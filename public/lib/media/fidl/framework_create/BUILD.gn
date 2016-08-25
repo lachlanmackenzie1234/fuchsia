@@ -2,8 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/module_args/mojo.gni")
-import("$mojo_sdk_root/mojo/public/mojo_sdk.gni")
+import("//mojo/public/tools/bindings/mojom.gni")
 
 source_set("framework_create") {
   sources = [
@@ -12,7 +11,7 @@ source_set("framework_create") {
   ]
 
   deps = [
-    "//services/media/framework",
-    "//services/media/framework_ffmpeg",
+    "//apps/media/services/framework",
+    "//apps/media/services/framework_ffmpeg",
   ]
 }
