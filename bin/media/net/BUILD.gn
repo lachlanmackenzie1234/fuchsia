@@ -10,7 +10,7 @@ source_set("net") {
   ]
 
   deps = [
-    "//apps/media/lib",
+    "//apps/media/lib/timeline",
     "//apps/media/services",
     "//apps/modular/lib/app",
     "//apps/netconnector/lib",
