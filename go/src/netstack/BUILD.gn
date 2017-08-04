@@ -8,15 +8,46 @@ import("//packages/package.gni")
 package("netstack") {
   deps = [
     ":netstack_bin",
+    "//apps/netstack/services",
+    "//apps/netstack/getaddrtest",
   ]
 
   binaries = [ {
-        name = "netstack"
-      } ]
+    name = "netstack"
+  }, {
+    name = "getaddrtest"
+  } ]
 }
 
 go_binary("netstack_bin") {
   output_name = "netstack"
 
   gopackage = "apps/netstack"
+
+  go_dependencies = [
+    {
+      package = "apps/netstack"
+      source = "//apps/netstack"
+    },
+    {
+      package = "application/lib/app"
+      source = "//application/lib/app/go/src/app"
+    },
+    {
+      package = "application/lib/svc"
+      source = "//application/lib/svc/go/src/svc"
+    },
+    {
+      package = "fidl"
+      source = "//lib/fidl/go/src/fidl"
+    },
+    {
+      package = "github.com/google/netstack"
+      source = "//third_party/netstack"
+    },
+  ]
+
+  deps = [
+    "//apps/netstack/services",
+  ]
 }
