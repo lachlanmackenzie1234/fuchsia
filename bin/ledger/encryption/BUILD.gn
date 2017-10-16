@@ -6,6 +6,7 @@ visibility = [ "//peridot/bin/ledger/*" ]
 
 group("encryption") {
   deps = [
+    "//peridot/bin/ledger/encryption/impl",
     "//peridot/bin/ledger/encryption/public",
   ]
 }
