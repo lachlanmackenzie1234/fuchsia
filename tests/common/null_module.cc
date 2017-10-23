@@ -14,6 +14,7 @@ using modular::testing::TestPoint;
 
 namespace {
 
+// The NullModule just sits there and does nothing until it's terminated.
 class NullModule {
  public:
   NullModule(
@@ -24,7 +25,6 @@ class NullModule {
     modular::testing::Init(module_host_->application_context(), __FILE__);
     module_host_->module_context()->Ready();
     initialized_.Pass();
-    module_host_->module_context()->Done();
   }
 
   // Called by ModuleDriver.
