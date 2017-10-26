@@ -9,6 +9,12 @@
 namespace escher {
 namespace impl {
 
+static const char kVertexShaderMainSourceCode[] = R"GLSL(
+void main() {
+  gl_Position = camera_transform * ComputeVertexPosition();
+}
+)GLSL";
+
 ModelDepthPass::ModelDepthPass(ResourceRecycler* recycler,
                                ModelDataPtr model_data,
                                vk::Format color_format,
@@ -33,6 +39,15 @@ ModelDepthPass::ModelDepthPass(ResourceRecycler* recycler,
 
   // We have finished specifying the render-pass.  Now create it.
   CreateRenderPassAndPipelineCache(std::move(model_data));
+}
+
+std::string ModelDepthPass::GetFragmentShaderSourceCode(
+    const ModelPipelineSpec& spec) {
+  return "";
+}
+
+std::string ModelDepthPass::GetVertexShaderMainSourceCode() {
+  return kVertexShaderMainSourceCode;
 }
 
 }  // namespace impl

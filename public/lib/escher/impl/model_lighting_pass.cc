@@ -9,6 +9,47 @@
 namespace escher {
 namespace impl {
 
+static const char kVertexShaderMainSourceCode[] = R"GLSL(
+layout(location = 0) out vec2 fragUV;
+
+void main() {
+  vec4 pos = ComputeVertexPosition();
+  gl_Position = camera_transform * pos;
+  fragUV = inUV;
+}
+)GLSL";
+
+static const char kFragmentShaderSourceCode[] = R"GLSL(
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(location = 0) in vec2 inUV;
+
+layout(set = 0, binding = 0) uniform PerModel {
+  vec2 frag_coord_to_uv_multiplier;
+  float time;
+  vec3 ambient_light_intensity;
+  vec3 direct_light_intensity;
+};
+
+layout(set = 0, binding = 1) uniform sampler2D light_tex;
+
+layout(set = 1, binding = 0) uniform PerObject {
+  mat4 camera_transform;
+  mat4 light_transform;
+  vec4 color;
+};
+
+layout(set = 1, binding = 1) uniform sampler2D material_tex;
+
+layout(location = 0) out vec4 outColor;
+
+void main() {
+  vec4 light = texture(light_tex, gl_FragCoord.xy * frag_coord_to_uv_multiplier);
+  outColor = light.r * color * texture(material_tex, inUV);
+}
+)GLSL";
+
 ModelLightingPass::ModelLightingPass(ResourceRecycler* recycler,
                                      ModelDataPtr model_data,
                                      vk::Format color_format,
@@ -20,7 +61,6 @@ ModelLightingPass::ModelLightingPass(ResourceRecycler* recycler,
   vk::AttachmentDescription* depth_attachment =
       attachment(kDepthAttachmentIndex);
 
-  // Create the depth-prepass RenderPass.
   color_attachment->loadOp = vk::AttachmentLoadOp::eClear;
   // TODO: necessary to store if we resolve as part of the render-pass?
   color_attachment->storeOp = vk::AttachmentStoreOp::eStore;
@@ -34,6 +74,15 @@ ModelLightingPass::ModelLightingPass(ResourceRecycler* recycler,
 
   // We have finished specifying the render-pass.  Now create it.
   CreateRenderPassAndPipelineCache(std::move(model_data));
+}
+
+std::string ModelLightingPass::GetFragmentShaderSourceCode(
+    const ModelPipelineSpec& spec) {
+  return kFragmentShaderSourceCode;
+}
+
+std::string ModelLightingPass::GetVertexShaderMainSourceCode() {
+  return kVertexShaderMainSourceCode;
 }
 
 }  // namespace impl

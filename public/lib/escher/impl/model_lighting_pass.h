@@ -10,7 +10,7 @@ namespace escher {
 namespace impl {
 
 // ModelLightingPass encapsulates a vk::RenderPass that is configured for the
-// final lighting pass (including shadows, either SSDO or shadow maps).
+// final lighting pass (including shadows, which were computed using SSDO).
 class ModelLightingPass : public ModelRenderPass {
  public:
   // |ModelRenderPass|
@@ -19,11 +19,19 @@ class ModelLightingPass : public ModelRenderPass {
   // |ModelRenderPass|
   bool OmitFragmentShader() override { return false; }
 
+  // |ModelRenderPass|
+  std::string GetFragmentShaderSourceCode(
+      const ModelPipelineSpec& spec) override;
+
   ModelLightingPass(ResourceRecycler* recycler,
                     ModelDataPtr model_data,
                     vk::Format color_format,
                     vk::Format depth_format,
                     uint32_t sample_count);
+
+ protected:
+  // |ModelRenderPass|
+  std::string GetVertexShaderMainSourceCode() override;
 };
 
 }  // namespace impl
