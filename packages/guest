@@ -3,7 +3,6 @@
         "cpp"
     ],
     "packages": {
-        "guest": "//garnet/bin/guest",
         "machina_tests": "//garnet/lib/machina:machina_tests"
     }
 }
