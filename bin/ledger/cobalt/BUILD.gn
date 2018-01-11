@@ -19,6 +19,7 @@ source_set("cobalt") {
     "//garnet/public/lib/cobalt/fidl",
     "//peridot/lib/backoff",
     "//peridot/lib/callback",
+    "//peridot/lib/cobalt",
   ]
 
   configs += [ "//peridot/bin/ledger:ledger_config" ]
