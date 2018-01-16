@@ -57,7 +57,7 @@ class IpAddress {
   // Creates an address from a sockaddr struct.
   explicit IpAddress(const sockaddr* addr);
 
-  // Creates an address from a NetAddress class.
+  // Creates an address from a NetAddress struct.
   explicit IpAddress(const netstack::NetAddress* addr);
 
   bool is_valid() const { return family_ != AF_UNSPEC; }

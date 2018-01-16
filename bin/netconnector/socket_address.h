@@ -13,6 +13,10 @@
 #include "garnet/bin/netconnector/ip_port.h"
 #include "lib/fxl/logging.h"
 
+namespace netstack {
+class SocketAddress;
+}
+
 namespace netconnector {
 
 // Represents a V4 or V6 socket address.
@@ -57,6 +61,9 @@ class SocketAddress {
 
   // Creates a socket address from an sockaddr_storage struct.
   explicit SocketAddress(const sockaddr_storage& addr);
+
+  // Creates a socket address from a SocketAddress struct.
+  explicit SocketAddress(const netstack::SocketAddress* addr);
 
   bool is_valid() const { return family() != AF_UNSPEC; }
 

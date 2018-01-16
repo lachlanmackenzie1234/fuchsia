@@ -8,6 +8,8 @@
 
 #include <endian.h>
 
+#include "lib/netstack/fidl/netstack.fidl.h"
+
 namespace netconnector {
 
 // static
@@ -114,6 +116,12 @@ SocketAddress::SocketAddress(const sockaddr_storage& addr) {
   } else {
     v6_ = *reinterpret_cast<const sockaddr_in6*>(&addr);
   }
+}
+
+SocketAddress::SocketAddress(const netstack::SocketAddress* addr)
+    : SocketAddress(IpAddress(addr->addr.get()),
+                    IpPort::From_uint16_t(addr->port)) {
+  FXL_DCHECK(addr != nullptr);
 }
 
 std::string SocketAddress::ToString() const {
