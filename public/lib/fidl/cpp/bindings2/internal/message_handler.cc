@@ -9,5 +9,7 @@ namespace internal {
 
 MessageHandler::~MessageHandler() = default;
 
-} // namespace internal
-} // namespace fidl
+void MessageHandler::OnChannelGone() {}
+
+}  // namespace internal
+}  // namespace fidl
