@@ -5,11 +5,11 @@
 package templates
 
 const Enum = `
-{{- define "EnumDeclaration" -}}
+{{- define "EnumForwardDeclaration" }}
 enum class {{ .Name }} : {{ .Type }} {
   {{- range .Members }}
   {{ .Name }} = {{ .Value }},
   {{- end }}
 };
-{{ end }}
+{{- end }}
 `
