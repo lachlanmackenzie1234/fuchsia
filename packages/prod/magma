@@ -3,9 +3,6 @@
         "cpp"
     ],
     "packages": {
-        "magma": "//garnet/lib/magma",
-        "magma-test-build-only": "//garnet/lib/magma/tests:magma-test-build-only",
-        "magma-tools": "//garnet/lib/magma:magma-tools",
-        "vkcube" : "//garnet/lib/magma:vkcube"
+        "magma": "//garnet/lib/magma"
     }
 }
