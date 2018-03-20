@@ -61,9 +61,9 @@ void NetMediaPlayerNetStub::HandleReceivedMessage(
       HandleStatusUpdates();
       break;
 
-    case MediaPlayerInMessageType::kSetUrlRequest:
-      FXL_DCHECK(message->set_url_request_);
-      player_->SetUrl(message->set_url_request_->url_);
+    case MediaPlayerInMessageType::kSetHttpSourceRequest:
+      FXL_DCHECK(message->set_http_source_request_);
+      player_->SetUrl(message->set_http_source_request_->url_);
       break;
 
     case MediaPlayerInMessageType::kPlayRequest:
@@ -77,6 +77,11 @@ void NetMediaPlayerNetStub::HandleReceivedMessage(
     case MediaPlayerInMessageType::kSeekRequest:
       FXL_DCHECK(message->seek_request_);
       player_->Seek(message->seek_request_->position_);
+      break;
+
+    case MediaPlayerInMessageType::kSetGainRequest:
+      // Not supported.
+      FXL_LOG(ERROR) << "NetMediaPlayerNetStub received SetGain message.";
       break;
   }
 }

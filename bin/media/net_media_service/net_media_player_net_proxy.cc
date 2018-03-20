@@ -54,8 +54,7 @@ NetMediaPlayerNetProxy::NetMediaPlayerNetProxy(
   zx::channel remote;
   zx_status_t status = zx::channel::create(0u, &local, &remote);
 
-  FXL_CHECK(status == ZX_OK) << "zx::channel::create failed, status "
-                                << status;
+  FXL_CHECK(status == ZX_OK) << "zx::channel::create failed, status " << status;
 
   // Give the local end of the channel to the relay.
   message_relay_.SetChannel(std::move(local));
@@ -73,8 +72,8 @@ NetMediaPlayerNetProxy::NetMediaPlayerNetProxy(
 NetMediaPlayerNetProxy::~NetMediaPlayerNetProxy() {}
 
 void NetMediaPlayerNetProxy::SetUrl(const f1dl::StringPtr& url) {
-  message_relay_.SendMessage(
-      Serializer::Serialize(MediaPlayerInMessage::SetUrlRequest(url)));
+  message_relay_.SendMessage(Serializer::Serialize(
+      MediaPlayerInMessage::SetHttpSourceRequest(url)));
 }
 
 void NetMediaPlayerNetProxy::Play() {
