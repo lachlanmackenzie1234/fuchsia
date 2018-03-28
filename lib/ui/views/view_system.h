@@ -15,27 +15,27 @@ class ViewSystem : public System {
  public:
   static constexpr TypeId kTypeId = kViews;
 
-  explicit ViewSystem(SystemContext context, scenic::gfx::ScenicSystem* scenic);
+  ViewSystem(SystemContext context, gfx::ScenicSystem* scenic);
   ~ViewSystem() override;
 
   std::unique_ptr<CommandDispatcher> CreateCommandDispatcher(
       CommandDispatcherContext context) override;
 
  private:
-  scenic::gfx::ScenicSystem* scenic_system_;
+  gfx::ScenicSystem* const scenic_system_;
 };
 
 // TODO(MZ-552): document.
 class ViewCommandDispatcher : public CommandDispatcher {
  public:
   ViewCommandDispatcher(CommandDispatcherContext context,
-                        scenic::gfx::ScenicSystem* scenic_system);
+                        gfx::ScenicSystem* scenic_system);
   ~ViewCommandDispatcher() override;
 
   bool ApplyCommand(const ui::Command& command) override;
 
  private:
-  scenic::gfx::ScenicSystem* scenic_system_;
+  gfx::ScenicSystem* const scenic_system_;
 };
 
 }  // namespace scenic
