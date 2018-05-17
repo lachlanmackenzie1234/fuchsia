@@ -11,26 +11,6 @@
 #include "bear.mpeg2.h"
 #include "mpeg12_decoder.h"
 
-static void DumpFrame(VideoFrame* frame, const char* name) {
-#if DUMP_VIDEO_TO_FILE
-  FILE* f = fopen(name, "a");
-  io_buffer_cache_flush_invalidate(&frame->buffer, 0,
-                                   frame->stride * frame->height);
-  io_buffer_cache_flush_invalidate(&frame->buffer, frame->uv_plane_offset,
-                                   frame->stride * frame->height / 2);
-
-  uint8_t* buf_start = (uint8_t*)io_buffer_virt(&frame->buffer);
-  for (uint32_t y = 0; y < frame->height; y++) {
-    fwrite(buf_start + frame->stride * y, 1, frame->width, f);
-  }
-  for (uint32_t y = 0; y < frame->height / 2; y++) {
-    fwrite(buf_start + frame->uv_plane_offset + frame->stride * y, 1,
-           frame->width, f);
-  }
-  fclose(f);
-#endif
-}
-
 class TestMpeg2 {
  public:
   static void Decode() {
@@ -49,7 +29,9 @@ class TestMpeg2 {
     std::promise<void> wait_valid;
     video->video_decoder_->SetFrameReadyNotifier(
         [&frame_count, &wait_valid](VideoFrame* frame) {
-          DumpFrame(frame, "/tmp/bearmpeg2.yuv");
+#if DUMP_VIDEO_TO_FILE
+          DumpVideoFrameToFile(frame, "/tmp/bearmpeg2.yuv");
+#endif
           ++frame_count;
           if (frame_count == 28)
             wait_valid.set_value();
@@ -81,7 +63,9 @@ class TestMpeg2 {
     std::promise<void> wait_valid;
     video->video_decoder_->SetFrameReadyNotifier(
         [&frame_count, &wait_valid](VideoFrame* frame) {
-          DumpFrame(frame, "/tmp/bearmpeg2noparser.yuv");
+#if DUMP_VIDEO_TO_FILE
+          DumpVideoFrameToFile(frame, "/tmp/bearmpeg2noparser.yuv");
+#endif
           ++frame_count;
           if (frame_count == 28)
             wait_valid.set_value();
