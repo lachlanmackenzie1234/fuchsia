@@ -1,0 +1,24 @@
+{
+  "test_suite_name": "fuchsia.ledger",
+  "app": "ledger_benchmark_put",
+  "args": [
+    "--entry-count=100", "--transaction-size=0", "--key-size=100",
+    "--value-size=20000", "--refs=off"
+  ],
+  "categories": ["benchmark", "ledger"],
+  "duration": 180,
+  "measure": [
+    {
+      "type": "duration",
+      "event_name": "put",
+      "event_category": "benchmark",
+      "split_samples_at": [1]
+    },
+    {
+      "type": "duration",
+      "event_name": "local_change_notification",
+      "event_category": "benchmark",
+      "split_samples_at": [1]
+    }
+  ]
+}
