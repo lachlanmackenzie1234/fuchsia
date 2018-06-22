@@ -7,25 +7,13 @@ executable("video_display") {
   output_name = "video_display"
 
   sources = [
-    "buffer.cc",
-    "buffer.h",
-    "camera_client.h",
-    "camera_client.cc",
-    "fake_camera_source.h",
-    "fake_camera_source.cc",
-    "fenced_buffer.cc",
-    "fenced_buffer.h",
-    "frame_scheduler.h",
-    "frame_scheduler.cc",
     "main.cc",
     "simple_camera_view.cc",
     "simple_camera_view.h",
-    "camera_interface_base.h",
-    "video_display.cc",
-    "video_display.h",
   ]
 
   deps = [
+    "//garnet/lib/media/camera/simple_camera_lib",
     "//garnet/public/lib/app/cpp",
     "//garnet/public/lib/fidl/cpp",
     "//garnet/public/lib/fsl",
