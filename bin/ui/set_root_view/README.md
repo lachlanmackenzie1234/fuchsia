@@ -17,8 +17,10 @@ e.g.
 $ set_root_view spinning_square_view
 ```
 
-If any other View-providing processes are running on your system, they should be
-killed before running this tool:
+When a view is presented, it takes over the entire display. To switch between
+presentations, type Control-Alt-'[' or Control-Alt-']'.
+
+Alternatively, kill any other view-providing processes like so:
 ```shell
 $ killall spinning_square_view
 ```
