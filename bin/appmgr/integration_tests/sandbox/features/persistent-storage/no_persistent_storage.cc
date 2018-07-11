@@ -3,16 +3,17 @@
 // found in the LICENSE file.
 
 #include <errno.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
 
 TEST(FeaturesTest, NoPersistentStorage) {
-  struct stat dontcare;
+  struct stat stat_;
   // /data is missing
-  int retval = stat("/data", &dontcare);
-  ASSERT_EQ(retval, -1);
+  int retval = stat("/data", &stat_);
+  ASSERT_EQ(retval, -1) << "Unexpectedly found /data";
   // While /svc is present
-  retval = stat("/svc", &dontcare);
-  ASSERT_EQ(retval, 0) << "errno: " << errno << std::endl;
+  retval = stat("/svc", &stat_);
+  ASSERT_EQ(retval, 0) << "Can't find /svc: " << strerror(errno);
 }
