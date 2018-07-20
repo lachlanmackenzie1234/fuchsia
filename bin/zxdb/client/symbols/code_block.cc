@@ -9,4 +9,6 @@ namespace zxdb {
 CodeBlock::CodeBlock(int tag) : Symbol(tag) {}
 CodeBlock::~CodeBlock() = default;
 
+const CodeBlock* CodeBlock::AsCodeBlock() const { return this; }
+
 }  // namespace zxdb
