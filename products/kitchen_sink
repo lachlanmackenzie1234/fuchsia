@@ -1,0 +1,11 @@
+{
+  "monolith": [
+    "peridot/packages/kitchen_sink"
+  ],
+  "preinstall": [
+
+  ],
+  "available": [
+
+  ]
+}

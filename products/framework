@@ -1,0 +1,11 @@
+{
+  "monolith": [
+    "peridot/packages/products/framework"
+  ],
+  "preinstall": [
+
+  ],
+  "available": [
+
+  ]
+}
