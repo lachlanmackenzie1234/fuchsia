@@ -3,21 +3,9 @@
 # found in the LICENSE file.
 
 import("//build/rust/rustc_binary.gni")
-import("//build/rust/rustc_library.gni")
 import("//build/package.gni")
 
 rustc_binary("dhcpd_bin") {
-  source_root = "src/bin/dhcpd.rs"
-  deps = [
-    "//garnet/lib/rust/crates/dhcp",
-    "//garnet/public/rust/crates/fuchsia-async",
-    "//third_party/rust-crates/rustc_deps:failure",
-    "//third_party/rust-crates/rustc_deps:futures",
-  ]
-}
-
-rustc_binary("fake_client_bin") {
-  source_root = "src/bin/fake_client.rs"
   deps = [
     "//garnet/lib/rust/crates/dhcp",
     "//garnet/public/rust/crates/fuchsia-async",
@@ -29,17 +17,6 @@ rustc_binary("fake_client_bin") {
 package("dhcpd") {
   deps = [
     ":dhcpd_bin",
-    ":fake_client_bin",
-  ]
-  binaries = [
-    {
-      name = "dhcpd"
-      source = "rust_crates/dhcpd_bin"
-    },
-    {
-      name = "fake_client"
-      source = "rust_crates/fake_client_bin"
-    }
   ]
   binary = "rust_crates/dhcpd_bin"
 }
