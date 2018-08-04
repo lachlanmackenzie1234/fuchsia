@@ -40,8 +40,7 @@ fn main() -> Result<(), Error> {
     let fut = ServicesServer::new()
         .add_service((TokenManagerFactoryMarker::NAME, |chan| {
             TokenManagerFactory::spawn(chan)
-        }))
-        .start()
+        })).start()
         .context("Error starting Auth TokenManager server")?;
 
     executor

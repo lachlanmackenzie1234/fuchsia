@@ -7,7 +7,9 @@ use fidl::endpoints2::RequestStream;
 use fidl::Error;
 use fidl_fuchsia_auth::{AuthProviderFactoryRequest, AuthProviderFactoryRequestStream,
                         AuthProviderStatus};
+
 use fuchsia_async as fasync;
+
 use futures::prelude::*;
 use log::{info, log, warn};
 
