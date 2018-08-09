@@ -3,6 +3,6 @@
         "binary": "test/run_test_component_test"
     },
     "sandbox": {
-        "features": [ "deprecated-all-services" ]
+        "features": [ "shell", "deprecated-all-services" ]
     }
 }
