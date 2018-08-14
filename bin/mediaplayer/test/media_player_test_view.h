@@ -13,7 +13,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/fit/function.h>
 
-#include "garnet/bin/mediaplayer/test/media_player_test_params.h"
+#include "garnet/bin/mediaplayer/test/mediaplayer_test_params.h"
 #include "lib/component/cpp/startup_context.h"
 #include "lib/fxl/macros.h"
 #include "lib/media/timeline/timeline_function.h"

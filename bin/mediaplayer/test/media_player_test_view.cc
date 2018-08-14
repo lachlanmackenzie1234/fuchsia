@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "garnet/bin/mediaplayer/test/media_player_test_view.h"
+#include "garnet/bin/mediaplayer/test/mediaplayer_test_view.h"
 
 #include <fcntl.h>
 #include <hid/usages.h>
 
-#include "garnet/bin/mediaplayer/test/media_player_test_params.h"
+#include "garnet/bin/mediaplayer/test/mediaplayer_test_params.h"
 #include "lib/fidl/cpp/clone.h"
 #include "lib/fidl/cpp/optional.h"
 #include "lib/fsl/io/fd.h"
