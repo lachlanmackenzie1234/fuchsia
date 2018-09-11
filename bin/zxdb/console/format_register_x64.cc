@@ -17,7 +17,6 @@ using debug_ipc::RegisterID;
 
 namespace zxdb {
 
-
 constexpr int kRflagsCarryFlagShift = 0;
 constexpr int kRflagsParityFlagShift = 2;
 constexpr int kRflagsAuxCarryFlagShift = 4;
@@ -28,7 +27,7 @@ constexpr int kRflagsInterruptEnableFlagShift = 9;
 constexpr int kRflagsDirectionFlagShift = 10;
 constexpr int kRflagsOverflowFlagShift = 11;
 
-#ifdef ENABLE_X64_SYSTEM_RFLAGS
+#ifdef ENABLE_X64_SYSTEM_FLAGS
 
 constexpr int kRflagsIoPriviledgeLevelShift = 12;
 constexpr int kRflagsNestedTaskShift = 14;
@@ -65,10 +64,10 @@ Err FormatRflags(const Register& rflags, TextForegroundColor color,
   buf.Append(fxl::StringPrintf(" %s ", hex_out.data()));
   buf.Append(fxl::StringPrintf(
       "(CF=%d, PF=%d, AF=%d, ZF=%d, SF=%d, TF=%d, IF=%d, DF=%d, OF=%d)",
-      FLAG_VALUE(value, kRflagsCarryFlagShift , 0x1),
-      FLAG_VALUE(value, kRflagsParityFlagShift , 0x1),
-      FLAG_VALUE(value, kRflagsAuxCarryFlagShift , 0x1),
-      FLAG_VALUE(value, kRflagsZeroFlagShift , 0x1),
+      FLAG_VALUE(value, kRflagsCarryFlagShift, 0x1),
+      FLAG_VALUE(value, kRflagsParityFlagShift, 0x1),
+      FLAG_VALUE(value, kRflagsAuxCarryFlagShift, 0x1),
+      FLAG_VALUE(value, kRflagsZeroFlagShift, 0x1),
       FLAG_VALUE(value, kRflagsSignFlagShift, 0x1),
       FLAG_VALUE(value, kRflagsTrapFlagShift, 0x1),
       FLAG_VALUE(value, kRflagsInterruptEnableFlagShift, 0x1),
@@ -76,8 +75,8 @@ Err FormatRflags(const Register& rflags, TextForegroundColor color,
       FLAG_VALUE(value, kRflagsOverflowFlagShift, 0x1)));
   row.push_back(std::move(buf));
 
-  // TODO(donosoc): Do the correct formatting when we enable this
-  //                ENABLE_X64_SYSTEM_RFLAGS
+  // TODO(donosoc): Do the correct formatting when we enable
+  //                ENABLE_X64_SYSTEM_FLAGS
 
   auto colspecs = std::vector<ColSpec>(2);
   FormatTable(std::move(colspecs), rows, out);
