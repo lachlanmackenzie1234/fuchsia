@@ -10,6 +10,7 @@ rustc_library("fidl_zircon_ethernet_ext") {
   edition = "2018"
   deps = [
     "//third_party/rust-crates/rustc_deps:bitflags",
+    "//third_party/rust-crates/rustc_deps:failure",
     "//third_party/rust-crates/rustc_deps:serde",
     "//third_party/rust-crates/rustc_deps:serde_derive",
     "//third_party/rust-crates/rustc_deps:serde_json",
