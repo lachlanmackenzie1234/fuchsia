@@ -5,7 +5,7 @@
 #include "garnet/lib/vulkan/src/swapchain/image_pipe_surface.h"
 #include "gtest/gtest.h"
 
-class TestImagePipeSurface : public image_pipe_swapchain::ImagePipeSurface {
+class MockImagePipeSurface : public image_pipe_swapchain::ImagePipeSurface {
  public:
   void AddImage(uint32_t image_id, fuchsia::images::ImageInfo image_info,
                 zx::vmo buffer) override {}
@@ -132,11 +132,47 @@ class TestSwapchain {
                                  swapchain_out);
   }
 
+  void Surface() {
+    zx::channel endpoint0, endpoint1;
+    EXPECT_EQ(ZX_OK, zx::channel::create(0, &endpoint0, &endpoint1));
+
+    VkMagmaSurfaceCreateInfoKHR create_info = {
+        .sType = VK_STRUCTURE_TYPE_MAGMA_SURFACE_CREATE_INFO_KHR,
+        .imagePipeHandle = endpoint0.release(),
+        .pNext = nullptr,
+    };
+    VkSurfaceKHR surface;
+    EXPECT_EQ(VK_SUCCESS, vkCreateMagmaSurfaceKHR(vk_instance_, &create_info,
+                                                  nullptr, &surface));
+    vkDestroySurfaceKHR(vk_instance_, surface, nullptr);
+  }
+
+  void CreateSwapchain() {
+    zx::channel endpoint0, endpoint1;
+    EXPECT_EQ(ZX_OK, zx::channel::create(0, &endpoint0, &endpoint1));
+
+    VkMagmaSurfaceCreateInfoKHR create_info = {
+        .sType = VK_STRUCTURE_TYPE_MAGMA_SURFACE_CREATE_INFO_KHR,
+        .imagePipeHandle = endpoint0.release(),
+        .pNext = nullptr,
+    };
+    VkSurfaceKHR surface;
+    EXPECT_EQ(VK_SUCCESS, vkCreateMagmaSurfaceKHR(vk_instance_, &create_info,
+                                                  nullptr, &surface));
+
+    VkSwapchainKHR swapchain;
+    EXPECT_EQ(VK_SUCCESS, CreateSwapchainHelper(surface, &swapchain));
+
+    destroy_swapchain_khr_(vk_device_, swapchain, nullptr);
+    vkDestroySurfaceKHR(vk_instance_, surface, nullptr);
+  }
+
   void AcquireNoSemaphore() {
     ASSERT_TRUE(init_);
 
-    TestImagePipeSurface surface;
+    MockImagePipeSurface surface;
     VkSwapchainKHR swapchain;
+
     ASSERT_EQ(VK_SUCCESS,
               CreateSwapchainHelper(reinterpret_cast<VkSurfaceKHR>(&surface),
                                     &swapchain));
@@ -175,7 +211,7 @@ class TestSwapchain {
     };
     EXPECT_EQ(VK_SUCCESS, queue_present_khr_(queue, &present_info));
     EXPECT_EQ(1u, surface.presented_.size());
-    EXPECT_EQ(0u, surface.presented_[0].acquire_fences->size());
+    EXPECT_EQ(1u, surface.presented_[0].acquire_fences->size());
     ASSERT_EQ(1u, surface.presented_[0].release_fences->size());
     (*surface.presented_[0].release_fences)[0].signal(0, ZX_EVENT_SIGNALED);
     surface.presented_.erase(surface.presented_.begin());
@@ -201,3 +237,7 @@ class TestSwapchain {
 };
 
 TEST(Swapchain, AcquireNoSemaphore) { TestSwapchain().AcquireNoSemaphore(); }
+
+TEST(Swapchain, Surface) { TestSwapchain().Surface(); }
+
+TEST(Swapchain, Create) { TestSwapchain().CreateSwapchain(); }
