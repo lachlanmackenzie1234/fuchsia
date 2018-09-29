@@ -67,7 +67,7 @@ class FirebaseAuthImplTest : public gtest::TestLoopFixture {
         token_provider_binding_(&token_provider_),
         firebase_auth_(
             {"api_key", "firebase-test", 1}, dispatcher(),
-            token_provider_binding_.NewBinding().Bind(), InitBackoff(),
+            token_provider_binding_.NewBinding().Bind(), nullptr, InitBackoff(),
             std::make_unique<MockCobaltLogger>(&report_observation_count_)) {}
 
   ~FirebaseAuthImplTest() override {}
@@ -84,7 +84,6 @@ class FirebaseAuthImplTest : public gtest::TestLoopFixture {
   fidl::Binding<fuchsia::modular::auth::TokenProvider> token_provider_binding_;
   FirebaseAuthImpl firebase_auth_;
   int report_observation_count_ = 0;
-  MockCobaltLogger* mock_cobalt_logger_;
   backoff::TestBackoff* backoff_;
 
  private:
