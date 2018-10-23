@@ -12,7 +12,7 @@
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
 #include "peridot/bin/ledger/filesystem/detached_path.h"
-#include "peridot/bin/ledger/storage/impl/db.h"
+#include "peridot/bin/ledger/storage/public/db.h"
 
 namespace storage {
 
