@@ -3,6 +3,9 @@
         "binary": "test/escher_unittests"
     },
     "sandbox": {
-        "features": [ "deprecated-all-services", "vulkan" ]
+        "features": [ "vulkan" ],
+        "services": [
+            "fuchsia.vulkan.loader.Loader"
+        ]
     }
 }
