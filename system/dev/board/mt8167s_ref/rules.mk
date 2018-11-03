@@ -9,7 +9,6 @@ MODULE := $(LOCAL_DIR)
 MODULE_TYPE := driver
 
 MODULE_SRCS := \
-    $(LOCAL_DIR)/bind.c \
     $(LOCAL_DIR)/mt8167.cpp \
     $(LOCAL_DIR)/mt8167-emmc.cpp \
     $(LOCAL_DIR)/mt8167-sdio.cpp \
@@ -20,6 +19,7 @@ MODULE_SRCS := \
     $(LOCAL_DIR)/mt8167-i2c.cpp \
     $(LOCAL_DIR)/mt8167-buttons.cpp \
     $(LOCAL_DIR)/mt8167-clk.cpp \
+    $(LOCAL_DIR)/mt8167-usb.cpp \
 
 MODULE_STATIC_LIBS := \
     system/dev/lib/mt8167 \
