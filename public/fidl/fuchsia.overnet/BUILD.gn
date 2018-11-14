@@ -8,4 +8,8 @@ fidl("fuchsia.overnet") {
   sources = [
     "overnet.fidl",
   ]
+
+  public_deps = [
+    "//garnet/public/fidl/fuchsia.overnet.protocol",
+  ]
 }
