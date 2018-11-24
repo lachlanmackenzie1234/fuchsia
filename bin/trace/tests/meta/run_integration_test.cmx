@@ -8,7 +8,9 @@
             "system-temp"
         ],
 	"services": [
-            "fuchsia.process.Launcher"
+            "fuchsia.process.Launcher",
+            "fuchsia.sys.Launcher",
+            "fuchsia.tracing.TraceController"
         ],
         "system": [ "bin" ]
     }
