@@ -4,7 +4,8 @@
     },
     "sandbox": {
         "features": [
-            "vulkan"
+            "vulkan",
+            "system-temp"
         ]
     }
 }
