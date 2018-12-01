@@ -20,6 +20,7 @@ MODULE_SRCS := \
     $(LOCAL_DIR)/mt8167-buttons.cpp \
     $(LOCAL_DIR)/mt8167-clk.cpp \
     $(LOCAL_DIR)/mt8167-usb.cpp \
+    $(LOCAL_DIR)/mt8167-thermal.cpp \
 
 MODULE_STATIC_LIBS := \
     system/dev/lib/mt8167 \
