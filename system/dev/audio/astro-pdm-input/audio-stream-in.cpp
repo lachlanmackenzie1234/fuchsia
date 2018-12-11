@@ -15,8 +15,11 @@
 namespace audio {
 namespace astro {
 
-// Calculate ring buffer size for 1 second of 16-bit, 48kHz, stereo.
-constexpr size_t RB_SIZE = fbl::round_up<size_t, size_t>(48000 * 2 * 2u, ZX_PAGE_SIZE);
+// Expects 2 mics.
+constexpr size_t kNumberOfChannels = 2;
+// Calculate ring buffer size for 1 second of 16-bit, 48kHz.
+constexpr size_t kRingBufferSize = fbl::round_up<size_t, size_t>(48000 * 2 * kNumberOfChannels,
+                                                                 ZX_PAGE_SIZE);
 
 AstroAudioStreamIn::AstroAudioStreamIn(zx_device_t* parent)
     : SimpleAudioStream(parent, true /* is input */) {
@@ -84,10 +87,12 @@ zx_status_t AstroAudioStreamIn::InitPDev() {
         return ZX_ERR_NO_MEMORY;
     }
     //Initialize the ring buffer
-    InitBuffer(RB_SIZE);
+    InitBuffer(kRingBufferSize);
 
     pdm_->SetBuffer(pinned_ring_buffer_.region(0).phys_addr,
                     pinned_ring_buffer_.region(0).size);
+
+    pdm_->ConfigPdmIn((1 << kNumberOfChannels) - 1); // First kNumberOfChannels channels.
 
     pdm_->Sync();
 
@@ -190,8 +195,8 @@ zx_status_t AstroAudioStreamIn::AddFormats() {
     // Astro only supports stereo, 16-bit, 48k audio in
     audio_stream_format_range_t range;
 
-    range.min_channels = 2;
-    range.max_channels = 2;
+    range.min_channels = kNumberOfChannels;
+    range.max_channels = kNumberOfChannels;
     range.sample_formats = AUDIO_SAMPLE_FORMAT_16BIT;
     range.min_frames_per_second = 48000;
     range.max_frames_per_second = 48000;
