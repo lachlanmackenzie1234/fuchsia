@@ -14,6 +14,8 @@ MODULE_BANJO_LIBRARY := ddk.protocol.usb.composite
 
 MODULE_BANJO_NAME := usb/composite
 
+MODULE_BANJO_DEPS := system/banjo/zircon-hw-usb
+
 MODULE_SRCS += $(LOCAL_DIR)/usb-composite.banjo
 
 include make/module.mk
