@@ -18,13 +18,13 @@ namespace arch {
 // Returns the state the debug registers should be if we added a execution HW
 // breakpoint for |address|.
 // return ZX_ERR_NO_RESOURCES if there are no registers left.
-zx_status_t SetupDebugBreakpoint(uint64_t address,
+zx_status_t SetupHWBreakpoint(uint64_t address,
                                  zx_thread_state_debug_regs_t*);
 
 // Removes an installed execution HW breakpoint for |address|.
 // If the address is not installed, no functional change will happen and
 // ZX_ERR_OUT_OF_RANGE will be returned.
-zx_status_t RemoveDebugBreakpoint(uint64_t address,
+zx_status_t RemoveHWBreakpoint(uint64_t address,
                                   zx_thread_state_debug_regs_t*);
 
 // Useful function for debugging to keep around.
