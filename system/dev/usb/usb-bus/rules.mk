@@ -11,14 +11,16 @@ MODULE_TYPE := driver
 MODULE_SRCS := \
     $(LOCAL_DIR)/usb-bus.c \
     $(LOCAL_DIR)/usb-device.c \
+    $(LOCAL_DIR)/usb-device-old.c \
     $(LOCAL_DIR)/util.c \
+    $(LOCAL_DIR)/util-old.c \
 
 MODULE_STATIC_LIBS := \
     system/ulib/ddk \
     system/ulib/fidl \
     system/ulib/sync \
     system/ulib/utf_conversion \
-    system/dev/lib/usb-old \
+    system/dev/lib/usb \
 
 MODULE_LIBS := \
     system/ulib/driver \
@@ -29,6 +31,7 @@ MODULE_FIDL_LIBS := \
     system/fidl/zircon-usb-device \
 
 MODULE_BANJO_LIBS := \
+    system/banjo/ddk-protocol-usb \
     system/banjo/ddk-protocol-usb-bus \
     system/banjo/ddk-protocol-usb-composite \
     system/banjo/ddk-protocol-usb-hci \
