@@ -20,6 +20,7 @@ MODULE_BANJO_DEPS := \
     system/banjo/ddk-driver \
     system/banjo/ddk-protocol-usb-hub \
     system/banjo/zircon-hw-usb \
+    system/banjo/zircon-hw-usb-hub \
 
 include make/module.mk
 
