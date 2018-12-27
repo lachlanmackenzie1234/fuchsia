@@ -14,8 +14,16 @@ MODULE_SRCS += \
     $(LOCAL_DIR)/cros.cpp \
     $(LOCAL_DIR)/gpt.cpp \
 
-MODULE_STATIC_LIBS := third_party/ulib/cksum
+MODULE_PACKAGE_INCS := \
+    $(LOCAL_INC)/c/gpt.h
 
-MODULE_LIBS := system/ulib/c
+MODULE_STATIC_LIBS := \
+    system/ulib/zxcpp \
+    system/ulib/fbl \
+    third_party/ulib/cksum
+
+MODULE_LIBS := \
+    system/ulib/c \
+    system/ulib/zircon \
 
 include make/module.mk
