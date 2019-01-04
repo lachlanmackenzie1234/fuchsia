@@ -13,6 +13,7 @@ test("log") {
     "$zx/system/ulib/fdio",
     "$zx/system/ulib/fzl",
     "$zx/system/ulib/log",
+    "$zx/system/ulib/log-writer-logger",
     "$zx/system/ulib/log-writer-textfile",
     "$zx/system/ulib/unittest",
     "$zx/system/ulib/zircon",
