@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 import("//build/test/test_package.gni")
 
-source_set("cmx_schema_json") {
+source_set("cm_schema_json") {
   inputs = [
     "cm_schema.json",
     "cml_schema.json",
@@ -25,7 +25,7 @@ rustc_library("cm_json") {
   ]
 
   non_rust_deps = [
-    ":cmx_schema_json"
+    ":cm_schema_json"
   ]
 }
 
