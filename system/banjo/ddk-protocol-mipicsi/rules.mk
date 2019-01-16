@@ -14,6 +14,8 @@ MODULE_BANJO_LIBRARY := ddk.protocol.mipicsi
 
 MODULE_BANJO_NAME := mipicsi
 
+MODULE_BANJO_DEPS := system/banjo/ddk-protocol-ispimpl
+
 MODULE_SRCS += $(LOCAL_DIR)/mipicsi.banjo
 
 include make/module.mk
