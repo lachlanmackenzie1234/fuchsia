@@ -4,5 +4,3 @@
 
 // Allow while bringing up MLME.
 #![allow(unused)]
-
-pub mod buffer;
