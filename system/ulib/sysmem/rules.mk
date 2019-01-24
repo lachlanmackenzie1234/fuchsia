@@ -9,7 +9,7 @@ MODULE := $(LOCAL_DIR)
 MODULE_TYPE := userlib
 
 MODULE_SRCS := \
-    $(LOCAL_DIR)/sysmem.cpp
+    $(LOCAL_DIR)/sysmem.cpp \
 
 MODULE_COMPILEFLAGS += -fvisibility=hidden
 
