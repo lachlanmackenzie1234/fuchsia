@@ -13,6 +13,7 @@ MODULE_PACKAGE := fidl
 MODULE_FIDL_LIBRARY := fuchsia.hardware.block
 
 MODULE_SRCS += \
+    $(LOCAL_DIR)/block.fidl \
     $(LOCAL_DIR)/ftl.fidl \
 
 include make/module.mk
