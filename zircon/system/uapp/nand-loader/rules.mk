@@ -23,7 +23,7 @@ MODULE_STATIC_LIBS := \
 MODULE_LIBS := \
     system/ulib/c \
     system/ulib/fdio \
-    system/ulib/fs-management \
+    system/ulib/ramdevice-client \
     system/ulib/zircon \
 
 MODULE_FIDL_LIBS := \
