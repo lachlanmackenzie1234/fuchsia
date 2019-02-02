@@ -10,26 +10,29 @@
 #include <ddk/protocol/i2c.h>
 #include <ddktl/pdev.h>
 
+#include "codec.h"
+
 namespace audio {
 namespace mt8167 {
 
-class Tas5782 {
+class Tas5782 final : public Codec {
 public:
     static std::unique_ptr<Tas5782> Create(ddk::PDev pdev, uint32_t i2c_index);
 
     explicit Tas5782(const ddk::I2cChannel& i2c)
         : i2c_(i2c) {}
 
-    bool ValidGain(float gain);
-    zx_status_t SetGain(float gain);
-    zx_status_t Init();
-    zx_status_t Reset();
-    zx_status_t Standby();
-    zx_status_t ExitStandby();
-    float GetGain() const { return current_gain_; }
-    float GetMinGain() { return kMinGain; }
-    float GetMaxGain() { return kMaxGain; }
-    float GetGainStep() const { return kGainStep; }
+    // Implementation of Codec interface.
+    bool ValidGain(float gain) const override;
+    zx_status_t SetGain(float gain) override;
+    zx_status_t Init() override;
+    zx_status_t Reset() override;
+    zx_status_t Standby() override;
+    zx_status_t ExitStandby() override;
+    float GetGain() const override { return current_gain_; }
+    float GetMinGain() const override { return kMinGain; }
+    float GetMaxGain() const override { return kMaxGain; }
+    float GetGainStep() const override { return kGainStep; }
 
 private:
     static constexpr float kMaxGain = 24.0;
