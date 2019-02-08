@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("base.gni")
+# DEPRECATED - this import path is deprecated, please use //products/terminal.gni.
 
-monolith += [ "garnet/packages/products/toulouse" ]
-
-wlancfg_config_type = "ap"
+import("//products/router.gni")
