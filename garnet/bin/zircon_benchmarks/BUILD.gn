@@ -4,6 +4,7 @@
 
 import("//build/fidl/fidl.gni")
 import("//build/package.gni")
+import("//build/testing/environments.gni")
 
 executable("bin") {
   output_name = "zircon_benchmarks"
@@ -66,6 +67,7 @@ package("zircon_benchmarks") {
   tests = [
     {
       name = "zircon_benchmarks"
+      environments = basic_envs
     },
   ]
 }
