@@ -42,14 +42,17 @@ public:
 
     // Part of ZX_DSIIMPL_PROTOCOL
     zx_status_t DsiImplConfig(const dsi_config_t* dsi_config);
-    zx_status_t DsiImplSendCmd(const mipi_dsi_cmd_t* cmd_list, size_t cmd_count);
+    void DsiImplPowerUp();
+    void DsiImplPowerDown();
     void DsiImplSetMode(dsi_mode_t mode);
-    void DsiImplPowerUpDsi();
-    void DsiImplPowerDownDsi();
-    void DsiImplSendPhyCode(uint32_t code, uint32_t parameter);
+    zx_status_t DsiImplSendCmd(const mipi_dsi_cmd_t* cmd_list, size_t cmd_count);
+    bool DsiImplIsPoweredUp();
+    void DsiImplReset() { DsiImplPowerDown(); }
+    zx_status_t DsiImplPhyConfig(const dsi_config_t* dsi_config) { return ZX_OK; }
     void DsiImplPhyPowerUp();
-    bool DsiImplIsDsiPoweredUp();
-    zx_status_t DsiImplWaitForPhyReady();
+    void DsiImplPhyPowerDown();
+    void DsiImplPhySendCode(uint32_t code, uint32_t parameter);
+    zx_status_t DsiImplPhyWaitForReady();
     void DsiImplPrintDsiRegisters();
 
     void DdkUnbind();
@@ -81,7 +84,8 @@ private:
     zx_status_t GenWriteLong(const mipi_dsi_cmd_t& cmd);
     zx_status_t GenRead(const mipi_dsi_cmd_t& cmd);
     zx_status_t SendCmd(const mipi_dsi_cmd_t& cmd);
-
+    zx_status_t GetColorCode(color_code_t c, bool& packed, uint8_t& code);
+    zx_status_t GetVideoMode(video_mode_t v, uint8_t& mode);
     std::optional<ddk::MmioBuffer> dsi_mmio_;
     pdev_protocol_t pdev_proto_ = {nullptr, nullptr};
     ddk::PDev pdev_;
