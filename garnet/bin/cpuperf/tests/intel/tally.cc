@@ -6,7 +6,7 @@
 
 #include "garnet/lib/perfmon/events.h"
 
-#include "../verify_test.h"
+#include "intel_tests.h"
 
 class TallyVerifier : public Verifier {
  public:
@@ -35,11 +35,11 @@ class TallyVerifier : public Verifier {
 
   bool VerifyTrace(const RecordCounts& counts) override {
     bool pass = true;
-    if (instructions_retired_count_ == 0) {
-      FXL_LOG(ERROR) << "Missing instructions_retired events";
-      pass = false;
-    } else if (instructions_retired_count_ > 1) {
-      FXL_LOG(ERROR) << "Too many instructions_retired events";
+    // In tally mode there is only one set of records emitted, at the end.
+    // Therefore we should have one record per trace (IOW per #cpus).
+    if (instructions_retired_count_ != session_result_spec_->num_traces) {
+      FXL_LOG(ERROR) << "Wrong number of instructions_retired events: "
+                     << instructions_retired_count_;
       pass = false;
     }
     return pass;
