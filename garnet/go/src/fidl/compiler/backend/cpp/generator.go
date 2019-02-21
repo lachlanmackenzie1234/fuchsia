@@ -22,7 +22,7 @@ type FidlGenerator struct {
 func NewFidlGenerator() *FidlGenerator {
 	tmpls := template.New("CPPTemplates").Funcs(template.FuncMap{
 		"Kinds": func() interface{} { return ir.Kinds },
-		"Eq": func(a interface{}, b interface{}) bool { return a == b },
+		"Eq":    func(a interface{}, b interface{}) bool { return a == b },
 	})
 	template.Must(tmpls.Parse(templates.Bits))
 	template.Must(tmpls.Parse(templates.Const))
@@ -30,7 +30,6 @@ func NewFidlGenerator() *FidlGenerator {
 	template.Must(tmpls.Parse(templates.Header))
 	template.Must(tmpls.Parse(templates.Implementation))
 	template.Must(tmpls.Parse(templates.Interface))
-	template.Must(tmpls.Parse(templates.OvernetStream))
 	template.Must(tmpls.Parse(templates.Struct))
 	template.Must(tmpls.Parse(templates.Table))
 	template.Must(tmpls.Parse(templates.TestBase))
