@@ -8,4 +8,7 @@ banjo_library("ddk-protocol-scpi") {
   sources = [
     "scpi.banjo",
   ]
+  public_deps = [
+    "$zx/system/banjo/zircon-device-scpi",
+  ]
 }
