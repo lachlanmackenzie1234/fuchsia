@@ -16,6 +16,8 @@ usage() {
 }
 
 declare UPDATE="${UPDATE:-false}"
+declare -r LINUX_GUEST_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+declare -r FUCHSIA_DIR="${DEBIAN_GUEST_DIR}/../../../../.."
 
 while getopts "d:o:u" OPT; do
   case $OPT in
@@ -47,7 +49,7 @@ elif [[ "${UPDATE}" = "true" ]]; then
 fi
 
 pushd "${TESTS_DIR}"
-./build.sh "${ARCH}"
+./build.sh -f ${FUCHSIA_DIR} "${ARCH}"
 popd
 
 if [ -n "${IMAGE_OUT}" ]; then
