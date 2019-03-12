@@ -10,8 +10,6 @@
 
 #include <utility>
 
-#include <utility>
-
 namespace devmgr {
 
 // Mixin for representing a type that represents an RPC handler and is owned
@@ -56,7 +54,7 @@ public:
         T::HandleRpc(std::move(self), dispatcher, wait, status, signal);
     }
 
-    zx::unowned_channel channel() { return zx::unowned_channel(wait_.object()); }
+    zx::unowned_channel channel() const { return zx::unowned_channel(wait_.object()); }
 
     // Sets the channel to the given handle and returns the old value
     zx::channel set_channel(zx::channel h) {
