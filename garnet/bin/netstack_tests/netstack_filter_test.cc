@@ -2,32 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <ddk/protocol/ethernet.h>
-#include <fbl/auto_call.h>
-#include <fuchsia/hardware/ethernet/cpp/fidl.h>
 #include <fuchsia/net/filter/cpp/fidl.h>
 #include <fuchsia/netstack/cpp/fidl.h>
-#include <garnet/lib/inet/ip_address.h>
-#include <lib/fidl/cpp/interface_handle.h>
-#include <lib/sys/cpp/file_descriptor.h>
-#include <lib/zx/socket.h>
-#include <zircon/status.h>
-#include <zircon/types.h>
 
-#include <string>
-
-#include <fcntl.h>
-#include <inttypes.h>
-#include <stdio.h>
-#include <string.h>
-
+#include "garnet/lib/inet/ip_address.h"
 #include "gtest/gtest.h"
-
 #include "lib/component/cpp/testing/test_util.h"
 #include "lib/component/cpp/testing/test_with_environment.h"
 #include "lib/netemul/network/ethernet_client.h"
 #include "lib/netemul/network/ethertap_client.h"
 #include "lib/netemul/network/ethertap_types.h"
+#include "lib/sys/cpp/file_descriptor.h"
 #include "lib/sys/cpp/termination_reason.h"
 
 namespace {
@@ -90,7 +75,7 @@ TEST_F(NetstackFilterTest, TestRuleset) {
   config.name = kInterfaceName;
   config.ip_address_config.set_static_ip(std::move(subnet));
 
-  uint32_t eth_id;
+  uint32_t eth_id = 0;
   netstack->AddEthernetDevice(std::move(kTopoPath), std::move(config),
                               eth->device(),
                               [&eth_id](uint32_t id) { eth_id = id; });
