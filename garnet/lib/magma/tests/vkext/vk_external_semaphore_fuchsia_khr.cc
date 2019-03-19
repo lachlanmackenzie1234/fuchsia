@@ -41,10 +41,6 @@ private:
     VkPhysicalDevice vk_physical_device_;
     VkDevice vk_device_;
     VkQueue vk_queue_;
-    VkImage vk_image_;
-    VkDeviceMemory vk_device_memory_;
-    VkCommandPool vk_command_pool_;
-    VkCommandBuffer vk_command_buffer_;
 
     static constexpr uint32_t kSemaphoreCount = 2;
     std::vector<VkSemaphore> vk_semaphore_;
