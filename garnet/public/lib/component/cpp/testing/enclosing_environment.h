@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Deprecated
+// Please use one in //sdk/lib/sys/cpp/testing
+
 #ifndef LIB_COMPONENT_CPP_TESTING_ENCLOSING_ENVIRONMENT_H_
 #define LIB_COMPONENT_CPP_TESTING_ENCLOSING_ENVIRONMENT_H_
 
