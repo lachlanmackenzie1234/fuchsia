@@ -4,8 +4,6 @@
 
 library("runtime") {
   sources = [
-    "message.c",
-    "processargs.c",
     "thread.c",
   ]
 
