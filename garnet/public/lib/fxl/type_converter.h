@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(dalesat): Remove this file once all clients use //sdk/fidl/cpp version.
+
 #ifndef LIB_FXL_TYPE_CONVERTER_H_
 #define LIB_FXL_TYPE_CONVERTER_H_
 
