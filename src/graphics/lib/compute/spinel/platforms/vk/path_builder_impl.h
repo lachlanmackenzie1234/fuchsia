@@ -8,15 +8,21 @@
 //
 //
 
-#include "spinel_result.h"
+#include "path_builder.h"
+
+//
+//
+//
+
+struct spn_device;
 
 //
 //
 //
 
 spn_result
-spn_path_builder_impl_create(struct spn_device  * const device,
-                             spn_path_builder_t * const path_builder);
+spn_path_builder_impl_create(struct spn_device         * const device,
+                             struct spn_path_builder * * const path_builder);
 
 //
 //
