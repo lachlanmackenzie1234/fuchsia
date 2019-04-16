@@ -8,6 +8,8 @@ board_name = "pc"
 
 fuchsia_packages = []
 
+export_x64_sdk_images = true
+
 board_packages = [
   # Include all drivers for now.
   "garnet/packages/prod/drivers",
