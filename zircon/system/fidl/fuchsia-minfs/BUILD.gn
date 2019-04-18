@@ -8,4 +8,7 @@ fidl_library("fuchsia-minfs") {
   sources = [
     "minfs.fidl",
   ]
+  public_deps = [
+    "$zx/system/fidl/fuchsia-storage-metrics",
+  ]
 }

@@ -13,6 +13,7 @@ executable("storage-metrics") {
     "$zx/system/ulib/fbl",
     "$zx/system/ulib/fdio",
     "$zx/system/ulib/fzl",
+    "$zx/system/ulib/minfs",
     "$zx/system/ulib/zircon",
     "$zx/system/ulib/zx",
   ]
