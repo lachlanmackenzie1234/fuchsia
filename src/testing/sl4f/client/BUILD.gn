@@ -5,19 +5,13 @@
 import("//build/dart/dart_library.gni")
 
 dart_library("client") {
-  package_name = "sl4f"
+  package_name = "src_sl4f"
 
   sources = [
-    "sl4f.dart",
-    "src/audio.dart",
-    "src/dump.dart",
-    "src/exceptions.dart",
-    "src/scenic.dart",
-    "src/sl4f_client.dart",
+    "src_sl4f.dart",
   ]
 
   deps = [
-    "//third_party/dart-pkg/pub/http",
-    "//third_party/dart-pkg/pub/image",
+    "//sdk/testing/sl4f/client",
   ]
 }
