@@ -28,10 +28,10 @@
 // 5. Wait for some time for the exception. If the exception never happened, it
 //    means that Zircon is not doing the right thing.
 
-constexpr char kBeacon[] = "Counter: Thread running.\n";
+static constexpr char kBeacon[] = "Counter: Thread running.\n";
 
 // This is the function that we will set up the breakpoint to.
-int __NO_INLINE FunctionToBreakpointOn(int c) { return c + c; }
+static int __NO_INLINE FunctionToBreakpointOn(int c) { return c + c; }
 
 // This is the code that the new thread will run.
 // It's meant to be an eternal loop.
@@ -46,6 +46,27 @@ int ThreadFunction(void*) {
 
   return 0;
 }
+
+#if defined(__x86_64__)
+
+zx_thread_state_debug_regs_t GetDebugRegs() {
+  FXL_NOTREACHED() << "x64 side not implemented.";
+  return {};
+}
+
+#elif defined(__aarch64__)
+
+zx_thread_state_debug_regs_t GetDebugRegs() {
+  zx_thread_state_debug_regs_t debug_regs = {};
+  auto& hw_bp = debug_regs.hw_bps[0];
+  hw_bp.dbgbcr = 1;  // Activate it.
+  hw_bp.dbgbvr = reinterpret_cast<uint64_t>(FunctionToBreakpointOn);
+  return debug_regs;
+}
+
+#else
+#error Unsupported arch.
+#endif
 
 int main() {
   FXL_LOG(INFO) << "****** Creating thread.";
@@ -69,13 +90,7 @@ int main() {
 
   FXL_LOG(INFO) << "****** Writing debug registers.";
 
-  zx_thread_state_debug_regs_t debug_regs = {};
-  auto& hw_bp = debug_regs.hw_bps[0];
-  hw_bp.dbgbcr = 1;  // Activate it.
-  hw_bp.dbgbvr = reinterpret_cast<uint64_t>(FunctionToBreakpointOn);
-
-  FXL_LOG(INFO) << "DBGBVR: 0x" << std::hex << debug_regs.hw_bps[0].dbgbvr;
-
+  auto debug_regs = GetDebugRegs();
   status = zx_thread_write_state(thread_handle, ZX_THREAD_STATE_DEBUG_REGS,
                                  &debug_regs, sizeof(debug_regs));
   FXL_DCHECK(status == ZX_OK) << "Could not write debug regs: " << status;
