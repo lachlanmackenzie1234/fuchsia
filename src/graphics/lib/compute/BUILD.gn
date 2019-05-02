@@ -6,5 +6,6 @@ group("compute") {
   deps = [
     "common",
     "common/vk",
+    "hotsort",
   ]
 }
