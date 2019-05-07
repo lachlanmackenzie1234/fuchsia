@@ -8,9 +8,10 @@ fidl("fuchsia.app") {
   sdk_category = "partner"
 
   sources = [
-    "constants.fidl",
     "context.fidl",
+    "ongoing_activity.fidl",
     "intent.fidl",
+    "types.fidl",
   ]
 
   deps = [
