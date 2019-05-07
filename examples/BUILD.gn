@@ -8,6 +8,8 @@ group("examples") {
     "cowsay",
     "fortune",
     "hello_world",
+    "media",
+    "speech",
   ]
 }
 
