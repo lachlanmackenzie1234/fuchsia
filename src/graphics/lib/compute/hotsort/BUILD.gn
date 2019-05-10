@@ -4,6 +4,13 @@
 
 group("hotsort") {
   deps = [
-    "hotsort_gen($host_toolchain)",
+    "platforms/vk",
+  ]
+}
+
+group("tests") {
+  testonly = true
+  public_deps = [
+    "platforms/vk/tests",
   ]
 }
