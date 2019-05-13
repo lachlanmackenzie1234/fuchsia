@@ -13,5 +13,8 @@ group("modular") {
 group("tests") {
   testonly = true
 
+  deps = [
+    "tests",  # tests/ directory
+  ]
   data_deps = []
 }
