@@ -13,6 +13,7 @@ void magma_indriver_test(zx_device_t* device)
 {
     DLOG("running magma unit tests");
     TestPlatformDevice::SetInstance(magma::PlatformDevice::Create(device));
+    SetTestDeviceHandle(device);
     const int kArgc = 3;
     const char* argv[kArgc] = {"magma_indriver_test", "--gtest_filter=-PlatformPci*.*"};
     testing::InitGoogleTest(const_cast<int*>(&kArgc), const_cast<char**>(argv));
