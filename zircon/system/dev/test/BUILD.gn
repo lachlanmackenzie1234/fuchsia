@@ -6,6 +6,7 @@ group("test") {
   testonly = true
   deps = [
     "ddk-test",
+    "isolateddevmgr",
     "mock-device",
     "operation",
     "sysdev",
