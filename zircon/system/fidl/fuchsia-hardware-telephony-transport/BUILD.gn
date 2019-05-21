@@ -8,4 +8,8 @@ fidl_library("fuchsia-hardware-telephony-transport") {
   sources = [
     "qmi.fidl",
   ]
+
+  public_deps = [
+    "$zx/system/fidl/fuchsia-telephony-snoop:fuchsia-telephony-snoop",
+  ]
 }
