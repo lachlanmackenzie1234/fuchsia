@@ -25,6 +25,7 @@
             "fuchsia.sys.Environment",
             "fuchsia.sys.Launcher",
             "fuchsia.sys.Loader",
+            "fuchsia.ui.input.ImeService",
             "fuchsia.ui.input.InputDeviceRegistry",
             "fuchsia.ui.policy.Presenter",
             "fuchsia.ui.scenic.Scenic"
