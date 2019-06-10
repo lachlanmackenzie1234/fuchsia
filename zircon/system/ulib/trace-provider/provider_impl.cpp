@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 
-#include <fuchsia/tracelink/c/fidl.h>
+#include <fuchsia/tracing/provider/c/fidl.h>
 #include <lib/async/default.h>
 #include <lib/fidl/coding.h>
 #include <lib/zx/process.h>
@@ -31,20 +31,30 @@ TraceProviderImpl::TraceProviderImpl(async_dispatcher_t* dispatcher,
 
 TraceProviderImpl::~TraceProviderImpl() = default;
 
-void TraceProviderImpl::Start(trace_buffering_mode_t buffering_mode,
-                              zx::vmo buffer, zx::fifo fifo,
-                              std::vector<std::string> enabled_categories) {
-    Session::StartEngine(
+void TraceProviderImpl::Initialize(trace_buffering_mode_t buffering_mode,
+                                   zx::vmo buffer, zx::fifo fifo,
+                                   std::vector<std::string> categories) {
+    Session::InitializeEngine(
         dispatcher_, buffering_mode, std::move(buffer), std::move(fifo),
-        std::move(enabled_categories));
+        std::move(categories));
+}
+
+void TraceProviderImpl::Start(trace_start_mode_t start_mode,
+                              std::vector<std::string> additional_categories) {
+    // TODO(PT-112): Add support for additional categories.
+    Session::StartEngine(start_mode);
 }
 
 void TraceProviderImpl::Stop() {
     Session::StopEngine();
 }
 
+void TraceProviderImpl::Terminate() {
+    Session::TerminateEngine();
+}
+
 void TraceProviderImpl::OnClose() {
-    Stop();
+    Terminate();
 }
 
 TraceProviderImpl::Connection::Connection(TraceProviderImpl* impl,
@@ -120,51 +130,98 @@ bool TraceProviderImpl::Connection::DecodeAndDispatch(
 
     auto hdr = reinterpret_cast<fidl_message_header_t*>(buffer);
     switch (hdr->ordinal) {
-    case fuchsia_tracelink_ProviderStartOrdinal: {
-        zx_status_t status = fidl_decode(&fuchsia_tracelink_ProviderStartRequestTable,
+    case fuchsia_tracing_provider_ProviderInitializeOrdinal: {
+        zx_status_t status = fidl_decode(&fuchsia_tracing_provider_ProviderInitializeRequestTable,
                                          buffer, num_bytes, handles, num_handles,
                                          nullptr);
-        if (status != ZX_OK)
-            break;
+        if (status != ZX_OK) {
+            return false;
+        }
 
-        auto request = reinterpret_cast<fuchsia_tracelink_ProviderStartRequest*>(buffer);
-        auto buffering_mode = request->buffering_mode;
-        auto buffer = zx::vmo(request->buffer);
-        auto fifo = zx::fifo(request->fifo);
+        auto request = reinterpret_cast<fuchsia_tracing_provider_ProviderInitializeRequest*>(buffer);
+        const fuchsia_tracing_provider_ProviderConfig& config = request->config;
+        auto buffering_mode = config.buffering_mode;
+        auto buffer = zx::vmo(config.buffer);
+        auto fifo = zx::fifo(config.fifo);
         std::vector<std::string> categories;
-        auto strings = reinterpret_cast<fidl_string_t*>(request->categories.data);
-        for (size_t i = 0; i < request->categories.count; i++) {
+        auto strings = reinterpret_cast<fidl_string_t*>(config.categories.data);
+        for (size_t i = 0; i < config.categories.count; i++) {
             categories.push_back(std::string(strings[i].data, strings[i].size));
         }
         trace_buffering_mode_t trace_buffering_mode;
         switch (buffering_mode) {
-        case fuchsia_tracelink_BufferingMode_ONESHOT:
+        case fuchsia_tracing_provider_BufferingMode_ONESHOT:
             trace_buffering_mode = TRACE_BUFFERING_MODE_ONESHOT;
             break;
-        case fuchsia_tracelink_BufferingMode_CIRCULAR:
+        case fuchsia_tracing_provider_BufferingMode_CIRCULAR:
             trace_buffering_mode = TRACE_BUFFERING_MODE_CIRCULAR;
             break;
-        case fuchsia_tracelink_BufferingMode_STREAMING:
+        case fuchsia_tracing_provider_BufferingMode_STREAMING:
             trace_buffering_mode = TRACE_BUFFERING_MODE_STREAMING;
             break;
         default:
             return false;
         }
-        impl_->Start(trace_buffering_mode, std::move(buffer), std::move(fifo),
-                     std::move(categories));
+        impl_->Initialize(trace_buffering_mode, std::move(buffer), std::move(fifo),
+                          std::move(categories));
         return true;
     }
-    case fuchsia_tracelink_ProviderStopOrdinal: {
-        zx_status_t status = fidl_decode(&fuchsia_tracelink_ProviderStopRequestTable,
+    case fuchsia_tracing_provider_ProviderStartOrdinal: {
+        zx_status_t status = fidl_decode(&fuchsia_tracing_provider_ProviderStartRequestTable,
                                          buffer, num_bytes, handles, num_handles,
                                          nullptr);
-        if (status != ZX_OK)
+        if (status != ZX_OK) {
+            return false;
+        }
+
+        auto request = reinterpret_cast<fuchsia_tracing_provider_ProviderStartRequest*>(buffer);
+        const fuchsia_tracing_provider_StartOptions& options = request->options;
+        trace_start_mode_t start_mode;
+        switch (options.buffer_disposition) {
+        case fuchsia_tracing_provider_BufferDisposition_CLEAR_ENTIRE:
+            start_mode = TRACE_START_CLEAR_ENTIRE_BUFFER;
             break;
+        case fuchsia_tracing_provider_BufferDisposition_CLEAR_NONDURABLE:
+            start_mode = TRACE_START_CLEAR_NONDURABLE_BUFFER;
+            break;
+        case fuchsia_tracing_provider_BufferDisposition_RETAIN:
+            start_mode = TRACE_START_RETAIN_BUFFER;
+            break;
+        default:
+            return false;
+        }
+        std::vector<std::string> categories;
+        auto strings = reinterpret_cast<fidl_string_t*>(options.additional_categories.data);
+        for (size_t i = 0; i < options.additional_categories.count; i++) {
+            categories.push_back(std::string(strings[i].data, strings[i].size));
+        }
+        impl_->Start(start_mode, std::move(categories));
+        return true;
+    }
+    case fuchsia_tracing_provider_ProviderStopOrdinal: {
+        zx_status_t status = fidl_decode(&fuchsia_tracing_provider_ProviderStopRequestTable,
+                                         buffer, num_bytes, handles, num_handles,
+                                         nullptr);
+        if (status != ZX_OK) {
+            return false;
+        }
 
         impl_->Stop();
         return true;
     }
+    case fuchsia_tracing_provider_ProviderTerminateOrdinal: {
+        zx_status_t status = fidl_decode(&fuchsia_tracing_provider_ProviderTerminateRequestTable,
+                                         buffer, num_bytes, handles, num_handles,
+                                         nullptr);
+        if (status != ZX_OK) {
+            return false;
+        }
+
+        impl_->Terminate();
+        return true;
     }
+    }
+
     return false;
 }
 
@@ -199,7 +256,7 @@ trace_provider_t* trace_provider_create_with_name(
     }
 
     // Register the trace provider.
-    status = fuchsia_tracelink_RegistryRegisterTraceProvider(
+    status = fuchsia_tracing_provider_RegistryRegisterProvider(
         to_service.get(), provider_client.release(),
         trace::internal::GetPid(), name, strlen(name));
     if (status != ZX_OK) {
@@ -249,7 +306,7 @@ trace_provider_t* trace_provider_create_synchronously(
     // Register the trace provider.
     zx_status_t registry_status;
     bool manager_is_tracing_already;
-    status = fuchsia_tracelink_RegistryRegisterTraceProviderSynchronously(
+    status = fuchsia_tracing_provider_RegistryRegisterProviderSynchronously(
         to_service.get(), provider_client.release(),
         trace::internal::GetPid(), name, strlen(name),
         &registry_status, &manager_is_tracing_already);
