@@ -7,14 +7,18 @@ driver("as370") {
     "as370.cpp",
     "as370-gpio.cpp",
     "as370-i2c.cpp",
+    "as370-usb.cpp",
   ]
   deps = [
     "$zx/system/banjo/ddk.protocol.gpioimpl",
     "$zx/system/banjo/ddk.protocol.platform.bus",
     "$zx/system/dev/lib/as370",
+    "$zx/system/dev/lib/mmio",
+    "$zx/system/dev/lib/usb",
     "$zx/system/ulib/ddk",
     "$zx/system/ulib/ddktl",
     "$zx/system/ulib/fbl",
+    "$zx/system/ulib/hwreg",
     "$zx/system/ulib/zx",
   ]
   data_deps = [
