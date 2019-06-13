@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 group("ui") {
-
   deps = [
+    "a11y",
     "bin",
   ]
 }
