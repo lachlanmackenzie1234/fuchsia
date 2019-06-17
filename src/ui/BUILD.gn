@@ -14,5 +14,6 @@ group("tests") {
 
   deps = [
     "bin:tests",
+    "tests",
   ]
 }
