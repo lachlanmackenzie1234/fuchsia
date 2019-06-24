@@ -14,7 +14,7 @@ executable("modules_bin") {
     "dma-mgr-test.cc",
   ]
   deps = [
-    "//src/camera/drivers/isp/modules",
+    "//src/camera/drivers/test_utils",
     "//zircon/public/fidl/fuchsia-camera-common:fuchsia-camera-common_c",
     "//zircon/public/fidl/fuchsia-sysmem:fuchsia-sysmem_c",
     "//zircon/public/lib/ddk",
