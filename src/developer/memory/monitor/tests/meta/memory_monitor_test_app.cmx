@@ -1,0 +1,16 @@
+{
+    "program": {
+        "binary": "bin/memory_monitor_test_app"
+    },
+    "sandbox": {
+        "dev": [
+            "misc/sysinfo"
+        ],
+        "features": [
+            "isolated-cache-storage"
+        ],
+        "services": [
+            "fuchsia.tracing.provider.Registry"
+        ]
+    }
+}
