@@ -13,5 +13,5 @@ toc:
   path: /fuchsia-src/the-book/components/life_of_a_service_open
 - title: "ELF runner"
   path: /fuchsia-src/the-book/components/elf_runner
-- title: "Storage capabilities"
-  path: /fuchsia-src/the-book/components/storage_capabilities
+- title: "Capabilities"
+  path: /fuchsia-src/the-book/components/capabilities
