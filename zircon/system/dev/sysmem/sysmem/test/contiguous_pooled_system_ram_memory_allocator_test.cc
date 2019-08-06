@@ -27,7 +27,8 @@ class FakeOwner : public MemoryAllocator::Owner {
 };
 
 namespace {
-TEST(ContiguousPooled, Full) {
+
+TEST(ContiguousPooledSystem, Full) {
   FakeOwner owner;
   constexpr uint32_t kVmoSize = 4096;
   constexpr uint32_t kVmoCount = 1024;
@@ -52,20 +53,14 @@ TEST(ContiguousPooled, Full) {
   zx::vmo vmo;
   EXPECT_NOT_OK(allocator.Allocate(kVmoSize, &vmo));
 
-  uintptr_t ptr;
-  EXPECT_OK(zx::vmar::root_self()->map(0u, vmos[0], 0u, kVmoSize, ZX_VM_PERM_READ, &ptr));
+  allocator.Delete(std::move(vmos[0]));
 
-  vmos[0].reset();
-
-  // The mapping should prevent the allocator from marking the memory as free.
-  EXPECT_NOT_OK(allocator.Allocate(kVmoSize, &vmo));
-  EXPECT_OK(zx::vmar::root_self()->unmap(ptr, kVmoSize));
-
-  EXPECT_OK(allocator.Allocate(kVmoSize, &vmo));
+  EXPECT_OK(allocator.Allocate(kVmoSize, &vmos[0]));
 
   // Destroy half of all vmos.
   for (uint32_t i = 0; i < kVmoCount; i += 2) {
-    vmos[i].reset();
+    ZX_DEBUG_ASSERT(vmos[i]);
+    allocator.Delete(std::move(vmos[i]));
   }
 
   // There shouldn't be enough contiguous address space for even 1 extra byte.
