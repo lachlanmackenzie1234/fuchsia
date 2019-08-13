@@ -4,6 +4,7 @@
     },
     "sandbox": {
         "pkgfs": [
+            "ctl",
             "versions"
         ],
         "services": [

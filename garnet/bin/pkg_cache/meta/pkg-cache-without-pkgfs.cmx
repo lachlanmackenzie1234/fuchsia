@@ -1,0 +1,11 @@
+{
+    "program": {
+        "binary": "bin/pkg_cache"
+    },
+    "sandbox": {
+        "services": [
+            "fuchsia.amber.Control",
+            "fuchsia.logger.LogSink"
+        ]
+    }
+}
