@@ -1,0 +1,20 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+static_library("sim-fake-ap") {
+  sources = [
+    "sim-fake-ap.h",
+  ]
+
+  deps = [
+    "//zircon/public/lib/ddk",
+  ]
+
+  public_deps = [
+    "//garnet/lib/wlan/protocol:protocol",
+    "//src/connectivity/wlan/drivers/testing/lib/sim-env:simenv",
+    "//zircon/public/banjo/ddk.hw.wlan.ieee80211",
+    "//zircon/public/banjo/ddk.hw.wlan.wlaninfo",
+  ]
+}

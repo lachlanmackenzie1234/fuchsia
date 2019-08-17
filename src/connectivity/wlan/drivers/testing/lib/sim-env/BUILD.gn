@@ -5,6 +5,7 @@
 static_library("simenv") {
   sources = [
     "sim-env.h",
+    "sim-sta-ifc.h",
   ]
 
   deps = [
