@@ -7,16 +7,15 @@
 #include <lib/ui/gfx/cpp/math.h>
 #include <lib/ui/scenic/cpp/commands.h>
 #include <lib/ui/scenic/cpp/view_token_pair.h>
-#include <zircon/status.h>
-
 #include <trace/event.h>
+#include <zircon/status.h>
 
 #include "src/lib/fxl/logging.h"
 
 namespace scenic {
 
 BaseView::BaseView(ViewContext context, const std::string& debug_name)
-    : component_context_(context.component_context),
+    : startup_context_(context.startup_context),
       incoming_services_(context.outgoing_services.Bind()),
       outgoing_services_(std::move(context.incoming_services)),
       listener_binding_(this, std::move(context.session_and_listener_request.second)),
@@ -32,7 +31,7 @@ BaseView::BaseView(ViewContext context, const std::string& debug_name)
   view_.AddChild(root_node_);
 
   if (enable_ime_) {
-    ime_manager_ = component_context_->svc()->Connect<fuchsia::ui::input::ImeService>();
+    startup_context_->ConnectToEnvironmentService(ime_manager_.NewRequest());
 
     ime_.set_error_handler([](zx_status_t status) {
       FXL_LOG(ERROR) << "Interface error on: Input Method Editor " << zx_status_get_string(status);

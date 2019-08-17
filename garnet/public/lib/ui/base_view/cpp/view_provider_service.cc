@@ -2,34 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/ui/base_view/cpp/view_provider_service.h>
-#include <lib/ui/scenic/cpp/view_token_pair.h>
+#include "lib/ui/base_view/cpp/view_provider_service.h"
 
 #include <algorithm>
 
+#include "lib/component/cpp/connect.h"
 #include "src/lib/fxl/logging.h"
+#include "lib/ui/scenic/cpp/view_token_pair.h"
 
 namespace scenic {
 
-ViewProviderService::ViewProviderService(sys::ComponentContext* component_context,
+ViewProviderService::ViewProviderService(component::StartupContext* startup_context,
                                          fuchsia::ui::scenic::Scenic* scenic,
                                          ViewFactory view_factory)
-    : ViewProviderService(component_context, scenic) {
+    : ViewProviderService(startup_context, scenic) {
   FXL_DCHECK(view_factory);
   view_factory_ = std::move(view_factory);
 }
 
-ViewProviderService::ViewProviderService(sys::ComponentContext* component_context,
+ViewProviderService::ViewProviderService(component::StartupContext* startup_context,
                                          fuchsia::ui::scenic::Scenic* scenic)
-    : component_context_(component_context), scenic_(scenic) {
-  FXL_DCHECK(component_context_);
+    : startup_context_(startup_context), scenic_(scenic) {
+  FXL_DCHECK(startup_context_);
 
-  component_context_->outgoing()->AddPublicService<fuchsia::ui::app::ViewProvider>(
-      bindings_.GetHandler(this));
+  startup_context_->outgoing().AddPublicService<fuchsia::ui::app::ViewProvider>(
+      [this](fidl::InterfaceRequest<fuchsia::ui::app::ViewProvider> request) {
+        bindings_.AddBinding(this, std::move(request));
+      });
 }
 
 ViewProviderService::~ViewProviderService() {
-  component_context_->outgoing()->RemovePublicService<fuchsia::ui::app::ViewProvider>();
+  startup_context_->outgoing().RemovePublicService<fuchsia::ui::app::ViewProvider>();
 }
 
 void ViewProviderService::CreateView(
@@ -41,7 +44,7 @@ void ViewProviderService::CreateView(
       .view_token = scenic::ToViewToken(std::move(view_token)),
       .incoming_services = std::move(incoming_services),
       .outgoing_services = std::move(outgoing_services),
-      .component_context = component_context_,
+      .startup_context = startup_context_,
   };
 
   if (view_factory_) {
