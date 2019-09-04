@@ -19,6 +19,7 @@ source_set("gesture_manager") {
     "//sdk/fidl/fuchsia.ui.input",
     "//sdk/fidl/fuchsia.ui.input.accessibility",
     "//src/lib/ui/input:gesture",
+    "//src/ui/a11y/lib/gesture_manager/arena:gesture_arena",
   ]
 
   deps = [
