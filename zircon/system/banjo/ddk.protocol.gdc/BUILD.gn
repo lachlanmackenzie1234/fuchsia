@@ -9,6 +9,7 @@ banjo_library("ddk.protocol.gdc") {
     "gdc.banjo",
   ]
   public_deps = [
+    "$zx/system/banjo/ddk.protocol.camerahwaccel",
     "$zx/system/banjo/zircon.device.sysmem",
   ]
 }
