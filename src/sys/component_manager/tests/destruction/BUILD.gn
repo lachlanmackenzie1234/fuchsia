@@ -1,0 +1,112 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/rust/rustc_binary.gni")
+import("//build/rust/rustc_test.gni")
+import("//build/test/test_package.gni")
+
+rustc_test("destruction_integration_test_bin") {
+  name = "destruction_integration_test"
+  edition = "2018"
+  source_root = "integration_test.rs"
+  deps = [
+    "//garnet/lib/rust/cm_fidl_translator",
+    "//garnet/public/rust/fdio",
+    "//garnet/public/rust/fuchsia-async",
+    "//garnet/public/rust/fuchsia-component",
+    "//garnet/public/rust/fuchsia-runtime",
+    "//garnet/public/rust/fuchsia-syslog",
+    "//sdk/fidl/fuchsia.sys:fuchsia.sys-rustc",
+    "//src/sys/component_manager:lib",
+    "//src/sys/component_manager/tests:test_utils",
+    "//third_party/rust_crates:failure",
+    "//third_party/rust_crates:futures-preview",
+  ]
+  non_rust_deps = [
+    "//zircon/public/lib/async",
+    "//zircon/public/lib/async-default",
+    "//zircon/public/lib/async-loop",
+  ]
+}
+
+rustc_binary("destruction_collection_realm_bin") {
+  name = "destruction_collection_realm"
+  edition = "2018"
+  source_root = "collection_realm.rs"
+  deps = [
+    "//garnet/lib/rust/io_util",
+    "//garnet/public/lib/fidl/rust/fidl",
+    "//garnet/public/rust/fuchsia-async",
+    "//garnet/public/rust/fuchsia-component",
+    "//garnet/public/rust/fuchsia-syslog",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2-rustc",
+    "//src/sys/component_manager/tests/fidl:components-rustc",
+    "//third_party/rust_crates:failure",
+    "//third_party/rust_crates:log",
+    "//zircon/system/fidl/fuchsia-io:fuchsia-io-rustc",
+  ]
+}
+
+rustc_binary("destruction_trigger_bin") {
+  name = "destruction_trigger"
+  edition = "2018"
+  source_root = "trigger.rs"
+  deps = [
+    "//garnet/public/rust/fuchsia-async",
+    "//garnet/public/rust/fuchsia-component",
+    "//src/sys/component_manager/tests/fidl:components-rustc",
+    "//third_party/rust_crates:failure",
+    "//third_party/rust_crates:futures-preview",
+  ]
+}
+
+test_package("destruction_integration_test") {
+  deps = [
+    ":destruction_integration_test_bin",
+    ":destruction_collection_realm_bin",
+    ":destruction_trigger_bin",
+    "//src/sys/component_manager/tests:mock_pkg_resolver_bin",
+  ]
+
+  meta = [
+    {
+      path = rebase_path("meta/mock_pkg_resolver.cmx")
+      dest = "mock_pkg_resolver.cmx"
+    },
+    {
+      path = rebase_path("meta/trigger.cml")
+      dest = "trigger.cm"
+    },
+    {
+      path = rebase_path("meta/trigger_realm.cml")
+      dest = "trigger_realm.cm"
+    },
+    {
+      path = rebase_path("meta/collection_realm.cml")
+      dest = "collection_realm.cm"
+    },
+  ]
+
+  binaries = [
+    {
+      name = "mock_pkg_resolver"
+    },
+    {
+      name = "trigger"
+      source = "${root_out_dir}/destruction_trigger"
+    },
+    {
+      name = "collection_realm"
+      source = "${root_out_dir}/destruction_collection_realm"
+    },
+  ]
+
+  tests = [
+    {
+      name = "destruction_integration_test"
+    }
+  ]
+}
+
+

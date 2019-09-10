@@ -6,8 +6,8 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 import("//build/test/test_package.gni")
 
-rustc_test("integration_test_bin") {
-  name = "integration_test"
+rustc_test("collections_integration_test_bin") {
+  name = "collections_integration_test"
   edition = "2018"
   source_root = "integration_test.rs"
   deps = [
@@ -56,12 +56,12 @@ rustc_binary("trigger_bin") {
 
 test_package("collections_integration_test") {
   deps = [
-    ":integration_test_bin",
     ":collection_realm_bin",
+    ":collections_integration_test_bin",
     ":trigger_bin",
-    "//src/sys/component_manager/tests:mock_pkg_resolver_bin",
     "//examples/components/routing/echo_client",
     "//examples/components/routing/echo_server",
+    "//src/sys/component_manager/tests:mock_pkg_resolver_bin",
   ]
 
   components =
@@ -111,9 +111,7 @@ test_package("collections_integration_test") {
 
   tests = [
     {
-      name = "integration_test"
-    }
+      name = "collections_integration_test"
+    },
   ]
 }
-
-
