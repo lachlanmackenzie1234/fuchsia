@@ -4,36 +4,6 @@
 
 import("//build/fidl/fidl.gni")
 
-static_library("lib") {
-  friend = [ ":tests" ]
-
-  public = [
-    "display_options.h",
-    "library_loader.h",
-    "memory_helpers.h",
-    "message_decoder.h",
-    "type_decoder.h",
-    "wire_object.h",
-    "wire_parser.h",
-    "wire_types.h",
-  ]
-
-  sources = [
-    "library_loader.cc",
-    "message_decoder.cc",
-    "type_decoder.cc",
-    "wire_object.cc",
-    "wire_parser.cc",
-    "wire_types.cc",
-  ]
-
-  deps = [
-    "//src/lib/fxl",
-    "//third_party/rapidjson",
-    "//zircon/public/lib/fidl_base",
-  ]
-}
-
 if (current_toolchain == host_toolchain) {
   static_library("host_lib") {
     public = [
@@ -42,6 +12,7 @@ if (current_toolchain == host_toolchain) {
       "interception_workflow.h",
       "syscall_decoder.h",
       "syscall_decoder_dispatcher.h",
+      "type_decoder.h",
     ]
 
     sources = [
@@ -51,13 +22,14 @@ if (current_toolchain == host_toolchain) {
       "syscall_decoder.cc",
       "syscall_decoder_dispatcher.cc",
       "syscall_definition.cc",
+      "type_decoder.cc",
     ]
 
     deps = [
-      ":lib",
       "//src/developer/debug/ipc:client",
       "//src/developer/debug/zxdb/client",
       "//src/developer/debug/zxdb/common",
+      "//src/lib/fidl_codec",
       "//src/lib/fxl",
       "//third_party/rapidjson",
       "//zircon/public/lib/fidl_base",

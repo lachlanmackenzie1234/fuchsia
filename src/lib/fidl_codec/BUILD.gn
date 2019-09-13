@@ -1,0 +1,139 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/fidl/fidl.gni")
+import("//build/test.gni")
+import("//build/test/test_package.gni")
+import("//build/testing/environments.gni")
+
+static_library("fidl_codec") {
+  friend = [ ":tests" ]
+
+  public = [
+    "colors.h",
+    "display_handle.h",
+    "display_options.h",
+    "library_loader.h",
+    "memory_helpers.h",
+    "message_decoder.h",
+    "wire_object.h",
+    "wire_parser.h",
+    "wire_types.h",
+  ]
+
+  sources = [
+    "display_handle.cc",
+    "library_loader.cc",
+    "message_decoder.cc",
+    "wire_object.cc",
+    "wire_parser.cc",
+    "wire_types.cc",
+  ]
+
+  deps = [
+    "//src/lib/fxl",
+    "//third_party/rapidjson",
+    "//zircon/public/lib/fidl_base",
+  ]
+}
+
+executable("fidl_codec_test_bin") {
+  testonly = true
+  sources = [
+    "library_loader_test.cc",
+    "message_decoder_test.cc",
+    "wire_parser_test.cc",
+  ]
+
+  deps = [
+    ":fidl",
+    ":fidl_codec",
+    ":json_for_test",
+    "//sdk/fidl/fuchsia.sys",
+    "//sdk/lib/fidl/cpp:test_support",
+    "//sdk/lib/fidl/cpp/test",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+    "//third_party/rapidjson",
+    "//zircon/public/lib/async-loop-cpp",
+    "//zircon/public/lib/async-loop-default",
+  ]
+}
+
+unittest_package("fidl_codec_tests") {
+  deps = [
+    ":fidl_codec_test_bin",
+  ]
+  tests = [
+    {
+      name = "fidl_codec_test_bin"
+      environments = basic_envs
+    },
+  ]
+}
+
+group("tests") {
+  testonly = true
+
+  deps = [
+    ":fidl_codec_tests",
+  ]
+}
+
+action("json_for_test") {
+  deps = [
+    ":fidl($fidl_toolchain)",
+    ":fidl-composed($fidl_toolchain)",
+    ":fidl-sys($fidl_toolchain)",
+    "//sdk/fidl/fuchsia.sys",
+    "//sdk/lib/fidl/cpp/test:frobinator",
+    "//zircon/system/fidl/fuchsia-io",
+  ]
+  outputs = [
+    "$target_gen_dir/library_loader_test_data.h",
+  ]
+  script = "generate_test_includes.sh"
+  args = [
+    rebase_path(target_gen_dir, root_build_dir) + "/library_loader_test_data.h",
+    rebase_path(root_build_dir) +
+        "/fidling/gen/sdk/lib/fidl/cpp/test/frobinator.fidl.json",
+    rebase_path(root_build_dir) +
+        "/fidling/gen/zircon/system/fidl/fuchsia-io/fuchsia-io.fidl.json",
+    rebase_path(root_build_dir) +
+        "/fidling/gen/src/lib/fidl_codec/fidl.fidl.json",
+    rebase_path(root_build_dir) +
+        "/fidling/gen/src/lib/fidl_codec/fidl-composed.fidl.json",
+    rebase_path(root_build_dir) +
+        "/fidling/gen/src/lib/fidl_codec/fidl-sys.fidl.json",
+  ]
+}
+
+fidl("fidl") {
+  name = "test.fidlcodec.examples"
+
+  sources = [
+    "testdata/empty.test.fidl",
+    "testdata/types.test.fidl",
+  ]
+}
+
+fidl("fidl-composed") {
+  name = "test.fidlcodec.composedinto"
+
+  sources = [
+    "testdata/composed_into.test.fidl",
+  ]
+
+  deps = [
+    ":fidl",
+  ]
+}
+
+fidl("fidl-sys") {
+  name = "test.fidlcodec.sys"
+
+  sources = [
+    "testdata/sys.test.fidl",
+  ]
+}
