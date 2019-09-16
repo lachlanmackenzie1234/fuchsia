@@ -43,23 +43,25 @@ void DwarfDieScanner::Advance() {
     // the current level.
     while (tree_stack_.back().depth >= current_depth)
       tree_stack_.pop_back();
+    tree_stack_.emplace_back(current_depth, die_index_, false);
+  }
 
-    bool inside_function;
-    switch (static_cast<DwarfTag>(cur_die_->getTag())) {
-      case DwarfTag::kLexicalBlock:
-        // Inherits from previous.
-        inside_function = tree_stack_.back().inside_function;
-        break;
-      case DwarfTag::kSubprogram:
-      case DwarfTag::kInlinedSubroutine:
-        inside_function = true;
-        break;
-      default:
-        inside_function = false;
-        break;
-    }
-
-    tree_stack_.emplace_back(current_depth, die_index_, inside_function);
+  // Fix up the inside function flag.
+  switch (static_cast<DwarfTag>(cur_die_->getTag())) {
+    case DwarfTag::kLexicalBlock:
+    case DwarfTag::kVariable:
+      // Inherits from previous. For a block and a variable there should always be the parent,
+      // since at least there's the unit root DIE.
+      FXL_DCHECK(tree_stack_.size() >= 2);
+      tree_stack_.back().inside_function = tree_stack_[tree_stack_.size() - 2].inside_function;
+      break;
+    case DwarfTag::kSubprogram:
+    case DwarfTag::kInlinedSubroutine:
+      tree_stack_.back().inside_function = true;
+      break;
+    default:
+      tree_stack_.back().inside_function = false;
+      break;
   }
 
   // Save parent info. The parent of this node is the one right before the

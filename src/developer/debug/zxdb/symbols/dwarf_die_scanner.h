@@ -52,6 +52,9 @@ class DwarfDieScanner {
   // Advances to the next DIE.
   void Advance();
 
+  uint32_t die_index() const { return die_index_; }
+  uint32_t die_count() const { return die_count_; }
+
   bool done() const { return die_index_ == die_count_; }
 
   // Returns true if the current stack position is considered to be directly inside a function.
