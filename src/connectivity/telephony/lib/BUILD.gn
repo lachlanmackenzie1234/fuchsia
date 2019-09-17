@@ -10,9 +10,9 @@ group("lib") {
   ]
 }
 
-group("testing") {
+group("tel_devmgr") {
   testonly = true
   deps = [
-    "tel-devmgr:tel_devmgr",
+    "tel-devmgr:tel_devmgr_component_test",
   ]
 }
