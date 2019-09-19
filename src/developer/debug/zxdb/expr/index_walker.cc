@@ -32,7 +32,7 @@ IndexWalker::~IndexWalker() = default;
 bool IndexWalker::WalkUp() {
   if (path_.size() > 1) {
     // Don't walk above the root.
-    path_.resize(path_.size() - 1);
+    path_.pop_back();
     return true;
   }
   return false;
