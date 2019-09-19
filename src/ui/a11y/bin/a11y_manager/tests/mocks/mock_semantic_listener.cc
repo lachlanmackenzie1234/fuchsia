@@ -15,9 +15,10 @@ MockSemanticListener::MockSemanticListener(sys::testing::ComponentContextProvide
   manager_.set_error_handler([](zx_status_t status) {
     FX_LOGS(ERROR) << "Cannot connect to SemanticsManager with status:" << status;
   });
-  fidl::InterfaceHandle<SemanticActionListener> listener_handle;
+  fidl::InterfaceHandle<SemanticListener> listener_handle;
   bindings_.AddBinding(this, listener_handle.NewRequest());
-  manager_->RegisterView(std::move(view_ref_), std::move(listener_handle), tree_ptr_.NewRequest());
+  manager_->RegisterViewForSemantics(std::move(view_ref_), std::move(listener_handle),
+                                     tree_ptr_.NewRequest());
 }
 
 void MockSemanticListener::UpdateSemanticNodes(std::vector<Node> nodes) {
@@ -28,6 +29,8 @@ void MockSemanticListener::DeleteSemanticNodes(std::vector<uint32_t> node_ids) {
   tree_ptr_->DeleteSemanticNodes(std::move(node_ids));
 }
 
-void MockSemanticListener::Commit() { tree_ptr_->Commit(); }
+void MockSemanticListener::CommitUpdates() {
+  tree_ptr_->CommitUpdates([]() {});
+}
 
 }  // namespace accessibility_test

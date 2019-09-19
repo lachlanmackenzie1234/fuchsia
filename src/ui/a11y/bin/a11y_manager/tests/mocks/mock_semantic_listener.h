@@ -16,11 +16,11 @@
 namespace accessibility_test {
 using fuchsia::accessibility::semantics::Action;
 using fuchsia::accessibility::semantics::Node;
-using fuchsia::accessibility::semantics::SemanticActionListener;
+using fuchsia::accessibility::semantics::SemanticListener;
 using fuchsia::accessibility::semantics::SemanticsManagerPtr;
 using fuchsia::accessibility::semantics::SemanticTreePtr;
 
-class MockSemanticListener : public SemanticActionListener {
+class MockSemanticListener : public SemanticListener {
  public:
   // Mock for SemanticProvider and Semantic Action Listener, which will be
   // responsible for sending Node updates to A11y Manager and handling
@@ -35,21 +35,24 @@ class MockSemanticListener : public SemanticActionListener {
 
   void UpdateSemanticNodes(std::vector<Node> nodes);
   void DeleteSemanticNodes(std::vector<uint32_t> node_ids);
-  void Commit();
+  void CommitUpdates();
 
  private:
-  // |fuchsia::accessibility::semantics::SemanticActionListener|
+  // |fuchsia::accessibility::semantics::SemanticListener|
   void OnAccessibilityActionRequested(
       uint32_t node_id, Action action,
-      SemanticActionListener::OnAccessibilityActionRequestedCallback callback) override {}
+      SemanticListener::OnAccessibilityActionRequestedCallback callback) override {}
 
-  // |fuchsia::accessibility::semantics::SemanticActionListener|
+  // |fuchsia::accessibility::semantics::SemanticListener|
   void HitTest(::fuchsia::math::PointF local_point, HitTestCallback callback) override {}
+
+  // |fuchsia::accessibility::semantics::SemanticListener|
+  void OnSemanticsModeChanged(bool enabled, OnSemanticsModeChangedCallback callback) override {}
 
   sys::testing::ComponentContextProvider* context_provider_;
   SemanticsManagerPtr manager_;
   SemanticTreePtr tree_ptr_;
-  fidl::BindingSet<SemanticActionListener> bindings_;
+  fidl::BindingSet<SemanticListener> bindings_;
   fuchsia::ui::views::ViewRef view_ref_;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(MockSemanticListener);
