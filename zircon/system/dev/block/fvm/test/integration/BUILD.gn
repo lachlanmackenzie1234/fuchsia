@@ -1,0 +1,27 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("test") {
+  testonly = true
+  deps = [
+    ":fvm-driver-integration",
+  ]
+}
+
+test("fvm-driver-integration") {
+  sources = [
+    "volume_manager_api_test.cc",
+  ]
+  include_dirs = [ ".." ]
+  deps = [
+    "$zx/system/dev/block/fvm:shared",
+    "$zx/system/fidl/fuchsia-hardware-block-volume:llcpp",
+    "$zx/system/ulib/devmgr-integration-test",
+    "$zx/system/ulib/devmgr-launcher",
+    "$zx/system/ulib/driver",
+    "$zx/system/ulib/fvm",
+    "$zx/system/ulib/fvm/test:devices",
+    "$zx/system/ulib/zxtest",
+  ]
+}

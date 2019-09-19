@@ -6,6 +6,7 @@ group("test") {
   testonly = true
   deps = [
     ":fvm-driver-unittests",
+    "integration:test",
   ]
 }
 
@@ -15,8 +16,8 @@ test("fvm-driver-unittests") {
   ]
   include_dirs = [ ".." ]
   deps = [
+    "$zx/system/dev/block/fvm:shared",
     "$zx/system/ulib/driver",
     "$zx/system/ulib/zxtest",
-    "..:shared",
   ]
 }
