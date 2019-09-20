@@ -124,7 +124,7 @@ template("sdk_shared_library") {
       configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]
     } else {
       # Adding this linker flag keeps us honest about not commiting to a
-      # specific C++ ABI. If this flag is causing your library to not to
+      # specific C++ ABI. If this flag is causing your library to not
       # compile, consider whether your library really ought to be in the SDK.
       # If so, consider including your library in the SDK as source rather than
       # precompiled. If you do require precompilation, you probably need to
@@ -236,6 +236,8 @@ template("sdk_shared_library") {
              rebase_path(metadata_file),
              "--name",
              atom_name,
+             "--format",
+             "shared",
              "--root",
              file_base,
              "--include-dir",
