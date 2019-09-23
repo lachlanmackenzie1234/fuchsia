@@ -15,6 +15,7 @@
         "services": [
             "fuchsia.cobalt.SystemDataUpdater",
             "fuchsia.logger.LogSink",
+            "fuchsia.paver.Paver",
             "fuchsia.pkg.PackageResolver",
             "fuchsia.pkg.rewrite.Engine",
             "fuchsia.recovery.FactoryReset",
