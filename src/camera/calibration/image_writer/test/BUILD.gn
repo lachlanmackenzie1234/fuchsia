@@ -10,7 +10,6 @@ executable("image_writer_test") {
   ]
   deps = [
     "//src/camera/drivers/test_utils",
-    "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

@@ -16,8 +16,6 @@ executable("image_writer_bin") {
     "//src/lib/fxl",
     "//zircon/public/lib/fzl",
   ]
-
-  include_dirs = [ "//lib" ]
 }
 
 package("image_writer") {
