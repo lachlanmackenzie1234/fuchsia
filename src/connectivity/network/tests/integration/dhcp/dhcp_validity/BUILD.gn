@@ -1,0 +1,39 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/package.gni")
+import("//build/rust/rustc_binary.gni")
+import("//build/rust/rustc_library.gni")
+
+rustc_binary("test") {
+  edition = "2018"
+  name = "dhcp_validity"
+  deps = [
+    ":lib",
+    "//garnet/public/rust/fdio",
+    "//garnet/public/rust/fuchsia-async",
+    "//garnet/public/rust/fuchsia-component",
+    "//garnet/public/rust/fuchsia-zircon",
+    "//third_party/rust_crates:failure",
+    "//zircon/system/fidl/fuchsia-net:fuchsia-net-rustc",
+  ]
+}
+
+rustc_library("lib") {
+  edition = "2018"
+  name = "dhcp_validity_lib"
+  deps = [
+    "//garnet/lib/rust/fidl_fuchsia_net_ext",
+    "//garnet/public/lib/fidl/rust/fidl",
+    "//garnet/public/rust/fuchsia-async",
+    "//garnet/public/rust/fuchsia-component",
+    "//garnet/public/rust/fuchsia-zircon",
+    "//sdk/fidl/fuchsia.netstack:fuchsia.netstack-rustc",
+    "//src/connectivity/network/testing/netemul/runner/test/guest:lib",
+    "//src/virtualization/lib/guest_interaction:fuchsia.netemul.guest-rustc",
+    "//third_party/rust_crates:failure",
+    "//third_party/rust_crates:futures-preview",
+    "//zircon/system/fidl/fuchsia-net:fuchsia-net-rustc",
+  ]
+}
