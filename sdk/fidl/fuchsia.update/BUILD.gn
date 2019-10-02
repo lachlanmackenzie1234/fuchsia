@@ -11,8 +11,4 @@ fidl("fuchsia.update") {
   sources = [
     "update.fidl",
   ]
-
-  public_deps = [
-    "//sdk/fidl/fuchsia.update.channel",
-  ]
 }
