@@ -7,6 +7,7 @@ group("ui") {
     "a11y",
     "bin",
     "policy",
+    "tools",
   ]
 }
 
