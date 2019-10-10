@@ -18,6 +18,7 @@ group("tests") {
     "examples:tests",
     "lib:tests",
     "overnetstack:tests",
+    "tests",
     "tools:tests",
   ]
 }
