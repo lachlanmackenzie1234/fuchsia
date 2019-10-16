@@ -5,42 +5,16 @@
 // This file contains functionality for checking the consistency of
 // Blobfs.
 
-#pragma once
+#ifndef BLOBFS_FSCK_H_
+#define BLOBFS_FSCK_H_
 
-#ifdef __Fuchsia__
-#include <blobfs/blobfs.h>
-#else
-#include <blobfs/host.h>
-#endif
+#include <blobfs/mount.h>
+#include <block-client/cpp/block-device.h>
 
 namespace blobfs {
 
-class BlobfsChecker {
- public:
-  BlobfsChecker(fbl::unique_ptr<Blobfs> blobfs);
-
-  zx_status_t Initialize(bool apply_journal);
-  void TraverseInodeBitmap();
-  void TraverseBlockBitmap();
-  zx_status_t CheckAllocatedCounts() const;
-
- private:
-  DISALLOW_COPY_ASSIGN_AND_MOVE(BlobfsChecker);
-  fbl::unique_ptr<Blobfs> blobfs_;
-  uint32_t alloc_inodes_ = 0;
-  uint32_t alloc_blocks_ = 0;
-  uint32_t error_blobs_ = 0;
-  uint32_t inode_blocks_ = 0;
-};
-
-zx_status_t Fsck(fbl::unique_ptr<Blobfs> vnode, bool apply_jouranl);
-
-#ifdef __Fuchsia__
-// Validate that the contents of the superblock matches the results claimed in the underlying
-// volume manager.
-//
-// If the results are inconsistent, update the FVM's allocation accordingly.
-zx_status_t CheckFvmConsistency(const Superblock* info, BlockDevice* device);
-#endif  // __Fuchsia__
+zx_status_t Fsck(std::unique_ptr<block_client::BlockDevice> device, MountOptions* options);
 
 }  // namespace blobfs
+
+#endif  // BLOBFS_FSCK_H_
