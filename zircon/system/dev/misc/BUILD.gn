@@ -6,9 +6,6 @@ group("misc") {
   deps = [
     "builtin",
     "cpu-trace",
-    "goldfish",
-    "goldfish-address-space",
-    "goldfish-control",
     "ktrace",
     "sysinfo",
     "test",
