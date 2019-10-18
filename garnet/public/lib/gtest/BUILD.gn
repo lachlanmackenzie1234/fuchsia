@@ -2,18 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Do not use this target directly, instead depend on //src/lib/testing/loop_fixture:gtest.
+# Do not use this target directly, instead depend on //src/lib/testing/loop_fixture.
 group("gtest") {
   public_deps = [
-    "//src/lib/testing/loop_fixture:gtest",
-  ]
-  testonly = true
-}
-
-# Do not use this target directly, instead depend on //src/lib/testing/loop_fixture:unittests.
-group("unittests") {
-  public_deps = [
-    "//src/lib/testing/loop_fixture:unittests",
+    "//src/lib/testing/loop_fixture",
   ]
   testonly = true
 }
