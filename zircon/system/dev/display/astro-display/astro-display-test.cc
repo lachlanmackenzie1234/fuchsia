@@ -7,48 +7,22 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fidl-async/cpp/bind.h>
+#include <lib/mock-sysmem/mock-buffer-collection.h>
 
 #include "zxtest/zxtest.h"
 
 namespace sysmem = llcpp::fuchsia::sysmem;
 
-class MockBufferCollection : public sysmem::BufferCollection::Interface {
+class MockBufferCollection : public mock_sysmem::MockBufferCollection {
  public:
-  bool set_constraints_called() const { return set_constraints_called_; }
-
-  void SetEventSink(::zx::channel events, SetEventSinkCompleter::Sync _completer) override {
-    EXPECT_TRUE(false);
-  }
-  void Sync(SyncCompleter::Sync _completer) override { EXPECT_TRUE(false); }
   void SetConstraints(bool has_constraints, sysmem::BufferCollectionConstraints constraints,
                       SetConstraintsCompleter::Sync _completer) override {
-    set_constraints_called_ = true;
     EXPECT_TRUE(constraints.buffer_memory_constraints.inaccessible_domain_supported);
-  }
-  void WaitForBuffersAllocated(WaitForBuffersAllocatedCompleter::Sync _completer) override {
-    EXPECT_TRUE(false);
-  }
-  void CheckBuffersAllocated(CheckBuffersAllocatedCompleter::Sync _completer) override {
-    EXPECT_TRUE(false);
+    EXPECT_FALSE(constraints.buffer_memory_constraints.cpu_domain_supported);
+    set_constraints_called_ = true;
   }
 
-  void CloseSingleBuffer(uint64_t buffer_index,
-                         CloseSingleBufferCompleter::Sync _completer) override {
-    EXPECT_TRUE(false);
-  }
-  void AllocateSingleBuffer(uint64_t buffer_index,
-                            AllocateSingleBufferCompleter::Sync _completer) override {
-    EXPECT_TRUE(false);
-  }
-  void WaitForSingleBufferAllocated(
-      uint64_t buffer_index, WaitForSingleBufferAllocatedCompleter::Sync _completer) override {
-    EXPECT_TRUE(false);
-  }
-  void CheckSingleBufferAllocated(uint64_t buffer_index,
-                                  CheckSingleBufferAllocatedCompleter::Sync _completer) override {
-    EXPECT_TRUE(false);
-  }
-  void Close(CloseCompleter::Sync _completer) override { EXPECT_TRUE(false); }
+  bool set_constraints_called() const { return set_constraints_called_; }
 
  private:
   bool set_constraints_called_ = false;
