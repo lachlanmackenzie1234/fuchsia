@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <functional>
 #include <gtest/gtest.h>
 
 #include "sim_test.h"
@@ -23,20 +24,16 @@ struct ApInfo {
 
 class ScanTest : public SimTest {
  public:
-  // These represent notifications we can receive from sim-env.
-  struct Notification {
-    enum NotificationType { FINISHED, START_SCAN } type;
-  };
-
-  static constexpr zx::duration kDefaultTestDuration = zx::sec(100);
-  static constexpr zx::duration kScanStartTime = zx::sec(1);
-  static constexpr zx::duration kDefaultBeaconInterval = zx::msec(100);
+  static constexpr zx::duration kBeaconInterval = zx::msec(100);
+  static constexpr uint32_t kDwellTimeMs = 120;
 
   ScanTest() = default;
   void Init();
   void StartFakeAp(const common::MacAddr& bssid, const wlan_ssid_t& ssid,
                    const wlan_channel_t& chan,
-                   zx::duration beacon_interval = kDefaultBeaconInterval);
+                   zx::duration beacon_interval = kBeaconInterval);
+
+  // Event handlers
   void EndSimulation();
   void StartScan();
 
@@ -97,12 +94,11 @@ void ScanTest::Rx(void* pkt) { GTEST_FAIL(); }
 
 // Called when simulation time has run out. Takes down all fake APs and the simulated DUT.
 void ScanTest::EndSimulation() {
-  zx_status_t status;
   for (auto ap_info = aps_.begin(); ap_info != aps_.end(); ap_info++) {
     (*ap_info)->ap_.DisableBeacon();
   }
-  status = device_->WlanphyImplDestroyIface(client_ifc_->iface_id_);
-  // TODO - check status. brcmfmac doesn't support destroying an interface yet.
+  zx_status_t status = device_->WlanphyImplDestroyIface(client_ifc_->iface_id_);
+  EXPECT_EQ(status, ZX_OK);
 }
 
 // Tell the DUT to run a scan
@@ -115,6 +111,8 @@ void ScanTest::StartScan() {
       .scan_type = WLAN_SCAN_TYPE_PASSIVE,
       .num_channels = 11,
       .channel_list = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+      .min_channel_time = kDwellTimeMs,
+      .max_channel_time = kDwellTimeMs,
       .num_ssids = 0,
   };
   if_impl_ops->start_scan(if_impl_args->ctx, &req);
@@ -122,19 +120,9 @@ void ScanTest::StartScan() {
 }
 
 void ScanTest::ReceiveNotification(void* payload) {
-  auto notification = static_cast<Notification*>(payload);
-  switch (notification->type) {
-    case Notification::FINISHED:
-      EndSimulation();
-      break;
-    case Notification::START_SCAN:
-      StartScan();
-      break;
-    default:
-      GTEST_FAIL();
-      break;
-  }
-  delete notification;
+  auto fn = static_cast<std::function<void()>*>(payload);
+  (*fn)();
+  delete fn;
 }
 
 // Keep track of which AP we received the scan result for, using the BSSID as a unique identifier.
@@ -188,6 +176,9 @@ constexpr wlan_ssid_t kDefaultSsid = {.ssid = "Fuchsia Fake AP", .len = 15};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 TEST_F(ScanTest, BasicFunctionality) {
+  constexpr zx::duration kScanStartTime = zx::sec(1);
+  constexpr zx::duration kDefaultTestDuration = zx::sec(100);
+
   // Create our simulated device
   Init();
 
@@ -195,14 +186,14 @@ TEST_F(ScanTest, BasicFunctionality) {
   StartFakeAp(kDefaultBssid, kDefaultSsid, kDefaultChannel);
 
   // Request a future scan
-  Notification* notification = new Notification;
-  notification->type = Notification::START_SCAN;
-  env_->ScheduleNotification(this, kScanStartTime, notification);
+  auto scan_handler = new std::function<void()>;
+  *scan_handler = std::bind(&ScanTest::StartScan, this);
+  env_->ScheduleNotification(this, kScanStartTime, scan_handler);
 
   // Request a future notification so we can shut down the test
-  notification = new Notification;
-  notification->type = Notification::FINISHED;
-  env_->ScheduleNotification(this, kDefaultTestDuration, notification);
+  auto end_handler = new std::function<void()>;
+  *end_handler = std::bind(&ScanTest::EndSimulation, this);
+  env_->ScheduleNotification(this, kDefaultTestDuration, end_handler);
 
   env_->Run();
 
