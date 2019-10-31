@@ -1,0 +1,15 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("all") {
+  deps = [
+    "//src/session/examples/elements",
+    "//src/session/examples/graphical_session:all",
+  ]
+}
+
+# Placeholder for adding unit tests for example sessions and related components.
+group("tests") {
+  testonly = true
+}

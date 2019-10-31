@@ -1,0 +1,19 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("all") {
+  deps = [
+    "//src/session/lib/element_management",
+    "//src/session/lib/realm_management",
+  ]
+}
+
+group("tests") {
+  testonly = true
+
+  deps = [
+    "//src/session/lib/element_management:element_management_tests",
+    "//src/session/lib/realm_management:realm_management_tests",
+  ]
+}

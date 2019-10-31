@@ -2,8 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-group("session_tools") {
+group("all") {
   deps = [
     "//src/session/tools/session_control",
+  ]
+}
+
+group("tests") {
+  testonly = true
+
+  deps = [
+    "//src/session/tools/session_control:session_control_tests",
   ]
 }
