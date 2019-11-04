@@ -30,9 +30,12 @@ rustc_library("lib") {
   edition = "2018"
   name = "netemul_guest_lib"
   deps = [
+    "//garnet/public/lib/fidl/rust/fidl",
+    "//garnet/public/rust/fdio",
     "//garnet/public/rust/fuchsia-zircon",
     "//src/virtualization/lib/guest_interaction:fuchsia.netemul.guest-rustc",
     "//third_party/rust_crates:failure",
     "//third_party/rust_crates:futures-preview",
+    "//zircon/system/fidl/fuchsia-io:fuchsia-io-rustc",
   ]
 }
