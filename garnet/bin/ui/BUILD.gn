@@ -2,104 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/test/test_package.gni")
-import("//build/testing/environments.gni")
-import("//garnet/lib/magma/gnbuild/magma.gni")
-import("//src/lib/vulkan/layers.gni")
-
 group("ui") {
   testonly = true
   deps = [
-    ":scenic_tests",
     "benchmarks",
     "tests",
-    "//src/ui/bin/ime:ime_service",
-    "//src/ui/bin/ime:ime_test",
-    "//src/ui/bin/root_presenter",
-    "//src/ui/scenic",
-    "//src/ui/tools:gltf_export",
-    "//src/ui/tools:input",
-    "//src/ui/tools:present_view",
-    "//src/ui/tools:print_input",
-    "//src/ui/tools:screencap",
-    "//src/ui/tools:set_renderer_params",
-    "//src/ui/tools:snapshot",
   ]
-}
-
-test_package("scenic_tests") {
-  deps = [
-    "//src/ui/bin/root_presenter/tests",
-    "//src/ui/lib/input_reader/tests",
-    "//src/ui/scenic/lib/display/tests",
-    "//src/ui/scenic/lib/flatland/tests",
-    "//src/ui/scenic/lib/gfx/tests",
-    "//src/ui/scenic/lib/gfx/util/tests",
-    "//src/ui/scenic/lib/input/tests",
-    "//src/ui/scenic/lib/scenic/tests",
-    "//src/ui/tools/present_view/tests",
-  ]
-
-  tests = [
-    {
-      name = "gfx_apptests"
-      environments = basic_envs
-    },
-    {
-      name = "gfx_pixeltests"
-      environments = magma_libvulkan_hardware_envs
-    },
-    {
-      name = "gfx_unittests"
-      environments = basic_envs + magma_libvulkan_hardware_envs
-    },
-    {
-      name = "gfx_util_unittests"
-      environments = basic_envs
-    },
-    {
-      name = "gfx_viewstate_apptests"
-      environments = magma_libvulkan_hardware_envs
-    },
-    {
-      name = "input_apptests"
-      environments = basic_envs
-    },
-    {
-      name = "input_reader_unittests"
-      environments = basic_envs
-    },
-    {
-      name = "input_unittests"
-      environments = basic_envs
-    },
-    {
-      name = "present_view_unittests"
-      environments = basic_envs
-    },
-    {
-      name = "present_view_apptests"
-      environments = basic_envs
-    },
-    {
-      name = "root_presenter_tests"
-      environments = basic_envs
-    },
-    {
-      name = "scenic_unittests"
-      environments = basic_envs
-    },
-    {
-      name = "flatland_unittests"
-      environments = basic_envs
-    },
-    {
-      name = "display_unittests"
-      environments = basic_envs
-    },
-  ]
-
-  public_deps = vulkan_validation_layers.public_deps
-  loadable_modules = vulkan_validation_layers.loadable_modules
-  resources = vulkan_validation_layers.resources
 }
