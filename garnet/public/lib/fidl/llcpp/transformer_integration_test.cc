@@ -20,12 +20,12 @@
 #include <vector>
 
 #include <example/llcpp/fidl.h>
-#include <llcpptest/transformerintegration/test/llcpp/fidl.h>
+#include <transformerintegration/test/llcpp/fidl.h>
 
 #include "garnet/public/lib/fidl/llcpp/test_utils.h"
 #include "gtest/gtest.h"
 
-namespace test = ::llcpp::llcpptest::transformerintegration::test;
+namespace test = ::llcpp::transformerintegration::test;
 
 namespace {
 
@@ -331,7 +331,6 @@ TEST_F(TransformerIntegrationTest, WritePathSendUnion) {
       run_asserts(request_buffer, actual_bytes);
 
       auto request_hdr = reinterpret_cast<fidl_message_header_t*>(&request_buffer[0]);
-      // Send response with xunion
       fidl::Buffer<test::ReceiveXunionsForUnions::SendUnionResponse> response_buffer;
       fidl::BytePart bytes = response_buffer.view();
       bytes.set_actual(bytes.capacity());
