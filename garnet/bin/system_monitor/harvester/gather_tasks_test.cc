@@ -12,12 +12,12 @@
 
 class GatherTasksTest : public ::testing::Test {
  public:
-  void SetUp() {
+  void SetUp() override {
     // Determine our KOID.
     zx_info_handle_basic_t info;
     zx_status_t status = zx_object_get_info(
         zx_process_self(), ZX_INFO_HANDLE_BASIC, &info, sizeof(info),
-        /*actual=*/nullptr, /*available=*/nullptr);
+        /*actual=*/nullptr, /*avail=*/nullptr);
     ASSERT_EQ(status, ZX_OK);
     self_koid_ = std::to_string(info.koid);
   }
