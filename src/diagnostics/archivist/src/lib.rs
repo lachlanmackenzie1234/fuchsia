@@ -8,5 +8,3 @@ pub mod configs;
 pub mod diagnostics;
 pub mod inspect;
 pub mod logs;
-pub mod selector_evaluator;
-pub mod selectors;
