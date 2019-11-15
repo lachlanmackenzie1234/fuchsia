@@ -10,25 +10,24 @@
 use fuchsia_zircon as zircon;
 
 
-// C ABI compat
 pub const STRINGS_SIZE: u32 = 32;
-
 #[repr(C)]
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct ThisIsAStruct {
     pub s: *mut std::ffi::c_void /* String */,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ThisIsAnEnum(u32);
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum this_is_an_enum_t {
-    X = 23,
+impl ThisIsAnEnum {
+    pub const X: Self = Self(23);
 }
 
 
 #[repr(C)]
-#[derive(Debug, Default, PartialEq)]
+#[derive(Copy, Clone)]
 pub union ThisIsAUnion {
     pub s: *mut std::ffi::c_void /* String */,
 }

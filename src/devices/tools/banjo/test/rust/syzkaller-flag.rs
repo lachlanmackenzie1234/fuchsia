@@ -10,20 +10,19 @@
 use fuchsia_zircon as zircon;
 
 
-// C ABI compat
 
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Topic(u32);
 
-
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum topic_t {
-    TOPIC0 = 0,
-    TOPIC1 = 1,
-    TOPIC2 = 2,
-    TOPIC3 = 3,
-    TOPIC4 = 4,
-    TOPIC5 = 5,
+impl Topic {
+    pub const TOPIC0: Self = Self(0);
+    pub const TOPIC1: Self = Self(1);
+    pub const TOPIC2: Self = Self(2);
+    pub const TOPIC3: Self = Self(3);
+    pub const TOPIC4: Self = Self(4);
+    pub const TOPIC5: Self = Self(5);
 }
 
 
