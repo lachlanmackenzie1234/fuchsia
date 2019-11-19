@@ -4,6 +4,7 @@
 
 group("storage") {
   deps = [
+    "ext4",
     "fs-management",
     "ramdevice-client",
   ]
@@ -12,6 +13,7 @@ group("storage") {
 group("tests") {
   testonly = true
   deps = [
+    "ext4:tests",
     "fs-management:tests",
     "ramdevice-client:tests",
   ]
