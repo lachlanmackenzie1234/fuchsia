@@ -1,5 +1,9 @@
 {
     "program": {
+        "args": [
+            "--config-path",
+            "/config/data/archivist_config.json"
+        ],
         "binary": "bin/archivist"
     },
     "sandbox": {

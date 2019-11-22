@@ -1,0 +1,16 @@
+{
+    "program": {
+        "args": [
+            "--disable-klog",
+            "--config-path",
+            "/config/data/observer_config.json"
+        ],
+        "binary": "bin/archivist"
+    },
+    "sandbox": {
+        "features": [
+            "config-data",
+            "hub"
+        ]
+    }
+}
