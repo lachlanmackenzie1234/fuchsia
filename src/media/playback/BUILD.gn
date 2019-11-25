@@ -8,3 +8,10 @@ group("playback") {
     "mediaplayer",
   ]
 }
+
+group("examples") {
+  testonly = true
+  deps = [
+    "//src/media/playback/examples",
+  ]
+}
