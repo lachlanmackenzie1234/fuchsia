@@ -5,6 +5,7 @@
 group("pkg") {
   testonly = true
   deps = [
+    "bin",
     "lib",
   ]
 }
@@ -12,6 +13,7 @@ group("pkg") {
 group("tests") {
   testonly = true
   deps = [
+    "bin:tests",
     "lib:tests",
   ]
 }
