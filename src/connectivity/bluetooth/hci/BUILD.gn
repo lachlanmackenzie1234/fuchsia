@@ -5,8 +5,9 @@
 group("hci") {
   testonly = true
   deps = [
+    "atheros",
     "emulator",
-    "transport",
-    "vendor",
+    "intel",
+    "passthrough",
   ]
 }
