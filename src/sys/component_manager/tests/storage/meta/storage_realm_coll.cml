@@ -1,0 +1,48 @@
+{
+    "program": {
+        "binary": "bin/storage_realm_coll"
+    },
+    "storage": [
+        {
+            "name": "mystorage",
+            "from": "#memfs",
+            "path": "/memfs",
+        },
+    ],
+    "use": [
+        {
+            "service_protocol": "/svc/fuchsia.sys2.Realm",
+            "from": "framework"
+        },
+        {
+            "service_protocol": "/svc/fidl.test.components.Trigger",
+            "from": "framework"
+        },
+    ],
+    "offer": [
+        {
+            "storage": "data",
+            "from": "#mystorage",
+            "to": [ "#coll" ]
+        },
+        {
+            "service_protocol": "/svc/fuchsia.logger.LogSink",
+            "from": "realm",
+            "to": [ "#coll", "#memfs" ]
+        },
+    ],
+    "children": [
+        {
+            "name": "memfs",
+            "url": "fuchsia-pkg://fuchsia.com/storage_integration_test#meta/memfs.cm",
+            "startup": "eager"
+        }
+    ],
+    "collections": [
+        {
+            "name": "coll",
+            "durability": "transient",
+        },
+    ],
+}
+

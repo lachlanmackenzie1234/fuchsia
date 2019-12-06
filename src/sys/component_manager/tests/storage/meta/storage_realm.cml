@@ -10,28 +10,24 @@
         {
             "storage": "data",
             "from": "#mystorage",
-            "to": [ "#storage_user", "#coll" ]
+            "to": [ "#storage_user" ]
         },
         {
             "service_protocol": "/svc/fuchsia.logger.LogSink",
             "from": "realm",
-            "to": [ "#storage_user", "#coll", "#memfs" ]
+            "to": [ "#storage_user", "#memfs" ]
         },
     ],
     "children": [
         {
             "name": "memfs",
             "url": "fuchsia-pkg://fuchsia.com/storage_integration_test#meta/memfs.cm",
+            "startup": "eager"
         },
         {
             "name": "storage_user",
             "url": "fuchsia-pkg://fuchsia.com/storage_integration_test#meta/storage_user.cm",
-        },
-    ],
-    "collections": [
-        {
-            "name": "coll",
-            "durability": "transient",
+            "startup": "eager"
         },
     ],
 }
