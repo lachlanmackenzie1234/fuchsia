@@ -11,6 +11,7 @@ zx_library("fake-bti") {
     "fake-bti.cc",
   ]
   deps = [
+    "$zx/system/dev/lib/fake-object",
     "$zx/system/ulib/fbl",
     "$zx/system/ulib/fdio",
     "$zx/system/ulib/zircon",
