@@ -36,7 +36,7 @@ rustc_test("driver") {
 test_package("pkgctl-integration-tests") {
   deps = [
     ":driver",
-    "//garnet/bin/pkg_ctl:bin",
+    "//src/sys/pkg/bin/pkgctl:bin",
   ]
 
   binaries = [
@@ -48,7 +48,7 @@ test_package("pkgctl-integration-tests") {
 
   meta = [
     {
-      path = rebase_path("//garnet/bin/pkg_ctl/meta/pkgctl.cmx")
+      path = rebase_path("//src/sys/pkg/bin/pkgctl/meta/pkgctl.cmx")
       dest = "pkgctl.cmx"
     },
   ]
