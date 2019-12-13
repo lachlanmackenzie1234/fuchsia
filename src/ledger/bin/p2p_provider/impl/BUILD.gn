@@ -8,20 +8,12 @@ source_set("impl") {
   sources = [
     "make_client_id.cc",
     "make_client_id.h",
-    "p2p_provider_impl.cc",
-    "p2p_provider_impl.h",
-    "remote_connection.cc",
-    "remote_connection.h",
     "static_user_id_provider.cc",
     "static_user_id_provider.h",
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.overnet",
-    "//sdk/fidl/fuchsia.overnet.protocol",
-    "//sdk/lib/fidl/cpp",
     "//sdk/lib/sys/cpp",
-    "//src/ledger/bin/fidl_helpers:message_relay",
     "//src/ledger/bin/filesystem",
     "//src/ledger/bin/p2p_provider/public",
     "//src/ledger/lib/convert",
@@ -29,37 +21,9 @@ source_set("impl") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.modular.auth",
     "//src/ledger/bin/environment",
     "//src/ledger/lib/convert",
     "//src/ledger/lib/logging",
     "//src/lib/callback",
   ]
-}
-
-source_set("unittests") {
-  testonly = true
-
-  sources = [
-    "p2p_provider_impl_unittest.cc",
-  ]
-
-  deps = [
-    ":impl",
-    "//sdk/lib/fidl/cpp",
-    "//sdk/lib/fidl/cpp",
-    "//src/ledger/bin/testing:lib",
-    "//src/ledger/bin/testing:lib",
-    "//src/ledger/bin/testing/overnet",
-    "//src/ledger/bin/testing/overnet",
-    "//src/ledger/lib/backoff/testing",
-    "//src/ledger/lib/vmo",
-    "//third_party/abseil-cpp",
-
-    # gtest matchers are in gmock.
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-  ]
-
-  configs += [ "//src/ledger:ledger_config" ]
 }
