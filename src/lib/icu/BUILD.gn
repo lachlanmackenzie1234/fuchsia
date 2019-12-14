@@ -17,3 +17,10 @@ group("tests") {
     "rust:tests",
   ]
 }
+
+group("tools") {
+  testonly = true
+  deps = [
+    "tools:tools",
+  ]
+}
