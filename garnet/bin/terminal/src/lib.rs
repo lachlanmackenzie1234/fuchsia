@@ -4,8 +4,10 @@
 
 #![recursion_limit = "4096"]
 
+mod app;
 mod key_util;
 mod pty;
 mod terminal_view;
+mod ui;
 
-pub mod app;
+pub use app::TerminalAssistant;
