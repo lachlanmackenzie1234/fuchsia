@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef GARNET_PUBLIC_LIB_FXL_OBSERVER_LIST_H_
-#define GARNET_PUBLIC_LIB_FXL_OBSERVER_LIST_H_
+#ifndef SRC_LIB_FXL_OBSERVER_LIST_H_
+#define SRC_LIB_FXL_OBSERVER_LIST_H_
 
 // Derived from chromium/src/base/observer_list.h
 
@@ -324,4 +324,4 @@ class ObserverList : public ObserverListBase<ObserverType> {
 
 }  // namespace fxl
 
-#endif  // GARNET_PUBLIC_LIB_FXL_OBSERVER_LIST_H_
+#endif  // SRC_LIB_FXL_OBSERVER_LIST_H_
