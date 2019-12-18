@@ -1,0 +1,15 @@
+{
+    "program": {
+        "binary": "test/gtest_adapter_integration_test"
+    },
+    "sandbox": {
+        "features": [
+            "isolated-temp"
+        ],
+        "services": [
+            "fuchsia.sys.Launcher",
+            "fuchsia.process.Launcher",
+            "fuchsia.logger.LogSink"
+        ]
+    }
+}
