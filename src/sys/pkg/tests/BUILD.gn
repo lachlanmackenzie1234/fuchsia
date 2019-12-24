@@ -1,0 +1,16 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can
+# found in the LICENSE file.
+
+group("tests") {
+  testonly = true
+  public_deps = [
+    "amberctl:tests",
+    "pkg-cache:tests",
+    "pkg-resolver:tests",
+    "pkgctl:tests",
+    "system-ota-tests:tests",
+    "system-update-checker:tests",
+    "system-updater:tests",
+  ]
+}
