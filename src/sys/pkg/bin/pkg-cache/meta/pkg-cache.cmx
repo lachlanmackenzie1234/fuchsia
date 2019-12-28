@@ -1,0 +1,15 @@
+{
+    "program": {
+        "binary": "bin/pkg-cache"
+    },
+    "sandbox": {
+        "pkgfs": [
+            "ctl",
+            "versions"
+        ],
+        "services": [
+            "fuchsia.logger.LogSink",
+            "fuchsia.tracing.provider.Registry"
+        ]
+    }
+}
