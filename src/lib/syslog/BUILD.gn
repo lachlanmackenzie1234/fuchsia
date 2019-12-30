@@ -11,8 +11,8 @@ group("syslog") {
 group("tests") {
   testonly = true
   deps = [
-    "rust:tests",
     "cpp:tests",
     "go/src/syslog:tests",
+    "rust:tests",
   ]
 }
