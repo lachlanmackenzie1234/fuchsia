@@ -29,8 +29,8 @@ pub struct RootJob {
 }
 
 impl RootJob {
-    pub fn new(capability_path: CapabilityPath, rights: zx::Rights) -> Self {
-        Self { capability_path, rights }
+    pub fn new(capability_path: CapabilityPath, rights: zx::Rights) -> Arc<Self> {
+        Arc::new(Self { capability_path, rights })
     }
 
     pub fn hooks(self: &Arc<Self>) -> Vec<HooksRegistration> {
@@ -114,6 +114,8 @@ impl CapabilityProvider for RootJobCapabilityProvider {
                 if let Err(err) = root_job.serve(stream).await {
                     warn!("RootJob::open failed: {}", err);
                 }
+            } else {
+                warn!("RootJob has been dropped");
             }
         });
         Ok(())
@@ -139,27 +141,23 @@ mod tests {
             "/svc/fuchsia.boot.RootJob".try_into().unwrap();
     }
 
-    fn create_root_job(rights: zx::Rights) -> Arc<RootJob> {
-        Arc::new(RootJob::new(CAPABILITY_PATH.clone(), rights))
-    }
-
     #[fasync::run_singlethreaded(test)]
     async fn has_correct_rights() -> Result<(), Error> {
-        let root_job = create_root_job(zx::Rights::TRANSFER);
+        let root_job = RootJob::new(CAPABILITY_PATH.clone(), zx::Rights::TRANSFER);
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fboot::RootJobMarker>()?;
         fasync::spawn_local(
             root_job.serve(stream).unwrap_or_else(|err| panic!("Error serving root job: {}", err)),
         );
 
-        let resource = proxy.get().await?;
-        let info = zx::Handle::from(resource).basic_info()?;
+        let root_job = proxy.get().await?;
+        let info = zx::Handle::from(root_job).basic_info()?;
         assert_eq!(info.rights, zx::Rights::TRANSFER);
         Ok(())
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn can_connect() -> Result<(), Error> {
-        let root_job = create_root_job(zx::Rights::SAME_RIGHTS);
+        let root_job = RootJob::new(CAPABILITY_PATH.clone(), zx::Rights::SAME_RIGHTS);
         let hooks = Hooks::new(None);
         hooks.install(root_job.hooks()).await;
 
