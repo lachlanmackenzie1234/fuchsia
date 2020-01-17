@@ -47,7 +47,7 @@ static const pbus_mmio_t eth_mac_mmios[] = {
 static const pbus_bti_t eth_mac_btis[] = {
     {
         .iommu_index = 0,
-        .bti_id = 0,
+        .bti_id = BTI_ETHERNET,
     },
 };
 
@@ -151,8 +151,8 @@ static const device_component_part_t gpio_int_component[] = {
 };
 static const device_component_t eth_components[] = {
     {countof(i2c_component), i2c_component},
-    {countof(gpio_reset_component), gpio_reset_component},
     {countof(gpio_int_component), gpio_int_component},
+    {countof(gpio_reset_component), gpio_reset_component},
 };
 
 // Composite binding rules for dwmac.
