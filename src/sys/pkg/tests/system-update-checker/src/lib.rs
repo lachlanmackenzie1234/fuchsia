@@ -4,7 +4,6 @@
 
 #![cfg(test)]
 use {
-    anyhow::Error,
     fidl_fuchsia_paver::{
         BootManagerRequest, BootManagerRequestStream, PaverRequest, PaverRequestStream,
     },
@@ -57,11 +56,7 @@ impl TestEnv {
         let paver_clone = Arc::clone(&paver);
         fs.add_fidl_service(move |stream: PaverRequestStream| {
             let paver_clone = Arc::clone(&paver_clone);
-            fasync::spawn(
-                paver_clone
-                    .run_service(stream)
-                    .unwrap_or_else(|e| panic!("error running paver service: {:?}", e)),
-            )
+            fasync::spawn(paver_clone.run_service(stream));
         });
 
         let env = fs
@@ -115,27 +110,22 @@ impl MockPaver {
             ),
         }
     }
-    async fn run_service(self: Arc<Self>, mut stream: PaverRequestStream) -> Result<(), Error> {
-        while let Some(req) = stream.try_next().await? {
+    async fn run_service(self: Arc<Self>, mut stream: PaverRequestStream) {
+        while let Some(req) = stream.try_next().await.unwrap() {
             match req {
                 PaverRequest::FindBootManager { boot_manager, .. } => {
                     let mock_paver_clone = self.clone();
                     fasync::spawn(
                         mock_paver_clone
-                            .run_boot_manager_service(boot_manager.into_stream()?)
-                            .unwrap_or_else(|e| panic!("error running paver service: {:?}", e)),
+                            .run_boot_manager_service(boot_manager.into_stream().unwrap()),
                     );
                 }
                 req => println!("mock Paver ignoring request: {:?}", req),
             }
         }
-        Ok(())
     }
-    async fn run_boot_manager_service(
-        self: Arc<Self>,
-        mut stream: BootManagerRequestStream,
-    ) -> Result<(), Error> {
-        while let Some(req) = stream.try_next().await? {
+    async fn run_boot_manager_service(self: Arc<Self>, mut stream: BootManagerRequestStream) {
+        while let Some(req) = stream.try_next().await.unwrap() {
             match req {
                 BootManagerRequest::SetActiveConfigurationHealthy { responder } => {
                     self.set_active_configuration_healthy_was_called_sender
@@ -146,7 +136,6 @@ impl MockPaver {
                 req => println!("mock Paver ignoring request: {:?}", req),
             }
         }
-        Ok(())
     }
 }
 
