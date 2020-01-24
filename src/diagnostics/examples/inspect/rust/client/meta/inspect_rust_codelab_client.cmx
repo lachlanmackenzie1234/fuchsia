@@ -1,0 +1,12 @@
+{
+    "program": {
+        "binary": "bin/inspect_rust_codelab_client"
+    },
+    "sandbox": {
+        "services": [
+            "fuchsia.sys.Loader",
+            "fuchsia.logger.LogSink",
+            "fuchsia.sys.Environment"
+        ]
+    }
+}

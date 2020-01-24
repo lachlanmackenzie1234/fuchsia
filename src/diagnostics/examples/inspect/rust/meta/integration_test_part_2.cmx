@@ -1,0 +1,12 @@
+{
+    "program": {
+        "binary": "test/integration_test_part_2"
+    },
+    "sandbox": {
+        "services": [
+            "fuchsia.logger.LogSink",
+            "fuchsia.sys.Loader",
+            "fuchsia.sys.Environment"
+        ]
+    }
+}
