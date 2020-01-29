@@ -11,6 +11,10 @@
 
 #include <utility>
 
+// DO NOT MODIFY!
+// This header is being moved to //zircon/system/ulib/fdio-caller.
+// See fxb/44933.
+
 namespace fzl {
 
 // Helper utility which borrows a file descriptor to allow the caller
