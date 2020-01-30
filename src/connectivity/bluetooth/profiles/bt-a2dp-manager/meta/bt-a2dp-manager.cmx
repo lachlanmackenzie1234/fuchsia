@@ -1,0 +1,15 @@
+{
+    "program": {
+        "binary": "bin/app"
+    },
+    "sandbox": {
+        "services": [
+            "fuchsia.bluetooth.a2dp.AudioMode",
+            "fuchsia.bluetooth.bredr.Profile",
+            "fuchsia.media.AudioDeviceEnumerator",
+            "fuchsia.mediacodec.CodecFactory",
+            "fuchsia.logger.LogSink",
+            "fuchsia.sys.Launcher"
+        ]
+    }
+}
