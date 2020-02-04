@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 group("tools") {
-  testonly = true
   deps = [ "banjo" ]
 }
 
