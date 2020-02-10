@@ -1,0 +1,29 @@
+# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+source_set("view") {
+  sources = [
+    "view_manager.cc",
+    "view_manager.h",
+  ]
+
+  public_deps = [
+    "//sdk/fidl/fuchsia.accessibility.semantics",
+    "//sdk/fidl/fuchsia.math",
+    "//src/ui/a11y/lib/util",
+    "//src/ui/scenic/lib/gfx",
+  ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.ui.gfx",
+    "//sdk/fidl/fuchsia.ui.input",
+    "//sdk/fidl/fuchsia.ui.views",
+    "//sdk/lib/fidl/cpp",
+    "//sdk/lib/sys/cpp",
+    "//src/lib/fsl",
+    "//src/lib/fxl",
+    "//src/lib/syslog/cpp",
+    "//src/ui/a11y/lib/semantics",
+  ]
+}

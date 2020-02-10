@@ -1,0 +1,39 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("tests") {
+  testonly = true
+  public_deps = [ ":view_tests" ]
+}
+
+executable("view_tests") {
+  output_name = "view_tests"
+
+  testonly = true
+
+  sources = [ "view_manager_test.cc" ]
+  public_deps = [ "//sdk/fidl/fuchsia.accessibility.semantics" ]
+  deps = [
+    "//garnet/public/lib/gtest",
+    "//garnet/public/lib/json",
+    "//sdk/fidl/fuchsia.accessibility",
+    "//sdk/fidl/fuchsia.sys",
+    "//sdk/lib/fidl/cpp",
+    "//sdk/lib/sys/cpp",
+    "//sdk/lib/sys/cpp/testing:unit",
+    "//sdk/lib/vfs/cpp",
+    "//src/lib/fsl",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/syslog/cpp",
+    "//src/ui/a11y/lib/semantics",
+    "//src/ui/a11y/lib/semantics",
+    "//src/ui/a11y/lib/semantics/tests/mocks",
+    "//src/ui/a11y/lib/view",
+    "//third_party/googletest:gmock",
+    "//third_party/rapidjson",
+  ]
+
+  # This is a dependency of the semantic tree to perform certain matrix transform operations.
+  include_dirs = [ "//third_party/glm" ]
+}

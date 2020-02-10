@@ -4,11 +4,11 @@
 
 group("tests") {
   testonly = true
-  public_deps = [ ":semantics_manager_tests" ]
+  public_deps = [ ":semantics_tests" ]
 }
 
-executable("semantics_manager_tests") {
-  output_name = "semantics_manager_tests"
+executable("semantics_tests") {
+  output_name = "semantics_tests"
 
   testonly = true
 
@@ -17,7 +17,6 @@ executable("semantics_manager_tests") {
     "semantic_tree_parser.h",
     "semantic_tree_parser_test.cc",
     "semantic_tree_service_unittest.cc",
-    "semantics_manager_test.cc",
     "tree_unittest.cc",
   ]
   public_deps = [ "//sdk/fidl/fuchsia.accessibility.semantics" ]
