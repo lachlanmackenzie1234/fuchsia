@@ -3,59 +3,36 @@
 # found in the LICENSE file.
 
 import("//build/test/test_package.gni")
+import("//src/connectivity/network/drivers/network-device/ddk_source_split.gni")
 
-# This template allows us to have a different source_set definition for targets that will become a
-# driver and targets that will not. Notably, the library's tests and the network-tun component use
-# the source_set without the DDK symbols.
-template("_split_source") {
-  source_set(target_name) {
-    defines = [ "_ALL_SOURCE" ]
-    sources = [
-      "definitions.h",
-      "device_interface.cc",
-      "device_interface.h",
-      "log.h",
-      "public/network_device.h",
-      "rx_queue.cc",
-      "rx_queue.h",
-      "session.cc",
-      "session.h",
-      "status_watcher.cc",
-      "status_watcher.h",
-      "tx_queue.cc",
-      "tx_queue.h",
-    ]
+ddk_source_split("device") {
+  sources = [
+    "definitions.h",
+    "device_interface.cc",
+    "device_interface.h",
+    "log.h",
+    "public/network_device.h",
+    "rx_queue.cc",
+    "rx_queue.h",
+    "session.cc",
+    "session.h",
+    "status_watcher.cc",
+    "status_watcher.h",
+    "tx_queue.cc",
+    "tx_queue.h",
+  ]
 
-    public_deps = [
-      "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_llcpp",
-      "//zircon/public/lib/async-cpp",
-      "//zircon/public/lib/fbl",
-      "//zircon/public/lib/fidl",
-      "//zircon/public/lib/fidl-async-cpp",
-      "//zircon/public/lib/fidl-utils",
-      "//zircon/public/lib/fzl",
-      "//zircon/public/lib/sync",
-      "//zircon/system/banjo/ddk.protocol.network.device",
-    ]
-
-    if (invoker.ddk) {
-      defines += [ "NETDEV_DDK" ]
-      public_deps += [
-        "//zircon/public/lib/ddk",
-        "//zircon/public/lib/ddktl",
-      ]
-    } else {
-      public_deps += [ "//zircon/public/lib/syslog" ]
-    }
-  }
-}
-
-_split_source("src_ddk") {
-  ddk = true
-}
-
-_split_source("device") {
-  ddk = false
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_llcpp",
+    "//zircon/public/lib/async-cpp",
+    "//zircon/public/lib/fbl",
+    "//zircon/public/lib/fidl",
+    "//zircon/public/lib/fidl-async-cpp",
+    "//zircon/public/lib/fidl-utils",
+    "//zircon/public/lib/fzl",
+    "//zircon/public/lib/sync",
+    "//zircon/system/banjo/ddk.protocol.network.device",
+  ]
 }
 
 group("tests") {
