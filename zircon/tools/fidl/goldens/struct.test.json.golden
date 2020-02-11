@@ -60,6 +60,59 @@
         "has_flexible_envelope": false,
         "contains_union": false
       }
+    },
+    {
+      "name": "fidl.test.json/BasicStruct",
+      "location": {
+        "filename": "struct.test.fidl",
+        "line": 8,
+        "column": 8
+      },
+      "anonymous": false,
+      "members": [
+        {
+          "type": {
+            "kind": "primitive",
+            "subtype": "uint32"
+          },
+          "name": "x",
+          "location": {
+            "filename": "struct.test.fidl",
+            "line": 9,
+            "column": 12
+          },
+          "field_shape_v1": {
+            "offset": 0,
+            "padding": 4
+          }
+        },
+        {
+          "type": {
+            "kind": "string",
+            "nullable": false
+          },
+          "name": "y",
+          "location": {
+            "filename": "struct.test.fidl",
+            "line": 10,
+            "column": 12
+          },
+          "field_shape_v1": {
+            "offset": 8,
+            "padding": 0
+          }
+        }
+      ],
+      "type_shape_v1": {
+        "inline_size": 24,
+        "alignment": 8,
+        "depth": 1,
+        "max_handles": 0,
+        "max_out_of_line": 4294967295,
+        "has_padding": true,
+        "has_flexible_envelope": false,
+        "contains_union": false
+      }
     }
   ],
   "table_declarations": [],
@@ -67,9 +120,11 @@
   "xunion_declarations": [],
   "type_alias_declarations": [],
   "declaration_order": [
-    "fidl.test.json/Simple"
+    "fidl.test.json/Simple",
+    "fidl.test.json/BasicStruct"
   ],
   "declarations": {
-    "fidl.test.json/Simple": "struct"
+    "fidl.test.json/Simple": "struct",
+    "fidl.test.json/BasicStruct": "struct"
   }
 }
