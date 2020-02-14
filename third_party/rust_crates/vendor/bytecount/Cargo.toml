@@ -3,7 +3,7 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g. crates.io) dependencies
+# to registry (e.g., crates.io) dependencies
 #
 # If you believe there's an error in this file please file an
 # issue against the rust-lang/cargo repository. If you're
@@ -11,9 +11,11 @@
 # will likely look very different (and much more reasonable)
 
 [package]
+edition = "2018"
 name = "bytecount"
-version = "0.3.2"
+version = "0.6.0"
 authors = ["Andre Bogus <bogusandre@gmail.de>", "Joshua Landau <joshua@landau.ws>"]
+exclude = ["/.travis.yml", "/appveyor.yml"]
 description = "count occurrences of a given byte, or the number of UTF-8 code points, in a byte slice, fast"
 readme = "README.md"
 categories = ["algorithms", "no-std"]
@@ -26,22 +28,23 @@ bench = false
 [[bench]]
 name = "bench"
 harness = false
-[dependencies.simd]
-version = "0.2.0"
+[dependencies.packed_simd]
+version = "0.3.1"
 optional = true
 [dev-dependencies.criterion]
-version = "0.2.4"
+version = "0.3"
+default-features = false
 
 [dev-dependencies.quickcheck]
-version = "0.6"
+version = "0.9"
 
 [dev-dependencies.rand]
-version = "0.4"
+version = "0.7"
 
 [features]
-avx-accel = ["simd-accel"]
+generic-simd = ["packed_simd"]
 html_report = []
-simd-accel = ["simd"]
+runtime-dispatch-simd = []
 [badges.appveyor]
 repository = "llogiq/bytecount"
 
