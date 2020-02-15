@@ -6,17 +6,26 @@ group("fake_stream") {
   public_deps = [ ":lib" ]
 }
 
+source_set("impl_header") {
+  visibility = [
+    ":*",
+    "//src/camera/lib/fake_camera/*",
+  ]
+
+  sources = [ "fake_stream.h" ]
+
+  public = [ "fake_stream_impl.h" ]
+}
+
 source_set("lib") {
   visibility = [ ":*" ]
 
-  sources = [
-    "fake_stream_impl.cc",
-    "fake_stream_impl.h",
-  ]
+  sources = [ "fake_stream_impl.cc" ]
 
   public = [ "fake_stream.h" ]
 
   deps = [
+    ":impl_header",
     "//src/lib/syslog/cpp",
     "//zircon/public/lib/async-loop-cpp",
     "//zircon/public/lib/async-loop-default",
