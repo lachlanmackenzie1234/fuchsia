@@ -3,6 +3,7 @@
         "fuchsia.test": {
             "injected-services": {
                 "fuchsia.net.NameLookup": "fuchsia-pkg://fuchsia.com/netstack#meta/netstack.cmx",
+                "fuchsia.net.stack.Stack": "fuchsia-pkg://fuchsia.com/netstack#meta/netstack.cmx",
                 "fuchsia.posix.socket.Provider": "fuchsia-pkg://fuchsia.com/netstack#meta/netstack.cmx"
             }
         }
@@ -13,6 +14,7 @@
     "sandbox": {
         "services": [
             "fuchsia.net.NameLookup",
+            "fuchsia.net.stack.Stack",
             "fuchsia.posix.socket.Provider"
         ]
     }
