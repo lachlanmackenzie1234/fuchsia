@@ -28,7 +28,6 @@ type Config struct {
 	upgradeBuilderName       string
 	upgradeBuildID           string
 	upgradeFuchsiaBuildDir   string
-	LongevityTest            bool
 	paveTimeout              time.Duration
 	cycleCount               int
 	cycleTimeout             time.Duration
@@ -46,7 +45,6 @@ func NewConfig(fs *flag.FlagSet) (*Config, error) {
 	fs.StringVar(&c.upgradeBuilderName, "upgrade-builder-name", "", "upgrade to the latest version of this builder")
 	fs.StringVar(&c.upgradeBuildID, "upgrade-build-id", os.Getenv("BUILDBUCKET_ID"), "upgrade to this build id (default is $BUILDBUCKET_ID)")
 	fs.StringVar(&c.upgradeFuchsiaBuildDir, "upgrade-fuchsia-build-dir", "", "Path to the upgrade fuchsia build dir")
-	fs.BoolVar(&c.LongevityTest, "longevity-test", false, "Continuously update to the latest repository")
 	fs.DurationVar(&c.paveTimeout, "pave-timeout", 1<<63-1, "Err if a pave takes longer than this time (default is no timeout)")
 	fs.IntVar(&c.cycleCount, "cycle-count", 1, "How many cycles to run the test before completing (default is 1)")
 	fs.DurationVar(&c.cycleTimeout, "cycle-timeout", 1<<63-1, "Err if a test cycle takes longer than this time (default is no timeout)")
@@ -77,10 +75,6 @@ func (c *Config) Validate() error {
 	}
 	if defined != 1 {
 		return fmt.Errorf("exactly one of -upgrade-builder-name, -upgrade-build-id, or -upgrade-fuchsia-build-dir must be specified")
-	}
-
-	if c.LongevityTest && c.upgradeBuilderName == "" {
-		return fmt.Errorf("-longevity-test requires -upgrade-builder-name to be specified")
 	}
 
 	if c.cycleCount < 1 {

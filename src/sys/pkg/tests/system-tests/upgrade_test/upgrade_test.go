@@ -12,7 +12,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"fuchsia.googlesource.com/host_target_testing/device"
 	"fuchsia.googlesource.com/host_target_testing/packages"
@@ -71,11 +70,7 @@ func TestOTA(t *testing.T) {
 		}
 	}
 
-	if c.LongevityTest {
-		testLongevityOTAs(t, ctx, device, &rpcClient)
-	} else {
-		testOTAs(t, ctx, device, &rpcClient)
-	}
+	testOTAs(t, ctx, device, &rpcClient)
 }
 
 func testOTAs(t *testing.T, ctx context.Context, device *device.Client, rpcClient **sl4f.Client) {
@@ -137,93 +132,6 @@ func doTestOTAs(ctx context.Context, device *device.Client, rpcClient **sl4f.Cli
 	log.Printf("OTA from N' -> N successful")
 
 	return nil
-}
-
-func testLongevityOTAs(t *testing.T, ctx context.Context, device *device.Client, rpcClient **sl4f.Client) {
-	builder, err := c.GetUpgradeBuilder()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// We only check ABR after the first update, since we can't be sure if
-	// the initial version of Fuchsia is recent enough to support ABR, but
-	// it should support ABR after the first OTA.
-	checkABR := false
-
-	lastBuildID := ""
-	attempt := 1
-	for {
-		log.Printf("Look up latest build for builder %s", builder)
-
-		buildID, err := builder.GetLatestBuildID(ctx)
-		if err != nil {
-			t.Fatalf("error getting latest build for builder %s: %s", builder, err)
-		}
-
-		if buildID == lastBuildID {
-			log.Printf("already updated to %s, sleeping", buildID)
-			time.Sleep(60 * time.Second)
-			continue
-		}
-		log.Printf("Longevity Test Attempt %d upgrading from build %s to build %s", attempt, lastBuildID, buildID)
-
-		if err := testLongevityOTAAttempt(ctx, device, rpcClient, buildID, checkABR); err != nil {
-			t.Fatalf("Longevity Test Attempt %d failed: %s", attempt, err)
-		}
-
-		log.Printf("Longevity Test Attempt %d successful", attempt)
-		log.Printf("------------------------------------------------------------------------------")
-
-		checkABR = true
-		lastBuildID = buildID
-		attempt += 1
-	}
-}
-
-func testLongevityOTAAttempt(
-	ctx context.Context,
-	device *device.Client,
-	rpcClient **sl4f.Client,
-	buildID string,
-	checkABR bool,
-) error {
-	ctx, cancel := context.WithTimeout(ctx, c.cycleTimeout)
-	defer cancel()
-
-	outputDir, cleanup, err := c.archiveConfig.OutputDir()
-	if err != nil {
-		return fmt.Errorf("failed to get output directory: %s", err)
-	}
-	defer cleanup()
-
-	build, err := c.archiveConfig.BuildArchive().GetBuildByID(ctx, buildID, outputDir)
-	if err != nil {
-		return fmt.Errorf("failed to find build %s: %s", buildID, err)
-	}
-
-	repo, err := build.GetPackageRepository(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get repo for build: %s", err)
-	}
-
-	expectedSystemImageMerkle, err := repo.LookupUpdateSystemImageMerkle()
-	if err != nil {
-		return fmt.Errorf("failed to get repo system image merkle: %s", err)
-	}
-
-	upToDate, err := isDeviceUpToDate(ctx, device, *rpcClient, expectedSystemImageMerkle)
-	if err != nil {
-		return fmt.Errorf("failed to check if device is up to date: %s", err)
-	}
-	if upToDate {
-		log.Printf("device already up to date")
-		return nil
-	}
-
-	log.Printf("\n\n")
-	log.Printf("OTAing to %s", build)
-
-	return systemOTA(ctx, device, rpcClient, repo, checkABR)
 }
 
 func paveDevice(ctx context.Context, device *device.Client) (*sl4f.Client, error) {
