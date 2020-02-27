@@ -24,7 +24,7 @@ use fidl_fuchsia_ui_views::ViewToken;
 use fuchsia_async::{self as fasync, OnSignals};
 use fuchsia_framebuffer::{
     sysmem::{minimum_row_bytes, BufferCollectionAllocator},
-    FrameSet,
+    FrameSet, FrameUsage, ImageId,
 };
 use fuchsia_scenic::{Image, ImagePipe2, Material, Memory, Rectangle, SessionPtr, ShapeNode};
 use fuchsia_zircon::{self as zx, ClockId, Event, HandleBased, Signals, Time, Vmo};
@@ -66,11 +66,16 @@ impl Plumber {
         first_image_id: u64,
         image_pipe_client: &mut ImagePipe2Proxy,
     ) -> Result<Plumber, Error> {
-        let mut buffer_allocator =
-            BufferCollectionAllocator::new(size.width, size.height, pixel_format, buffer_count)?;
+        let mut buffer_allocator = BufferCollectionAllocator::new(
+            size.width,
+            size.height,
+            pixel_format,
+            FrameUsage::Cpu,
+            buffer_count,
+        )?;
         let image_pipe_token = buffer_allocator.duplicate_token().await?;
         image_pipe_client.add_buffer_collection(collection_id, image_pipe_token)?;
-        let buffers_result = buffer_allocator.allocate_buffers().await;
+        let buffers_result = buffer_allocator.allocate_buffers(true).await;
         let mut canvases: Canvases = Canvases::new();
         let mut image_ids = BTreeSet::new();
         let tools = if let Ok(buffers) = buffers_result {
@@ -226,6 +231,7 @@ impl ScenicCanvasViewStrategy {
 
     fn make_view_assistant_context<'a>(
         view_details: &ViewDetails,
+        image_id: ImageId,
         canvas: Option<&'a RefCell<Canvas<MappingPixelSink>>>,
     ) -> ViewAssistantContext<'a> {
         ViewAssistantContext {
@@ -239,6 +245,8 @@ impl ScenicCanvasViewStrategy {
             canvas: canvas,
             buffer_count: None,
             wait_event: None,
+            image_id,
+            image_index: 0,
         }
     }
 
@@ -295,7 +303,7 @@ fn make_image_format(
 impl ViewStrategy for ScenicCanvasViewStrategy {
     fn setup(&mut self, view_details: &ViewDetails, view_assistant: &mut ViewAssistantPtr) {
         let canvas_context =
-            ScenicCanvasViewStrategy::make_view_assistant_context(view_details, None);
+            ScenicCanvasViewStrategy::make_view_assistant_context(view_details, 0, None);
         view_assistant.setup(&canvas_context).unwrap_or_else(|e| panic!("Setup error: {:?}", e));
     }
 
@@ -327,6 +335,7 @@ impl ViewStrategy for ScenicCanvasViewStrategy {
                 self.content_node.set_shape(&rectangle);
                 let canvas_context = ScenicCanvasViewStrategy::make_view_assistant_context(
                     view_details,
+                    available,
                     Some(canvas),
                 );
                 view_assistant
@@ -412,7 +421,7 @@ impl ViewStrategy for ScenicCanvasViewStrategy {
         event: &fidl_fuchsia_ui_input::InputEvent,
     ) -> Vec<Message> {
         let mut canvas_context =
-            ScenicCanvasViewStrategy::make_view_assistant_context(view_details, None);
+            ScenicCanvasViewStrategy::make_view_assistant_context(view_details, 0, None);
         view_assistant
             .handle_input_event(&mut canvas_context, &event)
             .unwrap_or_else(|e| eprintln!("handle_event: {:?}", e));

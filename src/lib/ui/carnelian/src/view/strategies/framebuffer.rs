@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::{
-    app::{FrameBufferPtr, MessageInternal},
+    app::{FrameBufferPtr, MessageInternal, FRAME_COUNT},
     canvas::{Canvas, MappingPixelSink},
     geometry::IntSize,
     message::Message,
@@ -11,6 +11,7 @@ use crate::{
         Canvases, ViewAssistantContext, ViewAssistantPtr, ViewDetails, ViewKey,
     },
 };
+use anyhow::Error;
 use async_trait::async_trait;
 use fuchsia_async::{self as fasync};
 use fuchsia_framebuffer::{FrameSet, ImageId};
@@ -35,17 +36,18 @@ pub(crate) struct FrameBufferViewStrategy {
 }
 
 impl FrameBufferViewStrategy {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         key: ViewKey,
         size: &IntSize,
         pixel_size: u32,
-        _pixel_format: fuchsia_framebuffer::PixelFormat,
+        pixel_format: fuchsia_framebuffer::PixelFormat,
         stride: u32,
         app_sender: UnboundedSender<MessageInternal>,
         frame_buffer: FrameBufferPtr,
         signals_wait_event: bool,
-    ) -> ViewStrategyPtr {
+    ) -> Result<ViewStrategyPtr, Error> {
         let mut fb = frame_buffer.borrow_mut();
+        fb.allocate_frames(FRAME_COUNT, pixel_format).await?;
         let mut canvases: Canvases = Canvases::new();
         let mut wait_events: WaitEvents = WaitEvents::new();
         let image_ids = fb.get_image_ids();
@@ -79,7 +81,7 @@ impl FrameBufferViewStrategy {
             }
         });
         let frame_set = FrameSet::new(image_ids);
-        Box::new(FrameBufferViewStrategy {
+        Ok(Box::new(FrameBufferViewStrategy {
             canvases,
             frame_buffer: frame_buffer.clone(),
             frame_set: frame_set,
@@ -88,7 +90,7 @@ impl FrameBufferViewStrategy {
             signals_wait_event,
             vsync_phase: Time::get(ClockId::Monotonic),
             vsync_interval: Duration::from_millis(16),
-        })
+        }))
     }
 
     fn make_context(
@@ -129,6 +131,8 @@ impl FrameBufferViewStrategy {
             ),
             buffer_count: Some(self.frame_buffer.borrow().get_frame_count()),
             wait_event: wait_event,
+            image_id,
+            image_index: 0,
         }
     }
 }
