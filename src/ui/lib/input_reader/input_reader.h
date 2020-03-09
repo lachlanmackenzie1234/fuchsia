@@ -17,6 +17,10 @@ namespace ui_input {
 
 class InputInterpreter;
 
+// NOTE: This library is deprecated in favor of input_report_reader which
+// reads structured InputReports instead of raw HID reports. Please
+// migrate to the new library.
+//
 // InputReader does four things:
 // 1- Watches who owns the display, which can be us, or the console.
 // 2- Watches new devices that are added to dev/class/input and then
