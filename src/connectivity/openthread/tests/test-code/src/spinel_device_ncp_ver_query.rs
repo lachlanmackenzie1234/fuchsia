@@ -7,8 +7,10 @@ use {
     ot_test_utils::spinel_device_utils::*,
 };
 
+const OT_RADIO_QUERY_NUM: u32 = 128;
+
 pub async fn spinel_device_ncp_ver_query(spinel_device_proxy: DeviceProxy) {
-    // Create and initialize spinel device client.
+    // Create and initialize lowpan spinel device.
     let mut spinel_device_client = LoWPANSpinelDeviceClientImpl::new(spinel_device_proxy);
     spinel_device_client.open_and_init_device().await;
 
