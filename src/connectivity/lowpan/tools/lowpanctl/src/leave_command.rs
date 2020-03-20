@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::context::LowpanCtlContext;
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use argh::FromArgs;
 
 /// Contains the arguments decoded for the `leave` command.
@@ -12,8 +12,11 @@ use argh::FromArgs;
 pub struct LeaveCommand {}
 
 impl LeaveCommand {
-    pub async fn exec(&self, _context: &mut LowpanCtlContext) -> Result<(), Error> {
-        println!("Command `leave` not yet implemented");
+    pub async fn exec(&self, context: &mut LowpanCtlContext) -> Result<(), Error> {
+        let device = context.get_default_device().await.context("Unable to get device instance")?;
+
+        device.leave_network().await.context("Unable to send leave command")?;
+
         Ok(())
     }
 }
