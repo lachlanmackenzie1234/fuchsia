@@ -5,24 +5,11 @@
 //! Typesafe wrappers around the /pkgfs/versions filesystem.
 
 use {
-    crate::iou,
-    fidl::endpoints::{ClientEnd, ServerEnd},
-    fidl_fuchsia_io::{DirectoryMarker, DirectoryProxy},
+    crate::{iou, package},
+    fidl_fuchsia_io::DirectoryProxy,
     fuchsia_merkle::Hash,
     fuchsia_zircon::Status,
-    thiserror::Error,
 };
-
-/// An error encountered while opening a package
-#[derive(Debug, Error)]
-#[allow(missing_docs)]
-pub enum PackageOpenError {
-    #[error("the package does not exist")]
-    NotFound,
-
-    #[error("while opening the package: {0}")]
-    Io(iou::OpenError),
-}
 
 /// An open handle to /pkgfs/versions
 #[derive(Debug, Clone)]
@@ -48,31 +35,21 @@ impl Client {
         })
     }
 
-    /// Open the package given by `meta_far_merkle`, returning the directory and optionally cloning
-    /// the directory onto the given `dir_request`. Verifies the OnOpen event before returning.
+    /// Open the package given by `meta_far_merkle`. Verifies the OnOpen event before returning.
     pub async fn open_package(
         &self,
         meta_far_merkle: &Hash,
-        dir_request: Option<ServerEnd<DirectoryMarker>>,
-    ) -> Result<ClientEnd<DirectoryMarker>, PackageOpenError> {
+    ) -> Result<package::Directory, package::OpenError> {
+        // TODO(37858) allow opening as executable too
         let flags = fidl_fuchsia_io::OPEN_RIGHT_READABLE;
         let dir = iou::open_directory(&self.proxy, &meta_far_merkle.to_string(), flags)
             .await
             .map_err(|e| match e {
-                iou::OpenError::OpenError(Status::NOT_FOUND) => PackageOpenError::NotFound,
-                other => PackageOpenError::Io(other),
+                iou::OpenError::OpenError(Status::NOT_FOUND) => package::OpenError::NotFound,
+                other => package::OpenError::Io(other),
             })?;
 
-        // serve the directory on the client provided handle, if requested.
-        if let Some(dir_request) = dir_request {
-            let () = iou::clone_directory(&dir, dir_request).await.map_err(PackageOpenError::Io)?;
-        }
-
-        Ok(dir
-            .into_channel()
-            .expect("no other users of the wrapped channel")
-            .into_zx_channel()
-            .into())
+        Ok(package::Directory::new(dir))
     }
 }
 
@@ -90,7 +67,7 @@ mod tests {
         let client = Client::open_from_pkgfs_root(&root).unwrap();
 
         let merkle = fuchsia_merkle::MerkleTree::from_reader(std::io::empty()).unwrap().root();
-        assert_matches!(client.open_package(&merkle, None).await, Err(PackageOpenError::NotFound));
+        assert_matches!(client.open_package(&merkle).await, Err(package::OpenError::NotFound));
 
         pkgfs.stop().await.unwrap();
     }
@@ -106,12 +83,10 @@ mod tests {
         let pkg_merkle = pkg.meta_far_merkle_root().to_owned();
         install.write_meta_far(&pkg).await;
 
-        assert_matches!(client.open_package(&pkg_merkle, None).await, Ok(_));
+        assert_matches!(client.open_package(&pkg_merkle).await, Ok(_));
         assert_matches!(
-            pkg.verify_contents(
-                &client.open_package(&pkg_merkle, None).await.unwrap().into_proxy().unwrap()
-            )
-            .await,
+            pkg.verify_contents(&client.open_package(&pkg_merkle).await.unwrap().into_proxy())
+                .await,
             Ok(())
         );
 
@@ -136,10 +111,7 @@ mod tests {
         install.write_meta_far(&pkg).await;
 
         // Package is not complete yet, so opening fails.
-        assert_matches!(
-            client.open_package(&pkg_merkle, None).await,
-            Err(PackageOpenError::NotFound)
-        );
+        assert_matches!(client.open_package(&pkg_merkle).await, Err(package::OpenError::NotFound));
 
         install
             .write_blob(
@@ -156,12 +128,10 @@ mod tests {
             )
             .await;
 
-        assert_matches!(client.open_package(&pkg_merkle, None).await, Ok(_));
+        assert_matches!(client.open_package(&pkg_merkle).await, Ok(_));
         assert_matches!(
-            pkg.verify_contents(
-                &client.open_package(&pkg_merkle, None).await.unwrap().into_proxy().unwrap()
-            )
-            .await,
+            pkg.verify_contents(&client.open_package(&pkg_merkle).await.unwrap().into_proxy())
+                .await,
             Ok(())
         );
 
