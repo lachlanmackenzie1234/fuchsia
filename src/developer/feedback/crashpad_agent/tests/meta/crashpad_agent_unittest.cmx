@@ -4,12 +4,10 @@
     },
     "sandbox": {
         "features": [
-            "build-info",
             "isolated-temp"
         ],
         "services": [
-            "fuchsia.logger.LogSink",
-            "fuchsia.process.Launcher"
+            "fuchsia.logger.LogSink"
         ]
     }
 }

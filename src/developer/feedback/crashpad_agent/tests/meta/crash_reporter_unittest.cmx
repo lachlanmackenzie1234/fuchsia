@@ -1,0 +1,14 @@
+{
+    "program": {
+        "binary": "test/crash_reporter_unittest"
+    },
+    "sandbox": {
+        "features": [
+            "build-info",
+            "isolated-temp"
+        ],
+        "services": [
+            "fuchsia.logger.LogSink"
+        ]
+    }
+}
