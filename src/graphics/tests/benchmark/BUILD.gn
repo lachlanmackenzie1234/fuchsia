@@ -43,7 +43,15 @@ executable("vkcopy") {
 
   defines = [ "VULKAN_HPP_NO_EXCEPTIONS" ]
 
-  sources = [ "test_vkcopy.cc" ]
+  sources = [
+    "//src/graphics/tests/common/vulkan_context.cc",
+    "test_vkcopy.cc",
+  ]
 
   deps = [ "//src/lib/vulkan" ]
+
+  public_deps = [
+    "//src/lib/fxl/test:test_settings",
+    "//third_party/googletest:gtest",
+  ]
 }
