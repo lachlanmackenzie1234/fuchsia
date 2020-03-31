@@ -1,45 +1,28 @@
-// Copyright 2017 The Fuchsia Authors. All rights reserved.
+// Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef ZIRCON_SYSTEM_UAPP_AUDIO_SINE_SOURCE_H_
+#define ZIRCON_SYSTEM_UAPP_AUDIO_SINE_SOURCE_H_
 
-#include <limits>
+#include <math.h>
 
-#include <audio-utils/audio-stream.h>
-#include <zircon/types.h>
+#include "generated-source.h"
 
-class SineSource : public audio::utils::AudioSource {
+class SineSource : public GeneratedSource {
  public:
-  static constexpr uint32_t kAllChannelsActive = std::numeric_limits<uint32_t>::max();
-
-  SineSource() {}
-
   zx_status_t Init(float freq, float amp, float duration_secs, uint32_t frame_rate,
-                   uint32_t channels, uint32_t active, audio_sample_format_t sample_format);
+                   uint32_t channels, uint32_t active,
+                   audio_sample_format_t sample_format) override {
+    auto status = GeneratedSource::Init(freq, amp, duration_secs, frame_rate, channels, active,
+                                        sample_format);
 
-  zx_status_t GetFormat(Format* out_format) final;
-  zx_status_t GetFrames(void* buffer, uint32_t buf_space, uint32_t* out_packed);
-  bool finished() const final { return (frames_produced_ >= frames_to_produce_); }
+    pos_scalar_ = (freq * 2.0 * M_PI) / frame_rate;
 
- private:
-  using GetFramesThunk = zx_status_t (SineSource::*)(void* buffer, uint32_t buf_space,
-                                                     uint32_t* out_packed);
+    return status;
+  }
 
-  template <audio_sample_format_t SAMPLE_FORMAT>
-  zx_status_t InitInternal();
-
-  template <audio_sample_format_t SAMPLE_FORMAT>
-  zx_status_t GetFramesInternal(void* buffer, uint32_t buf_space, uint32_t* out_packed);
-
-  uint64_t frames_to_produce_;
-  uint64_t frames_produced_;
-  double amp_;
-  double sine_scalar_;
-  uint32_t frame_rate_;
-  uint32_t channels_;
-  uint32_t active_;
-  uint32_t frame_size_;
-  audio_sample_format_t sample_format_;
-  GetFramesThunk get_frames_thunk_ = nullptr;
+  double GenerateValue(double pos) override { return sin(pos); }
 };
+
+#endif  // ZIRCON_SYSTEM_UAPP_AUDIO_SINE_SOURCE_H_
