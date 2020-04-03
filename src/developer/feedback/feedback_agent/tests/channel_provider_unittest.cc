@@ -5,8 +5,8 @@
 #include "src/developer/feedback/feedback_agent/annotations/channel_provider.h"
 
 #include <lib/async/cpp/executor.h>
+#include <lib/fit/promise.h>
 #include <lib/zx/time.h>
-#include <zircon/errors.h>
 
 #include <memory>
 #include <optional>
@@ -18,7 +18,6 @@
 #include "src/developer/feedback/testing/stubs/cobalt_logger_factory.h"
 #include "src/developer/feedback/testing/unit_test_fixture.h"
 #include "src/developer/feedback/utils/cobalt_event.h"
-#include "src/lib/fxl/logging.h"
 #include "src/lib/syslog/cpp/logger.h"
 #include "third_party/googletest/googlemock/include/gmock/gmock.h"
 #include "third_party/googletest/googletest/include/gtest/gtest.h"
@@ -33,100 +32,94 @@ class ChannelProviderTest : public UnitTestFixture, public CobaltTestFixture {
   ChannelProviderTest() : CobaltTestFixture(/*unit_test_fixture=*/this), executor_(dispatcher()) {}
 
  protected:
-  void SetUpChannelProviderPtr(std::unique_ptr<stubs::ChannelProvider> channel_provider) {
-    channel_provider_ = std::move(channel_provider);
-    if (channel_provider_) {
-      InjectServiceProvider(channel_provider_.get());
+  void SetUpChannelProviderServer(std::unique_ptr<stubs::ChannelProvider> channel_provider_server) {
+    channel_provider_server_ = std::move(channel_provider_server);
+    if (channel_provider_server_) {
+      InjectServiceProvider(channel_provider_server_.get());
     }
   }
 
-  std::optional<std::string> RetrieveCurrentChannel(const zx::duration timeout = zx::sec(1)) {
+  std::optional<std::string> GetCurrentChannel(const zx::duration timeout = zx::sec(1)) {
     SetUpCobaltLoggerFactory(std::make_unique<stubs::CobaltLoggerFactory>());
     Cobalt cobalt(dispatcher(), services());
 
-    std::optional<std::string> channel;
     ChannelProvider provider(dispatcher(), services(), timeout, &cobalt);
-    auto promises = provider.GetAnnotations();
-    executor_.schedule_task(std::move(promises).then([&channel](fit::result<Annotations>& res) {
-      if (res.is_error()) {
-        channel = std::nullopt;
-      } else {
-        Annotations annotations = res.take_value();
-        if (annotations.empty()) {
-          channel = std::nullopt;
-        } else {
-          FX_CHECK(annotations.size() == 1u);
-          channel = std::move(annotations.begin()->second);
-        }
-      }
-    }));
+    auto promise = provider.GetAnnotations();
+
+    bool was_called = false;
+    std::optional<std::string> channel;
+    executor_.schedule_task(
+        std::move(promise).then([&was_called, &channel](fit::result<Annotations>& res) {
+          was_called = true;
+
+          if (res.is_error()) {
+            channel = std::nullopt;
+          } else {
+            Annotations annotations = res.take_value();
+            if (annotations.empty()) {
+              channel = std::nullopt;
+            } else {
+              FX_CHECK(annotations.size() == 1u);
+              channel = std::move(annotations.begin()->second);
+            }
+          }
+        }));
     RunLoopFor(timeout);
+    FX_CHECK(was_called);
     return channel;
   }
 
   async::Executor executor_;
 
  private:
-  std::unique_ptr<stubs::ChannelProvider> channel_provider_;
+  std::unique_ptr<stubs::ChannelProvider> channel_provider_server_;
 };
 
 TEST_F(ChannelProviderTest, Succeed_SomeChannel) {
   auto channel_provider = std::make_unique<stubs::ChannelProvider>();
   channel_provider->set_channel("my-channel");
-  SetUpChannelProviderPtr(std::move(channel_provider));
+  SetUpChannelProviderServer(std::move(channel_provider));
 
-  const auto result = RetrieveCurrentChannel();
+  const auto result = GetCurrentChannel();
 
   ASSERT_TRUE(result);
   EXPECT_EQ(result.value(), "my-channel");
 }
 
 TEST_F(ChannelProviderTest, Succeed_EmptyChannel) {
-  SetUpChannelProviderPtr(std::make_unique<stubs::ChannelProvider>());
+  SetUpChannelProviderServer(std::make_unique<stubs::ChannelProvider>());
 
-  const auto result = RetrieveCurrentChannel();
+  const auto result = GetCurrentChannel();
 
   ASSERT_TRUE(result);
   EXPECT_EQ(result.value(), "");
 }
 
 TEST_F(ChannelProviderTest, Fail_ChannelProviderPtrNotAvailable) {
-  SetUpChannelProviderPtr(nullptr);
+  SetUpChannelProviderServer(nullptr);
 
-  const auto result = RetrieveCurrentChannel();
+  const auto result = GetCurrentChannel();
 
   ASSERT_FALSE(result);
 }
 
 TEST_F(ChannelProviderTest, Fail_ChannelProviderPtrClosesConnection) {
-  SetUpChannelProviderPtr(std::make_unique<stubs::ChannelProviderClosesConnection>());
+  SetUpChannelProviderServer(std::make_unique<stubs::ChannelProviderClosesConnection>());
 
-  const auto result = RetrieveCurrentChannel();
+  const auto result = GetCurrentChannel();
 
   ASSERT_FALSE(result);
 }
 
 TEST_F(ChannelProviderTest, Fail_ChannelProviderPtrNeverReturns) {
-  SetUpChannelProviderPtr(std::make_unique<stubs::ChannelProviderNeverReturns>());
+  SetUpChannelProviderServer(std::make_unique<stubs::ChannelProviderNeverReturns>());
 
-  const auto result = RetrieveCurrentChannel();
+  const auto result = GetCurrentChannel();
 
   ASSERT_FALSE(result);
   EXPECT_THAT(ReceivedCobaltEvents(), UnorderedElementsAreArray({
                                           CobaltEvent(TimedOutData::kChannel),
                                       }));
-}
-
-TEST_F(ChannelProviderTest, Fail_CallGetCurrentTwice) {
-  SetUpChannelProviderPtr(std::make_unique<stubs::ChannelProvider>());
-  SetUpCobaltLoggerFactory(std::make_unique<stubs::CobaltLoggerFactory>());
-  Cobalt cobalt(dispatcher(), services());
-
-  const zx::duration unused_timeout = zx::sec(1);
-  internal::ChannelProviderPtr channel_provider(dispatcher(), services(), &cobalt);
-  executor_.schedule_task(channel_provider.GetCurrent(unused_timeout));
-  ASSERT_DEATH(channel_provider.GetCurrent(unused_timeout),
-               testing::HasSubstr("GetCurrent() is not intended to be called twice"));
 }
 
 }  // namespace
