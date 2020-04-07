@@ -4,8 +4,7 @@
     },
     "sandbox": {
         "features": [
-            "isolated-temp",
-            "vulkan"
+            "isolated-temp"
         ],
         "services": [
             "fuchsia.logger.LogSink",
