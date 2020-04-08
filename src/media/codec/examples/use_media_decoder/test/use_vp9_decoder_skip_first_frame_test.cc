@@ -36,9 +36,10 @@ const char* kGoldenSha256 = "7af41ec1056227e4c83459240c89db07916d8b67d31d023260a
 // is especially relevant to any decoder that has an internal watchdog that might reset decoder
 // stream state at any arbitrary frame.
 int main(int argc, char* argv[]) {
-  UseVideoDecoderTestParams test_params;
-  test_params.Add("skip_frame_ordinal", 0);
-  test_params.Add("first_expected_output_frame_ordinal", 150);
+  const UseVideoDecoderTestParams test_params{
+      .first_expected_output_frame_ordinal = 150,
+      .skip_frame_ordinal = 0,
+  };
   return use_video_decoder_test(kInputFilePath, kInputFileFrameCount, use_vp9_decoder,
                                 /*is_secure_output=*/false, /*is_secure_input=*/false,
                                 /*min_output_buffer_count=*/0, kGoldenSha256, &test_params);
