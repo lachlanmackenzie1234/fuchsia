@@ -22,55 +22,17 @@ else
   AEMU_PLATFORM="linux-amd64"
 fi
 
-# Helpers.
-
-# Verifies that the given arguments appear in the command line invocation of the
-# most previously sourced mock state. Any arguments passed to this function will
-# be searched for in the actual arguments. This succeeds if the arguments are
-# found in adjacent positions in the correct order.
-#
-# This function only checks for presence. As a result, it will NOT verify any of
-# the following:
-#
-# * The arguments only appear once.
-# * The arguments don't appear with conflicting arguments.
-# * Any given argument --foo isn't overridden, say with a --no-foo flag later.
-#
-# Args: any number of arguments to check.
-# Returns: 0 if found; 1 if not found.
-check_mock_has_args() {
-  local expected=("$@")
-  for j in "${!BT_MOCK_ARGS[@]}"; do
-    local window=("${BT_MOCK_ARGS[@]:$j:${#expected}}")
-    local found=true
-    for k in "${!expected[@]}"; do
-      if [[ "${expected[$k]}" != "${window[$k]}" ]]; then
-        found=false
-        break
-      fi
-    done
-    if [[ "${found}" == "true" ]]; then
-      return 0
-    fi
-  done
-  BT_EXPECT false "Could not find ${expected[*]} in ${BT_MOCK_ARGS[*]}"
-  return 1
-}
-
 # Verifies that the correct emulator command is run by femu when no arguments are provided on the command line.
 TEST_femu_noargs() {
 
   PATH_DIR_FOR_TEST="${BT_TEMP_DIR}/_isolated_path_for"
   export PATH="${PATH_DIR_FOR_TEST}:${PATH}"
 
-  # Mock authkeys
-  echo ssh-ed25519 00000000000000000000000000000000000000000000000000000000000000000000 \
-    >"${BT_TEMP_DIR}/scripts/sdk/gn/base/authkeys.txt"
-
   # Create fake ZIP file download so femu.sh doesn't try to download it, and
   # later on provide a mocked emulator script so it doesn't try to unzip it.
   touch "${FUCHSIA_WORK_DIR}/emulator/aemu-${AEMU_PLATFORM}-${AEMU_LABEL}.zip"
 
+  # Need to configure a DISPLAY so that we can get past the graphics error checks
   export DISPLAY="fakedisplay"
 
   # Run command.
@@ -99,12 +61,11 @@ TEST_femu_noargs() {
   # Verify some of the arguments passed to the emulator binary
   # shellcheck disable=SC1090
   source "${FUCHSIA_WORK_DIR}/emulator/aemu-${AEMU_PLATFORM}-${AEMU_LABEL}/emulator.mock_state"
-  check_mock_has_args -fuchsia
-
+  gn-test-check-mock-partial -fuchsia
 }
 
 # Verifies that the correct emulator command is run by femu, along with the image setup.
-# This tests the -N option. On mac os, this is expected to fail.
+# This tests the -N option for networking.
 TEST_femu_networking() {
 
   PATH_DIR_FOR_TEST="${BT_TEMP_DIR}/_isolated_path_for"
@@ -119,25 +80,24 @@ INPUT
   # later on provide a mocked emulator script so it doesn't try to unzip it.
   touch "${FUCHSIA_WORK_DIR}/emulator/aemu-${AEMU_PLATFORM}-${AEMU_LABEL}.zip"
 
-  if is-mac; then
-    expected_result=BT_EXPECT_FAIL
-  else
-    expected_result=BT_EXPECT
-  fi
-
+  # Need to configure a DISPLAY so that we can get past the graphics error checks
   export DISPLAY="fakedisplay"
 
+  # OSX may not have the tun/tap driver installed, and you cannot bypass the
+  # network checks, so need to work around this for the test. Linux does not
+  # need a fake network because we use a fake ip command.
+  if is-mac && [[ ! -c /dev/tap0 ]]; then
+    NETWORK_ARGS=( -N -I fakenetwork )
+  else
+    NETWORK_ARGS=( -N )
+  fi
+
   # Run command.
-  ${expected_result} gn-test-run-bash-script "${BT_TEMP_DIR}/scripts/sdk/gn/base/bin/femu.sh" \
-    -N \
+  BT_EXPECT gn-test-run-bash-script "${BT_TEMP_DIR}/scripts/sdk/gn/base/bin/femu.sh" \
+    "${NETWORK_ARGS[*]}" \
     --unknown-arg1-to-qemu \
     --authorized-keys "${BT_TEMP_DIR}/scripts/sdk/gn/base/testdata/authorized_keys" \
     --unknown-arg2-to-qemu
-
-  #The remaining validation steps are disabled on OSX since the test failed earlier due to -N not being supported yet".
-  if is-mac; then
-    return 0
-  fi
 
   # Verify that fvm resized the disk file by 2x from the input 1024 to 2048.
   # shellcheck disable=SC1090
@@ -162,14 +122,23 @@ INPUT
   # Verify some of the arguments passed to the emulator binary
   # shellcheck disable=SC1090
   source "${FUCHSIA_WORK_DIR}/emulator/aemu-${AEMU_PLATFORM}-${AEMU_LABEL}/emulator.mock_state"
-  # The mac address is computed with a hash function in fx emu but will not change if the device
-  # is named qemu. We test the generated mac address here since our scripts use the mac for a
-  # hard coded address to SSH into the device.
-  check_mock_has_args -fuchsia
-  check_mock_has_args -netdev type=tap,ifname=qemu,id=net0,script=no
-  check_mock_has_args -device e1000,netdev=net0,mac=52:54:00:63:5e:7a
-  check_mock_has_args --unknown-arg1-to-qemu
-  check_mock_has_args --unknown-arg2-to-qemu
+  # The mac address is computed with a hash function in fx emu based on the device name.
+  # We test the generated mac address since other scripts hard code this to SSH into the device.
+  gn-test-check-mock-partial -fuchsia
+  if is-mac; then
+    if [[ -c /dev/tap0 ]]; then
+      gn-test-check-mock-partial -netdev type=tap,ifname=tap0,id=net0,script="${BT_TEMP_DIR}/scripts/sdk/gn/base/bin/devshell/lib/emu-ifup-macos.sh"
+      gn-test-check-mock-partial -device e1000,netdev=net0,mac=52:54:00:4d:27:96
+    else
+      gn-test-check-mock-partial -netdev type=tap,ifname=fakenetwork,id=net0,script="${BT_TEMP_DIR}/scripts/sdk/gn/base/bin/devshell/lib/emu-ifup-macos.sh"
+      gn-test-check-mock-partial -device e1000,netdev=net0,mac=52:54:00:95:03:66
+    fi
+  else
+    gn-test-check-mock-partial -netdev type=tap,ifname=qemu,id=net0,script=no
+    gn-test-check-mock-partial -device e1000,netdev=net0,mac=52:54:00:63:5e:7a
+  fi
+  gn-test-check-mock-partial --unknown-arg1-to-qemu
+  gn-test-check-mock-partial --unknown-arg2-to-qemu
 }
 # Test initialization. Note that we copy various tools/devshell files and need to replicate the
 # behavior of generate.py by copying these files into scripts/sdk/gn/base/bin/devshell
@@ -182,6 +151,7 @@ BT_FILE_DEPS=(
   scripts/sdk/gn/bash_tests/gn-bash-test-lib.sh
   tools/devshell/emu
   tools/devshell/lib/fvm.sh
+  tools/devshell/lib/emu-ifup-macos.sh
 )
 # shellcheck disable=SC2034
 BT_MOCKED_TOOLS=(
@@ -215,8 +185,7 @@ BT_INIT_TEMP_DIR() {
     >"${BT_TEMP_DIR}/scripts/sdk/gn/base/testdata/authorized_keys"
 
   # Stage the files we copy from the fx emu implementation, replicating behavior of generate.py
-  cp "${BT_TEMP_DIR}/tools/devshell/emu" "${BT_TEMP_DIR}/scripts/sdk/gn/base/bin/devshell/emu"
-  cp "${BT_TEMP_DIR}/tools/devshell/lib/fvm.sh" "${BT_TEMP_DIR}/scripts/sdk/gn/base/bin/devshell/lib/fvm.sh"
+  cp -r "${BT_TEMP_DIR}/tools/devshell" "${BT_TEMP_DIR}/scripts/sdk/gn/base/bin/"
 }
 
 BT_RUN_TESTS "$@"
