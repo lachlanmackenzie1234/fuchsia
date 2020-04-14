@@ -7,6 +7,9 @@ import (
 )
 
 func TestInitPartitionTables(t *testing.T) {
+	_, cleanup := bootserver.StartQemu(t, "netsvc.all-features=true, netsvc.netboot=true", "full")
+	defer cleanup()
+
 	logPattern := []bootserver.LogMatch{
 		{"Received request from ", true},
 		{"Proceeding with nodename ", true},
@@ -19,8 +22,4 @@ func TestInitPartitionTables(t *testing.T) {
 		t, logPattern,
 		bootserver.ToolPath(t, "bootserver"), "-n", bootserver.DefaultNodename,
 		"--init-partition-tables", "/dev/class/block/000", "-1", "--fail-fast")
-}
-
-func TestMain(m *testing.M) {
-	bootserver.RunTests(m, "netsvc.all-features=true, netsvc.netboot=true")
 }
