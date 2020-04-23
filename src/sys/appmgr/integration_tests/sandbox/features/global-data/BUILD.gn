@@ -10,6 +10,7 @@ group("global-data") {
   deps = [
     ":has_global_data",
     ":no_global_data",
+    ":restricted_global_data",
   ]
 }
 

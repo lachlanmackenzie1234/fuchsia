@@ -1,0 +1,48 @@
+# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/testing/environments.gni")
+import("//src/sys/appmgr/integration_tests/sandbox/sandbox_test_package.gni")
+
+group("misc-storage") {
+  testonly = true
+  deps = [
+    ":has-misc-storage",
+    ":no-misc-storage",
+    ":restricted-misc-storage",
+  ]
+}
+
+sandbox_test_package("has-misc-storage") {
+  deprecated_misc_storage = "//build"
+  sources = [ "has_misc_storage.cc" ]
+
+  deps = [
+    "//src/lib/fxl/test:gtest_main",
+    "//src/sys/appmgr/integration_tests/sandbox:namespace_test",
+  ]
+  environments = basic_envs
+}
+
+sandbox_test_package("no-misc-storage") {
+  sources = [ "no_misc_storage.cc" ]
+
+  deps = [
+    "//src/lib/fxl/test:gtest_main",
+    "//src/sys/appmgr/integration_tests/sandbox:namespace_test",
+  ]
+  environments = basic_envs
+}
+
+sandbox_test_package("restricted-misc-storage") {
+  # Has deprecated-misc-storage feature, but not in //src/security/policy allowlist.
+  deprecated_misc_storage = "//build"
+  sources = [ "no_misc_storage.cc" ]
+
+  deps = [
+    "//src/lib/fxl/test:gtest_main",
+    "//src/sys/appmgr/integration_tests/sandbox:namespace_test",
+  ]
+  environments = basic_envs
+}
