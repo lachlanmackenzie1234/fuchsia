@@ -4,9 +4,5 @@
 toc:
 - title: "Wireless"
   path: /docs/concepts/networking/wireless_networking.md
-- title: "Bluetooth architecture"
-  path: /docs/concepts/networking/bluetooth_architecture.md
-- title: "Bluetooth source code"
-  path: /docs/concepts/networking/bluetooth_source_layout.md
 - title: "Telephony"
   path: https://fuchsia.googlesource.com/fuchsia/+/master/src/connectivity/telephony/
