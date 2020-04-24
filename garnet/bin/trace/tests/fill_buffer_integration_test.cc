@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/trace-provider/provider.h>
 #include <lib/zx/time.h>
 #include <zircon/status.h>
 
 #include <memory>
-
-#include <trace-provider/provider.h>
 
 #include "garnet/bin/trace/tests/basic_integration_tests.h"
 #include "src/lib/fxl/logging.h"
@@ -15,7 +14,7 @@
 namespace tracing {
 namespace test {
 
-const char kProviderName[] = "fill-buffer";
+const char kFillBufferProviderName[] = "fill-buffer";
 
 static bool RunFillBufferTest(const tracing::Spec& spec) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
@@ -25,7 +24,7 @@ static bool RunFillBufferTest(const tracing::Spec& spec) {
 
   std::unique_ptr<trace::TraceProvider> provider;
   bool already_started;
-  if (!CreateProviderSynchronously(loop, kProviderName, &provider, &already_started)) {
+  if (!CreateProviderSynchronously(loop, kFillBufferProviderName, &provider, &already_started)) {
     return false;
   }
 
@@ -37,7 +36,8 @@ static bool RunFillBufferTest(const tracing::Spec& spec) {
     // contains the trace buffer (as a vmo) and other things. So wait for it.
     async::Loop wait_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
     if (!WaitForTracingToStart(wait_loop, kStartTimeout)) {
-      FXL_LOG(ERROR) << "Provider " << kProviderName << " failed waiting for tracing to start";
+      FXL_LOG(ERROR) << "Provider " << kFillBufferProviderName
+                     << " failed waiting for tracing to start";
       return false;
     }
   }
@@ -67,7 +67,7 @@ static bool VerifyFillBufferTest(const tracing::Spec& spec, const std::string& t
 }
 
 const IntegrationTest kFillBufferIntegrationTest = {
-    "fill-buffer",
+    kFillBufferProviderName,
     &RunFillBufferTest,
     &VerifyFillBufferTest,
 };
