@@ -161,7 +161,7 @@ async fn launch_and_test_no_on_finished() {
 
 #[fuchsia_async::run_singlethreaded(test)]
 async fn launch_and_test_gtest_runner_sample_test() {
-    let test_url = "fuchsia-pkg://fuchsia.com/gtest_runner_example_tests#meta/sample_tests.cm";
+    let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/sample_tests.cm";
 
     let events = run_test(test_url).await.unwrap();
 
