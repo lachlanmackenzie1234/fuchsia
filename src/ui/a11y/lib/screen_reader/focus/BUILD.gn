@@ -8,7 +8,10 @@ source_set("focus") {
     "a11y_focus_manager.h",
   ]
 
-  public_deps = [ "//src/ui/a11y/lib/util" ]
+  public_deps = [
+    "//src/ui/a11y/lib/semantics",
+    "//src/ui/a11y/lib/util",
+  ]
 
   deps = [
     "//sdk/fidl/fuchsia.ui.views",
@@ -16,6 +19,7 @@ source_set("focus") {
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",
     "//src/lib/syslog/cpp",
+    "//src/ui/a11y/lib/annotation",
     "//src/ui/a11y/lib/focus_chain",
   ]
 }
