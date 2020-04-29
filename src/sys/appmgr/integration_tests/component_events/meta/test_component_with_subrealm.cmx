@@ -1,0 +1,13 @@
+{
+    "program": {
+        "binary": "bin/test_component_with_subrealm"
+    },
+    "sandbox": {
+        "services": [
+            "fuchsia.sys.Environment",
+            "fuchsia.sys.Launcher",
+            "fuchsia.sys.Loader",
+            "fuchsia.sys.internal.ComponentEventProvider"
+        ]
+    }
+}
