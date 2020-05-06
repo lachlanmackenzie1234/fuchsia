@@ -8,3 +8,8 @@ config_data("config") {
   for_pkg = "sysmgr"
   sources = [ "netstack.config" ]
 }
+
+config_data("dns") {
+  for_pkg = "sysmgr"
+  sources = [ "netstack_dns.config" ]
+}
