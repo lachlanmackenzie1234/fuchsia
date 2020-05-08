@@ -8,6 +8,8 @@
 
 #include "test-main.h"
 
+const char Symbolize::kProgramName_[] = "hello-world-test";
+
 int TestMain(void*, arch::EarlyTicks) {
   printf("Hello, world!\n");
   return 0;
