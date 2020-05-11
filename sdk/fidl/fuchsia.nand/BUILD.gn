@@ -6,5 +6,5 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.nand") {
   sources = [ "broker.fidl" ]
-  public_deps = [ "//zircon/system/fidl/fuchsia-hardware-nand" ]
+  public_deps = [ "//sdk/fidl/fuchsia.hardware.nand" ]
 }
