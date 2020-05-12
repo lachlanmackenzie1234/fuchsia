@@ -16,5 +16,6 @@ group("tests") {
   deps = [
     "kms:tests",
     "tee_manager:tests",
+    "tools:tests",
   ]
 }

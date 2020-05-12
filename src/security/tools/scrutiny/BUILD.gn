@@ -1,0 +1,15 @@
+# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("scrutiny") {
+  testonly = true
+  public_deps =
+      [ "//src/security/tools/scrutiny/service:host($host_toolchain)" ]
+}
+
+group("tests") {
+  testonly = true
+  public_deps =
+      [ "//src/security/tools/scrutiny/service:tests($host_toolchain)" ]
+}
