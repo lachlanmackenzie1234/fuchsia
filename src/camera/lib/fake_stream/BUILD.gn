@@ -10,6 +10,7 @@ source_set("impl_header") {
   visibility = [
     ":*",
     "//src/camera/lib/fake_camera/*",
+    "//src/camera/lib/fake_controller/*",
   ]
 
   sources = [ "fake_stream.h" ]
