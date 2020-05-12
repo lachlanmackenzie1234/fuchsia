@@ -13,6 +13,7 @@
             "fuchsia.logger.LogSink",
             "fuchsia.posix.socket.Provider",
             "fuchsia.weave.FactoryDataManager",
+            "fuchsia.weave.Signer",
             "fuchsia.wlan.device.service.DeviceService"
         ]
     }
