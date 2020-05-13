@@ -10,8 +10,7 @@ if (host_toolchain == current_toolchain) {
     version = "0.1.0"
     edition = "2018"
 
-    deps = []
-
+    deps = [ "macro:lib" ]
     non_rust_deps = [ "//third_party/boringssl" ]
   }
 }
