@@ -1,0 +1,61 @@
+# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/rust/rustc_library.gni")
+import("//build/test/test_package.gni")
+import("//build/testing/environments.gni")
+
+rustc_library("packet-formats") {
+  name = "packet_formats"
+  version = "0.1.0"
+  edition = "2018"
+
+  configs -= [ "//build/config:rust_no_features" ]
+  configs += [ "//build/config:netstack3_only_specialization_feature" ]
+
+  deps = [
+    # TODO(https://github.com/dtolnay/thiserror/pull/64): remove this module.
+    "//garnet/lib/rust/never",
+    "//src/connectivity/lib/internet-checksum",
+    "//src/connectivity/lib/net-types",
+    "//src/connectivity/network/netstack3/core/fakestd",
+    "//src/lib/network/packet",
+    "//src/lib/zerocopy",
+    "//third_party/rust_crates:byteorder",
+    "//third_party/rust_crates:log",
+    "//third_party/rust_crates:thiserror",
+  ]
+}
+
+rustc_test("packet-formats-lib-test") {
+  version = "0.1.0"
+  edition = "2018"
+  name = "packet_formats_lib_test"
+
+  configs -= [ "//build/config:rust_no_features" ]
+  configs += [ "//build/config:netstack3_only_specialization_feature" ]
+
+  deps = [
+    # TODO(https://github.com/dtolnay/thiserror/pull/64): remove this module.
+    "//garnet/lib/rust/never",
+    "//src/connectivity/lib/internet-checksum",
+    "//src/connectivity/lib/net-types",
+    "//src/connectivity/network/netstack3/core/fakestd",
+    "//src/lib/network/packet",
+    "//src/lib/zerocopy",
+    "//third_party/rust_crates:byteorder",
+    "//third_party/rust_crates:log",
+    "//third_party/rust_crates:thiserror",
+  ]
+}
+
+test_package("packet-formats-test") {
+  deps = [ ":packet-formats-lib-test" ]
+  tests = [
+    {
+      name = "packet_formats_lib_test"
+      environments = [ qemu_env ]
+    },
+  ]
+}
