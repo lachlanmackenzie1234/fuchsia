@@ -7,4 +7,5 @@
 zx_library("code_patching") {
   kernel = true
   sources = [ "code_patching.cc" ]
+  deps = [ "$zx/kernel/lib/init" ]
 }
