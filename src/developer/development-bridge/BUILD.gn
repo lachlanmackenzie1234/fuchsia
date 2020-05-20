@@ -15,22 +15,6 @@ group("development-bridge") {
 }
 
 if (host_toolchain == current_toolchain) {
-  rustc_library("lib") {
-    name = "ffxlib"
-    edition = "2018"
-
-    deps = [
-      "core:lib",
-      "//sdk/fidl/fuchsia.developer.bridge:fuchsia.developer.bridge-rustc",
-      "//sdk/fidl/fuchsia.overnet:fuchsia.overnet-rustc",
-      "//sdk/fidl/fuchsia.overnet.protocol:fuchsia.overnet.protocol-rustc",
-      "//src/connectivity/overnet/lib/hoist",
-      "//src/lib/fidl/rust/fidl",
-      "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:futures",
-    ]
-  }
-
   ffx("ffx") {
     version = "0.1.0"
     edition = "2018"
@@ -42,35 +26,25 @@ if (host_toolchain == current_toolchain) {
     ]
 
     deps = [
-      ":lib",
       "config:lib",
       "core:lib",
+      "daemon:lib",
       "//sdk/fidl/fuchsia.developer.bridge:fuchsia.developer.bridge-rustc",
       "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol-rustc",
       "//sdk/fidl/fuchsia.overnet:fuchsia.overnet-rustc",
       "//sdk/fidl/fuchsia.overnet.protocol:fuchsia.overnet.protocol-rustc",
       "//src/connectivity/overnet/lib/hoist",
-      "//src/connectivity/overnet/tools/ascendd:lib",
       "//src/lib/fidl/rust/fidl",
-      "//src/lib/mdns/rust:mdns",
-      "//src/lib/network/packet",
-      "//src/lib/zerocopy",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:argh",
-      "//third_party/rust_crates:async-std",
-      "//third_party/rust_crates:async-trait",
-      "//third_party/rust_crates:chrono",
       "//third_party/rust_crates:futures",
-      "//third_party/rust_crates:libc",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:simplelog",
-      "//third_party/rust_crates:socket2",
-      "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:tokio",
     ]
 
     # TODO: remove this dep once Overnet is on async-std also.
-    deps += ["//src/connectivity/overnet/lib/core"]
+    deps += [ "//src/connectivity/overnet/lib/core" ]
   }
 }
 
@@ -83,11 +57,14 @@ group("ffx") {
   deps = [
     ":bin($host_toolchain)",
     ":host",
-    ":lib($host_toolchain)",
+    "daemon:lib($host_toolchain)",
   ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":ffx_tests($host_toolchain)" ]
+  deps = [
+    ":ffx_tests($host_toolchain)",
+    "daemon:tests",
+  ]
 }
