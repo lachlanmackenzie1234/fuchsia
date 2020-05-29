@@ -4,6 +4,3 @@
 toc:
 - title: "Overview"
   path: /docs/concepts/fidl/overview.md
-- title: "Language tuning proposals"
-  section:
-  - include: /docs/concepts/fidl/ftp/_toc.yaml
