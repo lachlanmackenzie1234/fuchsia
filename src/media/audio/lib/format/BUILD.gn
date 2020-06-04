@@ -6,6 +6,7 @@ import("//build/test/test_package.gni")
 
 source_set("format") {
   sources = [
+    "audio_buffer.h",
     "constants.h",
     "driver_format.cc",
     "driver_format.h",
@@ -35,11 +36,15 @@ executable("unittest-bin") {
   testonly = true
   output_name = "audio-libformat-unittests"
 
-  sources = [ "format_unittest.cc" ]
+  sources = [
+    "audio_buffer_unittest.cc",
+    "format_unittest.cc",
+  ]
 
   deps = [
     ":format",
     "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gmock",
   ]
 
   libs = [ "zircon" ]
