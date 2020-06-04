@@ -73,3 +73,10 @@ table TableWithSubTables {
     2: vector<SampleTable> vt;
     3: array<SampleTable>:3 at;
 };
+
+enum Enum : uint32 {
+    VALUE_0 = 0;
+};
+
+struct EmptyStruct {
+};
