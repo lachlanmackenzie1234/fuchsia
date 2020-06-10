@@ -78,12 +78,17 @@ template("ffx_plugin") {
       args_source_root = invoker.args_source_root
     }
 
+    args_deps = []
+    if (defined(invoker.args_deps)) {
+      args_deps += invoker.args_deps
+    }
+
     rustc_library(args) {
       source_root = args_source_root
-      deps = [
-        "//src/developer/development-bridge/core:lib",
-        "//third_party/rust_crates:argh",
-      ]
+      deps = args_deps + [
+               "//src/developer/development-bridge/core:lib",
+               "//third_party/rust_crates:argh",
+             ]
       non_rust_deps = [ "//third_party/boringssl" ]
       forward_variables_from(invoker,
                              "*",
@@ -102,7 +107,8 @@ template("ffx_plugin") {
       "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol-rustc",
       "//src/connectivity/overnet/lib/hoist",
       "//src/developer/development-bridge/core:lib",
-      "//src/developer/development-bridge:command_lib",
+      "//src/developer/development-bridge:ffx_lib_args",
+      "//src/developer/development-bridge:ffx_lib_sub_command",
       "//src/developer/development-bridge/config:lib",
       "//src/lib/fidl/rust/fidl",
       "//third_party/rust_crates:anyhow",
