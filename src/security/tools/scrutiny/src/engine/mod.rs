@@ -8,4 +8,4 @@ pub mod hook;
 pub mod plugin;
 pub mod dispatcher;
 pub mod manager;
-pub mod pool;
+pub mod scheduler;
