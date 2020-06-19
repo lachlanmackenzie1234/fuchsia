@@ -11,15 +11,6 @@ enum EnumArrayElement {
     B = 2;
 };
 
-struct EnumArray16 {
-    array<EnumArrayElement>:16 values;
-};
-
 struct EnumArray256 {
     array<EnumArrayElement>:256 values;
-};
-
-[BindingsDenylist = "rust, cpp, llcpp, walker"]
-struct EnumArray4096 {
-    array<EnumArrayElement>:4096 values;
 };

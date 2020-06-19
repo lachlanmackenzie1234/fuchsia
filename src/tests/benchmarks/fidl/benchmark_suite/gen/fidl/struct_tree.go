@@ -17,7 +17,6 @@ func init() {
 		ExtraDefinition: `
 struct StructTree1 {
 	uint8 a;
-	// 8 byte padding
 	uint8 b;
 };`,
 		Definitions: []config.Definition{

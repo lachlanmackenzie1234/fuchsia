@@ -6,15 +6,6 @@
 
 library benchmarkfidl;
 
-struct FloatArray16 {
-    array<float32>:16 values;
-};
-
 struct FloatArray256 {
     array<float32>:256 values;
-};
-
-[BindingsDenylist = "rust, cpp, llcpp, walker"]
-struct FloatArray4096 {
-    array<float32>:4096 values;
 };

@@ -17,28 +17,11 @@ func init() {
 		Gen:      gidlGenFloatArray,
 		Benchmarks: []config.Benchmark{
 			{
-				Name:    "FloatArray/16",
-				Comment: `16 float array in a struct`,
-				Config: config.Config{
-					"size": 16,
-				},
-			},
-			{
 				Name:    "FloatArray/256",
 				Comment: `256 float array in a struct`,
 				Config: config.Config{
 					"size": 256,
 				},
-			},
-			{
-				Name: "FloatArray/4096",
-				Comment: `
-			4096 float array in a struct
-			Disabled on HLCPP / LLCPP due to clang performance issues`,
-				Config: config.Config{
-					"size": 4096,
-				},
-				Denylist: []config.Binding{config.HLCPP, config.LLCPP, config.Rust, config.Walker},
 			},
 		},
 	})
