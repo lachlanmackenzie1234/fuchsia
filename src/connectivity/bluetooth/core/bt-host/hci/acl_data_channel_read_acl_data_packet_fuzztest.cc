@@ -12,7 +12,6 @@ void fuzz(const uint8_t* data, size_t size) {
   // we allocate the largest possible buffer.
   auto packet = ACLDataPacket::New(slab_allocators::kLargeACLDataPayloadSize);
   if (!packet) {
-    bt_log(ERROR, "hci", "failed to allocate buffer received ACL data packet!");
     return;
   }
   zx::channel a;
