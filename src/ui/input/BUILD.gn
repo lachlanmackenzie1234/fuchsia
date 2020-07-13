@@ -12,5 +12,6 @@ group("tests") {
   deps = [
     "drivers:tests",
     "lib:tests",
+    "tests",
   ]
 }
