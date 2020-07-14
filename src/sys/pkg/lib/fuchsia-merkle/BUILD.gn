@@ -13,6 +13,7 @@ rustc_library("fuchsia-merkle") {
 
   deps = [
     "//src/lib/mundane",
+    "//src/sys/pkg/lib/fuchsia-hash",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:proptest",
