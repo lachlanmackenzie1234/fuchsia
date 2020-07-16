@@ -15,6 +15,7 @@
 
 #include "h264_multi_decoder.h"
 #include "video_decoder.h"
+#include "zircon/system/ulib/fit/include/lib/fit/defer.h"
 
 class AmlogicVideo;
 class DeviceCtx;
@@ -74,23 +75,23 @@ class CodecAdapterH264Multi : public CodecAdapter,
   bool IsCurrentOutputBufferCollectionUsable(uint32_t min_frame_count, uint32_t max_frame_count,
                                              uint32_t coded_width, uint32_t coded_height,
                                              uint32_t stride, uint32_t display_width,
-                                             uint32_t display_height) override {
-    return true;
-  }
+                                             uint32_t display_height) override;
 
   // H264MultiDecoder::FrameDataProvider implementation.
-  H264MultiDecoder::DataInput ReadMoreInputData(H264MultiDecoder* decoder) override;
+  std::optional<H264MultiDecoder::DataInput> ReadMoreInputData() override;
   bool HasMoreInputData() override;
+  void AsyncPumpDecoder() override;
   void AsyncResetStreamAfterCurrentFrame() override;
 
  private:
-  void QueueInputItem(CodecInputItem input_item);
+  void QueueInputItem(CodecInputItem input_item, bool at_front = false);
   CodecInputItem DequeueInputItem();
   std::vector<uint8_t> ParseAndDeliverCodecOobBytes();
   // If parsing something whose format depends on is_avcc_, use this method.
   //
   // The buffer pointer can be nullptr unless the VMO is a secure VMO.
   std::optional<H264MultiDecoder::DataInput> ParseVideo(const CodecBuffer* buffer,
+                                                        fit::deferred_callback* return_input_packet,
                                                         const uint8_t* data, uint32_t length);
   // If parsing something that's known to be in AVCC format, such as a bunch of
   // 0x00 without start codes or emulation prevention bytes, use this method.
@@ -103,8 +104,9 @@ class CodecAdapterH264Multi : public CodecAdapter,
   // end-of-stream marker data, use this method.
   //
   // The buffer pointer can be nullptr unless the VMO is a secure VMO.
-  std::optional<H264MultiDecoder::DataInput> ParseVideoAnnexB(const CodecBuffer* buffer,
-                                                              const uint8_t* data, uint32_t length);
+  std::optional<H264MultiDecoder::DataInput> ParseVideoAnnexB(
+      const CodecBuffer* buffer, fit::deferred_callback* return_input_packet, const uint8_t* data,
+      uint32_t length);
 
   void OnCoreCodecFailStream(fuchsia::media::StreamError error);
   CodecPacket* GetFreePacket();
@@ -132,6 +134,7 @@ class CodecAdapterH264Multi : public CodecAdapter,
   fuchsia::media::FormatDetails initial_input_format_details_;
   fuchsia::media::FormatDetails latest_input_format_details_;
 
+  std::optional<fuchsia::sysmem::BufferCollectionInfo_2> output_buffer_collection_info_;
   std::optional<fuchsia::sysmem::SingleBufferSettings> buffer_settings_[kPortCount];
 
   std::vector<const CodecBuffer*> all_output_buffers_;
