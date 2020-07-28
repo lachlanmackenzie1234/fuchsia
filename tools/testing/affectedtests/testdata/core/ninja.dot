@@ -486110,7 +486110,7 @@ edge [fontsize=10]
 "0x9f7aa20" -> "0x9f7aa90"
 "0x9f7ab90" -> "0x9f7aa20" [arrowhead=none]
 "0x9f7ac90" -> "0x9f7aa20" [arrowhead=none style=dotted]
-"0x9f7ab90" [label="../../prebuilt/third_party/rust/linux-x64/bin/rustfmt"]
+"0x9f7ab90" [label="../../prebuilt/third_party/rust_tools/linux-x64/bin/rustfmt"]
 "0x9f7ac90" [label="host_x64/obj/tools/fidl/fidlgen_rust/test_data_metadata.stamp"]
 "0x9f7b0e0" [label="host_x64_stamp", shape=ellipse]
 "0x9f7b0e0" -> "0x9f7ac90"
