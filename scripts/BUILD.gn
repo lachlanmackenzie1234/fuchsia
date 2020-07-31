@@ -6,6 +6,7 @@ group("tests") {
   testonly = true
   deps = [
     "blobstats:tests",
+    "codesize:tests",
     "fxtest:tests",
     "fxutils:tests",
   ]
