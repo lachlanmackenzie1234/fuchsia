@@ -1208510,7 +1208510,6 @@ edge [fontsize=10]
 "0x128d340" -> "0x5e4b200" [arrowhead=none style=dotted]
 "0x12efa40" -> "0x5e4b200" [arrowhead=none style=dotted]
 "0x12efb30" -> "0x5e4b200" [arrowhead=none style=dotted]
-"0x5e4a580" [label="../../src/sys/component_index/src/main.rs"]
 "0x5e4b770" [label="obj/src/sys/component_index/component_index_bin_test.inputdeps.stamp"]
 "0x5e41940" [label="stamp", shape=ellipse]
 "0x5e41940" -> "0x5e4b770"
@@ -1308045,4 +1308044,5 @@ edge [fontsize=10]
 "0x12c8780" -> "0x1288bc0"
 "0x12c8420" -> "0x12c8780" [arrowhead=none]
 "0x12c7e10" -> "0x12c8780" [arrowhead=none]
+"0x5e4a580" [label="../../src/sys/component_index/src/main.rs"]
 }
