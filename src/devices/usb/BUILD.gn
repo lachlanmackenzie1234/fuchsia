@@ -8,5 +8,6 @@ group("tests") {
   deps = [
     "bin:tests",
     "drivers:tests",
+    "lib:tests",
   ]
 }
