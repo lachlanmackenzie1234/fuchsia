@@ -41,7 +41,21 @@ driver_module("aml-cpu") {
 }
 
 test("aml-cpu-test") {
-  configs += [ "//build/unification/config:zircon-migrated" ]
+  # Dependent manifests unfortunately cannot be marked as `testonly`.
+  # TODO(44278): Remove when converting this file to proper GN build idioms.
+  if (is_fuchsia) {
+    testonly = false
+  }
+  if (is_fuchsia) {
+    configs += [ "//build/unification/config:zircon-migrated" ]
+  }
+  if (is_fuchsia) {
+    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
+    if (configs + fdio_config - fdio_config != configs) {
+      configs -= fdio_config
+    }
+  }
+  output_name = "aml-cpu-test"
   sources = [
     "aml-cpu-test.cc",
     "aml-cpu.cc",
@@ -57,7 +71,6 @@ test("aml-cpu-test") {
     "//src/devices/bus/lib/device-protocol-platform-device",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/mmio",
-    "//src/devices/testing/fake-mmio-reg",
     "//src/devices/testing/fake_ddk",
     "//src/lib/ddk",
     "//src/lib/ddktl",
