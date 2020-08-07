@@ -36,6 +36,8 @@ extern "C" {
 #include "private/tgt-aarch64.h"
 #elif defined __x86_64__
 #include "private/tgt-x86_64.h"
+#elif defined __riscv
+#include "private/tgt-riscv64.h"
 #else
 #error "Unsupported arch"
 #endif
