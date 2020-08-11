@@ -39,10 +39,6 @@ test_package("vkprimer") {
   }
 }
 
-declare_args() {
-  vulkan_sdk = ""
-}
-
 config("vulkan_sdk_linux_config") {
   # Specify the include/lib dirs and linked libraries for use with the
   # downloaded LunarG Vulkan SDK.
@@ -55,6 +51,7 @@ config("vulkan_sdk_linux_config") {
 executable("bin") {
   output_name = "vkprimer"
   sources = common_sources
+  sources += [ "example/main.cc" ]
 
   include_dirs = [ "//src/graphics/examples/vkprimer/common" ]
 
