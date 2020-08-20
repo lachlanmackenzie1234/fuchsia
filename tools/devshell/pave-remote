@@ -90,14 +90,7 @@ fi
 
 save_remote_info "$host" "$dir"
 
-ssh "${host}" "cd ${dir} && ./.jiri_root/bin/fx build build-archive.tar" || exit $?
-build_dir=$(ssh "${host}" "cd ${dir} && ./.jiri_root/bin/fx get-build-dir")
-
-rsync -z -P "${host}":"${build_dir}/build-archive.tar" out/build-archive.tar
-
-mkdir -p out/fetched
-tar xf out/build-archive.tar -C out/fetched
-echo >&2 "Build archive expanded into out/fetched"
+fetch_remote_build_archive "${host}" "${dir}"
 
 if "${pave}"; then
   cd out/fetched
