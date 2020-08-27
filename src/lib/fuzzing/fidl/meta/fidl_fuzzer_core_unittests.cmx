@@ -3,7 +3,7 @@
         "binary": "test/fidl_fuzzer_core_unittests"
     },
     "sandbox": {
-        "services" : [
+        "services": [
             "fuchsia.logger.LogSink"
         ]
     }
