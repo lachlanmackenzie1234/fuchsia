@@ -154,22 +154,22 @@ const String testTemperatureMetricJsonString = '''
   "displayTimeUnit": "ns",
   "traceEvents": [
     {
-      "cat": "system_metrics",
-      "name": "temperature",
+      "cat": "power_manager",
+      "name": "ThermalPolicy raw_temperature",
       "ts": 3000000000,
       "pid": 7009,
       "tid": 7022,
       "ph": "C",
-      "args":{"temperature":50}
+      "args":{"raw_temperature":50}
     },
     {
-      "cat": "system_metrics",
-      "name": "temperature",
+      "cat": "power_manager",
+      "name": "ThermalPolicy raw_temperature",
       "ts": 13200000000,
       "pid": 7009,
       "tid": 7022,
       "ph": "C",
-      "args":{"temperature":60}
+      "args":{"raw_temperature":60}
     }
   ],
   "systemTraceEvents": {
