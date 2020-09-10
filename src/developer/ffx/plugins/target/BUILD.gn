@@ -12,6 +12,7 @@ ffx_plugin("ffx_target") {
     "list:ffx_list",
     "off:ffx_off",
     "reboot:ffx_reboot",
+    "update:ffx_update",
   ]
 
   sources = [ "src/args.rs" ]
