@@ -11,6 +11,42 @@
 #include <fuchsia/io/cpp/fidl.h>
 #include <fuchsia/sys/cpp/fidl.h>
 
+class Proxy {
+ public:
+  void run() {
+    setup_();
+    group_0();
+    loop_.Run();
+  }
+
+ private:
+  void group_0();
+
+  void setup_() {
+    fidl::InterfaceHandle<fuchsia::io::Directory> directory;
+    fuchsia::sys::LaunchInfo launch_info;
+    launch_info.url = server_url;
+    launch_info.directory_request = directory.NewRequest().TakeChannel();
+    fuchsia::sys::LauncherPtr launcher;
+    context_->svc()->Connect(launcher.NewRequest());
+    launcher->CreateComponent(std::move(launch_info), controller_.NewRequest());
+    sys::ServiceDirectory provider(std::move(directory));
+    provider.Connect(proxy_.NewRequest());
+  }
+
+  async::Loop loop_ = async::Loop(&kAsyncLoopConfigAttachToCurrentThread);
+  std::unique_ptr<sys::ComponentContext> context_ = sys::ComponentContext::CreateAndServeOutgoingDirectory();
+  fuchsia::sys::ComponentControllerPtr controller_;
+  std::string server_url = "fuchsia-pkg://fuchsia.com/echo_server_cpp#meta/echo_server_cpp.cmx";
+  EchoStringPtr proxy_;
+};
+
+void Proxy::group_0() {
+  proxy_->EchoString([this]() {
+    loop_.Quit();
+  });
+}
+
 TEST(echo_client_cpp, fidl_examples_echo__echo) {
   Proxy proxy;
   proxy.run();
