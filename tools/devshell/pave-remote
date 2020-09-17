@@ -22,6 +22,8 @@
 ## HOST and DIR are persisted in the file //.fx-remote-config and are reused as
 ## defaults in future invocations of any 'fx *-remote' tools.
 
+set -o errexit
+
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/fx-remote.sh || exit $?
 fx-config-read
@@ -95,20 +97,15 @@ fi
 
 save_remote_info "$host" "$dir"
 
-fetch_remote_build_archive "${host}" "${dir}"
+artifact_dir="${FUCHSIA_DIR}/out/fetched"
+fetch_remote_build_artifacts "${host}" "${dir}" "${artifact_dir}" pave $build
 
 if "${pave}"; then
-  cd "${FUCHSIA_DIR}/out/fetched"
-
-  if [[ $(uname) = "Darwin" ]]; then
-    # HACK!
-    rm -f bootserver.exe.linux-x64
-    cp "${FUCHSIA_BUILD_DIR}/host_x64/bootserver" ./bootserver.exe.linux-x64
-  fi
-
   if [[ -n "$(get-device-name)" ]]; then
     args+=(-n $(get-device-name))
   fi
 
+  fetch_or_build_tool "${host}" "${dir}" "${artifact_dir}" bootserver
+  cd "${artifact_dir}"
   ./pave.sh --authorized-keys "${authkeys_path}" "${args[@]}"
 fi
