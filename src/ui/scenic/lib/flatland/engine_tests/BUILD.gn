@@ -1,0 +1,27 @@
+# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("tests") {
+  testonly = true
+
+  public_deps = [ ":unittests" ]
+}
+
+executable("unittests") {
+  output_name = "flatland_engine_unittests"
+  testonly = true
+  sources = [ "engine_unittest.cc" ]
+
+  deps = [
+    "//garnet/public/lib/gtest:gtest",
+    "//src/lib/fsl:fsl",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/ui/lib/display:hdcp_client",
+    "//src/ui/scenic/lib/display/tests:mocks",
+    "//src/ui/scenic/lib/flatland",
+    "//src/ui/scenic/lib/flatland/renderer",
+    "//src/ui/scenic/lib/scheduling:frame_scheduler",
+    "//third_party/googletest:gmock",
+  ]
+}

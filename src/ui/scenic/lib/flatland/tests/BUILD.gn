@@ -12,7 +12,6 @@ executable("unittests") {
   output_name = "flatland_unittests"
   testonly = true
   sources = [
-    "engine_unittest.cc",
     "flatland_manager_unittest.cc",
     "flatland_unittest.cc",
     "global_matrix_data_unittest.cc",
@@ -29,8 +28,6 @@ executable("unittests") {
     "//garnet/public/lib/gtest:gtest",
     "//src/lib/fsl:fsl",
     "//src/lib/fxl/test:gtest_main",
-    "//src/ui/lib/display:hdcp_client",
-    "//src/ui/scenic/lib/display/tests:mocks",
     "//src/ui/scenic/lib/flatland",
     "//src/ui/scenic/lib/flatland/renderer",
     "//src/ui/scenic/lib/scheduling:frame_scheduler",
