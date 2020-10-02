@@ -23,6 +23,7 @@ async fn base_resolver_test() {
     // 2. the component manager needs a manifest without fuchsia.sys.Loader
     let test = OpaqueTestBuilder::new("fuchsia-boot:///#meta/root.cm")
         .component_manager_url("fuchsia-pkg://fuchsia.com/base_resolver_test#meta/component_manager_without_loader.cmx")
+        .config("/pkg/data/component_manager_config")
         .add_dir_handle("/boot", pkg_channel.into())
         .build().await.unwrap();
 
