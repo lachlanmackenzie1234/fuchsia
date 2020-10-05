@@ -4,12 +4,10 @@
 
 use {
     anyhow::Error,
-    fidl_fuchsia_wlan_service::WlanMarker,
     fidl_fuchsia_wlan_tap::{
         WlanTxStatusEntry, WlantapPhyConfig, WlantapPhyEvent, WlantapPhyProxy,
     },
     fuchsia_async::Interval,
-    fuchsia_component::client::connect_to_service,
     fuchsia_zircon::DurationNum,
     futures::{channel::mpsc, poll, StreamExt},
     log::info,
@@ -140,8 +138,6 @@ async fn eth_and_beacon_sender<'a>(
 async fn rate_selection() {
     init_syslog();
 
-    let wlan_service =
-        connect_to_service::<WlanMarker>().expect("Error connecting to wlan service");
     let mut helper = test_utils::TestHelper::begin_test(WlantapPhyConfig {
         quiet: true,
         ..default_wlantap_config_client()
@@ -149,7 +145,8 @@ async fn rate_selection() {
     .await;
     let () = loop_until_iface_is_found().await;
 
-    let () = connect_to_open_ap(&wlan_service, &mut helper, SSID_MINSTREL, &BSS_MINSTL).await;
+    let phy = helper.proxy();
+    let () = connect(&phy, &mut helper, SSID_MINSTREL, &BSS_MINSTL, None).await;
 
     let phy = helper.proxy();
     let (sender, mut receiver) = mpsc::channel(1);
