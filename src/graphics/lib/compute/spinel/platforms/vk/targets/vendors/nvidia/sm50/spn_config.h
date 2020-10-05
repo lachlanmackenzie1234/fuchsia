@@ -28,6 +28,7 @@
 #define SPN_DEVICE_NVIDIA_SM50                                    1
 #define SPN_DEVICE_SUBGROUP_SIZE_LOG2                             5   // 32
 #define SPN_DEVICE_MAX_PUSH_CONSTANTS_SIZE                        256 // bytes
+#define SPN_DEVICE_SMEM_PER_SUBGROUP_DWORDS                       512
 
 //
 // TILE CONFIGURATION
@@ -97,6 +98,9 @@
 #define SPN_DEVICE_FILLS_EXPAND_SUBGROUP_SIZE_LOG2                SPN_DEVICE_SUBGROUP_SIZE_LOG2
 #define SPN_DEVICE_FILLS_EXPAND_WORKGROUP_SIZE                    ((1 << SPN_DEVICE_FILLS_EXPAND_SUBGROUP_SIZE_LOG2) * 1)
 
+// enable nvidia partition extensiona
+#define SPN_DEVICE_FILLS_EXPAND_ENABLE_SUBGROUP_PARTITION_NV      1
+
 //
 // KERNEL: FILLS DISPATCH
 //
@@ -108,15 +112,15 @@
 // KERNEL: RASTERIZE_[LINES|QUADS|CUBICS|...]
 //
 
-// enable nvidia partition extension
-#define SPN_DEVICE_RASTERIZE_EXT_ENABLE_SUBGROUP_PARTITION_NV     1
-
 // e.g. NVIDIA, AMD, Intel, ARM Bifrost, etc.
 #define SPN_DEVICE_RASTERIZE_SUBGROUP_SIZE_LOG2                   SPN_DEVICE_SUBGROUP_SIZE_LOG2
 #define SPN_DEVICE_RASTERIZE_WORKGROUP_SIZE                       ((1 << SPN_DEVICE_RASTERIZE_SUBGROUP_SIZE_LOG2) * 1)
 
 // can reduce this to force earlier launches of smaller grids
 #define SPN_DEVICE_RASTERIZE_COHORT_SIZE                          (SPN_RASTER_COHORT_METAS_SIZE - 1)
+
+// enable nvidia partition extension
+#define SPN_DEVICE_RASTERIZE_ENABLE_SUBGROUP_PARTITION_NV         1
 
 //
 // KERNEL: SEGMENT TTRK
