@@ -9,6 +9,7 @@ ffx_plugin("ffx_target") {
   edition = "2018"
   plugin_deps = [
     "flash:ffx_flash",
+    "get-ssh-address:ffx_get_ssh_address",
     "list:ffx_list",
     "off:ffx_off",
     "reboot:ffx_reboot",
