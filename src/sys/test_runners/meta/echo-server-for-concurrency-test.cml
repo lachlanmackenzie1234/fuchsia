@@ -2,15 +2,18 @@
     program: {
         binary: "bin/echo_server_for_concurrency_test",
     },
+    capabilities: [
+        { protocol: "fidl.examples.routing.echo.Echo" },
+    ],
     use: [
         { runner: "elf" },
         {
-            protocol: [ "/svc/fuchsia.logger.LogSink" ],
+            protocol: [ "fuchsia.logger.LogSink" ],
         },
     ],
     expose: [
         {
-            protocol: "/svc/fidl.examples.routing.echo.Echo",
+            protocol: "fidl.examples.routing.echo.Echo",
             from: "self",
         },
     ],
