@@ -22,8 +22,6 @@
 
 namespace {
 constexpr char kInterface[] = "/dev/whatever/whatever";
-constexpr char kNodename[] = "some-four-word-name";
-constexpr char kEthDir[] = "/dev";
 
 TEST(ArgsTest, NetsvcNodenamePrintsAndExits) {
   const std::string path = "/pkg/bin/netsvc";
@@ -131,55 +129,4 @@ TEST_F(ArgsTest, NetsvcValidation) {
   ASSERT_TRUE(strstr(error, "interface"));
 }
 
-TEST_F(ArgsTest, DeviceNameProviderNoneProvided) {
-  int argc = 1;
-  const char* argv[] = {"device-name-provider"};
-  const char* error = nullptr;
-  DeviceNameProviderArgs args;
-  ASSERT_EQ(ParseArgs(argc, const_cast<char**>(argv), svc_root(), &error, &args), 0, "%s", error);
-  ASSERT_TRUE(args.interface.empty());
-  ASSERT_TRUE(args.nodename.empty());
-  ASSERT_EQ(args.ethdir, std::string("/dev/class/ethernet"));
-  ASSERT_EQ(error, nullptr);
-}
-
-TEST_F(ArgsTest, DeviceNameProviderAllProvided) {
-  int argc = 7;
-  const char* argv[] = {"device-name-provider",
-                        "--nodename",
-                        kNodename,
-                        "--interface",
-                        kInterface,
-                        "--ethdir",
-                        kEthDir};
-  const char* error = nullptr;
-  DeviceNameProviderArgs args;
-  ASSERT_EQ(ParseArgs(argc, const_cast<char**>(argv), svc_root(), &error, &args), 0, "%s", error);
-  ASSERT_EQ(args.interface, std::string(kInterface));
-  ASSERT_EQ(args.nodename, std::string(kNodename));
-  ASSERT_EQ(args.ethdir, std::string(kEthDir));
-  ASSERT_EQ(error, nullptr);
-}
-
-TEST_F(ArgsTest, DeviceNameProviderValidation) {
-  int argc = 2;
-  const char* argv[] = {
-      "device-name-provider",
-      "--interface",
-  };
-  DeviceNameProviderArgs args;
-  const char* error = nullptr;
-  ASSERT_LT(ParseArgs(argc, const_cast<char**>(argv), svc_root(), &error, &args), 0);
-  ASSERT_TRUE(args.interface.empty());
-  ASSERT_TRUE(strstr(error, "interface"));
-
-  argc = 2;
-  argv[1] = "--nodename";
-  args.interface = "";
-  args.nodename = "";
-  error = nullptr;
-  ASSERT_LT(ParseArgs(argc, const_cast<char**>(argv), svc_root(), &error, &args), 0);
-  ASSERT_TRUE(args.nodename.empty());
-  ASSERT_TRUE(strstr(error, "nodename"));
-}
 }  // namespace
