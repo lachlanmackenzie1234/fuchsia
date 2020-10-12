@@ -5,5 +5,8 @@
 group("tests") {
   testonly = true
 
-  deps = [ "controller:tests" ]
+  deps = [
+    "codecs:tests",
+    "controller:tests",
+  ]
 }
