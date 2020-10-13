@@ -5,12 +5,15 @@
 group("diagnostics") {
   testonly = true
   deps = [
-    ":tests",
-    "rust",
+    "inspect",
+    "logs",
   ]
 }
 
 group("tests") {
   testonly = true
-  data_deps = [ "rust:tests" ]
+  deps = [
+    "inspect:tests",
+    "logs:tests",
+  ]
 }

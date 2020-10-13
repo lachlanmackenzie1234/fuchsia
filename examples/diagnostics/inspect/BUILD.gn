@@ -1,0 +1,25 @@
+# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("inspect") {
+  testonly = true
+  deps = [
+    "codelab",
+    "cpp",
+    "rust",
+    "rust-ergonomic",
+    "rust-vmo",
+  ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    "codelab:tests",
+    "cpp:tests",
+    "rust:tests",
+    "rust-ergonomic:tests",
+    "rust-vmo:tests",
+  ]
+}
