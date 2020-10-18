@@ -8,3 +8,8 @@ group("build_only_deps") {
   testonly = true
   deps = dev_build_only_deps
 }
+
+group("system_image_deps") {
+  testonly = true
+  deps = dev_system_image_deps
+}
