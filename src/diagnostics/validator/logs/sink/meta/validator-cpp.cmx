@@ -1,0 +1,17 @@
+{
+    "program": {
+        "args": [
+            "--url",
+            "fuchsia-pkg://fuchsia.com/log-sink-validator-cpp#meta/sink-validator-cpp-puppet.cmx"
+        ],
+        "binary": "bin/sink_validator"
+    },
+    "sandbox": {
+        "services": [
+            "fuchsia.logger.LogSink",
+            "fuchsia.sys.Environment",
+            "fuchsia.sys.Launcher",
+            "fuchsia.sys.Loader"
+        ]
+    }
+}

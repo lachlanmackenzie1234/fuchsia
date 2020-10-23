@@ -2,10 +2,9 @@
     "program": {
         "args": [
             "--url",
-            "fuchsia-pkg://fuchsia.com/log-encoding-validator-cpp#meta/log-validator-cpp-puppet.cmx",
-            "--test-log-sink"
+            "fuchsia-pkg://fuchsia.com/log-encoding-validator-cpp#meta/log-validator-cpp-puppet.cmx"
         ],
-        "binary": "bin/log_validator"
+        "binary": "bin/encoding_validator"
     },
     "sandbox": {
         "services": [
