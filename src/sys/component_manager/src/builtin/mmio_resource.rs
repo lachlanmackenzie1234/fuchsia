@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use {
-    crate::{builtin::capability::BuiltinCapability, capability::*},
-    anyhow::{format_err, Error},
+    crate::{builtin::capability::ResourceCapability, capability::*},
+    anyhow::Error,
     async_trait::async_trait,
     cm_rust::CapabilityName,
+    fidl::endpoints::ServiceMarker,
     fidl_fuchsia_kernel as fkernel,
-    fuchsia_zircon::{self as zx, HandleBased, Resource},
+    fuchsia_zircon::{self as zx, HandleBased, Resource, ResourceInfo},
     futures::prelude::*,
     lazy_static::lazy_static,
     std::sync::Arc,
@@ -31,21 +32,19 @@ impl MmioResource {
 }
 
 #[async_trait]
-impl BuiltinCapability for MmioResource {
+impl ResourceCapability for MmioResource {
+    const KIND: zx::sys::zx_rsrc_kind_t = zx::sys::ZX_RSRC_KIND_MMIO;
     const NAME: &'static str = "MmioResource";
     type Marker = fkernel::MmioResourceMarker;
 
-    async fn serve(
+    fn get_resource_info(self: &Arc<Self>) -> Result<ResourceInfo, Error> {
+        Ok(self.resource.info()?)
+    }
+
+    async fn server_loop(
         self: Arc<Self>,
-        mut stream: fkernel::MmioResourceRequestStream,
+        mut stream: <Self::Marker as ServiceMarker>::RequestStream,
     ) -> Result<(), Error> {
-        let resource_info = self.resource.info()?;
-        if (resource_info.kind != zx::sys::ZX_RSRC_KIND_MMIO
-            || resource_info.base != 0
-            || resource_info.size != 0)
-        {
-            return Err(format_err!("MMIO resource not available."));
-        }
         while let Some(fkernel::MmioResourceRequest::Get { responder }) = stream.try_next().await? {
             responder.send(self.resource.duplicate_handle(zx::Rights::SAME_RIGHTS)?)?;
         }
@@ -61,9 +60,12 @@ impl BuiltinCapability for MmioResource {
 mod tests {
     use {
         super::*,
-        crate::model::{
-            hooks::{Event, EventPayload, Hooks},
-            moniker::AbsoluteMoniker,
+        crate::{
+            builtin::capability::BuiltinCapability,
+            model::{
+                hooks::{Event, EventPayload, Hooks},
+                moniker::AbsoluteMoniker,
+            },
         },
         cm_rust::CapabilityNameOrPath,
         fidl::endpoints::ClientEnd,
