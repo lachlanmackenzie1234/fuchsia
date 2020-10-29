@@ -1,0 +1,18 @@
+{
+    program: {
+        binary: "bin/gtest_runner_test_with_custom_args",
+        args: [ "--my_custom_arg" ],
+    },
+    capabilities: [
+        { protocol: "fuchsia.test.Suite" },
+    ],
+    use: [
+        { runner: "gtest_runner" },
+    ],
+    expose: [
+        {
+            protocol: "fuchsia.test.Suite",
+            from: "self",
+        },
+    ],
+}

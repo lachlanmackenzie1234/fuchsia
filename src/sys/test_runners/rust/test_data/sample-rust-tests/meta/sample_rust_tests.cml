@@ -1,6 +1,7 @@
 {
     program: {
         binary: "bin/sample_rust_tests",
+        args: [ "--my_custom_arg" ],
     },
     capabilities: [
         { protocol: "fuchsia.test.Suite" },
