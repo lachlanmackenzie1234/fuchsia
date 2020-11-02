@@ -7,6 +7,7 @@ group("tests") {
 
   deps = [
     "fdio:tests",
+    "procfs:tests",
     "syslog:tests",
   ]
 }
