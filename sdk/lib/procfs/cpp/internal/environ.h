@@ -12,7 +12,7 @@
 namespace procfs {
 namespace internal {
 
-std::unique_ptr<vfs::PseudoFile> CreateEnvironFile();
+std::unique_ptr<vfs::PseudoFile> CreateEnviron();
 
 }  // namespace internal
 }  // namespace procfs
