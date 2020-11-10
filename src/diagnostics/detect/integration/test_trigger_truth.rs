@@ -58,7 +58,7 @@ const CONFIG: &str = r#"
             trigger: "widgets > 2",
             type: "Snapshot",
             repeat: "Seconds(1)",
-            signature: "widgets-over-2"
+            signature: "widgets-over-two"
         }
     }
 }
@@ -75,9 +75,9 @@ pub fn test() -> TestData {
         inspect_data: vec![INSPECT_3.to_string(), INSPECT_2.to_string(), INSPECT_3.to_string()],
         config_files: vec![config, enable],
         snapshots: vec![
-            vec!["fuchsia-detect-widgets-over-2".to_string()],
+            vec!["fuchsia-detect-widgets-over-two".to_string()],
             vec![],
-            vec!["fuchsia-detect-widgets-over-2".to_string()],
+            vec!["fuchsia-detect-widgets-over-two".to_string()],
         ],
         bails: false,
     }
