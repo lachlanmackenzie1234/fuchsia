@@ -1,6 +1,7 @@
 // Copyright 2019 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+// TODO(fxbug.dev/7807): Remove when "using" is replaced by "alias".
 
 #include <fidl/names.h>
 #include <zxtest/zxtest.h>
