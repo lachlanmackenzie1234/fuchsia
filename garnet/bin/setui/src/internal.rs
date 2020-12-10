@@ -7,5 +7,6 @@ pub mod common;
 pub mod core;
 pub mod event;
 pub mod handler;
+pub mod monitor;
 pub mod policy;
 pub mod switchboard;
