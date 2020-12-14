@@ -2,16 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-##########################################
-# Though under //zircon, this build file #
-# is meant to be used in the Fuchsia GN  #
-# build.                                 #
-# See fxbug.dev/36548.                   #
-##########################################
-
-assert(!defined(zx) || zx != "/",
-       "This file can only be used in the Fuchsia GN build.")
-
 import("//build/unification/zx_library.gni")
 
 group("tests") {
@@ -21,5 +11,16 @@ group("tests") {
 
 zx_library("stdcompat") {
   sdk = "source"
-  sdk_headers = [ "lib/stdcompat/version.h" ]
+  sdk_migrated = true
+  host = true
+  static = true
+  sdk_publishable = true
+  sdk_headers = [
+    "lib/stdcompat/version.h",
+    "lib/stdcompat/string_view.h",
+  ]
+  sources = [
+    "include/lib/stdcompat/string_view.h",
+    "include/lib/stdcompat/version.h",
+  ]
 }
