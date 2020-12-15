@@ -34,7 +34,7 @@ fn test_parse(str_to_parse: &str, expected_result: Command) {
 #[test]
 fn exec_no_args() {
     test_parse(
-        "ATTEST a a",
+        "ATTEST",
         Command::Execute { name: String::from("TEST"), is_extension: false, arguments: None },
     )
 }
