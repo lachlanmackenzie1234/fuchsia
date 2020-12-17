@@ -22,6 +22,7 @@ rustc_test("ipv6") {
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
     "//src/lib/network/fidl_fuchsia_netstack_ext",
+    "//src/lib/network/packet",
     "//src/lib/network/packet-formats",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//third_party/rust_crates:anyhow",
