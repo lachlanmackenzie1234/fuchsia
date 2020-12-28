@@ -10,6 +10,7 @@ group("logs") {
 group("tests") {
   testonly = true
   deps = [
+    "ddk:tests",
     "encoding:tests",
     "sink:tests",
   ]
