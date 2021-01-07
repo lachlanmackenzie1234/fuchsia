@@ -6,4 +6,5 @@ library fuchsia.hardware.block;
 
 extend uint fuchsia.BIND_PROTOCOL {
   DEVICE = 1,
+  BLOCK_IMPL = 2,
 };
