@@ -249,7 +249,7 @@ func encodeFailureCases(gidlEncodeFailurees []gidlir.EncodeFailure, schema gidlm
 		}
 		handleDefs := libhlcpp.BuildHandleDefs(encodeFailure.HandleDefs)
 		valueBuild, valueVar := libllcpp.BuildValueAllocator("allocator_ptr", encodeFailure.Value, decl)
-		errorCode := llcppErrorCode(encodeFailure.Err)
+		errorCode := libllcpp.LlcppErrorCode(encodeFailure.Err)
 		fuchsiaOnly := decl.IsResourceType() || len(encodeFailure.HandleDefs) > 0
 		for _, wireFormat := range encodeFailure.WireFormats {
 			if !wireFormatSupported(wireFormat) {
@@ -276,8 +276,8 @@ func decodeFailureCases(gidlDecodeFailurees []gidlir.DecodeFailure, schema gidlm
 			return nil, fmt.Errorf("decode failure %s: %s", decodeFailure.Name, err)
 		}
 		handleDefs := libhlcpp.BuildHandleDefs(decodeFailure.HandleDefs)
-		valueType := conformanceType(decodeFailure.Type)
-		errorCode := llcppErrorCode(decodeFailure.Err)
+		valueType := libllcpp.ConformanceType(decodeFailure.Type)
+		errorCode := libllcpp.LlcppErrorCode(decodeFailure.Err)
 		fuchsiaOnly := decl.IsResourceType() || len(decodeFailure.HandleDefs) > 0
 		for _, encoding := range decodeFailure.Encodings {
 			if !wireFormatSupported(encoding.WireFormat) {
@@ -303,13 +303,4 @@ func wireFormatSupported(wireFormat gidlir.WireFormat) bool {
 
 func testCaseName(baseName string, wireFormat gidlir.WireFormat) string {
 	return fmt.Sprintf("%s_%s", baseName, fidl.ToUpperCamelCase(wireFormat.String()))
-}
-
-func conformanceType(gidlTypeString string) string {
-	return "llcpp::conformance::" + gidlTypeString
-}
-
-func llcppErrorCode(code gidlir.ErrorCode) string {
-	// TODO(fxbug.dev/35381) Implement different codes for different FIDL error cases.
-	return "ZX_ERR_INVALID_ARGS"
 }
