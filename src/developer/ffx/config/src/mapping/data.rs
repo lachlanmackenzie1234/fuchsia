@@ -3,11 +3,8 @@
 // found in the LICENSE file.
 
 use {
-    crate::get_data_base_path,
-    crate::mapping::{postprocess, preprocess, replace},
-    lazy_static::lazy_static,
-    regex::Regex,
-    serde_json::Value,
+    crate::mapping::replace, crate::paths::get_data_base_path, lazy_static::lazy_static,
+    regex::Regex, serde_json::Value,
 };
 
 pub(crate) fn data<'a, T: Fn(Value) -> Option<Value> + Sync>(
@@ -17,23 +14,7 @@ pub(crate) fn data<'a, T: Fn(Value) -> Option<Value> + Sync>(
         static ref REGEX: Regex = Regex::new(r"\$(DATA)").unwrap();
     }
 
-    Box::new(move |value| -> Option<Value> {
-        match preprocess(&value)
-            .as_ref()
-            .map(|s| {
-                replace(s, &*REGEX, |v| {
-                    match get_data_base_path() {
-                        Ok(p) => Ok(p.to_str().map_or(v.to_string(), |s| s.to_string())),
-                        Err(_) => Ok(v.to_string()), //just pass through
-                    }
-                })
-            })
-            .map(postprocess)
-        {
-            Some(v) => next(v),
-            None => next(value),
-        }
-    })
+    replace(&*REGEX, get_data_base_path, next)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
