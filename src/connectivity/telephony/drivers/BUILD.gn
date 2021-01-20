@@ -7,5 +7,6 @@ group("drivers") {
   deps = [
     "qmi-fake-transport",
     "qmi-usb-transport",
+    "qmi-usb-transport:tests",
   ]
 }
