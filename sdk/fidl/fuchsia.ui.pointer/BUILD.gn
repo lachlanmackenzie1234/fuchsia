@@ -8,8 +8,9 @@ fidl("fuchsia.ui.pointer") {
   sdk_category = "experimental"
 
   sources = [
-    "client.fidl",
-    "event.fidl",
+    "mouse.fidl",
+    "state.fidl",
+    "touch.fidl",
     "view.fidl",
   ]
 }
