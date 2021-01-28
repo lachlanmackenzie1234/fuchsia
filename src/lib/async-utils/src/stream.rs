@@ -12,17 +12,21 @@
 
 use {
     core::{
-        hash::Hash,
         pin::Pin,
         task::{Context, Poll},
     },
     futures::{
-        stream::{FusedStream, Stream, StreamExt},
+        stream::{FusedStream, Stream},
         Future,
     },
     pin_utils::unsafe_pinned,
-    std::collections::HashMap,
 };
+
+mod future_map;
+mod stream_map;
+
+pub use future_map::FutureMap;
+pub use stream_map::StreamMap;
 
 /// Values returned from a stream with an epitaph are of type `StreamItem`.
 #[derive(Debug, PartialEq)]
@@ -163,90 +167,6 @@ impl<K: Clone, St: Stream> Stream for Tagged<K, St> {
     }
 }
 
-/// A collection of Stream indexed by key, allowing removal by Key. When polled, a StreamMap yields
-/// from whichever member stream is ready first.
-/// The Stream type `St` can be `?Unpin`, as all streams are stored as pins inside the map. The Key
-/// type `K` must be `Unpin`; it is unlikely that an `!Unpin` type would ever be needed as a Key.
-/// StreamMap yields items of type St::Item; For a stream that yields messages tagged with their
-/// Key, consider using the `IndexedStreams` type alias or using the `Tagged` combinator.
-pub struct StreamMap<K, St> {
-    /// Streams `St` identified by key `K`
-    inner: HashMap<K, Pin<Box<St>>>,
-}
-
-impl<K: Unpin, St> Unpin for StreamMap<K, St> {}
-
-impl<K: Eq + Hash + Unpin, St: Stream> StreamMap<K, St> {
-    /// Returns an empty `StreamMap`.
-    pub fn empty() -> StreamMap<K, St> {
-        StreamMap { inner: HashMap::new() }
-    }
-
-    /// Insert a stream identified by `key` to the map.
-    ///
-    /// This method will not call `poll` on the submitted stream. The caller must ensure
-    /// that `poll_next` is called in order to receive wake-up notifications for the given
-    /// stream.
-    pub fn insert(&mut self, key: K, stream: St) -> Option<Pin<Box<St>>> {
-        self.inner.insert(key, Box::new(stream).into())
-    }
-
-    /// Returns `true` if the `StreamMap` contains `key`.
-    pub fn contains_key(&self, key: &K) -> bool {
-        self.inner.contains_key(key)
-    }
-
-    /// Remove the stream identified by `key`, returning it if it exists.
-    pub fn remove(&mut self, key: &K) -> Option<Pin<Box<St>>> {
-        self.inner.remove(key)
-    }
-
-    /// Provide mutable access to the inner hashmap.
-    /// This is safe as if the stream were being polled, we would not be able to access a mutable
-    /// reference to self to pass to this method.
-    pub fn inner(&mut self) -> &mut HashMap<K, Pin<Box<St>>> {
-        &mut self.inner
-    }
-}
-
-impl<K: Clone + Eq + Hash + Unpin, St: Stream> Stream for StreamMap<K, St> {
-    type Item = St::Item;
-
-    // TODO(fxbug.dev/52050) - This implementation is a simple one, which is convenient to write but
-    // suffers from a couple of known issues:
-    // * The implementation is O(n) wrt the number of streams in the map. We should
-    //   be able to produce an O(1) implementation at the cost of internal complexity by
-    //   implementing a ready-to-run queue similarly to futures::stream::FuturesUnordered
-    // * The implementation uses a stable order of iteration which could result in one particular
-    //   stream starving following streams from ever being polled. The implementation makes no
-    //   promises about fairness but clients may well expect a fairer distribution. We should be
-    //   able to provide a round-robin implementation using a similar transformation as resolves the
-    //   O(1) issue
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut result = Poll::Pending;
-        let mut to_remove = Vec::new();
-        // We can pull the inner value out as StreamMap is `Unpin`
-        let streams = Pin::into_inner(self);
-        for (key, stream) in streams.inner.iter_mut() {
-            match Pin::new(&mut stream.next()).poll(cx) {
-                Poll::Ready(Some(req)) => {
-                    result = Poll::Ready(Some(req));
-                    break;
-                }
-                // if a stream returns None, remove it and continue
-                Poll::Ready(None) => {
-                    to_remove.push(key.clone());
-                }
-                Poll::Pending => (),
-            }
-        }
-        for key in to_remove {
-            streams.remove(&key);
-        }
-        result
-    }
-}
-
 /// Convenient alias for a collection of Streams indexed by key where each message is tagged and
 /// stream termination is notified by key. This is especially useful for maintaining a collection
 /// of fidl client request streams, and being notified when each terminates
@@ -278,11 +198,12 @@ mod test {
     //!   * Elements are never duplicated
     use {
         super::*,
+        core::hash::Hash,
         fuchsia_async as fasync,
         futures::{
             channel::mpsc,
             future::ready,
-            stream::{empty, iter, once, Empty},
+            stream::{empty, iter, once, Empty, StreamExt},
         },
         proptest::prelude::*,
         std::{collections::HashSet, fmt::Debug},
