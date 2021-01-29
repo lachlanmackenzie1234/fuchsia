@@ -14,22 +14,22 @@
 __BEGIN_CDECLS
 
 // Forward declarations
-typedef struct a a_t;
-typedef struct b b_t;
 typedef struct c c_t;
+typedef struct b b_t;
+typedef struct a a_t;
 typedef struct d d_t;
 
 // Declarations
-struct a {
-    b_t foo;
+struct c {
+    zx_handle_t baz;
 };
 
 struct b {
     a_t bar;
 };
 
-struct c {
-    zx_handle_t baz;
+struct a {
+    b_t foo;
 };
 
 struct d {
