@@ -191,6 +191,48 @@ const String testTemperatureMetricJsonString = '''
 }
 ''';
 
+const String testTemperatureMetricTemperatureLoggerJsonString = '''
+{
+  "displayTimeUnit": "ns",
+  "traceEvents": [
+    {
+      "cat": "temperature_logger",
+      "name": "temperature",
+      "ts": 3000000000,
+      "pid": 7009,
+      "tid": 7022,
+      "ph": "C",
+      "args":{"soc_pll":50}
+    },
+    {
+      "cat": "temperature_logger",
+      "name": "temperature",
+      "ts": 13200000000,
+      "pid": 7009,
+      "tid": 7022,
+      "ph": "C",
+      "args":{"soc_pll":60}
+    }
+  ],
+  "systemTraceEvents": {
+    "type": "fuchsia",
+    "events": [
+      {
+        "ph": "p",
+        "pid": 7009,
+        "name": "root_presenter"
+      },
+      {
+        "ph": "t",
+        "pid": 7009,
+        "tid": 7022,
+        "name": "initial-thread"
+      }
+    ]
+  }
+}
+''';
+
 const String testModelJsonString = '''
 {
   "displayTimeUnit": "ns",
