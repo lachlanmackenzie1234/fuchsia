@@ -45,9 +45,43 @@ BanjoAst {
                 ),
                 name: Ident {
                     namespace: Some(
-                        "placeholder",
+                        "banjo.examples.view",
                     ),
                     name: "SomeLongAnonymousPrefix0",
+                },
+                fields: [
+                    StructField {
+                        attributes: Attrs(
+                            [],
+                        ),
+                        ty: Identifier {
+                            id: Ident {
+                                namespace: Some(
+                                    "banjo.examples.point",
+                                ),
+                                name: "Point",
+                            },
+                            reference: false,
+                        },
+                        ident: Ident {
+                            namespace: Some(
+                                "banjo.examples.view",
+                            ),
+                            name: "p",
+                        },
+                        val: None,
+                    },
+                ],
+            },
+            Struct {
+                attributes: Attrs(
+                    [],
+                ),
+                name: Ident {
+                    namespace: Some(
+                        "banjo.examples.view",
+                    ),
+                    name: "SomeLongAnonymousPrefix1",
                 },
                 fields: [],
             },
@@ -98,9 +132,18 @@ BanjoAst {
                     Identifier {
                         id: Ident {
                             namespace: Some(
-                                "placeholder",
+                                "banjo.examples.view",
                             ),
                             name: "SomeLongAnonymousPrefix0",
+                        },
+                        reference: false,
+                    },
+                    Identifier {
+                        id: Ident {
+                            namespace: Some(
+                                "banjo.examples.view",
+                            ),
+                            name: "SomeLongAnonymousPrefix1",
                         },
                         reference: false,
                     },
