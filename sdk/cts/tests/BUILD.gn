@@ -4,6 +4,7 @@
 
 group("tests") {
   deps = [
+    "fidl:tests",
     "pkg:tests",
     "tools:tests",
   ]
