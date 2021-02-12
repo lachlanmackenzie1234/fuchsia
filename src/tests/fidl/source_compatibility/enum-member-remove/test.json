@@ -100,7 +100,7 @@
         },
         "step_02_after": {
             "instructions": [
-                "Remove the old member"
+                "Remove the enum member"
             ],
             "source": "fidl/step_02_after.test.fidl"
         }
