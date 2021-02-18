@@ -32,11 +32,52 @@ struct MFingerNTapRecognizer::Contest {
 
 MFingerNTapRecognizer::MFingerNTapRecognizer(OnMFingerNTapCallback callback,
                                              uint32_t number_of_fingers, uint32_t number_of_taps)
-    : on_m_finger_n_tap_callback_(std::move(callback)),
+    : on_recognize_(std::move(callback)),
       number_of_fingers_in_gesture_(number_of_fingers),
       number_of_taps_in_gesture_(number_of_taps) {}
 
 MFingerNTapRecognizer::~MFingerNTapRecognizer() = default;
+
+void MFingerNTapRecognizer::OnExcessFingers() { ResetRecognizer(); }
+
+void MFingerNTapRecognizer::OnTapStarted() {
+  contest_->reject_task.PostDelayed(async_get_default_dispatcher(), kTapTimeout);
+}
+
+void MFingerNTapRecognizer::OnMoveEvent(
+    const fuchsia::ui::input::accessibility::PointerEvent& pointer_event) {
+  if (!PointerEventIsValidTap(gesture_context_, pointer_event)) {
+    ResetRecognizer();
+  }
+}
+
+void MFingerNTapRecognizer::OnUpEvent() {
+  // If there are still fingers on the screen, then we haven't yet detected
+  // a full tap, so there's no more work to do at this point.
+  if (NumberOfFingersOnScreen(gesture_context_)) {
+    return;
+  }
+
+  // If we've made it this far, we know that (1) m fingers were on screen
+  // simultaneously during the current gesture, and (2) The m fingers have
+  // now been removed, without any interceding finger DOWN events.
+  // Therefore, we can conclude that a complete m-finger tap has occurred.
+  contest_->number_of_taps_detected++;
+
+  // Check if this is not the last tap of the gesture.
+  if (contest_->number_of_taps_detected < number_of_taps_in_gesture_) {
+    contest_->tap_in_progress = false;
+    // Cancel task which was scheduled for detecting single tap.
+    contest_->reject_task.Cancel();
+
+    // Schedule task with delay of timeout_between_taps_.
+    contest_->reject_task.PostDelayed(async_get_default_dispatcher(), kTimeoutBetweenTaps);
+  } else {
+    // Tap gesture is detected.
+    contest_->member->Accept();
+    contest_.reset();
+  }
+}
 
 void MFingerNTapRecognizer::HandleEvent(
     const fuchsia::ui::input::accessibility::PointerEvent& pointer_event) {
@@ -53,7 +94,7 @@ void MFingerNTapRecognizer::HandleEvent(
       // already on the screen, or we've received a DOWN event for an (m+1)th
       // finger. In either case, we should abandon the current gesture.
       if (NumberOfFingersOnScreen(gesture_context_) >= number_of_fingers_in_gesture_) {
-        ResetRecognizer();
+        OnExcessFingers();
         break;
       }
 
@@ -99,8 +140,9 @@ void MFingerNTapRecognizer::HandleEvent(
           (NumberOfFingersOnScreen(gesture_context_) == number_of_fingers_in_gesture_);
       // Only start the timeout once all m fingers are on the screen together.
       if (contest_->tap_in_progress) {
-        contest_->reject_task.PostDelayed(async_get_default_dispatcher(), kTapTimeout);
+        OnTapStarted();
       }
+
       break;
 
     case fuchsia::ui::input::PointerEventPhase::MOVE:
@@ -108,11 +150,15 @@ void MFingerNTapRecognizer::HandleEvent(
           << DebugName() << ": Pointer MOVE event received without preceding DOWN event.";
 
       // Validate the pointer_event for the gesture being performed.
-      if (!EventIsValid(pointer_event)) {
+      if (!ValidatePointerEvent(gesture_context_, pointer_event)) {
         ResetRecognizer();
+        break;
       }
 
       UpdateGestureContext(pointer_event, true /* finger is on screen */, &gesture_context_);
+
+      OnMoveEvent(pointer_event);
+
       break;
 
     case fuchsia::ui::input::PointerEventPhase::UP:
@@ -120,7 +166,7 @@ void MFingerNTapRecognizer::HandleEvent(
           << DebugName() << ": Pointer UP event received without preceding DOWN event.";
 
       // Validate pointer_event for the gesture being performed.
-      if (!EventIsValid(pointer_event)) {
+      if (!ValidatePointerEvent(gesture_context_, pointer_event)) {
         ResetRecognizer();
         break;
       }
@@ -137,31 +183,8 @@ void MFingerNTapRecognizer::HandleEvent(
         break;
       }
 
-      // If there are still fingers on the screen, then we haven't yet detected
-      // a full tap, so there's no more work to do at this point.
-      if (NumberOfFingersOnScreen(gesture_context_)) {
-        break;
-      }
+      OnUpEvent();
 
-      // If we've made it this far, we know that (1) m fingers were on screen
-      // simultaneously during the current gesture, and (2) The m fingers have
-      // now been removed, without any interceding finger DOWN events.
-      // Therefore, we can conclude that a complete m-finger tap has occurred.
-      contest_->number_of_taps_detected++;
-
-      // Check if this is not the last tap of the gesture.
-      if (contest_->number_of_taps_detected < number_of_taps_in_gesture_) {
-        contest_->tap_in_progress = false;
-        // Cancel task which was scheduled for detecting single tap.
-        contest_->reject_task.Cancel();
-
-        // Schedule task with delay of timeout_between_taps_.
-        contest_->reject_task.PostDelayed(async_get_default_dispatcher(), kTimeoutBetweenTaps);
-      } else {
-        // Tap gesture is detected.
-        contest_->member->Accept();
-        contest_.reset();
-      }
       break;
     default:
       break;
@@ -174,28 +197,11 @@ void MFingerNTapRecognizer::ResetRecognizer() {
 }
 
 void MFingerNTapRecognizer::OnWin() {
-  on_m_finger_n_tap_callback_(gesture_context_);
+  on_recognize_(gesture_context_);
   ResetGestureContext(&gesture_context_);
 }
 
 void MFingerNTapRecognizer::OnDefeat() { ResetRecognizer(); }
-
-bool MFingerNTapRecognizer::EventIsValid(
-    const fuchsia::ui::input::accessibility::PointerEvent& pointer_event) const {
-  if (!StartInfoExist(pointer_event)) {
-    return false;
-  }
-
-  // Validate pointer event for one finger tap.
-  return ValidatePointerEvent(gesture_context_, pointer_event) &&
-         PointerEventIsValidTap(gesture_context_, pointer_event);
-}
-bool MFingerNTapRecognizer::StartInfoExist(
-    const fuchsia::ui::input::accessibility::PointerEvent& pointer_event) const {
-  FX_DCHECK(pointer_event.has_pointer_id()) << DebugName() << ": Pointer event missing pointer id.";
-  const auto pointer_id = pointer_event.pointer_id();
-  return gesture_context_.starting_pointer_locations.count(pointer_id);
-}
 
 void MFingerNTapRecognizer::OnContestStarted(std::unique_ptr<ContestMember> contest_member) {
   ResetRecognizer();
@@ -203,7 +209,8 @@ void MFingerNTapRecognizer::OnContestStarted(std::unique_ptr<ContestMember> cont
 }
 
 std::string MFingerNTapRecognizer::DebugName() const {
-  return fxl::StringPrintf("MFingerNTapRecognizer(n=%d)", number_of_taps_in_gesture_);
+  return fxl::StringPrintf("MFingerNTapDragRecognizer(m=%d, n=%d)", number_of_fingers_in_gesture_,
+                           number_of_taps_in_gesture_);
 }
 
 }  // namespace a11y
