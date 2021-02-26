@@ -11,6 +11,7 @@ use {
     bincode::deserialize_from,
     std::{
         collections::BTreeMap,
+        convert::TryInto as _,
         io::{Read, Seek, SeekFrom},
         str,
     },
@@ -44,11 +45,15 @@ where
         let stream_len = source.seek(SeekFrom::End(0)).map_err(Error::Seek)?;
 
         // DIRNAMES chunk must include padding to next 8 byte boundary
-        if dir_name_index.length % 8 != 0 {
+        if dir_name_index.length % 8 != 0 || dir_name_index.length > stream_len {
             return Err(Error::InvalidDirectoryNamesChunkLen(dir_name_index.length));
         }
+        let path_data_length = match dir_name_index.length.try_into() {
+            Ok(length) => length,
+            Err(_) => return Err(Error::InvalidDirectoryNamesChunkLen(dir_name_index.length)),
+        };
         source.seek(SeekFrom::Start(dir_name_index.offset)).map_err(Error::Seek)?;
-        let mut path_data = vec![0; dir_name_index.length as usize];
+        let mut path_data = vec![0; path_data_length];
         source.read_exact(&mut path_data).map_err(Error::Read)?;
 
         source.seek(SeekFrom::Start(dir_index.offset)).map_err(Error::Seek)?;
@@ -63,9 +68,9 @@ where
             let entry: DirectoryEntry =
                 deserialize_from(&mut source).map_err(Error::DeserializeDirectoryEntry)?;
 
-            let name = Self::name_for_entry(&entry, i, &path_data, previous_name)?;
+            let name = name_for_entry(&entry, i, &path_data, previous_name)?;
 
-            let () = Self::validate_content_chunk(
+            let () = validate_content_chunk(
                 &entry,
                 previous_entry.as_ref(),
                 name,
@@ -79,84 +84,6 @@ where
         }
 
         Ok(Reader { source, directory_entries })
-    }
-
-    // Obtain name for current directory entry, making sure it is a valid name and lexicographically
-    // than the previous name.
-    fn name_for_entry<'a>(
-        entry: &DirectoryEntry,
-        entry_index: u64,
-        path_data: &'a [u8],
-        previous_name: Option<&str>,
-    ) -> Result<&'a str, Error> {
-        let offset = entry.name_offset as usize;
-        if offset >= path_data.len() {
-            return Err(Error::PathDataOffsetTooLarge {
-                entry_index,
-                offset,
-                chunk_size: path_data.len(),
-            });
-        }
-
-        let end = offset + entry.name_length as usize;
-        if end > path_data.len() {
-            return Err(Error::PathDataLengthTooLarge {
-                entry_index,
-                offset,
-                length: entry.name_length,
-                chunk_size: path_data.len(),
-            });
-        }
-
-        let name = validate_name(&path_data[offset..end])?;
-        // FAR spec does not require that names be valid utf8, but this library does
-        let name = str::from_utf8(name).map_err(Error::PathDataInvalidUtf8)?;
-
-        // Directory entries must be strictly increasing by name
-        if let Some(previous_name) = previous_name {
-            if previous_name >= name {
-                return Err(Error::DirectoryEntriesOutOfOrder {
-                    entry_index,
-                    previous_name: previous_name.to_owned(),
-                    name: name.to_owned(),
-                });
-            }
-        }
-        Ok(name)
-    }
-
-    fn validate_content_chunk(
-        entry: &DirectoryEntry,
-        previous_entry: Option<&DirectoryEntry>,
-        name: &str,
-        stream_len: u64,
-        end_of_last_non_content_chunk: u64,
-    ) -> Result<(), Error> {
-        // Chunks must be non-overlapping and tightly packed
-        let expected_offset = if let Some(previous_entry) = previous_entry {
-            align(previous_entry.data_offset + previous_entry.data_length, CONTENT_ALIGNMENT)
-        } else {
-            align(end_of_last_non_content_chunk, CONTENT_ALIGNMENT)
-        };
-        if entry.data_offset != expected_offset {
-            return Err(Error::InvalidContentChunkOffset {
-                name: name.to_owned(),
-                expected: expected_offset,
-                actual: entry.data_offset,
-            });
-        }
-
-        // Chunks must be contained in the archive
-        let stream_len_lower_bound =
-            align(entry.data_offset + entry.data_length, CONTENT_ALIGNMENT);
-        if stream_len_lower_bound > stream_len {
-            return Err(Error::ContentChunkBeyondArchive {
-                name: name.to_owned(),
-                lower_bound: stream_len_lower_bound,
-                archive_size: stream_len,
-            });
-        }
-        Ok(())
     }
 
     /// Return a list of the items in the archive
@@ -257,6 +184,83 @@ where
         let directory_entry = self.find_directory_entry(archive_path)?;
         Ok(directory_entry.data_length)
     }
+}
+
+// Obtain name for current directory entry, making sure it is a valid name and lexicographically
+// than the previous name.
+pub(crate) fn name_for_entry<'a>(
+    entry: &DirectoryEntry,
+    entry_index: u64,
+    path_data: &'a [u8],
+    previous_name: Option<&str>,
+) -> Result<&'a str, Error> {
+    let offset = entry.name_offset as usize;
+    if offset >= path_data.len() {
+        return Err(Error::PathDataOffsetTooLarge {
+            entry_index,
+            offset,
+            chunk_size: path_data.len(),
+        });
+    }
+
+    let end = offset + entry.name_length as usize;
+    if end > path_data.len() {
+        return Err(Error::PathDataLengthTooLarge {
+            entry_index,
+            offset,
+            length: entry.name_length,
+            chunk_size: path_data.len(),
+        });
+    }
+
+    let name = validate_name(&path_data[offset..end])?;
+    // FAR spec does not require that names be valid utf8, but this library does
+    let name = str::from_utf8(name).map_err(Error::PathDataInvalidUtf8)?;
+
+    // Directory entries must be strictly increasing by name
+    if let Some(previous_name) = previous_name {
+        if previous_name >= name {
+            return Err(Error::DirectoryEntriesOutOfOrder {
+                entry_index,
+                previous_name: previous_name.to_owned(),
+                name: name.to_owned(),
+            });
+        }
+    }
+    Ok(name)
+}
+
+pub(crate) fn validate_content_chunk(
+    entry: &DirectoryEntry,
+    previous_entry: Option<&DirectoryEntry>,
+    name: &str,
+    stream_len: u64,
+    end_of_last_non_content_chunk: u64,
+) -> Result<(), Error> {
+    // Chunks must be non-overlapping and tightly packed
+    let expected_offset = if let Some(previous_entry) = previous_entry {
+        align(previous_entry.data_offset + previous_entry.data_length, CONTENT_ALIGNMENT)
+    } else {
+        align(end_of_last_non_content_chunk, CONTENT_ALIGNMENT)
+    };
+    if entry.data_offset != expected_offset {
+        return Err(Error::InvalidContentChunkOffset {
+            name: name.to_owned(),
+            expected: expected_offset,
+            actual: entry.data_offset,
+        });
+    }
+
+    // Chunks must be contained in the archive
+    let stream_len_lower_bound = align(entry.data_offset + entry.data_length, CONTENT_ALIGNMENT);
+    if stream_len_lower_bound > stream_len {
+        return Err(Error::ContentChunkBeyondArchive {
+            name: name.to_owned(),
+            lower_bound: stream_len_lower_bound,
+            archive_size: stream_len,
+        });
+    }
+    Ok(())
 }
 
 /// A structure that allows reading from the offset of an item in a
