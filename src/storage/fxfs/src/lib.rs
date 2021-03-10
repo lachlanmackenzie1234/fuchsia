@@ -3,3 +3,6 @@
 // found in the LICENSE file.
 
 pub mod lsm_tree;
+pub mod object_handle;
+#[cfg(test)]
+pub mod testing;
