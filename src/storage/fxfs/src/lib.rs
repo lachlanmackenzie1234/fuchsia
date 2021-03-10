@@ -4,5 +4,6 @@
 
 pub mod lsm_tree;
 pub mod object_handle;
+pub mod object_store;
 #[cfg(test)]
 pub mod testing;
