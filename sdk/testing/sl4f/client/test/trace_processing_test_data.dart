@@ -149,48 +149,6 @@ const String testMemoryMetricJsonString = '''
 }
 ''';
 
-const String testTemperatureMetricJsonString = '''
-{
-  "displayTimeUnit": "ns",
-  "traceEvents": [
-    {
-      "cat": "power_manager",
-      "name": "ThermalPolicy raw_temperature",
-      "ts": 3000000000,
-      "pid": 7009,
-      "tid": 7022,
-      "ph": "C",
-      "args":{"raw_temperature":50}
-    },
-    {
-      "cat": "power_manager",
-      "name": "ThermalPolicy raw_temperature",
-      "ts": 13200000000,
-      "pid": 7009,
-      "tid": 7022,
-      "ph": "C",
-      "args":{"raw_temperature":60}
-    }
-  ],
-  "systemTraceEvents": {
-    "type": "fuchsia",
-    "events": [
-      {
-        "ph": "p",
-        "pid": 7009,
-        "name": "root_presenter"
-      },
-      {
-        "ph": "t",
-        "pid": 7009,
-        "tid": 7022,
-        "name": "initial-thread"
-      }
-    ]
-  }
-}
-''';
-
 const String testTemperatureMetricTemperatureLoggerJsonString = '''
 {
   "displayTimeUnit": "ns",
