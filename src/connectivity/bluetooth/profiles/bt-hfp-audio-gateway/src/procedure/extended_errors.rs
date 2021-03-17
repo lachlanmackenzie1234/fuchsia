@@ -7,48 +7,22 @@ use super::{Procedure, ProcedureError, ProcedureMarker, ProcedureRequest};
 use crate::peer::service_level_connection::SlcState;
 use at_commands as at;
 
-/// Represents the current state of the Hf request to report extended Audio Gateway error result
-/// codes as defined in HFP v1.8, Section 4.9.
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum State {
-    /// Initial state of the Procedure.
-    Start,
-    /// Terminal state of the procedure.
-    Terminated,
-}
-
-impl State {
-    /// Transition to the next state in the ExtendedErrors procedure.
-    fn transition(&mut self) {
-        match *self {
-            Self::Start => *self = Self::Terminated,
-            Self::Terminated => *self = Self::Terminated,
-        }
-    }
-}
-
 /// The Hf may request that the Audio Gateway report extended error result codes as defined in
 /// HFP v1.8, Section 4.9.
 ///
 /// This procedure is implemented from the perspective of the AG. Namely, outgoing `requests`
 /// typically request information about the current state of the AG, to be sent to the remote
 /// peer acting as the HF.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ExtendedErrorsProcedure {
     /// The current state of the procedure
-    state: State,
-}
-
-impl Default for ExtendedErrorsProcedure {
-    fn default() -> Self {
-        Self { state: State::Start }
-    }
+    terminated: bool,
 }
 
 impl ExtendedErrorsProcedure {
     /// Create a new ExtendedErrors procedure in the Start state.
     pub fn new() -> Self {
-        Self { state: State::Start }
+        Self::default()
     }
 }
 
@@ -58,9 +32,9 @@ impl Procedure for ExtendedErrorsProcedure {
     }
 
     fn hf_update(&mut self, update: at::Command, state: &mut SlcState) -> ProcedureRequest {
-        match (self.state, update) {
-            (State::Start, at::Command::Cmee { enable }) => {
-                self.state.transition();
+        match (self.terminated, update) {
+            (false, at::Command::Cmee { enable }) => {
+                self.terminated = true;
                 state.extended_errors = enable;
                 at::Response::Ok.into()
             }
@@ -69,7 +43,7 @@ impl Procedure for ExtendedErrorsProcedure {
     }
 
     fn is_terminated(&self) -> bool {
-        self.state == State::Terminated
+        self.terminated
     }
 }
 
