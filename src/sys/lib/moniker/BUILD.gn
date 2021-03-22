@@ -14,6 +14,7 @@ rustc_library("moniker") {
     "//src/sys/component_manager/*",
     "//src/sys/lib/component_id_index/*",
     "//src/sys/lib/moniker/*",
+    "//src/sys/lib/routing/*",
     "//tools/component_id_index/*",
     "//tools/lib/cm_fidl_analyzer/*",
   ]
