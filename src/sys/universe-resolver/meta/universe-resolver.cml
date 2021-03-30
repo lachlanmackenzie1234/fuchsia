@@ -6,6 +6,7 @@
     program: {
         runner: "elf",
         binary: "bin/universe_resolver",
+        args: [ "--enable-ephemeral-components" ],
     },
     capabilities: [
         {
@@ -14,7 +15,12 @@
         },
     ],
     use: [
-        { protocol: "fuchsia.pkg.PackageResolver" },
+        {
+            protocol: [
+                "fuchsia.pkg.PackageResolver",
+                "fuchsia.sys2.ComponentResolver",
+            ],
+        },
     ],
     expose: [
         {
