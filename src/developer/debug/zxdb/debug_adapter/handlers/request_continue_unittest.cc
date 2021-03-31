@@ -34,7 +34,7 @@ TEST_F(RequestContinueTest, ContinueThread) {
 
   // Read request and process it in server.
   context().OnStreamReadable();
-  loop().RunUntilNoTasks();
+  EXPECT_EQ(1, mock_remote_api()->GetAndResetResumeCount());
 
   // Run client to receive continue response.
   RunClient();
