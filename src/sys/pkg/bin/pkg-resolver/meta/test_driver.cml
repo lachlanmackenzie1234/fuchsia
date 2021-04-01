@@ -19,7 +19,7 @@
             protocol: [ "fuchsia.process.Launcher" ],
         },
         {
-            directory: "config-ssl",
+            directory: "root-ssl-certificates",
             rights: [ "r*" ],
             path: "/config/ssl",
         },
