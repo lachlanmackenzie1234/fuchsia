@@ -1,3 +1,7 @@
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 // This realm contains the test cases for fuchsia_component_v2_test.
 {
     include: [ "sdk/lib/diagnostics/syslog/client.shard.cml" ],
@@ -18,9 +22,8 @@
             from: "framework",
         },
         {
-            event: "destroyed",
-            from: "framework",
-            modes: [ "async" ],
+            protocol: "fuchsia.component.client.test.EmptyProtocol",
+            from: "parent",
         },
     ],
 }

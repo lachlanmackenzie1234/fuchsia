@@ -1,0 +1,30 @@
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// This realm contains the test cases for fuchsia_component_v2_test.
+{
+    include: [ "sdk/lib/diagnostics/syslog/client.shard.cml" ],
+    program: {
+        runner: "elf",
+        binary: "bin/realm",
+        args: [ "--wait" ],
+    },
+    collections: [
+        {
+            name: "coll",
+            durability: "transient",
+        },
+    ],
+    use: [
+        // Needed to instantiate dynamic components.
+        {
+            protocol: "fuchsia.sys2.Realm",
+            from: "framework",
+        },
+        {
+            protocol: "fuchsia.component.client.test.EmptyProtocol",
+            from: "parent",
+        },
+    ],
+}
