@@ -7,6 +7,8 @@ pub mod errors;
 pub mod lsm_tree;
 pub mod object_handle;
 pub mod object_store;
+#[cfg(target_os = "fuchsia")]
+pub mod server;
 #[cfg(test)]
 pub mod testing;
 pub mod volume;
