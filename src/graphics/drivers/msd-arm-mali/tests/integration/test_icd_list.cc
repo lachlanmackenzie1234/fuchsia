@@ -10,6 +10,7 @@
 #include <shared_mutex>
 #include <thread>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "helper/test_device_helper.h"
@@ -29,8 +30,9 @@ TEST(Mali, IcdList) {
   EXPECT_TRUE(icd_item.has_flags());
   EXPECT_TRUE(icd_item.flags() & fuchsia_gpu_magma::wire::IcdFlags::SUPPORTS_VULKAN);
   std::string res_string(icd_item.component_url().get());
+  EXPECT_EQ(res_string.length(), icd_item.component_url().size());
   EXPECT_EQ(0u, res_string.find("fuchsia-pkg://fuchsia.com/libvulkan_arm_mali_"));
-  EXPECT_NE(std::string::npos, res_string.find("_test#meta/vulkan.cmx"));
+  EXPECT_THAT(res_string, testing::EndsWith("_test#meta/vulkan.cm"));
 }
 
 }  // namespace
