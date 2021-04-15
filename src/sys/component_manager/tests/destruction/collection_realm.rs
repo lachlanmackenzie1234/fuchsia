@@ -17,7 +17,7 @@ use {
 
 #[fasync::run_singlethreaded]
 async fn main() {
-    syslog::init_with_tags(&[]).expect("could not initialize logging");
+    syslog::init().expect("could not initialize logging");
     info!("Started collection realm");
     let realm = client::connect_to_service::<fsys::RealmMarker>()
         .expect("could not connect to Realm service");
