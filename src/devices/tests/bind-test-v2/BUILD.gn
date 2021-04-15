@@ -1,0 +1,71 @@
+# Copyright 2021 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/config/fuchsia/rules.gni")
+import("//build/test.gni")
+import("//zircon/system/ulib/devmgr-integration-test/isolated_devmgr.gni")
+
+test("test") {
+  output_name = "bind-test-v2"
+
+  sources = [ "bind-test-v2.cc" ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.device:fuchsia.device_llcpp",
+    "//sdk/fidl/fuchsia.device.manager",
+    "//sdk/fidl/fuchsia.device.test:fuchsia.device.test_llcpp",
+    "//sdk/lib/fdio",
+    "//sdk/lib/sys/cpp",
+    "//src/lib/ddk",
+    "//src/lib/fxl",
+    "//src/lib/fxl/test:gtest_main",
+    "//zircon/system/ulib/devmgr-integration-test",
+
+    # TODO(fxb/38132): Migrate to the new bind rules and delete the below
+    "//src/lib/ddk:ddk-deprecated-binding-headers",
+  ]
+
+  # TODO(fxbug.dev/69585): This target uses raw zx::channel with LLCPP which is deprecated.
+  # Please migrate to typed channel APIs (fidl::ClientEnd<T>, fidl::ServerEnd<T>).
+  # See linked bug for details.
+  configs += [ "//build/cpp:fidl-llcpp-deprecated-raw-channels" ]
+}
+
+isolated_devmgr_unittest_package("bind-test-v2") {
+  executable_path = "test/bind-test-v2"
+
+  deps = [
+    ":bind-test-driver-v2",
+    ":test",
+    "//src/devices/misc/drivers/test",
+    "//src/devices/tests/sysdev",
+  ]
+}
+
+bind_rules("bind-v2") {
+  rules = "bind-test-v2.bind"
+  output = "bind-test-v2-bind.h"
+  disable_autobind = true
+  use_new_bytecode = true
+  deps = [ "//src/devices/bind/fuchsia.test" ]
+}
+
+driver_module("bind-test-driver-v2") {
+  output_name = "bind-test-v2"
+  test = true
+  configs += [
+    "//build/config:all_source",
+    "//build/config/fuchsia:enable_zircon_asserts",
+  ]
+  if (is_fuchsia) {
+    configs += [ "//build/unification/config:zircon-migrated" ]
+  }
+  sources = [ "bind-test-driver-v2.cc" ]
+  deps = [
+    ":bind-v2",
+    "//src/devices/lib/driver",
+    "//src/lib/ddk",
+  ]
+}
