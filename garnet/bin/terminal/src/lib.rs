@@ -6,7 +6,6 @@
 
 mod app;
 mod key_util;
-mod pty;
 mod terminal_view;
 mod ui;
 
