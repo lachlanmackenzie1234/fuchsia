@@ -8,29 +8,11 @@ ffx_plugin("ffx_repository") {
   version = "0.1.0"
   edition = "2018"
   with_unit_tests = true
-  deps = [
-    "//src/developer/ffx/lib/pkg",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-hyper",
-    "//src/sys/pkg/lib/far/rust:fuchsia-archive",
-    "//src/sys/pkg/lib/fuchsia-merkle",
-    "//src/sys/pkg/lib/fuchsia-pkg",
-    "//src/sys/pkg/lib/tuf",
-    "//third_party/rust_crates:async-net",
-    "//third_party/rust_crates:chrono",
-    "//third_party/rust_crates:home",
-    "//third_party/rust_crates:hyper",
-    "//third_party/rust_crates:lazy_static",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:ring",
-    "//third_party/rust_crates:signal-hook",
-    "//third_party/rust_crates:tempfile",
-    "//third_party/rust_crates:tokio",
+
+  plugin_deps = [
+    "list:ffx_repository_list",
+    "serve:ffx_repository_serve",
   ]
 
-  sources = [
-    "src/args.rs",
-    "src/lib.rs",
-    "src/serve.rs",
-  ]
+  sources = [ "src/args.rs" ]
 }
