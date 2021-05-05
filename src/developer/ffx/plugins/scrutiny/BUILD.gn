@@ -9,6 +9,7 @@ ffx_plugin("ffx_scrutiny") {
   edition = "2018"
   plugin_deps = [
     "extract:ffx_scrutiny_extract",
+    "list:ffx_scrutiny_list",
     "shell:ffx_scrutiny_shell",
     "verify:ffx_scrutiny_verify",
   ]
