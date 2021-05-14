@@ -1,0 +1,10 @@
+{
+    include: [ "src/diagnostics/sampler/meta/common.shard.cml" ],
+    program: {
+        args: [
+            "lapis",
+            "--minimum-sample-rate-sec",
+            "1",
+        ],
+    },
+}
