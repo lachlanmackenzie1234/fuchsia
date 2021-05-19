@@ -24,7 +24,7 @@ rustc_library("netstack_testing_common") {
     "//src/connectivity/lib/net-types",
     "//src/connectivity/lib/packet-formats",
     "//src/connectivity/network/testing/netemul/lib/fidl:environment-rustc",
-    "//src/connectivity/network/testing/netemul/rust:lib",
+    "//src/connectivity/network/testing/netemul/rust-v1:lib",
     "//src/lib/diagnostics/data/rust",
     "//src/lib/diagnostics/hierarchy/rust",
     "//src/lib/diagnostics/reader/rust",
