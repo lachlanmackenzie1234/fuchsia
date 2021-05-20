@@ -20,6 +20,16 @@
     ],
     use: [
         {
+            directory: "system-delayed",
+            rights: [ "r*" ],
+            path: "/system",
+        },
+        {
+            directory: "pkgfs-delayed",
+            rights: [ "r*" ],
+            path: "/pkgfs",
+        },
+        {
             protocol: [
                 "fuchsia.boot.Arguments",
                 "fuchsia.boot.Items",

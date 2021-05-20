@@ -1,0 +1,49 @@
+{
+    include: [
+        "sdk/lib/diagnostics/inspect/client.shard.cml",
+        "sdk/lib/diagnostics/syslog/client.shard.cml",
+    ],
+    program: {
+        runner: "elf",
+        binary: "bin/support",
+    },
+    capabilities: [
+        {
+            protocol: [
+                "fuchsia.boot.Arguments",
+                "fuchsia.boot.Items",
+                "fuchsia.kernel.RootJob",
+                "fuchsia.power.manager.DriverManagerRegistration",
+            ],
+        },
+        {
+            directory: "pkgfs-delayed",
+            rights: [ "r*" ],
+            path: "/pkgfs",
+        },
+        {
+            directory: "system-delayed",
+            rights: [ "r*" ],
+            path: "/pkgfs",
+        },
+    ],
+    expose: [
+        {
+            protocol: [
+                "fuchsia.boot.Arguments",
+                "fuchsia.boot.Items",
+                "fuchsia.kernel.RootJob",
+                "fuchsia.power.manager.DriverManagerRegistration",
+            ],
+            from: "self",
+        },
+        {
+            directory: "pkgfs-delayed",
+            from: "self",
+        },
+        {
+            directory: "system-delayed",
+            from: "self",
+        },
+    ],
+}
