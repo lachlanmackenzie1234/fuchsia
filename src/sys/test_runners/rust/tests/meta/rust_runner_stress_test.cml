@@ -1,0 +1,6 @@
+{
+    include: [ "src/sys/test_runners/rust/tests/meta/common.shard.cml" ],
+    program: {
+        binary: "bin/rust_runner_stress_test",
+    },
+}
