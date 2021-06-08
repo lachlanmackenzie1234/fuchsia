@@ -39,8 +39,8 @@
 
 // This test exercises the touch input dispatch path from Root Presenter to a Scenic client. It is a
 // multi-component test, and carefully avoids sleeping or polling for component coordination.
-// - It runs a real Root Presenter; other top-level programs, like Tiles, interfere with this test.
-// - It runs a real Scenic; the display controller MUST be free.
+// - It runs real Root Presenter and Scenic components.
+// - It uses a fake display controller; the physical device is unused.
 //
 // Components involved
 // - This test program
