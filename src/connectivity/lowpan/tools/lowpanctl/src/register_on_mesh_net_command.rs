@@ -14,7 +14,7 @@ use fidl_fuchsia_net::Ipv6Address;
 #[argh(subcommand, name = "register-on-mesh-net")]
 pub struct RegisterOnMeshNetCommand {
     /// ipv6 prefix (always a /64)
-    #[argh(option)]
+    #[argh(positional)]
     pub addr: std::net::Ipv6Addr,
 
     /// offers a default route
