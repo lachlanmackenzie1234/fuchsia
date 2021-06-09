@@ -8,5 +8,8 @@
 group("tests") {
   testonly = true
 
-  deps = [ "reboot_log/tests" ]
+  deps = [
+    "migration:tests",
+    "reboot_log/tests",
+  ]
 }
