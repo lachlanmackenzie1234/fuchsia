@@ -3,19 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
-# This script runs an action with rewrapper and reproxy. Use as follows:
-#
-# $0 -- echo Hello
-#
-# To override the default config:
-#
-# $0 --cfg reclient.cfg -- echo Hello
-#
-# Note that --cfg will set the same config file for both
-# rewrapper and reproxy, so you need to make sure it contains all needed
-# arguments for both.
-#
-# To override the location of reclient binaries, set --bindir.
+# See usage().
 
 set -e
 
@@ -26,22 +14,33 @@ script_dir="$(dirname "$script")"
 config="$script_dir"/fuchsia-re-client.cfg
 # location of reclient binaries relative to output directory where build is run
 # TODO(fangism): this could also be set relative to --exec_root.
-reclient_bindir=../../prebuilt/proprietary/third_party/reclient/linux-x64
+reclient_bindir="$script_dir"/../../prebuilt/proprietary/third_party/reclient/linux-x64
+auto_reproxy="$script_dir"/fuchsia-reproxy-wrap.sh
 
 usage() {
   cat <<EOF
 $script [rewrapper options] -- command [args...]
 
-This script runs a command remotely (RBE).
+This script runs a command remotely (RBE) using rewrapper.
+
+example: $script -- echo Hello
 
 options:
-  --cfg FILE: reclient config for reproxy and rewrapper tools
+  --cfg FILE: reclient config for both reproxy and rewrapper tools
+      [default: $config]
   --bindir DIR: location of reproxy and rewrapper tools
-  All other options forwarded to rewrapper until -- is encountered.
+      [default: $reclient_bindir]
+
+  --auto-reproxy: startup and shutdown reproxy around the command.
+  --no-reproxy: assume reproxy is already running, and only use rewrapper.
+      [This is the default.]
+
+  All other options are forwarded to rewrapper until -- is encountered.
 EOF
 }
 
 rewrapper_options=()
+want_auto_reproxy=0
 # Extract script options before --
 for opt
 do
@@ -63,6 +62,8 @@ do
     --cfg) prev_opt=config ;;
     --bindir=*) reclient_bindir="$optarg" ;;
     --bindir) prev_opt=reclient_bindir ;;
+    --auto-reproxy) want_auto_reproxy=1 ;;
+    --no-reproxy) want_auto_reproxy=0 ;;
     # stop option processing
     --) shift; break ;;
     # Forward all other options to rewrapper
@@ -75,16 +76,17 @@ test -z "$prev_out" || { echo "Option is missing argument to set $prev_opt." ; e
 reproxy_cfg="$config"
 rewrapper_cfg="$config"
 
-# command is in "$@"
-
 rewrapper="$reclient_bindir"/rewrapper
-bootstrap="$reclient_bindir"/bootstrap
-reproxy="$reclient_bindir"/reproxy
 
-# Use the same config for bootstrap as for reproxy
-"$bootstrap" --re_proxy="$reproxy" --cfg="$reproxy_cfg"
-"$rewrapper" --cfg="$rewrapper_cfg" "${rewrapper_options[@]}" "$@"
-# b/188923283 -- added --cfg to shut down properly
-"$bootstrap" --shutdown --cfg="$reproxy_cfg"
+# command is in "$@"
+rewrapped_command=("$rewrapper" --cfg="$rewrapper_cfg" "${rewrapper_options[@]}" "$@")
 
-# TODO(fangism): bootstrap should be done as a setup/shutdown of 'fx build'
+if test "$want_auto_reproxy" = 1
+then
+  # startup and stop reproxy around this single command
+  "$auto_reproxy" --cfg="$reproxy_cfg" -- "${rewrapped_command[@]}"
+else
+  # reproxy is already running
+  "${rewrapped_command[@]}"
+fi
+
