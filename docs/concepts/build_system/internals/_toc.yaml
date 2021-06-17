@@ -10,3 +10,6 @@ toc:
   path: /docs/concepts/build_system/internals/index.md
 - title: "Manifest file formats"
   path: /docs/concepts/build_system/internals/manifest_formats.md
+- title: "GN toolchains and the Fuchsia build"
+  section:
+  - include: /docs/concepts/build_system/internals/toolchains/_toc.yaml
