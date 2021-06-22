@@ -2,6 +2,7 @@
     include: [
         "//sdk/lib/diagnostics/syslog/client.shard.cml",
         "//src/diagnostics/archivist/meta/common.shard.cml",
+        "//src/diagnostics/archivist/tests/v2/meta/test.shard.cml",
     ],
     program: {
         binary: "bin/archivist",
@@ -13,26 +14,4 @@
             "/pkg/data/config/archivist_config.json",
         ],
     },
-    capabilities: [
-        {
-            protocol: [ "fuchsia.diagnostics.FeedbackArchiveAccessor" ],
-        },
-    ],
-    use: [
-        {
-            directory: "config-data",
-            rights: [ "r*" ],
-            path: "/config/data",
-        },
-        {
-            storage: "data",
-            path: "/data",
-        },
-    ],
-    expose: [
-        {
-            protocol: [ "fuchsia.diagnostics.FeedbackArchiveAccessor" ],
-            from: "self",
-        },
-    ],
 }
