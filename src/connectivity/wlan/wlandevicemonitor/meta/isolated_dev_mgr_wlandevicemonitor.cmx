@@ -1,0 +1,19 @@
+{
+    "include": [
+        "syslog/client.shard.cmx"
+    ],
+    "program": {
+        "binary": "bin/isolated_dev_mgr_wlandevicemonitor"
+    },
+    "sandbox": {
+        "dev": [
+            "class/wlanif",
+            "class/wlanphy"
+        ],
+        "services": [
+            "fuchsia.cobalt.LoggerFactory",
+            "fuchsia.wlan.device.service.DeviceService",
+            "fuchsia.wlan.devmgr.IsolatedDevmgr"
+        ]
+    }
+}
