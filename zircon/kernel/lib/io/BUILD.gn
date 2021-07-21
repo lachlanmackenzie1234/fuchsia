@@ -12,5 +12,6 @@ zx_library("io") {
   deps = [
     "tests",
     "//zircon/kernel/lib/debuglog",
+    "//zircon/kernel/lib/persistent-debuglog",
   ]
 }

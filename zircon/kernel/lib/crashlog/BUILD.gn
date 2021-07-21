@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/zircon/migrated_targets.gni")
+import("params.gni")
 
 zx_library("crashlog") {
   kernel = true
@@ -18,7 +19,16 @@ zx_library("crashlog") {
     "//zircon/kernel/lib/version",
     "//zircon/kernel/object:headers",
   ]
+  public_configs = [
+    ":config",
+    "//zircon/kernel:persistent_ram_config",
+  ]
 
   # TODO: testonly
   deps += [ "test" ]
+}
+
+config("config") {
+  visibility = [ ":*" ]
+  defines = [ "MIN_CRASHLOG_SIZE=$min_crashlog_size" ]
 }
