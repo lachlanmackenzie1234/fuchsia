@@ -9,7 +9,7 @@ use super::*;
 use crate::fd_impl_seekable;
 use crate::logging::impossible_error;
 use crate::mm::vmo::round_up_to_system_page_size;
-use crate::task::*;
+use crate::task::Task;
 use crate::types::*;
 use crate::vmex_resource::VMEX_RESOURCE;
 
