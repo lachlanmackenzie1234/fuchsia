@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// NOTE: validating_v2_tests.cc IS A FORK OF THIS FILE AND WILL REPLACE
+// THIS FILE ONCE THE V2 MIGRATION IS COMPLETE.
+
 #include <lib/fidl/coding.h>
 #include <stddef.h>
 
