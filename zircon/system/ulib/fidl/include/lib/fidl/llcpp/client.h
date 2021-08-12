@@ -11,6 +11,11 @@
 
 namespace fidl {
 
+//
+// Note: when updating the documentation below, please make similar updates to
+// the one in //src/lib/fidl/cpp/include/lib/fidl/cpp/client.h.
+//
+
 // |WireClient| is a client for sending and receiving FIDL wire messages, that
 // is bound to a single fixed thread. See |WireSharedClient| for a client that
 // may be moved or cloned to a different thread.
@@ -98,6 +103,7 @@ namespace fidl {
 // arbitrary threads, at the expense of requiring two-phase shutdown.
 template <typename Protocol>
 class WireClient {
+ private:
   using ClientImpl = fidl::internal::WireClientImpl<Protocol>;
 
  public:
@@ -338,6 +344,7 @@ fidl::AnyTeardownObserver ShareUntilTeardown(std::shared_ptr<T> object) {
 // happen on the thread invoking dispatcher shutdown.
 template <typename Protocol>
 class WireSharedClient final {
+ private:
   using ClientImpl = fidl::internal::WireClientImpl<Protocol>;
 
  public:
