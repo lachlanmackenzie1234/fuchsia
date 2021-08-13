@@ -32,6 +32,10 @@ impl Procedure for IndicatorStatusProcedure {
 
     fn hf_update(&mut self, update: at::Command, state: &mut SlcState) -> ProcedureRequest {
         match (self.terminated, update) {
+            (false, at::Command::CindTest {}) => {
+                self.terminated = true;
+                AgUpdate::Features(state.ag_features).into()
+            }
             (false, at::Command::CindRead {}) => {
                 self.terminated = true;
                 AgUpdate::IndicatorStatus(state.ag_indicator_status).into()
@@ -67,7 +71,15 @@ mod tests {
     }
 
     #[test]
-    fn procedure_with_ok_response() {
+    fn procedure_test_with_ok_response() {
+        let mut proc = IndicatorStatusProcedure::new();
+        let req = proc.hf_update(at::Command::CindTest {}, &mut SlcState::default());
+        assert_matches!(req, ProcedureRequest::SendMessages(_));
+        assert!(proc.is_terminated());
+    }
+
+    #[test]
+    fn procedure_read_with_ok_response() {
         let mut proc = IndicatorStatusProcedure::new();
         let req = proc.hf_update(at::Command::CindRead {}, &mut SlcState::default());
         assert_matches!(req, ProcedureRequest::SendMessages(_));
