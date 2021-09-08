@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(fxb/83762): Delete this library once all of the references are
+// migrated to fuchsia.amlogic.platform.
+
 library amlogic.platform;
 
 extend uint fuchsia.BIND_PROTOCOL {
