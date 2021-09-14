@@ -11,7 +11,7 @@ use futures::prelude::*;
 /// Runs the `TextFieldTestSuite` integration tests.
 #[fuchsia_async::run_singlethreaded(test)]
 async fn test_external_text_field_implementation() {
-    fuchsia_syslog::init_with_tags(&["ime_service"]).expect("ime syslog init should not fail");
+    fuchsia_syslog::init_with_tags(&["text_manager"]).expect("ime syslog init should not fail");
     let launcher = launcher().expect("Failed to open launcher service");
     let app = launch(
         &launcher,
@@ -41,7 +41,7 @@ async fn run_test(
     tester: &txt_testing::TextFieldTestSuiteProxy,
     test_id: u64,
 ) -> Result<(), String> {
-    let mut ime_service = crate::ime_service::ImeService::new();
+    let mut text_manager = crate::text_manager::TextManager::new();
     let (text_proxy, text_stream) =
         fidl::endpoints::create_proxy_and_stream::<txt::TextInputContextLegacyMarker>()
             .expect("Failed to create proxy");
@@ -51,8 +51,8 @@ async fn run_test(
     let (_ime_client, ime_server) =
         fidl::endpoints::create_endpoints::<uii::InputMethodEditorMarker>()
             .expect("Failed to create endpoints");
-    ime_service.bind_text_input_context(text_stream);
-    ime_service
+    text_manager.bind_text_input_context(text_stream);
+    text_manager
         .get_input_method_editor(
             uii::KeyboardType::Text,
             uii::InputMethodAction::Done,

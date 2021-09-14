@@ -18,7 +18,7 @@ use crate::{
     multiplex::TextFieldMultiplexer,
 };
 
-pub struct ImeServiceState {
+pub struct TextManagerState {
     pub keyboard_visible: bool,
     pub active_ime: Option<Weak<Mutex<ImeState>>>,
     pub visibility_listeners: Vec<uii::ImeVisibilityServiceControlHandle>,
@@ -30,9 +30,9 @@ pub struct ImeServiceState {
     pub text_input_context_clients: Vec<txt::TextInputContextLegacyControlHandle>,
 }
 
-/// The internal state of the IMEService, usually held behind an Arc<Mutex>
+/// The internal state of the `TextManager`, usually held behind an Arc<Mutex>
 /// so it can be accessed from multiple places.
-impl ImeServiceState {
+impl TextManagerState {
     pub fn update_keyboard_visibility(&mut self, visible: bool) {
         self.keyboard_visible = visible;
 
@@ -46,14 +46,14 @@ impl ImeServiceState {
 /// Serves several public FIDL services: `ImeService`, `ImeVisibilityService`, and
 /// `TextInputContext`.
 #[derive(Clone)]
-pub struct ImeService {
-    state: Arc<Mutex<ImeServiceState>>,
+pub struct TextManager {
+    state: Arc<Mutex<TextManagerState>>,
 }
 
-impl ImeService {
-    pub fn new() -> ImeService {
-        ImeService {
-            state: Arc::new(Mutex::new(ImeServiceState {
+impl TextManager {
+    pub fn new() -> TextManager {
+        TextManager {
+            state: Arc::new(Mutex::new(TextManagerState {
                 keyboard_visible: false,
                 active_ime: None,
                 multiplexer: None,

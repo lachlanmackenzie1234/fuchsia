@@ -2,10 +2,10 @@
     "facets": {
         "fuchsia.test": {
             "injected-services": {
-                "fuchsia.ui.input.ImeService": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/ime_service.cmx",
-                "fuchsia.ui.input.ImeVisibilityService": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/ime_service.cmx",
-                "fuchsia.ui.input3.KeyEventInjector": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/ime_service.cmx",
-                "fuchsia.ui.input3.Keyboard": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/ime_service.cmx"
+                "fuchsia.ui.input.ImeService": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/text_manager.cmx",
+                "fuchsia.ui.input.ImeVisibilityService": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/text_manager.cmx",
+                "fuchsia.ui.input3.KeyEventInjector": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/text_manager.cmx",
+                "fuchsia.ui.input3.Keyboard": "fuchsia-pkg://fuchsia.com/keyboard_test#meta/text_manager.cmx"
             }
         }
     },
@@ -16,7 +16,7 @@
         "args": [
             "--test-threads=1"
         ],
-        "binary": "bin/ime_service_integration_test"
+        "binary": "bin/text_manager_integration_test"
     },
     "sandbox": {
         "services": [

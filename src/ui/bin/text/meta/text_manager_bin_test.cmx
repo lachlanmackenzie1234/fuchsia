@@ -3,7 +3,7 @@
         "syslog/client.shard.cmx"
     ],
     "program": {
-        "binary": "bin/ime_service"
+        "binary": "bin/text_manager_bin_test"
     },
     "sandbox": {
         "services": [

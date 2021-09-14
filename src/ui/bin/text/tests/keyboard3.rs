@@ -26,42 +26,42 @@ use {
     test_helpers::create_key_event,
 };
 
-const URL_IME_SERVICE: &str = "fuchsia-pkg://fuchsia.com/keyboard_test#meta/ime_service.cmx";
+const URL_TEXT_MANAGER: &str = "fuchsia-pkg://fuchsia.com/keyboard_test#meta/text_manager.cmx";
 
-/// Wrapper for a `NestedEnvironment` that exposes the protocols offered by `ime_service.cmx`.
+/// Wrapper for a `NestedEnvironment` that exposes the protocols offered by `text_manager.cmx`.
 /// Running each test method in its own environment allows the tests to be run in parallel.
 struct TestEnvironment {
-    _ime_service_app: App,
+    _text_manager_app: App,
     _fs_task: fasync::Task<()>,
     env: NestedEnvironment,
 }
 
 impl TestEnvironment {
-    /// Creates a new `NestedEnvironment` exposing services from `ime_service.cmx`, which is
+    /// Creates a new `NestedEnvironment` exposing services from `text_manager.cmx`, which is
     /// immediately launched.
     #[must_use]
     fn new() -> Result<Self> {
-        let mut ime_service_builder = AppBuilder::new(URL_IME_SERVICE);
-        let ime_service_dir =
-            ime_service_builder.directory_request().context("directory_request")?.to_owned();
+        let mut text_manager_builder = AppBuilder::new(URL_TEXT_MANAGER);
+        let text_manager_dir =
+            text_manager_builder.directory_request().context("directory_request")?.to_owned();
 
         let mut fs: ServiceFs<ServiceObj<'static, ()>> = ServiceFs::new();
         fs.add_proxy_service_to::<fidl_fuchsia_ui_input::ImeServiceMarker, _>(
-            ime_service_dir.clone(),
+            text_manager_dir.clone(),
         )
-        .add_proxy_service_to::<ui_input3::KeyboardMarker, _>(ime_service_dir.clone())
-        .add_proxy_service_to::<ui_input3::KeyEventInjectorMarker, _>(ime_service_dir.clone())
-        .add_proxy_service_to::<fidl_focus::ControllerMarker, _>(ime_service_dir.clone());
+        .add_proxy_service_to::<ui_input3::KeyboardMarker, _>(text_manager_dir.clone())
+        .add_proxy_service_to::<ui_input3::KeyEventInjectorMarker, _>(text_manager_dir.clone())
+        .add_proxy_service_to::<fidl_focus::ControllerMarker, _>(text_manager_dir.clone());
 
         let env = fs
             .create_salted_nested_environment("test")
             .context("create_salted_nested_environment")?;
 
-        let _ime_service_app =
-            ime_service_builder.spawn(env.launcher()).context("Launching ime_service")?;
+        let _text_manager_app =
+            text_manager_builder.spawn(env.launcher()).context("Launching text_manager")?;
         let _fs_task = fasync::Task::spawn(fs.collect());
 
-        Ok(TestEnvironment { _ime_service_app, _fs_task, env })
+        Ok(TestEnvironment { _text_manager_app, _fs_task, env })
     }
 
     /// Connects to the given discoverable service in the `NestedEnvironment`, with a readable

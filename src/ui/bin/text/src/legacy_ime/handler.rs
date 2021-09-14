@@ -23,7 +23,7 @@ use super::{
     HID_USAGE_KEY_BACKSPACE, HID_USAGE_KEY_DELETE, HID_USAGE_KEY_ENTER, HID_USAGE_KEY_LEFT,
     HID_USAGE_KEY_RIGHT,
 };
-use crate::{ime_service::ImeService, index_convert as idx, keyboard::events};
+use crate::{index_convert as idx, keyboard::events, text_manager::TextManager};
 
 /// An input method provides edits and cursor updates to a text field. This Legacy Input Method
 /// provides edits to a text field over the legacy pair of interfaces `InputMethodEditor` and
@@ -44,14 +44,14 @@ impl LegacyIme {
         action: uii::InputMethodAction,
         initial_state: uii::TextInputState,
         client: I,
-        ime_service: ImeService,
+        text_manager: TextManager,
     ) -> LegacyIme {
         let state = ImeState {
             text_state: initial_state,
             client: Box::new(client),
             keyboard_type,
             action,
-            ime_service,
+            text_manager,
             revision: 0,
             next_text_point_id: 0,
             text_points: HashMap::new(),
@@ -127,8 +127,8 @@ impl LegacyIme {
                 async move {
                     // this runs when IME stream closes
                     // clone to ensure we only hold one lock at a time
-                    let ime_service = self_clone_2.0.lock().await.ime_service.clone();
-                    ime_service.update_keyboard_visibility_from_ime(&self_clone_2.0, false).await;
+                    let text_manager = self_clone_2.0.lock().await.text_manager.clone();
+                    text_manager.update_keyboard_visibility_from_ime(&self_clone_2.0, false).await;
                 }
             }),
         )
@@ -298,14 +298,14 @@ impl LegacyIme {
             }
             ImeReq::Show { .. } => {
                 // clone to ensure we only hold one lock at a time
-                let ime_service = self.0.lock().await.ime_service.clone();
-                ime_service.show_keyboard().await;
+                let text_manager = self.0.lock().await.text_manager.clone();
+                text_manager.show_keyboard().await;
                 Ok(())
             }
             ImeReq::Hide { .. } => {
                 // clone to ensure we only hold one lock at a time
-                let ime_service = self.0.lock().await.ime_service.clone();
-                ime_service.hide_keyboard().await;
+                let text_manager = self.0.lock().await.text_manager.clone();
+                text_manager.hide_keyboard().await;
                 Ok(())
             }
         }

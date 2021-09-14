@@ -18,7 +18,7 @@ use {
 };
 
 use super::position;
-use crate::{ime_service::ImeService, index_convert as idx, keyboard::events::KeyEvent};
+use crate::{index_convert as idx, keyboard::events::KeyEvent, text_manager::TextManager};
 
 /// The internal state of the IME, held within `LegacyIme` inside `Arc<Mutex<ImeState>>`, so it can
 /// be accessed from multiple message handler async tasks. Methods that aren't message handlers
@@ -33,7 +33,7 @@ pub struct ImeState {
     pub keyboard_type: uii::KeyboardType,
 
     pub action: uii::InputMethodAction,
-    pub ime_service: ImeService,
+    pub text_manager: TextManager,
 
     /// Currently pressed keys.
     pub keys_pressed: HashSet<input::Key>,

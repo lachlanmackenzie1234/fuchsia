@@ -13,24 +13,24 @@ use {
 
 use fidl_fuchsia_ui_keyboard_focus as fidl_focus;
 
-use crate::ime_service::ImeService;
 use crate::keyboard::{events::KeyEvent, keyboard3};
+use crate::text_manager::TextManager;
 
 /// Keyboard service router.
 /// Starts providers of input3.Keyboard.
 /// Handles keyboard events, routing them to one of the following:
-/// - other fuchsia.ui.input.ImeService events to ime_service
+/// - other fuchsia.ui.input.ImeService events to text_manager
 pub struct Service {
-    ime_service: ImeService,
+    text_manager: TextManager,
     keyboard3: keyboard3::KeyboardService,
     clock: std::sync::Arc<zx::Clock>,
 }
 
 impl Service {
-    pub async fn new(ime_service: ImeService) -> Result<Service, Error> {
+    pub async fn new(text_manager: TextManager) -> Result<Service, Error> {
         let keyboard3 = keyboard3::KeyboardService::new();
         let clock = std::sync::Arc::new(zx::Clock::create(zx::ClockOpts::MONOTONIC, None).unwrap());
-        Ok(Service { ime_service, keyboard3, clock })
+        Ok(Service { text_manager, keyboard3, clock })
     }
 
     /// Starts a task that processes `fuchsia.ui.keyboard.focus.Controller`.
@@ -71,7 +71,7 @@ impl Service {
     /// This method returns immediately without blocking.
     pub fn spawn_key_event_injector(&self, mut stream: ui_input3::KeyEventInjectorRequestStream) {
         let mut keyboard3 = self.keyboard3.clone();
-        let mut ime_service = self.ime_service.clone();
+        let mut text_manager = self.text_manager.clone();
         fuchsia_async::Task::spawn(
             async move {
                 while let Some(msg) = stream.try_next().await.context(concat!(
@@ -92,7 +92,7 @@ impl Service {
                                 Some(KeyMeaning::Codepoint(_)) => None,
                                 None => None,
                             });
-                            ime_service
+                            text_manager
                                 .inject_input(KeyEvent::new(
                                     &key_event,
                                     keyboard3.get_keys_pressed().await,
@@ -136,13 +136,13 @@ impl Service {
     }
 
     pub fn spawn_ime_service(&self, mut stream: ui_input::ImeServiceRequestStream) {
-        let mut ime_service = self.ime_service.clone();
+        let mut text_manager = self.text_manager.clone();
         fuchsia_async::Task::spawn(
             async move {
                 while let Some(msg) =
                     stream.try_next().await.context("error running keyboard service")?
                 {
-                    ime_service
+                    text_manager
                         .handle_ime_service_msg(msg)
                         .await
                         .context("Handle IME service messages")?;
