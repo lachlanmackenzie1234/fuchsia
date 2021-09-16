@@ -36,7 +36,7 @@ fuchsia_test_package("integration_test_pkg") {
    ":BINARY_NAME",
    # Change COMPONENT_BUILD_TARGET to component targets the test use
    # ex: "//examples/components/routing/echo_server:echo_server_component",
-   {COMPONENT_BUILD_TARGET}, 
+   {COMPONENT_BUILD_TARGET},
  ]
 }
 
