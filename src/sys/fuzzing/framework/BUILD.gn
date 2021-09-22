@@ -10,6 +10,7 @@ test("unittests") {
   testonly = true
   deps = [
     "engine:unittests",
+    "target:unittests",
     "//src/lib/fxl/test:gtest_main",
   ]
 }
