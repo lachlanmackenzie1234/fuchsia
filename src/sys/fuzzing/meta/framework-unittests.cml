@@ -9,4 +9,9 @@
     program: {
         binary: "test/component_fuzzing_framework_unittests",
     },
+    use: [
+        {
+            protocol: [ "fuchsia.process.Launcher" ],
+        },
+    ],
 }
