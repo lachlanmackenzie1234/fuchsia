@@ -49,6 +49,7 @@ the current architecture.
  - [`zx_guest_set_trap()`]
  - [`zx_vcpu_create()`]
  - [`zx_vcpu_enter()`]
+ - [`zx_vcpu_kick()`]
  - [`zx_vcpu_read_state()`]
  - [`zx_vcpu_write_state()`]
 
@@ -58,5 +59,6 @@ the current architecture.
 [`zx_guest_set_trap()`]: guest_set_trap.md
 [`zx_vcpu_create()`]: vcpu_create.md
 [`zx_vcpu_enter()`]: vcpu_enter.md
+[`zx_vcpu_kick()`]: vcpu_kick.md
 [`zx_vcpu_read_state()`]: vcpu_read_state.md
 [`zx_vcpu_write_state()`]: vcpu_write_state.md
