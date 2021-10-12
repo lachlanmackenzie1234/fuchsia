@@ -5,10 +5,7 @@
 import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.driver.test") {
-  sources = [
-    "logger.fidl",
-    "realm.fidl",
-  ]
+  sources = [ "realm.fidl" ]
 
   public_deps = [
     "//sdk/fidl/fuchsia.io",
