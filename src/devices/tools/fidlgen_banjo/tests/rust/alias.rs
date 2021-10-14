@@ -17,7 +17,8 @@ pub struct SomeStruct {
     pub one: u16,
     pub two: u32,
     pub primitive: u32,
-    pub vector_alias: u8,
+    pub vector_alias_list: *const u8,
+    pub vector_alias_count: usize,
     pub array_alias: [u8; 32 as usize],
     pub nested_alias: [[u8; 32 as usize]; 32 as usize],
 }
