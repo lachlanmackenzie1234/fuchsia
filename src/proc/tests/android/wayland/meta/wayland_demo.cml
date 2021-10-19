@@ -1,7 +1,7 @@
 {
     program: {
         runner: "starnix",
-        binary: "/data/tests/wayland_demo",
+        binary: "data/bin/wayland_demo",
         environ: [
             "XDG_RUNTIME_DIR=/data/tmp",
             "VIRTWL_DEVICE=/data/tmp/wayland-1",
