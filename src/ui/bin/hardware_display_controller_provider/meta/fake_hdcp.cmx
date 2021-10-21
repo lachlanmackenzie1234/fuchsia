@@ -1,14 +1,8 @@
 {
     "include": [
-        "syslog/client.shard.cmx"
+        "//src/ui/bin/hardware_display_controller_provider/meta/fake_hdcp.common.cmx"
     ],
     "program": {
         "binary": "bin/fake_hw_display_controller_provider"
-    },
-    "sandbox": {
-        "services": [
-            "fuchsia.sysmem.Allocator",
-            "fuchsia.tracing.provider.Registry"
-        ]
     }
 }

@@ -1,28 +1,7 @@
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "//src/ui/bin/hardware_display_controller_provider/meta/fake_hdcp.common.cml" ],
     program: {
         runner: "elf",
         binary: "bin/fake_hw_display_controller_provider",
     },
-    capabilities: [
-        { protocol: "fuchsia.hardware.display.Provider" },
-    ],
-    use: [
-        {
-            protocol: [
-                "fuchsia.sysmem.Allocator",
-                "fuchsia.tracing.provider.Registry",
-            ],
-            from: "parent",
-        },
-    ],
-    expose: [
-        {
-            protocol: "fuchsia.hardware.display.Provider",
-            from: "self",
-        },
-    ],
 }
