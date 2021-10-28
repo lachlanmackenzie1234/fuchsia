@@ -4,8 +4,7 @@
 
 use {
     anyhow::Error,
-    fdio,
-    fidl::endpoints::{DiscoverableProtocolMarker, Proxy},
+    fidl::endpoints::DiscoverableProtocolMarker,
     fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileProxy},
     fidl_fuchsia_bluetooth_gatt as fbgatt, fidl_fuchsia_bluetooth_le as fble,
     fidl_fuchsia_bluetooth_rfcomm_test::{RfcommTestMarker, RfcommTestProxy},
@@ -17,14 +16,13 @@ use {
     fidl_fuchsia_device::{NameProviderMarker, NameProviderRequestStream},
     fidl_fuchsia_io2 as fio2,
     fidl_fuchsia_stash::SecureStoreMarker,
-    fuchsia_async as fasync,
     fuchsia_component::server::ServiceFs,
     fuchsia_component_test::{
         builder::{Capability, CapabilityRoute, ComponentSource, RealmBuilder, RouteEndpoint},
         mock::{Mock, MockHandles},
     },
     futures::{channel::mpsc, SinkExt, StreamExt},
-    realmbuilder_mock_helpers::{add_fidl_service_handler, mock_dev},
+    realmbuilder_mock_helpers::{add_fidl_service_handler, mock_dev, provide_bt_gap_uses},
     std::sync::Arc,
     tracing::{error, info},
     vfs::{directory::entry::DirectoryEntry, pseudo_directory},
@@ -72,6 +70,13 @@ impl From<SnoopRequestStream> for Event {
 impl From<NameProviderRequestStream> for Event {
     fn from(src: NameProviderRequestStream) -> Self {
         Self::NameProvider(Some(src))
+    }
+}
+
+// So that Event can be generically constructed in provide_bt_gap_uses.
+impl From<SecureStoreMarker> for Event {
+    fn from(_src: SecureStoreMarker) -> Self {
+        Self::SecureStore
     }
 }
 
@@ -130,33 +135,8 @@ async fn mock_client(mut sender: mpsc::Sender<Event>, handles: MockHandles) -> R
 /// The component mock that provides the services used by bt-init and its children.
 async fn mock_provider(sender: mpsc::Sender<Event>, handles: MockHandles) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
-    let svc_dir = handles.clone_from_namespace("svc")?;
-    let sender_clone = Some(sender.clone());
-    let _ = fs.dir("svc").add_service_at(SecureStoreMarker::PROTOCOL_NAME, move |chan| {
-        let mut s = sender_clone.clone();
-        let svc_dir = Clone::clone(&svc_dir);
-        fasync::Task::local(async move {
-            info!(
-                "Proxying {} connection to real implementation",
-                SecureStoreMarker::PROTOCOL_NAME
-            );
-            fdio::service_connect_at(
-                svc_dir.as_channel().as_ref(),
-                SecureStoreMarker::PROTOCOL_NAME,
-                chan,
-            )
-            .expect("unable to forward secure store");
-            // We only care that the Secure Store is routed correctly, so if a client connects
-            // to it more than once, we only want to report it the first time.
-            if let Some(mut sender) = s.take() {
-                sender.send(Event::SecureStore).await.expect("should send");
-            }
-        })
-        .detach();
-        None
-    });
+    provide_bt_gap_uses(&mut fs, &sender, &handles)?;
     add_fidl_service_handler::<SnoopMarker, _>(&mut fs, sender.clone());
-    add_fidl_service_handler::<NameProviderMarker, _>(&mut fs, sender.clone());
 
     let _ = fs.serve_connection(handles.outgoing_dir.into_channel())?;
     fs.collect::<()>().await;
@@ -263,11 +243,7 @@ async fn bt_init_component_topology() {
         )
         .expect("Failed adding route for Name Provider service")
         .add_route(CapabilityRoute {
-            capability: Capability::directory(
-                "dev-bt-host",
-                "/dev/class/bt-host",
-                fio2::RW_STAR_DIR,
-            ),
+            capability: Capability::directory("dev", "/dev", fio2::RW_STAR_DIR),
             source: RouteEndpoint::component(MOCK_DEV_MONIKER),
             targets: vec![RouteEndpoint::component(BT_INIT_MONIKER)],
         })
