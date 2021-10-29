@@ -8,9 +8,9 @@ use {
 };
 
 #[derive(Debug, PartialEq)]
-pub struct UsbDevice {
-    pub vendor_id: u16,
-    pub product_id: Option<u16>,
+struct UsbDevice {
+    vendor_id: u16,
+    product_id: Option<u16>,
 }
 
 impl FromArgValue for UsbDevice {
@@ -32,6 +32,12 @@ impl FromArgValue for UsbDevice {
     }
 }
 
+impl std::convert::Into<lsusb::args::UsbDevice> for UsbDevice {
+    fn into(self) -> lsusb::args::UsbDevice {
+        lsusb::args::UsbDevice { vendor_id: self.vendor_id, product_id: self.product_id }
+    }
+}
+
 #[ffx_command()]
 #[derive(FromArgs, Debug, PartialEq)]
 #[argh(
@@ -46,16 +52,27 @@ impl FromArgValue for UsbDevice {
 pub struct DriverLsusbCommand {
     #[argh(switch, short = 't')] // TODO
     /// prints USB device tree
-    pub tree: bool,
+    tree: bool,
     #[argh(switch, short = 'v')]
     /// verbose output (prints descriptors)
-    pub verbose: bool,
+    verbose: bool,
     #[argh(option, short = 'c')]
     /// prints configuration descriptor for specified configuration (rather than
     /// current configuration)
-    pub configuration: Option<u8>,
+    configuration: Option<u8>,
     #[argh(option, short = 'd')]
     /// shows only devices with the specified vendor and product ID numbers (in hexadecimal)
     /// UsbDevice must be in format vendor[:product]
-    pub device: Option<UsbDevice>,
+    device: Option<UsbDevice>,
+}
+
+impl std::convert::Into<lsusb::args::Args> for DriverLsusbCommand {
+    fn into(self) -> lsusb::args::Args {
+        lsusb::args::Args {
+            tree: self.tree,
+            verbose: self.verbose,
+            configuration: self.configuration,
+            device: self.device.map(|d| d.into()),
+        }
+    }
 }
