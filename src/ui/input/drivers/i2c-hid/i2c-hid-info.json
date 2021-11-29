@@ -9,6 +9,6 @@
     ],
     "areas": [
         "Input",
-        "I2c"
+        "I2C"
     ]
 }
