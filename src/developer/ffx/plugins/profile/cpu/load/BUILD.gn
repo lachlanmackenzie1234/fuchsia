@@ -8,11 +8,9 @@ ffx_plugin("ffx_cpu_load") {
   version = "0.1.0"
   edition = "2018"
 
+  sources = [ "src/lib.rs" ]
+  deps = [ "//sdk/fidl/fuchsia.kernel:fuchsia.kernel-rustc" ]
   with_unit_tests = true
 
-  deps = [ "//sdk/fidl/fuchsia.kernel:fuchsia.kernel-rustc" ]
-
   args_sources = [ "src/args.rs" ]
-
-  sources = [ "src/lib.rs" ]
 }
