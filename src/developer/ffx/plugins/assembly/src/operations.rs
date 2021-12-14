@@ -5,3 +5,4 @@
 pub mod config_data;
 pub mod create_update;
 pub mod image;
+pub mod product;
