@@ -4,11 +4,10 @@
 
 use {
     crate::constants::*,
-    crate::daemon_manager::{DaemonManager, DefaultDaemonManager},
-    crate::recorder::{DoctorRecorder, Recorder},
     anyhow::{anyhow, Context, Error, Result},
     async_lock::Mutex,
     async_trait::async_trait,
+    doctor_utils::{DaemonManager, DefaultDaemonManager, DoctorRecorder, Recorder},
     errors::ffx_bail,
     ffx_config::{get, print_config},
     ffx_core::ffx_plugin,
@@ -35,8 +34,6 @@ use {
 };
 
 mod constants;
-mod daemon_manager;
-mod recorder;
 
 const DEFAULT_TARGET_CONFIG: &str = "target.default";
 const DOCTOR_OUTPUT_FILENAME: &str = "doctor_output.txt";
@@ -808,7 +805,6 @@ async fn execute_steps(
 mod test {
     use {
         super::*,
-        crate::recorder::Recorder,
         async_lock::Mutex,
         async_trait::async_trait,
         fidl::endpoints::RequestStream,
@@ -1070,6 +1066,11 @@ mod test {
             let mut state = self.state_manager.lock().await;
             assert!(!state.kill_results.is_empty(), "too many calls to kill_all");
             state.kill_results.remove(0)
+        }
+
+        // placeholder method
+        async fn get_pid(&self) -> Result<Vec<usize>> {
+            Ok(Vec::new())
         }
 
         async fn is_running(&self) -> bool {
