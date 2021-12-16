@@ -9,10 +9,10 @@ use {argh::FromArgs, ffx_core::ffx_command};
 #[argh(
     subcommand,
     name = "bind",
-    description = "Binds to a component instance, causing it to start",
+    description = "[Deprecated. Use `ffx component start` instead]",
     example = "To bind to the component instance designated by the moniker `/core/brightness_manager`:
 
-    $ ffx component bind /core/brightness_manager",
+    $ ffx component start /core/brightness_manager",
     note = "To learn more about running components, visit https://fuchsia.dev/fuchsia-src/development/components/run"
 )]
 pub struct ComponentBindCommand {

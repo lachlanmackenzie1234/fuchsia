@@ -25,6 +25,7 @@ async fn bind_impl<W: std::io::Write>(
 ) -> Result<()> {
     let moniker = PartialAbsoluteMoniker::parse_string_without_instances(&moniker)
         .map_err(|e| ffx_error!("Moniker could not be parsed: {}", e))?;
+    writeln!(writer, "[Deprecated. Use `ffx componenent start` instead.]")?;
     writeln!(writer, "Moniker: {}", moniker)?;
     writeln!(writer, "Binding to component instance...")?;
 
