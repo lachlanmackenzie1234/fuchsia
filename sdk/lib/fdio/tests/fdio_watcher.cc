@@ -53,6 +53,27 @@ class Server final : public fuchsia_io::testing::Directory_TestBase {
   F onWatch_;
 };
 
+TEST(WatcherTest, WatchInvalidCallback) {
+  auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+  ASSERT_OK(endpoints.status_value());
+
+  Server server([](uint32_t mask, uint32_t options, zx::channel watcher,
+                   fidl::WireServer<fuchsia_io::Directory>::WatchCompleter::Sync& completer) {});
+
+  async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+  ASSERT_OK(fidl::BindSingleInFlightOnly(loop.dispatcher(), std::move(endpoints->server), &server));
+  ASSERT_OK(loop.StartThread("fake-directory-server"));
+
+  fbl::unique_fd directory;
+  ASSERT_OK(
+      fdio_fd_create(endpoints->client.channel().release(), directory.reset_and_get_address()));
+
+  ASSERT_STATUS(fdio_watch_directory(directory.get(), nullptr, ZX_TIME_INFINITE, nullptr),
+                ZX_ERR_INVALID_ARGS);
+
+  loop.Shutdown();
+}
+
 TEST(WatcherTest, Smoke) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
   ASSERT_OK(endpoints.status_value());
@@ -103,4 +124,6 @@ TEST(WatcherTest, Smoke) {
                 ZX_ERR_PEER_CLOSED);
   decltype(events) expected_events = {{WATCH_EVENT_ADD_FILE, "valid"}};
   ASSERT_EQ(events, expected_events);
+
+  loop.Shutdown();
 }
