@@ -25,7 +25,6 @@ class {{ .WireUnownedResult }} final : public ::fidl::Result {
     ::fidl::DecodedMessage<{{ .WireResponse }}>&& decoded,
     ::fidl::internal::IncomingTransportContext context)
       : ::fidl::Result(decoded)
-        {{- if eq .Transport.Name "Driver" }}, arena_(context.release<::fidl::internal::DriverTransport>()){{- end }}
         {
     if (decoded.ok()) {
       bytes_ = reinterpret_cast<uint8_t*>(decoded.PrimaryObject());
@@ -68,18 +67,8 @@ class {{ .WireUnownedResult }} final : public ::fidl::Result {
   {{ .WireResponse }}& operator*() { return value(); }
   const {{ .WireResponse }}& operator*() const { return value(); }
 
-  {{- if eq .Transport.Name "Driver" }}
-  fdf::Arena& arena() {
-    ZX_DEBUG_ASSERT(ok());
-    return arena_;
-  }
-  {{- end }}
-
  private:
   uint8_t* bytes_;
-  {{- if eq .Transport.Name "Driver" }}
-  fdf::Arena arena_;
-  {{- end }}
   {{- end }}
 };
 {{- end }}
