@@ -7,6 +7,6 @@
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/simple_system_realm_test",
+        binary: "bin/noop_test",
     },
 }
