@@ -19,7 +19,7 @@
 //
 // DEVICE-SPECIFIC
 //
-#define SPN_DEVICE_NVIDIA_SM50                                    1
+#define SPN_DEVICE_NVIDIA_SM35                                    1
 #define SPN_DEVICE_SUBGROUP_SIZE_LOG2                             5   // 32
 #define SPN_DEVICE_MAX_PUSH_CONSTANTS_SIZE                        256 // bytes
 #define SPN_DEVICE_SMEM_PER_SUBGROUP_DWORDS                       512
@@ -32,8 +32,6 @@
 
 //
 // BLOCK POOL CONFIGURATION
-//
-// e.g. NVIDIA, AMD, Intel, ARM Bifrost, etc.
 //
 #define SPN_DEVICE_BLOCK_POOL_BLOCK_DWORDS_LOG2                   7
 #define SPN_DEVICE_BLOCK_POOL_SUBBLOCK_DWORDS_LOG2                SPN_DEVICE_TILE_HEIGHT_LOG2
@@ -63,8 +61,6 @@
 //
 // KERNEL: FILL SCAN
 //
-// e.g. NVIDIA, AMD, Intel, ARM Bifrost, etc.
-//
 #define SPN_DEVICE_FILL_SCAN_SUBGROUP_SIZE_LOG2                   SPN_DEVICE_SUBGROUP_SIZE_LOG2
 #define SPN_DEVICE_FILL_SCAN_WORKGROUP_SIZE                       ((1 << SPN_DEVICE_FILL_SCAN_SUBGROUP_SIZE_LOG2) * 1)
 #define SPN_DEVICE_FILL_SCAN_ROWS                                 4
@@ -74,11 +70,9 @@
 //
 // KERNEL: FILL EXPAND
 //
-// e.g. NVIDIA, AMD, Intel, ARM Bifrost, etc.
-//
 #define SPN_DEVICE_FILL_EXPAND_SUBGROUP_SIZE_LOG2                 SPN_DEVICE_SUBGROUP_SIZE_LOG2
 #define SPN_DEVICE_FILL_EXPAND_WORKGROUP_SIZE                     ((1 << SPN_DEVICE_FILL_EXPAND_SUBGROUP_SIZE_LOG2) * 1)
-// enable nvidia partition extensiona
+
 #define SPN_DEVICE_FILL_EXPAND_ENABLE_SUBGROUP_PARTITION_NV       1
 
 //
@@ -88,15 +82,15 @@
 #define SPN_DEVICE_FILL_DISPATCH_WORKGROUP_SIZE                   ((1 << SPN_DEVICE_FILL_DISPATCH_SUBGROUP_SIZE_LOG2) * 1)
 
 //
-// KERNEL: RASTERIZE_[LINES|QUADS|CUBICS|...]pus
+// KERNEL: RASTERIZE_[LINES|QUADS|CUBICS|...]
 //
-// e.g. NVIDIA, AMD, Intel, ARM Bifrost, etc.
+// Cohort size can be reduced to force earlier launches of smaller grids.
 //
 #define SPN_DEVICE_RASTERIZE_SUBGROUP_SIZE_LOG2                   SPN_DEVICE_SUBGROUP_SIZE_LOG2
 #define SPN_DEVICE_RASTERIZE_WORKGROUP_SIZE                       ((1 << SPN_DEVICE_RASTERIZE_SUBGROUP_SIZE_LOG2) * 1)
-// can reduce this to force earlier launches of smaller grids
+
 #define SPN_DEVICE_RASTERIZE_COHORT_SIZE                          SPN_RASTER_COHORT_MAX_SIZE
-// enable nvidia partition extension
+
 #define SPN_DEVICE_RASTERIZE_ENABLE_SUBGROUP_PARTITION_NV         1
 
 //
@@ -149,23 +143,16 @@
 #define SPN_DEVICE_RENDER_SUBGROUP_SIZE_LOG2                      SPN_DEVICE_SUBGROUP_SIZE_LOG2
 #define SPN_DEVICE_RENDER_WORKGROUP_SIZE                          ((1 << SPN_DEVICE_RENDER_SUBGROUP_SIZE_LOG2) * 1)
 
-// config switches
 #define SPN_DEVICE_RENDER_LGF_USE_SHUFFLE
 #define SPN_DEVICE_RENDER_TTCKS_USE_SHUFFLE
 #define SPN_DEVICE_RENDER_STYLING_CMDS_USE_SHUFFLE
 #define SPN_DEVICE_RENDER_COVERAGE_USE_SHUFFLE
 
-// TODO(allanmac): generate a new target for NVIDIA devices that support fp16
-#if 1
-#define SPN_DEVICE_RENDER_TILE_CHANNEL_IS_FLOAT32                 // CC: 3.0, 3.2, 3.5, 3.7, 5.0, 5.2, 6.1
-#else
-#define SPN_DEVICE_RENDER_TILE_CHANNEL_IS_FLOAT16                 // CC: 5.3, 6.0, 6.2, 7.x
-#endif
-// expecting VK_FORMAT_R8G8B8A8_UNORM or equivalent
+#define SPN_DEVICE_RENDER_TILE_CHANNEL_IS_FLOAT32
+
 #define SPN_DEVICE_RENDER_SURFACE_TYPE                            rgba8
 
-// TODO(allanmac): The vertex shader tile copy pass will take care of this
-#if defined(__Fuchsia__)
+#if defined(__Fuchsia__) // TODO(allanmac): The tile copy pass will eventually take care of this
 #define SPN_DEVICE_RENDER_SURFACE_SWIZZLE(rgba_)                  (rgba_)
 #else
 #define SPN_DEVICE_RENDER_SURFACE_SWIZZLE(rgba_)                  (rgba_).bgra

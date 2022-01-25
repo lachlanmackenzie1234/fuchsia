@@ -22,9 +22,6 @@ static struct spinel_target_header const header __attribute__((used)) =
 
   .extensions.named = {
     .NV_shader_subgroup_partitioned     = 1,
-#ifndef NDEBUG
-    .KHR_shader_non_semantic_info       = 1,
-#endif
   },
 
   .features.named = {
