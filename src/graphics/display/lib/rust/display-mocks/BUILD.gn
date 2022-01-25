@@ -20,12 +20,15 @@ rustc_library("display-mocks") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display-rustc",
     "//src/lib/fidl/rust/fidl",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:itertools",
+    "//third_party/rust_crates:thiserror",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:anyhow",
+  ]
 }
 
 fuchsia_unittest_package("display-mocks-test") {
