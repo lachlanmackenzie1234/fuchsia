@@ -8,7 +8,10 @@ ffx_plugin("ffx_setui") {
   version = "0.1.0"
   edition = "2018"
 
-  plugin_deps = [ "privacy:ffx_setui_privacy" ]
+  plugin_deps = [
+    "night_mode:ffx_setui_night_mode",
+    "privacy:ffx_setui_privacy",
+  ]
 
   args_sources = [ "src/args.rs" ]
 }
