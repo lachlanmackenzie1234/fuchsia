@@ -7,7 +7,7 @@
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/minfs_stressor",
+        binary: "bin/fs_stressor",
         args: [
             // Run a 100 operations. This should fit in the CQ/CI time limits.
             "--num-operations",
@@ -20,6 +20,8 @@
             // Enable debug logging for this variant
             "-l",
             "debug",
+            "--target-filesystem",
+            "minfs",
         ],
     },
     children: [
