@@ -14,6 +14,7 @@ ffx_plugin("ffx_scrutiny_verify") {
     "kernel_cmdline:ffx_scrutiny_kernel_cmdline",
     "route_sources:ffx_scrutiny_route_sources",
     "routes:ffx_scrutiny_routes",
+    "static_pkgs:ffx_scrutiny_static_pkgs",
   ]
   deps = [
     "//src/security/scrutiny/config",
