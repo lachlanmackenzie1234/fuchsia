@@ -3,4 +3,3 @@
 // found in the LICENSE file.
 
 pub mod backends;
-pub mod fidl;
