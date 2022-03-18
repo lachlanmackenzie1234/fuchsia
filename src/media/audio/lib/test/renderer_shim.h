@@ -4,9 +4,9 @@
 
 #ifndef SRC_MEDIA_AUDIO_LIB_TEST_RENDERER_SHIM_H_
 #define SRC_MEDIA_AUDIO_LIB_TEST_RENDERER_SHIM_H_
-
 #include <fuchsia/media/cpp/fidl.h>
 #include <fuchsia/ultrasound/cpp/fidl.h>
+#include <fuchsia/virtualaudio/cpp/fidl.h>
 #include <lib/zx/clock.h>
 
 #include <deque>
