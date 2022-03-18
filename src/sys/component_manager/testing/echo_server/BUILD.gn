@@ -5,7 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
-rustc_binary("echo_placeholder") {
+rustc_binary("echo_server_testing") {
   deps = [
     "//examples/components/routing/fidl:echo-rustc",
     "//src/lib/fuchsia",
@@ -21,5 +21,5 @@ fuchsia_component("echo_server") {
   testonly = true
   component_name = "echo_server"
   manifest = "meta/echo_server.cml"
-  deps = [ ":echo_placeholder" ]
+  deps = [ ":echo_server_testing" ]
 }
