@@ -7,17 +7,9 @@
         }
     },
     "include": [
-        "syslog/client.shard.cmx"
+        "//src/connectivity/network/tests/benchmarks/meta/socket-benchmarks.shard.cmx"
     ],
     "program": {
         "binary": "test/socket_benchmarks"
-    },
-    "sandbox": {
-        "features": [
-            "isolated-temp"
-        ],
-        "services": [
-            "fuchsia.posix.socket.Provider"
-        ]
     }
 }
