@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <lib/sys/inspect/cpp/component.h>
+#include <lib/inspect/cpp/inspect.h>
 
 namespace {{cpp_namespace}} {
 struct Config {
@@ -15,7 +15,7 @@ struct Config {
 
   static Config from_args() noexcept;
 
-  void record_to_inspect(sys::ComponentInspector * inspector);
+  void record_to_inspect(inspect::Inspector * inspector);
 };
 
 std::ostream& operator<<(std::ostream& os, const {{cpp_namespace}}::Config& c);

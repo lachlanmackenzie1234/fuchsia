@@ -1,0 +1,25 @@
+#ifndef __{{header_guard}}_H__
+#define __{{header_guard}}_H__
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include <fidl/fuchsia.driver.framework/cpp/wire.h>
+#include <lib/inspect/cpp/inspect.h>
+
+namespace {{cpp_namespace}} {
+struct Config {
+  {{#each fields}}
+    {{(cpp_type type_)}} {{ident}};
+  {{/each}}
+
+  static Config from_args(fuchsia_driver_framework::wire::DriverStartArgs& start_args) noexcept;
+
+  void record_to_inspect(inspect::Inspector * inspector);
+};
+
+std::ostream& operator<<(std::ostream& os, const {{cpp_namespace}}::Config& c);
+}
+
+#endif

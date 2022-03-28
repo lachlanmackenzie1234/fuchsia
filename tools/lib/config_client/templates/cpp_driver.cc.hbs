@@ -1,0 +1,31 @@
+#include <fidl/{{fidl_library_name}}/cpp/wire.h>
+#include <fidl/{{fidl_library_name}}/cpp/wire_types.h>
+#include <lib/fidl/llcpp/coding.h>
+#include <lib/fidl/llcpp/message.h>
+#include <lib/fidl/llcpp/traits.h>
+#include <lib/zx/vmo.h>
+#include <zircon/assert.h>
+#include <zircon/process.h>
+#include <zircon/processargs.h>
+#include <zircon/status.h>
+#include <zircon/syscalls.h>
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include "config.h"
+
+namespace {{cpp_namespace}} {
+
+{{> helpers }}
+
+Config Config::from_args(fuchsia_driver_framework::wire::DriverStartArgs& start_args) noexcept {
+  // Get the VMO containing FIDL config
+  ZX_ASSERT_MSG(start_args.has_config(), "No config found in driver start args");
+  auto config_vmo = std::move(start_args.config());
+
+  {{> vmo_parse }}
+}
+
+}
