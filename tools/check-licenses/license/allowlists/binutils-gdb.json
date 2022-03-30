@@ -1,0 +1,16 @@
+{
+    "license": {
+        "allowlists": [
+            {
+                "paths": [
+                    "prebuilt\/third_party\/binutils-gdb\/.*"
+                ],
+                "patterns": [
+                    "gpl.lic",
+                    "gpl3.lic"
+                ],
+                "notes": []
+            }
+        ]
+    }
+}

@@ -6,7 +6,8 @@
                     "prebuilt\/third_party\/goma\/.*"
                 ],
                 "patterns": [
-                    "cryptsoft.lic"
+                    "cryptsoft.lic",
+                    "llvm_project3.lic"
                 ],
                 "notes": []
             }

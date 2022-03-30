@@ -1,0 +1,15 @@
+{
+    "license": {
+        "allowlists": [
+            {
+                "paths": [
+                    "third_party\/glslang\/.*"
+                ],
+                "patterns": [
+                    "gpl3.lic"
+                ],
+                "notes": []
+            }
+        ]
+    }
+}
