@@ -1,0 +1,16 @@
+{{ range $_, $pattern := ( getDedupedPatterns . ) }}
+================================================================================
+License Category: {{ $pattern.Type }}
+
+{{ range $_, $projectTextMap := $pattern.Sorted }}
+--------------------------------------------------------------------------------
+The following license text(s) applies to these projects:
+{{ range $_, $projectName := $projectTextMap.SortedProjectNames }}
+ • {{ $projectName }}{{ end }}
+
+The above project include the following files:
+{{ range $_, $fileName := $projectTextMap.SortedFileNames }}
+ • {{ $fileName }}{{ end }}
+{{ end }}
+================================================================================
+{{ end }}
