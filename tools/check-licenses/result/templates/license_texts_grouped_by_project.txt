@@ -1,10 +1,10 @@
-{{ range $_, $project := .Projects }}
+{{ range $_, $project := .FilteredProjects }}
 ================================================================================
 {{ $project.Name }}
 
-{{ range $_, $license := $project.LicenseFile }}
+{{ range $_, $sr := $project.SearchResults }}
 --------------------------------------------------------------------------------
-{{ printf "%s" $license.Text }}
+{{ printf "%s" $sr.LicenseData.Data }}
 {{ end }}
 ================================================================================
 {{ end }}

@@ -8,18 +8,21 @@ import("//build/go/go_test.gni")
 go_library("result") {
   sources = [
     "config.go",
-    "csv.go",
-    "dedup.go",
     "init.go",
     "metrics.go",
-    "notice_filter_fx_gn_gen.go",
     "result.go",
     "template.go",
   ]
   deps = [
+    "world",
     "//tools/check-licenses/filetree",
     "//tools/check-licenses/license",
     "//tools/check-licenses/project",
     "//tools/lib/logger",
   ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ "world:tests" ]
 }
