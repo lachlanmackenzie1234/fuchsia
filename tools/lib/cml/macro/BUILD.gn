@@ -10,7 +10,6 @@ rustc_macro("macro") {
   source_root = "src/lib.rs"
 
   deps = [
-    "//third_party/rust_crates:darling",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:proc-macro2",
     "//third_party/rust_crates:quote",
@@ -22,12 +21,6 @@ rustc_macro("macro") {
     "src/derive_checked_vec.rs",
     "src/derive_one_or_many.rs",
     "src/derive_reference.rs",
-    "src/derive_reference_doc.rs",
     "src/lib.rs",
   ]
-}
-
-group("tests") {
-  testonly = true
-  deps = [ "derive-reference-doc-tests" ]
 }
