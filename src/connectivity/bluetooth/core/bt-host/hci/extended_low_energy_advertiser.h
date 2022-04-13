@@ -44,12 +44,7 @@ class ExtendedLowEnergyAdvertiser final : public LowEnergyAdvertiser {
                         ConnectionCallback connect_callback,
                         ResultFunction<> result_callback) override;
 
-  // Stops advertisement on all currently advertising addresses. Idempotent and asynchronous.
-  // Returns true if advertising will be stopped, false otherwise.
   void StopAdvertising() override;
-
-  // Stops any advertisement currently active on |address|. Idempotent and asynchronous. Returns
-  // true if advertising will be stopped, false otherwise.
   void StopAdvertising(const DeviceAddress& address) override;
 
   void OnIncomingConnection(hci_spec::ConnectionHandle handle, hci_spec::ConnectionRole role,
@@ -102,12 +97,20 @@ class ExtendedLowEnergyAdvertiser final : public LowEnergyAdvertiser {
 
   // Event handler for the HCI LE Advertising Set Terminated event
   CommandChannel::EventCallbackResult OnAdvertisingSetTerminatedEvent(const EventPacket& event);
-  CommandChannel::EventHandlerId event_handler_id_;
+  CommandChannel::EventHandlerId set_terminated_event_handler_id_;
 
   AdvertisingHandleMap advertising_handle_map_;
-  std::unordered_map<hci_spec::ConnectionHandle, StagedConnectionParameters> connection_handle_map_;
   std::queue<fit::closure> op_queue_;
   StagedAdvertisingParameters staged_advertising_parameters_;
+
+  // Core Spec Volume 4, Part E, Section 7.8.56: Incoming connections to LE Extended Advertising
+  // occur through two events: HCI_LE_Connection_Complete and HCI_LE_Advertising_Set_Terminated.
+  // The HCI_LE_Connection_Complete event provides the connection handle along with some other
+  // connection related parameters. Notably missing is the advertising handle, which we need to
+  // obtain the advertised device address. Until we receive the HCI_LE_Advertising_Set_Terminated
+  // event, we stage these parameters.
+  std::unordered_map<hci_spec::ConnectionHandle, StagedConnectionParameters>
+      staged_connections_map_;
 
   // Keep this as the last member to make sure that all weak pointers are invalidated before other
   // members get destroyed
