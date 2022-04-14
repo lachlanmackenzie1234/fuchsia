@@ -14,7 +14,7 @@ use {
 /// Wraps all hosted protocols into a single type that can be matched against
 /// and dispatched.
 enum IncomingRequest {
-    /// A request to the fuchsia.sys2.ComponentResolver protocol.
+    /// A request to the fuchsia.component.resolution.Resolver protocol.
     TriggerProtocol(TriggerRequestStream),
 }
 
