@@ -74,63 +74,25 @@ The `component show` command provides more details about each component.
 Use this command to see the details of `fshost` — the Fuchsia filesystem manager:
 
 ```posix-terminal
-ffx component show fshost
+ffx component show fshost.cm
 ```
 
-
 The command outputs the following report:
-
 
 ```none {:.devsite-disable-click-to-copy}
                Moniker: /bootstrap/fshost
                    URL: fuchsia-boot:///#meta/fshost.cm
                   Type: CML static component
        Component State: Resolved
- Incoming Capabilities: boot
-                        dev
-                        fuchsia.boot.Arguments
-                        fuchsia.boot.Items
-                        fuchsia.cobalt.LoggerFactory
-                        fuchsia.device.manager.Administrator
-                        fuchsia.feedback.CrashReporter
-                        fuchsia.logger.LogSink
-                        fuchsia.process.Launcher
-                        fuchsia.tracing.provider.Registry
-                        svc_blobfs
-  Exposed Capabilities: bin
-                        bin-not-delayed
-                        blob
-                        build-info
-                        config-data
-                        diagnostics
-                        durable
-                        factory
-                        fuchsia.fshost.Admin
-                        fuchsia.fshost.BlockWatcher
-                        fuchsia.update.verify.BlobfsVerifier
-                        install
-                        minfs
-                        minfs-not-delayed
-                        mnt
-                        pkgfs
-                        pkgfs-not-delayed
-                        pkgfs-packages
-                        root-ssl-certificates
-                        system
-                        system-not-delayed
-                        tmp
+ Incoming Capabilities: ...
+  Exposed Capabilities: ...
+         Configuration: ...
        Execution State: Running
-          Start reason: '/bootstrap/base_resolver' requested capability 'pkgfs-packages'
-           Running for: 1807734933 ticks
-                Job ID: 2546
-            Process ID: 2716
- Outgoing Capabilities: delayed
-                        diagnostics
-                        fs
-                        fuchsia.fshost.Admin
-                        fuchsia.fshost.BlockWatcher
-                        fuchsia.fshost.Loader
-                        fuchsia.update.verify.BlobfsVerifier
+          Start reason: '/bootstrap/base_resolver' requested capability 'pkgfs-packages-delayed'
+           Running for: 759834353 ticks
+                Job ID: 2933
+            Process ID: 2995
+ Outgoing Capabilities: ...
 ```
 
 Notice a few of the details reported here:
