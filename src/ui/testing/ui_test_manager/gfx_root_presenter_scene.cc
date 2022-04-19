@@ -16,86 +16,49 @@
 
 namespace ui_testing {
 
-void GfxRootPresenterScene::Initialize(component_testing::RealmRoot* realm) {
-  realm_ = realm;
+void GfxRootPresenterScene::Initialize() {
+  // Create the test view.
+  auto scenic = realm_->Connect<fuchsia::ui::scenic::Scenic>();
+  test_view_ = std::make_unique<GfxTestView>(std::move(scenic));
 
-  scenic_ = realm_->Connect<fuchsia::ui::scenic::Scenic>();
-
-  // Set up ui test manager's View, to harvest the client view's state.
-  auto session_pair = scenic::CreateScenicSessionPtrAndListenerRequest(scenic_.get());
-  session_ = std::make_unique<scenic::Session>(std::move(session_pair.first),
-                                               std::move(session_pair.second));
-
-  // Create view tokens.
   auto test_view_tokens = scenic::ViewTokenPair::New();
-  auto client_view_tokens = scenic::ViewTokenPair::New();
 
-  // Instruct root_presenter to present ui test manager's View.
   auto root_presenter = realm_->Connect<fuchsia::ui::policy::Presenter>();
-
   root_presenter->PresentOrReplaceView(std::move(test_view_tokens.view_holder_token),
                                        /* presentation */ nullptr);
 
-  // Set up test's View, to harvest the client view's view_state.is_rendering signal.
-  session_->SetDebugName("ui-test-manager-scene");
-  session_->set_event_handler([this](const std::vector<fuchsia::ui::scenic::Event>& events) {
-    for (const auto& event : events) {
-      if (!event.is_gfx())
-        continue;  // skip non-gfx events
+  auto [test_control_ref, test_view_ref] = scenic::ViewRefPair::New();
+  test_view_->CreateViewWithViewRef(std::move(test_view_tokens.view_token.value),
+                                    std::move(test_control_ref), std::move(test_view_ref));
 
-      if (event.gfx().is_view_properties_changed()) {
-        FX_LOGS(INFO) << "View properties changed";
-        const auto properties = event.gfx().view_properties_changed().properties;
-        FX_CHECK(client_view_holder_) << "Expect that view holder is already set up.";
-        client_view_holder_->SetViewProperties(properties);
-        session_->Present2(/*when*/ zx::clock::get_monotonic().get(), /*span*/ 0, [](auto) {});
-      } else if (event.gfx().is_view_state_changed()) {
-        FX_LOGS(INFO) << "Client view is rendering content";
-        client_view_is_rendering_ = true;
-      } else if (event.gfx().is_view_connected()) {
-        FX_LOGS(INFO) << "Client view connected";
-        client_view_connected_ = true;
-      } else if (event.gfx().is_view_disconnected()) {
-        FX_LOGS(INFO) << "Client view disconnected";
-        client_view_connected_ = false;
-      } else if (event.gfx().is_view_attached_to_scene()) {
-        FX_LOGS(INFO) << "Test view attached to scene";
-        test_view_attached_ = true;
-      } else if (event.gfx().is_view_detached_from_scene()) {
-        FX_LOGS(INFO) << "Test view detached from scene";
-        test_view_attached_ = false;
-      }
-    }
-  });
-
-  client_view_holder_ = std::make_unique<scenic::ViewHolder>(
-      session_.get(), std::move(client_view_tokens.view_holder_token), "client view holder");
-  ui_test_manager_view_ = std::make_unique<scenic::View>(
-      session_.get(), std::move(test_view_tokens.view_token), "test view");
-  ui_test_manager_view_->AddChild(*client_view_holder_);
-
-  // Request to present ; this will trigger dispatch of view properties.
-  session_->Present2(/*when*/ zx::clock::get_monotonic().get(), /*span*/ 0, [](auto) {});
-
-  // Attach client view.
-  auto view_provider = realm_->Connect<fuchsia::ui::app::ViewProvider>();
-  auto [client_control_ref, client_view_ref] = scenic::ViewRefPair::New();
-  client_view_ref_ = fidl::Clone(client_view_ref);
-  view_provider->CreateViewWithViewRef(std::move(client_view_tokens.view_token.value),
-                                       std::move(client_control_ref), std::move(client_view_ref));
+  auto client_view_provider = realm_->Connect<fuchsia::ui::app::ViewProvider>();
+  test_view_->AttachChildView(std::move(client_view_provider));
 }
 
 bool GfxRootPresenterScene::ClientViewIsAttached() {
-  return test_view_attached_ && client_view_connected_;
+  if (!test_view_)
+    return false;
+
+  return test_view_->test_view_attached() && test_view_->child_view_connected();
 }
 
-bool GfxRootPresenterScene::ClientViewIsRendering() { return client_view_is_rendering_; }
+bool GfxRootPresenterScene::ClientViewIsRendering() {
+  return test_view_->child_view_is_rendering();
+}
 
 std::optional<zx_koid_t> GfxRootPresenterScene::ClientViewRefKoid() {
-  if (!client_view_ref_)
+  const auto& child_view_ref = test_view_->child_view_ref();
+
+  if (!child_view_ref)
     return std::nullopt;
 
-  return fsl::GetKoid(client_view_ref_->reference.get());
+  return fsl::GetKoid(child_view_ref->reference.get());
+}
+
+float GfxRootPresenterScene::ClientViewScaleFactor() {
+  // The test manager's view won't apply any transforms to the client view, so
+  // the two views' scale factors will be identical.
+  return test_view_->scale_factor();
 }
 
 }  // namespace ui_testing
