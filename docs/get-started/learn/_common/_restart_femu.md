@@ -1,16 +1,24 @@
+
 ### Restart the emulator
 
-Close any emulator instances you currently have open.
-Start a new FEMU instance with networking support:
+1.  Run the following command to close any emulator instances you currently have
+    open:
 
-```posix-terminal
-fx vdl start -N -H --start-package-server
-```
+    ```posix-terminal
+    ffx emu stop --all
+    ```
 
-When startup is complete, the emulator prints the following message and opens
-a shell prompt:
+1.  Start a new emulator instance:
 
-```none {:.devsite-disable-click-to-copy}
-To support fx tools on emulator, please run "fx set-device fuchsia-5254-0063-5e7a"
-$
-```
+    ```posix-terminal
+    ffx emu start --headless
+    ```
+
+    When startup is complete, the emulator prints the following message and
+    returns:
+
+    ```none {:.devsite-disable-click-to-copy}
+    Logging to "{{ '<var>' }}$HOME{{ '</var>' }}/.local/share/Fuchsia/ffx/emu/instances/fuchsia-emulator/emulator.log"
+    Waiting for Fuchsia to start (up to 60 seconds)........
+    Emulator is ready.
+    ```
