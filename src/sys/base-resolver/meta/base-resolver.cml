@@ -6,6 +6,7 @@
     program: {
         runner: "elf",
         binary: "bin/base_resolver",
+        args: [ "base_resolver" ],
     },
     capabilities: [
         {
