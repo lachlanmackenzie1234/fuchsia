@@ -10,6 +10,7 @@ ffx_plugin("ffx_profile") {
   plugin_deps = [
     "cpu:ffx_cpu",
     "memory:ffx_profile_memory",
+    "power:ffx_power",
     "temperature:ffx_temperature",
   ]
 
