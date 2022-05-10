@@ -17,6 +17,7 @@
 #include "src/media/audio/drivers/codecs/test/codec_test-bind.h"
 
 namespace audio {
+// Codec with good behavior.
 class Test : public SimpleCodecServer {
  public:
   static zx_status_t Create(zx_device_t* parent);
