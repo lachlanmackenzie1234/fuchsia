@@ -16,7 +16,7 @@ pub async fn blobfs_checkerboard(cmd: BlobfsCheckerboardCommand) -> Result<()> {
         iterations: cmd.iterations,
         run_until_failure: cmd.run_until_failure,
     };
-    let mut test = TestEnv::new_component(
+    let mut test = TestEnv::new(
         "blackout-blobfs-checkerboard-target",
         "blackout-blobfs-checkerboard-target-component",
         opts,
@@ -25,7 +25,7 @@ pub async fn blobfs_checkerboard(cmd: BlobfsCheckerboardCommand) -> Result<()> {
     test.setup_step()
         .load_step(Duration::from_secs(30))
         .reboot_step()
-        .verify_step(20, Duration::from_secs(5));
+        .verify_step(20, Duration::from_secs(10));
     test.run().await?;
     Ok(())
 }
