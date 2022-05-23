@@ -422,6 +422,7 @@ class CodecAdapterVaApiDecoder : public CodecAdapter {
 
   uint32_t GetOutputStride() {
     // bytes_per_row_divisor must be a multiple of the size from in the output constraints.
+    ZX_ASSERT(buffer_settings_[kOutputPort]);
     ZX_ASSERT(buffer_settings_[kOutputPort]->image_format_constraints.bytes_per_row_divisor >= 16);
     return fbl::round_up(
         static_cast<uint32_t>(media_decoder_->GetPicSize().width()),
