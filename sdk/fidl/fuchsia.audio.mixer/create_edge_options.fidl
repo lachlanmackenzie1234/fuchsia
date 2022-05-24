@@ -6,21 +6,6 @@ library fuchsia.audio.mixer;
 
 const MAX_GAIN_STAGES_PER_EDGE uint32 = 32;
 
-/// Options for [`Graph.CreateEdge`].
-type CreateEdgeOptions = resource table {
-    /// This selects the sampler to use when performing sample rate conversion
-    /// on the input. Valid only when the dest node is a Mixer.
-    ///
-    /// Optional. If not specified, a default sampler is selected.
-    1: mixer_sampler Sampler;
-
-    /// Gains to apply to this edge. Since gain is applied by Mixer nodes,
-    /// either the source or dest node must be a Mixer.
-    ///
-    /// Optional. If empty, no gain is applied.
-    2: gain_stages vector<GainStageId>:MAX_GAIN_STAGES_PER_EDGE;
-};
-
 /// Ways that a Mixer node can sample from its source stream to produce a
 /// destination stream.
 type Sampler = flexible union {
