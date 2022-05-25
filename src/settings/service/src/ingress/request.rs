@@ -13,7 +13,7 @@
 //! The first trait is the [From] trait for [Response]. While [Response] could be broken
 //! down into its contained [SettingInfo](crate::base::SettingInfo) and
 //! [Error](crate::handler::base::Error) types, callers often only care about the success of a call.
-//! For example, set calls typically simple return an empty value upon success and therefore do not
+//! For example, set calls typically return an empty value upon success and therefore do not
 //! have a value to convert. The second trait is [Responder], which takes the first trait
 //! implementation as a parameter. Ths trait allows callers to customize how the response is handled
 //! with their own type as defined in the [From<Response>] trait. One should note that the
