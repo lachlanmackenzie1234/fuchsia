@@ -23,7 +23,7 @@ fuchsia_component("echo-client") {
   deps = [ ":bin" ]
 }
 
-# Unified C++ example package
+# Unified C++ async client and server example package
 fuchsia_package("echo-cpp-client") {
   deps = [
     ":echo-client",
@@ -32,7 +32,7 @@ fuchsia_package("echo-cpp-client") {
   ]
 }
 
-# Unified C++ example integration test package
+# Unified C++ async client and server example integration test package
 fuchsia_package("echo-cpp-client-test") {
   testonly = true
   deps = [
