@@ -119,7 +119,8 @@ void AddBaseRoutes(RealmBuilder* realm_builder) {
             .source = ParentRef(),
             .targets = {ChildRef{kScenicTestRealm}}});
   realm_builder->AddRoute(
-      Route{.capabilities = {Protocol{fuchsia::tracing::provider::Registry::Name_}},
+      Route{.capabilities = {Protocol{fuchsia::tracing::provider::Registry::Name_},
+                             Protocol{fuchsia::logger::LogSink::Name_}},
             .source = ParentRef(),
             .targets = {ChildRef{kRootPresenter}}});
 
