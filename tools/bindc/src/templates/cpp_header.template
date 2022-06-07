@@ -10,7 +10,6 @@
 #include <string>
 
 {dep_includes}
-
 namespace {namespace} {{
 
 {content}
