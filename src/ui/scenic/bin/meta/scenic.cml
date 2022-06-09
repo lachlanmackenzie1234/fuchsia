@@ -2,64 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-        "vulkan/client.shard.cml",
-    ],
-    program: {
-        runner: "elf",
-        binary: "bin/scenic",
-    },
-    capabilities: [
-        {
-            protocol: [
-                "fuchsia.ui.annotation.Registry",
-                "fuchsia.ui.composition.Allocator",
-                "fuchsia.ui.composition.Flatland",
-                "fuchsia.ui.composition.FlatlandDisplay",
-                "fuchsia.ui.composition.ScreenCapture",
-                "fuchsia.ui.display.internal.DisplayPower",
-                "fuchsia.ui.display.singleton.Info",
-                "fuchsia.ui.focus.FocusChainListenerRegistry",
-                "fuchsia.ui.observation.test.Registry",
-                "fuchsia.ui.pointerinjector.Registry",
-                "fuchsia.ui.scenic.Scenic",
-                "fuchsia.ui.views.ViewRefInstalled",
-            ],
-        },
-    ],
+    include: [ "//src/ui/scenic/bin/meta/scenic.shard.cml" ],
     use: [
         {
-            directory: "config-data",
-            rights: [ "r*" ],
-            path: "/config/data",
-        },
-        {
-            protocol: [
-                "fuchsia.hardware.display.Provider",
-                "fuchsia.metrics.MetricEventLoggerFactory",
-                "fuchsia.scheduler.ProfileProvider",
-            ],
-        },
-    ],
-    expose: [
-        {
-            protocol: [
-                "fuchsia.ui.annotation.Registry",
-                "fuchsia.ui.composition.Allocator",
-                "fuchsia.ui.composition.Flatland",
-                "fuchsia.ui.composition.FlatlandDisplay",
-                "fuchsia.ui.composition.ScreenCapture",
-                "fuchsia.ui.display.internal.DisplayPower",
-                "fuchsia.ui.display.singleton.Info",
-                "fuchsia.ui.focus.FocusChainListenerRegistry",
-                "fuchsia.ui.observation.test.Registry",
-                "fuchsia.ui.pointerinjector.Registry",
-                "fuchsia.ui.scenic.Scenic",
-                "fuchsia.ui.views.ViewRefInstalled",
-            ],
-            from: "self",
+            directory: "dev-display-controller",
+            rights: [ "rw*" ],
+            path: "/dev/class/display-controller",
         },
     ],
 }
