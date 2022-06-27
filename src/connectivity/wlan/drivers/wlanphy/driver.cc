@@ -1,7 +1,9 @@
-// Copyright 2018 The Fuchsia Authors. All rights reserved.
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://fxbug.dev/100036): Deprecate this file when all the drivers that wlanphy driver
+// binds to gets migrated to DFv2.
 #include "driver.h"
 
 #include <lib/async-loop/cpp/loop.h>
@@ -40,9 +42,9 @@ zx_status_t wlanphy_init(void** out_ctx) {
 zx_status_t wlanphy_bind(void* ctx, zx_device_t* device) {
   wlan::drivers::Log::SetFilter(kFiltSetting);
   ltrace_fn();
+  zx_status_t status;
 
   wlanphy_impl_protocol_t wlanphy_impl_proto;
-  zx_status_t status;
   status = device_get_protocol(device, ZX_PROTOCOL_WLANPHY_IMPL,
                                static_cast<void*>(&wlanphy_impl_proto));
   if (status != ZX_OK) {
@@ -52,6 +54,7 @@ zx_status_t wlanphy_bind(void* ctx, zx_device_t* device) {
 
   auto wlanphy_dev = std::make_unique<wlanphy::Device>(device, wlanphy_impl_proto);
   status = wlanphy_dev->Bind();
+
   if (status != ZX_OK) {
     lerror("could not bind: %s", zx_status_get_string(status));
   } else {
@@ -62,7 +65,19 @@ zx_status_t wlanphy_bind(void* ctx, zx_device_t* device) {
   return status;
 }
 
-async_dispatcher_t* wlanphy_async_t() { return loop->dispatcher(); }
+async_dispatcher_t* wlanphy_async_t() {
+  if (loop == nullptr) {
+    lerror("Loop is not initialized.");
+    return nullptr;
+  }
+
+  return loop->dispatcher();
+}
+
+void wlanphy_destroy_loop() {
+  loop->Shutdown();
+  delete loop;
+}
 
 static constexpr zx_driver_ops_t wlanphy_driver_ops = []() {
   zx_driver_ops_t ops = {};
