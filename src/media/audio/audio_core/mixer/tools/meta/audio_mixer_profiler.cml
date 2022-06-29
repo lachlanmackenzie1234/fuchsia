@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 {
     include: [
-        "sys/testing/elf_test_runner.shard.cml",
-        "syslog/client.shard.cml",
+        "//sdk/lib/sys/testing/elf_test_runner.shard.cml",
+        "//sdk/lib/syslog/client.shard.cml",
     ],
     program: {
         binary: "bin/audio_mixer_profiler",
