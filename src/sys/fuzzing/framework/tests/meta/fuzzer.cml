@@ -11,6 +11,6 @@
         args: [ "data/corpus" ],
     },
     use: [
-        { protocol: "fuchsia.fuzzer.Instrumentation" },
+        { protocol: "fuchsia.debugdata.Publisher" },
     ],
 }
