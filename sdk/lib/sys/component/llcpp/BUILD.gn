@@ -4,6 +4,10 @@
 
 import("//build/cpp/sdk_source_set.gni")
 
+# DO NOT USE.
+# This library is deprecated in favor of //sdk/lib/sys/component/cpp.
+# TODO(http://fxbug.dev/103203): Remove this directory.
+
 sdk_source_set("llcpp") {
   category = "experimental"
   sdk_name = "sys_component_llcpp"
