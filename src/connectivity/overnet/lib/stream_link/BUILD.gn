@@ -15,13 +15,25 @@ rustc_library("stream_link") {
     "//third_party/rust_crates:byteorder",
     "//third_party/rust_crates:futures",
   ]
-  test_deps = [ "//src/lib/fuchsia-async" ]
+  test_deps = [
+    "//src/connectivity/overnet/lib/onet_test_util",
+    "//src/lib/fuchsia-async",
+  ]
 
   sources = [ "src/lib.rs" ]
+
+  inputs = [
+    "//third_party/rust_crates/mirrors/quiche/quiche/examples/cert.crt",
+    "//third_party/rust_crates/mirrors/quiche/quiche/examples/cert.key",
+    "//third_party/rust_crates/mirrors/quiche/quiche/examples/rootca.crt",
+  ]
 }
 
 fuchsia_unittest_package("overnet-stream-link-tests") {
-  deps = [ ":stream_link_test" ]
+  deps = [
+    ":stream_link_test",
+    "//src/connectivity/overnet/overnetstack:certificates",
+  ]
 }
 
 group("tests") {
