@@ -7,6 +7,7 @@
         runner: "elf",
         binary: "bin/prints_when_launched_cpp",
         forward_stdout_to: "log",
+        forward_stderr_to: "none",
     },
     expose: [
         {
