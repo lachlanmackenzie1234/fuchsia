@@ -9,8 +9,12 @@ fuchsia.BIND_PROTOCOL == fuchsia.pci.BIND_PROTOCOL.DEVICE;
 fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL;
 
 accept fuchsia.BIND_PCI_DID {
-  // TODO(fxbug.dev/95863): Replace this placeholder device ID with Tiger Lake
-  // device IDs once it is supported.
-  0xFFFF,
+  // Tiger Lake device IDs: IHD-OS-TGL-Vol 4-12.21 page 9
+  0x9a49,  // TGL-U / TGL-H: UP3 / H35 - GT2
+  0x9a78,  // TGL-U: UP3 / UP4 - GT2
+  0x9a40,  // TGL-U: UP4 - GT2
+  0x9a60,  // TGL-H: H81 - GT1
+  0x9a68,  // TGL-H: H81 - GT1
+  0x9a70,  // TGL-H: H81 - GT1
 }
 fuchsia.BIND_COMPOSITE == 1;
