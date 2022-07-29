@@ -7,7 +7,6 @@ group("server_suite") {
   deps = [
     "cpp",
     "go",
-    "harness:tests",
     "hlcpp",
     "llcpp",
     "rust",
