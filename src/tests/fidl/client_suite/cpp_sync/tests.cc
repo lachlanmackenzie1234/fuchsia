@@ -6,9 +6,9 @@
 
 CLIENT_TEST(Setup) {}
 
-CLIENT_TEST(ServerClosesChannel) {
-  ASSERT_OK(target().client_end().channel().wait_one(
-      ZX_CHANNEL_PEER_CLOSED, zx::deadline_after(kTimeoutDuration), nullptr));
+CLIENT_TEST(GracefulFailureDuringCallAfterPeerClose) {
+  auto result = target()->TwoWayNoPayload();
+  ASSERT_EQ(ZX_ERR_PEER_CLOSED, result.error_value().status());
 }
 
 CLIENT_TEST(TwoWayNoPayload) {
