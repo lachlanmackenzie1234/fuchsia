@@ -11,7 +11,7 @@ assert(
 product_assembly_configuration("minimal") {
   platform = {
     base_feature_set = "minimal"
-    build_type = "eng"
+    build_type = "user"
   }
   product = {
   }
