@@ -2,73 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "//src/power/power-manager/meta/base.shard.cml" ],
     program: {
-        runner: "elf",
-        binary: "bin/power_manager",
         main_process_critical: "true",
-    },
-    capabilities: [
-        {
-            protocol: [
-                "fuchsia.hardware.power.statecontrol.Admin",
-                "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
-                "fuchsia.power.clientlevel.Connector",
-                "fuchsia.power.manager.DriverManagerRegistration",
-                "fuchsia.power.profile.Watcher",
-                "fuchsia.power.systemmode.ClientConfigurator",
-                "fuchsia.power.systemmode.Requester",
-                "fuchsia.thermal.ClientStateConnector",
-            ],
-        },
-    ],
-    use: [
-        {
-            protocol: [
-                "fuchsia.cobalt.LoggerFactory",
-                "fuchsia.device.manager.Administrator",
-                "fuchsia.feedback.CrashReporter",
-                "fuchsia.kernel.CpuResource",
-                "fuchsia.kernel.Stats",
-                "fuchsia.sys2.SystemController",
-                "fuchsia.ui.activity.Provider",
-            ],
-        },
-        {
-            protocol: [
-                "fuchsia.settings.Input",
-                "fuchsia.tracing.provider.Registry",
-            ],
-            availability: "optional",
-        },
-    ],
-    expose: [
-        {
-            protocol: [
-                "fuchsia.hardware.power.statecontrol.Admin",
-                "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
-                "fuchsia.power.clientlevel.Connector",
-                "fuchsia.power.manager.DriverManagerRegistration",
-                "fuchsia.power.profile.Watcher",
-                "fuchsia.power.systemmode.ClientConfigurator",
-                "fuchsia.power.systemmode.Requester",
-                "fuchsia.thermal.ClientStateConnector",
-            ],
-            from: "self",
-        },
-    ],
-    config: {
-        // Enable the debug service for manipulating Power Manager state at run-time.
-        enable_debug_service: { type: "bool" },
-
-        // Path to a node config file for the Power Manager to use. Typically set as a default
-        // value, but can be overriden for integration tests.
-        node_config_path: {
-            type: "string",
-            max_size: 128,
-        },
     },
 }
