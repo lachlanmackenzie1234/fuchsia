@@ -7,7 +7,7 @@
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/branch_bin",
+        binary: "bin/branch_bin_rust",
     },
     use: [
         { service: "fuchsia.examples.services.BankAccount" },
