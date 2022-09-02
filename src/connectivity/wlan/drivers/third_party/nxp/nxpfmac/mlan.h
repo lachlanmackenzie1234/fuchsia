@@ -21,6 +21,7 @@ extern "C" {
 #endif
 
 #include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/mlan/mlan_decl.h"
+#include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/mlan/mlan_ioctl.h"
 
 #ifdef __cplusplus
 }  // extern "C"
