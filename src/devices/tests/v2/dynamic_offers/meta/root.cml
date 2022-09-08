@@ -12,11 +12,11 @@
         bind: "meta/bind/root.bindbc",
     },
     capabilities: [
-        { protocol: "fuchsia.offers.test.Handshake" },
+        { service: "fuchsia.offers.test.Service" },
     ],
     expose: [
         {
-            protocol: "fuchsia.offers.test.Handshake",
+            service: "fuchsia.offers.test.Service",
             from: "self",
         },
     ],

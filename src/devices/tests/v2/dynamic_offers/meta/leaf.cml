@@ -12,11 +12,7 @@
         bind: "meta/bind/leaf.bindbc",
     },
     use: [
-        {
-            protocol: [
-                "fuchsia.offers.test.Handshake",
-                "fuchsia.offers.test.Waiter",
-            ],
-        },
+        { protocol: "fuchsia.offers.test.Waiter" },
+        { service: "fuchsia.offers.test.Service" },
     ],
 }
