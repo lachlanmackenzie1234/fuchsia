@@ -10,6 +10,7 @@ ffx_plugin("ffx_product") {
   config_data = [ "data/config.json" ]
 
   plugin_deps = [
+    "create:ffx_product_create",
     "get:ffx_product_get",
     "verify:ffx_product_verify",
   ]
