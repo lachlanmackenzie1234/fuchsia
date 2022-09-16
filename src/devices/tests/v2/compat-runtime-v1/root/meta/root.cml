@@ -3,12 +3,22 @@
 // found in the LICENSE file.
 {
     include: [
+        "//src/devices/lib/compat/compat.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
         runner: "driver",
-        binary: "driver/root.so",
+        compat: "driver/compat-runtime-v1-root.so",
         bind: "meta/bind/root.bindbc",
     },
+    capabilities: [
+        { service: "fuchsia.compat.runtime.Service" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.compat.runtime.Service",
+            from: "self",
+        },
+    ],
 }
