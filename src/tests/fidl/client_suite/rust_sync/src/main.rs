@@ -169,7 +169,7 @@ async fn run_runner_server(stream: RunnerRequestStream) -> Result<(), Error> {
                     std::thread::spawn(move || {
                         loop {
                             let report_result = match client.wait_for_event(zx::Time::INFINITE) {
-                                Ok(_) => panic!("closed target defines no events"),
+                                Ok(_) => panic!("unreachable: closed target defines no events"),
                                 Err(fidl_err @ fidl::Error::ClientEvent(_))
                                 | Err(fidl_err @ fidl::Error::ClientChannelClosed { .. }) => {
                                     // Error receiving event or peer closed.
