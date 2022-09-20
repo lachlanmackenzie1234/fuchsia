@@ -11,22 +11,13 @@ ffx_plugin("ffx_package_far") {
   deps = [
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/sys/pkg/lib/far/rust:fuchsia-archive",
-    "//src/sys/pkg/lib/fuchsia-hash",
-    "//src/sys/pkg/lib/fuchsia-pkg",
-    "//third_party/rust_crates:humansize",
-    "//third_party/rust_crates:prettytable-rs",
-    "//third_party/rust_crates:serde",
+    "//src/developer/ffx/plugins/package/archive:lib",
   ]
-  test_deps = [
-    "//third_party/rust_crates:mockall",
-    "//third_party/rust_crates:tempfile",
-  ]
+  test_deps = [ "//third_party/rust_crates:tempfile" ]
   args_sources = [ "src/args.rs" ]
   sources = [
     "src/cat.rs",
     "src/extract.rs",
     "src/lib.rs",
-    "src/list.rs",
   ]
 }
