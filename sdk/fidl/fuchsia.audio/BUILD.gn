@@ -6,6 +6,8 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.audio") {
   sources = [
+    "compression.fidl",
+    "format.fidl",
     "gain.fidl",
     "ring_buffer.fidl",
   ]
