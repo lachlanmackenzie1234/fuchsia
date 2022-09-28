@@ -9,6 +9,7 @@ using fuchsia.wlan.internal;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using zx;
 
+// LINT.IfChange
 type WlanSoftmacBandCapability = struct {
     /// The values of this struct apply to the band indicated in this field.
     band fuchsia.wlan.common.WlanBand;
@@ -473,3 +474,4 @@ protocol WlanSoftmac {
         st zx.status;
     });
 };
+// LINT.ThenChange(//sdk/fidl/fuchsia.wlan.softmac/softmac.fidl)
