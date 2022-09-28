@@ -280,6 +280,12 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionToken.CreateBufferCollectionTokenGroup",
+        "ordinal": "3414366098448103847",
+        "type": "(server_end:fuchsia.sysmem/BufferCollectionTokenGroup group_request)"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.sysmem/BufferCollectionToken.DeprecatedClose",
         "ordinal": "1287775990545719670",
         "type": "()"
@@ -359,6 +365,81 @@
     {
         "kind": "protocol",
         "name": "fuchsia.sysmem/BufferCollectionToken"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.AllChildrenPresent",
+        "ordinal": "2108090755284486992",
+        "type": "()"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.Close",
+        "ordinal": "6565538312948415655",
+        "type": "()"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.CreateChild",
+        "ordinal": "3347573912591003225",
+        "type": "(fuchsia.sysmem/BufferCollectionTokenGroupCreateChildRequest payload)"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.CreateChildrenSync",
+        "ordinal": "6241359931670852917",
+        "type": "(vector<zx/rights>:64 rights_attenuation_masks) -> (vector<client_end:fuchsia.sysmem/BufferCollectionToken>:64 tokens)"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.SetDebugClientInfo",
+        "ordinal": "8247627555829145314",
+        "type": "(string:64 name,uint64 id)"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.SetDebugTimeoutLogDeadline",
+        "ordinal": "5103580339765479527",
+        "type": "(int64 deadline)"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.SetName",
+        "ordinal": "8621046055753884739",
+        "type": "(uint32 priority,string:64 name)"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.SetVerboseLogging",
+        "ordinal": "7781062160284766856",
+        "type": "()"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup.Sync",
+        "ordinal": "312857390244586129",
+        "type": "() -> ()"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroup"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroupCreateChildRequest.rights_attenuation_mask",
+        "ordinal": "2",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroupCreateChildRequest.token_request",
+        "ordinal": "1",
+        "type": "server_end:fuchsia.sysmem/BufferCollectionToken"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.sysmem/BufferCollectionTokenGroupCreateChildRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",
