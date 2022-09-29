@@ -5,6 +5,6 @@
 // TODO(fxb/104019): ffx auto-imports these libraries, even though we don't need them.
 use {argh as _, ffx_core as _};
 
-pub use package_tool::BuildCommand;
+pub use package_tool::PackageBuildCommand;
 
-pub type FfxPluginCommand = BuildCommand;
+pub type FfxPluginCommand = PackageBuildCommand;
