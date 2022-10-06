@@ -4,7 +4,7 @@
 
 import("//src/developer/ffx/build/ffx_plugin.gni")
 
-ffx_plugin("ffx_gpu") {
+ffx_plugin("ffx_profile_gpu") {
   version = "0.1.0"
   edition = "2021"
   plugin_deps = [ "usage:ffx_gpu_usage" ]
