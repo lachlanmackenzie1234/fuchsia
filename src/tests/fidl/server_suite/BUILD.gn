@@ -6,6 +6,7 @@ group("server_suite") {
   testonly = true
   deps = [
     "cpp",
+    "dart",
     "go",
     "hlcpp",
     "llcpp",
