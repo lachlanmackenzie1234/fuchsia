@@ -1,19 +1,7 @@
 # README
 
-This directory contains all of the example code for the "canvas" case study
-series of FIDL examples. In sum, this case study series is meant to serve as a
-tour of some of FIDL's most popular patterns around data flow, including topics
-like improving protocol performance and flow control.
-
-The canvas store case study features a "baseline" case implementing a simple
-canvas that "draws" an (unrendered) set of lines, returning the position of the
-bounding box of all things drawn to the canvas when it has done so. This is then
-follow by a number of examples demonstrating various possible "extensions" to
-that baseline case, including:
-
-* Implementing flow control on messages sent by the client.
-* Implementing flow control on messages sent by the server.
-* Various changes that improve IPC performance.
+This directory contains all of the example code for the "canvas" series of FIDL
+examples. See the associated [docs][docs] for more information.
 
 Each example should include the following:
 
@@ -26,6 +14,7 @@ Each example should include the following:
 * An [implementation][impl-hlcpp] of the client and server using the HLCPP bindings.
 * An [implementation][impl-rust] of the client and server using the Rust bindings.
 
+[docs]: /docs/development/languages/fidl/examples/canvas/README.md
 [impl-cml]: baseline/meta
 [impl-cpp-natural]: baseline/cpp-natural
 [impl-cpp-wire]: baseline/cpp-wire
