@@ -1,62 +1,62 @@
 [
     {
-        "declaration": "uint64",
         "kind": "const",
         "name": "zx/CHANNEL_MAX_MSG_BYTES",
+        "type": "uint64",
         "value": "65536"
     },
     {
-        "declaration": "uint64",
         "kind": "const",
         "name": "zx/CHANNEL_MAX_MSG_HANDLES",
+        "type": "uint64",
         "value": "64"
     },
     {
-        "declaration": "zx/rights",
         "kind": "const",
         "name": "zx/DEFAULT_CHANNEL_RIGHTS",
+        "type": "zx/rights",
         "value": "61454"
     },
     {
-        "declaration": "zx/rights",
         "kind": "const",
         "name": "zx/DEFAULT_EVENT_RIGHTS",
+        "type": "zx/rights",
         "value": "53251"
     },
     {
-        "declaration": "uint64",
         "kind": "const",
         "name": "zx/MAX_CPUS",
+        "type": "uint64",
         "value": "512"
     },
     {
-        "declaration": "uint64",
         "kind": "const",
         "name": "zx/MAX_NAME_LEN",
+        "type": "uint64",
         "value": "32"
     },
     {
-        "declaration": "zx/rights",
         "kind": "const",
         "name": "zx/RIGHTS_BASIC",
+        "type": "zx/rights",
         "value": "49155"
     },
     {
-        "declaration": "zx/rights",
         "kind": "const",
         "name": "zx/RIGHTS_IO",
+        "type": "zx/rights",
         "value": "12"
     },
     {
-        "declaration": "zx/rights",
         "kind": "const",
         "name": "zx/RIGHTS_POLICY",
+        "type": "zx/rights",
         "value": "3072"
     },
     {
-        "declaration": "zx/rights",
         "kind": "const",
         "name": "zx/RIGHTS_PROPERTY",
+        "type": "zx/rights",
         "value": "192"
     },
     {
@@ -205,10 +205,10 @@
         "value": "3"
     },
     {
-        "declaration": "uint32",
         "kind": "enum",
         "name": "zx/obj_type",
-        "strictness": "strict"
+        "strictness": "strict",
+        "type": "uint32"
     },
     {
         "kind": "bits/member",
@@ -321,10 +321,10 @@
         "value": "8"
     },
     {
-        "declaration": "uint32",
         "kind": "bits",
         "name": "zx/rights",
-        "strictness": "strict"
+        "strictness": "strict",
+        "type": "uint32"
     },
     {
         "kind": "library",
