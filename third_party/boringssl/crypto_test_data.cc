@@ -4450,9 +4450,9 @@ static std::string AssembleString(const char **data, size_t len) {
 }
 
 /* Silence -Wmissing-declarations. */
-std::string GetTestData(const char *path);
+__attribute__((__visibility__("default"))) std::string GetTestData(const char *path);
 
-std::string GetTestData(const char *path) {
+__attribute__((__visibility__("default"))) std::string GetTestData(const char *path) {
   if (strcmp(path, "crypto/blake2/blake2b256_tests.txt") == 0) {
     return AssembleString(kData0, kLen0);
   }
