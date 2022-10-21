@@ -13,25 +13,19 @@ mod triangle;
 
 use {
     anyhow::Error,
+    circuit::multi_stream::multi_stream_node_connection_to_async,
     fidl::endpoints::ClientEnd,
     fidl_fuchsia_overnet::{Peer, ServiceProviderMarker},
     fuchsia_async::Task,
     futures::prelude::*,
-    overnet_core::{
-        log_errors, Endpoint, LinkReceiver, LinkSender, ListPeersContext, NodeId, NodeIdGenerator,
-        Router,
-    },
+    overnet_core::{log_errors, ListPeersContext, NodeId, NodeIdGenerator, Router},
     parking_lot::Mutex,
-    std::pin::Pin,
     std::sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
-    stream_link::run_stream_link,
-    udp_link::{new_quic_link, QuicReceiver},
 };
 
-pub use fidl_fuchsia_overnet::MeshControllerProxyInterface;
 pub use fidl_fuchsia_overnet::ServiceConsumerProxyInterface;
 pub use fidl_fuchsia_overnet::ServicePublisherProxyInterface;
 
@@ -43,22 +37,7 @@ enum OvernetCommand {
     ListPeers(futures::channel::oneshot::Sender<Vec<Peer>>),
     RegisterService(String, ClientEnd<ServiceProviderMarker>),
     ConnectToService(NodeId, String, fidl::Channel),
-    AttachSocketLink(fidl::Socket),
-    NewLink(Box<dyn NewLinkRunner>),
-}
-
-trait NewLinkRunner: Send {
-    fn run(
-        self: Box<Self>,
-        tx: LinkSender,
-        rx: LinkReceiver,
-    ) -> Pin<Box<dyn Send + Future<Output = Result<(), Error>>>>;
-}
-
-impl std::fmt::Debug for dyn NewLinkRunner {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        "link_runner".fmt(f)
-    }
+    AttachCircuitSocketLink(fidl::Socket, bool),
 }
 
 /// Overnet implementation for integration tests
@@ -72,8 +51,15 @@ pub struct Overnet {
 impl Overnet {
     /// Create a new instance
     pub fn new(node_id_gen: &mut NodeIdGenerator) -> Result<Arc<Overnet>, Error> {
-        let node = node_id_gen.new_router()?;
+        Self::from_router(node_id_gen.new_router()?)
+    }
 
+    /// Create a new circuit instance
+    pub fn new_circuit_router(node_id_gen: &mut NodeIdGenerator) -> Result<Arc<Overnet>, Error> {
+        Self::from_router(node_id_gen.new_router_circuit_router()?)
+    }
+
+    fn from_router(node: Arc<Router>) -> Result<Arc<Overnet>, Error> {
         let (tx, rx) = futures::channel::mpsc::unbounded();
         tracing::info!(node_id = node.node_id().0, "SPAWN OVERNET");
         let tx = Mutex::new(tx);
@@ -102,19 +88,16 @@ impl Overnet {
         Ok(ServicePublisher(self.clone()))
     }
 
-    /// Produce a proxy that acts as a connection to Overnet under the MeshController role
-    pub fn connect_as_mesh_controller(
-        self: &Arc<Self>,
-    ) -> Result<impl MeshControllerProxyInterface, Error> {
-        Ok(MeshController(self.clone()))
+    fn attach_circuit_socket_link(
+        &self,
+        socket: fidl::Socket,
+        is_server: bool,
+    ) -> Result<(), fidl::Error> {
+        self.send(OvernetCommand::AttachCircuitSocketLink(socket, is_server))
     }
 
     pub fn node_id(&self) -> NodeId {
         self.node_id
-    }
-
-    fn new_link(&self, runner: impl 'static + NewLinkRunner) -> Result<(), fidl::Error> {
-        self.send(OvernetCommand::NewLink(Box::new(runner)))
     }
 }
 
@@ -135,14 +118,17 @@ async fn run_overnet_command(
         OvernetCommand::ConnectToService(node_id, service_name, channel) => {
             node.connect_to_service(node_id, &service_name, channel).await
         }
-        OvernetCommand::AttachSocketLink(socket) => {
+        OvernetCommand::AttachCircuitSocketLink(socket, is_server) => {
             let (mut rx, mut tx) = fidl::AsyncSocket::from_socket(socket)?.split();
-            run_stream_link(node, None, &mut rx, &mut tx, Default::default(), Box::new(|| None))
-                .await
-        }
-        OvernetCommand::NewLink(runner) => {
-            let (tx, rx) = node.new_link(Default::default(), Box::new(|| None));
-            runner.run(tx, rx).await
+            multi_stream_node_connection_to_async(
+                node.circuit_node(),
+                &mut rx,
+                &mut tx,
+                is_server,
+                circuit::Quality::IN_PROCESS,
+            )
+            .await?;
+            Ok(())
         }
     }
 }
@@ -184,14 +170,6 @@ async fn run_overnet(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // ProxyInterface implementations
-
-struct MeshController(Arc<Overnet>);
-
-impl MeshControllerProxyInterface for MeshController {
-    fn attach_socket_link(&self, socket: fidl::Socket) -> Result<(), fidl::Error> {
-        self.0.send(OvernetCommand::AttachSocketLink(socket))
-    }
-}
 
 struct ServicePublisher(Arc<Overnet>);
 
@@ -250,90 +228,11 @@ impl ServiceConsumerProxyInterface for ServiceConsumer {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Connect Overnet nodes to each other
 
-async fn copy_with_mutator(
-    mut rx: impl AsyncRead + std::marker::Unpin,
-    mut tx: impl AsyncWrite + std::marker::Unpin,
-    mut mutator: impl FnMut(Vec<u8>) -> Vec<u8>,
-) -> Result<(), Error> {
-    let mut buf = [0u8; 1024];
-    loop {
-        let n = rx.read(&mut buf).await?;
-        if n == 0 {
-            return Ok(());
-        }
-        let write = mutator(Vec::from(&buf[0..n]));
-        tx.write_all(&write).await?;
-    }
-}
-
-/// Connect two test overnet instances, with mutating functions between the stream socket connecting
-/// them - to test recovery mechanisms.
-pub async fn connect_with_mutator(
-    a: Arc<Overnet>,
-    b: Arc<Overnet>,
-    mutator_ab: Box<dyn Send + FnMut(Vec<u8>) -> Vec<u8>>,
-    mutator_ba: Box<dyn Send + FnMut(Vec<u8>) -> Vec<u8>>,
-) -> Result<(), Error> {
-    let a = a.clone().connect_as_mesh_controller()?;
-    let b = b.clone().connect_as_mesh_controller()?;
-    let (a1, a2) = fidl::Socket::create(fidl::SocketOpts::STREAM)?;
-    let (b1, b2) = fidl::Socket::create(fidl::SocketOpts::STREAM)?;
-    let (arx, atx) = fidl::AsyncSocket::from_socket(a2)?.split();
-    let (brx, btx) = fidl::AsyncSocket::from_socket(b1)?.split();
-    a.attach_socket_link(a1)?;
-    b.attach_socket_link(b2)?;
-    futures::future::try_join(
-        copy_with_mutator(brx, atx, mutator_ab),
-        copy_with_mutator(arx, btx, mutator_ba),
-    )
-    .await
-    .map(drop)
-}
-
 /// Connect two test overnet instances with a stream socket.
 pub fn connect(a: &Arc<Overnet>, b: &Arc<Overnet>) -> Result<(), Error> {
     tracing::info!(a = a.node_id().0, b = b.node_id().0, "Connect nodes");
-    let a = a.clone().connect_as_mesh_controller()?;
-    let b = b.clone().connect_as_mesh_controller()?;
     let (sa, sb) = fidl::Socket::create(fidl::SocketOpts::STREAM)?;
-    a.attach_socket_link(sa)?;
-    b.attach_socket_link(sb)?;
-    Ok(())
-}
-
-struct QuicLinkRunner {
-    tx: futures::channel::oneshot::Sender<QuicReceiver>,
-    rx: futures::channel::oneshot::Receiver<QuicReceiver>,
-    endpoint: Endpoint,
-}
-
-impl NewLinkRunner for QuicLinkRunner {
-    fn run(
-        self: Box<Self>,
-        link_sender: LinkSender,
-        link_receiver: LinkReceiver,
-    ) -> Pin<Box<dyn Send + Future<Output = Result<(), Error>>>> {
-        async move {
-            let (tx, rx, _) = new_quic_link(link_sender, link_receiver, self.endpoint).await?;
-            self.tx
-                .send(rx)
-                .map_err(|_| anyhow::format_err!("failed to send quic link to other end"))?;
-            let rx = self.rx.await?;
-            let mut frame = [0u8; 1400];
-            while let Some(n) = tx.next_send(&mut frame).await? {
-                rx.received_frame(&mut frame[..n]).await;
-            }
-            Ok(())
-        }
-        .boxed()
-    }
-}
-
-// Connect two test overnet instances with a QUIC based link
-pub fn connect_with_quic(a: &Arc<Overnet>, b: &Arc<Overnet>) -> Result<(), Error> {
-    let (atx, brx) = futures::channel::oneshot::channel();
-    let (btx, arx) = futures::channel::oneshot::channel();
-    a.new_link(QuicLinkRunner { tx: atx, rx: arx, endpoint: Endpoint::Client })?;
-    b.new_link(QuicLinkRunner { tx: btx, rx: brx, endpoint: Endpoint::Server })?;
+    a.attach_circuit_socket_link(sa, true)?;
+    b.attach_circuit_socket_link(sb, false)?;
     Ok(())
 }
