@@ -5,5 +5,5 @@
 import("//build/components.gni")
 
 group("third_party") {
-  deps = [ "adb-daemon" ]
+  deps = [ "adb" ]
 }
