@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod block;
+pub mod ota;
 pub mod wlan;
 
 #[cfg(test)]
