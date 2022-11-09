@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "fidl/fidl.clientsuite/cpp/natural_types.h"
+#include "src/tests/fidl/channel_util/bytes.h"
 #include "src/tests/fidl/client_suite/harness/harness.h"
 #include "src/tests/fidl/client_suite/harness/ordinals.h"
 
@@ -29,6 +31,38 @@ CLIENT_TEST(TwoWayNoPayload) {
 
   Bytes bytes_in = {
       header(txid, kOrdinalTwoWayNoPayload, fidl::MessageDynamicFlags::kStrictMethod),
+  };
+  ASSERT_OK(server_end().write(bytes_in));
+
+  WAIT_UNTIL_CALLBACK_RUN();
+}
+
+CLIENT_TEST(TwoWayStructPayload) {
+  static const fidl_clientsuite::NonEmptyPayload kPayload{{.some_field = 42}};
+
+  runner()
+      ->CallTwoWayStructPayload({{.target = TakeClosedClient()}})
+      .ThenExactlyOnce(
+          [&](fidl::Result<fidl_clientsuite::Runner::CallTwoWayStructPayload>& result) {
+            MarkCallbackRun();
+            ASSERT_TRUE(result.is_ok()) << result.error_value();
+            ASSERT_TRUE(result.value().success().has_value());
+            ASSERT_EQ(result.value().success().value(), kPayload);
+          });
+
+  ASSERT_OK(server_end().wait_for_signal(ZX_CHANNEL_READABLE));
+
+  Bytes bytes_out = {
+      header(0, kOrdinalTwoWayStructPayload, fidl::MessageDynamicFlags::kStrictMethod),
+  };
+  zx_txid_t txid;
+  ASSERT_OK(server_end().read_and_check_unknown_txid(&txid, bytes_out));
+  ASSERT_NE(0u, txid);
+
+  Bytes bytes_in = {
+      header(txid, kOrdinalTwoWayStructPayload, fidl::MessageDynamicFlags::kStrictMethod),
+      i32(42),
+      padding(4),
   };
   ASSERT_OK(server_end().write(bytes_in));
 
