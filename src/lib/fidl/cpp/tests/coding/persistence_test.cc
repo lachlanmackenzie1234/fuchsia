@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/test.types/cpp/fidl.h>
+#include <fidl/test.types/cpp/natural_types.h>
 #include <lib/zx/event.h>
 #include <zircon/fidl.h>
 
@@ -13,11 +13,9 @@
 
 #include <zxtest/zxtest.h>
 
-#include "fidl/test.types/cpp/natural_types.h"
-
-TEST(Unpersist, NaturalStruct) {
+static std::vector<uint8_t> GetWireStructBytes() {
   // clang-format off
-  const std::vector<uint8_t> bytes = {
+  std::vector<uint8_t> bytes = {
       // Wire format metadata.
       0, kFidlWireFormatMagicNumberInitial, FIDL_MESSAGE_HEADER_AT_REST_FLAGS_0_USE_VERSION_V2, 0,
       0, 0, 0, 0,
@@ -25,6 +23,30 @@ TEST(Unpersist, NaturalStruct) {
       42, 0, 0, 0, 0, 0, 0, 0,
   };
   // clang-format on
+  return bytes;
+}
+
+TEST(Unpersist, TooFewBytesError) {
+  std::vector<uint8_t> bytes = {1, 2, 3};
+  fit::result result = ::fidl::Unpersist<test_types::CopyableStruct>(cpp20::span(bytes));
+  ASSERT_FALSE(result.is_ok());
+  ASSERT_EQ(fidl::Reason::kDecodeError, result.error_value().reason());
+}
+
+TEST(Unpersist, TooManyBytesError) {
+  for (size_t n : {1, 8}) {
+    std::vector<uint8_t> bytes = GetWireStructBytes();
+    for (size_t i = 0; i < n; i++) {
+      bytes.push_back(0);
+    }
+    fit::result result = ::fidl::Unpersist<test_types::CopyableStruct>(cpp20::span(bytes));
+    ASSERT_FALSE(result.is_ok(), "Should fail with %zu extra bytes", n);
+    ASSERT_EQ(fidl::Reason::kDecodeError, result.error_value().reason());
+  }
+}
+
+TEST(Unpersist, NaturalStruct) {
+  std::vector<uint8_t> bytes = GetWireStructBytes();
   EXPECT_EQ(bytes.size(), 16U);
 
   fit::result result = ::fidl::Unpersist<test_types::CopyableStruct>(cpp20::span(bytes));
