@@ -69,7 +69,7 @@ class InstanceImpl final : public fidl::WireServer<examples_canvas_addlinemetere
     state_.changed = true;
 
     // [START diff_1]
-    // Because this is now a two-way method, we must use the generated `completer` to send an in
+    // Because this is now a two-way method, we must use the generated |completer| to send an in
     // this case empty reply back to the client. This is the mechanic which syncs the flow rate
     // between the client and server on this method, thereby preventing the client from "flooding"
     // the server with unacknowledged work.
