@@ -25,9 +25,11 @@
   return ::examples::canvas::baseline::Point{.x = x, .y = y};
 }
 
+using Line = ::std::array<::examples::canvas::baseline::Point, 2>;
+
 // A helper function that takes a coordinate pair in string form, like "1,2:-3,-4", and parses it
 // into an array of 2 |Point| structs.
-::std::array<::examples::canvas::baseline::Point, 2> ParseLine(const std::string& action) {
+Line ParseLine(const std::string& action) {
   auto input = std::string_view(action);
   size_t index = input.find(':');
   if (index != std::string::npos) {
@@ -80,7 +82,7 @@ int main(int argc, const char** argv) {
 
     // Draw a line to the canvas by calling the server, using the two points we just parsed
     // above as arguments.
-    auto line = ParseLine(action);
+    Line line = ParseLine(action);
     instance_proxy->AddLine(line);
     FX_LOGS(INFO) << "AddLine request sent: [Point { x: " << line[1].x << ", y: " << line[1].y
                   << " }, Point { x: " << line[0].x << ", y: " << line[0].y << " }]";
