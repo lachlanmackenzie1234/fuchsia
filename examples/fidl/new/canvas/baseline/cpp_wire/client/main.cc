@@ -18,8 +18,8 @@ class EventHandler : public fidl::WireAsyncEventHandler<examples_canvas_baseline
  public:
   // Handler for |OnDrawn| events sent from the server.
   void OnDrawn(fidl::WireEvent<examples_canvas_baseline::Instance::OnDrawn>* event) override {
-    auto top_left = event->top_left;
-    auto bottom_right = event->bottom_right;
+    ::examples_canvas_baseline::wire::Point top_left = event->top_left;
+    ::examples_canvas_baseline::wire::Point bottom_right = event->bottom_right;
     FX_LOGS(INFO) << "OnDrawn event received: top_left: Point { x: " << top_left.x
                   << ", y: " << top_left.y << " }, bottom_right: Point { x: " << bottom_right.x
                   << ", y: " << bottom_right.y << " }";
@@ -47,9 +47,11 @@ class EventHandler : public fidl::WireAsyncEventHandler<examples_canvas_baseline
   return ::examples_canvas_baseline::wire::Point{.x = x, .y = y};
 }
 
+using Line = ::fidl::Array<::examples_canvas_baseline::wire::Point, 2>;
+
 // A helper function that takes a coordinate pair in string form, like "1,2:-3,-4", and parses it
 // into an array of 2 |Point| structs.
-::fidl::Array<::examples_canvas_baseline::wire::Point, 2> ParseLine(const std::string& action) {
+Line ParseLine(const std::string& action) {
   auto input = std::string_view(action);
   size_t index = input.find(':');
   if (index != std::string::npos) {
@@ -97,7 +99,7 @@ int main(int argc, const char** argv) {
 
     // Draw a line to the canvas by calling the server, using the two points we just parsed
     // above as arguments.
-    auto line = ParseLine(action);
+    Line line = ParseLine(action);
     fidl::Status status = client->AddLine(line);
     if (!status.ok()) {
       // Check that our one-way call was enqueued successfully, and handle the error appropriately.
