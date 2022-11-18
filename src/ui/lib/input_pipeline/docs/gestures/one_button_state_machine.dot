@@ -69,11 +69,10 @@ digraph {
   }
 
   arena -> process_at_button_down_winner [label="process\nnew\nevent()"]
-  // if button release, end the gesture and send button up.
   process_at_button_down_winner [shape="diamond" label="button\npressed?"]
-  process_at_button_down_winner -> return_end_with_button_up_at_winner [label="no"]
+  process_at_button_down_winner -> return_button_up_winner_at_button_down_winner [label="no"]
   process_at_button_down_winner -> process2_at_button_down_winner [label="yes"]
-  return_end_with_button_up_at_winner [shape="rectangle" label="return\nEndesture(Some)"]
+  return_button_up_winner_at_button_down_winner [shape="rectangle" label="return\nContinueGesture(\nSome(ButtonUp),\nButtonUpWinner)"]
 
   // if button for certain time, it is likely a drag gesture, use smaller
   // threshold for detect as drag.
@@ -103,7 +102,7 @@ digraph {
   subgraph cluster_forward_button_down {
     label="ButtonDownWinner"
     process_at_button_down_winner
-    return_end_with_button_up_at_winner
+    return_button_up_winner_at_button_down_winner
     process2_at_button_down_winner
     process3_at_button_down_winner
     process4_at_button_down_winner
@@ -115,9 +114,9 @@ digraph {
   // if button release, end the gesture and send button up.
   // otherwise, translate the 1st finger movement to mouse event.
   process_at_drag_winner [shape="diamond" label="button\npressed?"]
-  process_at_drag_winner -> return_end_with_button_up_at_drag_winner [label="no"]
+  process_at_drag_winner -> return_button_up_winner_at_drag_winner [label="no"]
   process_at_drag_winner -> return_continue_with_event_at_winner [label="yes"]
-  return_end_with_button_up_at_drag_winner [shape="rectangle" label="return\nEndesture(Some)"]
+  return_button_up_winner_at_drag_winner [shape="rectangle" label="return\nContinueGesture(\nSome(ButtonUp),\nButtonUpWinner)"]
   return_continue_with_event_at_winner [shape="rectangle" label="return\nContinueGesture(\nSome, self)"]
 
   // Here number of finger does not matter anymore.
@@ -130,7 +129,27 @@ digraph {
   subgraph cluster_forward_motion {
     label="DragWinner"
     process_at_drag_winner
-    return_end_with_button_up_at_drag_winner
+    return_button_up_winner_at_drag_winner
     return_continue_with_event_at_winner
+  }
+
+  arena -> process_at_button_up_winner [label="process\nnew\nevent()"]
+  process_at_button_up_winner [shape="diamond" label="button\nup\ntimeout"]
+  process_at_button_up_winner -> process2_at_button_up_winner[label="no"]
+  process_at_button_up_winner -> return_end_at_button_up_winner[label="yes"]
+
+  process2_at_button_up_winner [shape="diamond" label="movement\n>\nlarger_threshold"]
+  process2_at_button_up_winner -> return_self_at_button_up_winner[label="no"]
+  process2_at_button_up_winner -> return_end_at_button_up_winner[label="yes"]
+
+  return_self_at_button_up_winner [shape="rectangle" label="return\n`self`"]
+  return_end_at_button_up_winner [shape="rectangle" label="return EndGesutre(None)"]
+
+  subgraph cluster_ignore_motion_after_button_up {
+    label="ButtonUpWinner"
+    process_at_button_up_winner
+    process2_at_button_up_winner
+    return_self_at_button_up_winner
+    return_end_at_button_up_winner
   }
 }
