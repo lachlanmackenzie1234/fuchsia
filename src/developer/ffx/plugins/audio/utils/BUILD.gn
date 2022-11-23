@@ -11,6 +11,7 @@ rustc_library("audio-utils") {
 
   deps = [
     "//sdk/fidl/fuchsia.audio.ffxdaemon:fuchsia.audio.ffxdaemon_rust",
+    "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//src/developer/ffx/lib/errors:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:hound",
