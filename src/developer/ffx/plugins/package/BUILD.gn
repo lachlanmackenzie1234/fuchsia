@@ -11,6 +11,7 @@ ffx_plugin("ffx_package") {
   plugin_deps = [
     "archive:ffx_package_archive",
     "build:ffx_package_build",
+    "far:ffx_package_far",
   ]
 
   args_sources = [ "src/args.rs" ]
