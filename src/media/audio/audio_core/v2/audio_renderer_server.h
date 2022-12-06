@@ -14,8 +14,7 @@
 
 #include <map>
 #include <memory>
-#include <unordered_map>
-#include <unordered_set>
+#include <optional>
 #include <utility>
 
 #include "src/media/audio/audio_core/shared/device_config.h"
@@ -73,7 +72,7 @@ class AudioRendererServer
   void SetPcmStreamType(SetPcmStreamTypeRequestView request,
                         SetPcmStreamTypeCompleter::Sync& completer) final;
 
-  // Must be called after SetPcmStreamType.
+  // Must be called after SetPcmStreamType + AddPayloadBuffer.
   void SendPacket(SendPacketRequestView request, SendPacketCompleter::Sync& completer) final;
   void SendPacketNoReply(SendPacketNoReplyRequestView request,
                          SendPacketNoReplyCompleter::Sync& completer) final;
@@ -119,7 +118,7 @@ class AudioRendererServer
                     std::optional<PlayCompleter::Async> completer);
   void PauseInternal(std::optional<PauseCompleter::Async> completer);
 
-  void OnShutdown(fidl::UnbindInfo info);
+  void OnShutdown(fidl::UnbindInfo info) final;
   void OnMinLeadTimeUpdated(std::optional<zx::duration> min_lead_time);
   void MaybeConfigure();
   void MaybeSetReadyToPlay();
@@ -132,6 +131,8 @@ class AudioRendererServer
   const bool ramp_on_play_pause_;
 
   enum class State {
+    // Server has shut down.
+    kShutdown,
     // Waiting for the client to select a format and payload buffer.
     kWaitingForConfig,
     // Finalized the format and payload buffer. Started graph node creations.
