@@ -1,7 +1,7 @@
 # README
 
 This directory contains all of the example code for the "${series_text_case}"
-series of FIDL examples. See the associated [docs][docs] for more information.
+series of FIDL examples. See the associated [docs] for more information.
 
 Each example should include the following:
 
