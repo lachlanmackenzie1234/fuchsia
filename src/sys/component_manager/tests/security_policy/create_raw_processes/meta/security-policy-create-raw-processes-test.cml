@@ -8,6 +8,7 @@
         binary: "bin/security-policy-create-raw-processes-test",
         job_policy_create_raw_processes: "true",
         is_shared_process: "true",
+        use_next_vdso: "true",
     },
     capabilities: [
         { protocol: "fuchsia.test.Suite" },
