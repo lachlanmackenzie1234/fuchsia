@@ -25,7 +25,10 @@
             to: "#f2fs",
         },
         {
-            protocol: "fuchsia.tracing.provider.Registry",
+            protocol: [
+                "fuchsia.memorypressure.Provider",
+                "fuchsia.tracing.provider.Registry",
+            ],
             from: "parent",
             to: "#f2fs",
             availability: "optional",
