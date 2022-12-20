@@ -7,4 +7,5 @@ pub mod launch;
 pub mod list;
 pub mod platform;
 pub mod stop;
+pub mod vsockperf;
 pub mod wipe;
