@@ -8,34 +8,11 @@
 #include <lib/media/codec_impl/codec_adapter.h>
 
 #include "chunk_input_stream.h"
+#include "codec_adapter_cvsd.h"
 #include "codec_adapter_sw.h"
 
 class CodecAdapterCvsdEncoder : public CodecAdapterSW<fit::deferred_action<fit::closure>> {
  public:
-  // See Bluetooth Core v5.3 section 9.2 CVSD CODEC.
-  struct CodecParams {
-    const uint32_t k;
-    const uint32_t j;
-    const uint32_t equal_bit_mask;
-    const uint32_t historic_bit_mask;
-    uint32_t historic_bits;  // Historic record of outputs bits.
-    // Accumulator and step size are kept as double values to keep more
-    // precisions for smaller values. Also makes the codec more
-    // similar to other CVSD codec implementations.
-    double accumulator;  // Referred to as x^ in the algorithm.
-    double step_size;    // Referred to as delta in the algorithm.
-  };
-
-  struct OutputItem {
-    CodecPacket* packet;
-    const CodecBuffer* buffer;
-
-    // Number of valid data bytes currently in the `buffer`.
-    uint32_t data_length;
-    // Timestamp of the last processed input item.
-    std::optional<uint64_t> timestamp;
-  };
-
   explicit CodecAdapterCvsdEncoder(std::mutex& lock, CodecAdapterEvents* codec_adapter_events);
   ~CodecAdapterCvsdEncoder() = default;
 
@@ -58,17 +35,14 @@ class CodecAdapterCvsdEncoder : public CodecAdapterSW<fit::deferred_action<fit::
   std::pair<fuchsia::media::FormatDetails, size_t> OutputFormatDetails() override;
 
  private:
-  static void PostSerial(async_dispatcher_t* dispatcher, fit::closure to_run);
-  bool ProcessFormatDetails(const fuchsia::media::FormatDetails& format_details);
-  bool ProcessEndOfStream(CodecInputItem* item);
-  bool ProcessInputPacket(CodecPacket* packet);
-  bool ProcessCodecPacket(CodecPacket* packet);
-  void InitCodecParams();
-  void SendOutputPacket();
-  void SetOutputItem(CodecPacket* packet, const CodecBuffer* buffer);
+  InputLoopStatus ProcessFormatDetails(const fuchsia::media::FormatDetails& format_details);
+  InputLoopStatus ProcessEndOfStream(CodecInputItem* item);
+  InputLoopStatus ProcessInputPacket(CodecPacket* packet);
+  InputLoopStatus ProcessCodecPacket(CodecPacket* packet);
   // Outputs and resets current output buffer.
   void SendAndResetOutputPacket();
   void InitChunkInputStream(const fuchsia::media::FormatDetails& format_details);
+
   // Encodes a single output byte.
   static void Encode(CodecParams* params, const uint8_t* input_data, uint8_t* output);
 
