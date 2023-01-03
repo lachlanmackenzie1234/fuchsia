@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod attach;
+pub mod balloon;
 pub mod launch;
 pub mod list;
 pub mod mem;
