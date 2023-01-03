@@ -8,6 +8,7 @@ pub mod launch;
 pub mod list;
 pub mod mem;
 pub mod platform;
+pub mod socat;
 pub mod stop;
 pub mod vsockperf;
 pub mod wipe;
