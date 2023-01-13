@@ -182,7 +182,7 @@ struct As370TdmOutputTest : public zxtest::Test {
   FakeMmio mmio0_{::as370::kAudioGlobalSize}, mmio1_{::as370::kAudioI2sSize};
 };
 
-TEST_F(As370TdmOutputTest, Metadata) {
+TEST_F(As370TdmOutputTest, GetSupportedFormatsWithMetadata) {
   metadata::As370Config metadata = {};
   snprintf(metadata.manufacturer, sizeof(metadata.manufacturer), "manufacturer");
   snprintf(metadata.product_name, sizeof(metadata.product_name), "product");
@@ -247,6 +247,9 @@ TEST_F(As370TdmOutputTest, Metadata) {
                 .attributes()[1]
                 .max_frequency(),
             48'000);
+
+  EXPECT_EQ(supported->supported_formats[0].pcm_supported_formats().frame_rates().count(), 1);
+  EXPECT_EQ(supported->supported_formats[0].pcm_supported_formats().frame_rates()[0], 96'000);
 }
 
 }  // namespace audio::as370
