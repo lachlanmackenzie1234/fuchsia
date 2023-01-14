@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 use {
-    crate::app_monitor::AppMonitor, crate::screencapture::take_screenshot,
-    crate::single_session_trace::SingleSessionTrace, argh::FromArgs,
+    argh::FromArgs,
     fidl_fuchsia_session_scene as scene, fidl_fuchsia_ui_app as ui_app, fuchsia_async as fasync,
-    fuchsia_component::client::connect_to_protocol, fuchsia_scenic as scenic,
-    std::convert::TryInto, tracing::info,
+    fuchsia_component::client::connect_to_protocol,
+    fuchsia_scenic as scenic,
+    system_validation_lib::{
+        app_monitor::AppMonitor, screencapture::take_screenshot,
+        single_session_trace::SingleSessionTrace,
+    },
+    tracing::info,
 };
-
-mod app_monitor;
-mod screencapture;
-mod single_session_trace;
 
 /// Args to control how to run system validation test.
 /// Specify them through *_system_validation.cml
@@ -20,12 +20,12 @@ mod single_session_trace;
 struct RunTestCmd {
     /// trace configurations, input is a comma delimited string
     /// example: --trace-config "system_metrics,input,gfx"
-    #[argh(option)]
-    trace_config: Option<String>,
+    #[argh(option, default = "vec![]", from_str_fn(to_vector))]
+    trace_config: Vec<String>,
 
-    /// number of seconds to run example app
-    #[argh(option)]
-    run_duration_sec: Option<usize>,
+    /// number of seconds to run example app, default is 5 seconds
+    #[argh(option, default = "fasync::Duration::from_seconds(5)", from_str_fn(to_duration))]
+    run_duration_sec: fasync::Duration,
 }
 
 // Note: Maybe we want to make this an argument.
@@ -57,21 +57,16 @@ async fn main() {
 
     // Collect trace.
     let trace = SingleSessionTrace::new();
-    let collect_trace = args.trace_config.is_some();
+    let collect_trace = !args.trace_config.is_empty();
     if collect_trace {
-        let trace_configs: Vec<String> =
-            args.trace_config.unwrap().split(',').map(|v| v.trim().to_string()).collect();
-        info!("Collecting trace: {:?}", trace_configs);
-        trace.initialize(trace_configs).await.unwrap();
+        info!("Collecting trace: {:?}", args.trace_config);
+        trace.initialize(args.trace_config).await.unwrap();
         trace.start().await.unwrap();
     }
     // Let the UI App run for [run_duration_sec], then the test_runner will shutdown the sample_app
-    let duration_sec = args.run_duration_sec.unwrap_or(5);
-    info!("Running sample app for {} sec", duration_sec);
-    fasync::Timer::new(fasync::Time::after(fasync::Duration::from_seconds(
-        duration_sec.try_into().unwrap(),
-    )))
-    .await;
+    let duration_sec = args.run_duration_sec;
+    info!("Running sample app for {:?} sec", duration_sec);
+    fasync::Timer::new(duration_sec).await;
 
     if collect_trace {
         trace.stop().await.unwrap();
@@ -85,4 +80,12 @@ async fn main() {
     if app_monitor.has_seen_stop_event() {
         panic!("Sample app unexpectedly stopped");
     }
+}
+
+fn to_duration(duration_sec: &str) -> Result<fasync::Duration, String> {
+    Ok(fasync::Duration::from_seconds(duration_sec.parse::<i64>().unwrap()))
+}
+
+fn to_vector(configs: &str) -> Result<Vec<String>, String> {
+    Ok(configs.split(',').map(|v| v.trim().to_string()).collect())
 }
