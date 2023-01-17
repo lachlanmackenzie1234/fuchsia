@@ -248,7 +248,7 @@
                 "pid": 38280
             },
             {
-                "name": "driver_host:pdev:05:03:17",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 4286
             },
@@ -288,7 +288,7 @@
                 "pid": 30235
             },
             {
-                "name": "driver_host:pdev:05:00:18",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 4436
             },
@@ -368,7 +368,7 @@
                 "pid": 61777
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 10360
             },
@@ -378,22 +378,22 @@
                 "pid": 53196
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 10250
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 5467
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 9250
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 8402
             },
@@ -408,7 +408,7 @@
                 "pid": 49735
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 8168
             },
@@ -428,22 +428,22 @@
                 "pid": 22169
             },
             {
-                "name": "driver_host:root",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 3189
             },
             {
-                "name": "driver_host:pdev:05:03:13",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 7129
             },
             {
-                "name": "driver_host:sys",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 3064
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 6265
             },
@@ -453,7 +453,7 @@
                 "pid": 1143
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 4609
             },
@@ -473,7 +473,7 @@
                 "pid": 126902
             },
             {
-                "name": "driver_host:pdev:05:03:1d",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 5749
             },
@@ -483,22 +483,22 @@
                 "pid": 2124
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 9033
             },
             {
-                "name": "driver_host:misc",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 3278
             },
             {
-                "name": "driver_host:pdev:05:00:f",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 6134
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 7513
             },
@@ -518,7 +518,7 @@
                 "pid": 27655
             },
             {
-                "name": "driver_host:test",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 3114
             },
@@ -533,12 +533,12 @@
                 "pid": 41417
             },
             {
-                "name": "driver_host:pdev:05:00:2",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 4169
             },
             {
-                "name": "driver_host:pdev:00:00:1e",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 5042
             },
@@ -563,7 +563,7 @@
                 "pid": 39378
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 6980
             },
@@ -573,17 +573,17 @@
                 "pid": 50735
             },
             {
-                "name": "driver_host:pdev:00:00:f",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 6016
             },
             {
-                "name": "driver_host:pdev:05:03:24",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 7395
             },
             {
-                "name": "driver_host:pdev:05:00:10",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 5251
             },
@@ -593,7 +593,7 @@
                 "pid": 24144
             },
             {
-                "name": "driver_host:composite-device",
+                "name": "driver_host",
                 "ph": "p",
                 "pid": 8869
             },
