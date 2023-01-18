@@ -4,7 +4,9 @@
 
 use {
     fidl_fuchsia_component as fcomp, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_sys2 as fsys, fuchsia_component::client::connect_to_protocol,
+    fidl_fuchsia_sys2 as fsys,
+    fuchsia_component::client::connect_to_protocol,
+    futures::{FutureExt, StreamExt},
 };
 
 #[fuchsia::test]
@@ -17,7 +19,7 @@ async fn static_child() {
     assert_eq!(info.state, fsys::InstanceState::Unresolved);
     assert!(state.is_none());
 
-    lifecycle_controller.resolve("./echo_server").await.unwrap().unwrap();
+    lifecycle_controller.resolve_instance("./echo_server").await.unwrap().unwrap();
 
     // echo server is resolved
     let (info, state) = realm_query.get_instance_info("./echo_server").await.unwrap().unwrap();
@@ -25,7 +27,8 @@ async fn static_child() {
     let state = state.unwrap();
     assert!(state.execution.is_none());
 
-    lifecycle_controller.start("./echo_server").await.unwrap().unwrap();
+    let (binder, server) = fidl::endpoints::create_proxy().unwrap();
+    lifecycle_controller.start_instance("./echo_server", server).await.unwrap().unwrap();
 
     // echo server is running
     let (info, state) = realm_query.get_instance_info("./echo_server").await.unwrap().unwrap();
@@ -33,13 +36,22 @@ async fn static_child() {
     let state = state.unwrap();
     state.execution.unwrap();
 
-    lifecycle_controller.stop("./echo_server", false).await.unwrap().unwrap();
+    // Check that the binder protocol is still alive
+    let mut event_stream = binder.take_event_stream();
+    let fut = event_stream.next();
+    futures::pin_mut!(fut);
+    assert!(fut.as_mut().now_or_never().is_none());
+
+    lifecycle_controller.stop_instance("./echo_server").await.unwrap().unwrap();
 
     // echo server is not running
     let (info, state) = realm_query.get_instance_info("./echo_server").await.unwrap().unwrap();
     assert_eq!(info.state, fsys::InstanceState::Resolved);
     let state = state.unwrap();
     assert!(state.execution.is_none());
+
+    // the binder of the component should be closed by now
+    assert!(fut.await.is_none());
 }
 
 #[fuchsia::test]
@@ -53,7 +65,7 @@ async fn dynamic_child() {
     assert_eq!(error, fsys::RealmQueryError::InstanceNotFound);
 
     lifecycle_controller
-        .create_child(
+        .create_instance(
             ".",
             &mut fdecl::CollectionRef { name: "servers".to_string() },
             fdecl::Child {
@@ -74,7 +86,7 @@ async fn dynamic_child() {
     assert_eq!(info.state, fsys::InstanceState::Unresolved);
     assert!(state.is_none());
 
-    lifecycle_controller.resolve("./servers:dynamic_echo_server").await.unwrap().unwrap();
+    lifecycle_controller.resolve_instance("./servers:dynamic_echo_server").await.unwrap().unwrap();
 
     // dynamic echo server is resolved
     let (info, state) =
@@ -83,7 +95,12 @@ async fn dynamic_child() {
     let state = state.unwrap();
     assert!(state.execution.is_none());
 
-    lifecycle_controller.start("./servers:dynamic_echo_server").await.unwrap().unwrap();
+    let (binder, server) = fidl::endpoints::create_proxy().unwrap();
+    lifecycle_controller
+        .start_instance("./servers:dynamic_echo_server", server)
+        .await
+        .unwrap()
+        .unwrap();
 
     // dynamic echo server is running
     let (info, state) =
@@ -92,7 +109,13 @@ async fn dynamic_child() {
     let state = state.unwrap();
     state.execution.unwrap();
 
-    lifecycle_controller.stop("./servers:dynamic_echo_server", false).await.unwrap().unwrap();
+    // Check that the binder protocol is still alive
+    let mut event_stream = binder.take_event_stream();
+    let fut = event_stream.next();
+    futures::pin_mut!(fut);
+    assert!(fut.as_mut().now_or_never().is_none());
+
+    lifecycle_controller.stop_instance("./servers:dynamic_echo_server").await.unwrap().unwrap();
 
     // dynamic echo server is not running
     let (info, state) =
@@ -101,8 +124,11 @@ async fn dynamic_child() {
     let state = state.unwrap();
     assert!(state.execution.is_none());
 
+    // the binder of the component should be closed by now
+    assert!(fut.await.is_none());
+
     lifecycle_controller
-        .destroy_child(
+        .destroy_instance(
             ".",
             &mut fdecl::ChildRef {
                 name: "dynamic_echo_server".to_string(),
