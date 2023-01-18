@@ -12,7 +12,6 @@ rustc_library("util") {
   deps = [
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:camino",
-    "//third_party/rust_crates:pathdiff",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json5",
   ]
@@ -20,7 +19,6 @@ rustc_library("util") {
   sources = [
     "src/insert_unique.rs",
     "src/lib.rs",
-    "src/path_to_string.rs",
     "src/paths.rs",
   ]
 }
