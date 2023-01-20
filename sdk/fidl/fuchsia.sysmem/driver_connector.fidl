@@ -23,6 +23,7 @@ using fuchsia.io;
 /// for proper functioning of at least the BufferCollection interface since
 /// that interface has requests that don't complete until the devhost has
 /// constraints from other participants.
+@available(added=7, deprecated=9, removed=HEAD)
 @discoverable
 @for_deprecated_c_bindings
 protocol DriverConnector {
