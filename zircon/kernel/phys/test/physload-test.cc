@@ -16,15 +16,25 @@
 #include <phys/stdio.h>
 #include <phys/symbolize.h>
 
+#include "../log.h"
+
 #include <ktl/enforce.h>
 
-void PhysLoadHandoff(FILE* log, MainSymbolize* symbolize, const BootOptions* boot_options,
-                     memalloc::Pool& allocation_pool, PhysBootTimes boot_times,
-                     KernelStorage kernel_storage) {
-  FILE::stdout_ = *log;
+extern "C" void PhysLoadHandoff(Log* log, UartDriver& uart, MainSymbolize* symbolize,
+                                const BootOptions* boot_options, memalloc::Pool& allocation_pool,
+                                PhysBootTimes boot_times, KernelStorage kernel_storage) {
+  // Install the log/stdout first thing.  Note this doesn't use log.SetStdout()
+  // because we don't want to stash this module's (uninitialized) stdout to be
+  // restored, but keep the one already stashed by physload.
+  gLog = log;
+  FILE::stdout_ = FILE{log};
+
+  // Install the other global state handed off from physload.
   gSymbolize = symbolize;
   gBootOptions = boot_options;
   Allocation::InitWithPool(allocation_pool);
+
+  symbolize->set_name("physload-test");
 
   ktl::string_view me = symbolize->modules().back()->name();
   ZX_ASSERT_MSG(me == "physload-test-data/physload-test",
