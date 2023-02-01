@@ -9,6 +9,7 @@ source_set("cfg") {
     "7000.c",
     "8000.c",
     "9000.c",
+    "22000.c",
   ]
   deps = [
     "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
