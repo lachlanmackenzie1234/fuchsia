@@ -233,20 +233,6 @@ pub const POLLWRBAND: u32 = 512;
 pub const POLLMSG: u32 = 1024;
 pub const POLLREMOVE: u32 = 4096;
 pub const POLLRDHUP: u32 = 8192;
-pub const ARCH_SET_GS: u32 = 4097;
-pub const ARCH_SET_FS: u32 = 4098;
-pub const ARCH_GET_FS: u32 = 4099;
-pub const ARCH_GET_GS: u32 = 4100;
-pub const ARCH_GET_CPUID: u32 = 4113;
-pub const ARCH_SET_CPUID: u32 = 4114;
-pub const ARCH_GET_XCOMP_SUPP: u32 = 4129;
-pub const ARCH_GET_XCOMP_PERM: u32 = 4130;
-pub const ARCH_REQ_XCOMP_PERM: u32 = 4131;
-pub const ARCH_GET_XCOMP_GUEST_PERM: u32 = 4132;
-pub const ARCH_REQ_XCOMP_GUEST_PERM: u32 = 4133;
-pub const ARCH_MAP_VDSO_X32: u32 = 8193;
-pub const ARCH_MAP_VDSO_32: u32 = 8194;
-pub const ARCH_MAP_VDSO_64: u32 = 8195;
 pub const FP_XSTATE_MAGIC1: u32 = 1179670611;
 pub const FP_XSTATE_MAGIC2: u32 = 1179670597;
 pub const X86_FXSR_MAGIC: u32 = 0;
@@ -3010,6 +2996,20 @@ pub const XATTR_POSIX_ACL_DEFAULT: &'static std::ffi::CStr =
     unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"posix_acl_default\0") };
 pub const XATTR_NAME_POSIX_ACL_DEFAULT: &'static std::ffi::CStr =
     unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(b"system.posix_acl_default\0") };
+pub const ARCH_SET_GS: u32 = 4097;
+pub const ARCH_SET_FS: u32 = 4098;
+pub const ARCH_GET_FS: u32 = 4099;
+pub const ARCH_GET_GS: u32 = 4100;
+pub const ARCH_GET_CPUID: u32 = 4113;
+pub const ARCH_SET_CPUID: u32 = 4114;
+pub const ARCH_GET_XCOMP_SUPP: u32 = 4129;
+pub const ARCH_GET_XCOMP_PERM: u32 = 4130;
+pub const ARCH_REQ_XCOMP_PERM: u32 = 4131;
+pub const ARCH_GET_XCOMP_GUEST_PERM: u32 = 4132;
+pub const ARCH_REQ_XCOMP_GUEST_PERM: u32 = 4133;
+pub const ARCH_MAP_VDSO_X32: u32 = 8193;
+pub const ARCH_MAP_VDSO_32: u32 = 8194;
+pub const ARCH_MAP_VDSO_64: u32 = 8195;
 pub type wchar_t = crate::x86_64_types::c_int;
 #[repr(C)]
 #[repr(align(16))]
