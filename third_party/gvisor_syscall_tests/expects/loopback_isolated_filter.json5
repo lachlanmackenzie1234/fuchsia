@@ -4,14 +4,10 @@
 {
     actions: [
         {
-            type: "skip",
-            matchers: [
-                // Skip tests run by loopback_isolated_tcp_fin_wait target.
-                "All/SocketInetLoopbackIsolatedTest.TCPFinWait2Test/*",
-
-                // Skip tests run by loopback_isolated_tcp_linger_timeout target.
-                "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/*",
-            ],
+            include: "./loopback_isolated_tcp_fin_wait_skip.json5",
+        },
+        {
+            include: "./loopback_isolated_tcp_linger_timeout_skip.json5",
         },
     ],
 }
