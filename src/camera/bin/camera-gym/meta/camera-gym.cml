@@ -18,6 +18,8 @@
                 "fuchsia.camera3.DeviceWatcher",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.tracing.provider.Registry",
+                "fuchsia.ui.composition.Allocator",
+                "fuchsia.ui.composition.Flatland",
                 "fuchsia.ui.scenic.Scenic",
             ],
         },
