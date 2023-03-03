@@ -19,6 +19,7 @@ if (is_host) {
     testonly = true
     public_deps = [
       ":init_test($host_toolchain)",
+      "affordances_tests:tests",
       "device_class_tests:tests",
       "utility_tests:tests",
     ]
