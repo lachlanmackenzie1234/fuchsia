@@ -277,8 +277,18 @@
     },
     {
         "kind": "bits/member",
+        "name": "zx/rights.OP_CHILDREN",
+        "value": "2097152"
+    },
+    {
+        "kind": "bits/member",
         "name": "zx/rights.READ",
         "value": "4"
+    },
+    {
+        "kind": "bits/member",
+        "name": "zx/rights.RESIZE",
+        "value": "4194304"
     },
     {
         "kind": "bits/member",
