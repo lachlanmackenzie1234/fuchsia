@@ -19,7 +19,7 @@ pub struct UnattributedLogSinkSource {
 }
 
 impl UnattributedLogSinkSource {
-    pub async fn new_connection(&mut self, request_stream: flogger::LogSinkRequestStream) {
+    pub fn new_connection(&mut self, request_stream: flogger::LogSinkRequestStream) {
         self.dispatcher
             .emit(Event {
                 timestamp: zx::Time::get_monotonic(),
@@ -58,7 +58,7 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<LogSinkMarker>().unwrap();
 
         let _task = fasync::Task::spawn(async move {
-            source.new_connection(log_sink_stream).await;
+            source.new_connection(log_sink_stream);
         });
 
         let event = event_stream.next().await.expect("received event");
