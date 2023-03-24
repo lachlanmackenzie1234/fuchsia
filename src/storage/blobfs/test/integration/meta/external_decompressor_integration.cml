@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
+        "//src/storage/blobfs/test/integration/meta/decompressor.shard.cml",
         "//src/sys/test_runners/gtest/default.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
@@ -12,10 +13,7 @@
     },
     use: [
         {
-            protocol: [
-                "fuchsia.blobfs.internal.DecompressorCreator",
-                "fuchsia.process.Launcher",
-            ],
+            protocol: [ "fuchsia.process.Launcher" ],
         },
     ],
 }
