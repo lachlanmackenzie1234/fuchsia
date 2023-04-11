@@ -6,7 +6,7 @@ group("starnix") {
   if (target_cpu == "x64") {
     deps = [
       "//src/proc/bin",
-      "//src/proc/examples",
+      "//src/starnix/examples",
     ]
   }
 }

@@ -1,0 +1,17 @@
+# Copyright 2021 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("examples") {
+  deps = [ "hello_starnix:hello-starnix" ]
+  if (target_cpu == "x64") {
+    deps += [
+      "android",
+      "chromiumos",
+    ]
+  }
+}
+
+group("tests") {
+  testonly = true
+}
