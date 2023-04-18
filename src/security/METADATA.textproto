@@ -1,14 +1,20 @@
+# proto-file: tools/metadata/proto/metadata.proto
+# proto-message: Metadata
+# https://fuchsia.dev/fuchsia-src/development/source_code/metadata
+
 last_reviewed_date: {
-    year: 2023
-    month: 2
-    day: 16
+  year: 2023
+  month: 4
+  day: 17
 }
+
 trackers: {
-    monorail: {
-        project: "fuchsia"
-        component: "Security"
-    }
+  monorail: {
+    project: "fuchsia"
+    component: "Security"
+  }
 }
+
 presubmits: {
-    review_notify: "fuchsia-security@google.com"
+  review_notify: "fuchsia-security@google.com"
 }
