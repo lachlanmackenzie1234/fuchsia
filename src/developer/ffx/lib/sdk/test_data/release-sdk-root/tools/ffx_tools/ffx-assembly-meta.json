@@ -1,0 +1,9 @@
+{
+    "files": {
+        "executable": "tools/ffx_tools/ffx-assembly",
+        "executable_metadata": "tools/ffx_tools/ffx-assembly.json"
+    },
+    "name": "ffx-assembly",
+    "root": "tools",
+    "type": "ffx_tool"
+}
