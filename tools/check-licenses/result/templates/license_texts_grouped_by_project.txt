@@ -1,8 +1,8 @@
-{{ range $_, $licenseDataList := .DedupedLicenseData }}
+{{ range $_, $licenseData := .LicenseData }}
 ================================================================================
-{{ range $_, $licenseData := $licenseDataList }}
-{{ $licenseData.LibraryName }}{{ end }}
+{{ range $_, $libraryName := $licenseData.LibraryNames }}
+{{ $libraryName }}{{ end }}
 ---------------------------------
 
-{{ printf "%s" (index $licenseDataList 0).Data }}
+{{ $licenseData.Text }}
 {{ end }}
