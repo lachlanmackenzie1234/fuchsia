@@ -32,13 +32,7 @@ readonly RAW_LINES="// Copyright 2023 The Fuchsia Authors. All rights reserved.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
-use zerocopy::{FromBytes, AsBytes, Unaligned};
-
-// Configure linkage for MacOS.
-#[cfg(target_os = \"macos\")]
-#[link(name = \"IOKit\", kind = \"framework\")]
-#[link(name = \"CoreFoundation\", kind = \"framework\")]
-extern \"C\" {}"
+use zerocopy::{FromBytes, AsBytes, Unaligned};"
 
 "${BINDGEN}" \
     ${SCRIPT_DIR}/usbdevfs_stub.h \
