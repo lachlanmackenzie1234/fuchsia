@@ -13,11 +13,7 @@ class Bluetooth(abc.ABC):
     # List all the public methods in alphabetical order
     @abc.abstractmethod
     def sys_init(self) -> None:
-        """Initializes bluetooth stack.
-
-        Raises:
-            errors.FuchsiaDeviceError: On failure.
-        """
+        """Initializes bluetooth stack."""
 
     @abc.abstractmethod
     def request_discovery(self, discovery: bool) -> None:

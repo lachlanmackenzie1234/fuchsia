@@ -21,39 +21,19 @@ class Tracing(abc.ABC):
         Args:
             categories: list of categories to trace.
             buffer_size: buffer size to use in MB.
-
-        Raises:
-            errors.FuchsiaStateError: When trace session is already initialized.
-            errors.FuchsiaDeviceError: On failure.
         """
 
     @abc.abstractmethod
     def start(self) -> None:
-        """Starts tracing.
-
-        Raises:
-            errors.FuchsiaStateError: When trace session is not initialized.
-            errors.FuchsiaDeviceError: On failure.
-        """
+        """Starts tracing."""
 
     @abc.abstractmethod
     def stop(self) -> None:
-        """Stops the current trace.
-
-        Raises:
-            errors.FuchsiaStateError: When trace session not initialized or
-                trace not started.
-            errors.FuchsiaDeviceError: On failure.
-        """
+        """Stops the current trace."""
 
     @abc.abstractmethod
     def terminate(self) -> None:
-        """ Terminates the trace session..
-
-        Raises:
-            errors.FuchsiaStateError: When Trace session not initialized.
-            errors.FuchsiaDeviceError: On failure.
-        """
+        """ Terminates the trace session.."""
 
     @abc.abstractmethod
     def terminate_and_download(
@@ -72,8 +52,4 @@ class Tracing(abc.ABC):
 
         Returns:
             The path to the trace file.
-
-        Raises:
-            errors.FuchsiaStateError: When Trace session not initialized.
-            errors.FuchsiaDeviceError: On failure.
         """
