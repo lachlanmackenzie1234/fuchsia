@@ -18,13 +18,13 @@ rustc_test("bin") {
   sources = [ source_root ]
   name = "{{ test_binary_name }}"
   deps = [
+    "../testing/fidl:{{ fidl_library_name }}_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/testing/realm_proxy",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:tracing",
-    "//{{ test_root }}/testing/fidl:{{ fidl_library_name }}_rust",
   ]
 }
 
@@ -48,7 +48,7 @@ fuchsia_component("test-root") {
 fuchsia_test_package("{{ test_package_name }}") {
   test_components = [ ":test-root" ]
   subpackages = [
-    "//{{ test_root }}/testing/realm-factory",
+    "../testing/realm-factory",
     ":test-suite",
   ]
 }
