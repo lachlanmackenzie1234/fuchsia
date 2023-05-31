@@ -21,6 +21,7 @@ group("tests") {
   public_deps = [
     ":init_test($host_toolchain)",
     "affordances_tests:tests",
+    "custom_types_tests:tests",
     "device_class_tests:tests",
     "transports_tests:tests",
     "utility_tests:tests",
