@@ -10,14 +10,11 @@ fidl("fuchsia.net.debug") {
   sources = [
     "diagnostics.fidl",
     "interfaces.fidl",
-    "routes.fidl",
   ]
 
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.network",
     "//sdk/fidl/fuchsia.net",
-    "//sdk/fidl/fuchsia.net.interfaces.admin",
-    "//sdk/fidl/fuchsia.net.routes.admin",
   ]
 
   enable_hlcpp = true
