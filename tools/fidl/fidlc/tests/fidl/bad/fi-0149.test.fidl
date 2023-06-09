@@ -4,7 +4,7 @@
 @available(added=1)
 library test.bad.fi0149;
 
-@available(platform="bad")
+@available(platform="foo")
 type Person = struct {
     name string;
 };
