@@ -2,17 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    children: [
-        {
-            //name: "omaha-client-service",
-            // TODO(fxbug.dev/106761): encapsulate the source of system update
-            // capabilities in a core subrealm instead.
-            name: "system-update-checker",
-            url: "fuchsia-pkg://fuchsia.com/omaha-client#meta/omaha-client-service.cm",
-            startup: "eager",
-            on_terminate: "reboot",
-        },
-    ],
     use: [
         {
             protocol: [
@@ -20,21 +9,21 @@
                 "fuchsia.update.channelcontrol.ChannelControl",
                 "fuchsia.update.Manager",
             ],
-            from: "#system-update-checker",
+            from: "#system-update",
         },
     ],
     offer: [
         {
             protocol: "fuchsia.update.config.OptOut",
             from: "#system-update-configurator",
-            to: "#system-update-checker",
+            to: "#system-update",
             source_availability: "unknown",
             availability: "optional",
         },
         {
             protocol: "fuchsia.update.installer.Installer",
             from: "#system-updater",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             protocol: [
@@ -42,17 +31,17 @@
                 "fuchsia.metrics.MetricEventLoggerFactory",
             ],
             from: "#cobalt",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             protocol: "fuchsia.hardware.power.statecontrol.Admin",
             from: "parent",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             protocol: "fuchsia.stash.Store2",
             from: "#stash2",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             protocol: [
@@ -60,17 +49,12 @@
                 "fuchsia.posix.socket.Provider",
             ],
             from: "#network",
-            to: "#system-update-checker",
-        },
-        {
-            protocol: "fuchsia.update.CommitStatusProvider",
-            from: "#system-update",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             protocol: "fuchsia.logger.LogSink",
             from: "parent",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             protocol: [
@@ -78,7 +62,7 @@
                 "fuchsia.feedback.CrashReporter",
             ],
             from: "#feedback",
-            to: "#system-update-checker",
+            to: "#system-update",
 
             // TODO: break the dependency cycle
             dependency: "weak",
@@ -89,28 +73,29 @@
                 "fuchsia.paver.Paver",
             ],
             from: "parent",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             protocol: "fuchsia.pkg.Cup",
             from: "#pkg-resolver",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             directory: "build-info",
             from: "parent",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
         {
             directory: "config-data",
             from: "parent",
-            to: "#system-update-checker",
+            as: "omaha-client-service-config-data",
+            to: "#system-update",
             subdir: "omaha-client",
         },
         {
             directory: "root-ssl-certificates",
             from: "parent",
-            to: "#system-update-checker",
+            to: "#system-update",
         },
     ],
 }
