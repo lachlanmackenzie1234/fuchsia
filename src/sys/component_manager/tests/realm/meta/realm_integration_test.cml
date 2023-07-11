@@ -22,10 +22,6 @@
     ],
     use: [
         {
-            protocol: "fuchsia.sys2.RealmExplorer",
-            from: "framework",
-        },
-        {
             protocol: "fuchsia.sys2.RealmQuery",
             from: "framework",
         },
