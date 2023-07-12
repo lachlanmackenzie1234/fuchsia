@@ -1,0 +1,70 @@
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    children: [
+        {
+            name: "system-updater",
+            url: "fuchsia-pkg://fuchsia.com/system-updater#meta/system-updater.cm",
+
+            // Eager to expose the update history over inspect
+            startup: "eager",
+        },
+    ],
+    offer: [
+        {
+            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
+            from: "parent",
+            to: "#system-updater",
+        },
+        {
+            protocol: "fuchsia.pkg.PackageResolver",
+            from: "parent",
+            to: "#system-updater",
+        },
+        {
+            protocol: [
+                "fuchsia.pkg.PackageCache",
+                "fuchsia.pkg.RetainedPackages",
+                "fuchsia.space.Manager",
+            ],
+            from: "parent",
+            to: "#system-updater",
+        },
+        {
+            protocol: [ "fuchsia.logger.LogSink" ],
+            from: "parent",
+            to: [ "#system-updater" ],
+        },
+        {
+            protocol: [
+                "fuchsia.hardware.power.statecontrol.Admin",
+                "fuchsia.paver.Paver",
+            ],
+            from: "parent",
+            to: "#system-updater",
+        },
+        {
+            directory: "system",
+            from: "parent",
+            as: "pkgfs-system",
+            to: "#system-updater",
+        },
+        {
+            directory: "build-info",
+            from: "parent",
+            to: "#system-updater",
+        },
+        {
+            storage: "data",
+            from: "parent",
+            to: "#system-updater",
+        },
+    ],
+    expose: [
+        {
+            protocol: [ "fuchsia.update.installer.Installer" ],
+            from: "#system-updater",
+        },
+    ],
+}

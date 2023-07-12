@@ -2,31 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    children: [
-        {
-            name: "system-updater",
-            url: "fuchsia-pkg://fuchsia.com/system-updater#meta/system-updater.cm",
-
-            // Eager to expose the update history over inspect
-            startup: "eager",
-        },
-    ],
     use: [
         {
             protocol: "fuchsia.update.installer.Installer",
-            from: "#system-updater",
+            from: "#system-update",
         },
     ],
     offer: [
         {
             protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
             from: "#cobalt",
-            to: "#system-updater",
+            to: "#system-update",
         },
         {
             protocol: "fuchsia.pkg.PackageResolver",
             from: "#pkg-resolver",
-            to: "#system-updater",
+            to: "#system-update",
         },
         {
             protocol: [
@@ -35,12 +26,12 @@
                 "fuchsia.space.Manager",
             ],
             from: "parent",
-            to: "#system-updater",
+            to: "#system-update",
         },
         {
             protocol: [ "fuchsia.logger.LogSink" ],
             from: "parent",
-            to: [ "#system-updater" ],
+            to: [ "#system-update" ],
         },
         {
             protocol: [
@@ -48,23 +39,22 @@
                 "fuchsia.paver.Paver",
             ],
             from: "parent",
-            to: "#system-updater",
+            to: "#system-update",
         },
         {
             directory: "system",
             from: "parent",
-            as: "pkgfs-system",
-            to: "#system-updater",
+            to: "#system-update",
         },
         {
             directory: "build-info",
             from: "parent",
-            to: "#system-updater",
+            to: "#system-update",
         },
         {
             storage: "data",
             from: "self",
-            to: "#system-updater",
+            to: "#system-update",
         },
     ],
 }
