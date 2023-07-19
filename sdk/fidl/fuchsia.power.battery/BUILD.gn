@@ -10,8 +10,3 @@ fidl("fuchsia.power.battery") {
   sources = [ "battery.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
-
-fidl("fuchsia.power.battery.test") {
-  sources = [ "simulator.fidl" ]
-  public_deps = [ "//sdk/fidl/fuchsia.power.battery" ]
-}
