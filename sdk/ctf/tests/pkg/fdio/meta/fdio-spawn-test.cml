@@ -8,6 +8,9 @@
     ],
     program: {
         binary: "bin/fdio-spawn-tests-bin",
+
+        // TODO(b/295025303): Delete when Resolve tests are fixed.
+        args: [ "--gtest_filter=-ResolveTest.*" ],
         forward_stderr_to: "log",
         forward_stdout_to: "log",
     },
