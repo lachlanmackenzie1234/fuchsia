@@ -19,7 +19,7 @@ driver_bind_rules("parent_bind") {
 }
 
 fuchsia_driver("parent_driver") {
-  output_name = "banjo_transport_parent"
+  output_name = "banjo_transport_parent_v1"
   sources = [ "parent-driver.cc" ]
   deps = [
     ":parent_bind",
@@ -44,7 +44,7 @@ driver_bind_rules("child_bind") {
 }
 
 fuchsia_driver("child_driver") {
-  output_name = "banjo_transport_child"
+  output_name = "banjo_transport_child_v1"
   sources = [ "child-driver.cc" ]
   deps = [
     ":child_bind",
