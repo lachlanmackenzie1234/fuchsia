@@ -5,6 +5,6 @@
 import("//build/bind/bind.gni")
 
 # TODO(fxb/131608): Move sdk category to partner.
-bind_library("fuchsia.sierra.usb") {
-  source = "fuchsia.sierra.usb.bind"
+bind_library("fuchsia.sierra.platform.usb") {
+  source = "fuchsia.sierra.platform.usb.bind"
 }

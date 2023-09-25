@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-library fuchsia.sierra.usb;
+library fuchsia.sierra.platform.usb;
 
 extend uint fuchsia.BIND_USB_VID {
   SIERRA = 0x1199,
