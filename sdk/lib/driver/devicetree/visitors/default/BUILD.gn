@@ -2,19 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-source_set("default") {
-  sources = [
-    "bind-property.cc",
-    "bind-property.h",
-    "bti.cc",
-    "bti.h",
-    "mmio.cc",
-    "mmio.h",
-  ]
+group("tests") {
+  deps = [ "mmio:tests" ]
+  testonly = true
+}
 
+source_set("default") {
   public = [ "default.h" ]
 
   deps = [
+    "bind-property",
+    "bti",
+    "mmio",
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp",
   ]
