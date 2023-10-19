@@ -30,16 +30,6 @@ class ImmediateExit(Exception):
     pass
 
 
-def _write_file_contents(path: Path, contents: str):
-    with open(path, "w") as f:
-        f.write(contents)
-
-
-def _read_file_contents(path: Path) -> str:
-    with open(path, "r") as f:
-        return f.read()
-
-
 def _strs(items: Sequence[Any]) -> Sequence[str]:
     return [str(i) for i in items]
 
@@ -418,8 +408,7 @@ class CxxRemoteActionTests(unittest.TestCase):
 
             remote_cwd = remote_action._REMOTE_PROJECT_ROOT / fake_builddir
             fake_cwd.mkdir(parents=True, exist_ok=True)
-            _write_file_contents(
-                fake_cwd / depfile,
+            (fake_cwd / depfile).write_text(
                 f"{remote_cwd}/lib/bar.a: {remote_cwd}/obj/foo.o\n",
             )
 
@@ -435,7 +424,7 @@ class CxxRemoteActionTests(unittest.TestCase):
             )
             self.assertEqual(c.remote_action.remote_working_dir, remote_cwd)
             c._rewrite_remote_depfile()
-            new_depfile = _read_file_contents(fake_cwd / depfile)
+            new_depfile = (fake_cwd / depfile).read_text()
             self.assertEqual(new_depfile, "lib/bar.a: obj/foo.o\n")
 
 
