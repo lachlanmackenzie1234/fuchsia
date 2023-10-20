@@ -39,14 +39,17 @@ fuchsia-vendored-python -m venv $VENV_PATH
 echo "Activating the virtual environment..."
 source $VENV_PATH/bin/activate
 
-# upgrade the `pip` module
-echo "Upgrading pip module..."
-python -m pip install --upgrade pip
+# Install pip
+echo "Installing pip..."
+python -m ensurepip --upgrade
+
+echo "Installing tool dependencies..."
+python -m pip install -r base-tooling-requirements.txt --require-hashes
 
 # install fuchsia controller
-echo "Installing 'fuchsia controller' module..."
+echo "Installing 'fuchsia controller' dependencies..."
 cd $FCT_SRC
-python -m pip install --editable ".[test,guidelines]"
+python -m pip install -r requirements.txt --require-hashes
 
 cd $STARTING_DIR
 
