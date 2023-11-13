@@ -29,7 +29,7 @@ impl SysFsDirectory {
 
 impl SysFsOps for SysFsDirectory {
     fn kobject(&self) -> KObjectHandle {
-        self.kobject.clone().upgrade().expect("Weak references to kobject must always be valid")
+        self.kobject.upgrade().expect("Weak references to kobject must always be valid")
     }
 }
 
