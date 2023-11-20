@@ -8,7 +8,16 @@
 
 namespace block {
 
-TEST(CommonTest, CheckIoRangeTest) {
+class CommonTest : public zxtest::Test {
+ public:
+  void SetUp() override { fdf::Logger::SetGlobalInstance(&logger_); }
+
+ private:
+  fdf::Logger logger_{"common-test", FUCHSIA_LOG_DEBUG, zx::socket{},
+                      fidl::WireClient<fuchsia_logger::LogSink>()};
+};
+
+TEST_F(CommonTest, CheckIoRangeTest) {
   block_read_write rw;
 
   rw = {
@@ -60,7 +69,7 @@ TEST(CommonTest, CheckIoRangeTest) {
   EXPECT_OK(CheckIoRange(rw, 100));
 }
 
-TEST(CommonTest, CheckIoRangeMaxTransferTest) {
+TEST_F(CommonTest, CheckIoRangeMaxTransferTest) {
   block_trim trim;
 
   trim = {
@@ -82,7 +91,7 @@ TEST(CommonTest, CheckIoRangeMaxTransferTest) {
   EXPECT_OK(CheckIoRange(trim, 100, 25));
 }
 
-TEST(CommonTest, CheckFlushValidTest) {
+TEST_F(CommonTest, CheckFlushValidTest) {
   block_read_write rw;
 
   rw = {
