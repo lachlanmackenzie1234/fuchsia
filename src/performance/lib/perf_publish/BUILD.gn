@@ -13,6 +13,7 @@ python_library("perf_publish") {
     "publish.py",
     "summarize.py",
   ]
+  library_deps = [ "//src/performance/lib/py_test_utils:perf_test_utils" ]
 }
 
 group("tests") {
