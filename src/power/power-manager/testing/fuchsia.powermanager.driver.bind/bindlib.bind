@@ -6,4 +6,5 @@ library fuchsia.powermanager.driver;
 
 extend uint fuchsia.BIND_PROTOCOL {
   PLATFORM = 0x0001,
+  TEMP = 0x0002,
 };
