@@ -8,6 +8,5 @@
 #[allow(clippy::module_inception)]
 mod device;
 mod file;
-mod virtgralloc;
 
 pub use device::gralloc_device_init;
