@@ -9,8 +9,12 @@ mod node;
 mod power_manager;
 mod shutdown_request;
 mod timer;
-mod types;
 mod utils;
+
+#[path = "../../common/lib/common_utils.rs"]
+mod common_utils;
+#[path = "../../common/lib/types.rs"]
+mod types;
 
 // nodes
 mod activity_handler;

@@ -1147,7 +1147,7 @@ pub mod tests {
     /// overlapping CPU numbers.
     #[test]
     pub fn test_config_files() -> Result<(), anyhow::Error> {
-        crate::utils::test_each_node_config_file(|config_file| {
+        crate::common_utils::test_each_node_config_file(|config_file| {
             let cpu_control_handlers =
                 config_file.iter().filter(|n| n["type"] == "CpuControlHandler");
 

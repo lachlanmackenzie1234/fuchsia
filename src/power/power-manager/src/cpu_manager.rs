@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::common_utils::result_debug_panic::ResultDebugPanic;
 use crate::error::PowerManagerError;
 use crate::message::{Message, MessageResult, MessageReturn};
 use crate::node::Node;
 use crate::ok_or_default_err;
 use crate::types::{NormPerfs, PState, ThermalLoad, Watts};
-use crate::utils::result_debug_panic::ResultDebugPanic;
 use anyhow::{bail, format_err, Error};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;

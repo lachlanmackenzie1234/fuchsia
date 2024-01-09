@@ -320,7 +320,7 @@ mod tests {
     /// Tests that all nodes in a given config file have a unique name.
     #[test]
     fn test_config_file_unique_names() -> Result<(), anyhow::Error> {
-        crate::utils::test_each_node_config_file(|config_file| {
+        crate::common_utils::test_each_node_config_file(|config_file| {
             let mut set = HashSet::new();
             for node in config_file {
                 let node_name = node["name"].as_str().unwrap().to_string();
@@ -362,7 +362,7 @@ mod tests {
             }
         }
 
-        crate::utils::test_each_node_config_file(|config_file| {
+        crate::common_utils::test_each_node_config_file(|config_file| {
             for (dependent_idx, dependent_node) in config_file.iter().enumerate() {
                 if let Some(dependencies_obj) = dependent_node.get("dependencies") {
                     for required_node_name in flatten_node_names(dependencies_obj) {
