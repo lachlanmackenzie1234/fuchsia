@@ -2,27 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
+import("//tools/cmc/build/expect_includes.gni")
 
 rustc_library("realm_proxy") {
   testonly = true
   edition = "2021"
   sources = [
-    "src/client.rs",
     "src/error.rs",
     "src/lib.rs",
     "src/service.rs",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_rust",
-    "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test:lib",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/storage/lib/vfs/rust:vfs",
@@ -30,6 +26,5 @@ rustc_library("realm_proxy") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:tracing",
-    "//third_party/rust_crates:uuid",
   ]
 }
