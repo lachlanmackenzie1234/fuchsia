@@ -10,7 +10,7 @@ using zx;
 @discoverable
 @available(added=HEAD)
 closed protocol FramebufferResource {
-    /// Get an framebuffer resource handle.
+    /// Get a framebuffer resource handle.
     @available(added=HEAD)
     strict Get() -> (resource struct {
         resource zx.Handle:RESOURCE;
