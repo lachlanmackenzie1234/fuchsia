@@ -2,34 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "//src/sys/test_runners/gtest/default.shard.cml",
-        "inspect/offer.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "//src/lib/fake-clock/lib/meta/fake_clock.common_shard.cml" ],
     program: {
         binary: "bin/fake_clock_lib_test",
     },
-    children: [
-        {
-            name: "fake_clock",
-            url: "#meta/fake_clock.cm",
-        },
-    ],
-    use: [
-        {
-            protocol: [
-                "fuchsia.testing.FakeClock",
-                "fuchsia.testing.FakeClockControl",
-            ],
-            from: "#fake_clock",
-        },
-    ],
-    offer: [
-        {
-            protocol: "fuchsia.logger.LogSink",
-            from: "parent",
-            to: "#fake_clock",
-        },
-    ],
 }
