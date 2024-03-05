@@ -22,6 +22,7 @@ group("tests") {
   public_deps = [
     ":base_fuchsia_device_test($host_toolchain)",
     "fuchsia_controller:tests",
+    "fuchsia_controller_preferred:tests",
     "sl4f:tests",
   ]
 }
