@@ -1,23 +1,18 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-use ffx_validation::schema::{self, Schema};
+use crate::{Format, Result, SimpleWriter, TestBuffers, ToolIO};
 use serde::Serialize;
 use std::{fmt::Display, io::Write};
 
-use crate::{Error, Format, Result, SimpleWriter, TestBuffers, ToolIO};
-
-pub type VerifiedMachineWriter<T, S = T> = MachineWriter<T, S>;
-
 /// Type-safe machine output implementation of [`crate::ToolIO`]
-pub struct MachineWriter<T, S: ?Sized = NoSchema> {
+pub struct MachineWriter<T> {
     format: Option<Format>,
     simple_writer: SimpleWriter,
-    _p: std::marker::PhantomData<fn(T, S)>,
+    _p: std::marker::PhantomData<fn(T)>,
 }
 
-impl<T, S: ?Sized> MachineWriter<T, S> {
+impl<T> MachineWriter<T> {
     /// Create a new writer that doesn't support machine output at all, with the
     /// given streams underlying it.
     pub fn new_buffers<'a, O, E>(format: Option<Format>, stdout: O, stderr: E) -> Self
@@ -46,10 +41,9 @@ impl<T, S: ?Sized> MachineWriter<T, S> {
     }
 }
 
-impl<T, S> MachineWriter<T, S>
+impl<T> MachineWriter<T>
 where
     T: Serialize,
-    S: ?Sized + MaybeSchema,
 {
     /// Write the items from the iterable object to standard output.
     ///
@@ -68,7 +62,7 @@ where
     /// This is a no-op if `is_machine` returns false.
     pub fn machine(&mut self, output: &T) -> Result<()> {
         if let Some(format) = self.format {
-            format_output::<_, _, S>(format, &mut self.simple_writer, output)
+            format_output(format, &mut self.simple_writer, output)
         } else {
             Ok(())
         }
@@ -78,7 +72,7 @@ where
     /// representation to stdout. Otherwise, print the display item given.
     pub fn machine_or<D: Display>(&mut self, value: &T, or: D) -> Result<()> {
         match self.format {
-            Some(format) => format_output::<_, _, S>(format, &mut self.simple_writer, value)?,
+            Some(format) => format_output(format, &mut self.simple_writer, value)?,
             None => writeln!(self, "{or}")?,
         }
         Ok(())
@@ -93,32 +87,25 @@ where
         R: Display,
     {
         match self.format {
-            Some(format) => format_output::<_, _, S>(format, &mut self.simple_writer, value)?,
+            Some(format) => format_output(format, &mut self.simple_writer, value)?,
             None => writeln!(self, "{}", f())?,
         }
         Ok(())
     }
-}
 
-pub(crate) fn format_output<W: Write, T, S>(format: Format, mut out: W, output: &T) -> Result<()>
-where
-    T: Serialize,
-    S: ?Sized + MaybeSchema,
-{
-    let mut res = Ok(());
-
-    if let Some(f) = <S as MaybeSchema>::SCHEMA.filter(|_| cfg!(debug_assertions)) {
-        if ffx_validation::validate::validate(f, &serde_json::to_value(output)?).is_err() {
-            // Validation error has already been output to stderr.
-            eprintln!("Machine output does not match its declared schema!");
-            eprintln!(
-                "Make sure to update the schema when making changes to the output structure."
-            );
-            eprintln!("The output that triggered the validation error:");
-            res = Err(Error::SchemaFailure)
+    pub(crate) fn formatted<J: Serialize>(&mut self, output: &J) -> Result<()> {
+        if let Some(format) = self.format {
+            format_output(format, &mut self.simple_writer, output)
+        } else {
+            Ok(())
         }
     }
+}
 
+pub(crate) fn format_output<W: Write, T>(format: Format, mut out: W, output: &T) -> Result<()>
+where
+    T: Serialize,
+{
     match format {
         Format::Json => {
             serde_json::to_writer(&mut out, output)?;
@@ -129,18 +116,14 @@ where
             serde_json::to_writer_pretty(&mut out, output)?;
         }
     }
-
-    res
+    Ok(())
 }
 
-impl<T, S> ToolIO for MachineWriter<T, S>
+impl<T> ToolIO for MachineWriter<T>
 where
     T: Serialize,
-    S: ?Sized + MaybeSchema,
 {
     type OutputItem = T;
-
-    const OUTPUT_SCHEMA: Option<schema::StaticType> = S::SCHEMA;
 
     fn is_machine_supported() -> bool {
         true
@@ -166,10 +149,9 @@ where
     }
 }
 
-impl<T, S> Write for MachineWriter<T, S>
+impl<T> Write for MachineWriter<T>
 where
     T: Serialize,
-    S: ?Sized + MaybeSchema,
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.is_machine() {
@@ -187,20 +169,6 @@ where
         }
     }
 }
-
-pub trait MaybeSchema {
-    const SCHEMA: Option<schema::StaticType>;
-}
-
-pub struct NoSchema;
-impl MaybeSchema for NoSchema {
-    const SCHEMA: Option<schema::StaticType> = None;
-}
-
-impl<T: Schema + ?Sized> MaybeSchema for T {
-    const SCHEMA: Option<schema::StaticType> = Some(<T as Schema>::TYPE);
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -373,27 +341,5 @@ mod test {
   }
 }"#
         );
-    }
-
-    #[test]
-    fn test_machine_validation_error() {
-        let test_buffers = TestBuffers::default();
-        let mut writer: MachineWriter<Option<&str>, str> =
-            MachineWriter::new_test(Some(Format::Json), &test_buffers);
-
-        writer.machine(&Some("ok")).expect("Failed to write str");
-
-        let res = writer.machine(&None);
-        if cfg!(debug_assertions) {
-            match res {
-                Err(Error::SchemaFailure) => {}
-                res @ _ => {
-                    panic!("Unexpected output, expected schema failure: {res:?}");
-                }
-            }
-        } else {
-            // In release mode the schema check is not done.
-            res.expect("Schema check should not occur in release mode");
-        }
     }
 }
