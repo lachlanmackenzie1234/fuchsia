@@ -1,0 +1,18 @@
+# Copyright 2024 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp-string",
+    srcs = [
+        "string_printf.cc",
+        "string_printf.h",
+        "utf_codecs.cc",
+        "utf_codecs.h",
+    ],
+    deps = [
+        "//src/connectivity/bluetooth/lib/third_party/icu",
+    ],
+)

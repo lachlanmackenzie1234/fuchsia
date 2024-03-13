@@ -14,6 +14,7 @@ cc_library(
     hdrs = [
         "inspect.h",
     ],
+    include_prefix = "lib/inspect/testing/cpp",
     deps = [
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/inspect",

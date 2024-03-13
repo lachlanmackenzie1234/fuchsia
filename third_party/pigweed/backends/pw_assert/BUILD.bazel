@@ -1,0 +1,22 @@
+# Copyright 2024 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pw_assert",
+    srcs = [
+        "assert.cc",
+    ],
+    hdrs = [
+        "public_overrides/pw_assert_backend/assert_backend.h",
+        "public_overrides/pw_assert_backend/check_backend.h",
+    ],
+    includes = [
+        "public_overrides",
+    ],
+    deps = [
+        "@pigweed//pw_assert:facade",
+    ],
+)
