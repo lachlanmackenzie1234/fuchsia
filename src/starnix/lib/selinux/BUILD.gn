@@ -9,5 +9,6 @@ group("tests") {
     "common:tests",
     "core:tests",
     "policy:tests",
+    "scripts:tests",
   ]
 }
