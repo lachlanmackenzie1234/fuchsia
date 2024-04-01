@@ -15,7 +15,7 @@ import("//src/starnix/kernel/starnix.gni")
 template("starnix_linux_test_executable") {
   _output_name = target_name
   if (defined(invoker.output_name)) {
-    _output_name = output_name
+    _output_name = invoker.output_name
   }
 
   _bin_label = "${target_name}_bin"
