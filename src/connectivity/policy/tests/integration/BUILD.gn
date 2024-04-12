@@ -1,0 +1,126 @@
+# Copyright 2024 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/config.gni")
+import(
+    "//src/lib/testing/expectation/fuchsia_test_component_with_expectations.gni")
+import(
+    "//src/lib/testing/expectation/fuchsia_test_with_expectations_package.gni")
+
+tests_with_err_logs = [
+  {
+    label = "management"
+  },
+  {
+    label = "reachability"
+  },
+]
+
+foreach(test, tests_with_err_logs) {
+  name = "policy-${test.label}-integration-test"
+  fuchsia_test_component(name) {
+    manifest = "meta/${name}.cml"
+    deps = [ test.label ]
+  }
+}
+
+package_deps = [
+  # netemul-sandbox is used to create hermetic test realms.
+  "//src/connectivity/network/testing/netemul/service:netemul-sandbox",
+
+  # netstack3 is under test.
+  "//src/connectivity/network/netstack3:component",
+  "//src/connectivity/network/netstack3:component-debug",
+
+  # reachability monitor is under test.
+  "//src/connectivity/policy/reachability:component_with_fake_time",
+
+  # stash_secure is used by dhcpd and netstack.
+  "//src/sys/stash:stash_secure_v2",
+
+  # DHCPv4 Server is used to test DHCP address acquisition.
+  "//src/connectivity/network/dhcpv4/server:component",
+
+  # DHCP(v4) client is under test.
+  "//src/connectivity/network/dhcpv4/client/bindings:component",
+
+  # DHCPv6 client is under test.
+  "//src/connectivity/network/dhcpv6/client:component",
+
+  # dns_resolver integration with netstack is tested.
+  "//src/connectivity/network/dns:component_with_fake_time",
+
+  # the DNS resolver under test uses the fake clock.
+  "//src/lib/fake-clock/svc",
+
+  # netcfg integration with netstack is tested.
+  ":netcfg-netemul-configs",
+  "//src/connectivity/policy/netcfg:component-advanced",
+  "//src/connectivity/policy/netcfg:component-basic",
+]
+
+# RISC-V on Fuchsia does not support Golang.
+if (target_cpu != "riscv64") {
+  package_deps += [
+    "//src/connectivity/network/netstack:component",
+    "//src/connectivity/network/netstack:component-debug",
+    "//src/connectivity/network/netstack:component-with-fast-udp-debug",
+  ]
+}
+
+err_log_package_deps = []
+foreach(test, tests_with_err_logs) {
+  name = "policy-${test.label}-integration-test"
+  no_err_logs_package_name = "${name}-no-err-logs"
+  fuchsia_test_with_expectations_package(no_err_logs_package_name) {
+    test_components = [ ":${name}" ]
+    expectations = "expects/${name}.json5"
+    treatment_of_cases_with_error_logs = "SKIP_CASES_WITH_ERROR_LOGS"
+    deps =
+        package_deps + [ "//src/lib/testing/expectation:expectation_comparer" ]
+  }
+  with_err_logs_package_name = "${name}-with-err-logs"
+  fuchsia_test_with_expectations_package(with_err_logs_package_name) {
+    test_components = [ ":${name}" ]
+    expectations = "expects/${name}.json5"
+    treatment_of_cases_with_error_logs = "RUN_ONLY_CASES_WITH_ERROR_LOGS"
+    deps =
+        package_deps + [ "//src/lib/testing/expectation:expectation_comparer" ]
+    test_specs = {
+      log_settings = {
+        max_severity = "ERROR"
+      }
+    }
+  }
+  err_log_package_deps += [
+    ":${no_err_logs_package_name}",
+    ":${with_err_logs_package_name}",
+  ]
+}
+
+# Note: using configs in tests requires for this path to be added to
+# network/tests/integration/common/src/realms.rs with an enum type.
+resource("netcfg-netemul-configs") {
+  testonly = true
+
+  sources = [
+    "management/config/all_delegated.json",
+    "management/config/dhcpv6.json",
+    "management/config/duplicate_names.json",
+    "management/config/empty.json",
+    "management/config/forwarding.json",
+    "management/config/iface_prefix.json",
+    "management/config/packet_filter_ethernet.json",
+    "management/config/packet_filter_wlan.json",
+  ]
+
+  outputs = [ "netcfg/{{source_file_part}}" ]
+}
+
+group("tests") {
+  testonly = true
+
+  deps = err_log_package_deps
+}

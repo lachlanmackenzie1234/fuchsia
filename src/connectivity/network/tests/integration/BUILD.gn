@@ -37,13 +37,7 @@ tests_with_err_logs = [
     label = "ipv6"
   },
   {
-    label = "management"
-  },
-  {
     label = "product-flow"
-  },
-  {
-    label = "reachability"
   },
   {
     label = "socket"
@@ -104,16 +98,9 @@ package_deps = [
   "//src/lib/fake-clock/svc",
 
   # netcfg integration with netstack is tested.
-  ":netcfg-netemul-config",
-  ":netcfg-with-dhcpv6-netemul-config",
-  ":netcfg-with-duplicate-names",
-  ":netcfg-with-forwarding-netemul-config",
-  ":netcfg-with-iface-name-prefix",
-  ":netcfg-with-packet-filter-ethernet",
-  ":netcfg-with-packet-filter-wlan",
-  ":netcfg-without-provisioning-netemul-config",
   "//src/connectivity/policy/netcfg:component-advanced",
   "//src/connectivity/policy/netcfg:component-basic",
+  "//src/connectivity/policy/tests/integration:netcfg-netemul-configs",
 ]
 
 # RISC-V on Fuchsia does not support Golang.
@@ -180,54 +167,6 @@ foreach(test, tests_with_err_logs + long_tests_with_err_logs) {
       ":${with_err_logs_package_name}",
     ]
   }
-}
-
-resource("netcfg-netemul-config") {
-  testonly = true
-  sources = [ "management/config/empty.json" ]
-  outputs = [ "netcfg/empty.json" ]
-}
-
-resource("netcfg-with-dhcpv6-netemul-config") {
-  testonly = true
-  sources = [ "management/config/dhcpv6.json" ]
-  outputs = [ "netcfg/dhcpv6.json" ]
-}
-
-resource("netcfg-with-forwarding-netemul-config") {
-  testonly = true
-  sources = [ "management/config/forwarding.json" ]
-  outputs = [ "netcfg/forwarding.json" ]
-}
-
-resource("netcfg-without-provisioning-netemul-config") {
-  testonly = true
-  sources = [ "management/config/all_delegated.json" ]
-  outputs = [ "netcfg/all_delegated.json" ]
-}
-
-resource("netcfg-with-iface-name-prefix") {
-  testonly = true
-  sources = [ "management/config/iface_prefix.json" ]
-  outputs = [ "netcfg/iface_prefix.json" ]
-}
-
-resource("netcfg-with-duplicate-names") {
-  testonly = true
-  sources = [ "management/config/duplicate_names.json" ]
-  outputs = [ "netcfg/duplicate_names.json" ]
-}
-
-resource("netcfg-with-packet-filter-ethernet") {
-  testonly = true
-  sources = [ "management/config/packet_filter_ethernet.json" ]
-  outputs = [ "netcfg/packet_filter_ethernet.json" ]
-}
-
-resource("netcfg-with-packet-filter-wlan") {
-  testonly = true
-  sources = [ "management/config/packet_filter_wlan.json" ]
-  outputs = [ "netcfg/packet_filter_wlan.json" ]
 }
 
 # We keep tests that involve the virtualization stack (and especially guest
