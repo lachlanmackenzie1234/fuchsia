@@ -204,6 +204,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 {
                     "process_name": "big_process",
                     "thread_name": "thread-1",
+                    "tid": 1,
                     "cpu": 5,
                     "percent": 54.545,
                     "duration": 3000.0,
@@ -211,6 +212,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 {
                     "process_name": "big_process",
                     "thread_name": "thread-2",
+                    "tid": 2,
                     "cpu": 3,
                     "percent": 33.333,
                     "duration": 1000.0,
@@ -218,6 +220,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 {
                     "process_name": "big_process",
                     "thread_name": "thread-2",
+                    "tid": 2,
                     "cpu": 2,
                     "percent": 62.5,
                     "duration": 5000.0,
@@ -225,6 +228,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 {
                     "process_name": "big_process",
                     "thread_name": "thread-1",
+                    "tid": 1,
                     "cpu": 2,
                     "percent": 18.75,
                     "duration": 1500.0,
@@ -232,6 +236,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 {
                     "process_name": "small_process",
                     "thread_name": "small-thread",
+                    "tid": 100,
                     "cpu": 2,
                     "percent": 6.25,
                     "duration": 500.0,
