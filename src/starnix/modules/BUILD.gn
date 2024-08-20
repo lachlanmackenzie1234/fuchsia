@@ -21,5 +21,6 @@ rustc_library("modules") {
     "//src/starnix/kernel:starnix_core",
     "//src/starnix/kernel:starnix_sync",
     "//src/starnix/lib/starnix-uapi",
+    "//src/starnix/modules/zram",
   ]
 }
