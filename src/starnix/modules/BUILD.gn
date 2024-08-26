@@ -27,6 +27,7 @@ rustc_library("modules") {
     "//src/starnix/lib/starnix-sync",
     "//src/starnix/lib/starnix-uapi",
     "//src/starnix/modules/ext4",
+    "//src/starnix/modules/functionfs",
     "//src/starnix/modules/fuse",
     "//src/starnix/modules/loop",
     "//src/starnix/modules/tracefs",
