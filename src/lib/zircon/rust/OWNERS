@@ -1,4 +1,1 @@
-abarth@google.com
-adamperry@google.com
-mcgrathr@google.com
-tmandry@google.com
+include /sdk/rust/zx/OWNERS
