@@ -1,3 +1,5 @@
+robots: noindex
+
 # View device information
 
 The [`ffx target`][ffx-target] commands can retrieve various types of

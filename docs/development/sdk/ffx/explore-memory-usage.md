@@ -1,3 +1,5 @@
+robots: noindex
+
 # Measure the memory usage on a device
 
 The `ffx profile memory` command can measure the RAM (Random Access Memory) usage of

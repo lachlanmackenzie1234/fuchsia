@@ -1,3 +1,5 @@
+robots: noindex
+
 # Start the Fuchsia emulator
 
 The [`ffx emu`][ffx-emu] commands launch and manage the Fuchsia emulator on

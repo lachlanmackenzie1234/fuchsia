@@ -1,3 +1,5 @@
+robots: noindex
+
 # Monitor FIDL messages on a device
 
 The [`ffx debug fidl`][ffx-debug-fidl] starts [`fidlcat`][fidlcat] (a

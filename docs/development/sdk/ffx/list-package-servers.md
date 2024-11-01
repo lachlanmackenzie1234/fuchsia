@@ -1,3 +1,5 @@
+robots: noindex
+
 # List running package servers
 
 The [`ffx repository server`][ffx-repo-server] commands can identify and list

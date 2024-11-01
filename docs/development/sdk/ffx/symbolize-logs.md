@@ -1,3 +1,5 @@
+robots: noindex
+
 # Symbolize logs
 
 The [`ffx debug symbolize`][ffx-debug-symbolize] command processes logs

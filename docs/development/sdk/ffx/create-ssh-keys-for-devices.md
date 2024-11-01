@@ -1,3 +1,5 @@
+robots: noindex
+
 # Create SSH keys for Fuchsia devices
 
 To make an SSH connection to a Fuchsia device, some `ffx` commands

@@ -1,3 +1,5 @@
+robots: noindex
+
 # Start a component during development
 
 For testing and debugging purposes, the
