@@ -7,6 +7,7 @@ group("power") {
   deps = [
     "cpp",
     "rust",
+    "suspend_config",
   ]
 }
 
@@ -15,5 +16,6 @@ group("hermetic_tests") {
   deps = [
     "cpp:tests",
     "rust:tests",
+    "suspend_config:tests",
   ]
 }
