@@ -4,4 +4,4 @@
 
 #include "driver_entry_point.h"
 
-int64_t DriverStart() { return 1; }
+int64_t DriverStart(uint64_t* data, int data_len) { return 1; }
