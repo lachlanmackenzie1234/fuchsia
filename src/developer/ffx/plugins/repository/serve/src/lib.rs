@@ -21,6 +21,7 @@ use fuchsia_repo::server::RepositoryServer;
 use futures::executor::block_on;
 use futures::{SinkExt, StreamExt};
 use package_tool::{cmd_repo_publish, RepoPublishCommand};
+use pkg::config::DEFAULT_REPO_NAME;
 use pkg::{
     write_instance_info, PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances, ServerMode,
 };
@@ -33,14 +34,6 @@ use target_connector::Connector;
 use target_errors::FfxTargetError;
 use target_holders::{daemon_protocol, TargetProxyHolder};
 use tuf::metadata::RawSignedMetadata;
-
-// LINT.IfChange
-/// Default name used for package repositories in ffx. It is expected that there is no need to
-/// change this constant. But in case this is changed, ensure that it is consistent with the ffx
-/// developer documentation, see
-/// https://cs.opensource.google/search?q=devhost&sq=&ss=fuchsia%2Ffuchsia:src%2Fdeveloper%2Fffx%2F
-pub const DEFAULT_REPO_NAME: &str = "devhost";
-// LINT.ThenChange(args.rs)
 
 mod target;
 
