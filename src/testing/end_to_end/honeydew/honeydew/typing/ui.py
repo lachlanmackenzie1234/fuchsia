@@ -4,6 +4,8 @@
 
 """user-interface testing types"""
 
+# TODO(b/393656975): This file will be deleted after impacted tests have been pointed to honeydew.affordances.ui.user_input.types.py
+
 from dataclasses import dataclass
 
 
