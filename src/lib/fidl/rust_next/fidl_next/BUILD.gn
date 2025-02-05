@@ -9,16 +9,9 @@ import("//build/rust/rustc_test.gni")
 
 rustc_library("fidl_next") {
   edition = "2021"
-  sources = [
-    "src/bind/buffer.rs",
-    "src/bind/client.rs",
-    "src/bind/endpoint.rs",
-    "src/bind/method.rs",
-    "src/bind/mod.rs",
-    "src/bind/server.rs",
-    "src/lib.rs",
-  ]
+  sources = [ "src/lib.rs" ]
   deps = [
+    "//src/lib/fidl/rust_next/fidl_next_bind",
     "//src/lib/fidl/rust_next/fidl_next_codec",
     "//src/lib/fidl/rust_next/fidl_next_protocol",
   ]

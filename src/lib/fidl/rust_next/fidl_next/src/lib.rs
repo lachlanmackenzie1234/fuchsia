@@ -21,7 +21,5 @@
 )]
 #![forbid(unsafe_op_in_unsafe_fn)]
 
-pub mod bind;
-
 pub use ::fidl_next_codec::*;
-pub use ::fidl_next_protocol as protocol;
+pub use {::fidl_next_bind as bind, ::fidl_next_protocol as protocol};
