@@ -22,15 +22,6 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 pub mod bind;
-mod framework_error;
-#[cfg(target_os = "fuchsia")]
-pub mod fuchsia;
-pub mod protocol;
-#[cfg(test)]
-mod testing;
 
 pub use ::fidl_next_codec::*;
-
-pub use self::framework_error::*;
-#[cfg(target_os = "fuchsia")]
-pub use self::fuchsia::*;
+pub use ::fidl_next_protocol as protocol;
