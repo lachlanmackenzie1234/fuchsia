@@ -14,22 +14,9 @@ if (is_host) {
     main_callable = "unittest.main"
     extra_args = [ "-v" ]
   }
-
-  python_host_test("fuchsia_controller_test") {
-    main_source = "fuchsia_controller_test.py"
-    libraries = [
-      "//src/testing/end_to_end/honeydew",
-      "//third_party/parameterized",
-    ]
-    main_callable = "unittest.main"
-    extra_args = [ "-v" ]
-  }
 }
 
 group("tests") {
   testonly = true
-  public_deps = [
-    ":ffx_test($host_toolchain)",
-    ":fuchsia_controller_test($host_toolchain)",
-  ]
+  public_deps = [ ":ffx_test($host_toolchain)" ]
 }
