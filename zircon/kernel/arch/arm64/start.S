@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+// TODO(https://fxbug.dev/42164859): Remove secondary CPU code paths and update
+// comments!
+
 #include <arch/arm64/asm.h>
 #include <arch/arm64/mmu.h>
 #include <arch/arm64.h>
