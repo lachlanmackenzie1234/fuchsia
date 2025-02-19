@@ -15,5 +15,5 @@ trackers: {
   }
 }
 presubmits: {
-  review_notify: "starnix-selinux+reviews@google.com"
+  review_notify: "fuchsia-sestarnix+reviews@google.com"
 }
