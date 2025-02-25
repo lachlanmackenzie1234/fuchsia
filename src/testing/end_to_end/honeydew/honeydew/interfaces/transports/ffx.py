@@ -3,12 +3,15 @@
 # found in the LICENSE file.
 """ABC with methods for Host-(Fuchsia)Target interactions via FFX."""
 
+# TODO(b/397438776): This file will be deleted after impacted tests have been pointed to honeydew.transports.ffx.ffx.py
+
 import abc
 import subprocess
 from typing import Any
 
+from honeydew.transports.ffx import config as ffx_config
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.typing import custom_types
-from honeydew.typing import ffx as ffx_types
 from honeydew.utils import properties
 
 
@@ -17,12 +20,12 @@ class FFX(abc.ABC):
 
     @properties.PersistentProperty
     @abc.abstractmethod
-    def config(self) -> custom_types.FFXConfig:
+    def config(self) -> ffx_config.FfxConfigData:
         """Returns the FFX configuration associated with this instance of FFX
         object.
 
         Returns:
-            custom_types.FFXConfig
+            FfxConfigData
         """
 
     @abc.abstractmethod
@@ -30,8 +33,8 @@ class FFX(abc.ABC):
         """Adds a target to the ffx collection
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -39,7 +42,7 @@ class FFX(abc.ABC):
         """Checks the FFX connection from host to Fuchsia device.
 
         Raises:
-            errors.FfxConnectionError
+            FfxConnectionError
         """
 
     @abc.abstractmethod
@@ -50,8 +53,8 @@ class FFX(abc.ABC):
             Output of `ffx -t {target} target show`.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -63,7 +66,7 @@ class FFX(abc.ABC):
             Output of `ffx --machine json target list <target>`.
 
         Raises:
-            errors.FfxCommandError: In case of FFX command failure.
+            FfxCommandError: In case of FFX command failure.
         """
 
     @abc.abstractmethod
@@ -74,8 +77,8 @@ class FFX(abc.ABC):
             Target name.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -86,8 +89,8 @@ class FFX(abc.ABC):
             (Target SSH IP Address, Target SSH Port)
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -98,8 +101,8 @@ class FFX(abc.ABC):
             Target's board.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -110,8 +113,8 @@ class FFX(abc.ABC):
             Target's product.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -143,9 +146,9 @@ class FFX(abc.ABC):
             an empty string.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxTimeoutError: In case of FFX command timeout.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxTimeoutError: In case of FFX command timeout.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -212,8 +215,8 @@ class FFX(abc.ABC):
             empty string.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -236,8 +239,8 @@ class FFX(abc.ABC):
             True, otherwise an empty string.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -245,8 +248,8 @@ class FFX(abc.ABC):
         """Wait until FFX is able to establish a RCS connection to the target.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
@@ -254,8 +257,8 @@ class FFX(abc.ABC):
         """Wait until FFX is able to disconnect RCS connection to the target.
 
         Raises:
-            errors.DeviceNotConnectedError: If FFX fails to reach target.
-            errors.FfxCommandError: In case of other FFX command failure.
+            DeviceNotConnectedError: If FFX fails to reach target.
+            FfxCommandError: In case of other FFX command failure.
         """
 
     @abc.abstractmethod
