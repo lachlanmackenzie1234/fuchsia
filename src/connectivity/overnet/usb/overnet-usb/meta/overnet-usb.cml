@@ -16,7 +16,7 @@
         colocate: "true",
     },
     capabilities: [
-        { service: "fuchsia.hardware.overnet.Service" },
+        { service: "fuchsia.hardware.overnet.UsbService" },
     ],
     use: [
         { service: "fuchsia.hardware.usb.function.UsbFunctionService" },
@@ -24,7 +24,7 @@
     ],
     expose: [
         {
-            service: "fuchsia.hardware.overnet.Service",
+            service: "fuchsia.hardware.overnet.UsbService",
             from: "self",
         },
     ],
