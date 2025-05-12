@@ -82,7 +82,7 @@ rust_library(
     version = "0.8.0",
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
-        "//third_party/rust_crates/vendor/crossbeam-channel-0.5.1:crossbeam_channel",
+        "//third_party/rust_crates/vendor/crossbeam-channel-0.5.15:crossbeam_channel",
         "//third_party/rust_crates/vendor/crossbeam-deque-0.8.1:crossbeam_deque",
         "//third_party/rust_crates/vendor/crossbeam-epoch-0.9.4:crossbeam_epoch",
         "//third_party/rust_crates/vendor/crossbeam-queue-0.3.1:crossbeam_queue",
