@@ -1,19 +1,19 @@
 module(
     name = "rules_java",
-    version = "7.6.5",
-    # Requires @bazel_tools//tools/jdk:bootstrap_runtime_toolchain_type.
-    bazel_compatibility = [">=7.0.0"],
+    version = "8.5.1",
+    bazel_compatibility = [">=6.3.0"],
     compatibility_level = 1,
 )
 
 bazel_dep(name = "platforms", version = "0.0.4")
-bazel_dep(name = "rules_cc", version = "0.0.2")
+bazel_dep(name = "rules_cc", version = "0.0.15")
 bazel_dep(name = "bazel_features", version = "1.11.0")
 bazel_dep(name = "bazel_skylib", version = "1.6.1")
+bazel_dep(name = "protobuf", version = "27.0", repo_name = "com_google_protobuf")
 
 # Required by @remote_java_tools, which is loaded via module extension.
-bazel_dep(name = "rules_proto", version = "4.0.0")
 bazel_dep(name = "rules_license", version = "0.0.3")
+bazel_dep(name = "abseil-cpp", version = "20230802.1", repo_name = "com_google_absl")
 
 register_toolchains("//toolchains:all")
 
@@ -89,11 +89,14 @@ REMOTE_JDK_REPOS = [(("remote_jdk" if version == "8" else "remotejdk") + version
 
 [register_toolchains("@" + name + "_toolchain_config_repo//:all") for name in REMOTE_JDK_REPOS]
 
+# Compatibility layer
+compat = use_extension("//java:rules_java_deps.bzl", "compatibility_proxy")
+use_repo(compat, "compatibility_proxy")
+
 # Dev dependencies
 bazel_dep(name = "rules_pkg", version = "0.9.1", dev_dependency = True)
+bazel_dep(name = "stardoc", version = "0.7.1", dev_dependency = True)
+bazel_dep(name = "rules_shell", version = "0.2.0", dev_dependency = True)
 
-# Override rules_python version to deal with #161 and https://github.com/bazelbuild/bazel/issues/20458
-single_version_override(
-    module_name = "rules_python",
-    version = "0.24.0",
-)
+test_repositories = use_extension("//test:repositories.bzl", "test_repositories_ext", dev_dependency = True)
+use_repo(test_repositories, "guava", "truth")
