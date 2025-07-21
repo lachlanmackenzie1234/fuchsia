@@ -3,13 +3,14 @@
 # https://fuchsia.dev/fuchsia-src/development/source_code/metadata
 
 last_reviewed_date: {
-  year: 2023
-  month: 4
-  day: 17
+  year: 2025
+  month: 7
+  day: 21
 }
 
 trackers: {
   issue_tracker: {
+    # Component: Public Trackers > Fuchsia > Graphics > Display
     component_id: 1478350
   }
 }
