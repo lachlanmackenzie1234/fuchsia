@@ -13,7 +13,7 @@ rustc_library("ring-buffer") {
     ":*",
     "//src/diagnostics/archivist/*",
     "//src/diagnostics/validator/*",
-    "//src/lib/diagnostics/fake-log-sink/*",
+    "//src/lib/diagnostics/fake-log-sink/rust/*",
     "//src/lib/diagnostics/log/*",
     "//src/lib/diagnostics/log/bench/*",
   ]
