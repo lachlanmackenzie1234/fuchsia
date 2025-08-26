@@ -7,7 +7,7 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.net.power") {
   sources = [ "wake_group.fidl" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.net",
+    "//sdk/fidl/fuchsia.net.resources",
     "//sdk/fidl/fuchsia.power.system",
   ]
 }
