@@ -4,3 +4,5 @@
 
 #include "dependency.h"
 #include "test_header.h"
+
+int SomeFunction() { return RequiredFunction(42); }
