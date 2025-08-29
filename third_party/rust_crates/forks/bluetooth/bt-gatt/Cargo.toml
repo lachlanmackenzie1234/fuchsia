@@ -12,7 +12,7 @@ test-utils = []
 bt-common = { path = "../bt-common" }
 thiserror = "2.0.12"
 futures = "=0.3.31"
-parking_lot = "0.12.0"
+parking_lot = "0.12.4"
 
 [dev-dependencies]
 assert_matches = "1.5.0"
