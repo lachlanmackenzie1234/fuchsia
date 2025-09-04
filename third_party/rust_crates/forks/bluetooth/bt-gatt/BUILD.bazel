@@ -51,6 +51,7 @@ rust_library(
     ),
     crate_features = [
         "default",
+        "test-utils",
     ],
     crate_root = "src/lib.rs",
     edition = "2021",
