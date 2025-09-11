@@ -11,9 +11,7 @@ rustc_test("fdomain-example-bin") {
   deps = [
     "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",
     "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_fdomain",
-    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_fdomain_next",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain_next",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/container",
     "//src/lib/fidl/rust/fidl",
