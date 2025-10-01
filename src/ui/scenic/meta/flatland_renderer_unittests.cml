@@ -15,7 +15,7 @@
 
         // Only run some tests so that this test component can run within the test timeout.
         // In particular, run all the tests that aren't run by the other sharded components.
-        args: [ "--gtest_filter=-*VulkanRendererTest*" ],
+        args: [ "--gtest_filter=-*VulkanRendererTest*:*VulkanRendererColorTest*" ],
     },
     use: [
         {
