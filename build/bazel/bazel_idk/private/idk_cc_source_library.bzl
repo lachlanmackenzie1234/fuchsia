@@ -95,9 +95,9 @@ def _idk_cc_source_library_impl(
         include_path = include_base
 
     # TODO(https://fxbug.dev/421888626): Apply the equivalent of GN's
-    # `default_common_binary_configs` using the `copts` argument.
+    # `default_common_binary_configs` using the `copts` attribute.
     # TODO(https://fxbug.dev/421888626): Add "//build/config:sdk_extra_warnings"
-    # using the `copts` argument.
+    # using the `copts` attribute.
     cc_library(
         name = name,
         srcs = srcs_for_bazel_library,
