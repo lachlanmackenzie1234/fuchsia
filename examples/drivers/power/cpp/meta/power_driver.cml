@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
+        "//examples/drivers/power/cpp/meta/config_capability.shard.cml",
         "driver_component/driver.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
@@ -12,7 +13,15 @@
         binary: "driver/power_driver.so",
         bind: "meta/bind/power_driver.bindbc",
     },
+    capabilities: [
+        {
+            config: "fuchsia.mytest.SuspendEnabled",
+            type: "bool",
+            value: true,
+        },
+    ],
     use: [
         { protocol: "fuchsia.power.system.ActivityGovernor" },
+        { protocol: "fuchsia.examples.Echo" },
     ],
 }
