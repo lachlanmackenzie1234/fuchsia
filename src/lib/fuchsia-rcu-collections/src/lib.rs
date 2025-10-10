@@ -3,5 +3,5 @@
 // found in the LICENSE file.
 
 pub mod rcu_array;
-pub mod rcu_hash_map;
 pub mod rcu_list;
+pub mod rcu_raw_hash_map;
