@@ -19,6 +19,16 @@
             protocol: "fuchsia.sysinfo.SysInfo",
             from: "parent",
             to: "#feedback_id",
-        }
+        },
+        {
+            protocol: [
+                "google.deviceproperty.Reader",
+                "google.deviceproperty.Writer",
+                "google.flashts.Reader",
+            ],
+            from: "void",
+            to: "#session-manager",
+            availability: "optional",
+        },
     ],
 }
