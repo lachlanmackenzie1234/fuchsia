@@ -34,4 +34,6 @@ mesa_source_set("null") {
     "$mesa_source_root/src/gallium/auxiliary/",
     "$mesa_source_root/src/gallium/include/",
   ]
+
+  deps = [ "$mesa_build_root/src/util/format" ]
 }
