@@ -10,7 +10,10 @@ rustc_library("fdf_sys") {
   edition = "2024"
   with_unit_tests = true
 
-  deps = [ "//sdk/rust/zx-types" ]
+  deps = [
+    "//sdk/lib/driver/runtime/rust/libasync_sys",
+    "//sdk/rust/zx-types",
+  ]
 
   sources = [
     "src/bindings.rs",
