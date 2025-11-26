@@ -16,21 +16,19 @@ rustc_library("core") {
   deps = [
     "//sdk/lib/async",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
-    "//sdk/lib/driver/runtime/rust/libasync_sys",
+    "//sdk/lib/driver/runtime/rust/libasync",
     "//sdk/rust/zx",
     "//src/devices/lib/driver:driver_runtime",
-    "//third_party/rust_crates:futures",
   ]
 
   test_deps = [
     "//src/devices/bin/driver_runtime",
     "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:futures",
   ]
 
   sources = [
-    "src/callback_state.rs",
     "src/dispatcher.rs",
-    "src/dispatcher/after_deadline.rs",
     "src/handle.rs",
     "src/lib.rs",
   ]

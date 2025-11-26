@@ -5,6 +5,5 @@
 //! Bindings for the core of the fuchsia driver framework C API
 #![deny(unsafe_op_in_unsafe_fn, missing_docs)]
 
-pub mod callback_state;
 pub mod dispatcher;
 pub mod handle;
