@@ -14,6 +14,7 @@ ffx_plugin("ffx_target_repository") {
     "deregister:ffx_target_repository_deregister",
     "list:ffx_target_repository_list",
     "register:ffx_target_repository_register",
+    "rule:ffx_target_repository_rule",
   ]
 
   args_sources = [ "src/args.rs" ]
