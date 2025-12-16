@@ -13,6 +13,8 @@ pub async fn list_hosts(
     _cmd: ListHostsCommand,
     driver_development_proxy: fdd::ManagerProxy,
 ) -> Result<()> {
+    println!("This command is deprecated, please use \"driver host list\" in the future.");
+
     let device_info = fuchsia_driver_dev::get_device_info(
         &driver_development_proxy,
         &[],
