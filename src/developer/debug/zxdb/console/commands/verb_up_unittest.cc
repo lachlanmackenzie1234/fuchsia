@@ -10,6 +10,10 @@
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
+#include "src/developer/debug/zxdb/symbols/file_line.h"
+#include "src/developer/debug/zxdb/symbols/location.h"
+#include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
+#include "src/developer/debug/zxdb/symbols/mock_source_file_provider.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_data_provider.h"
 
 namespace zxdb {
@@ -59,6 +63,35 @@ TEST_F(VerbUp, Up) {
   EXPECT_EQ("Frame 1 0x12471263", event.output.AsString());
   event = console().GetOutputEvent();
   EXPECT_EQ("Frame 2 0x12471273", event.output.AsString());
+}
+
+TEST_F(VerbUp, UpWithSource) {
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread(), Location(), 0x1000));
+
+  const char kFileName[] = "file.cc";
+  FileLine file_line(kFileName, 2);
+  auto source_file_provider = std::make_unique<MockSourceFileProvider>();
+  source_file_provider->SetFileData(
+      kFileName, SourceFileProvider::FileData("line1\nline2\nline3\nline4", kFileName, 0));
+  Location loc(0x1000, file_line, 0, SymbolContext::ForRelativeAddresses(), nullptr);
+  auto frame1 = std::make_unique<MockFrame>(&session(), thread(), loc, 0x1000);
+  frame1->set_source_file_provider(std::move(source_file_provider));
+  frames.push_back(std::move(frame1));
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), /*has_all_frames=*/true);
+
+  console().ProcessInputLine("up");
+  loop().RunUntilNoTasks();
+
+  std::string output;
+  while (console().HasOutputEvent()) {
+    output += console().GetOutputEvent().output.AsString();
+  }
+
+  EXPECT_NE(std::string::npos, output.find("Frame 1"));
+  EXPECT_NE(std::string::npos, output.find("▶ 2 line2"));
 }
 
 }  // namespace zxdb
