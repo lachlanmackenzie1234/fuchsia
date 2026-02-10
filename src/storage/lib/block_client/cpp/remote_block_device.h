@@ -5,7 +5,6 @@
 #ifndef SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_REMOTE_BLOCK_DEVICE_H_
 #define SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_REMOTE_BLOCK_DEVICE_H_
 
-#include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/fifo.h>
@@ -25,8 +24,7 @@ namespace block_client {
 class RemoteBlockDevice final : public BlockDevice {
  public:
   static zx::result<std::unique_ptr<RemoteBlockDevice>> Create(
-      fidl::ClientEnd<fuchsia_storage_block::Block> device,
-      fidl::ClientEnd<fuchsia_device::Controller> controller = {});
+      fidl::ClientEnd<fuchsia_storage_block::Block> device);
   RemoteBlockDevice& operator=(RemoteBlockDevice&&) = delete;
   RemoteBlockDevice(RemoteBlockDevice&&) = delete;
   RemoteBlockDevice& operator=(const RemoteBlockDevice&) = delete;
@@ -49,11 +47,9 @@ class RemoteBlockDevice final : public BlockDevice {
 
  private:
   RemoteBlockDevice(fidl::ClientEnd<fuchsia_storage_block::Block> device,
-                    fidl::ClientEnd<fuchsia_device::Controller> controller,
                     fidl::ClientEnd<fuchsia_storage_block::Session> session, zx::fifo fifo);
 
   fidl::ClientEnd<fuchsia_storage_block::Block> device_;
-  fidl::ClientEnd<fuchsia_device::Controller> controller_;
   block_client::Client fifo_client_;
 };
 
