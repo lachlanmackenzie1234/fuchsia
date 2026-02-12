@@ -4,4 +4,4 @@
 
 #include "src/lib/dso/cpp/sync.h"
 
-int dso_main(int argc, const char** argv, const char** envp) { return 128; }
+int dso_main(int argc, const char** argv, const char** envp) { return 1; }
