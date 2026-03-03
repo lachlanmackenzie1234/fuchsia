@@ -423,17 +423,6 @@ class FuchsiaDevice(abc.ABC):
         """Soft reboot the device."""
 
     @abc.abstractmethod
-    def register_on_device_suspend_fn(
-        self,
-        fn: Callable[[], None],
-    ) -> None:
-        """Register a function to be called before device is suspended.
-
-        Args:
-            fn: Function to be called before device is suspended.
-        """
-
-    @abc.abstractmethod
     def register_on_device_resume_fn(
         self,
         fn: Callable[[], None],
