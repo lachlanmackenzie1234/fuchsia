@@ -54,6 +54,13 @@ class TracingFCTests(unittest.TestCase):
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.RebootCapableDevice
         )
+        self.reboot_affordance_obj_async = mock.MagicMock(
+            spec=affordances_capable.AsyncRebootCapableDevice
+        )
+        self.reboot_affordance_obj.as_async.return_value = (
+            self.reboot_affordance_obj_async
+        )
+
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
@@ -370,7 +377,7 @@ class TracingFCTests(unittest.TestCase):
         self.tracing_obj.initialize()
 
         with mock.patch.object(
-            self.tracing_obj._trace_controller_proxy,  # pylint: disable=protected-access
+            self.tracing_obj._inner._trace_controller_proxy,  # pylint: disable=protected-access
             "close_cleanly",
             new_callable=mock.Mock,
         ) as mock_wait:
