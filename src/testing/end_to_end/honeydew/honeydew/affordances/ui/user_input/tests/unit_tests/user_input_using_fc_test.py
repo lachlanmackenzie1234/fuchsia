@@ -86,7 +86,7 @@ class UserInputFCTests(unittest.TestCase):
 
         register_touch_screen.assert_called_once()
 
-        self.assertIsNotNone(touch_device._touch_screen_proxy)  # type: ignore[attr-defined]
+        self.assertIsNotNone(touch_device._inner._touch_screen_proxy)
 
     @mock.patch.object(
         f_test_input.TouchScreenClient,
@@ -285,7 +285,7 @@ class UserInputFCTests(unittest.TestCase):
         )
         register_keyboard.assert_called_once()
 
-        self.assertIsNotNone(keyboard_device._keyboard_proxy)  # type: ignore[attr-defined]
+        self.assertIsNotNone(keyboard_device._inner._keyboard_proxy)
 
     @mock.patch.object(
         f_test_input.KeyboardClient,
@@ -312,3 +312,7 @@ class UserInputFCTests(unittest.TestCase):
                 ),
             ]
         )
+
+
+if __name__ == "__main__":
+    unittest.main()
