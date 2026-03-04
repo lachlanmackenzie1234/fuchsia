@@ -8,7 +8,6 @@ import unittest
 from unittest import mock
 
 import fidl_fuchsia_hardware_rtc as frtc
-import fuchsia_async_extension
 import fuchsia_controller_py
 
 from honeydew import affordances_capable
@@ -25,12 +24,12 @@ class RtcFcTests(unittest.TestCase):
     """Unit tests for the rtc_using_fc.RtcUsingFc class."""
 
     def setUp(self) -> None:
-        self.m_run = self.enterContext(
-            mock.patch.object(fuchsia_async_extension, "get_loop")
-        ).return_value.run_until_complete
-        self.m_proxy = self.enterContext(
-            mock.patch.object(frtc, "DeviceClient")
-        ).return_value
+        self.m_proxy = mock.create_autospec(frtc.DeviceClient, spec_set=True)
+        self.enterContext(
+            mock.patch.object(frtc, "DeviceClient", return_value=self.m_proxy)
+        )
+        self.m_proxy.get = mock.AsyncMock()
+        self.m_proxy.set2 = mock.AsyncMock()
 
         self.transport = mock.create_autospec(
             fuchsia_controller.FuchsiaController
@@ -38,10 +37,14 @@ class RtcFcTests(unittest.TestCase):
         self.reboot_af = mock.create_autospec(
             affordances_capable.RebootCapableDevice
         )
+        self.reboot_af_async = mock.create_autospec(
+            affordances_capable.AsyncRebootCapableDevice
+        )
+        self.reboot_af.as_async.return_value = self.reboot_af_async
 
         self.rtc = rtc_using_fc.RtcUsingFc(self.transport, self.reboot_af)
         self.transport.connect_device_proxy.assert_called_once()
-        self.reboot_af.register_for_on_device_boot.assert_called_once()
+        self.reboot_af_async.register_for_on_device_boot.assert_called_once()
 
     def test_verify_supported(self) -> None:
         """Test if verify_supported works."""
@@ -58,7 +61,7 @@ class RtcFcTests(unittest.TestCase):
 
         _ = rtc_using_fc.RtcUsingFc(self.transport, self.reboot_af)
         self.assertEqual(self.transport.connect_device_proxy.call_count, 2)
-        self.reboot_af.register_for_on_device_boot.assert_called_once()
+        self.reboot_af_async.register_for_on_device_boot.assert_called_once()
 
         (ep1,), _ = self.transport.connect_device_proxy.call_args_list[0]
         (ep2,), _ = self.transport.connect_device_proxy.call_args_list[1]
@@ -71,7 +74,7 @@ class RtcFcTests(unittest.TestCase):
 
     def test_rtc_get(self) -> None:
         chip_time = frtc.Time(23, 50, 15, 5, 2, 2022)
-        self.m_run.return_value = frtc.DeviceGetResult(
+        self.m_proxy.get.return_value = frtc.DeviceGetResult(
             response=frtc.DeviceGetResponse(rtc=chip_time)
         )
 
@@ -86,48 +89,49 @@ class RtcFcTests(unittest.TestCase):
 
         self.assertEqual(want, self.rtc.get())
         self.m_proxy.get.assert_called_once()
-        self.m_run.assert_called_once()
 
     def test_rtc_get_exception(self) -> None:
-        self.m_run.side_effect = fuchsia_controller_py.ZxStatus
+        self.m_proxy.get.side_effect = fuchsia_controller_py.ZxStatus(
+            fuchsia_controller_py.ZxStatus.ZX_ERR_INTERNAL
+        )
 
         msg = r"Device\.Get\(\) error"
         with self.assertRaisesRegex(HoneydewRtcError, msg):
             self.rtc.get()
 
         self.m_proxy.get.assert_called_once()
-        self.m_run.assert_called_once()
 
     def test_rtc_set(self) -> None:
         time = datetime.datetime(2022, 2, 5, 15, 50, 23)
-        self.m_run.return_value = frtc.DeviceSet2Result()
+        self.m_proxy.set2.return_value = frtc.DeviceSet2Result()
         self.rtc.set(time)
         self.m_proxy.set2.assert_called_once()
-        self.m_run.assert_called_once()
 
     def test_rtc_set_error(self) -> None:
         """Test errors returned by Set2() are handled."""
         time = datetime.datetime(2022, 2, 5, 15, 50, 23)
-        self.m_run.return_value = frtc.DeviceSet2Result(err=ZX_ERR_INTERNAL)
+        self.m_proxy.set2.return_value = frtc.DeviceSet2Result(
+            err=ZX_ERR_INTERNAL
+        )
 
         msg = r"Device\.Set2\(\) error"
         with self.assertRaisesRegex(HoneydewRtcError, msg):
             self.rtc.set(time)
 
         self.m_proxy.set2.assert_called_once()
-        self.m_run.assert_called_once()
 
     def test_rtc_set_exception(self) -> None:
         """Test that we gracefully handle transport errors when invoking Set2()."""
         time = datetime.datetime(2022, 2, 5, 15, 50, 23)
-        self.m_run.side_effect = fuchsia_controller_py.ZxStatus
+        self.m_proxy.set2.side_effect = fuchsia_controller_py.ZxStatus(
+            fuchsia_controller_py.ZxStatus.ZX_ERR_INTERNAL
+        )
 
         msg = r"Device\.Set2\(\) error"
         with self.assertRaisesRegex(HoneydewRtcError, msg):
             self.rtc.set(time)
 
         self.m_proxy.set2.assert_called_once()
-        self.m_run.assert_called_once()
 
 
 if __name__ == "__main__":
