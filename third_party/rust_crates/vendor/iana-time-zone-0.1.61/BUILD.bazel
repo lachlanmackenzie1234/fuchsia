@@ -78,10 +78,10 @@ rust_library(
     version = "0.1.61",
     deps = select({
         "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.3:core_foundation_sys",  # cfg(any(target_os = "macos", target_os = "ios"))
+            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7:core_foundation_sys",  # cfg(any(target_os = "macos", target_os = "ios"))
         ],
         "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.3:core_foundation_sys",  # cfg(any(target_os = "macos", target_os = "ios"))
+            "//third_party/rust_crates/vendor/core-foundation-sys-0.8.7:core_foundation_sys",  # cfg(any(target_os = "macos", target_os = "ios"))
         ],
         "//conditions:default": [],
     }),
