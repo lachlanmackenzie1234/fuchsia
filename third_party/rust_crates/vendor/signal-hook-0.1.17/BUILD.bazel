@@ -83,6 +83,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/libc-0.2.183:libc",
         "//third_party/rust_crates/vendor/mio-0.7.14:mio",
-        "//third_party/rust_crates/vendor/signal-hook-registry-1.4.1:signal_hook_registry",
+        "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
     ],
 )
