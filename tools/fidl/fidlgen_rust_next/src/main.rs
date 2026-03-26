@@ -66,5 +66,5 @@ fn main() {
         .arg(&args.rustfmt_config)
         .arg(&args.output_filename)
         .status()
-        .expect("failed to run format output file");
+        .expect("failed to format output file");
 }
