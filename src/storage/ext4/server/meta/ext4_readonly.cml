@@ -8,7 +8,8 @@
     ],
     program: {
         runner: "elf",
-        binary: "bin/ext4_readonly",
+        binary: "bin/ext4_server",
+        args: [ "--read-only" ],
     },
     capabilities: [
         {
