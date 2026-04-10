@@ -53,18 +53,7 @@ rust_library(
         "alloc",
         "default",
         "std",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "simd",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "simd",  # x86_64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "simd",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -86,16 +75,4 @@ rust_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     version = "0.7.13",
-    deps = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
 )
