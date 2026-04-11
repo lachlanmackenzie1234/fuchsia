@@ -18,7 +18,11 @@ use futures::{AsyncReadExt as _, FutureExt as _, StreamExt as _, TryStreamExt as
 use log::warn;
 use rand::prelude::*;
 
-use {fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fsock, fuchsia_async as fasync};
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fsock;
+use fuchsia_async as fasync;
+
+pub mod fdomain;
 
 /// A fake netstack for use in tests.
 ///
