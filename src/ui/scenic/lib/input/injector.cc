@@ -36,6 +36,7 @@ uint64_t GetCurrentMinute(const zx::time timestamp) { return timestamp.get() / z
 
 }  // namespace
 
+// LINT.IfChange
 InjectorInspector::InjectorInspector(inspect::Node node)
     : node_(std::move(node)),
       history_stats_node_(node_.CreateLazyValues("Injection history",
@@ -348,5 +349,6 @@ zx_status_t Injector::IsValidViewport(const fuchsia::ui::pointerinjector::Viewpo
 
   return ZX_OK;
 }
+// LINT.ThenChange(//src/ui/scenic/lib/input/dso/injector.cc)
 
 }  // namespace scenic_impl::input

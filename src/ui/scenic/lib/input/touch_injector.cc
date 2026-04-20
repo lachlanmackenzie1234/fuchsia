@@ -26,6 +26,7 @@ InternalTouchEvent CreateCancelEvent(uint32_t device_id, uint32_t pointer_id, zx
 
 }  // namespace
 
+// LINT.IfChange
 TouchInjector::TouchInjector(inspect::Node inspect_node, InjectorSettings settings,
                              Viewport viewport,
                              fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
@@ -99,5 +100,6 @@ void TouchInjector::CancelStream(uint32_t pointer_id, StreamId stream_id) {
                             settings.target_koid),
           stream_id);
 }
+// LINT.ThenChange(//src/ui/scenic/lib/input/dso/touch_injector.cc)
 
 }  // namespace scenic_impl::input

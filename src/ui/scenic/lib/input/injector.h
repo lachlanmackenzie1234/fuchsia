@@ -67,6 +67,7 @@ class InjectorInspector {
 };
 
 // Implementation of the |fuchsia::ui::pointerinjector::Device| interface. One instance per channel.
+// LINT.IfChange
 class Injector : public fuchsia::ui::pointerinjector::Device {
  public:
   Injector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
@@ -138,6 +139,7 @@ class Injector : public fuchsia::ui::pointerinjector::Device {
 
   InjectorInspector inspector_;
 };
+// LINT.ThenChange(//src/ui/scenic/lib/input/dso/injector.h)
 
 }  // namespace scenic_impl::input
 
