@@ -2,33 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "driver_component/driver.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "//src/graphics/display/lib/framebuffer-display/meta/framebuffer-pci-boot-display-driver.shard.cml" ],
     program: {
         runner: "driver",
         binary: "driver/framebuffer-intel-display.so",
         bind: "meta/bind/framebuffer-intel-display-bind.bindbc",
     },
-    capabilities: [
-        { service: "fuchsia.hardware.display.engine.Service" },
-    ],
-    use: [
-        {
-            protocol: [
-                "fuchsia.boot.Items",
-                "fuchsia.hardware.sysmem.Sysmem",
-                "fuchsia.sysmem2.Allocator",
-            ],
-        },
-        { service: "fuchsia.hardware.pci.Service" },
-    ],
-    expose: [
-        {
-            service: "fuchsia.hardware.display.engine.Service",
-            from: "self",
-        },
-    ],
 }
