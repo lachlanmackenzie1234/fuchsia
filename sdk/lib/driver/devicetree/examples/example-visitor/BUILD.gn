@@ -14,15 +14,13 @@ group("tests") {
   testonly = true
 }
 
-source_set("example-visitor-impl") {
+devicetree_visitor("example-visitor") {
   sources = [
     "example-visitor.cc",
     "example-visitor.h",
   ]
-  public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
-  deps = [ "//sdk/lib/driver/devicetree/visitors:registration" ]
-}
-
-devicetree_visitor("example-visitor") {
-  deps = [ ":example-visitor-impl" ]
+  deps = [
+    "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+    "//sdk/lib/driver/devicetree/visitors:registration",
+  ]
 }
