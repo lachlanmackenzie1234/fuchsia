@@ -55,7 +55,6 @@ rust_library(
     crate_features = [
         "alloc",
         "default",
-        "serde",
         "std",
     ],
     crate_root = "src/lib.rs",
@@ -79,7 +78,4 @@ rust_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     version = "0.7.5+spec-1.1.0",
-    deps = [
-        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
-    ],
 )
