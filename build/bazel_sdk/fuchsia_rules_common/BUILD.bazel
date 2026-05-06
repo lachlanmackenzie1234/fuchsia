@@ -7,6 +7,7 @@ filegroup(
     name = "bzl_srcs",
     srcs = [
         "//assembly:bzl_srcs",
+        "//packages:bzl_srcs",
     ],
     visibility = ["//visibility:public"],
 )
