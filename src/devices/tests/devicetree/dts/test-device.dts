@@ -8,6 +8,7 @@
 	#size-cells = <1>;
 
 	test-device@1000 {
+		compatible = "fuchsia,test-device";
 		reg = <0x1000 0x100>;
 	};
 };
