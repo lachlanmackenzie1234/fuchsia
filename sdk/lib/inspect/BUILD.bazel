@@ -3,6 +3,10 @@
 # found in the LICENSE file.
 
 exports_files(
-    ["offer.shard.cml"],
+    [
+        "offer.shard.cml",
+        "client.shard.cml",
+        "use.shard.cml",
+    ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )
