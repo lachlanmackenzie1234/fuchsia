@@ -8,13 +8,6 @@ use core::ops::Deref;
 #[derive(Clone, Debug)]
 pub struct Flexible<T>(pub T);
 
-impl<T> Flexible<T> {
-    /// Returns the contained value.
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
 impl<T> Deref for Flexible<T> {
     type Target = T;
 
