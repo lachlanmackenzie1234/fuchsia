@@ -1,0 +1,10 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include <lib/fxt/interned_string.h>
+
+extern "C" const fxt::InternedString* get_cpp_hello_ptr() {
+  using fxt::operator""_intern;
+  return &"hello"_intern;
+}

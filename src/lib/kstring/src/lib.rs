@@ -5,3 +5,6 @@
 #![no_std]
 
 pub mod interned_string;
+
+#[doc(hidden)]
+pub use kstring_macro::interned_string_export_name;
