@@ -4,3 +4,5 @@
 
 mod driver;
 mod resources;
+mod virtio;
+mod virtio_gpu_abi;
