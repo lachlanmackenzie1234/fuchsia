@@ -78,7 +78,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/ask2patch/csv",
         "//third_party/rust_crates/ask2patch/walkdir",
-        "//third_party/rust_crates/vendor/atty-0.2.11:atty",
+        "//third_party/rust_crates/vendor/atty-0.2.14:atty",
         "//third_party/rust_crates/vendor/cast-0.2.7:cast",
         "//third_party/rust_crates/vendor/clap-2.34.0:clap",
         "//third_party/rust_crates/vendor/itertools-0.8.0:itertools",

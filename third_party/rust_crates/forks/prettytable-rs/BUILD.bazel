@@ -76,7 +76,7 @@ rust_library(
     version = "0.8.0",
     deps = [
         "//third_party/rust_crates/ask2patch/csv",
-        "//third_party/rust_crates/vendor/atty-0.2.11:atty",
+        "//third_party/rust_crates/vendor/atty-0.2.14:atty",
         "//third_party/rust_crates/vendor/encode_unicode-0.3.6:encode_unicode",
         "//third_party/rust_crates/vendor/lazy_static-1.5.0:lazy_static",
         "//third_party/rust_crates/vendor/term-0.5.1:term",
