@@ -1,11 +1,11 @@
 module(
     name = "rules_cc",
-    version = "0.2.17",
+    version = "0.2.19",
     compatibility_level = 1,
 )
 
-bazel_dep(name = "bazel_features", version = "1.28.0")
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "bazel_features", version = "1.47.0")
+bazel_dep(name = "bazel_skylib", version = "1.8.0")
 bazel_dep(name = "platforms", version = "0.0.10")
 bazel_dep(name = "protobuf", version = "27.0", repo_name = "com_google_protobuf")
 
@@ -26,7 +26,16 @@ single_version_override(
     version = "1.17.0",
 )
 
-bazel_dep(name = "rules_testing", version = "0.6.0", dev_dependency = True)
+# Required commit 26a0b7d "Add CollectionSubject.contains_no_duplicates"
+# TODO: pzembrod - Change to a released version again when the commit is in a release.
+bazel_dep(name = "rules_testing", dev_dependency = True)
+archive_override(
+    module_name = "rules_testing",
+    integrity = "sha256-Fv1hcAnEWf4QxN9MhAcL9MBowNFqYdeFhZAApqdaY6w=",
+    strip_prefix = "rules_testing-26a0b7d0b21c21338bb2f5ce693eac14aa24e323",
+    urls = ["https://github.com/bazelbuild/rules_testing/archive/26a0b7d0b21c21338bb2f5ce693eac14aa24e323.tar.gz"],
+)
+
 bazel_dep(name = "stardoc", version = "0.8.0", dev_dependency = True)
 
 # Compatibility layer
