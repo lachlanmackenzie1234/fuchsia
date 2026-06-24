@@ -6,3 +6,4 @@ pub mod collections;
 pub mod errors;
 pub mod serialization;
 pub mod sort;
+pub mod tokenizer;
