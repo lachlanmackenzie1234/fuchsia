@@ -8,5 +8,5 @@ exports_files(
         "client.shard.cml",
         "use.shard.cml",
     ],
-    visibility = ["//bundles/assembly:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
