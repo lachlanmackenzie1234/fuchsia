@@ -56,15 +56,7 @@ rust_library(
     crate_features = [
         "serde",
         "serde-1",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "std",  # aarch64-unknown-linux-gnu
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "std",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -114,15 +106,7 @@ cargo_build_script(
     crate_features = [
         "serde",
         "serde-1",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "std",  # aarch64-unknown-linux-gnu
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "std",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+    ],
     crate_name = "build_script_build",
     crate_root = "build.rs",
     data = glob(
