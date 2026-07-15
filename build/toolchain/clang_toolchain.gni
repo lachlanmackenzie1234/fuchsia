@@ -182,7 +182,8 @@ template("clang_toolchain") {
                 # Speed up startup time by not searching for
                 # site packages.
                 "-S",
-                rebase_path("//build/gn/verify_depfile.py", root_build_dir),
+                rebase_path("//build/toolchain/verify_depfile.py",
+                            root_build_dir),
                 "--ignore-prefix=$rebased_rustc_prefix",
                 "--ignore-rspfile=${rbe_toolchain_vars.rust_compilation_deps_path}",
               ])
