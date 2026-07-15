@@ -8,13 +8,15 @@ use std::path::Path;
 
 use crate::DigitalAudioInterface;
 
-const DAI_DEVICE_DIR: &str = "/dev/class/dai";
+/// The member name within each service directory that provides the DAI connector.
+const DAI_CONNECTOR_MEMBER: &str = "dai_connector";
+const DAI_SERVICE_DIR: &str = "/svc/fuchsia.hardware.audio.DaiConnectorService";
 
-/// Finds any DAI devices, connects to any that are available and provides
+/// Finds any DAI devices, connects to any that are available and provides access to them.
 pub async fn find_devices() -> Result<Vec<DigitalAudioInterface>, Error> {
     // Connect to the component's environment.
     let directory_proxy =
-        fuchsia_fs::directory::open_in_namespace(DAI_DEVICE_DIR, fio::Flags::empty())?;
+        fuchsia_fs::directory::open_in_namespace(DAI_SERVICE_DIR, fio::Flags::empty())?;
     find_devices_internal(directory_proxy).await
 }
 
@@ -23,24 +25,29 @@ async fn find_devices_internal(
 ) -> Result<Vec<DigitalAudioInterface>, Error> {
     let files = fuchsia_fs::directory::readdir(&directory_proxy).await?;
 
-    let paths: Vec<_> =
-        files.iter().map(|file| Path::new(DAI_DEVICE_DIR).join(&file.name)).collect();
-    let devices = paths.iter().map(|path| DigitalAudioInterface::new(&path)).collect();
+    let devices = files
+        .iter()
+        .map(|file| {
+            let path = Path::new(DAI_SERVICE_DIR).join(&file.name).join(DAI_CONNECTOR_MEMBER);
+            DigitalAudioInterface::new(&path)
+        })
+        .collect();
 
     Ok(devices)
 }
 
 #[cfg(test)]
 mod tests {
+    use fidl_fuchsia_hardware_audio as fhaudio;
     use fuchsia_component_test::{
         Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Route,
     };
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
-    use realmbuilder_mock_helpers::mock_dev;
+    use realmbuilder_mock_helpers::mock_svc;
 
     use super::*;
-    use crate::test::mock_dai_dev_with_io_devices;
+    use crate::test::mock_dai_service_with_io_devices;
 
     #[fuchsia::test]
     async fn test_env_dir_is_not_found() {
@@ -51,8 +58,8 @@ mod tests {
         handles: LocalComponentHandles,
         mut sender: mpsc::Sender<()>,
     ) -> Result<(), Error> {
-        let proxy = handles.clone_from_namespace("dev/class/dai")?;
-        let devices = find_devices_internal(proxy).await.expect("should find devices");
+        let service_dir = handles.open_service::<fhaudio::DaiConnectorServiceMarker>()?;
+        let devices = find_devices_internal(service_dir).await.expect("should find devices");
         assert_eq!(devices.len(), 2);
         let _ = sender.send(()).await.unwrap();
         Ok(())
@@ -63,20 +70,23 @@ mod tests {
         let (device_sender, mut device_receiver) = mpsc::channel(0);
         let builder = RealmBuilder::new().await.expect("Failed to create test realm builder");
 
-        // Add a mock that provides the dev/ directory with one input and output device.
-        let mock_dev = builder
+        // Add a mock that provides the service with one input and output device.
+        let mock_svc = builder
             .add_local_child(
-                "mock-dev",
+                "mock-svc",
                 move |handles: LocalComponentHandles| {
-                    Box::pin(mock_dev(
+                    Box::pin(mock_svc(
                         handles,
-                        mock_dai_dev_with_io_devices("input1".to_string(), "output1".to_string()),
+                        mock_dai_service_with_io_devices(
+                            "input1".to_string(),
+                            "output1".to_string(),
+                        ),
                     ))
                 },
                 ChildOptions::new().eager(),
             )
             .await
-            .expect("Failed adding mock /dev provider to topology");
+            .expect("Failed adding mock service provider to topology");
 
         // Add a mock that represents a client trying to discover DAI devices.
         let mock_client = builder
@@ -91,22 +101,18 @@ mod tests {
             .await
             .expect("Failed adding mock client to topology");
 
-        // Give client access to dev/
+        // Give client access to service
         builder
             .add_route(
                 Route::new()
-                    .capability(
-                        Capability::directory("dev-dai")
-                            .path(DAI_DEVICE_DIR)
-                            .rights(fio::R_STAR_DIR),
-                    )
-                    .from(&mock_dev)
+                    .capability(Capability::service::<fhaudio::DaiConnectorServiceMarker>())
+                    .from(&mock_svc)
                     .to(&mock_client),
             )
             .await
-            .expect("Failed adding route for dai device directory");
+            .expect("Failed adding route for dai device service");
 
-        let _test_topology = builder.build().await.unwrap();
+        let _instance = builder.build().await.unwrap();
 
         let _ = device_receiver.next().await.expect("should receive devices");
     }

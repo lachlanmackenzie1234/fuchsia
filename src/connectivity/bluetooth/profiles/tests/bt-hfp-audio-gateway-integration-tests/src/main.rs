@@ -8,11 +8,12 @@ use bitflags::bitflags;
 use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_bluetooth_hfp::HfpMarker;
 use fidl_fuchsia_bluetooth_internal_a2dp::ControllerMarker;
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_hardware_audio as fhaudio;
+
 use fidl_fuchsia_media::{AudioDeviceEnumeratorMarker, AudioDeviceEnumeratorRequest};
 use fixture::fixture;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
-use fuchsia_audio_dai::test::mock_dai_dev_with_io_devices;
+use fuchsia_audio_dai::test::mock_dai_service_with_io_devices;
 use fuchsia_bluetooth::types::{Channel, PeerId, Uuid};
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
@@ -21,7 +22,7 @@ use futures::channel::mpsc;
 use futures::stream::StreamExt;
 use futures::{SinkExt, TryFutureExt};
 use mock_piconet_client::{BtProfileComponent, PiconetHarness, PiconetMember};
-use realmbuilder_mock_helpers::{mock_component, mock_dev};
+use realmbuilder_mock_helpers::{mock_component, mock_svc};
 use test_call_manager::TestCallManager;
 use zx::MonotonicDuration;
 
@@ -37,8 +38,8 @@ const MOCK_A2DP_CONTROLLER_URL: &str =
 
 /// The moniker for the Hands Free Profile Audio Gateway component under test.
 const HFP_AG_MONIKER: &str = "bt-hfp-ag-profile";
-/// The moniker for the mock dev/ directory provider.
-const MOCK_DEV_MONIKER: &str = "mock-dev";
+/// The moniker for the mock svc/ directory provider.
+const MOCK_SVC_MONIKER: &str = "mock-svc";
 /// The moniker for a mock piconet member.
 const MOCK_PICONET_MEMBER_MONIKER: &str = "mock-peer";
 /// The moniker for the audio device mock component.
@@ -135,7 +136,7 @@ impl HfpAgIntegrationTest {
             .expect("failed to add mock piconet member");
 
         // The HFP profile under test.
-        // - Add a fake `dev/` directory with DAI devices to be used by HFP.
+        // - Add a fake `svc/` directory with DAI devices to be used by HFP.
         // - Add a provider for the `AudioDeviceEnumerator` capability used by HFP.
         // - Add the HFP component with a hermetic RFCOMM intermediary component. Expose the
         //   `fuchsia.bluetooth.hfp.Hfp` capability for the `test_call_manager`.
@@ -226,34 +227,32 @@ async fn add_mock_audio_device_enumerator_provider(builder: &RealmBuilder) {
         .expect("Failed adding route for AudioDeviceEnumerator capability");
 }
 
-/// Adds a mock dev/ directory provider for the DAI devices used by HFP.
-/// Routes the directory capability from the provider to the HFP component.
+/// Adds a mock service provider for the DAI devices used by HFP.
+/// Routes the service capability from the provider to the HFP component.
 async fn add_mock_dai_devices(builder: &RealmBuilder) {
-    let mock_dai_devices = builder
+    let mock_svc_devices = builder
         .add_local_child(
-            MOCK_DEV_MONIKER,
+            MOCK_SVC_MONIKER,
             move |handles: LocalComponentHandles| {
-                Box::pin(mock_dev(
+                Box::pin(mock_svc(
                     handles,
-                    mock_dai_dev_with_io_devices("input1".to_string(), "output1".to_string()),
+                    mock_dai_service_with_io_devices("input1".to_string(), "output1".to_string()),
                 ))
             },
             ChildOptions::new().eager(),
         )
         .await
-        .expect("Failed adding mock /dev provider to topology");
+        .expect("Failed adding mock service provider to topology");
 
     builder
         .add_route(
             Route::new()
-                .capability(
-                    Capability::directory("dev-dai").path("/dev/class/dai").rights(fio::R_STAR_DIR),
-                )
-                .from(&mock_dai_devices)
+                .capability(Capability::service::<fhaudio::DaiConnectorServiceMarker>())
+                .from(&mock_svc_devices)
                 .to(Ref::child(HFP_AG_MONIKER)),
         )
         .await
-        .expect("Failed adding route for DAI device directory");
+        .expect("Failed adding route for DAI device service");
 }
 
 /// Returns a TestCallManager that uses the `Hfp` protocol provided by the `hfp_component` in the

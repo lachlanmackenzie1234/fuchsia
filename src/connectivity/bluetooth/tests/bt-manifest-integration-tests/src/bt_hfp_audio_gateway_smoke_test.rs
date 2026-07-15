@@ -6,10 +6,10 @@ use anyhow::Error;
 use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileRequest};
 use fidl_fuchsia_bluetooth_hfp::{HfpMarker, HfpProxy};
 use fidl_fuchsia_bluetooth_hfp_test::{HfpTestMarker, HfpTestProxy};
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_hardware_audio as fhaudio;
 use fidl_fuchsia_media::{AudioDeviceEnumeratorMarker, AudioDeviceEnumeratorRequestStream};
 use fidl_fuchsia_power_battery::{BatteryManagerMarker, BatteryManagerRequestStream};
-use fuchsia_audio_dai::test::mock_dai_dev_with_io_devices;
+use fuchsia_audio_dai::test::mock_dai_service_with_io_devices;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
@@ -17,7 +17,7 @@ use fuchsia_component_test::{
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use log::info;
-use realmbuilder_mock_helpers::{add_fidl_service_handler, mock_component, mock_dev};
+use realmbuilder_mock_helpers::{add_fidl_service_handler, mock_component, mock_svc};
 use std::collections::HashSet;
 
 /// HFP Audio Gateway component URL.
@@ -30,7 +30,7 @@ const HFP_MONIKER: &str = "hfp";
 const FAKE_PROFILE_MONIKER: &str = "fake-profile";
 /// Local name of the mock that is providing services used by HFP.
 const FAKE_CAPABILITY_PROVIDER_MONIKER: &str = "fake-audio-device-provider";
-const MOCK_DEV_MONIKER: &str = "mock-dev";
+const MOCK_SVC_MONIKER: &str = "mock-svc";
 /// Local name of the fake HFP client that is connecting to `HFP_MONIKER`s services.
 const HFP_CLIENT_MONIKER: &str = "fake-hfp-client";
 
@@ -135,19 +135,19 @@ async fn hfp_audio_gateway_v2_capability_routing() {
         .await
         .expect("Failed adding capability provider mock to topology");
 
-    let mock_dev = builder
+    let mock_svc = builder
         .add_local_child(
-            MOCK_DEV_MONIKER,
+            MOCK_SVC_MONIKER,
             move |handles: LocalComponentHandles| {
-                Box::pin(mock_dev(
+                Box::pin(mock_svc(
                     handles,
-                    mock_dai_dev_with_io_devices("input1".to_string(), "output1".to_string()),
+                    mock_dai_service_with_io_devices("input1".to_string(), "output1".to_string()),
                 ))
             },
             ChildOptions::new().eager(),
         )
         .await
-        .expect("Failed adding mock /dev provider to topology");
+        .expect("Failed adding mock service provider to topology");
     // Mock HFP-AG client that will request the `Hfp` and `HfpTest` services
     // which are provided by `bt-hfp-audio-gateway.cml`.
     let sender_clone = sender.clone();
@@ -203,14 +203,12 @@ async fn hfp_audio_gateway_v2_capability_routing() {
     builder
         .add_route(
             Route::new()
-                .capability(
-                    Capability::directory("dev-dai").path("/dev/class/dai").rights(fio::R_STAR_DIR),
-                )
-                .from(&mock_dev)
+                .capability(Capability::service::<fhaudio::DaiConnectorServiceMarker>())
+                .from(&mock_svc)
                 .to(&hfp),
         )
         .await
-        .expect("Failed adding route for DAI device directory");
+        .expect("Failed adding route for DAI device service");
     builder
         .add_route(
             Route::new()

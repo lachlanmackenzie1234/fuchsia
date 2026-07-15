@@ -93,6 +93,21 @@ pub async fn mock_dev(
     Ok(())
 }
 
+/// Sets up a mock svc/ directory with the provided `svc_directory` topology.
+pub async fn mock_svc(
+    handles: LocalComponentHandles,
+    svc_directory: Arc<dyn Directory>,
+) -> Result<(), Error> {
+    let mut fs = ServiceFs::new();
+    let _ = fs.add_remote(
+        "svc",
+        vfs::directory::serve_read_only(svc_directory, vfs::execution_scope::ExecutionScope::new()),
+    );
+    let _ = fs.serve_connection(handles.outgoing_dir)?;
+    fs.collect::<()>().await;
+    Ok(())
+}
+
 /// A mock component serving a protocol `S` on `handles`. Specifically, this services S by calling
 /// `responder` for every request of every client connection to S.
 pub async fn stateless_mock_responder<S, F>(

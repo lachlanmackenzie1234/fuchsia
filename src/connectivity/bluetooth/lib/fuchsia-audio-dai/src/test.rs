@@ -246,20 +246,22 @@ async fn handle_dai_connect_requests(as_input: bool, mut stream: DaiConnectorReq
     }
 }
 
-/// Builds and returns a VFS with a mock input and output DAI device.
-pub fn mock_dai_dev_with_io_devices(input: String, output: String) -> Arc<dyn Directory> {
+/// Builds and returns a VFS with a mock input and output DAI service.
+pub fn mock_dai_service_with_io_devices(input: String, output: String) -> Arc<dyn Directory> {
     pseudo_directory! {
-        "class" => pseudo_directory! {
-            "dai" => pseudo_directory! {
-                &input => service::host(
+        "fuchsia.hardware.audio.DaiConnectorService" => pseudo_directory! {
+            &input => pseudo_directory! {
+                "dai_connector" => service::host(
                     move |stream: DaiConnectorRequestStream| handle_dai_connect_requests(true,
                                                                                          stream)
                 ),
-                &output => service::host(
+            },
+            &output => pseudo_directory! {
+                "dai_connector" => service::host(
                     move |stream: DaiConnectorRequestStream| handle_dai_connect_requests(false,
                                                                                          stream)
                 ),
-            }
+            },
         }
     }
 }
