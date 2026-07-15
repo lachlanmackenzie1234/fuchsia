@@ -300,8 +300,7 @@ async fn handle_client_request_scan(
             // Note: for now, we must always present WPA2/3 networks as WPA2 over our external
             // interfaces (i.e. to FIDL consumers of scan results). See b/182209070 for more
             // information.
-            // TODO(b/182569380): use actual wpa3 support in this conversion rather than 'false'
-            let fidl_results = scan::scan_result_to_policy_scan_result(&results, false);
+            let fidl_results = scan::scan_result_to_policy_scan_result(&results);
             if let Err(e) = scan::send_scan_results_over_fidl(output_iterator, &fidl_results).await
             {
                 warn!("Failed to send scan results to requester: {:?}", e);

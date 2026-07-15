@@ -5,11 +5,12 @@
 use crate::client::types;
 use anyhow::{Error, format_err};
 use fidl::prelude::*;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use futures::stream::TryStreamExt;
 use ieee80211::MacAddrBytes;
 use log::{debug, info};
 use measure_tape_for_scan_result::Measurable as _;
-use {fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_sme as fidl_sme};
 
 // TODO(https://fxbug.dev/42160765): Remove this.
 // Size of FIDL message header and FIDL error-wrapped vector header
@@ -47,11 +48,21 @@ fn fidl_security_from_sme_protection(
 #[allow(clippy::ptr_arg, reason = "mass allow for https://fxbug.dev/381896734")]
 pub fn scan_result_to_policy_scan_result(
     internal_results: &Vec<types::ScanResult>,
-    wpa3_supported: bool,
 ) -> Vec<fidl_policy::ScanResult> {
     let scan_results: Vec<fidl_policy::ScanResult> = internal_results
         .iter()
         .filter_map(|internal| {
+            // Determine wpa3 support from the scan result entries.
+            let wpa3_supported = internal.entries.iter().any(|bss| {
+                if let Ok(compatible) = &bss.compatibility {
+                    compatible
+                        .mutual_security_protocols()
+                        .contains(&wlan_common::security::SecurityDescriptor::WPA3_PERSONAL)
+                } else {
+                    false
+                }
+            });
+
             if let Some(security) =
                 fidl_security_from_sme_protection(internal.security_type_detailed, wpa3_supported)
             {
@@ -192,7 +203,7 @@ mod tests {
             fidl_policy::ScanResult {
                 id: Some(fidl_policy::NetworkIdentifier {
                     ssid: types::Ssid::try_from("duplicated ssid").unwrap().into(),
-                    type_: fidl_policy::SecurityType::Wpa2,
+                    type_: fidl_policy::SecurityType::Wpa3,
                 }),
                 entries: Some(vec![
                     fidl_policy::Bss {
@@ -414,7 +425,89 @@ mod tests {
                 compatibility: types::Compatibility::Supported,
             },
         ];
-        assert_eq!(fidl_aps, scan_result_to_policy_scan_result(&internal_aps, false));
+        assert_eq!(fidl_aps, scan_result_to_policy_scan_result(&internal_aps));
+    }
+
+    #[fuchsia::test]
+    fn scan_results_converted_correctly_wpa3_unsupported() {
+        let mut fidl_aps = generate_test_fidl_data();
+        // Since WPA3 is not supported by the client in this test, the Wpa3Personal network
+        // should downgrade its reported security type to Wpa2.
+        fidl_aps[0].id.as_mut().unwrap().type_ = fidl_policy::SecurityType::Wpa2;
+
+        let internal_aps = vec![
+            types::ScanResult {
+                ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
+                security_type_detailed: types::SecurityTypeDetailed::Wpa3Personal,
+                entries: vec![
+                    types::Bss {
+                        bssid: types::Bssid::from([0, 0, 0, 0, 0, 0]),
+                        signal: types::Signal { rssi_dbm: 0, snr_db: 1 },
+                        timestamp: zx::MonotonicInstant::from_nanos(
+                            fidl_aps[0].entries.as_ref().unwrap()[0].timestamp_nanos.unwrap(),
+                        ),
+                        channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                        observation: types::ScanObservation::Passive,
+                        // Ensure WPA3 is omitted to simulate lack of WPA3 support
+                        compatibility: Compatible::expect_ok([SecurityDescriptor::WPA2_PERSONAL]),
+                        bss_description: random_fidl_bss_description!(
+                            Wpa3,
+                            bssid: [0, 0, 0, 0, 0, 0],
+                            ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
+                            rssi_dbm: 0,
+                            snr_db: 1,
+                            channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                        )
+                        .into(),
+                    },
+                    types::Bss {
+                        bssid: types::Bssid::from([7, 8, 9, 10, 11, 12]),
+                        signal: types::Signal { rssi_dbm: 13, snr_db: 3 },
+                        timestamp: zx::MonotonicInstant::from_nanos(
+                            fidl_aps[0].entries.as_ref().unwrap()[1].timestamp_nanos.unwrap(),
+                        ),
+                        channel: types::WlanChan::new(11, types::Cbw::Cbw20),
+                        observation: types::ScanObservation::Passive,
+                        compatibility: Incompatible::unknown(),
+                        bss_description: random_fidl_bss_description!(
+                            Wpa3,
+                            bssid: [7, 8, 9, 10, 11, 12],
+                            ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
+                            rssi_dbm: 13,
+                            snr_db: 3,
+                            channel: types::WlanChan::new(11, types::Cbw::Cbw20),
+                        )
+                        .into(),
+                    },
+                ],
+                compatibility: types::Compatibility::Supported,
+            },
+            types::ScanResult {
+                ssid: types::Ssid::try_from("unique ssid").unwrap(),
+                security_type_detailed: types::SecurityTypeDetailed::Wpa2Personal,
+                entries: vec![types::Bss {
+                    bssid: types::Bssid::from([1, 2, 3, 4, 5, 6]),
+                    signal: types::Signal { rssi_dbm: 7, snr_db: 2 },
+                    timestamp: zx::MonotonicInstant::from_nanos(
+                        fidl_aps[1].entries.as_ref().unwrap()[0].timestamp_nanos.unwrap(),
+                    ),
+                    channel: types::WlanChan::new(8, types::Cbw::Cbw20),
+                    observation: types::ScanObservation::Passive,
+                    compatibility: Compatible::expect_ok([SecurityDescriptor::WPA2_PERSONAL]),
+                    bss_description: random_fidl_bss_description!(
+                        Wpa2,
+                        bssid: [1, 2, 3, 4, 5, 6],
+                        ssid: types::Ssid::try_from("unique ssid").unwrap(),
+                        rssi_dbm: 7,
+                        snr_db: 2,
+                        channel: types::WlanChan::new(8, types::Cbw::Cbw20),
+                    )
+                    .into(),
+                }],
+                compatibility: types::Compatibility::Supported,
+            },
+        ];
+        assert_eq!(fidl_aps, scan_result_to_policy_scan_result(&internal_aps));
     }
 
     // TODO(https://fxbug.dev/42131757): Separate test case for "empty final vector not consumed" vs "partial ap list"

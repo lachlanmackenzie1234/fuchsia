@@ -350,9 +350,7 @@ impl ScanResultUpdate for LocationSensorUpdater {
             fidl_conversion::send_scan_results_over_fidl(server, &scan_results).await
         }
 
-        // Set "wpa3_supported: true" such that scan results are not artificially modified to hide
-        // WPA3 networks.
-        let scan_results = fidl_conversion::scan_result_to_policy_scan_result(&scan_results, true);
+        let scan_results = fidl_conversion::scan_result_to_policy_scan_result(&scan_results);
         // Filter out any errors and just log a message.
         // No error recovery, we'll just try again next time a scan result comes in.
         if let Err(e) = send_results(scan_results).await {
