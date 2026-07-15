@@ -33,6 +33,7 @@ rustc_binary("bin") {
     "src/serialization.rs",
     "src/sort.rs",
     "src/string.rs",
+    "src/subshell.rs",
     "src/tests/args.rs",
     "src/tests/arithmetic.rs",
     "src/tests/ast.rs",
@@ -67,7 +68,11 @@ fuchsia_package("zxsh") {
 
 fuchsia_unittest_package("zxsh_tests") {
   manifest = "meta/zxsh_tests.cml"
-  deps = [ ":bin_test" ]
+  deps = [
+    ":bin",
+    ":bin_test",
+    "//zircon/third_party/uapp/dash",
+  ]
 }
 
 group("tests") {

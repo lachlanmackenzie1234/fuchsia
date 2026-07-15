@@ -147,24 +147,10 @@ impl Deserialize for Vec<bstr::BString> {
 }
 
 pub trait BStrExt {
-    fn trim_ascii(&self) -> &bstr::BStr;
     fn split_byte(&self, sep: u8) -> impl Iterator<Item = &bstr::BStr>;
 }
 
-impl BStrExt for bstr::BStr {
-    fn trim_ascii(&self) -> &bstr::BStr {
-        let bytes: &[u8] = self;
-        let mut start = 0;
-        while start < bytes.len() && bytes[start].is_ascii_whitespace() {
-            start += 1;
-        }
-        let mut end = bytes.len();
-        while end > start && bytes[end - 1].is_ascii_whitespace() {
-            end -= 1;
-        }
-        bstr::BStr::new(&bytes[start..end])
-    }
-
+impl BStrExt for [u8] {
     fn split_byte(&self, sep: u8) -> impl Iterator<Item = &bstr::BStr> {
         self.split(move |&b| b == sep).map(bstr::BStr::new)
     }

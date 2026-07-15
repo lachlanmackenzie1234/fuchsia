@@ -12,6 +12,7 @@ use crate::parser::ast::*;
 use crate::parser::{Token, parse_script, parse_subshell_command, resolve_word_parts, tokenize};
 use crate::process::{clone_fd_to_action, make_pipe, read_fd_to_end};
 use crate::relative;
+use crate::subshell::{SubshellScriptArgs, spawn_subshell_process};
 use bstr::{BStr, BString, ByteSlice};
 
 pub fn is_assignment_flat(arg: &[WordPart], buf: &relative::Buffer) -> bool {
@@ -35,12 +36,42 @@ pub fn is_assignment_flat(arg: &[WordPart], buf: &relative::Buffer) -> bool {
 }
 
 fn run_command_substitution(
-    _cmd: &Command,
-    _state: &ShellState,
-    _ctx: &ExecutionContext,
-    _source_buf: &relative::Buffer,
+    cmd: &Command,
+    state: &ShellState,
+    ctx: &ExecutionContext,
+    source_buf: &relative::Buffer,
 ) -> Result<BString, String> {
-    Err("Command substitution requires subshell IPC".to_string())
+    let (read_fd, write_fd) = make_pipe()?;
+
+    let stdin = ctx.stdin();
+    let stdout = Some(&write_fd);
+    let stderr = ctx.stderr();
+
+    let mut actions = Vec::new();
+    for (fd_opt, target) in [(stdin, Fd::STDIN), (stdout, Fd::STDOUT), (stderr, Fd::STDERR)] {
+        if let Some(fd) = fd_opt {
+            if let Some(action) = clone_fd_to_action(fd, target) {
+                actions.push(action);
+            }
+        }
+    }
+
+    let proc =
+        spawn_subshell_process(cmd, state, &mut actions, SubshellScriptArgs::Pass, source_buf)?;
+
+    drop(write_fd);
+
+    let output_bytes =
+        read_fd_to_end(read_fd).map_err(|e| format!("Failed to read pipe: {}", io_err_str(e)))?;
+
+    proc.wait_one(zx::Signals::PROCESS_TERMINATED, zx::MonotonicInstant::INFINITE)
+        .map_err(|e| format!("Wait for subshell failed: {}", zx_status_str(e)))?;
+
+    let mut output = output_bytes;
+    while output.last() == Some(&b'\n') {
+        output.pop();
+    }
+    Ok(BString::from(output))
 }
 
 fn is_builtin(name: &BStr) -> bool {

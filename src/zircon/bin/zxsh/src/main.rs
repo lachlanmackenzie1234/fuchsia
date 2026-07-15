@@ -15,6 +15,7 @@ mod relative;
 mod serialization;
 mod sort;
 mod string;
+mod subshell;
 mod tty;
 
 fn main() {}

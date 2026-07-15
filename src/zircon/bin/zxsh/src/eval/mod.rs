@@ -4,6 +4,9 @@
 
 #![allow(unused_imports)]
 
+use crate::parser::ast::{ASTBuilder, Command};
+use crate::relative;
+
 pub mod arithmetic;
 pub mod execution_context;
 pub mod expand;
@@ -11,7 +14,7 @@ pub mod format;
 pub mod glob;
 pub mod state;
 
-pub use execution_context::ExecutionContext;
+pub use execution_context::{ClosedReader, ClosedWriter, ExecutionContext};
 pub use expand::expand_string;
 pub use state::{
     RLIM_INFINITY, RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellEnv, ShellPath, ShellState,
@@ -41,3 +44,14 @@ impl EvalOutcome {
         }
     }
 }
+
+pub fn eval_command(
+    _builder: &mut ASTBuilder,
+    _cmd_ptr: relative::Ptr<Command>,
+    _state: &mut ShellState,
+    _ctx: &mut ExecutionContext,
+) -> Result<EvalOutcome, String> {
+    Err("Execution engine not yet implemented".to_string())
+}
+
+pub fn run_exit_trap(_state: &mut ShellState, _ctx: &mut ExecutionContext) {}

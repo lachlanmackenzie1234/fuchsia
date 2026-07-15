@@ -3,8 +3,14 @@
 // found in the LICENSE file.
 
 use crate::collections::{FlatMap, FlatSet};
+use crate::eval::ShellState;
+use crate::parser::ast::ASTBuilder;
 use crate::serialization::{Deserialize, Serialize};
+use crate::subshell::{
+    SubshellPayloadHeader, deserialize_subshell_payload, serialize_subshell_payload,
+};
 use bstr::BString;
+use zerocopy::FromBytes;
 
 fn assert_serialization<T>(val: T, expected_bytes: &[u8])
 where
@@ -111,4 +117,52 @@ fn test_flat_set_serialization() {
 
     set.insert(BString::from("a"));
     assert_serialization(set, &[1, 0, 0, 0, 1, 0, 0, 0, b'a']);
+}
+
+#[test]
+fn test_subshell_serialization() {
+    let mut builder = ASTBuilder::new();
+    let off = builder.add_empty_simple_command();
+    let cmd = builder.get_ref(off);
+    let state = ShellState::new();
+    let bytes = serialize_subshell_payload(cmd, &state, &builder);
+    assert!(!bytes.is_empty());
+
+    let header_size = std::mem::size_of::<SubshellPayloadHeader>();
+    let header = SubshellPayloadHeader::ref_from_bytes(&bytes[0..header_size]).unwrap();
+    assert_eq!(header.total_length as usize, bytes.len() - header_size);
+}
+
+#[test]
+fn test_subshell_sequence_serialization() {
+    let mut builder = ASTBuilder::new();
+    let c1 = builder.add_empty_simple_command();
+    let c2 = builder.add_empty_simple_command();
+    let off = builder.add_sequence_command(&[c1, c2]);
+
+    let cmd = builder.get_ref(off);
+    let state = ShellState::new();
+    let bytes = serialize_subshell_payload(cmd, &state, &builder);
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn test_subshell_deserialization() {
+    let mut builder = ASTBuilder::new();
+    let off = builder.add_empty_simple_command();
+    let cmd = builder.get_ref(off);
+    let state = ShellState::new();
+    let bytes = serialize_subshell_payload(cmd, &state, &builder);
+
+    let header_size = std::mem::size_of::<SubshellPayloadHeader>();
+    let header = SubshellPayloadHeader::ref_from_bytes(&bytes[0..header_size]).unwrap();
+    let command_length = header.command_length as usize;
+    let environment_length = header.environment_length as usize;
+    let command_bytes = &bytes[header_size..header_size + command_length];
+    let environment_bytes =
+        &bytes[header_size + command_length..header_size + command_length + environment_length];
+
+    let data = deserialize_subshell_payload(command_bytes, environment_bytes).unwrap();
+    let deserialized_cmd = data.builder.get_ref(data.root_command_pointer);
+    assert_eq!(deserialized_cmd.tag, cmd.tag);
 }
