@@ -82,6 +82,10 @@ template("kernel_executable") {
       walk_keys = [ "link_output_barrier" ]
       data_keys = [ "kernel_rust_crate_decls" ]
       deps = _kernel_deps
+
+      metadata = {
+        rust_sources = rebase_path(outputs, root_build_dir)
+      }
     }
 
     generated_file("$target_name.extern-crates.rsp") {

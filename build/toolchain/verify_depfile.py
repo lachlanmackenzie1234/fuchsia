@@ -99,6 +99,11 @@ def main():
         help="Response file listing exact paths to ignore (may be repeated)",
     )
     parser.add_argument(
+        "--sources-file",
+        help="path to file listing expected source file names",
+        type=Path,
+    )
+    parser.add_argument(
         "expected_sources",
         nargs="*",
         help="path to the expected list of source files",
@@ -121,6 +126,9 @@ def main():
         ignore_paths.update(rspfile.read_text().splitlines())
 
     expected_sources = set(args.expected_sources)
+    if args.sources_file:
+        expected_sources.update(args.sources_file.read_text().splitlines())
+
     actual_sources = {
         file
         for file in parse_depfile(args.depfile)
@@ -166,6 +174,10 @@ def main():
                 ),
                 file=sys.stderr,
             )
+        print_suggested_sources(
+            f"actual depfile list from {args.depfile}", actual_sources
+        )
+        print_suggested_sources("expected_sources", expected_sources)
 
         print(
             "note: the BUILD.gn file for {} should have the following:\n".format(
