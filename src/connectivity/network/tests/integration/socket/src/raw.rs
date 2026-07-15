@@ -6,10 +6,10 @@
 
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
-use fuchsia_async::TimeoutExt as _;
 use fuchsia_async::net::DatagramSocket;
+use fuchsia_async::{self as fasync, TimeoutExt as _};
 use futures::FutureExt as _;
-use net_types::ip::IpVersion;
+use net_types::ip::{Ip, IpAddress as _, IpVersion};
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
 use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
@@ -21,7 +21,43 @@ use packet_formats::ipv4::Ipv4Packet;
 use socket2::InterfaceIndexOrAddress;
 use test_case::test_case;
 
-use crate::MulticastTestIpExt;
+use crate::{MulticastTestIpExt, TestIpExt};
+
+// A helper to receive a message and the control data from a raw socket.
+async fn recv_msg_and_control(
+    proxy: &fposix_socket_raw::SocketProxy,
+) -> (Vec<u8>, fposix_socket::NetworkSocketRecvControlData) {
+    let describe_info = proxy.describe().await.expect("describe should succeed");
+    let event = describe_info.event.expect("info should have an event");
+    let incoming_signal = zx::Signals::from_bits(fposix_socket::SIGNAL_DATAGRAM_INCOMING).unwrap();
+    let _signals = fasync::OnSignals::new(event, incoming_signal)
+        .await
+        .expect("waiting for signals should succeed");
+    let (_addr, data, control, _truncated) = proxy
+        .recv_msg(
+            false,           // want_addr
+            u16::MAX.into(), // data_len
+            true,            // want_control
+            fposix_socket::RecvMsgFlags::empty(),
+        )
+        .await
+        .expect("sending request should succeed")
+        .expect("RecvMsg request should succeed");
+    (data, control)
+}
+
+#[track_caller]
+fn verify_packet_body<I: Ip>(buf: &[u8], expected_body: &[u8]) {
+    match I::VERSION {
+        // NB: Raw IPv4 Sockets receive the full IP Header
+        IpVersion::V4 => {
+            let buffer = packet::Buf::new(buf, ..);
+            let packet = Ipv4Packet::parse(&mut buffer.as_ref(), ()).expect("parse should succeed");
+            assert_eq!(packet.body(), &expected_body[..]);
+        }
+        IpVersion::V6 => assert_eq!(&buf[..], &expected_body[..]),
+    }
+}
 
 #[netstack_test]
 #[variant(N, Netstack)]
@@ -109,20 +145,81 @@ async fn multicast_loop_on_raw_ip_socket<N: Netstack, I: MulticastTestIpExt>(
             })
             .await
             .expect("recv_from failed");
-        match I::VERSION {
-            // NB: Raw IPv4 Sockets receive the full IP Header
-            IpVersion::V4 => {
-                let buffer = packet::Buf::new(buf, 0..size);
-                let packet =
-                    Ipv4Packet::parse(&mut buffer.as_ref(), ()).expect("parse should succeed");
-                assert_eq!(packet.body(), &data[..]);
-            }
-            IpVersion::V6 => assert_eq!(&buf[..size], &data[..]),
-        }
+        verify_packet_body::<I>(&buf[..size], &data);
     } else {
         recv_fut
             .map(|output| panic!("unexpected received packet {output:?}"))
             .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, || ())
             .await;
     }
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(I, Ip)]
+async fn raw_ip_socket_recv_hop_limit<N: Netstack, I: TestIpExt>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let client = sandbox
+        .create_netstack_realm::<N, _>(format!("{name}_client"))
+        .expect("creating client realm should succeed");
+
+    let socket = client
+        .raw_socket(
+            I::DOMAIN,
+            fposix_socket_raw::ProtocolAssociation::Associated(IpProto::Udp.into()),
+        )
+        .await
+        .expect("creating socket should succeed");
+
+    let socket_channel = fdio::clone_channel(&socket).expect("cloning channel should succeed");
+    let socket_proxy =
+        fposix_socket_raw::SocketProxy::new(fidl::AsyncChannel::from_channel(socket_channel));
+
+    // Set `IP_TTL` or `IPV6_HOPLIMIT` so that the packet has a known hop limit.
+    const EXPECTED_TTL: u8 = 73;
+    match I::VERSION {
+        IpVersion::V4 => {
+            socket.set_ttl_v4(EXPECTED_TTL.into()).expect("setting IP_TTL should succeed")
+        }
+        IpVersion::V6 => socket
+            .set_unicast_hops_v6(EXPECTED_TTL.into())
+            .expect("setting IPV6_UNICAST_HOPS should succeed"),
+    }
+
+    fn get_hop_limit<I: Ip>(control: &fposix_socket::NetworkSocketRecvControlData) -> Option<u8> {
+        match I::VERSION {
+            IpVersion::V4 => control.ip.as_ref().map(|c| c.ttl).flatten(),
+            IpVersion::V6 => control.ipv6.as_ref().map(|c| c.hoplimit).flatten(),
+        }
+    }
+
+    // Send a packet and verify that the TTL/HopLimit is not present.
+    let loopback_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), 0);
+    let dest_addr = socket2::SockAddr::from(loopback_addr);
+    let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    assert_eq!(socket.send_to(&data, &dest_addr).expect("failed to send packet"), data.len());
+    let (msg, control) = recv_msg_and_control(&socket_proxy).await;
+    verify_packet_body::<I>(msg.as_slice(), &data);
+    assert_eq!(get_hop_limit::<I>(&control), None);
+
+    // Now, set `IP_RECVTTL` or `IPV6_RECVHOPLIMIT` and verify that the
+    // TTL/HopLimit is present.
+    // NB: socket2 doesn't support these options directly, so use the FIDL API
+    // instead.
+    match I::VERSION {
+        IpVersion::V4 => socket_proxy
+            .set_ip_receive_ttl(true)
+            .await
+            .expect("sending the request should succeed")
+            .expect("setting IP_RECVTTL should succeed"),
+        IpVersion::V6 => socket_proxy
+            .set_ipv6_receive_hop_limit(true)
+            .await
+            .expect("sending the request should succeed")
+            .expect("setting IPV6_RECVHOPLIMIT should succeed"),
+    }
+    assert_eq!(socket.send_to(&data, &dest_addr).expect("failed to send packet"), data.len());
+    let (msg, control) = recv_msg_and_control(&socket_proxy).await;
+    verify_packet_body::<I>(msg.as_slice(), &data);
+    assert_eq!(get_hop_limit::<I>(&control), Some(EXPECTED_TTL));
 }

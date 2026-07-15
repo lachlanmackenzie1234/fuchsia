@@ -116,6 +116,8 @@ struct ReceivedIpPacket<I: Ip> {
     src_addr: I::Addr,
     /// The device on which the packet was received.
     device: WeakDeviceId,
+    /// The TTL (IPv4) or Hop Limit (IPv6) of the packet.
+    hop_limit: u8,
 }
 
 impl<I: IpExt> ReceivedIpPacket<I> {
@@ -125,13 +127,14 @@ impl<I: IpExt> ReceivedIpPacket<I> {
             IpVersion::V4 => packet.to_vec(),
             IpVersion::V6 => packet.body().to_vec(),
         };
-        ReceivedIpPacket { src_addr: packet.src_ip(), data, device }
+        let hop_limit = packet.ttl();
+        ReceivedIpPacket { src_addr: packet.src_ip(), data, device, hop_limit }
     }
 }
 
 impl<I: Ip> BodyLen for ReceivedIpPacket<I> {
     fn body_len(&self) -> usize {
-        let Self { data, src_addr: _, device: _ } = self;
+        let Self { data, src_addr: _, device: _, hop_limit: _ } = self;
         data.len()
     }
 }
@@ -143,6 +146,8 @@ struct SocketWorkerState<I: IpExt> {
     peer_event: zx::EventPair,
     /// The identifier for the [`netstack3_core`] socket resource.
     id: RawIpSocketId<I>,
+    /// Whether the receive TTL (IPv4) or Hop Limit (IPv6) option is enabled.
+    recv_hop_limit: bool,
 }
 
 #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
@@ -160,7 +165,7 @@ impl<I: IpExt> SocketWorkerState<I> {
 
         let state = SocketState::new(local_event, &*ctx.bindings_ctx().settings.ip.read());
         let id = ctx.api().raw_ip_socket().create(proto, state);
-        SocketWorkerState { peer_event, id }
+        SocketWorkerState { peer_event, id, recv_hop_limit: false }
     }
 }
 
@@ -204,7 +209,7 @@ impl<I: IpExt + IpSockAddrExt> SocketWorkerHandler for SocketWorkerState<I> {
     }
 
     async fn close(self, ctx: &mut Ctx) {
-        let SocketWorkerState { peer_event: _, id } = self;
+        let SocketWorkerState { peer_event: _, id, recv_hop_limit: _ } = self;
         let weak = id.downgrade();
         let SocketState { rx_queue: _ } = ctx
             .api()
@@ -224,7 +229,7 @@ struct RequestHandler<'a, I: IpExt> {
 #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
 impl<'a, I: IpExt + IpSockAddrExt> RequestHandler<'a, I> {
     fn describe(
-        SocketWorkerState { peer_event, id: _ }: &SocketWorkerState<I>,
+        SocketWorkerState { peer_event, id: _, recv_hop_limit: _ }: &SocketWorkerState<I>,
     ) -> fpraw::SocketDescribeResponse {
         let peer = peer_event
             .duplicate_handle(
@@ -397,12 +402,20 @@ impl<'a, I: IpExt + IpSockAddrExt> RequestHandler<'a, I> {
             fpraw::SocketRequest::GetIpReceiveTypeOfService { responder } => {
                 respond_not_supported!("raw::GetIpReceiveTypeOfService", responder)
             }
-            fpraw::SocketRequest::SetIpReceiveTtl { value: _, responder } => {
-                respond_not_supported!("raw::SetIpReceiveTtl", responder)
-            }
-            fpraw::SocketRequest::GetIpReceiveTtl { responder } => {
-                respond_not_supported!("raw::GetIpReceiveTtl", responder)
-            }
+            fpraw::SocketRequest::SetIpReceiveTtl { value, responder } => responder
+                .send(
+                    handle_set_recv_hop_limit(data, IpVersion::V4, value)
+                        .map_err(IntoErrno::into_errno_error)
+                        .log_errno_error("raw::SetIpReceiveTtl"),
+                )
+                .unwrap_or_log("failed to respond"),
+            fpraw::SocketRequest::GetIpReceiveTtl { responder } => responder
+                .send(
+                    handle_get_recv_hop_limit(data, IpVersion::V4)
+                        .map_err(IntoErrno::into_errno_error)
+                        .log_errno_error("raw::GetIpReceiveTtl"),
+                )
+                .unwrap_or_log("failed to respond"),
             fpraw::SocketRequest::SetIpMulticastInterface { iface: _, address: _, responder } => {
                 respond_not_supported!("raw::SetIpMulticastInterface", responder)
             }
@@ -482,12 +495,20 @@ impl<'a, I: IpExt + IpSockAddrExt> RequestHandler<'a, I> {
                         .log_errno_error("raw::GetIpv6UnicastHops"),
                 )
                 .unwrap_or_log("failed to respond"),
-            fpraw::SocketRequest::SetIpv6ReceiveHopLimit { value: _, responder } => {
-                respond_not_supported!("raw::SetIpv6ReceiveHopLimit", responder)
-            }
-            fpraw::SocketRequest::GetIpv6ReceiveHopLimit { responder } => {
-                respond_not_supported!("raw::GetIpv6ReceiveHopLimit", responder)
-            }
+            fpraw::SocketRequest::SetIpv6ReceiveHopLimit { value, responder } => responder
+                .send(
+                    handle_set_recv_hop_limit(data, IpVersion::V6, value)
+                        .map_err(IntoErrno::into_errno_error)
+                        .log_errno_error("raw::SetIpv6ReceiveHopLimit"),
+                )
+                .unwrap_or_log("failed to respond"),
+            fpraw::SocketRequest::GetIpv6ReceiveHopLimit { responder } => responder
+                .send(
+                    handle_get_recv_hop_limit(data, IpVersion::V6)
+                        .map_err(IntoErrno::into_errno_error)
+                        .log_errno_error("raw::GetIpv6ReceiveHopLimit"),
+                )
+                .unwrap_or_log("failed to respond"),
             fpraw::SocketRequest::SetIpv6MulticastHops { value, responder } => responder
                 .send(
                     handle_set_hop_limit(ctx, data, HopLimitType::Multicast, IpVersion::V6, value)
@@ -701,11 +722,10 @@ fn handle_recvmsg<I: IpExt + IpSockAddrExt>(
     want_control: bool,
     flags: fposix_socket::RecvMsgFlags,
 ) -> Result<RecvMsgResponse, ErrnoError> {
-    // TODO(https://fxbug.dev/42175797): Support control data & flags.
-    let _want_control = want_control;
+    // TODO(https://fxbug.dev/42175797): Support flags.
     let _flags = flags;
 
-    let ReceivedIpPacket { mut data, src_addr, device } = socket
+    let ReceivedIpPacket { mut data, src_addr, device, hop_limit } = socket
         .id
         .external_state()
         .dequeue_rx_packet()
@@ -730,7 +750,27 @@ fn handle_recvmsg<I: IpExt + IpSockAddrExt>(
         I::SocketAddress::new(src_addr, RAW_IP_PORT_NUM).into_sock_addr()
     });
 
-    Ok(RecvMsgResponse { src_addr, data, control: Default::default(), truncated_bytes })
+    let mut control = fposix_socket::NetworkSocketRecvControlData::default();
+    if want_control {
+        if socket.recv_hop_limit {
+            match I::VERSION {
+                IpVersion::V4 => {
+                    control.ip = Some(fposix_socket::IpRecvControlData {
+                        ttl: Some(hop_limit),
+                        ..Default::default()
+                    });
+                }
+                IpVersion::V6 => {
+                    control.ipv6 = Some(fposix_socket::Ipv6RecvControlData {
+                        hoplimit: Some(hop_limit),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(RecvMsgResponse { src_addr, data, control, truncated_bytes })
 }
 
 /// Handler for a [`fpraw::SocketRequest::SendMsg`] request.
@@ -951,6 +991,34 @@ fn handle_get_hop_limit<I: IpExt>(
             Ok(ctx.api().raw_ip_socket().get_multicast_hop_limit(&socket.id).into())
         }
     }
+}
+
+/// Handler for the following requests:
+///  - [`fpraw::SocketRequest::SetIpReceiveTtl`]
+///  - [`fpraw::SocketRequest::SetIpv6ReceiveHopLimit`]
+fn handle_set_recv_hop_limit<I: IpExt>(
+    socket: &mut SocketWorkerState<I>,
+    ip_version: IpVersion,
+    value: bool,
+) -> Result<(), WrongIpVersionError> {
+    if I::VERSION != ip_version {
+        return Err(WrongIpVersionError);
+    }
+    socket.recv_hop_limit = value;
+    Ok(())
+}
+
+/// Handler for the following requests:
+///  - [`fpraw::SocketRequest::GetIpReceiveTtl`]
+///  - [`fpraw::SocketRequest::GetIpv6ReceiveHopLimit`]
+fn handle_get_recv_hop_limit<I: IpExt>(
+    socket: &SocketWorkerState<I>,
+    ip_version: IpVersion,
+) -> Result<bool, WrongIpVersionError> {
+    if I::VERSION != ip_version {
+        return Err(WrongIpVersionError);
+    }
+    Ok(socket.recv_hop_limit)
 }
 
 impl<I: IpExt> TryFromFidl<fpraw::ProtocolAssociation> for RawIpSocketProtocol<I> {
