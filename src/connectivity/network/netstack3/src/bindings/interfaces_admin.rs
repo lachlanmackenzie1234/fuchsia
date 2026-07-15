@@ -967,6 +967,7 @@ async fn remove_interface(ctx: &mut Ctx, id: BindingId) {
                 ctx.bindings_ctx()
                     .multicast_admin
                     .remove_multicast_routes_on_device(&weak_id).await;
+                ctx.bindings_ctx().packet_captures.notify_interface_removed(id);
                 result.map_deferred(|d| d.into_future("device", &id, ctx)).into_future().await.into()
             }
         );

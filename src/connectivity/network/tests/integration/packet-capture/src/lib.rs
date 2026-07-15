@@ -82,6 +82,31 @@ fn assert_udp_packets<'a>(
     }
 }
 
+async fn setup_interface<'a>(
+    realm: &netemul::TestRealm<'a>,
+    ep: netemul::TestEndpoint<'a>,
+    subnet: fidl_fuchsia_net::Subnet,
+) -> netemul::TestInterface<'a> {
+    let iface = ep.into_interface_in_realm(realm).await.expect("attach ep");
+    // Disable IPv6 to avoid NDP and MLD traffic from being captured.
+    let _ = iface
+        .control()
+        .set_configuration(&fnet_interfaces_admin::Configuration {
+            ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
+                enabled: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await
+        .expect("set_configuration FIDL error")
+        .expect("set_configuration error");
+    let _ = iface.control().enable().await.expect("enable iface").expect("enable error");
+    iface.set_link_up(true).await.expect("set link up");
+    iface.add_address_and_subnet_route(subnet).await.expect("configure address");
+    iface
+}
+
 #[netstack_test]
 #[test_case(false; "no_bpf")]
 #[test_case(true; "use_bpf")]
@@ -183,31 +208,6 @@ async fn packet_capture_multiple_interfaces_test(name: &str) {
     // Create two endpoints.
     let ep1 = sandbox.create_endpoint("ep1").await.expect("create endpoint ep1");
     let ep2 = sandbox.create_endpoint("ep2").await.expect("create endpoint ep2");
-
-    async fn setup_interface<'a>(
-        realm: &netemul::TestRealm<'a>,
-        ep: netemul::TestEndpoint<'a>,
-        subnet: fidl_fuchsia_net::Subnet,
-    ) -> netemul::TestInterface<'a> {
-        let iface = ep.into_interface_in_realm(realm).await.expect("attach ep");
-        // Disable IPv6 to avoid NDP and MLD traffic from being captured.
-        let _ = iface
-            .control()
-            .set_configuration(&fnet_interfaces_admin::Configuration {
-                ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
-                    enabled: Some(false),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .await
-            .expect("set_configuration FIDL error")
-            .expect("set_configuration error");
-        let _ = iface.control().enable().await.expect("enable iface").expect("enable error");
-        iface.set_link_up(true).await.expect("set link up");
-        iface.add_address_and_subnet_route(subnet).await.expect("configure address");
-        iface
-    }
 
     let if1 = setup_interface(&realm, ep1, fidl_subnet!("192.0.2.1/24")).await;
     let _if2 = setup_interface(&realm, ep2, fidl_subnet!("192.0.2.2/24")).await;
@@ -599,4 +599,143 @@ async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
     let res =
         provider.reconnect_rolling(capture_name).await.expect("reconnect_rolling FIDL error dup");
     assert_eq!(res, Err(fnet_debug::PacketCaptureReconnectError::NotFound));
+}
+
+#[netstack_test]
+#[test_case(true; "disconnect_before_removal")]
+#[test_case(false; "keep_connected_during_removal")]
+async fn packet_capture_interface_removed_test(name: &str, disconnect_before_removal: bool) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    // Create an endpoint and attach it as an interface.
+    let ep = sandbox.create_endpoint("ep").await.expect("create endpoint");
+    let iface = setup_interface(&realm, ep, fidl_subnet!("192.0.2.1/24")).await;
+
+    // Connect to provider.
+    let provider = realm
+        .connect_to_protocol::<fnet_debug::PacketCaptureProviderMarker>()
+        .expect("connect to PacketCaptureProvider");
+
+    // Capture on the interface.
+    let common_params = fnet_debug::CommonPacketCaptureParams {
+        interfaces: Some(fnet_debug::InterfaceSpecifier::InterfaceIds(vec![iface.id()])),
+        ..Default::default()
+    };
+    let rolling_params = fnet_debug::RollingPacketCaptureParams::default();
+
+    let rolling_proxy = provider
+        .start_rolling(common_params, &rolling_params)
+        .await
+        .expect("start_rolling call fail")
+        .expect("start_rolling error")
+        .into_proxy();
+
+    // Bind socket and send a packet.
+    const PORT: u16 = 9876;
+    const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
+    send_and_recv_udp(&realm, (std_ip_v4!("192.0.2.1"), PORT).into(), &PAYLOAD).await;
+
+    let capture_name = "interface_removed_test";
+
+    let rolling_proxy = if disconnect_before_removal {
+        // Detach the packet capture and close the client.
+        rolling_proxy.detach(capture_name).await.expect("detach FIDL").expect("detach");
+        std::mem::drop(rolling_proxy);
+
+        // Remove the interface!
+        let control = iface.control().clone();
+        control.remove().await.expect("remove call failed").expect("remove failed");
+
+        // Reconnect to the packet capture.
+        let channel = provider
+            .reconnect_rolling(capture_name)
+            .await
+            .expect("reconnect_rolling FIDL error")
+            .expect("reconnect_rolling error");
+        channel.into_proxy()
+    } else {
+        // Remove the interface while capture is still going and client is connected.
+        let control = iface.control().clone();
+        control.remove().await.expect("remove call failed").expect("remove failed");
+        rolling_proxy
+    };
+
+    // Assert that the channel yields the OnEnded event.
+    let mut event_stream = rolling_proxy.take_event_stream();
+    let event = event_stream.next().await.expect("event stream ended").expect("FIDL error");
+    let fnet_debug::RollingPacketCaptureEvent::OnEnded { reason } = event;
+    assert_eq!(reason, fnet_debug::PacketCaptureEndReason::InterfaceRemoved);
+
+    // Assert that we can still successfully call StopAndDownload to download the pcap.
+    let (file_client, file_server) = fidl::endpoints::create_endpoints();
+    rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");
+
+    let file_proxy = file_client.into_proxy();
+    let bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
+    let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
+
+    // Verify capture contains the UDP packet.
+    assert_udp_packets(
+        cap.packet_blocks(),
+        &[(net_declare::net_ip_v4!("192.0.2.1"), PORT, &PAYLOAD[..])],
+    );
+
+    // Discard and clean up.
+    rolling_proxy.discard().await.expect("discard failed");
+}
+
+#[netstack_test]
+async fn packet_capture_interface_removed_after_stop_and_download_test(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let ep = sandbox.create_endpoint("ep").await.expect("create endpoint");
+    let iface = setup_interface(&realm, ep, fidl_subnet!("192.0.2.1/24")).await;
+
+    let provider = realm
+        .connect_to_protocol::<fnet_debug::PacketCaptureProviderMarker>()
+        .expect("connect to PacketCaptureProvider");
+
+    let common_params = fnet_debug::CommonPacketCaptureParams {
+        interfaces: Some(fnet_debug::InterfaceSpecifier::InterfaceIds(vec![iface.id()])),
+        ..Default::default()
+    };
+    let rolling_params = fnet_debug::RollingPacketCaptureParams::default();
+
+    let rolling_proxy = provider
+        .start_rolling(common_params, &rolling_params)
+        .await
+        .expect("start_rolling call fail")
+        .expect("start_rolling error")
+        .into_proxy();
+
+    const PORT: u16 = 9876;
+    const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
+    send_and_recv_udp(&realm, (std_ip_v4!("192.0.2.1"), PORT).into(), &PAYLOAD).await;
+
+    let (file_client, file_server) = fidl::endpoints::create_endpoints();
+    rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");
+
+    let mut event_stream = rolling_proxy.take_event_stream();
+    let event = event_stream.next().await.expect("event stream ended").expect("FIDL error");
+    assert_matches!(
+        event,
+        fnet_debug::RollingPacketCaptureEvent::OnEnded {
+            reason: fnet_debug::PacketCaptureEndReason::UserRequest
+        }
+    );
+
+    iface.control().remove().await.expect("remove call failed").expect("remove failed");
+
+    let file_proxy = file_client.into_proxy();
+    let bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
+    let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
+
+    assert_udp_packets(
+        cap.packet_blocks(),
+        &[(net_declare::net_ip_v4!("192.0.2.1"), PORT, &PAYLOAD[..])],
+    );
+
+    rolling_proxy.discard().await.expect("discard failed");
 }

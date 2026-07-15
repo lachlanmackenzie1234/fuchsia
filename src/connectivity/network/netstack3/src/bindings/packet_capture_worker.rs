@@ -36,17 +36,24 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_mins(30);
 
 #[derive(Debug)]
 enum Source {
-    Ongoing { socket_id: SocketId<BindingsCtx> },
-    Stopped { buffer: Arc<RingBuffer>, download_scope: vfs::execution_scope::ExecutionScope },
+    Ongoing {
+        socket_id: SocketId<BindingsCtx>,
+        interface_removal_waiter: oneshot::Receiver<()>,
+    },
+    Stopped {
+        buffer: Arc<RingBuffer>,
+        download_scope: vfs::execution_scope::ExecutionScope,
+        end_reason: fnet_debug::PacketCaptureEndReason,
+    },
 }
 
 impl Source {
     async fn shutdown(self, ctx: &mut Ctx) {
         match self {
-            Self::Ongoing { socket_id } => {
+            Self::Ongoing { socket_id, interface_removal_waiter: _ } => {
                 let _: SocketState = remove_socket(ctx, socket_id).await;
             }
-            Self::Stopped { buffer: _, download_scope } => {
+            Self::Stopped { buffer: _, download_scope, end_reason: _ } => {
                 download_scope.shutdown();
                 download_scope.wait().await;
             }
@@ -81,7 +88,12 @@ enum RollingCaptureState {
     /// until all associated resources are freed.
     Closing,
     /// A packet capture is active (either attached or detached).
-    Running { task: fasync::Task<Option<CaptureData>>, detached: Option<DetachedState> },
+    Running {
+        interface_id: BindingId,
+        task: fasync::Task<Option<CaptureData>>,
+        interface_removal_notifier: Option<oneshot::Sender<()>>,
+        detached: Option<DetachedState>,
+    },
 }
 
 impl RollingCaptureState {
@@ -95,7 +107,12 @@ impl RollingCaptureState {
     #[track_caller]
     fn transition_to_closing(&mut self) {
         self.replace_with(|old| match old {
-            RollingCaptureState::Running { task, detached: _ } => {
+            RollingCaptureState::Running {
+                task,
+                interface_id: _,
+                interface_removal_notifier: _,
+                detached: _,
+            } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, ())
             }
@@ -116,6 +133,38 @@ impl Default for PacketCaptures {
     }
 }
 
+impl PacketCaptures {
+    pub(crate) fn notify_interface_removed(&self, removed_id: BindingId) {
+        let mut state_lock = self.state.lock();
+        state_lock.replace_with(|old_state| match old_state {
+            RollingCaptureState::Running {
+                interface_id,
+                task,
+                mut interface_removal_notifier,
+                detached,
+            } => {
+                if interface_id == removed_id {
+                    // The notifier might have been removed if the packet capture was
+                    // already stopped due to user request.
+                    if let Some(notifier) = interface_removal_notifier.take() {
+                        notifier.send(()).expect("notifying interface removal");
+                    }
+                }
+                (
+                    RollingCaptureState::Running {
+                        interface_id,
+                        task,
+                        interface_removal_notifier: None,
+                        detached,
+                    },
+                    (),
+                )
+            }
+            RollingCaptureState::Empty | RollingCaptureState::Closing => (old_state, ()),
+        });
+    }
+}
+
 async fn remove_socket(ctx: &mut Ctx, id: SocketId<BindingsCtx>) -> SocketState {
     let weak = id.downgrade();
     ctx.api()
@@ -126,16 +175,42 @@ async fn remove_socket(ctx: &mut Ctx, id: SocketId<BindingsCtx>) -> SocketState 
         .await
 }
 
+async fn transition_ongoing_to_stopped(
+    ctx: &mut Ctx,
+    source: &mut Option<Source>,
+    control_handle: &fnet_debug::RollingPacketCaptureControlHandle,
+    reason: fnet_debug::PacketCaptureEndReason,
+) {
+    let socket_id = match source.take().expect("source missing") {
+        Source::Ongoing { socket_id, interface_removal_waiter: _ } => socket_id,
+        Source::Stopped { .. } => unreachable!("already stopped"),
+    };
+    let socket_state = remove_socket(ctx, socket_id).await;
+    let buf = Arc::new(socket_state.into_rolling_pcap_buffer());
+    let download_scope = vfs::execution_scope::ExecutionScope::new();
+    control_handle
+        .send_on_ended(reason)
+        .unwrap_or_log(format!("failed to send OnEnded event with reason {reason:?}"));
+    *source = Some(Source::Stopped { buffer: buf, download_scope, end_reason: reason });
+}
+
 fn handle_detach(
     ctx: &mut Ctx,
     name: String,
 ) -> Result<oneshot::Receiver<()>, fnet_debug::RollingPacketCaptureDetachError> {
     ctx.bindings_ctx().packet_captures.state.lock().replace_with(|old_state| match old_state {
-        RollingCaptureState::Running { task, detached: None } => {
+        RollingCaptureState::Running {
+            interface_id,
+            task,
+            interface_removal_notifier,
+            detached: None,
+        } => {
             let (cancel_tx, cancel_rx) = oneshot::channel();
             (
                 RollingCaptureState::Running {
+                    interface_id,
                     task,
+                    interface_removal_notifier,
                     detached: Some(DetachedState {
                         name: name.clone(),
                         cancel: cancel_tx,
@@ -180,9 +255,9 @@ where
     // If the packet capture has already ended (e.g. we are reconnecting after
     // StopAndDownload was called), immediately yield the OnEnded event.
     match &source {
-        Source::Stopped { .. } => {
+        Source::Stopped { end_reason, .. } => {
             rs.control_handle()
-                .send_on_ended(fnet_debug::PacketCaptureEndReason::UserRequest)
+                .send_on_ended(*end_reason)
                 .unwrap_or_log("failed to send OnEnded event on reconnect");
         }
         Source::Ongoing { .. } => {}
@@ -201,17 +276,34 @@ where
         Canceled,
         Discard(fnet_debug::RollingPacketCaptureDiscardResponder),
     }
+
+    enum Event {
+        InterfaceRemoval,
+        Request(fnet_debug::RollingPacketCaptureRequest),
+    }
+
     let mut scope_cancel_fut = pin!(scope_cancel_fut.fuse());
     let close_type = loop {
-        let req = futures::select_biased! {
+        let mut interface_removed_fut =
+            OptionFuture::from(match source.as_mut().expect("source must be Some") {
+                Source::Ongoing { socket_id: _, interface_removal_waiter } => {
+                    Some(interface_removal_waiter.fuse())
+                }
+                Source::Stopped { .. } => None,
+            });
+
+        let event = futures::select_biased! {
             _ = scope_cancel_fut => {
                 break CloseType::Canceled;
+            }
+            _ = &mut interface_removed_fut => {
+                Event::InterfaceRemoval
             }
             _ = &mut takeover_cancel => {
                 break CloseType::Takeover;
             }
             req = rs.try_next().fuse() => match req {
-                Ok(Some(req)) => req,
+                Ok(Some(req)) => Event::Request(req),
                 Ok(None) => break CloseType::StreamClosed,
                 Err(e) => {
                     e.log("rolling packet capture stream error");
@@ -219,6 +311,21 @@ where
                 }
             },
         };
+
+        let req = match event {
+            Event::InterfaceRemoval => {
+                transition_ongoing_to_stopped(
+                    &mut ctx,
+                    &mut source,
+                    &rs.control_handle(),
+                    fnet_debug::PacketCaptureEndReason::InterfaceRemoved,
+                )
+                .await;
+                continue;
+            }
+            Event::Request(req) => req,
+        };
+
         match req {
             fnet_debug::RollingPacketCaptureRequest::Detach { name, responder } => {
                 let ret = handle_detach(&mut ctx, name);
@@ -231,28 +338,42 @@ where
                 break CloseType::Discard(responder);
             }
             fnet_debug::RollingPacketCaptureRequest::StopAndDownload { channel, .. } => {
-                let (ring_buffer, download_scope) = match source.take().expect("source missing") {
-                    Source::Ongoing { socket_id } => {
-                        rs.control_handle()
-                            .send_on_ended(fnet_debug::PacketCaptureEndReason::UserRequest)
-                            .unwrap_or_log("failed to send OnEnded event on StopAndDownload");
-                        let socket_state = remove_socket(&mut ctx, socket_id).await;
-                        let buf = Arc::new(socket_state.into_rolling_pcap_buffer());
-                        let download_scope = vfs::execution_scope::ExecutionScope::new();
-                        source = Some(Source::Stopped {
-                            buffer: buf.clone(),
-                            download_scope: download_scope.clone(),
-                        });
-                        (buf, download_scope)
+                // Remove the interface removal notifier first before dropping the
+                // receiver.
+                {
+                    let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
+                    match &mut *state_lock {
+                        RollingCaptureState::Running {
+                            interface_id: _,
+                            task: _,
+                            interface_removal_notifier,
+                            detached: _,
+                        } => {
+                            let _ = interface_removal_notifier.take();
+                        }
+                        RollingCaptureState::Empty | RollingCaptureState::Closing => {
+                            unreachable!("invalid state when handling StopAndDownload");
+                        }
                     }
-                    Source::Stopped { buffer, download_scope } => {
-                        let b = buffer.clone();
-                        let s = download_scope.clone();
-                        source = Some(Source::Stopped { buffer, download_scope });
-                        (b, s)
+                }
+                if matches!(source.as_ref().expect("source must be Some"), Source::Ongoing { .. }) {
+                    transition_ongoing_to_stopped(
+                        &mut ctx,
+                        &mut source,
+                        &rs.control_handle(),
+                        fnet_debug::PacketCaptureEndReason::UserRequest,
+                    )
+                    .await;
+                }
+                let (ring_buffer, download_scope) = match source
+                    .as_ref()
+                    .expect("source must be Some")
+                {
+                    Source::Ongoing { .. } => unreachable!("source just transitioned to stopped"),
+                    Source::Stopped { buffer, download_scope, end_reason: _ } => {
+                        (buffer.clone(), download_scope.clone())
                     }
                 };
-
                 let file = Arc::new(PcapFile::new(ring_buffer, pcap_headers.clone()));
                 let mut object_request = vfs::object_request::ObjectRequest::new(
                     fio::PERM_READABLE,
@@ -333,16 +454,25 @@ where
 
         state_lock.replace_with(|old| match old {
             RollingCaptureState::Running {
+                interface_id,
                 task,
+                interface_removal_notifier,
                 detached: Some(DetachedState { name, cancel, connected: true }),
             } => (
                 RollingCaptureState::Running {
+                    interface_id,
                     task,
+                    interface_removal_notifier,
                     detached: Some(DetachedState { name, cancel, connected: false }),
                 },
                 NewState::Disconnected,
             ),
-            RollingCaptureState::Running { task, detached: None } => {
+            RollingCaptureState::Running {
+                task,
+                interface_id: _,
+                interface_removal_notifier: _,
+                detached: None,
+            } => {
                 let _ = task.detach_on_drop();
                 (RollingCaptureState::Closing, NewState::Closing)
             }
@@ -366,29 +496,66 @@ where
             None
         }
         NewState::Disconnected => {
-            let ongoing_downloads_fut = OptionFuture::from(
-                match source {
-                    Source::Ongoing { .. } => None,
-                    Source::Stopped { buffer: _, ref download_scope } => {
-                        Some(download_scope.clone())
+            let mut source = Some(source);
+            let control_handle = rs.control_handle();
+            let mut timeout = pin!(fasync::Timer::new(TIMEOUT));
+
+            loop {
+                enum Event {
+                    Cancel,
+                    Takeover,
+                    InterfaceRemoved,
+                }
+
+                let event = {
+                    let source_fut = async {
+                        match source.as_mut().expect("source missing") {
+                            Source::Ongoing { interface_removal_waiter, .. } => {
+                                let mut stop_rx_fut = interface_removal_waiter.fuse();
+
+                                futures::select_biased! {
+                                    _ = &mut stop_rx_fut => Event::InterfaceRemoved,
+                                    _ = &mut timeout => Event::Cancel,
+                                }
+                            }
+                            Source::Stopped { download_scope, .. } => {
+                                download_scope.wait().await;
+                                (&mut timeout).await;
+                                Event::Cancel
+                            }
+                        }
+                    };
+                    let mut source_fut = pin!(source_fut.fuse());
+
+                    futures::select_biased! {
+                        _ = scope_cancel_fut => Event::Cancel,
+                        _ = &mut takeover_cancel => Event::Takeover,
+                        event = source_fut => event,
+                    }
+                };
+
+                match event {
+                    Event::Cancel => {
+                        cleanup(ctx, source.expect("source must be Some"), None).await;
+                        return None;
+                    }
+                    Event::Takeover => {
+                        return Some(CaptureData {
+                            source: source.expect("source must be Some"),
+                            pcap_headers,
+                        });
+                    }
+                    Event::InterfaceRemoved => {
+                        transition_ongoing_to_stopped(
+                            &mut ctx,
+                            &mut source,
+                            &control_handle,
+                            fnet_debug::PacketCaptureEndReason::InterfaceRemoved,
+                        )
+                        .await;
                     }
                 }
-                .map(|scope| async move { scope.wait().await }),
-            );
-            let mut timeout_after_downloads_complete =
-                pin!(ongoing_downloads_fut.then(|_: Option<()>| fasync::Timer::new(TIMEOUT)));
-
-            futures::select! {
-                _ = scope_cancel_fut => {
-                    cleanup(ctx, source, None).await;
-                    return None;
-                }
-                _ = &mut takeover_cancel => return Some(CaptureData { source, pcap_headers }),
-                _ = timeout_after_downloads_complete => {},
             }
-
-            cleanup(ctx, source, None).await;
-            None
         }
     }
 }
@@ -463,8 +630,12 @@ fn handle_start_rolling(
             return Err(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds);
         }
     };
-    let device_id = BindingId::new(interface_id)
-        .and_then(|id| ctx.bindings_ctx().devices.get_core_id(id))
+    let binding_id = BindingId::new(interface_id)
+        .ok_or(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds)?;
+    let device_id = ctx
+        .bindings_ctx()
+        .devices
+        .get_core_id(binding_id)
         .ok_or(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds)?;
 
     let link_type = match device_id {
@@ -513,7 +684,7 @@ fn handle_start_rolling(
     }
     .try_into()
     .expect("default snap len fits in usize");
-    let id = ctx.api().device_socket().create(SocketState::new_rolling_pcap(
+    let socket_id = ctx.api().device_socket().create(SocketState::new_rolling_pcap(
         RingBuffer::new(
             capture_size.try_into().expect("capture_size fits in usize"),
             chunk_size.try_into().expect("chunk_size fits in usize"),
@@ -526,7 +697,7 @@ fn handle_start_rolling(
     ));
 
     ctx.api().device_socket().set_device_and_protocol(
-        &id,
+        &socket_id,
         TargetDevice::SpecificDevice(&device_id),
         Protocol::All,
     );
@@ -543,14 +714,24 @@ fn handle_start_rolling(
 
     let scope = fasync::Scope::current();
 
-    let data = CaptureData { source: Source::Ongoing { socket_id: id }, pcap_headers };
+    let (interface_removal_notifier, interface_removal_waiter) = oneshot::channel();
+
+    let data = CaptureData {
+        source: Source::Ongoing { socket_id, interface_removal_waiter },
+        pcap_headers,
+    };
 
     let new_task = scope.compute(async move {
         let scope_cancel = guard.on_cancel();
         serve_rolling_packet_capture(ctx_clone, request_stream, data, scope_cancel, None).await
     });
 
-    *state_lock = RollingCaptureState::Running { task: new_task, detached: None };
+    *state_lock = RollingCaptureState::Running {
+        interface_id: binding_id,
+        task: new_task,
+        interface_removal_notifier: Some(interface_removal_notifier),
+        detached: None,
+    };
 
     Ok(rolling_client)
 }
@@ -574,10 +755,12 @@ fn handle_reconnect_rolling(
 
     state_lock.replace_with(|old_state| match old_state {
         RollingCaptureState::Running {
+            interface_id,
             task,
+            interface_removal_notifier,
             detached: Some(DetachedState { name: n, cancel, connected: _ }),
         } if n == name => {
-            cancel.send(()).expect("cancel recevier should not have been dropped");
+            cancel.send(()).expect("cancel receiver should not have been dropped");
 
             let new_task = scope.compute(async move {
                 let scope_cancel = guard.on_cancel();
@@ -594,7 +777,9 @@ fn handle_reconnect_rolling(
 
             (
                 RollingCaptureState::Running {
+                    interface_id,
                     task: new_task,
+                    interface_removal_notifier,
                     detached: Some(DetachedState { name, cancel: cancel_sender, connected: true }),
                 },
                 Ok(rolling_client),
