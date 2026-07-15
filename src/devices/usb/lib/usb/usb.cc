@@ -15,7 +15,7 @@ static zx_status_t usb_desc_iter_additional_init(usb_composite_protocol_t* comp,
   memset(iter, 0, sizeof(*iter));
 
   size_t length = usb_composite_get_additional_descriptor_length(comp);
-  uint8_t* descriptors = malloc(length);
+  uint8_t* descriptors = static_cast<uint8_t*>(malloc(length));
   if (!descriptors) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -49,8 +49,8 @@ __EXPORT zx_status_t usb_claim_additional_interfaces(
     // total length of the current one.
     usb_interface_descriptor_t* next = usb_desc_iter_next_interface(&iter, true);
     // If we're currently on the last interface, next will be NULL.
-    void* intf_end = next ? next : (void*)iter.desc_end;
-    size_t length = intf_end - (void*)intf;
+    const uint8_t* intf_end = next ? reinterpret_cast<const uint8_t*>(next) : iter.desc_end;
+    size_t length = intf_end - reinterpret_cast<const uint8_t*>(intf);
 
     ZX_ASSERT(length < UINT32_MAX);
     status = usb_composite_claim_interface(comp, intf, (uint32_t)length);
@@ -66,7 +66,7 @@ __EXPORT zx_status_t usb_claim_additional_interfaces(
 // initializes a usb_desc_iter_t
 __EXPORT zx_status_t usb_desc_iter_init(usb_protocol_t* usb, usb_desc_iter_t* iter) {
   size_t length = usb_get_descriptors_length(usb);
-  void* descriptors = malloc(length);
+  uint8_t* descriptors = static_cast<uint8_t*>(malloc(length));
   if (!descriptors) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -81,9 +81,9 @@ __EXPORT zx_status_t usb_desc_iter_init_unowned(void* descriptors, size_t length
                                                 usb_desc_iter_t* iter) {
   memset(iter, 0, sizeof(*iter));
 
-  iter->desc = descriptors;
-  iter->desc_end = descriptors + length;
-  iter->current = descriptors;
+  iter->desc = static_cast<uint8_t*>(descriptors);
+  iter->desc_end = iter->desc + length;
+  iter->current = iter->desc;
   return ZX_OK;
 }
 
@@ -91,14 +91,14 @@ __EXPORT zx_status_t usb_desc_iter_init_unowned(void* descriptors, size_t length
 zx_status_t usb_desc_iter_clone(const usb_desc_iter_t* src, usb_desc_iter_t* dest) {
   size_t length = (size_t)(src->desc_end) - (size_t)(src->desc);
   size_t offset = (size_t)(src->current) - (size_t)(src->desc);
-  void* descriptors = malloc(length);
+  uint8_t* descriptors = static_cast<uint8_t*>(malloc(length));
   if (!descriptors) {
     return ZX_ERR_NO_MEMORY;
   }
   memcpy(descriptors, src->desc, length);
   dest->desc = descriptors;
-  dest->current = ((unsigned char*)descriptors) + offset;
-  dest->desc_end = ((unsigned char*)descriptors) + length;
+  dest->current = descriptors + offset;
+  dest->desc_end = descriptors + length;
   return ZX_OK;
 }
 
@@ -143,7 +143,7 @@ __EXPORT usb_descriptor_header_t* usb_desc_iter_peek(usb_desc_iter_t* iter) {
   if (end > iter->desc_end) {
     return NULL;
   }
-  usb_descriptor_header_t* header = (usb_descriptor_header_t*)iter->current;
+  usb_descriptor_header_t* header = reinterpret_cast<usb_descriptor_header_t*>(iter->current);
   if (!safe_add(iter->current, header->b_length, &end)) {
     return NULL;
   }
@@ -161,7 +161,7 @@ __EXPORT usb_descriptor_header_t* usb_desc_iter_peek(usb_desc_iter_t* iter) {
 // length of descriptor buffer current pointed by the iterator is not enough to hold the structure,
 // NULL would be returned, user is expected to handle the error case.
 __EXPORT void* usb_desc_iter_get_structure(usb_desc_iter_t* iter, size_t structure_size) {
-  uint8_t* start = (uint8_t*)iter->current;
+  uint8_t* start = iter->current;
   uint8_t* end = 0;
   if (!safe_add(start, structure_size, &end)) {
     return NULL;
@@ -169,7 +169,12 @@ __EXPORT void* usb_desc_iter_get_structure(usb_desc_iter_t* iter, size_t structu
   if (end > iter->desc_end) {
     return NULL;
   }
-  return (void*)start;
+  return start;
+}
+
+template <typename T>
+static T* usb_desc_iter_get_structure_internal(usb_desc_iter_t* iter) {
+  return static_cast<T*>(usb_desc_iter_get_structure(iter, sizeof(T)));
 }
 
 // returns the next interface descriptor, optionally skipping alternate interfaces. The last
@@ -180,7 +185,7 @@ __EXPORT usb_interface_descriptor_t* usb_desc_iter_next_interface_with_assoc(
   while ((header = usb_desc_iter_peek(iter)) != NULL) {
     if (assoc && header->b_descriptor_type == USB_DT_INTERFACE_ASSOCIATION) {
       usb_interface_assoc_descriptor_t* desc =
-          usb_desc_iter_get_structure(iter, sizeof(usb_interface_assoc_descriptor_t));
+          usb_desc_iter_get_structure_internal<usb_interface_assoc_descriptor_t>(iter);
       if (!desc) {
         return NULL;
       }
@@ -189,7 +194,7 @@ __EXPORT usb_interface_descriptor_t* usb_desc_iter_next_interface_with_assoc(
 
     if (header->b_descriptor_type == USB_DT_INTERFACE) {
       usb_interface_descriptor_t* desc =
-          usb_desc_iter_get_structure(iter, sizeof(usb_interface_descriptor_t));
+          usb_desc_iter_get_structure_internal<usb_interface_descriptor_t>(iter);
       if (desc == NULL) {
         return NULL;
       }
@@ -219,7 +224,7 @@ __EXPORT usb_endpoint_descriptor_t* usb_desc_iter_next_endpoint(usb_desc_iter_t*
     }
     if (header->b_descriptor_type == USB_DT_ENDPOINT) {
       usb_endpoint_descriptor_t* desc =
-          usb_desc_iter_get_structure(iter, sizeof(usb_endpoint_descriptor_t));
+          usb_desc_iter_get_structure_internal<usb_endpoint_descriptor_t>(iter);
       if (desc == NULL) {
         return NULL;
       }
@@ -245,7 +250,7 @@ __EXPORT usb_ss_ep_comp_descriptor_t* usb_desc_iter_next_ss_ep_comp(usb_desc_ite
     }
     if (header->b_descriptor_type == USB_DT_SS_EP_COMPANION) {
       usb_ss_ep_comp_descriptor_t* desc =
-          usb_desc_iter_get_structure(iter, sizeof(usb_ss_ep_comp_descriptor_t));
+          usb_desc_iter_get_structure_internal<usb_ss_ep_comp_descriptor_t>(iter);
       if (desc == NULL) {
         return NULL;
       }

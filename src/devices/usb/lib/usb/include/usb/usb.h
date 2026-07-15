@@ -7,16 +7,13 @@
 
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <fuchsia/hardware/usb/composite/c/banjo.h>
+#include <fuchsia/hardware/usb/cpp/banjo.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
 
-#include <usb/descriptors.h>
-
-#ifdef __cplusplus
-#include <fuchsia/hardware/usb/cpp/banjo.h>
-
 #include <optional>
-#endif
+
+#include <usb/descriptors.h>
 
 __BEGIN_CDECLS
 
@@ -106,7 +103,6 @@ static inline zx_status_t usb_clear_feature(const usb_protocol_t* usb, uint8_t r
 
 __END_CDECLS
 
-#ifdef __cplusplus
 namespace usb {
 
 class UsbDevice : public ddk::UsbProtocolClient {
@@ -498,6 +494,5 @@ class InterfaceList : public UnownedInterfaceList {
 };
 
 }  // namespace usb
-#endif
 
 #endif  // SRC_DEVICES_USB_LIB_USB_INCLUDE_USB_USB_H_

@@ -21,7 +21,7 @@ source_set("usb") {
     "align.h",
     "usb-request.cc",
     "usb-wrapper.cc",
-    "usb.c",
+    "usb.cc",
   ]
   public_deps = [
     ":descriptors",
@@ -70,7 +70,7 @@ source_set("usb-dfv2-compat-logging") {
     "align.h",
     "usb-request.cc",
     "usb-wrapper.cc",
-    "usb.c",
+    "usb.cc",
   ]
   public_deps = [
     ":descriptors",
