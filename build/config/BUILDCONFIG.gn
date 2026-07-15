@@ -4414,14 +4414,20 @@ template("rust_library") {
     _searchdir_path = rebase_path(_searchdir_path, root_build_dir)
 
     metadata = {
+      rust_aux_externs = []
+      kernel_rust_externs = []
+      rust_aux_searchdir = []
+      rust_barrier = []
+      rust_compilation_deps = []
+
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")
       }
 
-      rust_aux_externs = [ "--extern=${crate_name}=${_rmeta_path}" ]
-      rust_aux_searchdir = [ "-Ldependency=${_searchdir_path}" ]
-      rust_barrier = []
-      rust_compilation_deps = [
+      rust_aux_externs += [ "--extern=${crate_name}=${_rmeta_path}" ]
+      kernel_rust_externs += [ "--extern=${crate_name}=${_rlib_path}" ]
+      rust_aux_searchdir += [ "-Ldependency=${_searchdir_path}" ]
+      rust_compilation_deps += [
         _rlib_path,
         _rmeta_path,
       ]
@@ -4513,14 +4519,21 @@ template("rust_proc_macro") {
         public_deps = []
       }
       metadata = {
+        rust_aux_externs = []
+        kernel_rust_externs = []
+        rust_aux_searchdir = []
+        rust_barrier = []
+        rust_compilation_deps = []
+        rust_compilation_deps_barrier = []
+
         if (defined(invoker.metadata)) {
           forward_variables_from(invoker.metadata, "*")
         }
-        rust_aux_externs = [ "--extern=${crate_name}=${_rlib_so_path}" ]
-        rust_aux_searchdir = [ "-Ldependency=${_searchdir_path}" ]
-        rust_barrier = []
-        rust_compilation_deps_barrier = []
-        rust_compilation_deps = [
+
+        rust_aux_externs += [ "--extern=${crate_name}=${_rlib_so_path}" ]
+        kernel_rust_externs += [ "--extern=${crate_name}=${_rlib_so_path}" ]
+        rust_aux_searchdir += [ "-Ldependency=${_searchdir_path}" ]
+        rust_compilation_deps += [
           _rlib_so_path,
           _rmeta_path,
         ]

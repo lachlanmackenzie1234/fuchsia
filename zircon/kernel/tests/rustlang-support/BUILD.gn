@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 # This directory has tests of the Rust build support and fundamental features
@@ -15,6 +16,7 @@ source_set("kernel-tests") {
   testonly = true
   sources = [ "rust-tests.cc" ]
   deps = [
+    ":test_mod",
     ":trivial_tests",
     "//zircon/kernel/lib/unittest",
   ]
@@ -24,5 +26,29 @@ kernel_rust_crate("trivial_tests") {
   testonly = true
   visibility = [ ":*" ]
   sources = [ "src/lib.rs" ]
+  deps = [ "test_macro" ]
+}
+
+kernel_rust_mod("test_mod") {
+  testonly = true
+  visibility = [ ":*" ]
+  sources = [ "test_submod.rs" ]
+  public_deps = [ ":test_dep_pub_mod" ]
+}
+
+kernel_rust_mod("test_dep_pub_mod") {
+  testonly = true
+  visibility = [ ":*" ]
+  sources = []
+  deps = [
+    ":test_dep_priv_mod",
+    "test_lib",
+  ]
+}
+
+kernel_rust_mod("test_dep_priv_mod") {
+  testonly = true
+  visibility = [ ":*" ]
+  sources = []
   deps = [ "test_macro" ]
 }

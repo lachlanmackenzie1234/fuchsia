@@ -1,0 +1,380 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/rust/build.gni")
+import("//build/rust/rustc_library.gni")
+
+# Define a Rust module of code going into a kernel crate.
+#
+# This is analogous to source_set() as used for C++ and assembly code, but for
+# Rust code.  Using kernel_rust_mod() targets is an alternative to structuring
+# Rust source code in the usual Rust way where each `mod foo;` line in a source
+# file leads to an adjacent `foo.rs` file or a subdirectory `foo/mod.rs` file.
+# Both methods can be interspersed, but where the `mod ...;` lines are used in
+# source code, all the sources they lead to must be included in the same one GN
+# target's $sources list.  The kernel_rust_mod() target acts as a `mod.rs` file
+# containing nothing but `mod ...;` lines for each file in $sources.
+#
+# Parameters
+#
+#   * output_name
+#     - Optional: Name of the Rust module, as if `mod $output_name` appeared in
+#     the parent mod / crate source file.  Usually this should not be used and
+#     instead the target name should just be chosen to match instead.
+#     - Type: string
+#     - Default: "$target_name"
+#
+#   * preamble
+#     - Optional: If specified, $source_root cannot be specified.  This gives
+#     a list of lines to begin the effective $source_root file, instead of
+#     including an actual $source_root file.
+#     - Type: list(string)
+#
+#   * source_root
+#     - Optional: Root `.rs` source file of the module.  Whatever the name
+#     of this source file, $target_name will be the Rust "path" component.
+#     This cannot be specified if $preamble is specified.
+#     - Type: path
+#     - Default: "$output_name.rs"
+#
+#   * sources
+#     - Required: This should list `.rs` files reached from $source_root
+#     via `mod` lines, except for those included in other kernel_rust_mod()
+#     targets.  (No file should appear in more than one $sources list; nor
+#     in both any $sources list and any $source_root, even a default one.)
+#     It can be empty if $source_root is the only file, but must be present.
+#     - Type: list(path)
+#
+#   * inputs
+#     - Optional: This should list any files the Rust compiler will read when
+#     compiling $source_root and $sources that aren't `.rs` files in $sources,
+#     via `include!` or the like.
+#     - Type: list(path)
+#
+#   * data_deps
+#     - Optional: Extra files or ZBI items to go with the kernel.
+#     This works the same as in source_set() et al.
+#     - Type: list(label)
+#
+#   * deps
+#     - Optional: Bring more things into the eventual Rust crate to satisfy
+#     references made by Rust code in $source_root or $sources.  These can be:
+#       * other kernel_rust_mod("foo") targets, which will appear under this
+#         in Rust paths "...::$target_name::foo" as if `mod foo;` appeared in
+#         $source_root and there was a `foo.rs` file in $sources.
+#       * rustc_library() or kernel_rust_crate() targets for crates referred
+#         to in $source_root or $sources code.
+#       * source_set(), static_library(), etc. targets of non-Rust code
+#       * group() targets leading to any and all of these
+#     - Type: list(label)
+#
+#   * public_deps
+#     - Optional: Same as $deps, but other kernel_rust_mod("foo") targets
+#     reached are as if `pub mod foo;` rather than `mod foo;`.  **NOTE:**
+#     This does not behave like $public_deps in source_set() and other targets,
+#     e.g. to propagate $public_configs.  It's exactly like $deps in every way
+#     except for `pub mod` declarations instead of `mod` declarations in Rust.
+#     To get the usual $public_deps effects on dependents of this target,
+#     instead use a group() or source_set() target to hold the public_deps
+#     as well as deps on this target.
+#     - Type: list(label)
+#
+#   * metadata, testonly, visibility
+#     - Optional: Usual GN meanings.
+#
+template("kernel_rust_mod") {
+  gen_dir = "$target_gen_dir/$target_name"
+  gen_dir_to_root_build_dir = rebase_path(root_build_dir, gen_dir)
+
+  if (defined(invoker.output_name)) {
+    output_name = invoker.output_name
+  } else {
+    output_name = target_name
+  }
+
+  assert(string_replace(output_name, "-", "_") == output_name,
+         "no - allowed in mod names, only _")
+  assert(string_replace(output_name, ".", "_") == output_name,
+         "no . allowed in mod names, only _")
+
+  # A label starts with // and so is already a Rust comment!
+  label = get_label_info(":$target_name", "label_with_toolchain")
+  gen_file_comment = [
+    label,
+    "// This is a generated file. DO NOT EDIT!",
+    "",
+  ]
+
+  assert(defined(invoker.sources), "kernel_rust_mod() requires `sources` list")
+  foreach(file, invoker.sources) {
+    assert(get_path_info(file, "extension") == "rs",
+           "only .rs files go in `source` list; use `inputs` for others")
+  }
+  _rust_sources = invoker.sources
+
+  assert(!defined(invoker.preamble) || !defined(invoker.source_root),
+         "only one of `preamble` and `source_root` may be specified")
+  if (defined(invoker.preamble)) {
+    preamble = invoker.preamble
+  } else {
+    if (defined(invoker.source_root)) {
+      source_root = invoker.source_root
+      assert(get_path_info(source_root, "extension") == "rs",
+             "`source_root` must be a .rs file name")
+    } else {
+      source_root = "$output_name.rs"
+    }
+    _rust_sources += [ source_root ]
+    source_root = rebase_path(source_root, gen_dir)
+    preamble = [
+      "// Textually include the kernel_rust_mod() source_root file.",
+      "include!(\"${source_root}\");",
+    ]
+  }
+
+  # This is semantically in Rust generating a single source file that contains:
+  # ```
+  # <preamble (by default, the $source_root file's contents)>
+  # #[path "$gen_dir_to_root_build_dir"]
+  # mod _imports {
+  #   #[path "../path/from/root_build_dir/to/foo/source/dir"]
+  #   mod foo;
+  #   <... pair of such lines for each foo in deps + public_deps ...>
+  # }
+  # #[allow(unused_imports)]
+  # use _imports::{
+  #   foo,
+  #   <... for each foo in deps ...>
+  # }
+  # #[allow(unused_imports)]
+  # pub use _imports::{
+  #   bar,
+  #   <... for each bar in public_deps ...>
+  # }
+  # ```
+  #
+  # However, it's accomplished with three generated_file() targets to generate
+  # three files at `gn gen` time, and the Rust include! macro, so there's no
+  # need for a build-time action to concatenate things.
+  #
+  # * The first file is the main $target_name target, the actual Rust source
+  #   file to be compiled.
+  #   * It contains the preamble, which by default is include!($source_root).
+  #   * It then has the `mod _imports { ... }` item.
+  #   * Finally, it has an include! for each of the other two files.
+  #   * All this is collected via the `rust_mod_import_lines` metadata key.
+  #     * This also gets `extern crate ...;` lines from kernel_rust_crate().
+  #   * The metadata walk include both $deps and $public_deps.
+  #
+  # * The second file contains the `use _imports::{ ... }` item.
+  #   * This is collected via the `rust_mod_use_lines` metadata key.
+  #
+  # * The third file contains the `pub use _imports::{ ... }` item.
+  #   * This is collected via the `rust_mod_pub_use_lines` metadata key.
+  #
+  # Each file has some prologue lines, then the lines collected from deps
+  # and/or public_deps, and then some epilogue lines.  Two group() targets are
+  # defined solely to hold the prologue and epilogue metadata, respectively.
+  # Each file's metadata collection is across the ordered deps list of:
+  # prologue + {deps and/or public_deps} + epilogue.
+  #
+  # The individual lines for the $output_name module itself are contributed to
+  # all three metadata lists by the $target_name target's own metadata to roll
+  # up into the dependent kernel_rust_mod() target.
+
+  gen_files = [
+    # This list controls how each file will be generated.  First, list
+    # the secondary generated files: the `use` and `pub use` lists.
+    {
+      name = "$target_name.use"
+      output = name
+      vars = {
+        visibility = [ ":$target_name" ]
+      }
+      metadata = {
+      }
+      prologue = {  # Start the file.
+        rust_mod_use_lines = gen_file_comment + [
+                               "#[allow(unused_imports)]",
+                               "use _imports::{",
+                             ]
+      }
+      key = "rust_mod_use_lines"  # Comma-separated list comes from here.
+      if (defined(invoker.deps)) {
+        deps = invoker.deps
+      } else {
+        deps = []
+      }
+      epilogue = {  # End the file.
+        rust_mod_use_lines = [ "};" ]
+      }
+    },
+    {
+      name = "$target_name.pub_use"
+      output = name
+      vars = {
+        visibility = [ ":$target_name" ]
+      }
+      metadata = {
+      }
+      prologue = {  # Start the file.
+        rust_mod_pub_use_lines = gen_file_comment + [
+                                   "#[allow(unused_imports)]",
+                                   "pub use _imports::{",
+                                 ]
+      }
+      key = "rust_mod_pub_use_lines"  # Comma-separated list comes from here.
+      if (defined(invoker.public_deps)) {
+        deps = invoker.public_deps
+      } else {
+        deps = []
+      }
+      epilogue = {  # End the file.
+        rust_mod_pub_use_lines = [ "};" ]
+      }
+    },
+  ]
+
+  # The primary generated file's details are partially derived from those.
+  gen_deps = []
+  gen_includes = []
+  foreach(gen, gen_files) {
+    gen_deps += [ ":${gen.name}" ]
+    gen_includes += [ "include!(\"${gen.name}.rs\");" ]
+  }
+
+  gen_files += [
+    {
+      name = target_name
+      output = output_name
+      vars = {
+        # The data_deps here do nothing but propagate to dependent targets.
+        forward_variables_from(invoker,
+                               [
+                                 "data_deps",
+                                 "visibility",
+                               ])
+
+        # The data_deps on the other generated files just gets them into the
+        # graph.  Since their outputs are used via include! and tracked via
+        # rustc's depfile generation, no GN target needs them in inputs and so
+        # no target needs to have direct deps on them.
+        if (!defined(data_deps)) {
+          data_deps = []
+        }
+        data_deps += gen_deps
+      }
+
+      _mod_path = rebase_path("$gen_dir/$name.rs", root_build_dir)
+      _mod_use_list = [ "    $output_name," ]
+      metadata = {
+        # Start the empty lists before forwarding any invoker metadata.
+        rust_mod_barrier = []
+        rust_mod_import_lines = []
+        rust_mod_use_lines = []
+        rust_mod_pub_use_lines = []
+        rust_sources = []
+
+        if (defined(invoker.metadata)) {
+          forward_variables_from(invoker.metadata, "*")
+        }
+
+        # Contribute this mod's own lines to the next kernel_rust_mod() up.
+        # It's always `pub mod` here because that's inside the `mod _imports`
+        # when collected, so it's still actually private to the collecting
+        # kernel_rust_mod() unless it re-exports it via rust_mod_pub_use_lines.
+        rust_mod_import_lines += [
+          "    #[path = \"${_mod_path}\"]",
+          "    pub mod $output_name;  $label",
+        ]
+        rust_mod_use_lines += _mod_use_list
+        rust_mod_pub_use_lines += _mod_use_list
+
+        # The common code in the loop below includes each generated file in the
+        # $rust_sources list.  Also contribute anything else from the invoker.
+        rust_sources = rebase_path(_rust_sources, root_build_dir)
+        if (defined(invoker.inputs)) {
+          rust_sources += rebase_path(invoker.inputs, root_build_dir)
+        }
+      }
+
+      prologue = {  # Start the file.
+        rust_mod_import_lines = gen_file_comment + preamble
+        rust_mod_import_lines += [
+          "",
+          "// kernel_rust_mod() source paths are relative to root_build_dir.",
+          "// The `_imports` module exists just to make the collected paths",
+          "// below resolve relative this generated file.",
+          "#[path = \"${gen_dir_to_root_build_dir}\"]",
+          "mod _imports {",
+        ]
+      }
+      key = "rust_mod_import_lines"  # Comma-separated list comes from here.
+      if (defined(invoker.deps)) {
+        deps = invoker.deps
+      } else {
+        deps = []
+      }
+      if (defined(invoker.public_deps)) {
+        deps += invoker.public_deps
+      }
+      epilogue = {  # End the file.
+        rust_mod_import_lines =
+            [
+              "}",
+              "",
+              "// Now bring those modules into the outer scope.",
+            ] + gen_includes
+      }
+    },
+  ]
+
+  gen_visibility = []
+  foreach(gen, gen_files) {
+    gen_visibility += [ ":${gen.name}" ]
+  }
+
+  # These groups are used in all the generated_file() metadata walks, and exist
+  # just to contribute their metadata before and after others, respectively.
+  # The deps and/or public_deps will come between them in the metadata walks.
+  prologue_deps = [ ":$target_name.prologue" ]
+  epilogue_deps = [ ":$target_name.epilogue" ]
+  foreach(which,
+          [
+            "prologue",
+            "epilogue",
+          ]) {
+    group("$target_name.$which") {
+      visibility = gen_visibility
+      forward_variables_from(invoker, [ "testonly" ])
+      metadata = {
+        foreach(gen, gen_files) {
+          forward_variables_from(gen[which], "*")
+        }
+      }
+    }
+  }
+
+  foreach(gen, gen_files) {
+    generated_file(gen.name) {
+      forward_variables_from(invoker, [ "testonly" ])
+      forward_variables_from(gen.vars, "*")
+      outputs = [ "$gen_dir/${gen.output}.rs" ]
+      output_conversion = "list lines"
+      data_keys = [ gen.key ]
+      walk_keys = [
+        "rust_barrier",
+        "rust_mod_barrier",
+      ]
+      deps = prologue_deps + gen.deps + epilogue_deps
+      metadata = {
+        rust_sources = []
+        forward_variables_from(gen.metadata, "*")
+        rust_sources += rebase_path(outputs, root_build_dir)
+      }
+    }
+  }
+}

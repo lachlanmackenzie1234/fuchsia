@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 source_set("top") {
@@ -15,10 +16,9 @@ source_set("top") {
     "main.cc",
   ]
   deps = [
+    ":rust_panic",
     "//src/lib/elfldltl",
-    "//src/lib/ksync",
     "//src/lib/zbitl",
-    "//zircon/kernel/arch:arch-rs",
     "//zircon/kernel/arch/$zircon_cpu",
     "//zircon/kernel/dev:init",
     "//zircon/kernel/dev/hw_rng",
@@ -28,7 +28,6 @@ source_set("top") {
     "//zircon/kernel/lib/code-patching:self-test",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
-    "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/cxxabi-dynamic-init:headers",
     "//zircon/kernel/lib/debuglog",
@@ -39,7 +38,6 @@ source_set("top") {
     "//zircon/kernel/lib/jtrace:headers",
     "//zircon/kernel/lib/ktrace:ktrace-rs",
     "//zircon/kernel/lib/lockup_detector",
-    "//zircon/kernel/lib/ltrace",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/thread-stack",
     "//zircon/kernel/lib/userabi",
@@ -48,7 +46,9 @@ source_set("top") {
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys:zircon-abi-spec",
     "//zircon/kernel/platform",
-    "//zircon/kernel/platform:platform-rs",
-    "//zircon/kernel/vm:vm-rs",
   ]
+}
+
+kernel_rust_mod("rust_panic") {
+  sources = []
 }

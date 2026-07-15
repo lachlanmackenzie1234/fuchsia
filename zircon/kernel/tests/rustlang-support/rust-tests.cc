@@ -27,6 +27,8 @@ int32_t fetch_add_var_exported_to_rust(int32_t);
 
 }  // extern "C"
 
+extern "C" int32_t rust_mod_fn();
+
 namespace {
 
 bool add_one_test() {
@@ -61,12 +63,19 @@ bool exported_var_test() {
   END_TEST;
 }
 
+bool rust_mod_test() {
+  BEGIN_TEST;
+  EXPECT_EQ(rust_mod_fn(), 42);
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(rust_compilation_tests)
 UNITTEST("test a trivial Rust function called from C++", add_one_test)
 UNITTEST("test a Rust-defined global variable read from C++", defined_const_test)
 UNITTEST("test a C++-defined global variable read from Rust", exported_const_test)
 UNITTEST("test a Rust-defined global variable written from C++", defined_var_test)
 UNITTEST("test a C++-defined global variable written from Rust", exported_var_test)
+UNITTEST("test a trivial Rust function via kernel_rust_mod()", rust_mod_test)
 UNITTEST_END_TESTCASE(rust_compilation_tests, "rust", "Tests for Rust compilation")
 
 }  // namespace

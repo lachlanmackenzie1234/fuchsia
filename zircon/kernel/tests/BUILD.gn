@@ -6,7 +6,7 @@
 
 import("//build/zircon/migrated_targets.gni")
 import("//build/zircon/zircon_cpu.gni")
-import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 # See //zircon/kernel/lib/BUILD.gn for the various *tests target names and uses.
@@ -125,8 +125,9 @@ if (toolchain_environment == "kernel") {
       "wait_queue_ordering_tests.cc",
     ]
     deps = [
-      ":arch-rs-tests",
+      ":arch_rs_tests",
       ":common",
+      ":unused_rust",
       "rustlang-support:kernel-tests",
       "//src/lib/ksync:ksync-kernel-tests",
       "//zircon/kernel/arch/$zircon_cpu:kernel-tests",
@@ -160,10 +161,21 @@ if (toolchain_environment == "kernel") {
     public_deps = [ "//zircon/system/ulib/zx:headers" ]
   }
 
-  kernel_rust_crate("arch-rs-tests") {
+  kernel_rust_mod("unused_rust") {
     testonly = true
-    source_root = "arch_rs_tests.rs"
-    sources = [ source_root ]
+    sources = []
+    deps = [
+      "//src/lib/ksync",
+      "//zircon/kernel/lib/counters:counters-rs",
+      "//zircon/kernel/lib/ltrace",
+      "//zircon/kernel/platform:platform-rs",
+      "//zircon/kernel/vm:vm-rs",
+    ]
+  }
+
+  kernel_rust_mod("arch_rs_tests") {
+    testonly = true
+    sources = []
     deps = [ "//zircon/kernel/arch:arch-rs" ]
   }
 }
