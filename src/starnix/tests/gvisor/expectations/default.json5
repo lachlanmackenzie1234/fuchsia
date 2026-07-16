@@ -469,7 +469,6 @@
                 "MountTest.DetachedMountBindFails",
                 "MountTest.LargeTreePropagationEvent",
                 "MountTest.LockedMountStopsNonRecBind",
-                "MountTest.MaxMounts",
                 "MountTest.MaxRecursiveBind",
                 "MountTest.MountInfo",
                 "MountTest.MountNamespaceSlavesNewUserNamespace",
@@ -746,7 +745,6 @@
                 "AllFamilies/SocketMultiProtocolInetLoopbackTest.TCPBindAvoidsOtherBoundPortsReuseAddr/TCP",
 
                 // socket_ip_tcp_loopback_test
-                "AllUnixDomainSockets/AllSocketPairTest.SendmsgRecvmsgMsgCtruncNoop/*",
                 "AllUnixDomainSockets/AllSocketPairTest.SetSocketRecvBufForceAboveMax/*",
                 "AllUnixDomainSockets/AllSocketPairTest.GetSetSocketRcvlowatOption/*",
 
@@ -875,9 +873,6 @@
 
                 // timers_test
                 "IntervalTimerTest.RealTimeSignalsAreNotDuplicated",
-                "TimerTest.ProcessKilledOnCPUHardLimit",
-                "TimerTest.ProcessKilledOnCPUSoftLimit",
-                "TimerTest.ProcessPingedRepeatedlyAfterCPUSoftLimit",
 
                 // udp_socket_test
                 "AllInetTests/UdpSocketTest.Disconnect/*",
