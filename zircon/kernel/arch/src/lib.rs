@@ -10,6 +10,9 @@ pub use arch_arm64 as arm64;
 #[cfg(target_arch = "riscv64")]
 pub use arch_riscv64 as riscv64;
 
+#[cfg(target_arch = "x86_64")]
+pub use arch_x86 as x86;
+
 use zx_status::Status;
 
 unsafe extern "C" {

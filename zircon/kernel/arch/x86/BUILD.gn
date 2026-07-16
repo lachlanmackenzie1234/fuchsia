@@ -6,6 +6,7 @@
 
 import("//build/config/compiler_config.gni")
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
 # These set the ABI contract between C++ and assembly code.
@@ -302,6 +303,19 @@ source_set("syscall") {
     "//zircon/kernel/lib/code-patching:headers",
     "//zircon/kernel/lib/syscalls",
   ]
+}
+
+source_set("ffi") {
+  sources = [ "x86_ffi.cc" ]
+  deps = [ "//zircon/kernel/lib/ktl" ]
+}
+
+rustc_library("arch-x86-rs") {
+  edition = "2024"
+  name = "arch_x86"
+  source_root = "src/lib.rs"
+  sources = [ "src/lib.rs" ]
+  non_rust_deps = [ ":ffi" ]
 }
 
 source_set("tests") {

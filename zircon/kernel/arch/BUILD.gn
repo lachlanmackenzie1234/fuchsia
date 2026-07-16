@@ -12,6 +12,8 @@ rustc_library("arch-rs") {
     deps += [ "//zircon/kernel/arch/arm64:arch-arm64-rs" ]
   } else if (current_cpu == "riscv64") {
     deps += [ "//zircon/kernel/arch/riscv64:arch-riscv64-rs" ]
+  } else if (current_cpu == "x64") {
+    deps += [ "//zircon/kernel/arch/x86:arch-x86-rs" ]
   }
   non_rust_deps = [ ":ffi" ]
 }
