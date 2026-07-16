@@ -110,25 +110,6 @@ compiler_config("lto-workarounds") {
   visibility = [ ":*" ]
 }
 
-config("lto-clang") {
-  cflags = [ "-flto" ]
-
-  configs = [
-    ":fat-lto-objects",
-    ":lto-workarounds",
-  ]
-
-  # TODO(https://fxbug.dev/533045810): WPD is temporarily disabled for the kernel because
-  # WPD depends on module summaries emitted for all participating bitcode, but
-  # rust currently doesn't emit module summaries for full/fat LTO.
-  if (!is_fuchsia) {
-    configs += [ ":lto-whole-program-devirtualization" ]
-  }
-
-  asmflags = cflags
-  ldflags = cflags
-}
-
 # This enables whole program devirtualization when LTO is enabled. Individual
 # binaries can opt-in to using this for LTO builds. This can be turned on safely
 # for self-contained binaries that do not expose the C++ ABI (such as the
@@ -187,18 +168,6 @@ config("lto-rust-linker-plugin") {
   }
 }
 
-config("lto-rust") {
-  rustflags = [
-    "-Clto=fat",
-    "-Zdylib-lto",
-  ]
-
-  configs = [
-    ":lto-rust-linker-plugin",
-    ":lto-workarounds",
-  ]
-}
-
 # This can be appended with:
 # ```
 #   configs += [ "//build/config/lto:no-lto" ]
@@ -211,10 +180,25 @@ compiler_config("no-lto") {
 }
 
 variant("lto") {
+  c_family_flags = [ "-flto" ]
+
   configs = [
-    ":lto-clang",
-    ":lto-rust",
+    ":fat-lto-objects",
+    ":lto-workarounds",
+    ":lto-rust-linker-plugin",
   ]
+
+  rustflags = [
+    "-Clto=fat",
+    "-Zdylib-lto",
+  ]
+
+  # TODO(https://fxbug.dev/533045810): WPD is temporarily disabled for all Fuchsia-contexts because
+  # WPD depends on module summaries emitted for all participating bitcode, but
+  # rust currently doesn't emit module summaries for full/fat LTO.
+  if (!is_fuchsia) {
+    configs += [ ":lto-whole-program-devirtualization" ]
+  }
 }
 
 # This config is used to opt-in targets to LTO while automatically excluding
