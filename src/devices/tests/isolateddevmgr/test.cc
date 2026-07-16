@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <zircon/syscalls.h>
 
+#include <sstream>
 #include <string>
 #include <vector>
 
