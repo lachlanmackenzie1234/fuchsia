@@ -11,6 +11,7 @@ group("tools") {
   testonly = true
 
   public_deps = [
+    "//build/bazel/host:bazel_root_host_tools.gndoc.host_tool($host_toolchain)",
     "//tools/build/ninjago/buildstats($host_toolchain)",
     "//tools/build/ninjago/ninjatrace($host_toolchain)",
   ]
