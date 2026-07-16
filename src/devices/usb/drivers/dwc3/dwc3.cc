@@ -39,6 +39,8 @@
 #include <fbl/auto_lock.h>
 #include <hwreg/bitfields.h>
 
+#include <sstream>
+
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 
 namespace dwc3 {
