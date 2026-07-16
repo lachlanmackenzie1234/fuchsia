@@ -177,6 +177,7 @@
                 "fuchsia.hardware.qualcomm.router.ClientService",
                 "fuchsia.hardware.rpmb.Service",
                 "fuchsia.hardware.sockettunnel.Service",
+                "fuchsia.hardware.spi.TestService",
                 "fuchsia.hardware.spmi.DebugService",
                 "fuchsia.hardware.trippoint.DebugService",
                 "fuchsia.hardware.vsock.Service",

@@ -575,6 +575,11 @@
             from: "parent",
             to: "#testing",
         },
+        {
+            service: "fuchsia.hardware.spi.TestService",
+            from: "parent",
+            to: "#testing",
+        },
 
         // Tests of the media system want to test against the real hardware
         // TODO(https://fxbug.dev/42164198): Remove when specialized test realms are ready.
