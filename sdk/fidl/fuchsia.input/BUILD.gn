@@ -35,9 +35,13 @@ if (is_host) {
 
 fidl("fuchsia.input") {
   sources = [
+    "button.fidl",
     "keymap.fidl",
     "keys.fidl",
+    "mouse.fidl",
     "overview.fidl",
+    "touch.fidl",
+    "units.fidl",
   ]
   sdk_area = "UI"
   sdk_category = "partner"

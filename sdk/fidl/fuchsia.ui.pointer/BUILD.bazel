@@ -21,6 +21,7 @@ fidl_library(
     stable = True,
     visibility = ["//visibility:public"],
     deps = [
+        "//sdk/fidl/fuchsia.input",
         "//sdk/fidl/fuchsia.input.report",
         "//zircon/vdso/zx",
     ],

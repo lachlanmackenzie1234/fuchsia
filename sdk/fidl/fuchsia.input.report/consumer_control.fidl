@@ -3,12 +3,22 @@
 // found in the LICENSE file.
 library fuchsia.input.report;
 
+using fuchsia.input;
+
 /// Hardcoded max sizes for ConsumerControl vectors. These sizes should be increased
 /// if we ever see a device with more objects than can be represented.
+// TODO(https://fxbug.dev/534432946): Deprecate and remove from
+// fuchsia.input.report in favor of fuchsia.input.
+@available(replaced=NEXT)
 const CONSUMER_CONTROL_MAX_NUM_BUTTONS uint32 = 255;
+@available(added=NEXT)
+const CONSUMER_CONTROL_MAX_NUM_BUTTONS uint32 = fuchsia.input.CONSUMER_CONTROL_MAX_NUM_BUTTONS;
 
 /// These ControlButtons represent on/off buttons whose purpose is to change
 /// the host's configuration.
+// TODO(https://fxbug.dev/534432946): Deprecate and remove from
+// fuchsia.input.report in favor of fuchsia.input.
+@available(replaced=NEXT)
 type ConsumerControlButton = flexible enum : uint32 {
     /// This button represents increasing volume.
     VOLUME_UP = 1;
@@ -37,6 +47,9 @@ type ConsumerControlButton = flexible enum : uint32 {
     /// This button represents a power button.
     POWER = 9;
 };
+
+@available(added=NEXT)
+alias ConsumerControlButton = fuchsia.input.ConsumerControlButton;
 
 /// Describes the format of the input report that will be sent from the
 /// ConsumerControl device to the host.

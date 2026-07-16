@@ -206,6 +206,7 @@ source_set("injection") {
   ]
 
   public_deps = [
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp_hlcpp_conversion",
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
@@ -234,6 +235,7 @@ source_set("injection_dso") {
   ]
 
   public_deps = [
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
     "//sdk/fidl/fuchsia.ui.pointerinjector.dso:fuchsia.ui.pointerinjector.dso_cpp",
     "//sdk/lib/sys/cpp",

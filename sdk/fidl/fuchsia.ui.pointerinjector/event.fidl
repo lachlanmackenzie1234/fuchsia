@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.ui.pointerinjector;
 
+using fuchsia.input;
 using fuchsia.input.report;
 using zx;
 
@@ -66,7 +67,10 @@ type PointerSample = table {
     10: is_precision_scroll bool;
 
     /// Identifiers of currently pressed buttons.
+    @available(replaced=NEXT)
     6: pressed_buttons vector<uint8>:fuchsia.input.report.MOUSE_MAX_NUM_BUTTONS;
+    @available(added=NEXT)
+    6: pressed_buttons vector<uint8>:fuchsia.input.MOUSE_MAX_NUM_BUTTONS;
 };
 
 /// A selection of FIFO data sent over the channel.

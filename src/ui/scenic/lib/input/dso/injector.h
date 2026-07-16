@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_DSO_INJECTOR_H_
 #define SRC_UI_SCENIC_LIB_INPUT_DSO_INJECTOR_H_
 
+#include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <fidl/fuchsia.ui.pointerinjector.dso/cpp/driver/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/inspect/cpp/inspect.h>

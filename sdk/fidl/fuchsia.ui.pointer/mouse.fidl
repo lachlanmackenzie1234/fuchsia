@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.ui.pointer;
 
+using fuchsia.input;
 using fuchsia.input.report as device;
 using zx;
 
@@ -139,7 +140,10 @@ type MouseEvent = resource table {
 
 /// The valid values of relative motion for a mouse device.
 /// - The ranges are placed in (x, y) order.
+@available(replaced=NEXT)
 alias RelativeMotionRange = array<device.Axis, 2>;
+@available(added=NEXT)
+alias RelativeMotionRange = array<fuchsia.input.Axis, 2>;
 
 /// Information about a device that issues a mouse event stream.
 type MouseDeviceInfo = table {

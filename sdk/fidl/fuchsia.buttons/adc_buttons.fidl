@@ -4,7 +4,7 @@
 @available(added=HEAD)
 library fuchsia.buttons;
 
-using fuchsia.input.report;
+using fuchsia.input;
 
 /// Analog-to-Digital Converter Buttons
 type AdcButtonConfig = table {
@@ -25,7 +25,7 @@ type Button = table {
     /// Button Types. A single button may affect multiple things and thus have multiple
     /// functionalities. For example, a privacy switch that mutes both the camera and mic may map to
     /// the combination of fuchsia.input.report.ConsumerControlButton.MIC_MUTE and CAMERA_DISABLE.
-    1: types vector<fuchsia.input.report.ConsumerControlButton>:MAX;
+    1: types vector<fuchsia.input.ConsumerControlButton>:MAX;
 
     /// Button Config.
     2: button_config ButtonConfig;

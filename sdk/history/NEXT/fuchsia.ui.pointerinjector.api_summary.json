@@ -33,19 +33,19 @@
         "kind": "table/member",
         "name": "fuchsia.ui.pointerinjector/Config.relative_motion_range",
         "ordinal": "10",
-        "type": "array<fuchsia.input.report/Axis,2>"
+        "type": "array<fuchsia.input/Axis,2>"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.ui.pointerinjector/Config.scroll_h_range",
         "ordinal": "8",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.ui.pointerinjector/Config.scroll_v_range",
         "ordinal": "7",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
@@ -334,7 +334,7 @@
     {
         "kind": "alias",
         "name": "fuchsia.ui.pointerinjector/RelativeMotionRange",
-        "type": "array<fuchsia.input.report/Axis,2>"
+        "type": "array<fuchsia.input/Axis,2>"
     },
     {
         "kind": "union/member",

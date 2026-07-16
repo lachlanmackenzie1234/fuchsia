@@ -197,7 +197,7 @@
         "kind": "table/member",
         "name": "fuchsia.ui.test.input/MediaButtonsDeviceScheduleSimulateButtonPressRequest.button",
         "ordinal": "1",
-        "type": "fuchsia.input.report/ConsumerControlButton"
+        "type": "fuchsia.input/ConsumerControlButton"
     },
     {
         "kind": "table/member",
@@ -213,7 +213,7 @@
         "kind": "table/member",
         "name": "fuchsia.ui.test.input/MediaButtonsDeviceSendButtonsStateRequest.buttons",
         "ordinal": "1",
-        "type": "vector<fuchsia.input.report/ConsumerControlButton>:255"
+        "type": "vector<fuchsia.input/ConsumerControlButton>:255"
     },
     {
         "kind": "table",
@@ -223,7 +223,7 @@
         "kind": "table/member",
         "name": "fuchsia.ui.test.input/MediaButtonsDeviceSimulateButtonPressRequest.button",
         "ordinal": "1",
-        "type": "fuchsia.input.report/ConsumerControlButton"
+        "type": "fuchsia.input/ConsumerControlButton"
     },
     {
         "kind": "table",

@@ -1,5 +1,84 @@
 [
     {
+        "kind": "struct/member",
+        "name": "fuchsia.input/Axis.range",
+        "ordinal": "1",
+        "type": "fuchsia.input/Range"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.input/Axis.unit",
+        "ordinal": "2",
+        "type": "fuchsia.input/Unit"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.input/Axis"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.input/CONSUMER_CONTROL_MAX_NUM_BUTTONS",
+        "type": "uint32",
+        "value": "255"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.CAMERA_DISABLE",
+        "value": "7"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.FACTORY_RESET",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.FUNCTION",
+        "value": "8"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.MIC_MUTE",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.PAUSE",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.POWER",
+        "value": "9"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.REBOOT",
+        "value": "6"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.VOLUME_DOWN",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/ConsumerControlButton.VOLUME_UP",
+        "value": "1"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.input/ConsumerControlButton",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.input/KEYBOARD_MAX_NUM_KEYS",
+        "type": "uint32",
+        "value": "256"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.input/Key.A",
         "value": "458756"
@@ -1043,6 +1122,127 @@
     {
         "kind": "enum",
         "name": "fuchsia.input/KeymapId",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.input/MOUSE_MAX_NUM_BUTTONS",
+        "type": "uint32",
+        "value": "32"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.input/Range.max",
+        "ordinal": "2",
+        "type": "int64"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.input/Range.min",
+        "ordinal": "1",
+        "type": "int64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.input/Range"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.input/TOUCH_MAX_CONTACTS",
+        "type": "uint32",
+        "value": "10"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.input/TOUCH_MAX_NUM_BUTTONS",
+        "type": "uint32",
+        "value": "10"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.input/Unit.exponent",
+        "ordinal": "2",
+        "type": "int32"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.input/Unit.type",
+        "ordinal": "1",
+        "type": "fuchsia.input/UnitType"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.input/Unit"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.CANDELAS",
+        "value": "9"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.DEGREES",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.ENGLISH_ANGULAR_VELOCITY",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.GRAMS",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.LUX",
+        "value": "11"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.METERS",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.NONE",
+        "value": "0"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.OTHER",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.PASCALS",
+        "value": "10"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.SECONDS",
+        "value": "12"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.SI_LINEAR_ACCELERATION",
+        "value": "7"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.SI_LINEAR_VELOCITY",
+        "value": "6"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input/UnitType.WEBERS",
+        "value": "8"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.input/UnitType",
         "strictness": "flexible",
         "type": "uint32"
     },

@@ -9,9 +9,13 @@ package(default_applicable_licenses = ["//:license"])
 fidl_library(
     name = "fuchsia.input",
     srcs = [
+        "button.fidl",
         "keymap.fidl",
         "keys.fidl",
+        "mouse.fidl",
         "overview.fidl",
+        "touch.fidl",
+        "units.fidl",
     ],
     api_area = "UI",
     category = "partner",

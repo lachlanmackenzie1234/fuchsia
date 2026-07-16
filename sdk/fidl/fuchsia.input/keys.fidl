@@ -3,6 +3,11 @@
 // found in the LICENSE file.
 library fuchsia.input;
 
+/// A hardcoded number of max keys per report. This should be increased in the future if
+/// we see devices with more than the max amount.
+@available(added=NEXT)
+const KEYBOARD_MAX_NUM_KEYS uint32 = 256;
+
 /// A Fuchsia key represents a control that can be pressed or released such as a key or
 /// a button on a keyboard or another input device.
 ///

@@ -52,19 +52,19 @@
         "kind": "table/member",
         "name": "fuchsia.ui.pointer/MouseDeviceInfo.relative_motion_range",
         "ordinal": "5",
-        "type": "array<fuchsia.input.report/Axis,2>"
+        "type": "array<fuchsia.input/Axis,2>"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.ui.pointer/MouseDeviceInfo.scroll_h_range",
         "ordinal": "3",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.ui.pointer/MouseDeviceInfo.scroll_v_range",
         "ordinal": "2",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table",
@@ -253,7 +253,7 @@
     {
         "kind": "alias",
         "name": "fuchsia.ui.pointer/RelativeMotionRange",
-        "type": "array<fuchsia.input.report/Axis,2>"
+        "type": "array<fuchsia.input/Axis,2>"
     },
     {
         "kind": "const",

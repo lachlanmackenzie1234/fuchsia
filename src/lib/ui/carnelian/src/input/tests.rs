@@ -139,7 +139,7 @@ mod input_report_tests {
 
     #[test]
     fn test_consumer_control() {
-        use fidl_input_report::ConsumerControlButton::{VolumeDown, VolumeUp};
+        use fidl_fuchsia_input::ConsumerControlButton::{VolumeDown, VolumeUp};
         let reports = test_data::consumer_control_input_reports();
 
         let device_id = DeviceId("cc-1".to_string());
@@ -234,7 +234,7 @@ mod input_tests {
 
 mod test_data {
     pub fn consumer_control_input_reports() -> Vec<fidl_fuchsia_input_report::InputReport> {
-        use fidl_fuchsia_input_report::ConsumerControlButton::{VolumeDown, VolumeUp};
+        use fidl_fuchsia_input::ConsumerControlButton::{VolumeDown, VolumeUp};
         use fidl_fuchsia_input_report::{ConsumerControlInputReport, InputReport};
         vec![
             InputReport {

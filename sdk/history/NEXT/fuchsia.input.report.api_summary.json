@@ -1,19 +1,8 @@
 [
     {
-        "kind": "struct/member",
-        "name": "fuchsia.input.report/Axis.range",
-        "ordinal": "1",
-        "type": "fuchsia.input.report/Range"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.input.report/Axis.unit",
-        "ordinal": "2",
-        "type": "fuchsia.input.report/Unit"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.input.report/Axis"
+        "kind": "alias",
+        "name": "fuchsia.input.report/Axis",
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "const",
@@ -22,55 +11,9 @@
         "value": "255"
     },
     {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.CAMERA_DISABLE",
-        "value": "7"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.FACTORY_RESET",
-        "value": "4"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.FUNCTION",
-        "value": "8"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.MIC_MUTE",
-        "value": "5"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.PAUSE",
-        "value": "3"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.POWER",
-        "value": "9"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.REBOOT",
-        "value": "6"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.VOLUME_DOWN",
-        "value": "2"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/ConsumerControlButton.VOLUME_UP",
-        "value": "1"
-    },
-    {
-        "kind": "enum",
+        "kind": "alias",
         "name": "fuchsia.input.report/ConsumerControlButton",
-        "strictness": "flexible",
-        "type": "uint32"
+        "type": "fuchsia.input/ConsumerControlButton"
     },
     {
         "kind": "table/member",
@@ -86,7 +29,7 @@
         "kind": "table/member",
         "name": "fuchsia.input.report/ConsumerControlInputDescriptor.buttons",
         "ordinal": "1",
-        "type": "vector<fuchsia.input.report/ConsumerControlButton>:255"
+        "type": "vector<fuchsia.input/ConsumerControlButton>:255"
     },
     {
         "kind": "table",
@@ -96,7 +39,7 @@
         "kind": "table/member",
         "name": "fuchsia.input.report/ConsumerControlInputReport.pressed_buttons",
         "ordinal": "1",
-        "type": "vector<fuchsia.input.report/ConsumerControlButton>:255"
+        "type": "vector<fuchsia.input/ConsumerControlButton>:255"
     },
     {
         "kind": "table",
@@ -106,31 +49,31 @@
         "kind": "table/member",
         "name": "fuchsia.input.report/ContactInputDescriptor.contact_height",
         "ordinal": "5",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/ContactInputDescriptor.contact_width",
         "ordinal": "4",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/ContactInputDescriptor.position_x",
         "ordinal": "1",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/ContactInputDescriptor.position_y",
         "ordinal": "2",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/ContactInputDescriptor.pressure",
         "ordinal": "3",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table",
@@ -658,37 +601,37 @@
         "kind": "table/member",
         "name": "fuchsia.input.report/MouseInputDescriptor.movement_x",
         "ordinal": "1",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/MouseInputDescriptor.movement_y",
         "ordinal": "2",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/MouseInputDescriptor.position_x",
         "ordinal": "6",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/MouseInputDescriptor.position_y",
         "ordinal": "7",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/MouseInputDescriptor.scroll_h",
         "ordinal": "4",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/MouseInputDescriptor.scroll_v",
         "ordinal": "3",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table",
@@ -761,20 +704,9 @@
         "name": "fuchsia.input.report/OutputReport"
     },
     {
-        "kind": "struct/member",
-        "name": "fuchsia.input.report/Range.max",
-        "ordinal": "2",
-        "type": "int64"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.input.report/Range.min",
-        "ordinal": "1",
-        "type": "int64"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.input.report/Range"
+        "kind": "alias",
+        "name": "fuchsia.input.report/Range",
+        "type": "fuchsia.input/Range"
     },
     {
         "kind": "const",
@@ -802,7 +734,7 @@
         "kind": "struct/member",
         "name": "fuchsia.input.report/SensorAxis.axis",
         "ordinal": "1",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "struct/member",
@@ -840,13 +772,13 @@
         "kind": "table/member",
         "name": "fuchsia.input.report/SensorFeatureDescriptor.report_interval",
         "ordinal": "1",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/SensorFeatureDescriptor.sampling_rate",
         "ordinal": "6",
-        "type": "fuchsia.input.report/Axis"
+        "type": "fuchsia.input/Axis"
     },
     {
         "kind": "table/member",
@@ -1202,91 +1134,14 @@
         "type": "uint32"
     },
     {
-        "kind": "struct/member",
-        "name": "fuchsia.input.report/Unit.exponent",
-        "ordinal": "2",
-        "type": "int32"
+        "kind": "alias",
+        "name": "fuchsia.input.report/Unit",
+        "type": "fuchsia.input/Unit"
     },
     {
-        "kind": "struct/member",
-        "name": "fuchsia.input.report/Unit.type",
-        "ordinal": "1",
-        "type": "fuchsia.input.report/UnitType"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.input.report/Unit"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.CANDELAS",
-        "value": "9"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.DEGREES",
-        "value": "4"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.ENGLISH_ANGULAR_VELOCITY",
-        "value": "5"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.GRAMS",
-        "value": "3"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.LUX",
-        "value": "11"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.METERS",
-        "value": "2"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.NONE",
-        "value": "0"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.OTHER",
-        "value": "1"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.PASCALS",
-        "value": "10"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.SECONDS",
-        "value": "12"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.SI_LINEAR_ACCELERATION",
-        "value": "7"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.SI_LINEAR_VELOCITY",
-        "value": "6"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.input.report/UnitType.WEBERS",
-        "value": "8"
-    },
-    {
-        "kind": "enum",
+        "kind": "alias",
         "name": "fuchsia.input.report/UnitType",
-        "strictness": "flexible",
-        "type": "uint32"
+        "type": "fuchsia.input/UnitType"
     },
     {
         "kind": "enum/member",
