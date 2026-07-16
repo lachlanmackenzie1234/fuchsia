@@ -12,21 +12,117 @@ import("//build/testing/golden_files.gni")
 #
 # Parameters
 #
-#   headers (required)
-#     List of paths to the input C header files.
+#   * headers
+#     - Required: List of paths to the input C header files.
+#     - Type: list(path)
 #
-#   output (optional)
-#     Name of the output Rust file (relative to target_gen_dir).
-#     Defaults to "${target_name}.rs".
+#   * output
+#     - Optional: Name of the output Rust file (relative to target_gen_dir).
+#     - Type: string
+#     - Default: "${target_name}.rs"
 #
-#   rustfmt_config (optional)
-#     Path to rustfmt.toml config file.
+#   * deps
+#     - Optional: List of targets that generate `headers` or other dependencies.
+#     - Type: list(label)
 #
-#   expect_lints (optional)
-#     List of lints to expect in the generated code (generates #![expect(lint)]).
+#   * expect_lints
+#     - Optional: List of lints to expect in the generated code (generates `#![expect(lint)]`).
+#     - Type: list(string)
 #
-#   Config parameters forwarded to bindgen:
-#     use_core, etc. (see template implementation for details)
+#   * notice_year
+#     - Optional: The year to use in the copyright notice header.
+#     - Type: string
+#
+#   * generator_label
+#     - Optional: The label of the target that generated this target.
+#     - Type: label
+#     - Default: get_label_info(":$target_name", "label_no_toolchain")
+#
+#   * raw_lines
+#     - Optional: List of raw lines of code to prepend to the generated file.
+#     - Type: list(string)
+#
+#   * explicit_padding
+#     - Optional: Whether to emit explicit padding fields.
+#     - Type: bool
+#
+#   * layout_tests
+#     - Optional: Whether to generate layout tests.
+#     - Type: bool
+#
+#   * include_dirs
+#     - Optional: List of include directories to pass to clang.
+#     - Type: list(path)
+#
+#   * std_impls
+#     - Optional: List of non-derivable std traits to implement.
+#     - Type: list(string)
+#
+#   * std_derives
+#     - Optional: List of std traits to derive.
+#     - Type: list(string)
+#
+#   * auto_derive_traits
+#     - Optional: Rules for automatically deriving traits. Each element is a
+#       list of two strings: a regex used to match the type name, and a
+#       comma-separated list of traits to derive.
+#     - Type: list(list)
+#
+#   * replacements
+#     - Optional: Rules for replacing text. Each element is a list of two
+#       strings: a regex used to match the original text, and the text to
+#       replace it with. The replacement text can use backreferences for
+#       captured groups.
+#     - Type: list(list(string))
+#
+#   * function_allowlist
+#     - Optional: A list of regexes. Free-standing functions which do not
+#       match one of these regexes will not be generated.
+#     - Type: list(string)
+#
+#   * var_allowlist
+#     - Optional: A list of regexes. Free-standing variables which do not
+#       match any of these regexes will not be generated.
+#     - Type: list(string)
+#
+#   * type_allowlist
+#     - Optional: A list of regexes. Types which do not match any of
+#       these regexes will not be generated.
+#     - Type: list(string)
+#
+#   * function_blocklist
+#     - Optional: A list of regexes. Free-standing functions which match any
+#       of these regexes will not be generated.
+#     - Type: list(string)
+#
+#   * type_blocklist
+#     - Optional: A list of regexes. Types which match any of these regexes
+#       will not be generated.
+#     - Type: list(string)
+#
+#   * no_debug_types
+#     - Optional: A list of regexes. Types which match any of these regexes
+#       will not derive `Debug`.
+#     - Type: list(string)
+#
+#   * use_core
+#     - Optional: Whether to use `core` instead of `std`.
+#     - Type: bool
+#
+#   * additional_bindgen_flags
+#     - Optional: List of additional flags to pass to bindgen.
+#     - Type: list(string)
+#
+#   * fuchsia_api_level
+#     - Optional: API level to pass to clang ("NEXT", "HEAD", "PLATFORM", or an integer string).
+#     - Type: string
+#
+#   * additional_clang_flags
+#     - Optional: List of additional flags to pass to clang.
+#     - Type: list(string)
+#
+#   * testonly, visibility
+#     - Optional: Usual GN meanings.
 #
 template("rustc_bindgen") {
   assert(defined(invoker.headers), "Must specify headers")
@@ -247,10 +343,11 @@ template("rustc_bindgen") {
 #
 # Parameters
 #
-#   checked_in_source (required)
-#     Path to the checked-in Rust file to compare against.
+#   * checked_in_source
+#     - Required: Path to the checked-in Rust file to compare against.
+#     - Type: path
 #
-#   Other parameters are forwarded to rustc_bindgen.
+# See rustc_bindgen() for other parameters.
 #
 template("rustc_bindgen_golden") {
   assert(defined(invoker.headers), "Must specify headers")
