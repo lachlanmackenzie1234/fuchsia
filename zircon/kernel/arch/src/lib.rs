@@ -4,6 +4,9 @@
 
 #![no_std]
 
+#[cfg(target_arch = "riscv64")]
+pub use arch_riscv64 as riscv64;
+
 use zx_status::Status;
 
 unsafe extern "C" {

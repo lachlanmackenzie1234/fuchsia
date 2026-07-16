@@ -8,6 +8,9 @@ rustc_library("arch-rs") {
   edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [ "//sdk/rust/zx-status" ]
+  if (current_cpu == "riscv64") {
+    deps += [ "//zircon/kernel/arch/riscv64:arch-riscv64-rs" ]
+  }
   non_rust_deps = [ ":ffi" ]
 }
 

@@ -6,6 +6,7 @@
 
 import("//build/config/compiler_config.gni")
 import("//build/config/riscv64/riscv64.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
 if (toolchain_base_environment == "kernel") {
@@ -116,6 +117,19 @@ if (toolchain_base_environment == "kernel") {
       "//zircon/system/ulib/bitmap",
       "//zircon/system/ulib/pretty",
     ]
+  }
+
+  source_set("ffi") {
+    sources = [ "riscv64_ffi.cc" ]
+    deps = [ "//zircon/kernel/lib/ktl" ]
+  }
+
+  rustc_library("arch-riscv64-rs") {
+    edition = "2024"
+    name = "arch_riscv64"
+    source_root = "src/lib.rs"
+    sources = [ "src/lib.rs" ]
+    non_rust_deps = [ ":ffi" ]
   }
 
   group("kernel-tests") {
