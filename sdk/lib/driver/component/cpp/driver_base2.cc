@@ -156,6 +156,15 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> DriverBase
   return fdf::AddChild(node(), logger(), node_name, devfs_args, properties, offers);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+zx::result<fidl::ClientEnd<fuchsia_driver_framework::ResourceController>>
+DriverBase2::ProvideResource(std::string_view node_name,
+                             cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties,
+                             cpp20::span<const fuchsia_driver_framework::Offer> offers) {
+  return fdf::ProvideResource(node(), logger(), node_name, properties, offers);
+}
+#endif
+
 DriverBase2::~DriverBase2() { Logger::SetGlobalInstance(nullptr); }
 
 }  // namespace fdf

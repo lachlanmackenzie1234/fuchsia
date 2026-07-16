@@ -173,7 +173,7 @@ void TestNode::AddChild(AddChildRequestView request, AddChildCompleter::Sync& co
 void TestNode::ProvideResource(
     fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceRequestView request,
     fidl::WireServer<fuchsia_driver_framework::Node>::ProvideResourceCompleter::Sync& completer) {
-  completer.ReplyError(fuchsia_driver_framework::NodeError::kUnsupportedArgs);
+  completer.ReplySuccess();
 }
 #endif
 

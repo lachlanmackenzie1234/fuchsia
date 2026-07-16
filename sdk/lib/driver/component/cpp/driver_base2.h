@@ -15,6 +15,7 @@
 #include <lib/driver/incoming/cpp/service_validator.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/node/cpp/add_child.h>
+#include <lib/driver/node/cpp/provide-resource.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fit/function.h>
@@ -347,6 +348,18 @@ class DriverBase2 {
       std::string_view node_name, fuchsia_driver_framework::DevfsAddArgs& devfs_args,
       cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties,
       cpp20::span<const fuchsia_driver_framework::Offer> offers);
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  // Provides a resource with the given offers and properties on the node that the driver is
+  // bound to. Other nodes can depend on this resource.
+  //
+  // The |node()| must not have been moved out manually by the user. This is a synchronous call
+  // and requires that the dispatcher allow sync calls.
+  zx::result<fidl::ClientEnd<fuchsia_driver_framework::ResourceController>> ProvideResource(
+      std::string_view node_name,
+      cpp20::span<const fuchsia_driver_framework::NodeProperty2> properties,
+      cpp20::span<const fuchsia_driver_framework::Offer> offers);
+#endif
 
  protected:
   friend DriverContext;

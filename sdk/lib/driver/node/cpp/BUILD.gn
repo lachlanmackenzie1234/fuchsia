@@ -16,6 +16,8 @@ sdk_source_set("cpp") {
   sources = [
     "add_child.cc",
     "add_child.h",
+    "provide-resource.cc",
+    "provide-resource.h",
   ]
 
   public_deps = [
