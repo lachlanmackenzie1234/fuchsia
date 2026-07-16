@@ -4,6 +4,9 @@
 
 #![no_std]
 
+#[cfg(target_arch = "aarch64")]
+pub use arch_arm64 as arm64;
+
 #[cfg(target_arch = "riscv64")]
 pub use arch_riscv64 as riscv64;
 
