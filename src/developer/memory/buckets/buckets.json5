@@ -80,7 +80,7 @@
     },
     {
         name: "Resolvers",
-        process: ".*-resolver\\.cm.*",
+        process: "loopback_resolver\\.cm|.*-resolver\\.cm.*",
         vmo: "",
         event_code: 42,
     },
