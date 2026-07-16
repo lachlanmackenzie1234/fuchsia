@@ -15,6 +15,8 @@
 #include <lib/trace/event.h>
 #include <lib/zx/result.h>
 
+#include <bitset>
+
 #include "src/media/audio/drivers/aml-g12-tdm/aml-tdm-config-device.h"
 #include "src/media/audio/drivers/lib/inspect/recorder.h"
 
