@@ -201,6 +201,12 @@ void TestRealm::OpenExposedDir(OpenExposedDirRequest& request,
   completer.Reply(fidl::Response<fcomponent::Realm::OpenExposedDir>(fit::ok()));
 }
 
+void TestRealm::DestroyChild(DestroyChildRequest& request, DestroyChildCompleter::Sync& completer) {
+  MarkChildDestroyed(request.child().name(), request.child().collection().value_or(""));
+  RemoveController(request.child().name());
+  completer.Reply(fit::ok());
+}
+
 class TestTransaction : public fidl::Transaction {
  public:
   explicit TestTransaction(std::string_view name, bool close) : name_(name), close_(close) {}
@@ -625,9 +631,11 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
       RunLoopUntilIdle();
       zx::nanosleep(zx::deadline_after(zx::msec(10)));
     }
-    DriverHostComponentStart(realm(), *driver_runner().driver_host_runner_for_tests(),
-                             std::move(driver_host_pkg));
-    RunLoopUntilIdle();
+    if (realm().HasHandles()) {
+      DriverHostComponentStart(realm(), *driver_runner().driver_host_runner_for_tests(),
+                               std::move(driver_host_pkg));
+      RunLoopUntilIdle();
+    }
   }
 
   if (!driver.close) {

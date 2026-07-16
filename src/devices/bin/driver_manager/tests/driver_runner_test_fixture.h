@@ -261,12 +261,14 @@ class TestRealm : public fidl::testing::TestBase<fuchsia_component::Realm> {
 
   void RemoveController(const std::string& name);
 
- private:
   void CreateChild(CreateChildRequest& request, CreateChildCompleter::Sync& completer) override;
 
   void OpenExposedDir(OpenExposedDirRequest& request,
                       OpenExposedDirCompleter::Sync& completer) override;
 
+  void DestroyChild(DestroyChildRequest& request, DestroyChildCompleter::Sync& completer) override;
+
+ private:
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
     printf("Not implemented: Realm::%s\n", name.c_str());
   }

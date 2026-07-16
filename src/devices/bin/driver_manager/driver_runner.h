@@ -214,7 +214,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       std::vector<fuchsia_power_broker::LevelDependency> power_dependencies,
       std::optional<zx::event> cpu_token_override, zx::eventpair release_fence);
 
-  std::unordered_set<const DriverHost*> DriverHostsWithDriverUrl(std::string_view url);
+  std::unordered_set<DriverHost*> DriverHostsWithDriverUrl(std::string_view url);
 
   fpromise::promise<inspect::Inspector> Inspect() const;
 

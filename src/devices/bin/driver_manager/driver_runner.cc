@@ -1612,46 +1612,84 @@ zx::result<uint32_t> DriverRunner::RestartNodesColocatedWithDriverUrl(
     std::string_view url, fdd::RestartRematchFlags rematch_flags) {
   auto driver_hosts = DriverHostsWithDriverUrl(url);
 
-  // Perform a BFS over the node topology, if the current node's host is one of the driver_hosts
-  // we collected, then restart that node and skip its children since they will go away
-  // as part of it's restart.
+  // Perform a BFS over the node topology. If a node's host is one of the driver_hosts
+  // we collected, or if a node's driver URL matches `url`, collect that node as a
+  // topmost node to restart and skip its children since they will go away as part of its restart.
   //
-  // The BFS ensures that we always find the topmost node of a driver host.
-  // This node will by definition have colocated set to false, so when we call StartDriver
-  // on this node we will always create a new driver host. The old driver host will go away
-  // on its own asynchronously since it is drained from all of its drivers.
-  PerformBFS(root_node_, [this, &driver_hosts, rematch_flags,
-                          url](const std::shared_ptr<driver_manager::Node>& current) {
-    if (driver_hosts.find(current->driver_host()) == driver_hosts.end()) {
-      // Not colocated with one of the restarting hosts. Continue to visit the children.
+  // The BFS ensures that we find the topmost nodes of each affected driver host or any nodes
+  // matching the URL that are not yet in a host.
+  std::vector<std::shared_ptr<driver_manager::Node>> nodes_to_restart;
+  PerformBFS(root_node_, [url, &driver_hosts,
+                          &nodes_to_restart](const std::shared_ptr<driver_manager::Node>& current) {
+    bool is_in_driver_host =
+        current->driver_host() && driver_hosts.find(current->driver_host()) != driver_hosts.end();
+    bool is_matching_url = current->driver_url() == url;
+
+    if (!is_in_driver_host && !is_matching_url) {
+      // Not in one of the restarting hosts or matching the URL. Continue to visit the children.
       return true;
     }
 
-    if (current->EvaluateRematchFlags(rematch_flags, url)) {
-      if (current->type() == driver_manager::NodeType::kComposite) {
-        // Composites need to go through a different flow that will fully remove the
-        // node and empty out the composite spec management layer.
-        fdf_log::debug("RestartNodesColocatedWithDriverUrl rebinding composite {}",
-                       current->MakeComponentMoniker());
-        RebindComposite(current->name(), std::nullopt, [](zx::result<>) {});
-        return false;
-      }
-
-      // Non-composite nodes use the restart with rematch flow.
-      fdf_log::debug("RestartNodesColocatedWithDriverUrl restarting node with rematch {}",
-                     current->MakeComponentMoniker());
-      current->RestartNodeWithRematch();
-      return false;
-    }
-
-    // Not rematching, plain node restart.
-    fdf_log::debug("RestartNodesColocatedWithDriverUrl restarting node {}",
-                   current->MakeComponentMoniker());
-    current->RestartNode();
+    nodes_to_restart.push_back(current);
     return false;
   });
 
-  return zx::ok(static_cast<uint32_t>(driver_hosts.size()));
+  if (nodes_to_restart.empty()) {
+    return zx::ok(0u);
+  }
+
+  // Collect any named driver host components that need to be destroyed and unregister
+  // their colocation name upfront.
+  //
+  // Unregistering `name_for_colocation_` immediately ensures that `GetDriverHost("tag")` will
+  // return nullptr while the dying driver host process is shutting down. When the restarting
+  // nodes re-bind/start, `GetDriverHost("tag")` will trigger `CreateDriverHost()` to spawn a
+  // fresh driver host process for the tag instead of reusing the dying host instance.
+  std::unordered_set<std::string> tags_to_destroy;
+  for (DriverHost* host : driver_hosts) {
+    if (std::string_view tag = host->name_for_colocation(); !tag.empty()) {
+      tags_to_destroy.insert(std::string(tag));
+      host->set_name_for_colocation("");
+    }
+  }
+
+  // Initiate node restart first so that the nodes start their shutdown flow and send StopDriver()
+  // to their drivers.
+  for (const auto& current : nodes_to_restart) {
+    if (current->EvaluateRematchFlags(rematch_flags, url)) {
+      if (current->type() == driver_manager::NodeType::kComposite) {
+        fdf_log::debug("RestartNodesColocatedWithDriverUrl rebinding composite {}",
+                       current->MakeComponentMoniker());
+        RebindComposite(current->name(), std::nullopt, [](zx::result<>) {});
+        continue;
+      }
+
+      fdf_log::debug("RestartNodesColocatedWithDriverUrl restarting node with rematch {}",
+                     current->MakeComponentMoniker());
+      current->RestartNodeWithRematch();
+      continue;
+    }
+
+    fdf_log::debug("RestartNodesColocatedWithDriverUrl restarting node {}",
+                   current->MakeComponentMoniker());
+    current->RestartNode();
+  }
+
+  // Destroy the old driver host components in ComponentManager.
+  for (const auto& tag : tags_to_destroy) {
+    DestroyDriverHostComponent(tag, [](zx::result<>) {});
+  }
+
+  // Count the number of nodes that matched the URL but didn't have a driver host yet.
+  // These nodes will be restarted by the driver manager in response to the driver's restart.
+  size_t matching_nodes_without_hosts = 0;
+  for (const auto& current : nodes_to_restart) {
+    if (current->driver_url() == url && current->driver_host() == nullptr) {
+      matching_nodes_without_hosts++;
+    }
+  }
+
+  return zx::ok(static_cast<uint32_t>(driver_hosts.size() + matching_nodes_without_hosts));
 }
 
 void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
@@ -1814,14 +1852,14 @@ void DriverRunner::RestartWithDictionaryAndPowerDependencies(
   });
 }
 
-std::unordered_set<const DriverHost*> DriverRunner::DriverHostsWithDriverUrl(std::string_view url) {
-  std::unordered_set<const DriverHost*> result_hosts;
+std::unordered_set<DriverHost*> DriverRunner::DriverHostsWithDriverUrl(std::string_view url) {
+  std::unordered_set<DriverHost*> result_hosts;
 
   // Perform a BFS over the node topology, if the current node's driver url is the url we are
   // interested in, add the driver host it is in to the result set.
   PerformBFS(root_node_,
              [&result_hosts, url](const std::shared_ptr<driver_manager::Node>& current) {
-               if (current->driver_url() == url) {
+               if (current->driver_url() == url && current->driver_host()) {
                  result_hosts.insert(current->driver_host());
                }
                return true;

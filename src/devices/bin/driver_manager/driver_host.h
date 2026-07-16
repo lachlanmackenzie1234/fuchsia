@@ -95,7 +95,11 @@ class DriverHost {
 
   virtual bool IsDynamicLinkingEnabled() const { return false; }
 
+  // The string tag for cross-DAG driver host colocation (e.g. driver_host = "tag" in NodeAddArgs).
+  // When a driver host process is dying during host restart, set_name_for_colocation("") is called
+  // to unregister the tag upfront so that GetDriverHost("tag") will not return the dying host.
   virtual std::string_view name_for_colocation() const { return ""; }
+  virtual void set_name_for_colocation(std::string name) {}
 
   virtual void TriggerStackTrace() const {}
 };
@@ -141,6 +145,9 @@ class DriverHostComponent final
   zx::result<> InstallLoader(fidl::ClientEnd<fuchsia_ldsvc::Loader> loader_client) const;
 
   std::string_view name_for_colocation() const override { return name_for_colocation_; }
+  void set_name_for_colocation(std::string name) override {
+    name_for_colocation_ = std::move(name);
+  }
 
  private:
   void InitializeElfDir();

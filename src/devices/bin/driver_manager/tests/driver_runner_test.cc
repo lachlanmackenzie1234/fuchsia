@@ -1034,6 +1034,97 @@ TEST_P(DriverRunnerTest, StartSecondDriver_DisableAndRematch_UndisableAndRestart
                                    CreateChildRef("dev.second", "boot-drivers")});
 }
 
+TEST_P(DriverRunnerTest, RestartNodesCrossColocatedWithDriverUrl) {
+  SetupDriverRunner();
+
+  driver_index().set_match_callback([](auto args) -> zx::result<FakeDriverIndex::MatchResult> {
+    if (args.name().get() == "second") {
+      return zx::ok(FakeDriverIndex::MatchResult{
+          .url = second_driver_url,
+      });
+    }
+    if (args.name().get() == "third") {
+      return zx::ok(FakeDriverIndex::MatchResult{
+          .url = "fuchsia-boot:///#meta/third-driver.cm",
+      });
+    }
+    return zx::error(ZX_ERR_NOT_FOUND);
+  });
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  fdfw::NodeAddArgs args1;
+  args1.name() = "second";
+  args1.driver_host() = "shared-host";
+  PrepareRealmForSecondDriverComponentStart();
+  std::shared_ptr<CreatedChild> second =
+      root_driver->driver->AddChild(std::move(args1), false, false);
+  EXPECT_TRUE(RunLoopUntilIdle());
+  auto [driver1, controller1] = StartSecondDriver("dev.second");
+  StopListener& stop_listener1 = ServeStopListener(std::move(controller1));
+
+  fdfw::NodeAddArgs args2;
+  args2.name() = "third";
+  args2.driver_host() = "shared-host";
+  PrepareRealmForDriverComponentStart("dev.third", "fuchsia-boot:///#meta/third-driver.cm");
+  std::shared_ptr<CreatedChild> third =
+      root_driver->driver->AddChild(std::move(args2), false, false);
+  EXPECT_TRUE(RunLoopUntilIdle());
+  auto third_driver_config = kDefaultThirdDriverPkgConfig;
+  std::string binary = std::string(third_driver_config.main_module.open_path);
+  StartDriverHandler start_handler2 = [this, binary](TestDriver* driver,
+                                                     fdfw::DriverStartArgs start_args) {
+    EXPECT_FALSE(start_args.symbols().has_value());
+    ValidateProgram(start_args.program(), binary, "false", "false", "false",
+                    use_dynamic_linker() ? "true" : "false");
+  };
+  auto [driver2, controller2] =
+      StartDriverWithConfig("dev.third",
+                            {
+                                .url = "fuchsia-boot:///#meta/third-driver.cm",
+                                .binary = binary,
+                                .colocate = false,
+                                .use_dynamic_linker = use_dynamic_linker(),
+                            },
+                            std::move(start_handler2), third_driver_config);
+  StopListener& stop_listener2 = ServeStopListener(std::move(controller2));
+
+  EXPECT_EQ(0u, driver_runner().bind_manager().NumOrphanedResources());
+
+  PrepareRealmForSecondDriverComponentStart();
+
+  // Prepare for third driver at the same time as the restart will happen on both.
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name() == "dev.third") {
+      EXPECT_EQ("fuchsia-boot:///#meta/third-driver.cm", decl.url());
+      return true;
+    }
+    return false;
+  });
+
+  zx::result count = driver_runner().RestartNodesColocatedWithDriverUrl(
+      second_driver_url, fuchsia_driver_development::RestartRematchFlags::kRequested);
+  EXPECT_EQ(1u, count.value());
+  EXPECT_TRUE(RunLoopUntilIdle());
+
+  EXPECT_TRUE(stop_listener1.is_stopped());
+  EXPECT_TRUE(stop_listener2.is_stopped());
+
+  StopDriverComponent(std::move(root_driver->controller));
+
+  // The node was destroyed twice, along with the host.
+  realm().AssertDestroyedChildren({
+      CreateChildRef("root", "boot-drivers"),
+      CreateChildRef("dev.second", "boot-drivers"),
+      CreateChildRef("dev.second", "boot-drivers"),
+      CreateChildRef("dev.third", "boot-drivers"),
+      CreateChildRef("dev.third", "boot-drivers"),
+      CreateChildRef("driver-host-shared-host", "driver-hosts"),
+  });
+}
+
 // Start the second driver with host_restart_on_crash enabled, and then kill the driver host, and
 // observe the node start the driver again in another host. Done by both a node client drop, and a
 // driver host server binding close.
