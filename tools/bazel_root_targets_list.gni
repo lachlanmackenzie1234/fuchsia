@@ -176,4 +176,14 @@ tools_bazel_root_targets = [
       },
     ]
   },
+  {
+    bazel_label = "//tools/integration/testsharder:testsharder"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/testsharder_/testsharder"
+        ninja = "testsharder"
+      },
+    ]
+    install_host_tool = true
+  },
 ]
