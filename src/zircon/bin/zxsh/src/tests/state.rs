@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::collections::FlatMap;
-use crate::eval::state::Frame;
+use crate::eval::testing::Frame;
 use crate::eval::{ExecutionContext, ShellState};
 use crate::fd::Fd;
 use bstr::{BStr, BString, ByteSlice};
@@ -187,6 +187,6 @@ fn test_add_function_with_equals_panics() {
 #[test]
 #[should_panic(expected = "name cannot contain '='")]
 fn test_shell_env_new_with_equals_panics() {
-    use crate::eval::state::ShellEnv;
+    use crate::eval::ShellEnv;
     let _ = ShellEnv::new(vec![(BString::from("A=B"), BString::from("val"))]);
 }

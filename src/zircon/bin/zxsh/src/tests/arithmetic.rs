@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::eval::arithmetic::evaluate_arithmetic;
+use crate::eval::testing::evaluate_arithmetic;
 use crate::eval::{ExecutionContext, ShellState};
 use bstr::BStr;
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::eval::format::command_to_bstring;
+use crate::eval::command_to_bstring;
 use crate::parser::ast::{ASTBuilder, CommandTag, ResolvedWordPart, WordPartTag};
 use crate::parser::{parse_script, tokenize};
 use bstr::{BStr, BString};

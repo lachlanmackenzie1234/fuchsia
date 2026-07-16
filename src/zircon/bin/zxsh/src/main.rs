@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 mod args;
+mod builtins;
 mod collections;
 mod errors;
 mod eval;

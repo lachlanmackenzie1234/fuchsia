@@ -6,44 +6,59 @@ use fidl_fuchsia_hardware_pty as fpty;
 use std::os::fd::AsFd;
 use zx::Task;
 
-/// Represents the state of POSIX signals in the shell.
-///
-/// Note: These are POSIX-like software signals (e.g. SIGINT) managed by the shell,
-/// not Zircon signals (which are kernel-level object state flags like `PROCESS_TERMINATED`).
-///
-/// Tracks received SIGINT and other pending signals.
-#[derive(Clone, Copy)]
+use bitflags::bitflags;
+
+bitflags! {
+    /// Represents POSIX-like software signals managed by the shell.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub struct ShellSignals: u32 {
+        const INT  = 1 << 0;
+        const TERM = 1 << 1;
+        const HUP  = 1 << 2;
+        const QUIT = 1 << 3;
+    }
+}
+
+impl ShellSignals {
+    /// List of all supported signal flags and their corresponding trap names.
+    pub const ALL: &'static [(ShellSignals, &'static [u8])] = &[
+        (ShellSignals::INT, b"INT"),
+        (ShellSignals::TERM, b"TERM"),
+        (ShellSignals::HUP, b"HUP"),
+        (ShellSignals::QUIT, b"QUIT"),
+    ];
+}
+
+/// Represents the state of pending signals in the shell.
+#[derive(Clone, Copy, Default)]
 pub struct ShellSignalState {
-    /// True if SIGINT has been received (e.g., Ctrl+C).
-    pub sigint_received: bool,
-    pending_signals: u32,
+    pub pending: ShellSignals,
 }
 
 impl ShellSignalState {
     /// Creates a new empty `ShellSignalState`.
     pub fn new() -> Self {
-        Self { sigint_received: false, pending_signals: 0 }
+        Self::default()
     }
 
-    /// Sets the specified signal as pending.
-    pub fn set_pending(&mut self, sig: i32) {
-        if sig > 0 && sig < 32 {
-            self.pending_signals |= 1 << sig;
-        }
+    /// Sets the specified signal flag(s) as pending.
+    pub fn set(&mut self, sig: ShellSignals) {
+        self.pending.insert(sig);
     }
 
-    /// Clears the specified pending signal.
-    pub fn clear_pending(&mut self, sig: i32) {
-        if sig > 0 && sig < 32 {
-            self.pending_signals &= !(1 << sig);
-        }
+    /// Clears the specified signal flag(s).
+    pub fn clear(&mut self, sig: ShellSignals) {
+        self.pending.remove(sig);
+    }
+
+    /// Checks if the specified signal flag(s) are pending.
+    pub fn is_pending(&self, sig: ShellSignals) -> bool {
+        self.pending.contains(sig)
     }
 
     /// Takes all pending signals, clearing them from the state.
-    pub fn take_pending(&mut self) -> u32 {
-        let pending = self.pending_signals;
-        self.pending_signals = 0;
-        pending
+    pub fn take_pending(&mut self) -> ShellSignals {
+        std::mem::take(&mut self.pending)
     }
 }
 
@@ -70,7 +85,7 @@ fn kill_and_wait(
     proc: &zx::Process,
     signal_state: &mut ShellSignalState,
 ) -> Result<zx::Signals, zx::Status> {
-    signal_state.set_pending(libc::SIGINT);
+    signal_state.set(ShellSignals::INT);
     let _ = proc.kill();
     proc.wait_one(zx::Signals::PROCESS_TERMINATED, zx::MonotonicInstant::INFINITE).to_result()
 }
@@ -84,7 +99,7 @@ pub fn wait_for_process_with_interrupt(
     pty_control: Option<&PtyControl>,
     signal_state: &mut ShellSignalState,
 ) -> Result<zx::Signals, zx::Status> {
-    if signal_state.sigint_received {
+    if signal_state.is_pending(ShellSignals::INT) {
         return kill_and_wait(proc, signal_state);
     }
 
@@ -95,7 +110,7 @@ pub fn wait_for_process_with_interrupt(
         ];
 
         loop {
-            if signal_state.sigint_received {
+            if signal_state.is_pending(ShellSignals::INT) {
                 return kill_and_wait(proc, signal_state);
             }
 
@@ -109,7 +124,7 @@ pub fn wait_for_process_with_interrupt(
                             Ok((status, events)) => {
                                 if status == zx::Status::OK.into_raw() {
                                     if (events & fpty::EVENT_INTERRUPT) != 0 {
-                                        signal_state.sigint_received = true;
+                                        signal_state.set(ShellSignals::INT);
                                         return kill_and_wait(proc, signal_state);
                                     }
                                 }

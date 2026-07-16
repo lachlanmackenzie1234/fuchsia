@@ -29,6 +29,12 @@ pub struct StateBackupGuard<'a> {
     pub backups: Vec<(BString, Option<BString>)>,
 }
 
+impl<'a> std::fmt::Debug for StateBackupGuard<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateBackupGuard").field("backups", &self.backups).finish()
+    }
+}
+
 impl<'a> Drop for StateBackupGuard<'a> {
     fn drop(&mut self) {
         for (var_name, old_val) in &self.backups {

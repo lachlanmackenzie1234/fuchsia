@@ -245,7 +245,7 @@ fn parse_modifier<'a>(name: &'a BStr) -> (&'a BStr, Option<Modifier<'a>>) {
 
 /// Helper to parse and expand parameter modifier words.
 /// Note: this function will become more elaborate in a later CL.
-pub(crate) fn parse_and_expand_modifier(
+pub fn parse_and_expand_modifier(
     modifier_str: &BStr,
     state: &mut ShellState,
     ctx: &ExecutionContext,

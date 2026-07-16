@@ -33,7 +33,7 @@ pub fn quick_sort<T>(mut slice: &mut [T], compare: &impl Fn(&T, &T) -> Ordering)
     }
 }
 
-pub(crate) fn partition_three_way<T>(
+pub fn partition_three_way<T>(
     slice: &mut [T],
     compare: &impl Fn(&T, &T) -> Ordering,
 ) -> (usize, usize) {

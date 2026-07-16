@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::eval::glob::{WordChar, expand_glob, match_glob, match_segment_glob};
+use crate::eval::testing::{WordChar, expand_glob, match_glob, match_segment_glob};
 use bstr::{BStr, BString};
 use std::fs;
 

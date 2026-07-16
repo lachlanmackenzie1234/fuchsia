@@ -4,12 +4,12 @@
 
 use crate::args::Args;
 use crate::collections::{FlatMap, FlatSet};
-use crate::eval::expand::{
+use crate::eval::testing::{
     ExpandedCommand, append_args_to_command, expand_alias, expand_argument,
-    expand_assignment_value, expand_string, expand_var_with_modifiers, get_literal_command_name,
+    expand_assignment_value, expand_var_with_modifiers, get_literal_command_name,
     needs_subshell_process,
 };
-use crate::eval::{ExecutionContext, ShellState};
+use crate::eval::{ExecutionContext, ShellState, expand_string};
 use crate::parser::ast::{ASTBuilder, CommandTag, ResolvedWordPart, WordPart, WordPartTag};
 use crate::parser::{parse_script, tokenize};
 use crate::relative;
