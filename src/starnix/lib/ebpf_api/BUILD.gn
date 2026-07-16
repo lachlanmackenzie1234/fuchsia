@@ -14,40 +14,53 @@ rustc_library("ebpf_api") {
   edition = "2024"
 
   sources = [
-    "src/helpers.rs",
     "src/lib.rs",
-    "src/maps/array.rs",
-    "src/maps/buffer.rs",
-    "src/maps/hashmap.rs",
-    "src/maps/lock.rs",
-    "src/maps/lpm_trie.rs",
-    "src/maps/mod.rs",
-    "src/maps/ring_buffer.rs",
-    "src/maps/vmar.rs",
     "src/program_type.rs",
   ]
+
+  if (is_fuchsia) {
+    sources += [
+      "src/helpers.rs",
+      "src/maps/array.rs",
+      "src/maps/buffer.rs",
+      "src/maps/hashmap.rs",
+      "src/maps/lock.rs",
+      "src/maps/lpm_trie.rs",
+      "src/maps/mod.rs",
+      "src/maps/ring_buffer.rs",
+      "src/maps/vmar.rs",
+    ]
+  }
   deps = [
     "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
-    "//sdk/rust/zx",
-    "//src/lib/diagnostics/inspect/contrib/stubs:inspect_stubs",
-    "//src/lib/fuchsia-runtime",
     "//src/starnix/lib/ebpf",
     "//src/starnix/lib/linux_uapi",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:siphasher",
-    "//third_party/rust_crates:smallvec",
-    "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]
 
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/rust/zx",
+      "//src/lib/diagnostics/inspect/contrib/stubs:inspect_stubs",
+      "//src/lib/fuchsia-runtime",
+      "//third_party/rust_crates:rand",
+      "//third_party/rust_crates:siphasher",
+      "//third_party/rust_crates:smallvec",
+      "//third_party/rust_crates:static_assertions",
+    ]
+  }
+
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
   with_unit_tests = true
-  test_deps = [
-    "//src/lib/fuchsia",
-    "//third_party/rust_crates:test-case",
-  ]
+  test_deps = []
+  if (is_fuchsia) {
+    test_deps += [
+      "//src/lib/fuchsia",
+      "//third_party/rust_crates:test-case",
+    ]
+  }
 }
 
 fuchsia_unittest_package("starnix_ebpf_api_tests") {
