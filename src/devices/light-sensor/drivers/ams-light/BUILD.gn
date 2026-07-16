@@ -40,8 +40,8 @@ source_set("common") {
   public_deps = [
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
-    "//sdk/lib/input_report_reader",
     "//src/devices/i2c/lib/i2c-channel",
+    "//src/ui/input/lib/input-report-reader",
     "//zircon/system/ulib/zircon-internal",
   ]
 }
@@ -85,12 +85,12 @@ test("ams-light-test-bin") {
     "//sdk/fidl/fuchsia.hardware.lightsensor:fuchsia.hardware.lightsensor_cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/testing/cpp",
-    "//sdk/lib/input_report_reader",
     "//sdk/lib/inspect/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
     "//src/devices/i2c/testing/fake-i2c",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
+    "//src/ui/input/lib/input-report-reader",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync",

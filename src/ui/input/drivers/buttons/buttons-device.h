@@ -12,7 +12,6 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/power/cpp/wake-lease.h>
 #include <lib/fidl/cpp/wire/server.h>
-#include <lib/input_report_reader/reader.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/interrupt.h>
@@ -22,6 +21,8 @@
 #include <zircon/threads.h>
 
 #include <fbl/array.h>
+
+#include "src/ui/input/lib/input-report-reader/reader.h"
 
 namespace buttons {
 

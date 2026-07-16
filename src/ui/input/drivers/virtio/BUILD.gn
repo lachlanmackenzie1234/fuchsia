@@ -39,6 +39,7 @@ fuchsia_cc_driver("virtio_input-driver") {
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddktl",
     "//src/ui/input/lib/hid",
+    "//src/ui/input/lib/input-report-reader",
     "//zircon/system/ulib/inspect",
   ]
 }
@@ -80,6 +81,7 @@ test("virtio-input-test") {
     "//src/lib/ddktl",
     "//src/ui/input/lib/hid-input-report",
     "//src/ui/input/lib/hid-parser",
+    "//src/ui/input/lib/input-report-reader",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zxtest",

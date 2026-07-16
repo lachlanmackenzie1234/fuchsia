@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/ui/input/lib/input-report-reader/reader.h"
+
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fidl/cpp/wire/server.h>
-#include <lib/input_report_reader/reader.h>
 #include <zircon/time.h>
 
 #include <gtest/gtest.h>

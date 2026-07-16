@@ -5,11 +5,12 @@
 #define SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_DEVICE_H_
 
 #include <fidl/fuchsia.input.report/cpp/wire.h>
-#include <lib/input_report_reader/reader.h>
 #include <lib/zx/clock.h>
 #include <zircon/types.h>
 
 #include <virtio/input.h>
+
+#include "src/ui/input/lib/input-report-reader/reader.h"
 
 namespace virtio {
 

@@ -112,7 +112,6 @@ cc_source_library://pkg/fidl_driver_natural
 cc_source_library://pkg/fidl_driver_transport
 cc_source_library://pkg/hwreg
 cc_source_library://pkg/images_cpp
-cc_source_library://pkg/input_report_reader
 cc_source_library://pkg/inspect
 cc_source_library://pkg/inspect_component_cpp
 cc_source_library://pkg/magma_common

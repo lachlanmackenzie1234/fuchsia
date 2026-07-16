@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_INPUT_REPORT_READER_READER_H_
-#define LIB_INPUT_REPORT_READER_READER_H_
+#ifndef SRC_UI_INPUT_LIB_INPUT_REPORT_READER_READER_H_
+#define SRC_UI_INPUT_LIB_INPUT_REPORT_READER_READER_H_
 
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/task.h>
@@ -304,4 +304,4 @@ InputReportReaderManager<Report, kMaxUnreadReports, kMaxBatchSize,
 
 }  // namespace input_report_reader
 
-#endif  // LIB_INPUT_REPORT_READER_READER_H_
+#endif  // SRC_UI_INPUT_LIB_INPUT_REPORT_READER_READER_H_

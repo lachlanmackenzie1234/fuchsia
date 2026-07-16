@@ -11,10 +11,11 @@
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/input_report_reader/reader.h>
 #include <zircon/assert.h>
 
 #include <set>
+
+#include "src/ui/input/lib/input-report-reader/reader.h"
 
 namespace adc_buttons_device {
 

@@ -13,7 +13,6 @@
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
-#include <lib/input_report_reader/reader.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/stdcompat/inplace_vector.h>
 #include <lib/stdcompat/span.h>
@@ -28,6 +27,7 @@
 #include <hwreg/bitfields.h>
 
 #include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
+#include "src/ui/input/lib/input-report-reader/reader.h"
 
 // clang-format off
 #define FTS_REG_CURPOINT                    0x02

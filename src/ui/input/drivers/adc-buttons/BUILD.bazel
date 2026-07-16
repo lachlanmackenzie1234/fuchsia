@@ -29,6 +29,7 @@ cc_library(
     features = ["enable_zircon_asserts"],
     deps = [
         "//src/devices/lib/amlogic",
+        "//src/ui/input/lib/input-report-reader",
         "//zircon/system/ulib/ddk-platform-defs",
         "//zircon/system/ulib/fbl",
         "@fuchsia_sdk//fidl/fuchsia.buttons:fuchsia.buttons_cpp",
@@ -41,7 +42,6 @@ cc_library(
         "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//pkg/driver_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",
-        "@fuchsia_sdk//pkg/input_report_reader",
     ],
 )
 

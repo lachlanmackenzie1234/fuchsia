@@ -9,5 +9,6 @@ group("tests") {
     "hid-input-report:test",
     "hid-parser:tests",
     "injector/tests",
+    "input-report-reader:tests",
   ]
 }

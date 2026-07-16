@@ -77,5 +77,5 @@ The steps below walk through how to use the input report reader library in an in
 
 <!-- Reference links -->
 
-[input_report_reader]: /sdk/lib/input_report_reader
+[input_report_reader]: /src/ui/input/lib/input-report-reader
 [device.fidl]: /sdk/fidl/fuchsia.input.report/device.fidl

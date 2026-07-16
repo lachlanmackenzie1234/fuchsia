@@ -12,7 +12,6 @@
 #include <lib/async/cpp/irq.h>
 #include <lib/ddk/debug.h>
 #include <lib/hid/boot.h>
-#include <lib/input_report_reader/reader.h>
 #include <lib/zx/interrupt.h>
 #include <zircon/assert.h>
 
@@ -23,6 +22,7 @@
 #include <ddktl/unbind-txn.h>
 
 #include "src/ui/input/drivers/pc-ps2/controller.h"
+#include "src/ui/input/lib/input-report-reader/reader.h"
 
 namespace i8042 {
 

@@ -26,7 +26,6 @@ group("tests") {
     "fit-promise:tests",
     "fuchsia-mem-ext:tests",
     "fuzzing/cpp:tests",
-    "input_report_reader:test",
     "inspect:tests",
     "iob:tests",
     "ld:tests",

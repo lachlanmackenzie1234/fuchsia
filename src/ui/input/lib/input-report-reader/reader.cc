@@ -2,4 +2,4 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/input_report_reader/reader.h>
+#include "src/ui/input/lib/input-report-reader/reader.h"
