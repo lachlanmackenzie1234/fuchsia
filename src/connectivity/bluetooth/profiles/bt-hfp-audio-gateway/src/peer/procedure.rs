@@ -425,6 +425,11 @@ pub trait Procedure {
         false
     }
 
+    /// Returns true if the Procedure finished in an error state.
+    fn is_error(&self) -> bool {
+        false
+    }
+
     /// Add an inspect node to this procedure.
     /// `child` is already within the inspect tree, and properties can be added as children of it.
     /// `name`, `started_at`, and `finished_at` are already tracked.
@@ -483,6 +488,10 @@ impl Procedure for IProcedure {
 
     fn is_terminated(&self) -> bool {
         self.procedure.is_terminated()
+    }
+
+    fn is_error(&self) -> bool {
+        self.procedure.is_error()
     }
 }
 

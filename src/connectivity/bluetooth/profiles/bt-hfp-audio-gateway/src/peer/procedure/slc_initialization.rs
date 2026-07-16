@@ -38,6 +38,11 @@ pub trait SlcProcedureState: core::fmt::Debug {
     fn is_terminal(&self) -> bool {
         false
     }
+
+    /// Returns true if this state is an error state.
+    fn is_error(&self) -> bool {
+        false
+    }
 }
 
 /// Represents the current state of the Service Level Connection initialization procedure
@@ -99,6 +104,10 @@ impl Procedure for SlcInitProcedure {
 
     fn is_terminated(&self) -> bool {
         self.state.is_terminal()
+    }
+
+    fn is_error(&self) -> bool {
+        self.state.is_error()
     }
 }
 
@@ -464,6 +473,10 @@ impl SlcProcedureState for SlcErrorState {
 
     fn is_terminal(&self) -> bool {
         // The procedure should be considered terminated in the error state.
+        true
+    }
+
+    fn is_error(&self) -> bool {
         true
     }
 }

@@ -433,6 +433,7 @@ impl ServiceLevelConnection {
         if is_terminated {
             let mut finished_procedure =
                 self.procedures.remove(procedure).expect("just checked existence");
+
             // Save the inspect data associated with the finished procedure.
             if let Some(inspect_node) = finished_procedure.take_inspect_node() {
                 self.inspect.record_procedure(inspect_node);
@@ -440,7 +441,7 @@ impl ServiceLevelConnection {
 
             // Special case of the SLCI Procedure - once this is complete, the channel is
             // considered initialized.
-            if *procedure == ProcedureMarker::SlcInitialization {
+            if *procedure == ProcedureMarker::SlcInitialization && !finished_procedure.is_error() {
                 self.set_initialized();
             }
         }
@@ -985,6 +986,26 @@ pub(crate) mod tests {
 
         // Channel should be disconnected now.
         assert!(!slc.connected());
+    }
+
+    #[fuchsia::test]
+    fn unexpected_command_before_initialization_leaves_channel_uninitialized() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut slc, mut remote) = create_and_connect_slc();
+
+        // Peer sends an unexpected AT command.
+        let unexpected = format!("AT+CIND=?\r").into_bytes();
+        let mut fut = remote.send(unexpected.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+
+        // No requests (like Initialized) should be received on the stream.
+        expect_slc_pending(&mut exec, &mut slc);
+
+        // Channel is still connected.
+        assert!(slc.connected());
+
+        // And the channel remains uninitialized.
+        assert!(!slc.state.initialized);
     }
 
     /// Tests that the SLC is resilient to a new connection being established while there
