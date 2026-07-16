@@ -9,14 +9,14 @@ use anyhow::{Error, bail, format_err};
 use bssl_sys::{
     BIGNUM, BN_CTX, BN_CTX_free, BN_CTX_new, BN_add, BN_asc2bn, BN_bin2bn, BN_bn2bin, BN_bn2dec,
     BN_cmp, BN_copy, BN_equal_consttime, BN_free, BN_is_odd, BN_is_one, BN_is_zero, BN_mod_add,
-    BN_mod_exp, BN_mod_inverse, BN_mod_mul, BN_mod_sqr, BN_mod_sqrt, BN_new, BN_nnmod, BN_num_bits,
-    BN_num_bytes, BN_one, BN_rand_range, BN_rand_range_ex, BN_rshift1, BN_set_negative, BN_set_u64,
-    BN_sub, BN_zero, EC_GROUP, EC_GROUP_free, EC_GROUP_get_curve_GFp, EC_GROUP_get_order,
-    EC_GROUP_get0_generator, EC_GROUP_new_by_curve_name, EC_POINT, EC_POINT_add, EC_POINT_copy,
-    EC_POINT_free, EC_POINT_get_affine_coordinates_GFp, EC_POINT_invert, EC_POINT_is_at_infinity,
-    EC_POINT_mul, EC_POINT_new, EC_POINT_set_affine_coordinates_GFp,
-    EC_POINT_set_compressed_coordinates_GFp, EC_wpa3_sae_hash_to_curve_p256, ERR_get_error,
-    ERR_reason_error_string, NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, OPENSSL_free,
+    BN_mod_exp, BN_mod_mul, BN_mod_sqrt, BN_new, BN_nnmod, BN_num_bits, BN_num_bytes, BN_one,
+    BN_rand_range, BN_rand_range_ex, BN_rshift1, BN_set_u64, BN_sub, BN_zero, EC_GROUP,
+    EC_GROUP_free, EC_GROUP_get_curve_GFp, EC_GROUP_get_order, EC_GROUP_get0_generator,
+    EC_GROUP_new_by_curve_name, EC_POINT, EC_POINT_add, EC_POINT_copy, EC_POINT_free,
+    EC_POINT_get_affine_coordinates_GFp, EC_POINT_invert, EC_POINT_is_at_infinity, EC_POINT_mul,
+    EC_POINT_new, EC_POINT_set_affine_coordinates_GFp, EC_POINT_set_compressed_coordinates_GFp,
+    EC_wpa3_sae_hash_to_curve_p256, ERR_get_error, ERR_reason_error_string, NID_X9_62_prime256v1,
+    OPENSSL_free,
 };
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::cmp::Ordering;
@@ -141,12 +141,6 @@ impl Bignum {
         Ok(bignum)
     }
 
-    /// Sets the sign of Bignum to negative, iff it is nonzero.  Consumes and returns itself.
-    pub fn set_negative(self) -> Self {
-        unsafe { BN_set_negative(self.0.as_ptr(), 1) };
-        self
-    }
-
     pub fn copy(&self) -> Result<Self, Error> {
         let mut copy = Self::new()?;
         ptr_or_error(unsafe { BN_copy(copy.0.as_mut(), self.0.as_ptr()) })?;
@@ -206,15 +200,6 @@ impl Bignum {
         Ok(result)
     }
 
-    /// Returns the result of `self^-1 mod m`.
-    pub fn mod_inverse(&self, m: &Self, ctx: &BignumCtx) -> Result<Self, Error> {
-        let mut result = Self::new()?;
-        ptr_or_error(unsafe {
-            BN_mod_inverse(result.0.as_mut(), self.0.as_ptr(), m.0.as_ptr(), ctx.0.as_ptr())
-        })?;
-        Ok(result)
-    }
-
     /// Returns the result of `self^p mod m`.
     pub fn mod_exp(&self, p: &Self, m: &Self, ctx: &BignumCtx) -> Result<Self, Error> {
         let mut result = Self::new()?;
@@ -226,15 +211,6 @@ impl Bignum {
                 m.0.as_ptr(),
                 ctx.0.as_ptr(),
             )
-        })?;
-        Ok(result)
-    }
-
-    /// Returns the result of `self^2 mod m`.
-    pub fn mod_square(&self, m: &Self, ctx: &BignumCtx) -> Result<Self, Error> {
-        let mut result = Self::new()?;
-        one_or_error(unsafe {
-            BN_mod_sqr(result.0.as_mut(), self.0.as_ptr(), m.0.as_ptr(), ctx.0.as_ptr())
         })?;
         Ok(result)
     }
@@ -336,16 +312,12 @@ impl fmt::Debug for Bignum {
 #[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
 pub enum EcGroupId {
     P256 = 19,
-    P384 = 20,
-    P521 = 21,
 }
 
 impl EcGroupId {
     const fn nid(&self) -> i32 {
         match self {
             EcGroupId::P256 => NID_X9_62_prime256v1,
-            EcGroupId::P384 => NID_secp384r1,
-            EcGroupId::P521 => NID_secp521r1,
         }
     }
 
@@ -469,7 +441,6 @@ impl EcPoint {
         Ok(point)
     }
 
-    #[allow(dead_code)]
     pub fn new_wpa3_sae_hash_to_curve_p256(
         group: &EcGroup,
         salt: &[u8],
@@ -598,13 +569,6 @@ mod tests {
     }
 
     #[test]
-    fn bignum_set_negative() {
-        assert_eq!(bn("100").set_negative(), bn("-100"));
-        assert_eq!(bn("-100").set_negative(), bn("-100"));
-        assert_eq!(bn("0").set_negative(), bn("0"));
-    }
-
-    #[test]
     fn bignum_format() {
         // Bignum::from_string should support both decimal and hex formats.
         assert_eq!(format!("{}", bn("100")), "100");
@@ -669,22 +633,10 @@ mod tests {
     }
 
     #[test]
-    fn bignum_mod_inverse() {
-        let ctx = BignumCtx::new().unwrap();
-        assert_eq!(bn("3").mod_inverse(&bn("7"), &ctx).unwrap(), bn("5"));
-    }
-
-    #[test]
     fn bignum_mod_exp() {
         let ctx = BignumCtx::new().unwrap();
         let value = bn("4").mod_exp(&bn("2"), &bn("10"), &ctx).unwrap();
         assert_eq!(value, bn("6"));
-    }
-
-    #[test]
-    fn bigum_mod_square() {
-        let ctx = BignumCtx::new().unwrap();
-        assert_eq!(bn("11").mod_square(&bn("17"), &ctx).unwrap(), bn("2"));
     }
 
     #[test]
@@ -837,12 +789,5 @@ mod tests {
         let (x, y) = point.to_affine_coords(&group, &ctx).unwrap();
         assert_eq!(x, bn(TEST_PT_X));
         assert_eq!(y, bn(TEST_PT_Y));
-    }
-
-    #[test]
-    fn ec_wpa3_sae_hash_to_curve_p256_wrong_group() {
-        let group = EcGroup::new(EcGroupId::P384).unwrap();
-        let result = EcPoint::new_wpa3_sae_hash_to_curve_p256(&group, TEST_SALT, TEST_IKM);
-        assert!(result.is_err());
     }
 }
