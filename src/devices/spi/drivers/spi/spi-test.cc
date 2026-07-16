@@ -368,7 +368,10 @@ class SpiDeviceTest : public ::testing::Test {
     });
     EXPECT_TRUE(driver_test()
                     .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
-                      spi_config::Config config{{.enable_suspend = true}};
+                      spi_config::Config config{{
+                          .enable_suspend = true,
+                          .expose_debug_capabilities = true,
+                      }};
                       args.config(config.ToVmo());
                     })
                     .is_ok());
@@ -916,6 +919,28 @@ TEST_F(SpiDeviceTest, SchedulerRoleName) {
     ASSERT_OK(result.status());
     EXPECT_OK(result.value().status);
   }
+}
+
+TEST_F(SpiDeviceTest, TestService) {
+  constexpr std::array<const char*, 1> kExpectedNodeNames{"spi-0-0"};
+
+  CreateSpiDevice(kExpectedNodeNames.size());
+
+  zx::result test_client_end = driver_test().Connect<fuchsia_hardware_spi::TestService::Test>();
+  ASSERT_TRUE(test_client_end.is_ok());
+  fidl::WireSyncClient<fuchsia_hardware_spi::Test> test_client(std::move(test_client_end.value()));
+
+  auto [device_client, device_server] = fidl::Endpoints<fuchsia_hardware_spi::Device>::Create();
+
+  auto connect_result = test_client->ConnectSpiLoopback(std::move(device_server));
+  ASSERT_OK(connect_result.status());
+  ASSERT_TRUE(connect_result.value().is_ok());
+
+  set_current_test_cs(fuchsia_hardware_spiimpl::kLoopbackChipSelect);
+  set_test_mode(FakeSpiImplServer::SpiTestMode::kTransmit);
+
+  uint8_t txbuf[] = {0, 1, 2, 3, 4, 5, 6};
+  EXPECT_OK(spilib_transmit(device_client, txbuf, sizeof(txbuf)));
 }
 
 }  // namespace spi

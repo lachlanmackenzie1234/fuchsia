@@ -20,7 +20,7 @@
 
 namespace spi {
 
-class SpiDriver : public fdf::DriverBase2 {
+class SpiDriver : public fdf::DriverBase2, public fidl::WireServer<fuchsia_hardware_spi::Test> {
  public:
   static constexpr std::string_view kDriverName = "spi";
   static constexpr std::string_view kChildNodeName = "spi";
@@ -30,9 +30,16 @@ class SpiDriver : public fdf::DriverBase2 {
   zx::result<> Start(fdf::DriverContext context) override;
 
  private:
+  zx::result<> AddTestChild(fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client);
+
   zx::result<> AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMetadata& metadata,
                            fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client,
                            const spi_config::Config& config);
+
+  void ConnectSpiLoopback(fuchsia_hardware_spi::wire::TestConnectSpiLoopbackRequest* request,
+                          ConnectSpiLoopbackCompleter::Sync& completer) override;
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_spi::Test> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
 
   fdf::UnownedSynchronizedDispatcher fidl_dispatcher() {
     if (fidl_dispatcher_) {
@@ -51,6 +58,9 @@ class SpiDriver : public fdf::DriverBase2 {
   fdf::OwnedChildNode child_;
 
   std::unique_ptr<fdf::Namespace> incoming_;
+
+  std::unique_ptr<SpiChild> test_child_;
+  fidl::ServerBindingGroup<fuchsia_hardware_spi::Test> test_bindings_;
 };
 
 }  // namespace spi

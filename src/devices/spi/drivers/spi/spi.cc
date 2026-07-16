@@ -70,6 +70,13 @@ zx::result<> SpiDriver::Start(fdf::DriverContext context) {
 
   fdf::WireSharedClient spi_impl(*std::move(spi_impl_client_end), fidl_dispatcher()->get());
 
+  const auto config = context.take_config<spi_config::Config>();
+  if (config.expose_debug_capabilities()) {
+    if (zx::result<> result = AddTestChild(spi_impl.Clone()); result.is_error()) {
+      return result;
+    }
+  }
+
   zx::result child = AddOwnedChild(kChildNodeName);
   if (child.is_error()) {
     fdf::error("Failed to add owned child: {}", child);
@@ -77,14 +84,45 @@ zx::result<> SpiDriver::Start(fdf::DriverContext context) {
   }
   child_ = std::move(child.value());
 
-  const auto config = context.take_config<spi_config::Config>();
-
   if (metadata.channels()) {
     if (zx::result result = AddChildren(metadata, std::move(spi_impl), config); result.is_error()) {
       return result.take_error();
     }
   } else {
     fdf::info("No channels supplied.");
+  }
+
+  return zx::ok();
+}
+
+zx::result<> SpiDriver::AddTestChild(
+    fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client) {
+  fdf::Arena arena('SPI_');
+  if (auto result = client.buffer(arena)->ReleaseRegisteredVmos(
+          fuchsia_hardware_spiimpl::kLoopbackChipSelect);
+      !result.ok()) {
+    fdf::error("Failed to release registered VMOs: {}", result.error().FormatDescription());
+  }
+
+  fuchsia_hardware_spi::TestService::InstanceHandler handler({
+      .test = test_bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+  });
+
+  auto serve_result = outgoing()->AddService<fuchsia_hardware_spi::TestService>(std::move(handler));
+  if (serve_result.is_error()) {
+    fdf::error("Failed to add SPI test service: {}", serve_result);
+    return serve_result.take_error();
+  }
+
+  fbl::AllocChecker ac;
+
+  test_child_ = std::unique_ptr<SpiChild>(
+      new (&ac) SpiChild(std::move(client), fuchsia_hardware_spiimpl::kLoopbackChipSelect,
+                         /*has_siblings=*/true, fidl_dispatcher()));
+
+  if (!ac.check()) {
+    fdf::error("Out of memory");
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   return zx::ok();
@@ -137,13 +175,10 @@ zx::result<> SpiDriver::AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMe
       offers.emplace_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(arena, name));
     }
 
-    auto [controller_client, controller_server] =
-        fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-
     fbl::AllocChecker ac;
 
-    std::unique_ptr<SpiChild> dev(new (&ac) SpiChild(
-        client.Clone(), cs, has_siblings, fidl_dispatcher(), std::move(controller_client)));
+    std::unique_ptr<SpiChild> dev(
+        new (&ac) SpiChild(client.Clone(), cs, has_siblings, fidl_dispatcher()));
 
     if (!ac.check()) {
       fdf::error("Out of memory");
@@ -185,6 +220,9 @@ zx::result<> SpiDriver::AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMe
                           .devfs_args(devfs)
                           .Build();
 
+    auto [controller_client, controller_server] =
+        fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+
     auto result = fidl::WireCall(child_.node_)->AddChild(args, std::move(controller_server), {});
     if (!result.ok()) {
       fdf::error("Failed to add SPI child node: {}", result.error().FormatDescription().c_str());
@@ -199,6 +237,24 @@ zx::result<> SpiDriver::AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMe
   }
 
   return zx::ok();
+}
+
+void SpiDriver::ConnectSpiLoopback(
+    fuchsia_hardware_spi::wire::TestConnectSpiLoopbackRequest* request,
+    ConnectSpiLoopbackCompleter::Sync& completer) {
+  if (test_child_) {
+    test_child_->Bind(std::move(request->server));
+    completer.ReplySuccess();
+  } else {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+}
+
+void SpiDriver::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_spi::Test> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown FIDL method ordinal {:x}", metadata.method_ordinal);
+  completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
 }  // namespace spi

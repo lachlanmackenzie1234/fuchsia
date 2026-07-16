@@ -18,13 +18,11 @@ class SpiChild : public fidl::WireServer<fuchsia_hardware_spi::Device>,
                  public fidl::WireServer<fuchsia_hardware_spi::Controller> {
  public:
   SpiChild(fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> spi, uint32_t chip_select,
-           bool has_siblings, fdf::UnownedSynchronizedDispatcher fidl_dispatcher,
-           fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller_client)
+           bool has_siblings, fdf::UnownedSynchronizedDispatcher fidl_dispatcher)
       : spi_(std::move(spi)),
         cs_(chip_select),
         has_siblings_(has_siblings),
         fidl_dispatcher_(std::move(fidl_dispatcher)),
-        controller_(std::move(controller_client)),
         devfs_connector_(fit::bind_member<&SpiChild::DevfsConnect>(this)) {}
 
   void OpenSession(OpenSessionRequestView request, OpenSessionCompleter::Sync& completer) override;
@@ -67,7 +65,6 @@ class SpiChild : public fidl::WireServer<fuchsia_hardware_spi::Device>,
 
   std::optional<fidl::ServerBinding<fuchsia_hardware_spi::Device>> binding_;
   fidl::ServerBindingGroup<fuchsia_hardware_spi::Controller> controller_bindings_;
-  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
   driver_devfs::Connector<fuchsia_hardware_spi::Controller> devfs_connector_;
 };
 
