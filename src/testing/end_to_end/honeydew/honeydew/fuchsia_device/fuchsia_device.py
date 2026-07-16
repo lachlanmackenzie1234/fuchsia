@@ -94,6 +94,7 @@ from honeydew.auxiliary_devices.power_switch import (
 from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub as usb_power_hub_interface,
 )
+from honeydew.transports.adb import adb as adb_transport
 from honeydew.transports.fastboot import fastboot
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
@@ -422,6 +423,33 @@ class FuchsiaDevice(
             )
         )
         return fuchsia_controller_obj
+
+    @properties.Transport
+    def adb(self) -> adb_transport.Adb:
+        """Returns the ADB transport object.
+
+        Returns:
+            ADB transport interface implementation.
+        """
+        adb_path = None
+        run_isolated_server = False
+        vendor_keys_path = None
+        if self._config:
+            adb_config = self._config.get("transports", {}).get("adb", {})
+            adb_path = adb_config.get("bin_path")
+            run_isolated_server = adb_config.get("run_isolated_server", False)
+            vendor_keys_path = adb_config.get("vendor_keys_path")
+
+        serial_number = self._device_info.serial_number or self.serial_number
+        adb_obj: adb_transport.Adb = adb_transport.Adb(
+            device_name=self.device_name,
+            serial_number=serial_number,
+            adb_path=adb_path,
+            run_isolated_server=run_isolated_server,
+            vendor_keys_path=vendor_keys_path,
+        )
+        self.register_for_on_device_close(adb_obj.close)
+        return adb_obj
 
     @properties.Transport
     def fastboot(self) -> fastboot.Fastboot:
