@@ -30,6 +30,7 @@ group("tests") {
     "fxfs:tests",
     "gpt:tests",
     "host_fs_test:tests",
+    "io_stress:tests",
     "lib:tests",
     "memfs:tests",
     "minfs:tests",

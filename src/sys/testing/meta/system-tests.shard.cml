@@ -430,6 +430,7 @@
             protocol: [
                 "fuchsia.fonts.Provider",
                 "fuchsia.intl.PropertyProvider",
+                "fuchsia.memory.debug.MemoryPressure",
                 "fuchsia.memorypressure.Provider",
                 "fuchsia.ui.composition.Flatland",
             ],

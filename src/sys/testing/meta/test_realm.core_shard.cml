@@ -166,7 +166,10 @@
             source_availability: "unknown",
         },
         {
-            protocol: "fuchsia.memorypressure.Provider",
+            protocol: [
+                "fuchsia.memory.debug.MemoryPressure",
+                "fuchsia.memorypressure.Provider",
+            ],
             from: "#memory_pressure_signaler",
             to: "#testing",
             source_availability: "unknown",
