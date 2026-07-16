@@ -5,15 +5,24 @@
 #include "src/storage/volume_image/fvm/fvm_unpack.h"
 
 #include <fcntl.h>
+#include <lib/fpromise/result.h>
 #include <sys/types.h>
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include "lib/fpromise/result.h"
+#include <fbl/unique_fd.h>
+
+#include "src/storage/fvm/format.h"
 #include "src/storage/fvm/metadata.h"
 #include "src/storage/volume_image/fvm/fvm_metadata.h"
 #include "src/storage/volume_image/utils/fd_writer.h"
@@ -87,7 +96,14 @@ std::vector<std::optional<std::string>> DisambiguateNames(
       continue;
     }
     std::string current = names[i].value();
-    std::replace(current.begin(), current.end(), '-', '_');
+    // Disallow path separators to keep files local, and dashes since they'll be used to
+    // differentiate duplicates.
+    const std::array bad_chars{'-', '/', '\\'};
+    std::ranges::replace_if(
+        current, [&bad_chars](char c) { return std::ranges::contains(bad_chars, c); }, '_');
+    if (current == "." || current == "..") {
+      current = std::string(current.size(), '_');
+    }
     size_t dupe_number = 0;
     auto entry = counts.find(current);
     if (entry == counts.end()) {

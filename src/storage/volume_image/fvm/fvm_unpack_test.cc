@@ -4,7 +4,19 @@
 
 #include "src/storage/volume_image/fvm/fvm_unpack.h"
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
 #include <iterator>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -194,7 +206,8 @@ TEST(FvmUnpackTest, InvalidHeader) {
 
 TEST(FvmUnpackTest, NameDisambiguation) {
   std::vector<std::optional<std::string>> before = {
-      std::nullopt, "", "My-file", "other_file", "My-file", "", std::nullopt, "My_file",
+      std::nullopt, "",          "My-file", "other_file", "My-file", "",   std::nullopt,
+      "My_file",    "../escape", "a/b/c",   "a\\b\\c",    ".",       "..",
   };
   std::vector<std::optional<std::string>> after = {
       std::nullopt,
@@ -205,7 +218,13 @@ TEST(FvmUnpackTest, NameDisambiguation) {
       "-1",         // empty name always gets a suffix
       std::nullopt,
       "My_file-2",  // Duplicate already had an underscore
+      ".._escape",  // path traversal sanitized
+      "a_b_c",      // forward slash sanitized
+      "a_b_c-1",    // backslash sanitized
+      "_",          // . becomes _
+      "__",         // .. becomes __
   };
+
   ASSERT_EQ(internal::DisambiguateNames(before), after);
 }
 
