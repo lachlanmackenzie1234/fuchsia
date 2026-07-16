@@ -15,7 +15,7 @@ executable("bin") {
   sources = [ "virtual_audio.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.virtualaudio:fuchsia.virtualaudio_hlcpp",
+    "//sdk/fidl/fuchsia.virtualaudio:fuchsia.virtualaudio_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/media/cpp:no_converters",
