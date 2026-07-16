@@ -1832,10 +1832,6 @@ group("scopeguard-1.2.0") {
 }
 
 if (current_os == "fuchsia") {
-  group("sec1") {
-    public_deps = [ ":sec1-v0_7_3" ]
-  }
-
   group("sec1-0.7") {
     public_deps = [ ":sec1-v0_7_3" ]
   }
@@ -1844,6 +1840,18 @@ if (current_os == "fuchsia") {
 if (current_os == "fuchsia") {
   group("sec1-0.7.3") {
     public_deps = [ ":sec1-v0_7_3" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("sec1") {
+    public_deps = [ ":sec1-v0_8_1" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("sec1-0.8.1") {
+    public_deps = [ ":sec1-v0_8_1" ]
   }
 }
 
@@ -3923,6 +3931,38 @@ rustc_library("base16ct-v0_2_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":base16ct-v0_2_0.license" ]
+}
+
+license("base16ct-v1_0_0.license") {
+  public_package_name = "base16ct"
+  license_files = [
+    "//third_party/rust_crates/vendor/base16ct-1.0.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/base16ct-1.0.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("base16ct-v1_0_0") {
+  crate_name = "base16ct"
+  source_root = "//third_party/rust_crates/vendor/base16ct-1.0.0/src/lib.rs"
+  output_name = "base16ct-3c0cfa2d3b26a96f"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=3c0cfa2d3b26a96f",
+    "-Cextra-filename=-3c0cfa2d3b26a96f",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":base16ct-v1_0_0.license" ]
 }
 
 license("base64-v0_21_7.license") {
@@ -19413,6 +19453,47 @@ rustc_library("sec1-v0_7_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":sec1-v0_7_3.license" ]
+}
+
+license("sec1-v0_8_1.license") {
+  public_package_name = "sec1"
+  license_files = [
+    "//third_party/rust_crates/vendor/sec1-0.8.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/sec1-0.8.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("sec1-v0_8_1") {
+  crate_name = "sec1"
+  source_root = "//third_party/rust_crates/vendor/sec1-0.8.1/src/lib.rs"
+  output_name = "sec1-7c0e03fc14a13278"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":base16ct-v1_0_0" ]
+  deps += [ ":der-v0_8_1" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=7c0e03fc14a13278",
+    "-Cextra-filename=-7c0e03fc14a13278",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"der\"",
+    "--cfg=feature=\"point\"",
+    "--cfg=feature=\"zeroize\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":sec1-v0_8_1.license" ]
 }
 
 rustc_library("security-framework-v2_3_1") {

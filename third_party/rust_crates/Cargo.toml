@@ -289,7 +289,8 @@ rust_icu_udat = { version = "5.6.0", default-features = false, features = ["rena
 rust_icu_udata = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_uloc = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_ustring = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-sec1 = { version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
+sec1 = { version = "0.8.1", features = ["alloc", "der", "zeroize"] }
+sec1-0_7_3 = { package = "sec1", version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
 spki = { version = "0.8.0", features = ["alloc"] }
 spki-0_7_3 = { package = "spki", version = "0.7.3", features = ["alloc"] }
 tokio = { version = "=1.52.3", default-features = false }
@@ -1090,7 +1091,6 @@ testonly = true
 
 [gn.package.sec1."0.7.3"]
 groups = [
-  { name = "sec1" },
   { name = "sec1-0.7" },
 ]
 

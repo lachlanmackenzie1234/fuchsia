@@ -2473,8 +2473,26 @@ alias(
 )
 
 alias(
-    name = "sec1",
+    name = "sec1_0_7_3-0.7.3",
     actual = "//third_party/rust_crates/vendor/sec1-0.7.3:sec1",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sec1_0_7_3",
+    actual = "//third_party/rust_crates/vendor/sec1-0.7.3:sec1",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sec1-0.8.1",
+    actual = "//third_party/rust_crates/vendor/sec1-0.8.1:sec1",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sec1",
+    actual = "//third_party/rust_crates/vendor/sec1-0.8.1:sec1",
     tags = ["manual"],
 )
 
