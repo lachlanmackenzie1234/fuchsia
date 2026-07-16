@@ -118,6 +118,15 @@ source_set("config") {
   ]
 }
 
+source_set("cpu_detect") {
+  public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
+
+  sources = [ "//third_party/abseil-cpp/src/absl/base/internal/cpu_detect.cc" ]
+  public = [ "//third_party/abseil-cpp/src/absl/base/internal/cpu_detect.h" ]
+
+  deps = [ ":config" ]
+}
+
 source_set("cycleclock_internal") {
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
 

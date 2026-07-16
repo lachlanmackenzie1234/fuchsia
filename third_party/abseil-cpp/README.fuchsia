@@ -1,7 +1,7 @@
 Name: Abseil - C++ Common Libraries
 URL: https://github.com/abseil/abseil-cpp
-Revision: 5650e9cf76d3be4318d5fa3af38ee483ddfd5e4a
-Version: lts_2026_05_26
+Revision: 1f0ebd4a3585f2c2680e35a22c8b170c09e432c1
+Version: git
 Security Critical: yes
 
 License File: LICENSE

@@ -9,18 +9,6 @@ visibility = [
   "//third_party/tink-cc/*",
 ]
 
-source_set("cpu_detect") {
-  public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
-
-  sources = [ "//third_party/abseil-cpp/src/absl/crc/internal/cpu_detect.cc" ]
-  public = [ "//third_party/abseil-cpp/src/absl/crc/internal/cpu_detect.h" ]
-
-  deps = [
-    "//third_party/abseil-cpp/absl/base",
-    "//third_party/abseil-cpp/absl/base:config",
-  ]
-}
-
 source_set("crc_internal") {
   public_configs = [ "//third_party/abseil-cpp:abseil_config" ]
 
@@ -35,9 +23,9 @@ source_set("crc_internal") {
   ]
 
   deps = [
-    ":cpu_detect",
     "//third_party/abseil-cpp/absl/base:config",
     "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/base:cpu_detect",
     "//third_party/abseil-cpp/absl/base:endian",
     "//third_party/abseil-cpp/absl/base:prefetch",
     "//third_party/abseil-cpp/absl/base:raw_logging_internal",
@@ -63,11 +51,11 @@ source_set("crc32c") {
   ]
 
   deps = [
-    ":cpu_detect",
     ":crc_internal",
     ":non_temporal_memcpy",
     "//third_party/abseil-cpp/absl/base:config",
     "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/base:cpu_detect",
     "//third_party/abseil-cpp/absl/base:endian",
     "//third_party/abseil-cpp/absl/base:prefetch",
     "//third_party/abseil-cpp/absl/strings",

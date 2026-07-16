@@ -18,7 +18,7 @@
              revision="b995ff63d8a427be733e7094e96fbbc67c8ac850"/>
     <project name="third_party/abseil-cpp"
              path="third_party/abseil-cpp/src"
-             revision="5650e9cf76d3be4318d5fa3af38ee483ddfd5e4a"
+             revision="1f0ebd4a3585f2c2680e35a22c8b170c09e432c1"
              remote="https://fuchsia.googlesource.com/third_party/abseil-cpp"/>
     <project name="third_party/acpica"
              path="third_party/acpica-migrating/src"
