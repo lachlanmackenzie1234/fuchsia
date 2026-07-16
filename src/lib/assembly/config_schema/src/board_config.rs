@@ -402,6 +402,15 @@ pub struct DevelopmentSupportConfig {
     /// Configure debug access port for specific SoC
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_debug_access_port_for_soc: Option<Arm64DebugDapSoc>,
+    /// Specify which network interface in Boot Items we should use to generate the
+    /// device node name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boot_item_interface_for_node_name: Option<u8>,
+    /// Flip the low bit of the MAC address we retrieve from boot items. This
+    /// mimics a behavior of the CDC ethernet driver and is necessary for
+    /// compatibility with it.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub boot_item_interface_flip_low_mac_bit: bool,
 }
 
 /// This struct defines network configurations.
@@ -562,6 +571,8 @@ mod test {
                 connectivity: ConnectivityConfig::default(),
                 development_support: DevelopmentSupportConfig {
                     enable_debug_access_port_for_soc: Some(Arm64DebugDapSoc::AmlogicT931g),
+                    boot_item_interface_for_node_name: None,
+                    boot_item_interface_flip_low_mac_bit: false,
                 },
                 graphics: GraphicsConfig::default(),
                 sysmem_defaults: BoardSysmemConfig::default(),

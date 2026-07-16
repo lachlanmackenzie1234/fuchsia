@@ -387,6 +387,33 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 .set_config_capability("fuchsia.network.PrimaryInterface", Config::new_void())?;
         }
 
+        if let Some(boot_item_iface) =
+            &context.board_config.platform.development_support.boot_item_interface_for_node_name
+        {
+            builder.set_config_capability(
+                "fuchsia.device.BootItemInterfaceForNodeName",
+                Config::new(ConfigValueType::Uint8, (*boot_item_iface).into()),
+            )?;
+        } else {
+            builder.set_config_capability(
+                "fuchsia.device.BootItemInterfaceForNodeName",
+                Config::new_void(),
+            )?;
+        }
+
+        builder.set_config_capability(
+            "fuchsia.device.BootItemInterfaceFlipLowMacBit",
+            Config::new(
+                ConfigValueType::Bool,
+                context
+                    .board_config
+                    .platform
+                    .development_support
+                    .boot_item_interface_flip_low_mac_bit
+                    .into(),
+            ),
+        )?;
+
         if connectivity_config.location.enable_emergency_location_provider {
             ensure!(
                 *context.feature_set_level == FeatureSetLevel::Standard,
