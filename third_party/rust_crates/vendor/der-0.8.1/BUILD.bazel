@@ -57,6 +57,8 @@ rust_library(
         "derive",
         "flagset",
         "oid",
+        "pem",
+        "std",
         "zeroize",
     ],
     crate_root = "src/lib.rs",
@@ -86,5 +88,6 @@ rust_library(
         "//third_party/rust_crates/forks/zeroize",
         "//third_party/rust_crates/vendor/const-oid-0.10.2:const_oid",
         "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",
+        "//third_party/rust_crates/vendor/pem-rfc7468-1.0.0:pem_rfc7468",
     ],
 )

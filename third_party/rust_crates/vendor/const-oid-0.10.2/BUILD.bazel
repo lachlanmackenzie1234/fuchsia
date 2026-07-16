@@ -52,15 +52,9 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = select({
-        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "db",  # aarch64-unknown-fuchsia
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "db",  # x86_64-unknown-fuchsia
-        ],
-        "//conditions:default": [],
-    }),
+    crate_features = [
+        "db",
+    ],
     crate_root = "src/lib.rs",
     edition = "2024",
     rustc_flags = [

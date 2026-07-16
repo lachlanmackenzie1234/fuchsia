@@ -7417,6 +7417,7 @@ rustc_library("der-v0_8_1") {
   deps += [ ":const-oid-v0_10_2" ]
   deps += [ ":der_derive-v0_8_0($host_toolchain)" ]
   deps += [ ":flagset-v0_4_7" ]
+  deps += [ ":pem-rfc7468-v1_0_0" ]
 
   rustenv = []
 
@@ -7428,6 +7429,8 @@ rustc_library("der-v0_8_1") {
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"flagset\"",
     "--cfg=feature=\"oid\"",
+    "--cfg=feature=\"pem\"",
+    "--cfg=feature=\"std\"",
     "--cfg=feature=\"zeroize\"",
   ]
 
@@ -14762,6 +14765,40 @@ rustc_library("pem-rfc7468-v0_7_0") {
   applicable_licenses = [ ":pem-rfc7468-v0_7_0.license" ]
 }
 
+license("pem-rfc7468-v1_0_0.license") {
+  public_package_name = "pem_rfc7468"
+  license_files = [
+    "//third_party/rust_crates/vendor/pem-rfc7468-1.0.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pem-rfc7468-1.0.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("pem-rfc7468-v1_0_0") {
+  crate_name = "pem_rfc7468"
+  source_root = "//third_party/rust_crates/vendor/pem-rfc7468-1.0.0/src/lib.rs"
+  output_name = "pem_rfc7468-d41d3908afb05a4e"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":base64ct-v1_8_3" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d41d3908afb05a4e",
+    "-Cextra-filename=-d41d3908afb05a4e",
+    "--cfg=feature=\"alloc\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":pem-rfc7468-v1_0_0.license" ]
+}
+
 license("percent-encoding-v2_3_1.license") {
   public_package_name = "percent_encoding"
   license_files = [
@@ -20708,6 +20745,8 @@ rustc_library("spki-v0_8_0") {
     "-Cmetadata=9655269515f77e62",
     "-Cextra-filename=-9655269515f77e62",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"pem\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
