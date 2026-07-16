@@ -24,13 +24,6 @@ func (c *testSuiteFailureReasonCheck) Check(to *TestingOutputs) bool {
 	c.testName = ""
 	c.failureReason = ""
 
-	if to.SwarmingSummary != nil && to.SwarmingSummary.Results != nil {
-		res := to.SwarmingSummary.Results
-		if !res.Failure && res.State == "COMPLETED" {
-			return false
-		}
-	}
-
 	if to.TestSummary == nil {
 		return false
 	}

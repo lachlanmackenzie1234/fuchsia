@@ -84,7 +84,7 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("should NOT match if task passed", func(t *testing.T) {
+	t.Run("should match even if task passed", func(t *testing.T) {
 		to := createOutputs([]runtests.TestDetails{
 			{
 				Name:   targetTest,
@@ -94,8 +94,8 @@ func TestTestSuiteFailureReasonCheck(t *testing.T) {
 				},
 			},
 		}, false) // taskFailed = false
-		if c.Check(&to) {
-			t.Error("expected check NOT to match")
+		if !c.Check(&to) {
+			t.Error("expected check to match")
 		}
 	})
 
