@@ -9,4 +9,4 @@ protocol without relying on the real implementation in Zircon.
 
 ## factoryctl
 Command line tool to list and read factory files from fuchsia.factory APIs and raw data from
-fuschsia.boot.FactoryItems.
+fuchsia.boot.FactoryItems.
