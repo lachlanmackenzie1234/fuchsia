@@ -24,6 +24,7 @@ import typing
 from typing import List
 import uuid
 
+import agents.agents as agents_lib
 import async_utils.command as command
 import async_utils.signals as signals
 import statusinfo
@@ -849,11 +850,18 @@ class AsyncMain:
                 # Note: it is important that we put --break-on-failure before the rest of the command
                 # line arguments so that it is ensured that this fx test argument comes before any extra
                 # arguments are passed through to the test executable (e.g. after "--").
-                recorder.emit_instruction_message(
-                    "\nTo debug with zxdb: fx test --break-on-failure {}\n".format(
+                msg = (
+                    "To debug with zxdb: fx test --break-on-failure {}".format(
                         " ".join(sys.argv[1:])
                     )
                 )
+
+                if agents_lib.is_invoked_by_agent():
+                    msg = "To debug with fx debug cli: fx test --agent-debugging-mode {}".format(
+                        " ".join(sys.argv[1:])
+                    )
+
+                recorder.emit_instruction_message(msg)
 
             await end_execution("Failed to run all tests")
 

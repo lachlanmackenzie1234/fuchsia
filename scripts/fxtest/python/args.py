@@ -12,6 +12,7 @@ import re
 import sys
 import typing
 
+import agents.agents as agents_lib
 import termout
 
 import selection_action
@@ -687,8 +688,8 @@ def parse_args(
     execution.add_argument(
         "--agent-debugging-mode",
         action="store_true",
-        help="""If set, automatically spawns the zxdb-daemon process in the background, which
-        simplifies the agentic test debugging workflow. Implies --break-on-failure and
+        help="""If set, automatically begins an fx debug cli session in the background, which should
+        be used by Agents for test debugging workflows. Implies --break-on-failure and
         --enable-debug-adapter.""",
         default=False,
     )
@@ -726,15 +727,10 @@ def parse_args(
         action=argparse.BooleanOptionalAction,
         help="Display the output from passing tests. Some test arguments may be needed.",
     )
-    is_agent = (
-        os.environ.get("ANTIGRAVITY_AGENT")
-        or os.environ.get("ANTIGRAVITY_EDITOR_APP_ROOT")
-        or os.environ.get("GEMINI_CLI")
-    )
     output.add_argument(
         "--simple",
         action=argparse.BooleanOptionalAction,
-        default=True if is_agent else False,
+        default=True if agents_lib.is_invoked_by_agent() else False,
         help="Remove any color or decoration from output. Disable pretty status printing. Implies --no-style",
     )
     output.add_argument(

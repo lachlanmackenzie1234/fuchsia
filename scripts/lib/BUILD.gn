@@ -5,6 +5,7 @@
 group("tests") {
   testonly = true
   deps = [
+    "agents:tests",
     "async_utils:tests",
     "build_dir:tests",
     "ffx_cmd:tests",
