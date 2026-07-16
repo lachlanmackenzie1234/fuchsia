@@ -27,7 +27,6 @@ source_set("top") {
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/code-patching:self-test",
     "//zircon/kernel/lib/console",
-    "//zircon/kernel/lib/console:console_rust",
     "//zircon/kernel/lib/counters",
     "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/cxxabi-dynamic-init:headers",

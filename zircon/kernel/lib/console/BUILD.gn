@@ -5,7 +5,6 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/testing/boot_tests/boot_test.gni")
-import("//zircon/kernel/kernel_rust_crate.gni")
 
 static_library("console") {
   public_deps = [ ":headers" ]
@@ -27,25 +26,6 @@ library_headers("headers") {
     # <lib/console.h> has #include <lib/special-sections/special-sections.h>.
     "//zircon/kernel/lib/special-sections:headers",
   ]
-}
-
-kernel_rust_crate("console_rust") {
-  crate_name = "console_rust"
-  visibility = [
-    "//zircon/kernel/bin:*",
-    "//zircon/kernel/lib/console/*",
-    "//zircon/kernel/top:*",
-  ]
-  sources = [ "rust/src/lib.rs" ]
-  source_root = "rust/src/lib.rs"
-  deps = [
-    "//sdk/rust/zx-status",
-    "//src/lib/kalloc",
-    "//src/lib/zr",
-    "//zircon/kernel/lib/debuglog:debuglog-rs",
-    "//zircon/kernel/platform:platform-rs",
-  ]
-  rustenv = [ "BOOT_TEST_SUCCESS_STRING=$boot_test_success_string" ]
 }
 
 group("tests") {

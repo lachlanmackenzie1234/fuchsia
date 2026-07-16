@@ -50,17 +50,14 @@
 static char* debug_buffer;
 
 /* echo commands? */
-extern "C" bool rust_console_get_echo();
-extern "C" bool rust_console_get_exit();
-extern "C" void rust_console_set_exit(bool val);
-extern "C" const cmd* rust_console_match_command(const char* name, uint8_t availability_mask);
-extern "C" int cpp_console_get_lastresult();
+static bool echo = true;
 
 /* command processor state */
 namespace {
 DECLARE_SINGLETON_MUTEX(CommandLock);
 }  // namespace
-static int lastresult;
+int lastresult;
+static bool exit_console;
 
 #if CONSOLE_ENABLE_HISTORY
 /* command history stuff */
@@ -79,15 +76,35 @@ static void dump_history(void);
 extern const cmd __start_commands[];
 extern const cmd __stop_commands[];
 
+static int cmd_help(int argc, const cmd_args* argv, uint32_t flags);
+static int cmd_echo(int argc, const cmd_args* argv, uint32_t flags);
+static int cmd_test(int argc, const cmd_args* argv, uint32_t flags);
 #if CONSOLE_ENABLE_HISTORY
 static int cmd_history(int argc, const cmd_args* argv, uint32_t flags);
 #endif
+static int cmd_boot_test_success(int argc, const cmd_args* argv, uint32_t flags);
+static int cmd_graceful_shutdown(int argc, const cmd_args* argv, uint32_t flags);
+static int cmd_and(int argc, const cmd_args* argv, uint32_t flags);
+static int cmd_repeat(int argc, const cmd_args* argv, uint32_t flags);
+static int cmd_exit(int argc, const cmd_args* argv, uint32_t flags);
 
 STATIC_COMMAND_START
+STATIC_COMMAND_MASKED("help", "this list", &cmd_help, CMD_AVAIL_ALWAYS)
+STATIC_COMMAND_MASKED("exit", "exit the command processor", &cmd_exit, CMD_AVAIL_NORMAL)
+STATIC_COMMAND_MASKED("echo", NULL, &cmd_echo, CMD_AVAIL_ALWAYS)
+STATIC_COMMAND_MASKED("and", "execute command if last command succeeded", &cmd_and,
+                      CMD_AVAIL_ALWAYS)
+STATIC_COMMAND_MASKED("repeat", "execute command in a loop for N loops or until error", &cmd_repeat,
+                      CMD_AVAIL_ALWAYS)
+STATIC_COMMAND_MASKED("test", "test the command processor", &cmd_test, CMD_AVAIL_ALWAYS)
 #if CONSOLE_ENABLE_HISTORY
 STATIC_COMMAND_MASKED("history", "command history", &cmd_history, CMD_AVAIL_ALWAYS)
 #endif
-STATIC_COMMAND_END(history)
+STATIC_COMMAND_MASKED("boot-test-success", "report boot-test success", &cmd_boot_test_success,
+                      CMD_AVAIL_ALWAYS)
+STATIC_COMMAND_MASKED("graceful-shutdown", "shut the system down gracefully",
+                      &cmd_graceful_shutdown, CMD_AVAIL_ALWAYS)
+STATIC_COMMAND_END(help)
 
 static void console_init(uint level) {
 #if CONSOLE_ENABLE_HISTORY
@@ -172,6 +189,16 @@ static const char* prev_history(uint* cursor) {
 }
 #endif
 
+static const cmd* match_command(const char* command, const uint8_t availability_mask) {
+  for (const cmd* curr_cmd = __start_commands; curr_cmd != __stop_commands; ++curr_cmd) {
+    if ((availability_mask & curr_cmd->availability_mask) != 0 &&
+        strcmp(command, curr_cmd->cmd_str) == 0) {
+      return curr_cmd;
+    }
+  }
+  return NULL;
+}
+
 static inline int cgetchar(void) {
   char c;
   int r = platform_dgetc(&c, true);
@@ -203,7 +230,7 @@ static int read_debug_line(const char** outbuffer, void* cookie) {
       switch (c) {
         case '\r':
         case '\n':
-          if (rust_console_get_echo())
+          if (echo)
             cputchar('\n');
           goto done;
 
@@ -221,7 +248,7 @@ static int read_debug_line(const char** outbuffer, void* cookie) {
 
         default:
           buffer[pos++] = c;
-          if (rust_console_get_echo())
+          if (echo)
             cputchar(c);
       }
     } else if (escape_level == 1) {
@@ -236,13 +263,13 @@ static int read_debug_line(const char** outbuffer, void* cookie) {
       switch (c) {
         case 67:  // right arrow
           buffer[pos++] = ' ';
-          if (rust_console_get_echo())
+          if (echo)
             cputchar(' ');
           break;
         case 68:  // left arrow
           if (pos > 0) {
             pos--;
-            if (rust_console_get_echo()) {
+            if (echo) {
               cputs("\b \b");  // wipe out a character
             }
           }
@@ -253,7 +280,7 @@ static int read_debug_line(const char** outbuffer, void* cookie) {
           // wipe out the current line
           while (pos > 0) {
             pos--;
-            if (rust_console_get_echo()) {
+            if (echo) {
               cputs("\b \b");  // wipe out a character
             }
           }
@@ -263,7 +290,7 @@ static int read_debug_line(const char** outbuffer, void* cookie) {
           else
             strlcpy(buffer, next_history(&history_cursor), LINE_LEN);
           pos = strlen(buffer);
-          if (rust_console_get_echo())
+          if (echo)
             cputs(buffer);
           break;
 #endif
@@ -553,7 +580,7 @@ static zx_status_t command_loop(int (*get_line)(const char**, void*), void* get_
     convert_args(argc, args);
 
     /* try to match the command */
-    const cmd* command = rust_console_match_command(args[0].str, CMD_AVAIL_NORMAL);
+    const cmd* command = match_command(args[0].str, CMD_AVAIL_NORMAL);
     if (!command) {
       printf("command \"%s\" not found\n", args[0].str);
       lastresult = -1;
@@ -563,7 +590,7 @@ static zx_status_t command_loop(int (*get_line)(const char**, void*), void* get_
     if (!locked)
       CommandLock::Get()->lock().Acquire();
 
-    rust_console_set_exit(false);
+    exit_console = false;
     lastresult = command->cmd_callback(argc, args, 0);
 
 #if WITH_LIB_ENV
@@ -582,10 +609,10 @@ static zx_status_t command_loop(int (*get_line)(const char**, void*), void* get_
     env_set_int("?", lastresult, true);
 #endif
 
-    // someone must have called console_set_exit(true) inside the command
-    if (rust_console_get_exit()) {
+    // someone must have called console_exit() inside the command
+    if (exit_console) {
       exit = true;
-      rust_console_set_exit(false);
+      exit_console = false;
       ret = ZX_ERR_CANCELED;
     }
 
@@ -597,6 +624,8 @@ static zx_status_t command_loop(int (*get_line)(const char**, void*), void* get_
   free(args);
   return ret;
 }
+
+void console_exit() { exit_console = true; }
 
 static void console_start(void) {
   debug_buffer = static_cast<char*>(malloc(LINE_LEN));
@@ -667,6 +696,49 @@ static int console_run_script_etc(const char* string, bool locked) {
 int console_run_script(const char* string) { return console_run_script_etc(string, false); }
 
 int console_run_script_locked(const char* string) { return console_run_script_etc(string, true); }
+
+static int cmd_help(int argc, const cmd_args* argv, uint32_t flags) {
+  auto print_cmds = [&flags](auto begin, auto end) {
+    // Filter out commands based on if we're called at normal or panic time.
+    const uint8_t availability_mask = (flags & CMD_FLAG_PANIC) ? CMD_AVAIL_PANIC : CMD_AVAIL_NORMAL;
+
+    printf("command list:\n");
+    for (auto it = begin; it != end; ++it) {
+      const cmd& curr_cmd = *it;
+      if ((availability_mask & curr_cmd.availability_mask) == 0) {
+        continue;
+      }
+      if (curr_cmd.help_str)
+        printf("\t%-16s: %s\n", curr_cmd.cmd_str, curr_cmd.help_str);
+    }
+  };
+
+  // If we're not panicking (and are free to allocate memory), sort the
+  // commands alphabetically before printing.
+  if (flags & CMD_FLAG_PANIC) {
+    print_cmds(__start_commands, __stop_commands);
+  } else {
+    const size_t num_cmds = __stop_commands - __start_commands;
+    fbl::AllocChecker ac;
+    auto cmds = ktl::make_unique<cmd[]>(&ac, num_cmds);
+    if (!ac.check()) {
+      return ZX_ERR_NO_MEMORY;
+    }
+    memcpy(cmds.get(), __start_commands, num_cmds * sizeof(cmd));
+    ktl::stable_sort(cmds.get(), cmds.get() + num_cmds, [](const cmd& cmd1, const cmd& cmd2) {
+      return strcmp(cmd1.cmd_str, cmd2.cmd_str) < 0;
+    });
+    print_cmds(cmds.get(), cmds.get() + num_cmds);
+  }
+
+  return 0;
+}
+
+static int cmd_echo(int argc, const cmd_args* argv, uint32_t flags) {
+  if (argc > 1)
+    echo = argv[1].b;
+  return ZX_OK;
+}
 
 static void panic_putc(char c) { platform_pputc(c); }
 
@@ -756,7 +828,7 @@ void panic_shell_start(void) {
 
     convert_args(argc, args);
 
-    const cmd* command = rust_console_match_command(args[0].str, CMD_AVAIL_PANIC);
+    const cmd* command = match_command(args[0].str, CMD_AVAIL_PANIC);
     if (!command) {
       panic_puts("command not found\n");
       continue;
@@ -764,6 +836,92 @@ void panic_shell_start(void) {
 
     command->cmd_callback(argc, args, CMD_FLAG_PANIC);
   }
+}
+
+static int cmd_test(int argc, const cmd_args* argv, uint32_t flags) {
+  int i;
+
+  printf("argc %d, argv %p\n", argc, argv);
+  for (i = 0; i < argc; i++)
+    printf("\t%d: str '%s', i %ld, u %#lx, p %p, b %d\n", i, argv[i].str, argv[i].i, argv[i].u,
+           argv[i].p, argv[i].b);
+
+  return 0;
+}
+
+static int cmd_boot_test_success(int argc, const cmd_args* argv, uint32_t flags) {
+  printf("*** Last script command result: %d ***\n", lastresult);
+  if (lastresult == 0) {
+    printf("%s\n", BOOT_TEST_SUCCESS_STRING);
+  }
+  return lastresult;
+}
+
+static int cmd_graceful_shutdown(int argc, const cmd_args* argv, uint32_t flags) {
+  printf("*** Performing graceful shutdown from kernel shell... ***\n");
+  const zx_instant_mono_t dlog_deadline = current_mono_time() + ZX_SEC(10);
+  dlog_shutdown(dlog_deadline);
+  // Does not return.
+  platform_halt(HALT_ACTION_SHUTDOWN, ZirconCrashReason::NoCrash);
+}
+
+static int cmd_exit(int argc, const cmd_args* argv, uint32_t flags) {
+  console_exit();
+
+  return 0;
+}
+
+static int cmd_and(int argc, const cmd_args* argv, uint32_t flags) {
+  if (argc < 2) {
+    printf("Usage: and COMMAND...\n");
+    return -1;
+  }
+
+  if (lastresult != 0) {
+    return lastresult;
+  }
+
+  const cmd* cmd = match_command(argv[1].str, CMD_AVAIL_NORMAL);
+  if (!cmd) {
+    printf("command \"%s\" not found\n", argv[1].str);
+    return -1;
+  }
+
+  return cmd->cmd_callback(argc - 1, argv + 1, flags);
+}
+
+static int cmd_repeat(int argc, const cmd_args* argv, uint32_t flags) {
+  if (argc < 3) {
+    printf("Usage: repeat <iterations | -1> COMMAND...\n");
+    return -1;
+  }
+
+  const cmd* cmd = match_command(argv[2].str, CMD_AVAIL_NORMAL);
+  if (!cmd) {
+    printf("command \"%s\" not found\n", argv[2].str);
+    return -1;
+  }
+
+  // negative arguments will cause it to effectively loop forever
+  size_t term = argv[1].i >= 0 ? argv[1].u : SIZE_MAX;
+  for (size_t loop = 0; loop < term; loop++) {
+    if (term == SIZE_MAX) {
+      printf("repeat (%zu): %s", loop + 1, argv[2].str);
+    } else {
+      printf("repeat (%zu/%zu): %s", loop + 1, term, argv[2].str);
+    }
+    for (int a = 3; a < argc; a++) {
+      printf(" %s", argv[a].str);
+    }
+    printf("\n");
+    int err = cmd->cmd_callback(argc - 2, argv + 2, flags);
+    if (err != 0) {
+      printf("stopping repeat due to nonzero status %d\n", err);
+      return err;
+    }
+  }
+
+  return ZX_OK;
 }
 
 static constexpr TimerSlack kSlack{ZX_MSEC(10), TIMER_SLACK_CENTER};
@@ -811,8 +969,5 @@ void kernel_shell_init() {
     console_start();
   }
 }
-
-// FFI exports.
-extern "C" int cpp_console_get_lastresult() { return lastresult; }
 
 #endif  // #if CONSOLE_ENABLED
