@@ -96,15 +96,15 @@ from the display engine to the DDIC.
 At a high level, driving a display connection can be split into the following
 concerns.
 
-* Detection - a method for the display engine to find out whether there is any
+- Detection - a method for the display engine to find out whether there is any
   DDIC on the other side of the display connection
-* Identification - a method for the display engine to find out what display
+- Identification - a method for the display engine to find out what display
   hardware (DDIC and panel) is on the other side of the display connection
-* Configuration - setting up the initial operation parameters of the hardware
+- Configuration - setting up the initial operation parameters of the hardware
   (DDIC and panel) at the other side of the connection, and changing these
   operating parameters in response to user requests or changes in circumstances
-* Video transmission - all the display connections supported by Fuchsia transmit
-  video data using the [raster scan][raster-scan] pattern
+- Video transmission - all the display connections supported by Fuchsia transmit
+  video data using the [raster scan][raster-scan]{.external} pattern
 
 In many modern use cases, such as mobile and embedded devices, the display
 engine and DDIC are in the same [housing][device-housing], also known as
@@ -135,10 +135,10 @@ from DRAM.
 Documentation from various vendors uses different acronyms to refer to the
 display engine hardware. Some of these names are below.
 
-* **DE** (Display Engine) - the term preferred by Fuchsia
-* Display Controller (DC)
-* Display Processing Unit (DPU)
-* Video Processing Unit (VPU)
+- **DE** (Display Engine) - the term preferred by Fuchsia
+- Display Controller (DC)
+- Display Processing Unit (DPU)
+- Video Processing Unit (VPU)
 
 ### GPU (Graphics Processing Unit)
 
@@ -186,17 +186,17 @@ This section will be expanded in the future.
 
 This section will be expanded in the future.
 
-* [SPI (Serial Peripheral Interface)][spi] - for low-resolution displays,
+- [SPI (Serial Peripheral Interface)][spi]{.external} - for low-resolution displays,
   generally supported by MCUs
-* [DPI (Display Pixel Interface)][dpi] - for low-resolution low-end displays;
+- [DPI (Display Pixel Interface)][dpi]{.external} - for low-resolution low-end displays;
   also called RGB in display specs
-* [DSI (Display Serial Interface)][dsi] - for high-resolution mobile displays,
+- [DSI (Display Serial Interface)][dsi]{.external} - for high-resolution mobile displays,
   supported by SoCs for wearables and phones
-* [HDMI (High-Definition Multimedia Interface)][hdmi] - for TVs and monitors,
+- [HDMI (High-Definition Multimedia Interface)][hdmi]{.external} - for TVs and monitors,
   supported by SoCs for dev boards,laptops, PCs
-* [DP (DisplayPort)][display-port] - started out in computers; supported by
+- [DP (DisplayPort)][display-port]{.external} - started out in computers; supported by
   phones because it’s the main standard for USB-C output
-* [eDP (Embedded DisplayPort)][embedded-display-port] - DisplayPort variant for
+- [eDP (Embedded DisplayPort)][embedded-display-port]{.external} - DisplayPort variant for
   internal connectors, most suitable for laptop panels
 
 [computer-graphics]: https://en.wikipedia.org/wiki/Computer_graphics

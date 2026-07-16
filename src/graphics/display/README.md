@@ -109,9 +109,9 @@ reviews.
 [dfv2]: /docs/concepts/drivers/driver_framework.md
 [dfv2-fidl]: /docs/concepts/drivers/driver_framework.md#fidl_interface
 [dfv2-migration]: /docs/development/drivers/migration/migrate-from-dfv1-to-dfv2.md
-[display-config-states]: docs/config-states.md
-[display-hardware-overview]: docs/hardware.md
-[display-register-definitions]: docs/register-definitions.md
+[display-config-states]: /docs/development/drivers/driver_guides/display/config-states.md
+[display-hardware-overview]: /docs/development/drivers/driver_guides/display/hardware.md
+[display-register-definitions]: /docs/development/drivers/driver_guides/display/register-definitions.md
 [display-coordinator-fidl]: /sdk/fidl/fuchsia.hardware.display/coordinator.fidl
 [display-engine-fidl]: /sdk/fidl/fuchsia.hardware.display.engine/engine.fidl
 [fuchsia-system-interface]: /docs/concepts/packages/system.md

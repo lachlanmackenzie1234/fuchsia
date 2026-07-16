@@ -193,13 +193,13 @@ following traits: `Copy`, `Clone`, `zerocopy::FromBytes`, `zerocopy::Immutable`,
 
 **Explanation:**
 
-* `Copy` makes it easy to reason about pointer operations
-* `Clone` is required by `Copy`
-* `zerocopy::FromBytes` proves that the type can be used to read any bit pattern
-* `zerocopy::FromZeros` is implied by `zerocopy::FromBytes`
-* `zerocopy::Immutable` proves that the type does not use interior mutability
-* `zerocopy::IntoBytes` proves that the type can be treated as a sequence of bytes
-* `zerocopy::KnownLayout` is required by other `zerocopy` derived traits
+- `Copy` makes it easy to reason about pointer operations
+- `Clone` is required by `Copy`
+- `zerocopy::FromBytes` proves that the type can be used to read any bit pattern
+- `zerocopy::FromZeros` is implied by `zerocopy::FromBytes`
+- `zerocopy::Immutable` proves that the type does not use interior mutability
+- `zerocopy::IntoBytes` proves that the type can be treated as a sequence of bytes
+- `zerocopy::KnownLayout` is required by other `zerocopy` derived traits
 
 Examples:
 
@@ -239,8 +239,8 @@ mod tests {
 
 **Guideline:** Follow the official defaults for idiomatic `use` paths:
 
-* Bring into scope: types, derive and attribute-like macros
-* Bring parent module into scope: functions, function-like macros
+- Bring into scope: types, derive and attribute-like macros
+- Bring parent module into scope: functions, function-like macros
 
 **Explanation:** Matches the established recommendation in
 [The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths].
@@ -561,10 +561,10 @@ produced by AI agents.
 
 Display drivers also follow the best practices below.
 
-* [The Rust API Guidelines][rust-api-guidelines]
-* [The Rust Style Guide][rust-style-guide] as implemented by `fx format-code`
-* [The rustdoc book][rustdoc-howto]
-* [The Rustonomicon][rustonomicon] (mostly informative, covers `unsafe` code)
+- [The Rust API Guidelines][rust-api-guidelines]{.external}
+- [The Rust Style Guide][rust-style-guide]{.external} as implemented by `fx format-code`
+- [The rustdoc book][rustdoc-howto]{.external}
+- [The Rustonomicon][rustonomicon]{.external} (mostly informative, covers `unsafe` code)
 
 [google-cpp-style-integers]: https://google.github.io/styleguide/cppguide.html#Integer_Types
 [logging-rfc]: /docs/contribute/governance/rfcs/0003_logging.md

@@ -1442,7 +1442,7 @@ the concept of panel drivers. New FIDL interfaces will be thoroughly documented.
 [coordinator-display-info-edid]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/graphics/display/drivers/coordinator/added-display-info.h;l=46-47;drc=e01ff8970a8873e522c066dda22e53b90d11c897
 [cta-861]: https://shop.cta.tech/products/cta-861
 [display-readme]: /src/graphics/display/README.md
-[display-hardware-readme]: /src/graphics/display/docs/hardware.md
+[display-hardware-readme]: /docs/development/drivers/driver_guides/display/hardware.md
 [dfv2-drivers-and-nodes]: /docs/concepts/drivers/drivers_and_nodes.md
 [fidl-display-engine-edid]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.hardware.display.engine/engine.fidl;l=200-211;drc=9e5de3fe1711ec3285450ac02e762c5c53e899bf
 [fidl-driver-transport]: /docs/development/languages/fidl/tutorials/cpp/topics/driver-transport.md

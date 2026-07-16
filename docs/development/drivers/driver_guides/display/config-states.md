@@ -164,5 +164,5 @@ low-priority enough that it’s not tested or not supported by the fabric. If th
 happens, writing to a latched configuration’s memory image may deadlock the
 fabric, bringing the entire system to a halt.
 
-[display-hardware-overview]: /src/graphics/display/docs/hardware.md
+[display-hardware-overview]: /docs/development/drivers/driver_guides/display/hardware.md
 [display-stack-overview]: /src/graphics/display/README.md

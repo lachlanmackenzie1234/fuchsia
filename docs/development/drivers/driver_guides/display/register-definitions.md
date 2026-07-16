@@ -4,9 +4,9 @@ This document aims to apply some modern software engineering practices to the
 context of driver development. The overall intent is to capitalize on the
 benefits of Fuchsia's modern environment for driver development, which are
 
-* a fully featured C++ toolchain with access to modern language features
-* (almost) full access to libraries
-* support for unit tests
+- a fully featured C++ toolchain with access to modern language features
+- (almost) full access to libraries
+- support for unit tests
 
 ## Motivation
 
@@ -65,9 +65,9 @@ is doing. This shifts bug detection earlier in the development timeline ("shift
 left"), by increasing the chances that bugs are found during code review or
 casual code inspection. Example:
 
-* Bad: `control.set_pu_en1(true).set_pdwn1(true)` is fairly inscrutable, and a
+- Bad: `control.set_pu_en1(true).set_pdwn1(true)` is fairly inscrutable, and a
   reviewer will likely gloss over the code
-* Good:
+- Good:
   `control.set_cc1_connected_to_pull_up(true).set_cc1_connected_to_pull_down(true)`
   is more likely to make a reviewer wonder if the driver will cause a
   short-circuit
@@ -103,21 +103,21 @@ bool type is a great match for these bits' values.
 To facilitate bool representation, the names of predicate bits should convey
 states (via adjectives), rather than actions (via verbs). Example:
 
-* Good: `power_savings_enabled`
-    * `if (!power_savings_enabled())` correctly reads like a getter with no side
+- Good: `power_savings_enabled`
+    - `if (!power_savings_enabled())` correctly reads like a getter with no side
        effects
-    * `set_power_savings_enabled(false)` flows nicely when read
-* Bad: `enable_power_savings`
-    * `if (!enable_power_savings())` reads like calling a method with side
+    - `set_power_savings_enabled(false)` flows nicely when read
+- Bad: `enable_power_savings`
+    - `if (!enable_power_savings())` reads like calling a method with side
       effects and checking for failure
-    * `set_enable_power_savings(false)` does not flow well
+    - `set_enable_power_savings(false)` does not flow well
 
 Prefer positive names, such as names suffixed with `_enabled` rather than
 `_disabled`. Example:
 
-* Good: `if (power_savings_enabled())`
-* Bad: `if (!power_savings_disabled())` results in a
-  [double negative][wikipedia-double-negative]
+- Good: `if (power_savings_enabled())`
+- Bad: `if (!power_savings_disabled())` results in a
+  [double negative][wikipedia-double-negative]{.external}
 
 Bits with trigger semantics can be described using the `_in_progress` suffix,
 supplemented by comments that clearly specify the driver responsibilities.
@@ -157,14 +157,14 @@ are also the best fit for driver software.
 
 The following common cases are prime candidates for normalizing.
 
-* Encodings aimed at reducing the number of bits required to represent the
+- Encodings aimed at reducing the number of bits required to represent the
   useful values
-    * biased encodings: field value \= conceptual value \+ delta
-    * scaled encodings: field value \= conceptual value \* scale
-    * logarithmic encodings: field value \= log2(conceptual value)
-    * non-integral value encodings: fixed point or unusual (not IEEE 754\)
+    - biased encodings: field value \= conceptual value \+ delta
+    - scaled encodings: field value \= conceptual value \* scale
+    - logarithmic encodings: field value \= log2(conceptual value)
+    - non-integral value encodings: fixed point or unusual (not IEEE 754\)
       floating point representations
-* Concepts where we standardized on a hardware-agnostic representation
+- Concepts where we standardized on a hardware-agnostic representation
 
 Usually, normalizing is best done right in the register class, by adding a
 getter and setter. This minimizes the amount of code exposed to the suboptimal
@@ -202,22 +202,22 @@ The example below shows a field definition with a helper.
 
 Some common patterns are below.
 
-* Raw field name suffixes can convey unusual scaling. Example:
-    * raw field name (used by helpers): `clock_speed_19200hz` communicates that
+- Raw field name suffixes can convey unusual scaling. Example:
+    - raw field name (used by helpers): `clock_speed_19200hz` communicates that
       the value is expressed in multiples of a 19.2 kHz base clock
-    * helper name (used by the rest of the code): `clock_speed_hz` appears to be
+    - helper name (used by the rest of the code): `clock_speed_hz` appears to be
       easier to use (which is what we want), and conveys that the value is
-      expressed in [Hertz (Hz)](https://en.wikipedia.org/wiki/Hertz)
-* Raw field name suffixes can convey biasing. Example:
-    * raw field name: `cycle_count_minus_one` communicates that the value uses
+      expressed in [Hertz (Hz)](https://en.wikipedia.org/wiki/Hertz){.external}
+- Raw field name suffixes can convey biasing. Example:
+    - raw field name: `cycle_count_minus_one` communicates that the value uses
       minus-one encoding (1 is encoded as 0, 2 is encoded as 1, so on)
-    * helper name: `cycle_count` appears to be easier to use, which is what we
+    - helper name: `cycle_count` appears to be easier to use, which is what we
       want
-* Generic suffixes `_select` or `_bits` make it clear that the raw has an
+- Generic suffixes `_select` or `_bits` make it clear that the raw has an
   unusual encoding. Example:
-    * raw field name: `image_width_bits`
-    * helper name: `image_width_px` (widths are generally expressed in
-      [pixels][wikipedia-pixel])
+    - raw field name: `image_width_bits`
+    - helper name: `image_width_px` (widths are generally expressed in
+      [pixels][wikipedia-pixel]{.external})
 
 Encoding-normalizing helpers are also an opportunity to optimize the type used
 to represent the normalized values. For example,
@@ -339,9 +339,9 @@ ZX_DEBUG_ASSERT_MSG(channel_count <= 4, "Invalid channel count: %d", channel_cou
 
 Precondition checking uses one of the following methods.
 
-* `ZX_ASSERT()` crashes the driver in production when the precondition is not
+- `ZX_ASSERT()` crashes the driver in production when the precondition is not
   met. This brings down all drivers that share the driver host process.
-* `ZX_DEBUG_ASSERT()` only crashes the driver in development builds when the
+- `ZX_DEBUG_ASSERT()` only crashes the driver in development builds when the
   precondition is not met.
 
 `ZX_DEBUG_ASSERT()` is appropriate when continued execution will only result in
@@ -366,12 +366,12 @@ strictly to support the debug checks.
 
 By contrast, precondition checking is infeasible in the following situations.
 
-* The check would introduce side-effects.
-    * We must assume that register access has side-effects, so checks that
+- The check would introduce side-effects.
+    - We must assume that register access has side-effects, so checks that
       require register access are unsafe.
-    * The CPU time consumed by the checks becomes an undesirable side-effect in
+    - The CPU time consumed by the checks becomes an undesirable side-effect in
       time-sensitive environments, such as interrupt handlers.
-* Implementing the check adds coupling (for getting information from multiple
+- Implementing the check adds coupling (for getting information from multiple
   places), and the architectural cost of the coupling exceeds the estimated
   benefit of reducing bugs.
 
@@ -442,9 +442,9 @@ section.
 
 The code contains references to the following documents.
 
-* [the FUSB302B datasheet][datasheet] - Revision 5, August 2021, publication
+- [the FUSB302B datasheet][datasheet]{.external} - Revision 5, August 2021, publication
   order number FUSB302B/D - referenced as "Rev 5 datasheet"
-* [the USB Power Delivery Specification][usb-pd-spec] - Revision 3.1,
+- [the USB Power Delivery Specification][usb-pd-spec]{.external} - Revision 3.1,
   Version 1.7, January 2023 - referenced as `usbpd3.1`
 
 [datasheet]: https://www.onsemi.com/pdf/datasheet/fusb302b-d.pdf
