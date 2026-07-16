@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.math/cpp/wire.h>
 
+#include <ostream>
+
 #include "src/ui/scenic/lib/types/util/hash_combine.h"
 
 namespace types {
