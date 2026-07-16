@@ -79,7 +79,7 @@ source_set("fake_block_server_cc") {
     ":block_server_cc",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//src/storage/lib/block_client/cpp",
-    "//zircon/system/ulib/storage/buffer",
+    "//src/storage/lib/buffer",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -92,7 +92,7 @@ test("block_server_cc_tests") {
     "//src/devices/lib/block",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/lib/block_client/cpp",
-    "//zircon/system/ulib/storage/buffer",
+    "//src/storage/lib/buffer",
   ]
 }
 

@@ -31,9 +31,9 @@ zx_library("gpt") {
     deps = [
       "//sdk/lib/fit",
       "//src/lib/utf_conversion",
+      "//src/storage/lib/range",
       "//zircon/system/ulib/fbl",
       "//zircon/system/ulib/mbr",
-      "//zircon/system/ulib/range",
       "//zircon/third_party/ulib/cksum",
       "//zircon/third_party/ulib/safemath",
     ]

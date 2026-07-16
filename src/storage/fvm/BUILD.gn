@@ -38,9 +38,9 @@ static_library("fvm") {
     "//sdk/lib/stdcompat",
     "//src/lib/digest",
     "//src/lib/uuid",
+    "//src/storage/lib/range",
     "//third_party/lz4",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/range",
     "//zircon/third_party/ulib/safemath",
   ]
   public_deps = [

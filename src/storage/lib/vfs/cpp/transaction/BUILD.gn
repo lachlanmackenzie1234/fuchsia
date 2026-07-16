@@ -15,12 +15,12 @@ static_library("transaction") {
     "transaction_handler.h",
   ]
   public_deps = [
-    "//zircon/system/ulib/storage/buffer",
-    "//zircon/system/ulib/storage/operation",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/operation",
   ]
   deps = [
-    "//zircon/system/ulib/storage/buffer",
-    "//zircon/system/ulib/storage/operation",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/operation",
   ]
 
   if (is_fuchsia) {
@@ -54,9 +54,9 @@ test("fs-transaction-test") {
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/lib/block_client/cpp:interface",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/operation",
     "//third_party/googletest:gtest",
-    "//zircon/system/ulib/storage/buffer",
-    "//zircon/system/ulib/storage/operation",
     "//zircon/system/ulib/zx",
   ]
 }

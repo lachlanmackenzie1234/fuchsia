@@ -22,8 +22,8 @@ cc_library(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "//src/storage/lib/block_protocol:block_fifo",
+        "//src/storage/lib/buffer",
         "//zircon/system/ulib/fzl",
-        "//zircon/system/ulib/storage/buffer",
         "//zircon/third_party/ulib/safemath",
         "@fuchsia_sdk//fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
         "@fuchsia_sdk//pkg/zx",
@@ -47,7 +47,7 @@ cc_library(
     deps = [
         ":interface",
         "//src/storage/lib/block_protocol:block_fifo",
-        "//zircon/system/ulib/storage/buffer",
+        "//src/storage/lib/buffer",
         "//zircon/third_party/ulib/safemath",
         "@fuchsia_sdk//fidl/fuchsia.io:fuchsia.io_cpp",
         "@fuchsia_sdk//fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",

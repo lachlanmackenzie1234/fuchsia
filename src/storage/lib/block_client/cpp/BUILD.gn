@@ -24,7 +24,7 @@ source_set("interface") {
     "//src/storage/lib/block_protocol:block_fifo",
 
     # For storage/buffer/...
-    "//zircon/system/ulib/storage/buffer",
+    "//src/storage/lib/buffer",
 
     # For fidl/fuchsia.../wire.h
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
@@ -57,7 +57,7 @@ static_library("cpp") {
     "//src/storage/lib/block_protocol:block_fifo",
 
     # client.h has #include <storage/buffer/vmoid_registry.h>.
-    "//zircon/system/ulib/storage/buffer",
+    "//src/storage/lib/buffer",
 
     # client.h has #include <lib/zx/fifo.h>.
     "//zircon/system/ulib/zx",
@@ -91,9 +91,9 @@ static_library("fake_device") {
   sources = [ "fake_block_device.cc" ]
   public_deps = [
     ":cpp",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/range",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/range",
-    "//zircon/system/ulib/storage/buffer",
     "//zircon/system/ulib/zx",
   ]
   deps = [
@@ -101,8 +101,8 @@ static_library("fake_device") {
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/syslog/cpp",
     "//src/storage/fvm",
-    "//zircon/system/ulib/range",
-    "//zircon/system/ulib/storage/buffer",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/range",
   ]
 }
 
@@ -132,8 +132,8 @@ test("block_client_unit_test") {
     "//src/devices/lib/block",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fvm",
+    "//src/storage/lib/range",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/range",
   ]
 }
 

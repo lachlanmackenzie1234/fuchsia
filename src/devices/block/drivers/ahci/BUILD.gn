@@ -69,7 +69,7 @@ test("ahci-unittest-bin") {
     "//src/lib/testing/predicates",
     "//src/storage/lib/block_protocol:block_fifo",
     "//src/storage/lib/block_server:block_server_cc",
-    "//zircon/system/ulib/storage/buffer",
+    "//src/storage/lib/buffer",
   ]
 }
 

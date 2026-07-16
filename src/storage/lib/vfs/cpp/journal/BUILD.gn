@@ -29,9 +29,9 @@ static_library("journal") {
   public_deps = [
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/operation",
     "//src/storage/lib/vfs/cpp/transaction",
-    "//zircon/system/ulib/storage/buffer",
-    "//zircon/system/ulib/storage/operation",
     "//zircon/system/ulib/zx",
   ]
 
@@ -53,7 +53,7 @@ static_library("journal") {
       "replay_tree.h",
       "superblock.cc",
     ]
-    public_deps += [ "//zircon/system/ulib/range" ]
+    public_deps += [ "//src/storage/lib/range" ]
     deps += [
       "//sdk/lib/syslog/cpp",
       "//zircon/system/public",
@@ -97,12 +97,12 @@ test("journal-unit") {
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/lib/block_client/cpp:interface",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/operation",
     "//src/storage/lib/vfs/cpp/transaction",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/storage/buffer",
-    "//zircon/system/ulib/storage/operation",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/cksum",
@@ -116,9 +116,9 @@ source_set("fuzz-utils") {
   public_deps = [
     ":journal",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_c",
+    "//src/storage/lib/buffer",
+    "//src/storage/lib/operation",
     "//src/storage/lib/vfs/cpp/transaction",
-    "//zircon/system/ulib/storage/buffer",
-    "//zircon/system/ulib/storage/operation",
     "//zircon/system/ulib/zx",
   ]
 }
