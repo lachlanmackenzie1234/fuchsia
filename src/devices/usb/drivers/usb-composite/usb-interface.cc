@@ -220,7 +220,7 @@ zx_status_t UsbInterface::ConfigureEndpoints(uint8_t interface_id, uint8_t alt_s
             status = ret;
           }
         }
-        active_endpoints_[i] = new_ep->descriptor();
+        active_endpoints_[i] = new_ep.has_value() ? new_ep->descriptor() : nullptr;
       }
     }
   }
