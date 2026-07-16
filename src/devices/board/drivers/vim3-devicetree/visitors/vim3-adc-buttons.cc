@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
-#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/driver_base.h>
@@ -22,8 +21,8 @@ zx::result<> Vim3AdcButtonsVisitor::DriverVisit(fdf_devicetree::Node& node,
 }
 
 zx::result<> Vim3AdcButtonsVisitor::AddAdcButtonsMetadata(fdf_devicetree::Node& node) {
-  auto func_types = std::vector<fuchsia_input_report::ConsumerControlButton>{
-      fuchsia_input_report::ConsumerControlButton::kFunction};
+  auto func_types = std::vector<fuchsia_input::ConsumerControlButton>{
+      fuchsia_input::ConsumerControlButton::kFunction};
   auto func_adc_config =
       fuchsia_buttons::AdcButtonConfig().channel_idx(2).release_threshold(1'000).press_threshold(
           70);

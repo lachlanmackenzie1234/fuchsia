@@ -602,7 +602,7 @@ TEST_F(Tcs3400Test, GetDescriptor) {
   for (const auto& axis : sensor_axes) {
     EXPECT_EQ(axis.axis.range.min, 0);
     EXPECT_EQ(axis.axis.range.max, UINT16_MAX);
-    EXPECT_EQ(axis.axis.unit.type, fuchsia_input_report::wire::UnitType::kOther);
+    EXPECT_EQ(axis.axis.unit.type, fuchsia_input::wire::UnitType::kOther);
     EXPECT_EQ(axis.axis.unit.exponent, 0);
   }
 
@@ -624,7 +624,7 @@ TEST_F(Tcs3400Test, GetDescriptor) {
 
   EXPECT_EQ(feature_descriptor.report_interval().range.min, 0);
   EXPECT_EQ(feature_descriptor.report_interval().unit.type,
-            fuchsia_input_report::wire::UnitType::kSeconds);
+            fuchsia_input::wire::UnitType::kSeconds);
   EXPECT_EQ(feature_descriptor.report_interval().unit.exponent, -6);
 
   EXPECT_TRUE(feature_descriptor.supports_reporting_state());
@@ -634,7 +634,7 @@ TEST_F(Tcs3400Test, GetDescriptor) {
   EXPECT_EQ(feature_descriptor.sensitivity()[0].axis.range.min, 1);
   EXPECT_EQ(feature_descriptor.sensitivity()[0].axis.range.max, 64);
   EXPECT_EQ(feature_descriptor.sensitivity()[0].axis.unit.type,
-            fuchsia_input_report::wire::UnitType::kOther);
+            fuchsia_input::wire::UnitType::kOther);
   EXPECT_EQ(feature_descriptor.sensitivity()[0].axis.unit.exponent, 0);
 
   EXPECT_EQ(feature_descriptor.threshold_high()[0].type,
@@ -642,7 +642,7 @@ TEST_F(Tcs3400Test, GetDescriptor) {
   EXPECT_EQ(feature_descriptor.threshold_high()[0].axis.range.min, 0);
   EXPECT_EQ(feature_descriptor.threshold_high()[0].axis.range.max, UINT16_MAX);
   EXPECT_EQ(feature_descriptor.threshold_high()[0].axis.unit.type,
-            fuchsia_input_report::wire::UnitType::kOther);
+            fuchsia_input::wire::UnitType::kOther);
   EXPECT_EQ(feature_descriptor.threshold_high()[0].axis.unit.exponent, 0);
 
   EXPECT_EQ(feature_descriptor.threshold_low()[0].type,
@@ -650,7 +650,7 @@ TEST_F(Tcs3400Test, GetDescriptor) {
   EXPECT_EQ(feature_descriptor.threshold_low()[0].axis.range.min, 0);
   EXPECT_EQ(feature_descriptor.threshold_low()[0].axis.range.max, UINT16_MAX);
   EXPECT_EQ(feature_descriptor.threshold_low()[0].axis.unit.type,
-            fuchsia_input_report::wire::UnitType::kOther);
+            fuchsia_input::wire::UnitType::kOther);
   EXPECT_EQ(feature_descriptor.threshold_low()[0].axis.unit.exponent, 0);
 }
 

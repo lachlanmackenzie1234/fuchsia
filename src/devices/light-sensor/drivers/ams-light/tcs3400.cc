@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
+#include <fidl/fuchsia.input/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -37,39 +38,39 @@ constexpr int64_t kMaxIntegrationTimeStep = 256;
 
 #define GET_BYTE(val, shift) static_cast<uint8_t>(((val) >> (shift)) & 0xFF)
 
-constexpr fuchsia_input_report::wire::Axis kLightSensorAxis = {
+constexpr fuchsia_input::wire::Axis kLightSensorAxis = {
     .range = {.min = 0, .max = UINT16_MAX},
     .unit =
         {
-            .type = fuchsia_input_report::wire::UnitType::kOther,
+            .type = fuchsia_input::wire::UnitType::kOther,
             .exponent = 0,
         },
 };
 
-constexpr fuchsia_input_report::wire::Axis kReportIntervalAxis = {
+constexpr fuchsia_input::wire::Axis kReportIntervalAxis = {
     .range = {.min = 0, .max = INT64_MAX},
     .unit =
         {
-            .type = fuchsia_input_report::wire::UnitType::kSeconds,
+            .type = fuchsia_input::wire::UnitType::kSeconds,
             .exponent = -6,
         },
 };
 
-constexpr fuchsia_input_report::wire::Axis kSensitivityAxis = {
+constexpr fuchsia_input::wire::Axis kSensitivityAxis = {
     .range = {.min = 1, .max = 64},
     .unit =
         {
-            .type = fuchsia_input_report::wire::UnitType::kOther,
+            .type = fuchsia_input::wire::UnitType::kOther,
             .exponent = 0,
         },
 };
 
-constexpr fuchsia_input_report::wire::Axis kSamplingRateAxis = {
+constexpr fuchsia_input::wire::Axis kSamplingRateAxis = {
     .range = {.min = kIntegrationTimeStepSize.to_usecs(),
               .max = kIntegrationTimeStepSize.to_usecs() * kMaxIntegrationTimeStep},
     .unit =
         {
-            .type = fuchsia_input_report::wire::UnitType::kSeconds,
+            .type = fuchsia_input::wire::UnitType::kSeconds,
             .exponent = -6,
         },
 };
