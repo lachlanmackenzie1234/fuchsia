@@ -12,7 +12,7 @@ https://fuchsia.dev/fuchsia-src/contribute/sdk/categories.
 
 # Stable FIDL libraries in the partner category.
 # All are included in the IDK.
-# LINT.IfChange(partner_libraries)
+# LINT.IfChange(partner_stable_libraries)
 PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture_idk",
@@ -196,9 +196,11 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_idk",
     "//zircon/vdso/zx:zx_idk",
 ]
+# LINT.ThenChange(BUILD.gn:partner_stable_libraries)
 
 # Unstable FIDL libraries in the partner category.
 # All are included in the IDK.
+# LINT.IfChange(partner_unstable_libraries)
 PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_idk",
@@ -264,7 +266,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_idk",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_idk",
 ]
-# LINT.ThenChange(BUILD.gn:partner_libraries)
+# LINT.ThenChange(BUILD.gn:partner_unstable_libraries)
 
 # FIDL libraries in the prebuilt category. All are stable.
 # None are included in the IDK, but they may be used by prebuilt libraries in the IDK.

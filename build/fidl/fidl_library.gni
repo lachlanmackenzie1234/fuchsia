@@ -102,6 +102,17 @@ template("fidl_library") {
   # All libraries in an SDK category require compatibility tests.
   requires_compatibility_tests = defined(invoker.sdk_category)
 
+  assert(
+      defined(invoker.sdk_category) == defined(invoker.stable),
+      "`stable` must be specified if and only if `sdk_category` is specified.")
+
+  assert(
+      !(defined(invoker.stable) && invoker.stable == false &&
+            defined(invoker.versioned) && invoker.versioned != "unversioned"),
+      "`stable` must not be `false` when `versioned` is specified")
+
+  stable = defined(invoker.stable) && invoker.stable
+
   is_unversioned_vendor_sdk = false
 
   # Validate `sdk_category` while determining `category_allowlist_deps`, which
@@ -142,7 +153,13 @@ template("fidl_library") {
         category_allowlist_deps = []
         is_unversioned_vendor_sdk = true
       } else {
-        category_allowlist_deps = [ "//sdk/fidl:sdk_partner_libs_allowlist" ]
+        if (stable) {
+          category_allowlist_deps =
+              [ "//sdk/fidl:sdk_partner_stable_libs_allowlist" ]
+        } else {
+          category_allowlist_deps =
+              [ "//sdk/fidl:sdk_partner_unstable_libs_allowlist" ]
+        }
       }
     } else {
       assert(
@@ -170,17 +187,6 @@ template("fidl_library") {
       category_allowlist_deps != [] || is_unversioned_vendor_sdk ||
           !defined(invoker.sdk_category),
       "Libraries with an SDK category must be in an allowlist to ensure they are compatibility tested and included in the IDK as appropriate.")
-
-  assert(
-      defined(invoker.sdk_category) == defined(invoker.stable),
-      "`stable` must be specified if and only if `sdk_category` is specified.")
-
-  assert(
-      !(defined(invoker.stable) && invoker.stable == false &&
-            defined(invoker.versioned) && invoker.versioned != "unversioned"),
-      "`stable` must not be `false` when `versioned` is specified")
-
-  stable = defined(invoker.stable) && invoker.stable
 
   # All stable libraries must be included in an SDK [category] and require
   # compatibility tests, but the inverse is not always true.

@@ -23,7 +23,7 @@ import("//build/sdk/sdk_molecule.gni")
 # IDK.
 #
 # For FIDL, the ":fidl" target in this file depends on the "_sdk" target for all
-# FIDL libraries in `_partner_idk_fidl_libraries_targets_list`. For all other
+# FIDL libraries in the partner category. For all other
 # categories, the ":<category>_fidl_libraries_non_sdk_molecule" target depends
 # on the "_sdk" target for all FIDL libraries in the category. For libraries
 # other than "compat_test", ":fidl" takes a `non_sdk_deps` on these molecules,
@@ -57,13 +57,13 @@ sdk_collection("fidl_category_check_collection") {
   category = "partner"
 }
 
-# The list of FIDL libraries distributed in the partner IDK.
+# Stable FIDL libraries distributed in the partner IDK.
 # Targets must be included if and only if the `fidl()` target specifies:
-# `sdk_category = "partner"`.
+# `sdk_category = "partner"` and `stable = true`.
 # When removing a library from all such lists, delete all of its history files:
 #   git rm sdk/history/*/<library_name>.api_summary.json
-# LINT.IfChange(partner_libraries)
-_partner_idk_fidl_libraries_targets_list = [
+# LINT.IfChange(partner_stable_libraries)
+_partner_idk_stable_fidl_libraries_targets_list = [
   # keep-sorted: begin
   "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture",
   "//sdk/fidl/fuchsia.accessibility.semantics:fuchsia.accessibility.semantics",
@@ -83,10 +83,8 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys",
   "//sdk/fidl/fuchsia.bluetooth.test:fuchsia.bluetooth.test",
   "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth",
-  "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata",
   "//sdk/fidl/fuchsia.buildinfo.test:fuchsia.buildinfo.test",
   "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo",
-  "//sdk/fidl/fuchsia.buttons:fuchsia.buttons",
   "//sdk/fidl/fuchsia.camera2.hal:fuchsia.camera2.hal",
   "//sdk/fidl/fuchsia.camera2:fuchsia.camera2",
   "//sdk/fidl/fuchsia.camera3:fuchsia.camera3",
@@ -113,85 +111,34 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics",
   "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development",
   "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework",
-  "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata",
   "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar",
   "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test",
-  "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token",
   "//sdk/fidl/fuchsia.element:fuchsia.element",
   "//sdk/fidl/fuchsia.factory.wlan:fuchsia.factory.wlan",
   "//sdk/fidl/fuchsia.factory:fuchsia.factory",
   "//sdk/fidl/fuchsia.feedback:fuchsia.feedback",
   "//sdk/fidl/fuchsia.fonts:fuchsia.fonts",
-  "//sdk/fidl/fuchsia.location.gnss.types:fuchsia.location.gnss.types",
   "//sdk/fidl/fuchsia.gpu.agis:fuchsia.gpu.agis",
   "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma",
   "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc",
-  "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl",
-  "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata",
   "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing",
   "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio",
-  "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume",
   "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth",
   "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock",
   "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl",
-  "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl",
-  "//sdk/fidl/fuchsia.hardware.google.nanohub:fuchsia.hardware.google.nanohub",
-  "//sdk/fidl/fuchsia.hardware.gnss:fuchsia.hardware.gnss",
   "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio",
-  "//sdk/fidl/fuchsia.hardware.haptics:fuchsia.hardware.haptics",
-  "//sdk/fidl/fuchsia.hardware.hrtimer:fuchsia.hardware.hrtimer",
-  "//sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo",
   "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c",
-  "//sdk/fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl",
-  "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect",
   "//sdk/fidl/fuchsia.hardware.light:fuchsia.hardware.light",
-  "//sdk/fidl/fuchsia.hardware.mailbox:fuchsia.hardware.mailbox",
-  "//sdk/fidl/fuchsia.hardware.mediacodec:fuchsia.hardware.mediacodec",
-  "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver",
   "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network",
-  "//sdk/fidl/fuchsia.hardware.nfc:fuchsia.hardware.nfc",
   "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci",
   "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin",
   "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl",
-  "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus",
   "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device",
   "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor",
   "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol",
-  "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power",
-  "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain",
-  "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery",
-  "//sdk/fidl/fuchsia.hardware.power.charger:fuchsia.hardware.power.charger",
-  "//sdk/fidl/fuchsia.hardware.power.source:fuchsia.hardware.power.source",
-  "//sdk/fidl/fuchsia.hardware.power.usb:fuchsia.hardware.power.usb",
-  "//sdk/fidl/fuchsia.hardware.qualcomm.fastrpc:fuchsia.hardware.qualcomm.fastrpc",
-  "//sdk/fidl/fuchsia.hardware.qualcomm.router:fuchsia.hardware.qualcomm.router",
   "//sdk/fidl/fuchsia.hardware.radar:fuchsia.hardware.radar",
-  "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers",
-  "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset",
-  "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption",
   "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc",
-  "//sdk/fidl/fuchsia.hardware.sdhci:fuchsia.hardware.sdhci",
-  "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio",
-  "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc",
-  "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial",
-  "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl",
-  "//sdk/fidl/fuchsia.hardware.sharedmemory:fuchsia.hardware.sharedmemory",
-  "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo",
-  "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi",
-  "//sdk/fidl/fuchsia.hardware.spiimpl:fuchsia.hardware.spiimpl",
-  "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi",
-  "//sdk/fidl/fuchsia.hardware.power.suspend:fuchsia.hardware.power.suspend",
   "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature",
-  "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint",
-  "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy",
-  "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci",
-  "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor",
-  "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint",
-  "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy",
-  "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy",
-  "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request",
-  "//sdk/fidl/fuchsia.hardware.uwb:fuchsia.hardware.uwb",
-  "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg",
   "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo",
   "//sdk/fidl/fuchsia.images2:fuchsia.images2",
   "//sdk/fidl/fuchsia.images:fuchsia.images",
@@ -230,16 +177,13 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.migration:fuchsia.migration",
   "//sdk/fidl/fuchsia.net.http:fuchsia.net.http",
   "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces",
-  "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers",
   "//sdk/fidl/fuchsia.net.mdns:fuchsia.net.mdns",
   "//sdk/fidl/fuchsia.net.reachability:fuchsia.net.reachability",
   "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes",
   "//sdk/fidl/fuchsia.net.stackmigrationdeprecated:fuchsia.net.stackmigrationdeprecated",
   "//sdk/fidl/fuchsia.net:fuchsia.net",
   "//sdk/fidl/fuchsia.pkg.resolution:fuchsia.pkg.resolution",
-  "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker",
   "//sdk/fidl/fuchsia.power.clientlevel:fuchsia.power.clientlevel",
-  "//sdk/fidl/fuchsia.power.observability:fuchsia.power.observability",
   "//sdk/fidl/fuchsia.power.profile:fuchsia.power.profile",
   "//sdk/fidl/fuchsia.power.system:fuchsia.power.system",
   "//sdk/fidl/fuchsia.power.systemmode:fuchsia.power.systemmode",
@@ -254,12 +198,10 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.settings.policy:fuchsia.settings.policy",
   "//sdk/fidl/fuchsia.settings:fuchsia.settings",
   "//sdk/fidl/fuchsia.storage.blobfs:fuchsia.storage.blobfs",
-  "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block",
   "//sdk/fidl/fuchsia.storage.ftl:fuchsia.storage.ftl",
   "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo",
   "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
   "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem",
-  "//sdk/fidl/fuchsia.system.state:fuchsia.system.state",
   "//sdk/fidl/fuchsia.test:fuchsia.test",
   "//sdk/fidl/fuchsia.thermal:fuchsia.thermal",
   "//sdk/fidl/fuchsia.time.alarms:fuchsia.time.alarms",
@@ -292,26 +234,98 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.update.config:fuchsia.update.config",
   "//sdk/fidl/fuchsia.update:fuchsia.update",
   "//sdk/fidl/fuchsia.url:fuchsia.url",
-  "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy",
   "//sdk/fidl/fuchsia.version:fuchsia.version",
   "//sdk/fidl/fuchsia.weave:fuchsia.weave",
   "//sdk/fidl/fuchsia.web:fuchsia.web",
   "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common",
   "//sdk/fidl/fuchsia.wlan.driver:fuchsia.wlan.driver",
-  "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac",
   "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211",
   "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl",
   "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy",
   "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:fuchsia.wlan.product.deprecatedclient",
   "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration",
-  "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac",
-  "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats",
   "//zircon/vdso/zx:zx",
 
   # keep-sorted: end
 ]
 
-# LINT.ThenChange(category_lists.bzl:partner_libraries)
+# LINT.ThenChange(category_lists.bzl:partner_stable_libraries)
+
+# Unstable FIDL libraries distributed in the partner IDK.
+# Targets must be included if and only if the `fidl()` target specifies:
+# `sdk_category = "partner"` and `stable = false`.
+# When removing a library from all such lists, delete all of its history files:
+#   git rm sdk/history/*/<library_name>.api_summary.json
+# LINT.IfChange(partner_unstable_libraries)
+_partner_idk_unstable_fidl_libraries_targets_list = [
+  # keep-sorted: begin
+  "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata",
+  "//sdk/fidl/fuchsia.buttons:fuchsia.buttons",
+  "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata",
+  "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token",
+  "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl",
+  "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata",
+  "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume",
+  "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl",
+  "//sdk/fidl/fuchsia.hardware.gnss:fuchsia.hardware.gnss",
+  "//sdk/fidl/fuchsia.hardware.google.nanohub:fuchsia.hardware.google.nanohub",
+  "//sdk/fidl/fuchsia.hardware.haptics:fuchsia.hardware.haptics",
+  "//sdk/fidl/fuchsia.hardware.hrtimer:fuchsia.hardware.hrtimer",
+  "//sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo",
+  "//sdk/fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl",
+  "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption",
+  "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect",
+  "//sdk/fidl/fuchsia.hardware.mailbox:fuchsia.hardware.mailbox",
+  "//sdk/fidl/fuchsia.hardware.mediacodec:fuchsia.hardware.mediacodec",
+  "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver",
+  "//sdk/fidl/fuchsia.hardware.nfc:fuchsia.hardware.nfc",
+  "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus",
+  "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery",
+  "//sdk/fidl/fuchsia.hardware.power.charger:fuchsia.hardware.power.charger",
+  "//sdk/fidl/fuchsia.hardware.power.source:fuchsia.hardware.power.source",
+  "//sdk/fidl/fuchsia.hardware.power.suspend:fuchsia.hardware.power.suspend",
+  "//sdk/fidl/fuchsia.hardware.power.usb:fuchsia.hardware.power.usb",
+  "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power",
+  "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain",
+  "//sdk/fidl/fuchsia.hardware.qualcomm.fastrpc:fuchsia.hardware.qualcomm.fastrpc",
+  "//sdk/fidl/fuchsia.hardware.qualcomm.router:fuchsia.hardware.qualcomm.router",
+  "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers",
+  "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset",
+  "//sdk/fidl/fuchsia.hardware.sdhci:fuchsia.hardware.sdhci",
+  "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio",
+  "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc",
+  "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial",
+  "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl",
+  "//sdk/fidl/fuchsia.hardware.sharedmemory:fuchsia.hardware.sharedmemory",
+  "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo",
+  "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi",
+  "//sdk/fidl/fuchsia.hardware.spiimpl:fuchsia.hardware.spiimpl",
+  "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi",
+  "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint",
+  "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy",
+  "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci",
+  "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor",
+  "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint",
+  "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy",
+  "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy",
+  "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request",
+  "//sdk/fidl/fuchsia.hardware.uwb:fuchsia.hardware.uwb",
+  "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg",
+  "//sdk/fidl/fuchsia.location.gnss.types:fuchsia.location.gnss.types",
+  "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers",
+  "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker",
+  "//sdk/fidl/fuchsia.power.observability:fuchsia.power.observability",
+  "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block",
+  "//sdk/fidl/fuchsia.system.state:fuchsia.system.state",
+  "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy",
+  "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac",
+  "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac",
+  "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats",
+
+  # keep-sorted: end
+]
+
+# LINT.ThenChange(category_lists.bzl:partner_unstable_libraries)
 
 # Fuchsia IDL (FIDL) files defining much of the API for the SDK.
 sdk_molecule("fidl") {
@@ -323,7 +337,9 @@ sdk_molecule("fidl") {
   ]
 
   deps = []
-  foreach(fidl_library_path, _partner_idk_fidl_libraries_targets_list) {
+  foreach(fidl_library_path,
+          _partner_idk_stable_fidl_libraries_targets_list +
+              _partner_idk_unstable_fidl_libraries_targets_list) {
     deps += [ "${fidl_library_path}_sdk($fidl_toolchain)" ]
   }
 
@@ -338,8 +354,12 @@ sdk_molecule("fidl") {
   ]
 }
 
-group("sdk_partner_libs_allowlist") {
-  visibility = _partner_idk_fidl_libraries_targets_list
+group("sdk_partner_stable_libs_allowlist") {
+  visibility = _partner_idk_stable_fidl_libraries_targets_list
+}
+
+group("sdk_partner_unstable_libs_allowlist") {
+  visibility = _partner_idk_unstable_fidl_libraries_targets_list
 }
 
 # The list of FIDL libraries in the "prebuilt" SDK category.
@@ -488,14 +508,16 @@ group("sdk_compat_test_libs_allowlist") {
 
 # Ensure the lists are mutually exclusive.
 assert(
-    _partner_idk_fidl_libraries_targets_list +
+    _partner_idk_stable_fidl_libraries_targets_list +
+        _partner_idk_unstable_fidl_libraries_targets_list +
         _prebuilt_fidl_libraries_targets_list +
         _host_tool_fidl_libraries_targets_list +
         _compat_test_fidl_libraries_targets_list -
+        _partner_idk_unstable_fidl_libraries_targets_list -
         _prebuilt_fidl_libraries_targets_list -
         _host_tool_fidl_libraries_targets_list -
         _compat_test_fidl_libraries_targets_list ==
-        _partner_idk_fidl_libraries_targets_list,
+        _partner_idk_stable_fidl_libraries_targets_list,
     "A FIDL library appears in more than one SDK category list. If adding a library to a category, remove it from the other.")
 
 group("tests") {
