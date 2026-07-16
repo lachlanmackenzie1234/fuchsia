@@ -15,11 +15,11 @@ If such a test fails, it will present all the details of `a` and `b`.
 But you have to spot the differences yourself, which is not always straightforward,
 like here:
 
-![standard assertion](https://raw.githubusercontent.com/colin-kiegel/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/standard_assertion.png)
+![standard assertion](https://raw.githubusercontent.com/rust-pretty-assertions/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/standard_assertion.png)
 
 Wouldn't that task be _much_ easier with a colorful diff?
 
-![pretty assertion](https://raw.githubusercontent.com/colin-kiegel/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/pretty_assertion.png)
+![pretty assertion](https://raw.githubusercontent.com/rust-pretty-assertions/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/pretty_assertion.png)
 
 Yep — and you only need **one line of code** to make it happen:
 
@@ -109,3 +109,7 @@ Unless you explicitly state otherwise, any contribution intentionally
 submitted for inclusion in the work by you, as defined in the Apache-2.0
 license, shall be dual licensed as above, without any additional terms or
 conditions.
+
+## Development
+
+- Cut a new release by creating a GitHub release with tag. Crate will be built and uploaded to crates.io by GHA.

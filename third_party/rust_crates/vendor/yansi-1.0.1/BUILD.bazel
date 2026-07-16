@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "pretty_assertions",
-    package_url = "https://github.com/colin-kiegel/rust-pretty-assertions",
-    package_version = "1.2.1",
+    package_name = "yansi",
+    package_url = "https://github.com/SergioBenitez/yansi",
+    package_version = "1.0.1",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "pretty_assertions",
+    name = "yansi",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,17 +53,18 @@ rust_library(
         ],
     ),
     crate_features = [
+        "alloc",
         "default",
         "std",
     ],
     crate_root = "src/lib.rs",
-    edition = "2018",
+    edition = "2021",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=pretty_assertions",
+        "crate-name=yansi",
         "manual",
         "noclippy",
         "norustfmt",
@@ -75,9 +76,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.2.1",
-    deps = [
-        "//third_party/rust_crates/vendor/ansi_term-0.12.1:ansi_term",
-        "//third_party/rust_crates/vendor/diff-0.1.13:diff",
-    ],
+    version = "1.0.1",
 )

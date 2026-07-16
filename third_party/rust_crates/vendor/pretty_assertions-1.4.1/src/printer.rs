@@ -1,14 +1,12 @@
 #[cfg(feature = "alloc")]
 use alloc::format;
-use ansi_term::{
-    Colour::{Fixed, Green, Red},
-    Style,
-};
 use core::fmt;
+use yansi::Color::{Green, Red};
+use yansi::{Paint, Style};
 
 macro_rules! paint {
-    ($f:expr, $colour:expr, $fmt:expr, $($args:tt)*) => (
-        write!($f, "{}", $colour.paint(format!($fmt, $($args)*)))
+    ($f:expr, $style:expr, $fmt:expr, $($args:tt)*) => (
+        write!($f, "{}", format!($fmt, $($args)*).paint($style))
     )
 }
 
@@ -19,10 +17,12 @@ const SIGN_LEFT: char = '<'; // - < ←
 pub(crate) fn write_header(f: &mut fmt::Formatter) -> fmt::Result {
     writeln!(
         f,
-        "{} {} / {} :",
-        Style::new().bold().paint("Diff"),
-        Red.paint(format!("{} left", SIGN_LEFT)),
-        Green.paint(format!("right {}", SIGN_RIGHT))
+        "{} {} {} / {} {} :",
+        "Diff".bold(),
+        SIGN_LEFT.red().linger(),
+        "left".resetting(),
+        "right".green().linger(),
+        SIGN_RIGHT.resetting(),
     )
 }
 
@@ -144,16 +144,18 @@ where
     }
 
     /// Push a new character into the buffer, specifying the style it should be written in.
-    fn write_with_style(&mut self, c: &char, style: Style) -> fmt::Result {
+    fn write_with_style<T: Into<Style>>(&mut self, c: &char, style: T) -> fmt::Result {
         // If the style is the same as previously, just write character
+        let style = style.into();
         if style == self.style {
             write!(self.f, "{}", c)?;
         } else {
             // Close out previous style
-            write!(self.f, "{}", self.style.suffix())?;
+            self.style.fmt_suffix(self.f)?;
 
             // Store new style and start writing it
-            write!(self.f, "{}{}", style.prefix(), c)?;
+            style.fmt_prefix(self.f)?;
+            write!(self.f, "{}", c)?;
             self.style = style;
         }
         Ok(())
@@ -162,8 +164,9 @@ where
     /// Finish any existing style and reset to default state.
     fn finish(&mut self) -> fmt::Result {
         // Close out previous style
-        writeln!(self.f, "{}", self.style.suffix())?;
-        self.style = Default::default();
+        self.style.fmt_suffix(self.f)?;
+        writeln!(self.f)?;
+        self.style = Style::new();
         Ok(())
     }
 }
@@ -178,8 +181,8 @@ fn write_inline_diff<TWrite: fmt::Write>(f: &mut TWrite, left: &str, right: &str
     let mut writer = InlineWriter::new(f);
 
     // Print the left string on one line, with differences highlighted
-    let light = Red.into();
-    let heavy = Red.on(Fixed(52)).bold();
+    let light = Red;
+    let heavy = Red.on_fixed(52).bold();
     writer.write_with_style(&SIGN_LEFT, light)?;
     for change in diff.iter() {
         match change {
@@ -191,8 +194,8 @@ fn write_inline_diff<TWrite: fmt::Write>(f: &mut TWrite, left: &str, right: &str
     writer.finish()?;
 
     // Print the right string on one line, with differences highlighted
-    let light = Green.into();
-    let heavy = Green.on(Fixed(22)).bold();
+    let light = Green;
+    let heavy = Green.on_fixed(22).bold();
     writer.write_with_style(&SIGN_RIGHT, light)?;
     for change in diff.iter() {
         match change {
@@ -573,7 +576,7 @@ Cabbage"#;
 
         /// Regression test for double abort
         ///
-        /// See: https://github.com/colin-kiegel/rust-pretty-assertions/issues/96
+        /// See: https://github.com/rust-pretty-assertions/rust-pretty-assertions/issues/96
         #[test]
         fn trailing_deleted() {
             // The below inputs caused an abort via double panic

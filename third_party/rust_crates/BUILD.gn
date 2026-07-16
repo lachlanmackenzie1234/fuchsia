@@ -1426,11 +1426,11 @@ group("pretty-0.12.5") {
 }
 
 group("pretty_assertions") {
-  public_deps = [ ":pretty_assertions-v1_2_1" ]
+  public_deps = [ ":pretty_assertions-v1_4_1" ]
 }
 
-group("pretty_assertions-1.2.1") {
-  public_deps = [ ":pretty_assertions-v1_2_1" ]
+group("pretty_assertions-1.4.1") {
+  public_deps = [ ":pretty_assertions-v1_4_1" ]
 }
 
 group("prettytable-rs") {
@@ -6915,30 +6915,6 @@ rustc_library("csv-core-v0_1_13") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":csv-core-v0_1_13.license" ]
-}
-
-rustc_library("ctor-v0_1_22") {
-  crate_name = "ctor"
-  source_root = "//third_party/rust_crates/empty/ctor/src/lib.rs"
-  output_name = "ctor-68e72cb62e982ed"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=68e72cb62e982ed",
-    "-Cextra-filename=-68e72cb62e982ed",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 license("ctr-v0_10_1.license") {
@@ -13957,7 +13933,7 @@ rustc_library("omaha_client-v0_3_8") {
   deps += [ ":p256-v0_11_1" ]
   deps += [ ":pin-project-v1_1_11" ]
   deps += [ ":pkcs8-v0_9_0" ]
-  deps += [ ":pretty_assertions-v1_2_1" ]
+  deps += [ ":pretty_assertions-v1_4_1" ]
   deps += [ ":rand-v0_8_4" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
@@ -14232,30 +14208,6 @@ rustc_library("openssl-sys-v0_9_117") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":openssl-sys-v0_9_117.license" ]
-}
-
-rustc_library("output_vt100-v0_1_3") {
-  crate_name = "output_vt100"
-  source_root = "//third_party/rust_crates/empty/output_vt100/src/lib.rs"
-  output_name = "output_vt100-b461a7524cd03ba2"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=b461a7524cd03ba2",
-    "-Cextra-filename=-b461a7524cd03ba2",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 license("p256-v0_11_1.license") {
@@ -15874,45 +15826,41 @@ rustc_library("pretty-v0_12_5") {
   applicable_licenses = [ ":pretty-v0_12_5.license" ]
 }
 
-license("pretty_assertions-v1_2_1.license") {
+license("pretty_assertions-v1_4_1.license") {
   public_package_name = "pretty_assertions"
   license_files = [
-    "//third_party/rust_crates/vendor/pretty_assertions-1.2.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pretty_assertions-1.2.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pretty_assertions-1.4.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pretty_assertions-1.4.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("pretty_assertions-v1_2_1") {
+rustc_library("pretty_assertions-v1_4_1") {
   crate_name = "pretty_assertions"
   source_root =
-      "//third_party/rust_crates/vendor/pretty_assertions-1.2.1/src/lib.rs"
-  output_name = "pretty_assertions-f3aaec2ba7bb72d0"
+      "//third_party/rust_crates/vendor/pretty_assertions-1.4.1/src/lib.rs"
+  output_name = "pretty_assertions-78fe3a8c85b60a20"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ansi_term-v0_12_1" ]
   deps += [ ":diff-v0_1_13" ]
-  if (false) {
-    deps += [ ":ctor-v0_1_22" ]
-    deps += [ ":output_vt100-v0_1_3" ]
-  }
+  deps += [ ":yansi-v1_0_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f3aaec2ba7bb72d0",
-    "-Cextra-filename=-f3aaec2ba7bb72d0",
+    "-Cmetadata=78fe3a8c85b60a20",
+    "-Cextra-filename=-78fe3a8c85b60a20",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pretty_assertions-v1_2_1.license" ]
+  applicable_licenses = [ ":pretty_assertions-v1_4_1.license" ]
 }
 
 license("prettyplease-v0_2_37.license") {
@@ -24706,6 +24654,41 @@ rustc_library("xml-rs-v0_8_26") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":xml-rs-v0_8_26.license" ]
+}
+
+license("yansi-v1_0_1.license") {
+  public_package_name = "yansi"
+  license_files = [
+    "//third_party/rust_crates/vendor/yansi-1.0.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/yansi-1.0.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("yansi-v1_0_1") {
+  crate_name = "yansi"
+  source_root = "//third_party/rust_crates/vendor/yansi-1.0.1/src/lib.rs"
+  output_name = "yansi-3d49c6ab7e326d1"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=3d49c6ab7e326d1",
+    "-Cextra-filename=-3d49c6ab7e326d1",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":yansi-v1_0_1.license" ]
 }
 
 license("zerocopy-v0_8_48.license") {

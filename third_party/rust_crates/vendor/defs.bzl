@@ -420,7 +420,7 @@ _NORMAL_DEPENDENCIES = {
             "pin-weak": Label("//third_party/rust_crates/vendor/pin-weak-1.1.0:pin_weak"),
             "png": Label("//third_party/rust_crates/vendor/png-0.18.1:png"),
             "pretty": Label("//third_party/rust_crates/vendor/pretty-0.12.5:pretty"),
-            "pretty_assertions": Label("//third_party/rust_crates/vendor/pretty_assertions-1.2.1:pretty_assertions"),
+            "pretty_assertions": Label("//third_party/rust_crates/vendor/pretty_assertions-1.4.1:pretty_assertions"),
             "prettytable-rs": Label("//third_party/rust_crates/vendor/prettytable-rs-0.10.0:prettytable"),
             "proptest": Label("//third_party/rust_crates/vendor/proptest-1.11.0:proptest"),
             "prost": Label("//third_party/rust_crates/vendor/prost-0.14.4:prost"),

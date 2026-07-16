@@ -265,7 +265,6 @@ skip_updating = [
     "predicates-core",
     "predicates-tree",
     "pretty",
-    "pretty_assertions",
     "prettytable-rs",
     "proc-macro2",
     "proc-macro-nested",

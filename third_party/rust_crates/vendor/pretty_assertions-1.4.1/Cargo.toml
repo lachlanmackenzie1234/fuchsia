@@ -12,28 +12,57 @@
 [package]
 edition = "2018"
 name = "pretty_assertions"
-version = "1.2.1"
-authors = ["Colin Kiegel <kiegel@gmx.de>", "Florent Fayolle <florent.fayolle69@gmail.com>", "Tom Milligan <code@tommilligan.net>"]
+version = "1.4.1"
+authors = [
+    "Colin Kiegel <kiegel@gmx.de>",
+    "Florent Fayolle <florent.fayolle69@gmail.com>",
+    "Tom Milligan <code@tommilligan.net>",
+]
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Overwrite `assert_eq!` and `assert_ne!` with drop-in replacements, adding colorful diffs."
 documentation = "https://docs.rs/pretty_assertions"
 readme = "README.md"
-keywords = ["assert", "diff", "pretty", "color"]
+keywords = [
+    "assert",
+    "diff",
+    "pretty",
+    "color",
+]
 categories = ["development-tools"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/colin-kiegel/rust-pretty-assertions"
-[dependencies.ansi_term]
-version = "0.12.1"
+repository = "https://github.com/rust-pretty-assertions/rust-pretty-assertions"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "pretty_assertions"
+path = "src/lib.rs"
+
+[[example]]
+name = "pretty_assertion"
+path = "examples/pretty_assertion.rs"
+
+[[example]]
+name = "standard_assertion"
+path = "examples/standard_assertion.rs"
+
+[[test]]
+name = "macros"
+path = "tests/macros.rs"
 
 [dependencies.diff]
 version = "0.1.12"
+
+[dependencies.yansi]
+version = "1.0.1"
 
 [features]
 alloc = []
 default = ["std"]
 std = []
 unstable = []
-[target."cfg(windows)".dependencies.ctor]
-version = "0.1.9"
-
-[target."cfg(windows)".dependencies.output_vt100]
-version = "0.1.2"

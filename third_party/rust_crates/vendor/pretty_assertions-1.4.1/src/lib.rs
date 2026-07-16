@@ -6,11 +6,11 @@
 //! But you have to spot the differences yourself, which is not always straightforward,
 //! like here:
 //!
-//! ![standard assertion](https://raw.githubusercontent.com/colin-kiegel/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/standard_assertion.png)
+//! ![standard assertion](https://raw.githubusercontent.com/rust-pretty-assertions/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/standard_assertion.png)
 //!
 //! Wouldn't that task be _much_ easier with a colorful diff?
 //!
-//! ![pretty assertion](https://raw.githubusercontent.com/colin-kiegel/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/pretty_assertion.png)
+//! ![pretty assertion](https://raw.githubusercontent.com/rust-pretty-assertions/rust-pretty-assertions/2d2357ff56d22c51a86b2f1cfe6efcee9f5a8081/examples/pretty_assertion.png)
 //!
 //! Yep — and you only need **one line of code** to make it happen:
 //!
@@ -72,7 +72,7 @@
 //! - `alloc`: Use the `alloc` crate.
 //!   Exactly one of `std` and `alloc` is required.
 //! - `unstable`: opt-in to unstable features that may not follow Semantic Versioning.
-//!   Implmenetion behind this feature is subject to change without warning between patch versions.
+//!   The implementation behind this feature is subject to change without warning between patch versions.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(clippy::all, missing_docs, unsafe_code)]
@@ -80,18 +80,9 @@
 #[cfg(feature = "alloc")]
 #[macro_use]
 extern crate alloc;
-pub use ansi_term::Style;
 use core::fmt::{self, Debug, Display};
 
 mod printer;
-
-#[cfg(windows)]
-use ctor::*;
-#[cfg(windows)]
-#[ctor]
-fn init() {
-    output_vt100::try_init().ok(); // Do not panic on fail
-}
 
 /// A comparison of two values.
 ///
@@ -335,13 +326,12 @@ macro_rules! assert_ne {
                 if *left_val == *right_val {
                     ::core::panic!("assertion failed: `(left != right)`{}{}\
                         \n\
-                        \n{}:\
+                        \nBoth sides:\
                         \n{:#?}\
                         \n\
                         \n",
                         $maybe_colon,
                         format_args!($($arg)+),
-                        $crate::Style::new().bold().paint("Both sides"),
                         left_val
                     )
                 }
