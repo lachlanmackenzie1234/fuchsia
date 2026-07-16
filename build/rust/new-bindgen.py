@@ -153,10 +153,11 @@ class Bindgen:
         # Clang arguments (after the "--").
         args += [
             "--",
-            "-target",
-            self.args.clang_target,
             "-DIS_BINDGEN=1",
         ]
+
+        if self.args.clang_target:
+            args += ["-target", self.args.clang_target]
 
         if not self.args.clang_resource_dir:
             raise ValueError("clang_resource_dir is required")
@@ -167,7 +168,6 @@ class Bindgen:
 
         for i in self.args.include_dir:
             args += ["-I", i]
-        args += ["-I", "."]
 
         args += self.args.clang_flag
 
@@ -191,7 +191,9 @@ class Bindgen:
                     if os.path.isabs(dep):
                         abs_dep = os.path.abspath(dep)
                     else:
-                        abs_dep = os.path.abspath(os.path.join(ROOT_PATH, dep))
+                        abs_dep = os.path.abspath(
+                            os.path.join(INITIAL_CWD, dep)
+                        )
 
                     if (
                         wrapper_file_to_filter
@@ -205,7 +207,7 @@ class Bindgen:
 
                 if not target.startswith("/"):
                     abs_target = os.path.abspath(
-                        os.path.join(ROOT_PATH, target)
+                        os.path.join(INITIAL_CWD, target)
                     )
                     target = os.path.relpath(abs_target, INITIAL_CWD)
                 else:
@@ -227,8 +229,6 @@ class Bindgen:
             source_file.write(text)
 
     def run(self):
-        os.chdir(ROOT_PATH)
-
         self.run_bindgen(self.args.input, self.args.output, self.args.depfile)
         # We must format the file before post-processing because our replacements
         # and auto-derive logic expect formatted code layout (e.g. predictable
@@ -284,7 +284,6 @@ def main():
     # Bindgen configuration options (previously in JSON config)
     parser.add_argument(
         "--clang-target",
-        default="x86_64-unknown-linux-gnu",
         help="Clang: Compilation target (--target)",
     )
     parser.add_argument(

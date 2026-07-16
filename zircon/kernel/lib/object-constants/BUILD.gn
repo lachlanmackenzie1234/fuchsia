@@ -21,11 +21,8 @@ rustc_bindgen("object-constants-bindings.bindgen") {
   visibility = [ ":*" ]
   headers = [ "include/lib/object-constants.h" ]
   deps = [ ":headers" ]
-  if (is_fuchsia && !is_kernel) {
-    deps += [ "//build/config/fuchsia:source_deps" ]
-  }
 
-  output = "object_constants_bindings.rs"
+  output_name = "object_constants_bindings.rs"
 
   include_dirs = [
     "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/${current_target_tuple}/c++/v1",
@@ -34,8 +31,6 @@ rustc_bindgen("object-constants-bindings.bindgen") {
   ]
   if (is_kernel) {
     include_dirs += [ "//zircon/kernel/lib/libc/include" ]
-  } else if (is_fuchsia && defined(sysroot) && sysroot != "") {
-    include_dirs += [ "${sysroot}/include" ]
   }
 
   additional_clang_flags = [
@@ -43,12 +38,7 @@ rustc_bindgen("object-constants-bindings.bindgen") {
     "c++",
     "-std=c++20",
     "-stdlib=libc++",
-    "--target=${current_target_tuple}",
   ]
-  if (!is_kernel && defined(sysroot) && sysroot != "") {
-    additional_clang_flags +=
-        [ "--sysroot=" + rebase_path(sysroot, root_build_dir) ]
-  }
 
   additional_bindgen_flags = [
     "--rust-edition",

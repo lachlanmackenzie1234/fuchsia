@@ -4,6 +4,8 @@
 
 import("//build/config/clang/clang_prefix.gni")
 import("//build/config/clang/clang_target_toolchain_info.gni")
+import("//build/config/current_target_tuple.gni")
+import("//build/config/sysroot.gni")
 import("//build/rust/config.gni")
 import("//build/testing/config.gni")
 import("//build/testing/golden_files.gni")
@@ -16,8 +18,8 @@ import("//build/testing/golden_files.gni")
 #     - Required: List of paths to the input C header files.
 #     - Type: list(path)
 #
-#   * output
-#     - Optional: Name of the output Rust file (relative to target_gen_dir).
+#   * output_name
+#     - Optional: Name of the output Rust file (relative to output_path).
 #     - Type: string
 #     - Default: "${target_name}.rs"
 #
@@ -127,13 +129,13 @@ import("//build/testing/golden_files.gni")
 template("rustc_bindgen") {
   assert(defined(invoker.headers), "Must specify headers")
 
-  if (defined(invoker.output)) {
-    _output_file = invoker.output
+  if (defined(invoker.output_name)) {
+    _output_name = invoker.output_name
   } else {
-    _output_file = "${target_name}.rs"
+    _output_name = "${target_name}.rs"
   }
 
-  _output_path = "$target_gen_dir/$_output_file"
+  _output_path = "$target_gen_dir/${_output_name}"
   _bindgen_bin = "//prebuilt/third_party/rust_bindgen/$host_platform/bindgen"
   _rustfmt_bin = "//prebuilt/third_party/rust/$host_platform/bin/rustfmt"
   _rustfmt_config = "//rustfmt.toml"
@@ -179,6 +181,8 @@ template("rustc_bindgen") {
       rebase_path(_bindgen_bin, root_build_dir),
       "--rustfmt",
       rebase_path(_rustfmt_bin, root_build_dir),
+      "--clang-target",
+      current_target_tuple,
     ]
 
     if (defined(invoker.expect_lints)) {
@@ -330,6 +334,10 @@ template("rustc_bindgen") {
         args += [ "--clang-flag=${x}" ]
       }
     }
+    if (defined(sysroot) && sysroot != "") {
+      args +=
+          [ "--clang-flag=--sysroot=" + rebase_path(sysroot, root_build_dir) ]
+    }
     _clang_resource_dir =
         "${rebased_clang_dir}/${clang_target_toolchain_info.resource_dir}"
     args += [
@@ -347,40 +355,72 @@ template("rustc_bindgen") {
 #     - Required: Path to the checked-in Rust file to compare against.
 #     - Type: path
 #
+#   * bindgen_toolchain
+#     - Optional: The GN toolchain under which to run bindgen. It is important
+#       that it be fixed so that the goldens are independent of the current
+#       target build configuration.
+#     - Type: label
+#     - Default: host_x64_toolchain
+#
 # See rustc_bindgen() for other parameters.
 #
 template("rustc_bindgen_golden") {
   assert(defined(invoker.headers), "Must specify headers")
   assert(defined(invoker.checked_in_source), "Must specify checked_in_source")
 
-  generated_target_name = "${target_name}_generated"
-  generated_file_path = "$target_gen_dir/${target_name}_generated.rs"
+  main_target = target_name
+  bindgen_target = "${target_name}_generated"
 
-  rustc_bindgen(generated_target_name) {
-    forward_variables_from(invoker,
-                           "*",
-                           [
-                             "checked_in_source",
-                             "output",
-                           ])
-    output = "${invoker.target_name}_generated.rs"
-    generator_label = get_label_info(":$target_name", "label_no_toolchain")
+  forward_variables_from(invoker, [ "bindgen_toolchain" ])
+  if (!defined(bindgen_toolchain)) {
+    bindgen_toolchain = host_x64_toolchain
   }
 
-  golden_files(target_name) {
+  generated_filename = "${target_name}_generated.rs"
+  generated_dir =
+      get_label_info(":${main_target}(${bindgen_toolchain})", "target_gen_dir")
+  generated_filepath = "${generated_dir}/${generated_filename}"
+  if (current_toolchain == bindgen_toolchain) {
+    rustc_bindgen(bindgen_target) {
+      visibility = [ ":*" ]
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "bindgen_toolchain",
+                               "checked_in_source",
+                               "output",
+                               "visibility",
+                             ])
+
+      output_name = generated_filename
+      generator_label = get_label_info(":$target_name", "label_no_toolchain")
+    }
+  } else {
+    not_needed(invoker,
+               "*",
+               [
+                 "deps",
+                 "testonly",
+                 "visibility",
+               ])
+  }
+
+  golden_files(main_target) {
     forward_variables_from(invoker,
                            [
+                             "deps",
                              "testonly",
                              "visibility",
                            ])
-    deps = [ ":$generated_target_name" ]
-    if (defined(invoker.deps)) {
-      deps += invoker.deps
+    if (!defined(deps)) {
+      deps = []
     }
+    deps += [ ":${bindgen_target}(${bindgen_toolchain})" ]
+
     comparisons = [
       {
         golden = invoker.checked_in_source
-        candidate = generated_file_path
+        candidate = generated_filepath
       },
     ]
   }
