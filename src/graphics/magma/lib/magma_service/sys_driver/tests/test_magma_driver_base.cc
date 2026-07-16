@@ -134,9 +134,9 @@ class MagmaDriverStarted : public testing::Test {
 TEST_F(MagmaDriverStarted, TestDriver) {}
 
 TEST_F(MagmaDriverStarted, Query) {
-  zx::result client_end = driver_test().ConnectThroughDevfs<fuchsia_gpu_magma::Device>("magma_gpu");
+  zx::result client_end = driver_test().Connect<fuchsia_gpu_magma::Service::Device>();
   ASSERT_OK(client_end);
-  fidl::WireSyncClient<fuchsia_gpu_magma::Device> client{std::move(client_end.value())};
+  fidl::WireSyncClient client{std::move(client_end.value())};
 
   auto result = client->Query(fuchsia_gpu_magma::wire::QueryId::kDeviceId);
   ASSERT_EQ(ZX_OK, result.status());

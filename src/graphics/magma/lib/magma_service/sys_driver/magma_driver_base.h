@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.kernel/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fit/thread_safety.h>
 #include <lib/magma/platform/zircon/zircon_platform_logger_dfv2.h>
 #include <lib/magma/platform/zircon/zircon_platform_status.h>
@@ -70,7 +69,6 @@ class MagmaDriverBase : public fdf::DriverBase2,
         magma_(std::make_shared<MagmaObjects>()),
         combined_device_server_(magma_, MagmaClientType::kUntrusted),
         trusted_combined_device_server_(magma_, MagmaClientType::kTrusted),
-        magma_devfs_connector_(fit::bind_member<&MagmaDriverBase::BindConnector>(this)),
         serve_untrusted_service_(serve_untrusted_service) {}
 
   zx::result<> Start(fdf::DriverContext context) override;
@@ -120,11 +118,7 @@ class MagmaDriverBase : public fdf::DriverBase2,
   std::shared_ptr<fdf::Namespace> incoming() { return incoming_; }
 
  private:
-  zx::result<> CreateDevfsNode();
-
-  void BindConnector(fidl::ServerEnd<fuchsia_gpu_magma::CombinedDevice> server) {
-    fidl::BindServer(dispatcher(), std::move(server), &combined_device_server_);
-  }
+  zx::result<> ExportServices();
 
   void InitializeInspector();
 
@@ -138,9 +132,6 @@ class MagmaDriverBase : public fdf::DriverBase2,
   std::optional<inspect::ComponentInspector> component_inspector_;
   MagmaCombinedDeviceServer combined_device_server_;
   MagmaCombinedDeviceServer trusted_combined_device_server_;
-  driver_devfs::Connector<fuchsia_gpu_magma::CombinedDevice> magma_devfs_connector_;
-  // Node representing /dev/class/gpu/<id>.
-  fdf::OwnedChildNode gpu_node_;
 
   internal::PerformanceCountersServer perf_counter_{dispatcher()};
   internal::DependencyInjectionServer dependency_injection_{this, dispatcher()};

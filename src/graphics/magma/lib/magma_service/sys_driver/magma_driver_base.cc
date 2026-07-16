@@ -33,7 +33,7 @@ zx::result<> MagmaDriverBase::Start(fdf::DriverContext context) {
     return result.take_error();
   }
 
-  if (zx::result result = CreateDevfsNode(); result.is_error()) {
+  if (zx::result result = ExportServices(); result.is_error()) {
     return result.take_error();
   }
   MAGMA_LOG(INFO, "MagmaDriverBase::Start completed for MSD %s", std::string(name()).c_str());
@@ -128,22 +128,7 @@ zx::result<> MagmaDriverBase::CreateTestService(MagmaTestServer& test_server) {
   return zx::ok();
 }
 
-zx::result<> MagmaDriverBase::CreateDevfsNode() {
-  zx::result connector = magma_devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    return connector.take_error();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs{
-      {.connector{std::move(connector.value())}, .class_name{"gpu"}}};
-
-  zx::result gpu_node = AddOwnedChild("magma_gpu", devfs);
-  if (gpu_node.is_error()) {
-    fdf::error("Failed to add child: {}", gpu_node);
-    return gpu_node.take_error();
-  }
-  gpu_node_ = std::move(gpu_node.value());
-
+zx::result<> MagmaDriverBase::ExportServices() {
   // Add the gpu service.
   if (serve_untrusted_service_) {
     auto power_protocol =
