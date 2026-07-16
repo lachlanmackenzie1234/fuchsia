@@ -23,7 +23,9 @@ use crate::session::tx::TxVmoConfig;
 use crate::session::{DEFAULT_VMO_ID, Port};
 use types::{ChainLength, DESCID_NO_NEXT};
 
-pub use pool::{AllocKind, Buffer, ChecksumRxOffloading, Rx, SinglePartTxBuffer, Tx};
+pub use pool::{
+    AllocKind, Buffer, ChecksumRxOffloading, Rx, RxMetadata, SinglePartTxBuffer, Tx, TxMetadataMut,
+};
 /// Network device descriptor version.
 pub const NETWORK_DEVICE_DESCRIPTOR_VERSION: u8 = sys::__NETWORK_DEVICE_DESCRIPTOR_VERSION as u8;
 pub(super) use types::DescId;

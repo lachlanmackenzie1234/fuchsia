@@ -69,8 +69,11 @@ async fn test_tx() {
                     .expect("failed to write into the buffer"),
                 DATA_LEN
             );
-            buffer.set_port(port);
-            buffer.set_frame_type(netdev::FrameType::Ethernet);
+            {
+                let mut meta = buffer.meta_mut();
+                meta.set_port(port);
+                meta.set_frame_type(netdev::FrameType::Ethernet);
+            }
             session.send(buffer);
             let frame = tun
                 .read_frame()
@@ -95,8 +98,11 @@ async fn echo(session: Session, port: Port, frame_count: u32) {
         assert_eq!(buffer.io().read(&mut bytes[..]).unwrap(), DATA_LEN);
         assert_eq!(u32::from_le_bytes(bytes), i);
         let mut buffer = session.alloc_tx_buffer(DATA_LEN).await.expect("no tx buffer available");
-        buffer.set_frame_type(netdev::FrameType::Ethernet);
-        buffer.set_port(port);
+        {
+            let mut meta = buffer.meta_mut();
+            meta.set_frame_type(netdev::FrameType::Ethernet);
+            meta.set_port(port);
+        }
         assert_eq!(buffer.io_mut().write(&bytes).unwrap(), DATA_LEN);
         session.send(buffer);
     }
@@ -185,8 +191,11 @@ async fn test_echo_pair() {
                                 .alloc_tx_buffer(DATA_LEN)
                                 .await
                                 .expect("failed to alloc tx buffer");
-                            buffer.set_frame_type(netdev::FrameType::Ethernet);
-                            buffer.set_port(port2);
+                            {
+                                let mut meta = buffer.meta_mut();
+                                meta.set_frame_type(netdev::FrameType::Ethernet);
+                                meta.set_port(port2);
+                            }
                             let mut bytes = i.to_le_bytes();
                             assert_eq!(
                                 buffer
@@ -313,8 +322,11 @@ fn tx_wait_idle() {
                     .expect("failed to write into the buffer"),
                 DATA_LEN
             );
-            buffer.set_port(port);
-            buffer.set_frame_type(netdev::FrameType::Ethernet);
+            {
+                let mut meta = buffer.meta_mut();
+                meta.set_port(port);
+                meta.set_frame_type(netdev::FrameType::Ethernet);
+            }
             session.send(buffer);
         }
     });

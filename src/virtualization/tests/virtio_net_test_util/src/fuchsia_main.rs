@@ -100,8 +100,11 @@ async fn network_device_send(
     // loop to ensure that we try sending after the device has its rx buffers ready.
     let recv_buf = loop {
         let mut buffer = session.alloc_tx_buffer(config.length).await.expect("allocate tx buffer");
-        buffer.set_frame_type(fidl_fuchsia_hardware_network::FrameType::Ethernet);
-        buffer.set_port(port);
+        {
+            let mut meta = buffer.meta_mut();
+            meta.set_frame_type(fidl_fuchsia_hardware_network::FrameType::Ethernet);
+            meta.set_port(port);
+        }
         let write_scratch = vec![config.send_byte; config.length];
         assert_eq!(buffer.io_mut().write_at(0, &write_scratch), config.length);
         session.send(buffer);

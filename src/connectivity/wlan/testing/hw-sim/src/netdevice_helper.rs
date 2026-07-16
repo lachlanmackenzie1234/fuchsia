@@ -120,8 +120,11 @@ pub async fn start_session(
 
 pub async fn send(session: &netdevice_client::Session, port: &netdevice_client::Port, data: &[u8]) {
     let mut buffer = session.alloc_tx_buffer(data.len()).await.expect("allocate tx buffer");
-    buffer.set_frame_type(fidl_fuchsia_hardware_network::FrameType::Ethernet);
-    buffer.set_port(*port);
+    {
+        let mut meta = buffer.meta_mut();
+        meta.set_frame_type(fidl_fuchsia_hardware_network::FrameType::Ethernet);
+        meta.set_port(*port);
+    }
     assert_eq!(buffer.io_mut().write_at(0, &data), data.len());
     session.send(buffer);
 }

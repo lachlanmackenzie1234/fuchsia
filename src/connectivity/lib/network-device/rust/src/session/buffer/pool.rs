@@ -718,16 +718,6 @@ impl<K: AllocKind> Buffer<K> {
         descs.into_iter().next().unwrap()
     }
 
-    /// Retrieves the frame type of the buffer.
-    pub fn frame_type(&self) -> Result<netdev::FrameType> {
-        self.alloc.descriptor().frame_type()
-    }
-
-    /// Retrieves the buffer's source port.
-    pub fn port(&self) -> Port {
-        self.alloc.descriptor().port()
-    }
-
     /// Returns the buffer data as a slice.
     pub fn as_slice(&self) -> Option<&[u8]> {
         if self.alloc.len() != 1 {
@@ -759,28 +749,41 @@ impl<K: AllocKind> Buffer<K> {
     }
 }
 
-// TODO(https://fxbug.dev/525167122): Consider a different API for the `set_*`
-// methods if the `descriptor_mut()` call isn't optimized out on consecutive
-// method calls.
-impl Buffer<Tx> {
+/// A guard for mutating metadata on a Tx buffer.
+///
+/// Holds an exclusive borrow of the underlying descriptor (`DescRefMut`),
+/// ensuring that atomic reference counting is performed only once when obtaining
+/// and dropping this guard, rather than on every individual field update.
+pub struct TxMetadataMut<'a> {
+    desc: DescRefMut<'a, Tx>,
+}
+
+impl<'a> TxMetadataMut<'a> {
     /// Sets the buffer's destination port.
     pub fn set_port(&mut self, port: Port) {
-        self.alloc.descriptor_mut().set_port(port)
+        self.desc.set_port(port);
     }
 
     /// Sets the frame type of the buffer.
     pub fn set_frame_type(&mut self, frame_type: netdev::FrameType) {
-        self.alloc.descriptor_mut().set_frame_type(frame_type)
+        self.desc.set_frame_type(frame_type);
     }
 
     /// Sets TxFlags of a Tx buffer.
     pub fn set_tx_flags(&mut self, flags: netdev::TxFlags) {
-        self.alloc.descriptor_mut().set_tx_flags(flags)
+        self.desc.set_tx_flags(flags);
     }
 
     /// Sets the generic checksum offload metadata for this buffer.
     pub fn set_generic_csum_offload(&mut self, start: u16, offset: u16) {
-        self.alloc.descriptor_mut().set_generic_csum_offload(start, offset)
+        self.desc.set_generic_csum_offload(start, offset);
+    }
+}
+
+impl Buffer<Tx> {
+    /// Returns a guard for mutating TX buffer metadata.
+    pub fn meta_mut(&mut self) -> TxMetadataMut<'_> {
+        TxMetadataMut { desc: self.alloc.descriptor_mut() }
     }
 
     /// Shrinks the buffer.
@@ -819,18 +822,41 @@ pub enum ChecksumRxOffloading {
     Offloaded(NonZeroU16),
 }
 
-// TODO(https://fxbug.dev/525167122): Consider a different API for the `rx_*`
-// methods if the `descriptor()` call isn't optimized out on consecutive method
-// calls.
-impl Buffer<Rx> {
+/// A guard for reading metadata on an Rx buffer.
+///
+/// Holds a shared borrow of the underlying descriptor (`DescRef`),
+/// ensuring that atomic reference counting is performed only once when obtaining
+/// and dropping this guard, rather than on every individual field access.
+pub struct RxMetadata<'a> {
+    desc: DescRef<'a, Rx>,
+}
+
+impl<'a> RxMetadata<'a> {
     /// Retrieves RxFlags of an Rx Buffer.
     pub fn rx_flags(&self) -> Result<netdev::RxFlags> {
-        self.alloc.descriptor().rx_flags()
+        self.desc.rx_flags()
     }
 
     /// Retrieves the checksum offloading information.
     pub fn rx_checksum_offloading(&self) -> Option<ChecksumRxOffloading> {
-        self.alloc.descriptor().rx_checksum_offloading()
+        self.desc.rx_checksum_offloading()
+    }
+
+    /// Retrieves the frame type of the buffer.
+    pub fn frame_type(&self) -> Result<netdev::FrameType> {
+        self.desc.frame_type()
+    }
+
+    /// Retrieves the buffer's source port.
+    pub fn port(&self) -> Port {
+        self.desc.port()
+    }
+}
+
+impl Buffer<Rx> {
+    /// Returns a guard for reading RX buffer metadata.
+    pub fn meta(&self) -> RxMetadata<'_> {
+        RxMetadata { desc: self.alloc.descriptor() }
     }
 }
 

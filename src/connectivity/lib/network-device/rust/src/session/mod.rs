@@ -31,7 +31,9 @@ use buffer::pool::{CreatedPool, Pool, RxLeaseWatcher};
 use buffer::{
     AllocKind, DescId, NETWORK_DEVICE_DESCRIPTOR_LENGTH, NETWORK_DEVICE_DESCRIPTOR_VERSION,
 };
-pub use buffer::{Buffer, ChecksumRxOffloading, Rx, SinglePartTxBuffer, Tx};
+pub use buffer::{
+    Buffer, ChecksumRxOffloading, Rx, RxMetadata, SinglePartTxBuffer, Tx, TxMetadataMut,
+};
 use tx::{BufferUsageEstimator, TxState, TxVmoConfig};
 
 // TODO(https://fxbug.dev/438527741): This is the VMO ID used for single VMO

@@ -213,7 +213,8 @@ impl NetdeviceWorker {
                     Err(e) => return Err(Error::Client(e))
                 }
             };
-            let port = rx.port();
+            let rx_meta = rx.meta();
+            let port = rx_meta.port();
             let id = if let Some(id) = state.lock().await.get(&port) {
                 id.clone()
             } else {
@@ -235,13 +236,14 @@ impl NetdeviceWorker {
                 continue;
             };
 
-            let frame_type = rx.frame_type().map_err(Error::Client)?.try_into()?;
-            let checksum_offloading = match rx.rx_checksum_offloading() {
+            let frame_type = rx_meta.frame_type().map_err(Error::Client)?.try_into()?;
+            let checksum_offloading = match rx_meta.rx_checksum_offloading() {
                 Some(netdevice_client::ChecksumRxOffloading::Offloaded(n)) => {
                     ChecksumRxOffloading::Offloaded(Some(n))
                 }
                 None => ChecksumRxOffloading::Offloaded(None),
             };
+            std::mem::drop(rx_meta);
             let parsing_context = NetworkParsingContext::new(checksum_offloading);
             let rx_data = match rx.as_slice_mut() {
                 Some(slice) => slice,
@@ -860,18 +862,21 @@ impl PortHandler {
     ) {
         trace_duration!("netdevice::send");
         let Self { port_id, inner: Inner { session, .. }, .. } = self;
-        tx.set_port(*port_id);
-        tx.set_frame_type(frame_type);
-        match csum_offload {
-            Some(ChecksumOffloadResult::Generic(partial)) => {
-                tx.set_generic_csum_offload(partial.start, partial.offset);
+        {
+            let mut meta = tx.meta_mut();
+            meta.set_port(*port_id);
+            meta.set_frame_type(frame_type);
+            match csum_offload {
+                Some(ChecksumOffloadResult::Generic(partial)) => {
+                    meta.set_generic_csum_offload(partial.start, partial.offset);
+                }
+                Some(ChecksumOffloadResult::ProtocolSpecific(_)) => {
+                    // TODO(https://fxbug.dev/527139703): Expose protocol-specific
+                    // TX checksum offloading in the netdevice API.
+                    todo!("protocol-specific TX checksum offloading not yet supported");
+                }
+                None => {}
             }
-            Some(ChecksumOffloadResult::ProtocolSpecific(_)) => {
-                // TODO(https://fxbug.dev/527139703): Expose protocol-specific
-                // TX checksum offloading in the netdevice API.
-                todo!("protocol-specific TX checksum offloading not yet supported");
-            }
-            None => {}
         }
         session.send(tx);
     }
