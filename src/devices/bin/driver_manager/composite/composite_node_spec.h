@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.driver.index/cpp/fidl.h>
 
 #include "src/devices/bin/driver_manager/composite/parent_set_collector.h"
+#include "src/devices/bin/driver_manager/resource.h"
 
 namespace driver_manager {
 class Node;
@@ -64,6 +65,21 @@ class CompositeNodeSpec {
   // Exposed for testing.
   virtual const std::vector<std::optional<ResourceWkPtr>>& GetParentResources() const {
     return parent_set_collector_.parents();
+  }
+
+  virtual std::vector<std::optional<NodeWkPtr>> GetParentNodes() const {
+    std::vector<std::optional<NodeWkPtr>> parent_nodes;
+    parent_nodes.reserve(parent_set_collector_.parents().size());
+    for (const auto& parent_resource : parent_set_collector_.parents()) {
+      if (parent_resource == std::nullopt) {
+        parent_nodes.push_back(std::nullopt);
+      } else if (auto resource = parent_resource->lock()) {
+        parent_nodes.push_back(resource->owner());
+      } else {
+        parent_nodes.push_back(std::nullopt);
+      }
+    }
+    return parent_nodes;
   }
 
  private:

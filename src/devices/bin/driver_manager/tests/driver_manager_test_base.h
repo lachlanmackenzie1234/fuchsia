@@ -8,9 +8,15 @@
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
+namespace driver_manager {
+class Resource;
+}  // namespace driver_manager
+
 class TestNodeManagerBase : public driver_manager::NodeManager {
  public:
   void Bind(driver_manager::Node& node,
+            std::shared_ptr<driver_manager::BindResultTracker> result_tracker) override {}
+  void Bind(driver_manager::Resource& resource,
             std::shared_ptr<driver_manager::BindResultTracker> result_tracker) override {}
 
   driver_manager::DriverHost* GetDriverHost(
@@ -60,6 +66,9 @@ class DriverManagerTestBase : public gtest::TestLoopFixture {
   // Creates a DFv2 node and add it to the given parent.
   std::shared_ptr<driver_manager::Node> CreateNode(std::string_view name,
                                                    std::weak_ptr<driver_manager::Node> parent);
+
+  std::shared_ptr<driver_manager::Resource> CreateResource(
+      std::weak_ptr<driver_manager::Node> owner, std::string_view name);
 
   std::shared_ptr<driver_manager::Node> CreateCompositeNode(
       std::string_view name, std::vector<std::weak_ptr<driver_manager::Node>> parents,

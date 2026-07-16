@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "src/devices/bin/driver_manager/resource.h"
 #include "src/devices/lib/log/log.h"
 
 namespace driver_manager {

@@ -51,6 +51,7 @@
 // TODO(https://fxbug.dev/479569256) Refactor DriverRunner to separate out power-related code
 // with the goal of making things more maintainable and readable.
 namespace driver_manager {
+class Resource;
 
 class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager>,
                      public fidl::WireServer<fuchsia_driver_index::DriverNotifier>,
@@ -257,6 +258,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   // Attempt to bind `node`. A nullptr for result_tracker is acceptable if the caller doesn't
   // intend to track the results.
   void Bind(Node& node, std::shared_ptr<BindResultTracker> result_tracker) override;
+  void Bind(Resource& resource, std::shared_ptr<BindResultTracker> result_tracker) override;
   void BindToUrl(Node& node, std::string_view driver_url_suffix,
                  std::shared_ptr<BindResultTracker> result_tracker) override;
   DriverHost* GetDriverHost(std::string_view driver_host_name_for_colocation) override;

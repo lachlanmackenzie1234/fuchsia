@@ -11,7 +11,7 @@
 
 namespace driver_manager {
 
-zx::result<> ParentSetCollector::AddNode(
+zx::result<> ParentSetCollector::AddResource(
     uint32_t index, const std::vector<fuchsia_driver_framework::NodeProperty2>& node_properties,
     ResourceWkPtr resource) {
   ZX_ASSERT(HasCompositeInfo());
@@ -25,8 +25,10 @@ zx::result<> ParentSetCollector::AddNode(
       fuchsia_driver_framework::NodePropertyEntry2(parent_names_.value()[index], node_properties);
 
   if (auto resource_ptr = parents_[index]->lock(); resource_ptr) {
-    if (auto node_ptr = resource_ptr->owner().lock(); node_ptr) {
-      node_ptr->MarkAsCompositeParent();
+    if (resource_ptr->is_self_resource()) {
+      if (auto node_ptr = resource_ptr->owner().lock(); node_ptr) {
+        node_ptr->MarkAsCompositeParent();
+      }
     }
   }
 
@@ -39,8 +41,10 @@ void ParentSetCollector::ReleaseNodes() {
       continue;
     }
     if (auto resource_ptr = resource->lock(); resource_ptr) {
-      if (auto node_ptr = resource_ptr->owner().lock(); node_ptr) {
-        node_ptr->UnmarkAsCompositeParent();
+      if (resource_ptr->is_self_resource()) {
+        if (auto node_ptr = resource_ptr->owner().lock(); node_ptr) {
+          node_ptr->UnmarkAsCompositeParent();
+        }
       }
     }
     resource.reset();
@@ -54,22 +58,18 @@ zx::result<std::shared_ptr<Node>> ParentSetCollector::TryToAssemble(
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
 
-  std::vector<NodeWkPtr> parent_nodes;
-  parent_nodes.reserve(parents_.size());
-  for (auto& resource : parents_) {
-    if (resource == std::nullopt) {
+  std::vector<ResourceWkPtr> parent_resources;
+  parent_resources.reserve(parents_.size());
+  for (auto& resource_opt : parents_) {
+    if (resource_opt == std::nullopt) {
       return zx::error(ZX_ERR_SHOULD_WAIT);
     }
-    auto resource_ptr = resource.value().lock();
-    if (!resource_ptr) {
-      return zx::error(ZX_ERR_INTERNAL);
-    }
-    parent_nodes.emplace_back(resource_ptr->owner());
+    parent_resources.push_back(resource_opt.value());
   }
 
-  auto result = Node::CreateCompositeNode(std::string(name), parent_nodes, parent_names_.value(),
-                                          parent_properties_, node_manager, dispatcher,
-                                          driver_host_name_for_colocation_, primary_index_.value());
+  auto result = Node::CreateCompositeNode(
+      std::string(name), parent_resources, parent_names_.value(), parent_properties_, node_manager,
+      dispatcher, driver_host_name_for_colocation_, primary_index_.value());
   if (result.is_error()) {
     return result.take_error();
   }
@@ -123,12 +123,10 @@ fidl::VectorView<fidl::StringView> ParentSetCollector::GetParentTopologicalPaths
     if (auto resource = parents_[i]->lock(); resource) {
       if (auto node = resource->owner().lock(); node) {
         parent_topological_paths[i] = fidl::StringView(arena, node->MakeTopologicalPath());
-      } else {
-        parent_topological_paths[i] = fidl::StringView();
+        continue;
       }
-    } else {
-      parent_topological_paths[i] = fidl::StringView();
     }
+    parent_topological_paths[i] = fidl::StringView();
   }
   return parent_topological_paths;
 }
@@ -145,12 +143,10 @@ fidl::VectorView<fidl::StringView> ParentSetCollector::GetParentMonikers(
     if (auto resource = parents_[i]->lock(); resource) {
       if (auto node = resource->owner().lock(); node) {
         parent_monikers[i] = fidl::StringView(arena, node->MakeComponentMoniker());
-      } else {
-        parent_monikers[i] = fidl::StringView();
+        continue;
       }
-    } else {
-      parent_monikers[i] = fidl::StringView();
     }
+    parent_monikers[i] = fidl::StringView();
   }
   return parent_monikers;
 }

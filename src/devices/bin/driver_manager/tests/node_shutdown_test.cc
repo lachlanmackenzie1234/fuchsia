@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.component/cpp/wire_test_base.h>
 
 #include "src/devices/bin/driver_manager/driver_host.h"
+#include "src/devices/bin/driver_manager/resource.h"
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
 #include "src/devices/bin/driver_manager/tests/driver_manager_test_base.h"
 
@@ -266,7 +267,31 @@ class NodeShutdownTest : public DriverManagerTestBase {
                                                  /* primary_index */ 0);
   }
 
+  void AddCompositeNodeWithResources(std::string composite_name,
+                                     std::vector<std::weak_ptr<Resource>> resources) {
+    ASSERT_EQ(nodes_.find(composite_name), nodes_.end());
+    std::vector<std::string> parent_names;
+    for (auto& resource_wk : resources) {
+      auto resource = resource_wk.lock();
+      ASSERT_TRUE(resource);
+      parent_names.push_back(resource->name());
+    }
+    std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_properties(resources.size());
+    nodes_[composite_name] =
+        Node::CreateCompositeNode(composite_name, std::move(resources), std::move(parent_names),
+                                  parent_properties, GetNodeManager(), dispatcher(), "", 0)
+            .value();
+  }
+
   std::shared_ptr<Node> GetNode(std::string node_name) { return nodes_[node_name].lock(); }
+
+  std::weak_ptr<Resource> AddProvidedResource(std::string node_name, std::string resource_name) {
+    auto node = GetNode(node_name);
+    ZX_ASSERT(node);
+    auto resource = CreateResource(node, resource_name);
+    node->add_provided_resource_for_testing(resource);
+    return resource;
+  }
 
   void AddChildNodeAndStartDriver(std::string parent, std::string child) {
     AddChildNodeAndStartDriver(parent, child, std::nullopt);
@@ -363,9 +388,12 @@ class NodeShutdownTest : public DriverManagerTestBase {
 
 TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
   AddNodeAndStartDriver("node_a");
+  auto resource_a = AddProvidedResource("node_a", "resource_a");
   AddChildNodeAndStartDriver("node_a", "node_a_a");
+  auto resource_a_a = AddProvidedResource("node_a_a", "resource_a_a");
   AddChildNodeAndStartDriver("node_a", "node_a_b");
   AddChildNodeAndStartDriver("node_a_b", "node_a_b_a");
+  auto resource_a_b_a = AddProvidedResource("node_a_b_a", "resource_a_b_a");
 
   InvokeRemoveNode("node_a");
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
@@ -388,6 +416,7 @@ TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
   // Close node_a_a's driver component. The node completes shutdown and should be removed.
   CloseComponentController("node_a_a");
   VerifyNodeRemovedFromParent("node_a_a", "node_a");
+  EXPECT_FALSE(resource_a_a.lock());
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_b", NodeState::kWaitingOnChildren},
                 {"node_a_b_a", NodeState::kWaitingOnDriver}});
@@ -405,6 +434,7 @@ TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
 
   CloseComponentController("node_a_b_a");
   VerifyNodeRemovedFromParent("node_a_b_a", "node_a_b");
+  EXPECT_FALSE(resource_a_b_a.lock());
   VerifyStates(
       {{"node_a", NodeState::kWaitingOnChildren}, {"node_a_b", NodeState::kWaitingOnDriver}});
 
@@ -426,6 +456,7 @@ TEST_F(NodeShutdownTest, BasicRemoveAllNodes) {
   VerifyState("node_a", NodeState::kWaitingOnDestroy);
   CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
+  EXPECT_FALSE(resource_a.lock());
   VerifyRemovalTrackerAllCallbackInvoked();
   VerifyRemovalTrackerPkgCallbackInvoked();
 }
@@ -438,6 +469,10 @@ TEST_F(NodeShutdownTest, RemoveCompositeNode) {
 
   AddCompositeNode("composite_abc", {"node_a_a", "node_a_b", "node_a_c"});
   StartDriver("composite_abc");
+
+  EXPECT_EQ(1u, GetNode("node_a_a")->GetSelfResource().value()->dependents().size());
+  EXPECT_EQ(1u, GetNode("node_a_b")->GetSelfResource().value()->dependents().size());
+  EXPECT_EQ(1u, GetNode("node_a_c")->GetSelfResource().value()->dependents().size());
 
   InvokeRemoveNode("node_a");
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
@@ -458,6 +493,9 @@ TEST_F(NodeShutdownTest, RemoveCompositeNode) {
   VerifyNodeRemovedFromParent("composite_abc", "node_a_a");
   VerifyNodeRemovedFromParent("composite_abc", "node_a_b");
   VerifyNodeRemovedFromParent("composite_abc", "node_a_c");
+  EXPECT_TRUE(GetNode("node_a_a")->GetSelfResource().value()->dependents().empty());
+  EXPECT_TRUE(GetNode("node_a_b")->GetSelfResource().value()->dependents().empty());
+  EXPECT_TRUE(GetNode("node_a_c")->GetSelfResource().value()->dependents().empty());
   VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
                 {"node_a_a", NodeState::kWaitingOnDriver},
                 {"node_a_b", NodeState::kWaitingOnDriver},
@@ -480,9 +518,62 @@ TEST_F(NodeShutdownTest, RemoveCompositeNode) {
   VerifyRemovalTrackerAllCallbackInvoked();
 }
 
+TEST_F(NodeShutdownTest, RemoveCompositeNodeWithProvidedResource) {
+  AddNodeAndStartDriver("node_a");
+  AddChildNodeAndStartDriver("node_a", "node_a_a");
+  AddChildNodeAndStartDriver("node_a", "node_a_b");
+  auto resource_b = AddProvidedResource("node_a_b", "resource_b");
+
+  AddCompositeNodeWithResources("composite_ab",
+                                {GetNode("node_a_a")->GetSelfResource().value(), resource_b});
+  StartDriver("composite_ab");
+
+  EXPECT_EQ(1u, GetNode("node_a_a")->GetSelfResource().value()->dependents().size());
+  EXPECT_EQ(1u, resource_b.lock()->dependents().size());
+
+  InvokeRemoveNode("node_a");
+  VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
+                {"node_a_a", NodeState::kWaitingOnChildren},
+                {"node_a_b", NodeState::kWaitingOnChildren},
+                {"composite_ab", NodeState::kWaitingOnDriver}});
+
+  CloseDriverForNode("composite_ab");
+  VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
+                {"node_a_a", NodeState::kWaitingOnChildren},
+                {"node_a_b", NodeState::kWaitingOnChildren},
+                {"composite_ab", NodeState::kWaitingOnDriverComponent}});
+
+  CloseRunnerController("composite_ab");
+  CloseComponentController("composite_ab");
+  VerifyNodeRemovedFromParent("composite_ab", "node_a_a");
+  VerifyNodeRemovedFromParent("composite_ab", "node_a_b");
+  EXPECT_TRUE(GetNode("node_a_a")->GetSelfResource().value()->dependents().empty());
+  EXPECT_TRUE(resource_b.lock()->dependents().empty());
+  VerifyStates({{"node_a", NodeState::kWaitingOnChildren},
+                {"node_a_a", NodeState::kWaitingOnDriver},
+                {"node_a_b", NodeState::kWaitingOnDriver}});
+
+  auto remove_nodes = {"node_a_a", "node_a_b"};
+  for (auto node : remove_nodes) {
+    CloseDriverForNode(node);
+    CloseRunnerController(node);
+    CloseComponentController(node);
+    VerifyNodeRemovedFromParent(node, "node_a");
+  }
+
+  VerifyState("node_a", NodeState::kWaitingOnDriver);
+  CloseDriverForNode("node_a");
+  CloseRunnerController("node_a");
+  CloseComponentController("node_a");
+  VerifyNodeRemovedFromParent("node_a", "root");
+
+  VerifyRemovalTrackerAllCallbackInvoked();
+}
+
 TEST_F(NodeShutdownTest, RemoveLeafNode) {
   AddNodeAndStartDriver("node_a");
   AddChildNodeAndStartDriver("node_a", "node_a_a");
+  auto resource_a_a = AddProvidedResource("node_a_a", "resource_a_a");
 
   InvokeRemoveNode("node_a_a");
 
@@ -495,11 +586,13 @@ TEST_F(NodeShutdownTest, RemoveLeafNode) {
   CloseRunnerController("node_a_a");
   CloseComponentController("node_a_a");
   VerifyNodeRemovedFromParent("node_a_a", "node_a");
+  EXPECT_FALSE(resource_a_a.lock());
   VerifyRemovalTrackerAllCallbackInvoked();
 }
 
 TEST_F(NodeShutdownTest, RemoveNodeWithNoChildren) {
   AddNodeAndStartDriver("node_a");
+  auto resource_a = AddProvidedResource("node_a", "resource_a");
   InvokeRemoveNode("node_a");
   VerifyState("node_a", NodeState::kWaitingOnDriver);
 
@@ -509,13 +602,16 @@ TEST_F(NodeShutdownTest, RemoveNodeWithNoChildren) {
   CloseRunnerController("node_a");
   CloseComponentController("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
+  EXPECT_FALSE(resource_a.lock());
   VerifyRemovalTrackerAllCallbackInvoked();
 }
 
 TEST_F(NodeShutdownTest, RemoveNodeWithNoDriverOrChildren) {
   AddNode("node_a");  // No driver.
+  auto resource_a = AddProvidedResource("node_a", "resource_a");
   InvokeRemoveNode("node_a");
   VerifyNodeRemovedFromParent("node_a", "root");
+  EXPECT_FALSE(resource_a.lock());
 }
 
 TEST_F(NodeShutdownTest, DriverShutdownWhileWaitingOnChildren) {

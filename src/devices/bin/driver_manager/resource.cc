@@ -30,24 +30,39 @@ void Resource::Bind(fidl::ServerEnd<fuchsia_driver_framework::ResourceController
     binding_.emplace(dispatcher_, std::move(server_end), this,
                      [self = weak_from_this()](Resource* resource, fidl::UnbindInfo info) {
                        if (auto shared_self = self.lock()) {
-                         if (auto owner = shared_self->owner_.lock()) {
-                           owner->RemoveResource(shared_self);
-                         }
+                         shared_self->Remove();
                        }
                      });
   }
 }
 
-void Resource::Remove(RemoveCompleter::Sync& completer) {
-  if (auto owner = owner_.lock()) {
-    owner->RemoveResource(shared_from_this());
+void Resource::Remove() {
+  auto dependents = std::move(dependents_);
+  for (auto& dependent : dependents) {
+    if (auto dependent_node = dependent.lock()) {
+      dependent_node->Remove(RemovalSet::kAll, nullptr);
+    }
+  }
+  if (!is_self_resource_) {
+    if (auto owner = owner_.lock(); owner) {
+      owner->RemoveResource(shared_from_this());
+    }
   }
 }
+
+void Resource::Remove(RemoveCompleter::Sync& completer) { Remove(); }
 
 void Resource::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_driver_framework::ResourceController> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   fdf_log::warn("ResourceController received unknown method. Ordinal: {}", metadata.method_ordinal);
+}
+
+void Resource::RemoveDependent(const std::shared_ptr<Node>& dependent) {
+  std::erase_if(dependents_, [&dependent](const auto& weak_dep) {
+    auto shared_dep = weak_dep.lock();
+    return !shared_dep || shared_dep == dependent;
+  });
 }
 
 }  // namespace driver_manager

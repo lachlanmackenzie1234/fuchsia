@@ -327,20 +327,54 @@ Node::Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_
   zx::event::create(0, &power_element_token_);
 }
 
-Node::Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
+Node::Node(std::string_view name, std::unordered_map<std::string, std::weak_ptr<Node>> parents,
            std::vector<std::string> parents_names, NodeManager* node_manager,
            async_dispatcher_t* dispatcher, uint32_t primary_index)
     : name_(name),
-      type_(Composite{
-          .parents_ = std::move(parents),
-          .parents_names_ = std::move(parents_names),
-          .primary_index_ = primary_index,
-      }),
       node_manager_(node_manager),
       dispatcher_(dispatcher),
       driver_host_handler_(this),
       component_controller_handler_(this) {
-  ZX_ASSERT(primary_index < std::get<Composite>(type_).parents_.size());
+  std::vector<std::weak_ptr<Node>> parents_vec;
+  uint32_t primary_node_index = 0;
+
+  // The `parents` map contains an entry for every resource dependency of the composite,
+  // where the key is the parent name. If the composite has multiple resource
+  // dependencies from the same parent node, the `parents` map will contain duplicate
+  // parent nodes under different keys.
+  //
+  // We iterate through `parents_names` in order to preserve the original dependency order,
+  // and construct the `parents_vec` with only unique parent nodes. At the same time, we
+  // determine the index of the primary parent node in both the ordered `parents_names_`
+  // and unique `parents_` lists.
+  for (size_t i = 0; i < parents_names.size(); ++i) {
+    const auto& parent_name = parents_names[i];
+    auto parent_node_wk = parents.at(parent_name);
+    auto parent_node = parent_node_wk.lock();
+    auto it = std::find_if(
+        parents_vec.begin(), parents_vec.end(),
+        [&parent_node](const std::weak_ptr<Node>& node) { return node.lock() == parent_node; });
+    uint32_t node_index;
+    if (it == parents_vec.end()) {
+      node_index = static_cast<uint32_t>(parents_vec.size());
+      parents_vec.push_back(parent_node_wk);
+    } else {
+      node_index = static_cast<uint32_t>(std::distance(parents_vec.begin(), it));
+    }
+
+    if (i == primary_index) {
+      primary_node_index = node_index;
+    }
+  }
+
+  type_ = Composite{
+      .parents_ = std::move(parents_vec),
+      .parents_names_ = std::move(parents_names),
+      .primary_index_ = primary_index,
+      .primary_node_index_ = primary_node_index,
+  };
+
+  ZX_ASSERT(primary_node_index < std::get<Composite>(type_).parents_.size());
 
   // By default, we set `driver_host_` to match the primary parent's
   // `driver_host_`. If the node is then subsequently bound to a driver in a
@@ -350,33 +384,46 @@ Node::Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
 }
 
 zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
-    std::string_view node_name, std::vector<std::weak_ptr<Node>> parents,
+    std::string_view node_name, std::vector<std::weak_ptr<Resource>> dependencies,
     std::vector<std::string> parents_names,
     const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
     NodeManager* driver_binder, async_dispatcher_t* dispatcher,
     std::string_view driver_host_name_for_colocation, uint32_t primary_index) {
-  ZX_ASSERT(!parents.empty());
+  ZX_ASSERT(!dependencies.empty());
+  ZX_ASSERT(parents_names.size() == dependencies.size());
 
-  if (parents.size() != parent_properties.size()) {
+  if (dependencies.size() != parent_properties.size()) {
     fdf_log::error(
-        "Missing parent properties. Expected {} entries, equal to the number of parents {}.",
-        parent_properties.size(), parents.size());
+        "Missing parent properties. Expected {} entries, equal to the number of dependencies {}.",
+        parent_properties.size(), dependencies.size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  if (primary_index >= parents.size()) {
+  if (primary_index >= dependencies.size()) {
     fdf_log::error("Primary node index is out of bounds");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  auto primary_node_ptr = parents[primary_index].lock();
-  if (!primary_node_ptr) {
-    fdf_log::error("Primary node freed before use");
-    return zx::error(ZX_ERR_INTERNAL);
+  std::unordered_map<std::string, std::weak_ptr<Node>> parents_map;
+  std::vector<std::shared_ptr<Resource>> received_resources;
+
+  for (uint32_t i = 0; i < dependencies.size(); ++i) {
+    auto parent_resource = dependencies[i].lock();
+    if (!parent_resource) {
+      fdf_log::error("Parent resource freed before use");
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    received_resources.push_back(parent_resource);
+    parents_map[parents_names[i]] = parent_resource->owner().lock();
   }
-  std::shared_ptr composite =
-      std::make_shared<Node>(node_name, std::move(parents), std::move(parents_names), driver_binder,
-                             dispatcher, primary_index);
+
+  std::shared_ptr composite = std::make_shared<Node>(
+      node_name, std::move(parents_map), parents_names, driver_binder, dispatcher, primary_index);
+
+  composite->received_resources_ = std::move(received_resources);
+  for (auto& resource : composite->received_resources_) {
+    resource->AddDependent(composite);
+  }
 
   composite->SetCompositeParentProperties(parent_properties);
   composite->driver_host_name_for_colocation_ = driver_host_name_for_colocation;
@@ -390,16 +437,15 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
 
   bool has_dictionary_offer = false;
 
-  // Copy the offers from each parent.
+  // Copy the offers from each parent resource.
   std::vector<NodeOffer> node_offers;
   size_t parent_index = 0;
-  for (const std::weak_ptr<Node>& parent : std::get<Composite>(composite->type_).parents_) {
-    auto parent_ptr = parent.lock();
-    if (!parent_ptr) {
-      fdf_log::error("Composite parent node freed before use");
+  for (const std::shared_ptr<Resource>& resource : composite->received_resources_) {
+    if (!resource) {
+      fdf_log::error("Composite parent resource freed before use");
       return zx::error(ZX_ERR_INTERNAL);
     }
-    auto parent_offers = parent_ptr->offers();
+    auto parent_offers = resource->offers();
     node_offers.reserve(node_offers.size() + parent_offers.size());
 
     for (auto& parent_offer : parent_offers) {
@@ -759,6 +805,22 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
   }
   state_ = Unbound{};
 
+  for (auto& resource : received_resources_) {
+    if (resource) {
+      resource->RemoveDependent(this_node);
+    }
+  }
+  received_resources_.clear();
+
+  // Only call Remove() on provided resources. Self resources act as a container for resource
+  // elements in a node so the node's own removal logic will handle it.
+  auto provided_resources = std::move(provided_resources_);
+  for (auto& resource : provided_resources) {
+    if (resource) {
+      resource->Remove();
+    }
+  }
+
   if (IsComposite()) {
     std::get<Composite>(type_).parents_.clear();
   } else {
@@ -1017,7 +1079,7 @@ void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& pare
   });
 
   auto& composite = std::get<Composite>(type_);
-  ZX_ASSERT(composite.primary_index_ < composite.parents_.size());
+  ZX_ASSERT(composite.primary_index_ < parent_properties.size());
   const auto& default_node_properties = parent_properties[composite.primary_index_].properties();
   properties.emplace_back(PropertiesEntry{
       .name = "default",
@@ -1403,21 +1465,52 @@ void Node::ProvideResource(
     completer.ReplyError(fdf::NodeError::kUnsupportedArgs);
     return;
   }
-  auto properties = fidl::ToNatural(request->resource.properties());
   ResourceId id = (*node_manager_)->GetNextResourceId();
-  auto resource =
-      std::make_shared<Resource>(id, weak_from_this(), std::string(request->resource.name().get()),
-                                 std::move(properties.value()), std::vector<NodeOffer>{},
-                                 request->resource.has_bus_info()
-                                     ? std::optional(fidl::ToNatural(request->resource.bus_info()))
-                                     : std::nullopt,
-                                 dispatcher_);
+  auto natural_resource = fidl::ToNatural(request->resource);
+  std::vector<NodeOffer> node_offers;
+  if (natural_resource.offers().has_value()) {
+    node_offers.reserve(natural_resource.offers()->size());
+
+    Node* source_node = this;
+    while (source_node && source_node->collection_ == Collection::kNone) {
+      if (source_node->GetPrimaryParent() == nullptr) {
+        break;
+      }
+      source_node = source_node->GetPrimaryParent();
+    }
+    std::string source_name = source_node->MakeComponentMoniker();
+    Collection source_collection = source_node->collection_;
+
+    for (const auto& fdf_offer : *natural_resource.offers()) {
+      fit::result new_offer =
+          ProcessNodeOfferWithTransportProperty(fdf_offer, source_collection, source_name);
+      if (new_offer.is_error()) {
+        fdf_log::error("Failed to provide resource '{}': Bad offer: {}",
+                       natural_resource.name().value(), new_offer.error_value());
+        completer.ReplyError(new_offer.error_value());
+        return;
+      }
+      auto [processed_offer, property] = std::move(new_offer.value());
+      node_offers.push_back(std::move(processed_offer));
+      natural_resource.properties()->push_back(std::move(property));
+    }
+  }
+  auto resource = std::make_shared<Resource>(
+      id, weak_from_this(), std::move(natural_resource.name().value()),
+      std::move(natural_resource.properties().value()), std::move(node_offers),
+      std::move(natural_resource.bus_info()), dispatcher_);
   resource->Bind(std::move(request->controller));
+  (*node_manager_)->Bind(*resource, nullptr);
   provided_resources_.push_back(std::move(resource));
+
   completer.ReplySuccess();
 }
 
 void Node::RemoveResource(const std::shared_ptr<Resource>& resource) {
+  // Only remove the resource if it's not the self resource.
+  if (resource->is_self_resource()) {
+    return;
+  }
   std::erase_if(provided_resources_, [&resource](const auto& r) { return r == resource; });
 }
 
@@ -1427,6 +1520,7 @@ void Node::InitializeSelfResource(std::vector<fuchsia_driver_framework::NodeProp
   ResourceId id = (*node_manager_)->GetNextResourceId();
   self_resource_ = std::make_shared<Resource>(id, weak_from_this(), name_, std::move(properties),
                                               std::move(offers), std::move(bus_info), dispatcher_);
+  self_resource_->set_is_self_resource(true);
 }
 
 void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
@@ -2451,9 +2545,8 @@ void Node::PrepareDictionary(fit::callback<void(zx::result<>)> callback) {
   auto primary_index = std::get<Composite>(type_).primary_index_;
 
   // Populate the service map.
-  for (size_t i = 0; i < parents().size(); i++) {
-    const auto& weak_parent = parents()[i];
-    std::shared_ptr<Node> parent = weak_parent.lock();
+  for (size_t i = 0; i < received_resources_.size(); i++) {
+    std::shared_ptr<Node> parent = received_resources_[i]->owner().lock();
     if (!parent) {
       continue;
     }
@@ -2462,7 +2555,7 @@ void Node::PrepareDictionary(fit::callback<void(zx::result<>)> callback) {
       continue;
     }
 
-    for (const auto& offer : parent->offers()) {
+    for (const auto& offer : received_resources_[i]->offers()) {
       if (offer.transport != OfferTransport::Dictionary) {
         continue;
       }

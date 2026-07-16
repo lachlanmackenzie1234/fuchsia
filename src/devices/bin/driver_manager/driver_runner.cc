@@ -32,6 +32,7 @@
 #include "src/devices/bin/driver_manager/async_sharder.h"
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
+#include "src/devices/bin/driver_manager/resource.h"
 #include "src/devices/lib/log/log.h"
 #include "src/lib/fxl/strings/join_strings.h"
 
@@ -1075,6 +1076,10 @@ zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
 
 void DriverRunner::Bind(Node& node, std::shared_ptr<BindResultTracker> result_tracker) {
   BindToUrl(node, {}, std::move(result_tracker));
+}
+
+void DriverRunner::Bind(Resource& resource, std::shared_ptr<BindResultTracker> result_tracker) {
+  bind_manager_.Bind(resource, {}, std::move(result_tracker));
 }
 
 void DriverRunner::BindToUrl(Node& node, std::string_view driver_url_suffix,

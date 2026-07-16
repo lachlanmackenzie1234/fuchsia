@@ -17,6 +17,7 @@
 
 #include <list>
 #include <memory>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 
@@ -87,6 +88,7 @@ class NodeManager {
   // A nullptr for result_tracker is acceptable if the caller doesn't intend to
   // track the results.
   virtual void Bind(Node& node, std::shared_ptr<BindResultTracker> result_tracker) = 0;
+  virtual void Bind(Resource& resource, std::shared_ptr<BindResultTracker> result_tracker) = 0;
 
   virtual void BindToUrl(Node& node, std::string_view driver_url_suffix,
                          std::shared_ptr<BindResultTracker> result_tracker) {
@@ -186,14 +188,14 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
  public:
   Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_manager,
        async_dispatcher_t* dispatcher);
-  Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
+  Node(std::string_view name, std::unordered_map<std::string, std::weak_ptr<Node>> parents,
        std::vector<std::string> parents_names, NodeManager* node_manager,
        async_dispatcher_t* dispatcher, uint32_t primary_index);
 
   ~Node() override;
 
   static zx::result<std::shared_ptr<Node>> CreateCompositeNode(
-      std::string_view node_name, std::vector<std::weak_ptr<Node>> parents,
+      std::string_view node_name, std::vector<std::weak_ptr<Resource>> dependencies,
       std::vector<std::string> parents_names,
       const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
       NodeManager* driver_binder, async_dispatcher_t* dispatcher,
@@ -327,8 +329,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Exposed for testing.
   Node* GetPrimaryParent() const {
     if (auto* composite = std::get_if<Composite>(&type_); composite) {
-      if (composite->primary_index_ < composite->parents_.size()) {
-        return composite->parents_[composite->primary_index_].lock().get();
+      if (composite->primary_node_index_ < composite->parents_.size()) {
+        return composite->parents_[composite->primary_node_index_].lock().get();
       }
       return nullptr;
     }
@@ -426,6 +428,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     subtree_dictionary_ref_ = subtree_dictionary_ref;
   }
 
+  void set_dictionary_ref(std::optional<fuchsia_component_sandbox::CapabilityId> ref) {
+    dictionary_ref_ = ref;
+  }
+
   /// Sets the power dependency overrides for this node. These overrides will be
   /// used instead of the default power dependencies when the driver is started.
   /// This is primarily intended for use in tests via the driver restart flow,
@@ -508,6 +514,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Exposed for testing.
   const std::vector<std::shared_ptr<Resource>>& provided_resources() const {
     return provided_resources_;
+  }
+  void add_provided_resource_for_testing(std::shared_ptr<Resource> resource) {
+    provided_resources_.push_back(std::move(resource));
   }
 
   std::optional<std::shared_ptr<Resource>> GetSelfResource() const;
@@ -694,6 +703,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     std::vector<std::weak_ptr<Node>> parents_;
     std::vector<std::string> parents_names_;
     uint32_t primary_index_;
+    uint32_t primary_node_index_;
     std::vector<PropertiesEntry> properties_;
   };
 
@@ -710,6 +720,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   std::vector<fuchsia_driver_framework::NodeSymbol> symbols_;
 
+  std::vector<std::shared_ptr<Resource>> received_resources_;
   std::vector<std::shared_ptr<Resource>> provided_resources_;
   std::shared_ptr<Resource> self_resource_;
 

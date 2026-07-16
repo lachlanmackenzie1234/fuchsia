@@ -38,12 +38,10 @@ class ParentSetCollector {
     return primary_index_ != std::nullopt && parent_names_ != std::nullopt;
   }
 
-  // Add a node to the parent set at the specified index.
-  // Caller should check that |ContainsNode| is false for the index before calling this.
-  // Only a weak_ptr of the node is stored by this class (until collection in GetIfComplete).
-  zx::result<> AddNode(uint32_t index,
-                       const std::vector<fuchsia_driver_framework::NodeProperty2>& node_properties,
-                       ResourceWkPtr resource);
+  // Only a weak_ptr of the resource is stored by this class (until collection in TryToAssemble).
+  zx::result<> AddResource(
+      uint32_t index, const std::vector<fuchsia_driver_framework::NodeProperty2>& node_properties,
+      ResourceWkPtr resource);
 
   void ReleaseNodes();
 
@@ -72,7 +70,7 @@ class ParentSetCollector {
   const std::vector<std::optional<ResourceWkPtr>>& parents() const { return parents_; }
 
  private:
-  // Nodes are stored as weak_ptrs. Only when trying to collect the completed set are they
+  // Resources are stored as weak_ptrs. Only when trying to collect the completed set are they
   // locked into shared_ptrs and validated to not be null.
   std::vector<std::optional<ResourceWkPtr>> parents_;
 

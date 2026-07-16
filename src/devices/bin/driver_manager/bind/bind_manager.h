@@ -144,8 +144,16 @@ class BindManager {
       fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchDriver>& result,
       bool has_tracker);
 
+  BindResult BindResourceToResult(
+      Resource& resource,
+      fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchDriver>& result,
+      bool has_tracker);
+
   zx::result<CompositeParents> BindNodeToSpec(fidl::AnyArena& arena, Node& node,
                                               CompositeParents composite_parents);
+
+  zx::result<CompositeParents> BindResourceToSpec(fidl::AnyArena& arena, Resource& resource,
+                                                  CompositeParents composite_parents);
 
   // Queue of TryBindAllAvailable() callbacks pending for the next TryBindAllAvailable() trigger.
   std::vector<NodeBindingInfoResultCallback> pending_orphan_rebind_callbacks_;

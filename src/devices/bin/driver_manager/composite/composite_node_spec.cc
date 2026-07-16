@@ -5,6 +5,7 @@
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
+#include "src/devices/bin/driver_manager/resource.h"
 
 namespace fdd = fuchsia_driver_development;
 
@@ -60,7 +61,7 @@ zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
       parent_specs()[composite_parent.index()].properties();
 
   zx::result<> add_result =
-      parent_set_collector_.AddNode(composite_parent.index(), properties, resource);
+      parent_set_collector_.AddResource(composite_parent.index(), properties, resource);
   if (add_result.is_error()) {
     return add_result.take_error();
   }

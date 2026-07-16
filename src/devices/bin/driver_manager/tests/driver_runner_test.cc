@@ -2213,7 +2213,8 @@ TEST(NodeTest, ToCollection) {
 
   constexpr char kChild2Name[] = "child2";
   std::shared_ptr<Node> child2 = std::make_shared<Node>(
-      kChild2Name, std::vector{std::weak_ptr{parent}, std::weak_ptr{child1}},
+      kChild2Name,
+      std::unordered_map<std::string, std::weak_ptr<Node>>{{"parent", parent}, {"child1", child1}},
       std::vector<std::string>{"parent", "child1"}, nullptr, loop.dispatcher(), 0);
 
   // Test parentless

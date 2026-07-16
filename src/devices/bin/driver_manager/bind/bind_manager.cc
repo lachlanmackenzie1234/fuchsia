@@ -132,15 +132,6 @@ void BindManager::BindInternal(BindRequest request,
     match_complete_callback();
     return;
   }
-  std::shared_ptr node = resource->owner().lock();
-  if (!node) {
-    fdf_log::warn("Node was freed before bind request is processed. {}", request.node_moniker);
-    if (request.tracker) {
-      request.tracker->ReportNoBind();
-    }
-    match_complete_callback();
-    return;
-  }
 
   std::string driver_url_suffix = request.driver_url_suffix;
   auto match_callback =
@@ -150,15 +141,30 @@ void BindManager::BindInternal(BindRequest request,
         OnMatchDriverCallback(std::move(request), result, std::move(match_complete_callback));
       };
   fidl::Arena arena;
-  auto builder = fuchsia_driver_index::wire::MatchDriverArgs::Builder(arena).name(node->name());
+  auto builder = fuchsia_driver_index::wire::MatchDriverArgs::Builder(arena).name(resource->name());
 
-  // Composite node's "default" node properties are its primary parent's node properties which
-  // should not be used.
-  if (node->type() == NodeType::kNormal) {
-    if (std::optional props = node->GetNodeProperties(); props.has_value()) {
-      builder.properties(fidl::ToWire(arena, props.value()));
+  if (!resource->is_self_resource()) {
+    builder.properties(fidl::ToWire(arena, resource->properties()));
+  } else {
+    std::shared_ptr node = resource->owner().lock();
+    if (!node) {
+      fdf_log::warn("Node was freed before bind request is processed. {}", request.node_moniker);
+      if (request.tracker) {
+        request.tracker->ReportNoBind();
+      }
+      match_complete_callback();
+      return;
+    }
+
+    // Composite node's "default" node properties are its primary parent's node properties which
+    // should not be used.
+    if (node->type() == NodeType::kNormal) {
+      if (std::optional props = node->GetNodeProperties(); props.has_value()) {
+        builder.properties(fidl::ToWire(arena, props.value()));
+      }
     }
   }
+
   if (!driver_url_suffix.empty()) {
     builder.driver_url_suffix(driver_url_suffix);
   }
@@ -181,6 +187,7 @@ void BindManager::OnMatchDriverCallback(
                   request.node_moniker);
     return;
   }
+
   std::shared_ptr node = resource->owner().lock();
 
   // TODO(https://fxbug.dev/42075939): Add an additional guard to ensure that the node is still
@@ -190,22 +197,23 @@ void BindManager::OnMatchDriverCallback(
     fdf_log::warn("Node {} was freed before it could be bound", request.node_moniker);
     return;
   }
-
-  BindResult bind_result =
-      BindNodeToResult(*node, request.composite_only, result, request.tracker != nullptr);
-
   auto node_moniker = node->MakeComponentMoniker();
 
-  // If the resource fails to bind to anything, add it to the orphaned resources.
-  if (!bind_result.bound() && !request.composite_only &&
-      !bind_resource_set_.MultibindContains(resource->id())) {
-    bind_resource_set_.AddOrphanedResource(resource);
-    return;
+  BindResult bind_result;
+  if (resource->is_self_resource()) {
+    bind_result =
+        BindNodeToResult(*node, request.composite_only, result, request.tracker != nullptr);
+    // If the resource fails to bind to anything, add it to the orphaned resources.
+    if (!bind_result.bound() && !request.composite_only &&
+        !bind_resource_set_.MultibindContains(resource->id())) {
+      bind_resource_set_.AddOrphanedResource(resource);
+      return;
+    }
+    bind_resource_set_.RemoveOrphanedResource(resource->id());
+  } else {
+    bind_result = BindResourceToResult(*resource, result, request.tracker != nullptr);
+    bind_resource_set_.AddOrMoveMultibindResource(resource);
   }
-
-  // Remove bound resources from the orphaned resources.
-  bind_resource_set_.RemoveOrphanedResource(resource->id());
-
   if (bind_result.bound()) {
     report_no_bind.cancel();
     if (request.tracker) {
@@ -288,10 +296,47 @@ BindResult BindManager::BindNodeToResult(
   return BindResult(start_result.value());
 }
 
+BindResult BindManager::BindResourceToResult(
+    Resource& resource, fidl::WireUnownedResult<fdi::DriverIndex::MatchDriver>& result,
+    bool has_tracker) {
+  if (!result.ok()) {
+    fdf_log::error("Failed to call match Resource '{}': {}", resource.name(), result.error());
+    return BindResult();
+  }
+
+  if (result->is_error()) {
+    zx_status_t match_error = result->error_value();
+    if (match_error != ZX_ERR_NOT_FOUND && !has_tracker) {
+      std::shared_ptr node = resource.owner().lock();
+      fdf_log::warn("Failed to match Resource '{}' for Node '{}': {}", resource.name(),
+                    node ? node->MakeTopologicalPath() : "unknown",
+                    zx_status_get_string(match_error));
+    }
+    return BindResult();
+  }
+
+  // Resources should only be matched as dependencies for a composite node.
+  auto& matched_driver = result->value();
+  if (!matched_driver->is_composite_parents()) {
+    return BindResult();
+  }
+
+  fidl::Arena arena;
+  auto bind_result = BindResourceToSpec(arena, resource, matched_driver->composite_parents());
+  if (!bind_result.is_ok()) {
+    return BindResult();
+  }
+
+  auto owned_result = fidl::ToNatural(bind_result.value());
+  ZX_ASSERT(owned_result.has_value());
+  return BindResult(owned_result.value());
+}
+
 zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, Node& node,
                                                          CompositeParents parents) {
   auto self_resource = node.GetSelfResource();
   ZX_ASSERT(self_resource.has_value());
+
   if (node.can_multibind_composites()) {
     bind_resource_set_.AddOrMoveMultibindResource(self_resource.value());
   }
@@ -317,6 +362,31 @@ zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, 
     }
   }
 
+  return zx::ok(result.value().bound_composite_parents);
+}
+
+zx::result<CompositeParents> BindManager::BindResourceToSpec(fidl::AnyArena& arena,
+                                                             Resource& resource,
+                                                             CompositeParents parents) {
+  auto result = bridge_->BindToParentSpec(arena, parents, resource.shared_from_this(),
+                                          /*enable_multibind=*/true);
+  if (result.is_error()) {
+    if (result.error_value() != ZX_ERR_NOT_FOUND) {
+      fdf_log::error("Failed to bind resource '{}' to any of the matched parent specs.",
+                     resource.name());
+    }
+    return result.take_error();
+  }
+
+  for (auto& composite : result.value().completed_node_and_drivers) {
+    std::shared_ptr composite_node = composite.node.lock();
+    ZX_ASSERT(composite_node);
+    auto start_result = bridge_->StartDriver(*composite_node, composite.driver.driver_info());
+    if (start_result.is_error()) {
+      fdf_log::error("Failed to start driver '{}': {}", composite_node->name(),
+                     zx_status_get_string(start_result.error_value()));
+    }
+  }
   return zx::ok(result.value().bound_composite_parents);
 }
 

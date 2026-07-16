@@ -4,6 +4,8 @@
 
 #include "src/devices/bin/driver_manager/tests/driver_manager_test_base.h"
 
+#include "src/devices/bin/driver_manager/resource.h"
+
 void DriverManagerTestBase::SetUp() {
   TestLoopFixture::SetUp();
   devfs_ = std::make_unique<driver_manager::Devfs>(root_devnode_, dispatcher());
@@ -43,11 +45,26 @@ std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateCompositeNode
     uint32_t primary_index) {
   std::vector<std::string> parent_names;
   parent_names.reserve(parents.size());
-  for (auto& parent : parents) {
-    parent_names.push_back(parent.lock()->name());
+  std::vector<std::weak_ptr<driver_manager::Resource>> parent_resources;
+  parent_resources.reserve(parents.size());
+  for (auto& parent_wk : parents) {
+    auto parent = parent_wk.lock();
+    ZX_ASSERT(parent);
+    parent_names.push_back(parent->name());
+    auto self_resource = parent->GetSelfResource();
+    ZX_ASSERT(self_resource.has_value());
+    parent_resources.push_back(self_resource.value());
   }
   return driver_manager::Node::CreateCompositeNode(
-             name, std::move(parents), std::move(parent_names), parent_properties, GetNodeManager(),
-             dispatcher(), "", primary_index)
+             name, std::move(parent_resources), std::move(parent_names), parent_properties,
+             GetNodeManager(), dispatcher(), "", primary_index)
       .value();
+}
+
+std::shared_ptr<driver_manager::Resource> DriverManagerTestBase::CreateResource(
+    std::weak_ptr<driver_manager::Node> owner, std::string_view name) {
+  return std::make_shared<driver_manager::Resource>(
+      GetNodeManager()->GetNextResourceId(), std::move(owner), std::string(name),
+      std::vector<fuchsia_driver_framework::NodeProperty2>{},
+      std::vector<driver_manager::NodeOffer>{}, std::nullopt, dispatcher());
 }

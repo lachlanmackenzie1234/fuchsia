@@ -41,8 +41,8 @@ class CompositeNodeSpecManager {
       std::unique_ptr<CompositeNodeSpec> spec,
       fit::callback<void(fit::result<fuchsia_driver_framework::CompositeNodeSpecError>)> callback);
 
-  // Binds the device to the spec parents it was matched to. If |enable_multibind| is false,
-  // CompositeNodeSpecManager will only bind the device to the first unbound parent. Depending
+  // Binds the resource to the spec parents it was matched to. If |enable_multibind| is false,
+  // CompositeNodeSpecManager will only bind the resource to the first unbound parent. Depending
   // on the implementation, completed_node_and_drivers will return an empty vector or a list of
   // completed CompositeNodeAndDrivers.
   zx::result<BindSpecResult> BindParentSpec(

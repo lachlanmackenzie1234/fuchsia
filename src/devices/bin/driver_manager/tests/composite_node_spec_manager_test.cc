@@ -17,6 +17,7 @@
 
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/node.h"
+#include "src/devices/bin/driver_manager/resource.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace fdf {
@@ -51,6 +52,8 @@ class FakeNodeManager : public driver_manager::NodeManager {
  public:
   void Bind(driver_manager::Node& node,
             std::shared_ptr<driver_manager::BindResultTracker> result_tracker) override {}
+  void Bind(driver_manager::Resource& resource,
+            std::shared_ptr<driver_manager::BindResultTracker> result_tracker) override {}
 
   zx::result<driver_manager::DriverHost*> CreateDriverHost(
       bool use_next_vdso, std::string_view driver_host_name_for_colocation) override {
@@ -73,7 +76,7 @@ class FakeCompositeNodeSpec : public driver_manager::CompositeNodeSpec {
 
   zx::result<std::optional<driver_manager::NodeWkPtr>> BindParent(
       fuchsia_driver_framework::wire::CompositeParent composite_parent,
-      const std::weak_ptr<driver_manager::Resource>& resource) override {
+      const driver_manager::ResourceWkPtr& resource) override {
     ZX_ASSERT(composite_parent.has_index());
     auto node_index = composite_parent.index();
     if (node_index >= parent_resources_.size()) {
@@ -103,9 +106,24 @@ class FakeCompositeNodeSpec : public driver_manager::CompositeNodeSpec {
     callback(zx::ok());
   }
 
-  const std::vector<std::optional<std::weak_ptr<driver_manager::Resource>>>& GetParentResources()
+  const std::vector<std::optional<driver_manager::ResourceWkPtr>>& GetParentResources()
       const override {
     return parent_resources_;
+  }
+
+  std::vector<std::optional<driver_manager::NodeWkPtr>> GetParentNodes() const override {
+    std::vector<std::optional<driver_manager::NodeWkPtr>> parent_nodes;
+    parent_nodes.reserve(parent_resources_.size());
+    for (const auto& parent_resource : parent_resources_) {
+      if (parent_resource == std::nullopt) {
+        parent_nodes.push_back(std::nullopt);
+      } else if (auto resource = parent_resource->lock()) {
+        parent_nodes.push_back(resource->owner());
+      } else {
+        parent_nodes.push_back(std::nullopt);
+      }
+    }
+    return parent_nodes;
   }
 
   bool remove_invoked() const { return remove_invoked_; }

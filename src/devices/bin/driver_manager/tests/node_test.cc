@@ -768,8 +768,15 @@ TEST_F(Dfv2NodeTest, TestCompositeNodeProperties) {
       fdf::MakeProperty2("test-key-2", "test=value")};
   auto parent_1 = CreateNode(kParent1Name);
   parent_1->InitializeSelfResource(kParent1NodeProperties);
+  auto parent_1_self = parent_1->GetSelfResource();
+  ASSERT_TRUE(parent_1_self.has_value());
+  EXPECT_TRUE(parent_1_self.value()->is_self_resource());
+
   auto parent_2 = CreateNode(kParent2Name);
   parent_2->InitializeSelfResource(kParent2NodeProperties);
+  auto parent_2_self = parent_2->GetSelfResource();
+  ASSERT_TRUE(parent_2_self.has_value());
+  EXPECT_TRUE(parent_2_self.value()->is_self_resource());
 
   std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_properties;
   parent_properties.emplace_back(kParent1Name, kParent1NodeProperties);
@@ -1154,11 +1161,23 @@ TEST_F(Dfv2NodeTest, ProvideAndRemoveResource) {
   auto endpoints = fidl::Endpoints<fuchsia_driver_framework::ResourceController>::Create();
 
   fidl::Arena arena;
+  fuchsia_component_decl::OfferService service_decl;
+  service_decl.source_name("service");
+  service_decl.target_name("service");
+  service_decl.renamed_instances(std::vector<::fuchsia_component_decl::NameMapping>{
+      fuchsia_component_decl::NameMapping("default", "default")});
+  service_decl.source_instance_filter(std::vector<std::string>{"default"});
+
+  fuchsia_driver_framework::Offer natural_offer =
+      fuchsia_driver_framework::Offer::WithZirconTransport(
+          fuchsia_component_decl::Offer::WithService(service_decl));
+  auto offers = fidl::ToWire(arena, std::vector{natural_offer});
+
   auto resource_args =
       fuchsia_driver_framework::wire::ResourceArgs::Builder(arena)
           .name("test-resource")
           .properties(fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2>())
-          .offers(fidl::VectorView<fuchsia_driver_framework::wire::Offer>())
+          .offers(offers)
           .Build();
 
   bool called = false;
@@ -1173,6 +1192,13 @@ TEST_F(Dfv2NodeTest, ProvideAndRemoveResource) {
 
   ASSERT_EQ(node->provided_resources().size(), 1u);
   EXPECT_EQ(node->provided_resources()[0]->name(), "test-resource");
+  EXPECT_FALSE(node->provided_resources()[0]->is_self_resource());
+  ASSERT_EQ(node->provided_resources()[0]->offers().size(), 1u);
+  EXPECT_EQ(node->provided_resources()[0]->offers()[0].service_name, "service");
+  ASSERT_EQ(node->provided_resources()[0]->properties().size(), 1u);
+  EXPECT_EQ(node->provided_resources()[0]->properties()[0].key(), "service");
+  EXPECT_EQ(node->provided_resources()[0]->properties()[0].value().string_value().value(),
+            "service.ZirconTransport");
 
   auto owner = node->provided_resources()[0]->owner().lock();
   ASSERT_NE(owner, nullptr);
@@ -1219,4 +1245,108 @@ TEST_F(Dfv2NodeTest, ProvideResourceInvalidArgs) {
 
   binding.Unbind();
   RunLoopUntilIdle();
+}
+TEST_F(Dfv2NodeTest, ProvideResourceInvalidOffer) {
+  auto node = CreateNode("test-node");
+
+  auto [node_client_end, node_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+  auto binding = fidl::BindServer(dispatcher(), std::move(node_server_end), node);
+
+  fidl::WireClient<fuchsia_driver_framework::Node> node_client(std::move(node_client_end),
+                                                               dispatcher());
+
+  auto endpoints = fidl::Endpoints<fuchsia_driver_framework::ResourceController>::Create();
+
+  fidl::Arena arena;
+  fuchsia_component_decl::OfferService service_decl;
+  // Missing source_name will fail offer validation.
+  fuchsia_driver_framework::Offer natural_offer =
+      fuchsia_driver_framework::Offer::WithZirconTransport(
+          fuchsia_component_decl::Offer::WithService(service_decl));
+  auto offers = fidl::ToWire(arena, std::vector{natural_offer});
+
+  auto resource_args =
+      fuchsia_driver_framework::wire::ResourceArgs::Builder(arena)
+          .name("test-resource")
+          .properties(fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2>())
+          .offers(offers)
+          .Build();
+
+  bool called = false;
+  node_client->ProvideResource(resource_args, std::move(endpoints.server))
+      .Then([&called](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(result->error_value(),
+                  fuchsia_driver_framework::NodeError::kOfferSourceNameMissing);
+        called = true;
+      });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(called);
+
+  ASSERT_EQ(node->provided_resources().size(), 0u);
+
+  binding.Unbind();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Dfv2NodeTest, CompositeNodeResourceDependents) {
+  const char* kParent1Name = "parent-1";
+  const std::vector<fuchsia_driver_framework::NodeProperty2> kParent1NodeProperties{
+      fdf::MakeProperty2("test-key-1", 2u)};
+  const char* kParent2Name = "parent-2";
+  const std::vector<fuchsia_driver_framework::NodeProperty2> kParent2NodeProperties{
+      fdf::MakeProperty2("test-key-2", "test=value")};
+  auto parent_1 = CreateNode(kParent1Name);
+  parent_1->InitializeSelfResource(kParent1NodeProperties);
+  auto parent_1_self = parent_1->GetSelfResource();
+  ASSERT_TRUE(parent_1_self.has_value());
+
+  auto parent_2 = CreateNode(kParent2Name);
+  parent_2->InitializeSelfResource(kParent2NodeProperties);
+  auto parent_2_self = parent_2->GetSelfResource();
+  ASSERT_TRUE(parent_2_self.has_value());
+
+  std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_properties;
+  parent_properties.emplace_back(kParent1Name, kParent1NodeProperties);
+  parent_properties.emplace_back(kParent2Name, kParent2NodeProperties);
+
+  auto parent_1_resource = parent_1_self.value();
+  auto parent_2_resource = parent_2_self.value();
+
+  // Initially, before composite is created, they should have no dependents.
+  EXPECT_TRUE(parent_1_resource->dependents().empty());
+  EXPECT_TRUE(parent_2_resource->dependents().empty());
+
+  // Create composite.
+  auto composite = CreateCompositeNode("composite", {parent_1, parent_2}, parent_properties,
+                                       /* primary_index */ 0);
+
+  // Now, both parent resources should have the composite node as a dependent.
+  ASSERT_EQ(parent_1_resource->dependents().size(), 1u);
+  EXPECT_EQ(parent_1_resource->dependents()[0].lock(), composite);
+
+  ASSERT_EQ(parent_2_resource->dependents().size(), 1u);
+  EXPECT_EQ(parent_2_resource->dependents()[0].lock(), composite);
+
+  // Reset our shared_ptr to composite.
+  composite.reset();
+
+  // Bind the parent_1_resource to a controller so we can remove it.
+  auto [resource_client_end, resource_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::ResourceController>::Create();
+  parent_1_resource->Bind(std::move(resource_server_end));
+  fidl::WireClient<fuchsia_driver_framework::ResourceController> resource_client(
+      std::move(resource_client_end), dispatcher());
+
+  // Remove the resource.
+  auto result = resource_client->Remove();
+  ASSERT_TRUE(result.ok());
+  RunLoopUntilIdle();
+
+  // The composite node should now be destroyed, and it should have removed itself from the
+  // resources' dependents list.
+  EXPECT_TRUE(parent_1_resource->dependents().empty());
+  EXPECT_TRUE(parent_2_resource->dependents().empty());
 }
