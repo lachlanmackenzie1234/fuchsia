@@ -17,6 +17,7 @@
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
 
+#include <sstream>
 #include <vector>
 
 #include <zxtest/zxtest.h>
