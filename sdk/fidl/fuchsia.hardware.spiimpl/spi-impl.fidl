@@ -8,6 +8,10 @@ using fuchsia.hardware.sharedmemory;
 using fuchsia.mem;
 using zx;
 
+/// If chip select is set to this value, the SPI driver should enable loopback mode for this
+/// request.
+const LOOPBACK_CHIP_SELECT uint32 = 0xffffffff;
+
 /// Low-level protocol for spi drivers.
 @discoverable
 @transport("Driver")

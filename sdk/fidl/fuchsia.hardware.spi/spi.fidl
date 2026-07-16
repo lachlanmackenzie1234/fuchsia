@@ -70,3 +70,19 @@ service Service {
 service ControllerService {
     device client_end:Controller;
 };
+
+open protocol Test {
+    /// Opens a connection to a SPI device in loopback mode, to be used for testing.
+    ///
+    /// Returns ZX_ERR_NOT_SUPPORTED if debugging is not enabled in this build.
+    ///
+    /// If the SPI implementation driver itself does not support loopback mode, this call will
+    /// succeed, but calls to the Device will fail with ZX_ERR_NOT_SUPPORTED instead.
+    strict ConnectSpiLoopback(resource struct {
+        server server_end:Device;
+    }) -> () error zx.Status;
+};
+
+service TestService {
+    test client_end:Test;
+};
