@@ -39,8 +39,6 @@ class RxQueue {
     ZX_DEBUG_ASSERT(parent_ == &parent);
   }
 
-  // Reclaims all buffers currently held by the device.
-  void Reclaim() __TA_REQUIRES(parent_->rx_lock());
   // Drops all queued buffers attributed to the given session, and marks the session as rx-disabled.
   // Called by the DeviceInterface parent when the session is marked as dead.
   void PurgeSession();
@@ -70,7 +68,7 @@ class RxQueue {
         : queue_(parent) {}
     ~SessionTransaction() __TA_REQUIRES(queue_->parent_->rx_lock()) = default;
     uint32_t remaining();
-    void Push(Session* session, uint16_t descriptor);
+    void Push(uint16_t descriptor);
     void AssertLock(DeviceInterface& parent) __TA_ASSERT(parent.rx_lock()) {
       ZX_DEBUG_ASSERT(queue_->parent_ == &parent);
     }

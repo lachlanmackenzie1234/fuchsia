@@ -709,7 +709,7 @@ bool Session::LoadAvailableRxDescriptors(RxQueue::SessionTransaction& transact) 
   }
   while (transact.remaining() != 0 && rx_avail_queue_count_ != 0) {
     rx_avail_queue_count_--;
-    transact.Push(this, rx_avail_queue_[rx_avail_queue_count_]);
+    transact.Push(rx_avail_queue_[rx_avail_queue_count_]);
   }
   return true;
 }

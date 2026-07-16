@@ -412,7 +412,7 @@ uint32_t RxQueue::SessionTransaction::remaining() __TA_REQUIRES(queue_->parent_-
   return queue_->in_flight_->available();
 }
 
-void RxQueue::SessionTransaction::Push(Session* session, uint16_t descriptor)
+void RxQueue::SessionTransaction::Push(uint16_t descriptor)
     __TA_REQUIRES(queue_->parent_->rx_lock()) {
   // NB: __TA_REQUIRES here is just encoding that a SessionTransaction always holds a lock for
   // its parent queue, the protection from misuse comes from the annotations on
