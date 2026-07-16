@@ -434,6 +434,45 @@ TEST(IntervalTreeTest, FindRangeOverlappingMultipleRangesReturnsFirst) {
   ASSERT_EQ(TestRange(2, 5), tree.find(TestRange(0, 10))->second);
 }
 
+TEST(IntervalTreeTest, TryInsertEmptyRangeDoesNothingAndReturnsTrue) {
+  TestIntervalTree tree;
+  tree.insert(TestRange(10, 30));
+
+  ASSERT_TRUE(tree.try_insert(TestRange(20, 20)));
+  EXPECT_EQ(1, tree.size());
+  // Tree wasn't modified.
+  EXPECT_EQ(TestRange(10, 30), tree.begin()->second);
+  EXPECT_EQ(TestRange(10, 30), (--tree.end())->second);
+
+  ASSERT_TRUE(tree.try_insert(TestRange(5, 5)));
+  // Tree wasn't modified.
+  EXPECT_EQ(1, tree.size());
+  EXPECT_EQ(TestRange(10, 30), tree.begin()->second);
+}
+
+TEST(IntervalTreeTest, EraseEmptyRangeDoesNothing) {
+  TestIntervalTree tree;
+  tree.insert(TestRange(10, 30));
+
+  tree.erase(TestRange(20, 20));
+  // Tree wasn't modified.
+  EXPECT_EQ(1, tree.size());
+  EXPECT_EQ(TestRange(10, 30), tree.begin()->second);
+
+  tree.erase(TestRange(5, 5));
+  // Tree wasn't modified.
+  EXPECT_EQ(1, tree.size());
+  EXPECT_EQ(TestRange(10, 30), tree.begin()->second);
+}
+
+TEST(IntervalTreeTest, FindEmptyRangeReturnsEnd) {
+  TestIntervalTree tree;
+  tree.insert(TestRange(10, 30));
+
+  EXPECT_EQ(tree.end(), tree.find(TestRange(20, 20)));
+  EXPECT_EQ(tree.end(), tree.find(TestRange(5, 5)));
+}
+
 struct RangeContainer {
   RangeContainer(uint64_t start, uint64_t end, bool merge)
       : start_(start), end_(end), allow_merge_(merge) {}

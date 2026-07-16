@@ -41,6 +41,10 @@ class IntervalTree {
   // Runtime: O(log(number of ranges))
   template <typename RangeType>
   bool try_insert(RangeType&& range) {
+    // Special case: Empty ranges aren't inserted.
+    if (range.Length() == 0) {
+      return true;
+    }
     // Special case: Set is empty, range is inserted as-is.
     if (map_.empty()) {
       map_.insert({range.Start(), std::forward<RangeType>(range)});
