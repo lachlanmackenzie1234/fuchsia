@@ -133,14 +133,6 @@ const FRAGMENT_BLOCK_SIZE: u8 = 8;
 /// IPv6 fragment extension header's fragment offset field are 13 bits wide.
 const MAX_FRAGMENT_BLOCKS: u16 = 8191;
 
-/// Maximum number of bytes of all currently cached fragments per IP protocol.
-///
-/// If the current cache size is less than this number, a new fragment can be
-/// cached (even if this will result in the total cache size exceeding this
-/// threshold). If the current cache size >= this number, the incoming fragment
-/// will be dropped.
-const MAX_FRAGMENT_CACHE_SIZE: usize = 4 * 1024 * 1024;
-
 /// The state context for the fragment cache.
 pub trait FragmentContext<I: Ip, BT: FragmentBindingsTypes> {
     /// Returns a mutable reference to the fragment cache.
@@ -349,8 +341,8 @@ pub enum FragmentProcessingState<I: ReassemblyIpExt, B: SplitByteSlice> {
     /// the packet.
     NeedMoreFragments,
 
-    /// Cannot process the fragment because `MAX_FRAGMENT_CACHE_SIZE` is
-    /// reached.
+    /// Cannot process the fragment because the cache's capacity is currently
+    /// exceeded.
     OutOfMemory,
 
     /// Successfully processed the provided fragment. We now have all the
@@ -526,8 +518,11 @@ enum FindGapResult {
 #[derive(Debug)]
 pub struct IpPacketFragmentCache<I: ReassemblyIpExt, BT: FragmentBindingsTypes> {
     cache: HashMap<FragmentCacheKey<I>, FragmentCacheData>,
-    size: usize,
-    threshold: usize,
+    // The bytes of data (e.g. IP Header + IP Payload) stored in `cache`.
+    data_size: usize,
+    // The number of individual fragments stored in `cache`.
+    num_fragments: usize,
+    capacity: FragmentCacheCapacity,
     timers: LocalTimerHeap<FragmentCacheKey<I>, (), BT>,
 }
 
@@ -538,8 +533,9 @@ impl<I: ReassemblyIpExt, BC: FragmentBindingsContext> IpPacketFragmentCache<I, B
     ) -> IpPacketFragmentCache<I, BC> {
         IpPacketFragmentCache {
             cache: HashMap::new(),
-            size: 0,
-            threshold: MAX_FRAGMENT_CACHE_SIZE,
+            data_size: 0,
+            num_fragments: 0,
+            capacity: FragmentCacheCapacity::default(),
             timers: LocalTimerHeap::new(bindings_ctx, CC::convert_timer(Default::default())),
         }
     }
@@ -563,7 +559,7 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
     where
         I::Packet<B>: FragmentablePacket,
     {
-        if self.above_size_threshold() {
+        if self.above_capacity() {
             return (FragmentProcessingState::OutOfMemory, None);
         }
 
@@ -796,7 +792,7 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
             FragmentProcessingState::NeedMoreFragments
         };
 
-        self.increment_size(added_bytes);
+        self.track_fragment(added_bytes);
         (result, timer_id)
     }
 
@@ -834,7 +830,7 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
         // Remove the entry from the cache now that we've validated that we will
         // be able to reassemble it.
         let (_key, data) = entry.remove_entry();
-        self.size -= data.total_size;
+        self.untrack_data(&data);
 
         // If we are not missing fragments, we must have header data.
         assert_matches!(data.header, Some(_));
@@ -863,18 +859,25 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
         }
     }
 
-    fn above_size_threshold(&self) -> bool {
-        self.size >= self.threshold
+    fn above_capacity(&self) -> bool {
+        self.data_size >= self.capacity.max_data_bytes
+            || self.num_fragments >= self.capacity.max_fragments
+            || self.cache.len() >= self.capacity.max_keys
     }
 
-    fn increment_size(&mut self, sz: usize) {
-        assert!(!self.above_size_threshold());
-        self.size += sz;
+    fn track_fragment(&mut self, added_bytes: usize) {
+        self.data_size += added_bytes;
+        self.num_fragments += 1;
+    }
+
+    fn untrack_data(&mut self, data: &FragmentCacheData) {
+        self.data_size -= data.total_size;
+        self.num_fragments -= data.body_fragments.len();
     }
 
     fn remove_data(&mut self, key: &FragmentCacheKey<I>) -> Option<FragmentCacheData> {
         let data = self.cache.remove(key)?;
-        self.size -= data.total_size;
+        self.untrack_data(&data);
         Some(data)
     }
 }
@@ -918,6 +921,53 @@ impl PartialOrd for PacketBodyFragment {
 impl Ord for PacketBodyFragment {
     fn cmp(&self, other: &Self) -> Ordering {
         self.offset.cmp(&other.offset)
+    }
+}
+
+/// Capacity limits for the IP packet fragment cache.
+///
+/// If none of these limits are currently exceeded, a new fragment can be cached
+/// (even if this results in the cache newly exceeding the limits). If any
+/// of the limits are currently exceeded, the incoming fragment is be dropped.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct FragmentCacheCapacity {
+    /// Maximum number of bytes of all currently cached fragments.
+    max_data_bytes: usize,
+    /// Maximum number of keys in the cache.
+    max_keys: usize,
+    /// Maximum number of individual fragments in the cache.
+    max_fragments: usize,
+}
+
+impl FragmentCacheCapacity {
+    /// The default value for [`FragmentCacheCapacity.max_data_bytes`].
+    ///
+    /// 4 MiB.
+    const DEFAULT_MAX_DATA_BYTES: usize = 4 * 1024 * 1024;
+
+    /// The default value for [`FragmentCacheCapacity.max_keys`].
+    ///
+    /// With some fuzzy (and conservative) math, each key is expected to take
+    /// < 512 bytes (after accounting for the [`FragmentCacheKey`],
+    /// [`FragmentCacheData`], and the heap allocations created by the data).
+    /// Thus 2048 keys should set a loose upper bound of 1MiB.
+    const DEFAULT_MAX_KEYS: usize = 2048;
+
+    /// The default value for [`FragmentCacheCapacity.max_fragments`].
+    ///
+    /// Allow on average 8 fragments per packet, with
+    /// [`Self::DEFAULT_MAX_KEYS`]. A factor of 8 is quite conservative, and
+    /// would only occur in the most extreme circumstances.
+    const DEFAULT_MAX_FRAGMENTS: usize = Self::DEFAULT_MAX_KEYS * 8;
+}
+
+impl Default for FragmentCacheCapacity {
+    fn default() -> Self {
+        Self {
+            max_data_bytes: Self::DEFAULT_MAX_DATA_BYTES,
+            max_keys: Self::DEFAULT_MAX_KEYS,
+            max_fragments: Self::DEFAULT_MAX_FRAGMENTS,
+        }
     }
 }
 
@@ -1017,13 +1067,16 @@ mod tests {
     fn validate_size<I: ReassemblyIpExt, BT: FragmentBindingsTypes>(
         cache: &IpPacketFragmentCache<I, BT>,
     ) {
-        let mut sz: usize = 0;
+        let mut data_size: usize = 0;
+        let mut num_fragments: usize = 0;
 
         for v in cache.cache.values() {
-            sz += v.total_size;
+            data_size += v.total_size;
+            num_fragments += v.body_fragments.len();
         }
 
-        assert_eq!(sz, cache.size);
+        assert_eq!(data_size, cache.data_size);
+        assert_eq!(num_fragments, cache.num_fragments);
     }
 
     struct FragmentSpec {
@@ -1548,7 +1601,8 @@ mod tests {
 
         // Make sure no timers in the dispatcher yet.
         bindings_ctx.timers.assert_no_timers_installed();
-        assert_eq!(core_ctx.state.cache.size, 0);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
 
         // Test that we properly reset fragment cache on timer.
 
@@ -1606,7 +1660,8 @@ mod tests {
 
         // Make sure no other times exist..
         bindings_ctx.timers.assert_no_timers_installed();
-        assert_eq!(core_ctx.state.cache.size, 0);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
 
         // Attempt to reassemble the packet but get an error since the fragment
         // data would have been reset/cleared.
@@ -1625,17 +1680,18 @@ mod tests {
     #[test_case(1)]
     #[test_case(10)]
     #[test_case(100)]
-    fn test_ip_fragment_cache_oom<I: TestIpExt>(size: u16) {
+    fn test_ip_fragment_cache_max_data_size<I: TestIpExt>(size: u16) {
         let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<I>();
         let mut id = 0;
         const THRESHOLD: usize = 8196usize;
 
-        assert_eq!(core_ctx.state.cache.size, 0);
-        core_ctx.state.cache.threshold = THRESHOLD;
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
+        core_ctx.state.cache.capacity.max_data_bytes = THRESHOLD;
 
-        // Test that when cache size exceeds the threshold, process_fragment
-        // returns OOM.
-        while core_ctx.state.cache.size + usize::from(size) <= THRESHOLD {
+        // Test that when cache.data_size exceeds the threshold,
+        // process_fragment returns OOM.
+        while core_ctx.state.cache.data_size + usize::from(size) <= THRESHOLD {
             I::process_ip_fragment(
                 &mut core_ctx,
                 &mut bindings_ctx,
@@ -1655,10 +1711,11 @@ mod tests {
         );
         validate_size(&core_ctx.state.cache);
 
-        // Trigger the timers, which will clear the cache.
+        // Trigger the timers, which clears the cache.
         let _timers = bindings_ctx
             .trigger_timers_for(I::REASSEMBLY_TIMEOUT + Duration::from_secs(1), &mut core_ctx);
-        assert_eq!(core_ctx.state.cache.size, 0);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
         validate_size(&core_ctx.state.cache);
 
         // Can process fragments again.
@@ -1666,6 +1723,88 @@ mod tests {
             &mut core_ctx,
             &mut bindings_ctx,
             FragmentSpec { id, offset: 0, size, m_flag: true },
+            ExpectedResult::NeedMore,
+        );
+    }
+
+    #[ip_test(I)]
+    fn test_ip_fragment_cache_max_keys<I: TestIpExt>() {
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+        const MAX_KEYS: u16 = 3;
+        core_ctx.state.cache.capacity.max_keys = MAX_KEYS.into();
+
+        // Test that when cache.cache.len() exceeds the threshold,
+        // process_fragment returns OOM.
+        for id in 0..MAX_KEYS {
+            I::process_ip_fragment(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                FragmentSpec { id, offset: 0, size: 1, m_flag: true },
+                ExpectedResult::NeedMore,
+            );
+        }
+
+        // Now that the cache is at or above the threshold, observe OOM.
+        I::process_ip_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id: MAX_KEYS, offset: 0, size: 1, m_flag: true },
+            ExpectedResult::OutOfMemory,
+        );
+
+        // Trigger the timers, which clears the cache.
+        let _timers = bindings_ctx
+            .trigger_timers_for(I::REASSEMBLY_TIMEOUT + Duration::from_secs(1), &mut core_ctx);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
+        validate_size(&core_ctx.state.cache);
+
+        // Can process fragments again.
+        I::process_ip_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id: MAX_KEYS, offset: 0, size: 1, m_flag: true },
+            ExpectedResult::NeedMore,
+        );
+    }
+
+    #[ip_test(I)]
+    fn test_ip_fragment_cache_max_fragments<I: TestIpExt>() {
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+        const MAX_FRAGMENTS: u16 = 3;
+        core_ctx.state.cache.capacity.max_fragments = MAX_FRAGMENTS.into();
+
+        // Test that when cache.num_fragments exceeds the threshold,
+        // process_fragment returns OOM.
+        for offset in 0..MAX_FRAGMENTS {
+            I::process_ip_fragment(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                FragmentSpec { id: 0, offset, size: 1, m_flag: true },
+                ExpectedResult::NeedMore,
+            );
+        }
+
+        // Now that the cache is at or above the threshold, observe OOM.
+        I::process_ip_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id: 0, offset: MAX_FRAGMENTS, size: 1, m_flag: true },
+            ExpectedResult::OutOfMemory,
+        );
+
+        // Trigger the timers, which clears the cache.
+        let _timers = bindings_ctx
+            .trigger_timers_for(I::REASSEMBLY_TIMEOUT + Duration::from_secs(1), &mut core_ctx);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
+        validate_size(&core_ctx.state.cache);
+
+        // Can process fragments again.
+        I::process_ip_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id: 0, offset: MAX_FRAGMENTS, size: 1, m_flag: true },
             ExpectedResult::NeedMore,
         );
     }
@@ -1796,7 +1935,8 @@ mod tests {
         let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<Ipv4>();
         let id = 0;
 
-        assert_eq!(core_ctx.state.cache.size, 0);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
         // Test that fragment bodies must be a multiple of
         // `FRAGMENT_BLOCK_SIZE`, except for the last fragment.
 
@@ -1860,7 +2000,8 @@ mod tests {
         let mut expected_body: Vec<u8> = Vec::new();
         expected_body.extend(0..15);
         assert_eq!(packet.body(), &expected_body[..]);
-        assert_eq!(core_ctx.state.cache.size, 0);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
     }
 
     #[test]
@@ -1868,7 +2009,8 @@ mod tests {
         let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<Ipv6>();
         let id = 0;
 
-        assert_eq!(core_ctx.state.cache.size, 0);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
         // Test that fragment bodies must be a multiple of
         // `FRAGMENT_BLOCK_SIZE`, except for the last fragment.
 
@@ -1933,7 +2075,8 @@ mod tests {
         let mut expected_body: Vec<u8> = Vec::new();
         expected_body.extend(0..15);
         assert_eq!(packet.body(), &expected_body[..]);
-        assert_eq!(core_ctx.state.cache.size, 0);
+        assert_eq!(core_ctx.state.cache.data_size, 0);
+        assert_eq!(core_ctx.state.cache.num_fragments, 0);
     }
 
     #[ip_test(I)]
