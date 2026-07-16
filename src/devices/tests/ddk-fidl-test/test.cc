@@ -16,6 +16,7 @@
 #include <zircon/types.h>
 
 #include <vector>
+#include <sstream>
 
 #include <zxtest/zxtest.h>
 
