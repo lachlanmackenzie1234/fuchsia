@@ -4,9 +4,6 @@
 
 #![no_std]
 
-pub mod arch;
 pub mod relaxed_atomic;
 pub mod thread;
 pub mod types;
-
-pub mod restricted_state;

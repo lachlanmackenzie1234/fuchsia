@@ -10,7 +10,6 @@
 #include <lib/user_copy/internal.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zx/result.h>
-#include <stddef.h>
 #include <zircon/syscalls-next.h>
 
 #include <arch/exception.h>
@@ -32,14 +31,8 @@ class VmMapping;
 //
 // Note everything in this class should be accessed only by the thread that it belongs to,
 // since there is no internal locking for efficiency reasons.
-//
-// The memory layout of `RestrictedState` in C++ must exactly match `RestrictedState` in Rust
-// (`zircon/kernel/kernel/restricted_state.rs`), as instances are allocated in Rust and accessed
-// directly from C++ by pointer. Any changes to field types, names, ordering, or layout must be
-// kept in sync between the two definitions, and verified via static assertions.
 class RestrictedState {
  public:
-  RestrictedState() = delete;
   // Create a |RestrictedState| with an optional exception report pointer.
   //
   // When |exception_report_ptr| is null, the exception report will be delivered
@@ -48,23 +41,20 @@ class RestrictedState {
       user_out_ptr<zx_exception_report_t> exception_report_ptr);
 
   ~RestrictedState();
-  void operator delete(void* ptr) {}
   DISALLOW_COPY_ASSIGN_AND_MOVE(RestrictedState);
 
   bool in_restricted() const { return in_restricted_; }
   uintptr_t vector_ptr() const { return vector_ptr_; }
   uintptr_t context() const { return context_; }
-  user_out_ptr<zx_exception_report_t> exception_report_ptr() const {
-    return make_user_out_ptr(exception_report_ptr_);
-  }
+  user_out_ptr<zx_exception_report_t> exception_report_ptr() const { return exception_report_ptr_; }
   const ArchSavedNormalState& arch_normal_state() const { return arch_; }
   ArchSavedNormalState& arch_normal_state() { return arch_; }
   template <typename T>
   T* state_ptr_as() const {
     static_assert(internal::is_copy_allowed<T>::value);
-    return reinterpret_cast<T*>(state_ptr());
+    return reinterpret_cast<T*>(state_mapping_ptr_);
   }
-  zx_restricted_state_t* state_ptr() const { return state_mapping_ptr_; }
+  zx_restricted_state_t* state_ptr() const { return state_ptr_as<zx_restricted_state_t>(); }
 
   fbl::RefPtr<VmObjectPaged> vmo() const;
 
@@ -115,36 +105,25 @@ class RestrictedState {
   static void ArchDump(const zx_restricted_state_t& state);
 
  private:
-  bool in_restricted_;
-  uintptr_t vector_ptr_;
-  uintptr_t context_;
-  zx_exception_report_t* exception_report_ptr_;
-  void* vmo_;
-  void* mapping_;
-  zx_restricted_state_t* state_mapping_ptr_;
-  ArchSavedNormalState arch_;
+  RestrictedState(fbl::RefPtr<VmObjectPaged> state_vmo, fbl::RefPtr<VmMapping> state_mapping,
+                  user_out_ptr<zx_exception_report_t> exception_report_ptr);
 
-  // Verify that the memory layout of C++ `RestrictedState` exactly matches the C-ABI
-  // `RestrictedState` struct in `zircon/kernel/kernel/restricted_state.rs`.
-  //
-  // Both types are accessed directly by pointer across the FFI boundary, so any changes to field
-  // types, ordering, or layout here must also be mirrored on the Rust side, and vice versa.
-  static void CheckLayout() {
-    static_assert(offsetof(RestrictedState, in_restricted_) == 0);
-    static_assert(offsetof(RestrictedState, vector_ptr_) == 8);
-    static_assert(offsetof(RestrictedState, context_) == 16);
-    static_assert(offsetof(RestrictedState, exception_report_ptr_) == 24);
-    static_assert(offsetof(RestrictedState, vmo_) == 32);
-    static_assert(offsetof(RestrictedState, mapping_) == 40);
-    static_assert(offsetof(RestrictedState, state_mapping_ptr_) == 48);
-    static_assert(offsetof(RestrictedState, arch_) == 56);
-    static_assert(alignof(RestrictedState) == 8);
-#if defined(__riscv)
-    static_assert(sizeof(RestrictedState) == 64);
-#else
-    static_assert(sizeof(RestrictedState) == 72);
-#endif
-  }
+  bool in_restricted_ = false;
+  uintptr_t vector_ptr_ = 0;
+  uintptr_t context_ = 0;
+
+  // May be null.
+  user_out_ptr<zx_exception_report_t> exception_report_ptr_;
+
+  // Ref pointer to a vmo holding the restricted state and a kernel mapping of the first page.
+  const fbl::RefPtr<VmObjectPaged> state_vmo_;
+  const fbl::RefPtr<VmMapping> state_mapping_;
+
+  // Cached pointer to the mapping, to avoid needing to deref the mapping on every access.
+  void* const state_mapping_ptr_ = nullptr;
+
+  // Arch specific part of the save state
+  ArchSavedNormalState arch_;
 };
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_RESTRICTED_STATE_H_
