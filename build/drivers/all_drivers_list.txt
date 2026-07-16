@@ -271,6 +271,8 @@
 //src/devices/tests/v2/reload-driver-cross-colocated/drivers/right-parent:driver
 //src/devices/tests/v2/reload-driver-cross-colocated/drivers/root:driver
 //src/devices/tests/v2/reload-driver-cross-colocated/drivers/target:driver
+//src/devices/tests/v2/resource_bound_composite:leaf_driver
+//src/devices/tests/v2/resource_bound_composite:root_driver
 //src/devices/tests/v2/reload-driver-nested-composite/drivers:driver_composite_a
 //src/devices/tests/v2/reload-driver-nested-composite/drivers:driver_composite_b
 //src/devices/tests/v2/reload-driver-nested-composite/drivers:driver_top_b
