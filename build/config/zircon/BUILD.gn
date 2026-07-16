@@ -270,7 +270,7 @@ variant("user") {
   if (is_gcc) {
     # This is the default in Clang for Fuchsia targets.  In shlib toolchains
     # this config will come before the one that overrides it with -fPIC.
-    common_flags = [ "-fPIE" ]
+    c_family_flags = [ "-fPIE" ]
   }
 }
 

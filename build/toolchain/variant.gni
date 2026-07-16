@@ -2,40 +2,50 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler_config.gni")
+
 # Template to define a config for use in the `known_variants` list.
-# `variant` is used just like `config`, but it also accepts two other
-# optional parameters:
+# variant() is used just like compiler_config(), but it also accepts other
+# optional parameters.
 #
-#   common_flags
-#     This is a shorthand for appending the same thing to cflags,
-#     asmflags, and ldflags.  Most flags that affect code generation
-#     should be used uniformly in compilation, assembly, and linking.
-#     If cflags, asmflags, or ldflags is also specified, common_flags
-#     will be appended to it.
+# Parameters
 #
-#   deps
-#     This lists labels that will be automatically added to the deps list
+#   * deps
+#     - Optional: This lists labels that will be automatically added to the deps list
+#     of each terminal target linked in this variant.
+#     - Type: list(label)
+#     - Default: []
+#
+#   * executable_deps
+#     - Optional: This lists labels that will be automatically added to the deps list
 #     of each executable target built in this variant.
+#     - Type: list(label)
+#     - Default: []
+#
+#   * link_deps
+#     - Optional: This lists labels that will be automatically added to the deps list
+#     of each linking target built in this variant.
+#     - Type: list(label)
+#     - Default: []
+#
+#   * source_deps
+#     - Optional: This lists labels that will be automatically added to the deps list
+#     of each target compiling sources built in this variant.
+#     - Type: list(label)
+#     - Default: []
+#
+# See compiler_config() for other parameters.
 #
 template("variant") {
-  config(target_name) {
-    asmflags = []
-    cflags = []
-    ldflags = []
+  compiler_config(target_name) {
     forward_variables_from(invoker,
                            "*",
                            [
-                             "common_flags",
                              "deps",
                              "executable_deps",
                              "link_deps",
                              "source_deps",
                            ])
-    if (defined(invoker.common_flags)) {
-      asmflags += invoker.common_flags
-      cflags += invoker.common_flags
-      ldflags += invoker.common_flags
-    }
   }
   group("${target_name}_deps") {
     # Propagate it as public_deps so that targets in deps can have

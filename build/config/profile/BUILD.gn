@@ -10,7 +10,7 @@ import("//build/toolchain/variant.gni")
 
 # Common flags for all coverage-based variants defined below.
 # IMPORTANT: This should not include any rust or linker flags!
-_coverage_common_flags = [
+_coverage_c_family_flags = [
   "-fprofile-instr-generate",
   "-fcoverage-mapping",
 ]
@@ -59,7 +59,7 @@ profile_source_files_list_files += [ _profile_source_files_file ]
 
 _coverage_inputs = profile_source_files_list_files
 foreach(file, profile_source_files_list_files) {
-  _coverage_common_flags +=
+  _coverage_c_family_flags +=
       [ "-fprofile-list=" + rebase_path(file, root_build_dir) ]
 }
 
@@ -97,7 +97,7 @@ variant("coverage") {
   configs = [ ":variant-libprefix" ]
   deps = [ ":runtime-deps" ]
 
-  common_flags = _coverage_common_flags
+  c_family_flags = _coverage_c_family_flags
   inputs = _coverage_inputs
 
   cflags = [
@@ -150,10 +150,10 @@ variant("coverage-cts") {
   configs = [ ":variant-libprefix" ]
   deps = [ ":runtime-deps" ]
 
-  common_flags = _coverage_common_flags
+  c_family_flags = _coverage_c_family_flags
   inputs = _coverage_inputs
 
-  common_flags +=
+  c_family_flags +=
       [ "-fprofile-list=" + rebase_path("profile-cts.list", root_build_dir) ]
   inputs += [ "profile-cts.list" ]
 
@@ -214,7 +214,7 @@ variant("profile") {
   configs = [ ":variant-libprefix" ]
   deps = [ ":runtime-deps" ]
 
-  common_flags = [ "-fprofile-generate" ]
+  c_family_flags = [ "-fprofile-generate" ]
 
   rustflags = []
 

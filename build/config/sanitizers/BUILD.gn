@@ -87,7 +87,7 @@ template("sanitizer_rustflags") {
 }
 
 variant("cfi") {
-  common_flags = [ "-fsanitize=cfi" ]
+  c_family_flags = [ "-fsanitize=cfi" ]
   configs = [ ":cfi.rustflags" ]
 
   # The phys environment has a custom cross-DSO runtime implementation.  The
@@ -95,7 +95,7 @@ variant("cfi") {
   # it participates in the dynamic symbol export scheme for it) because it's
   # only a cross-DSO _callee_, never a cross-DSO _caller_.
   if (toolchain_environment == "kernel.phys") {
-    common_flags += [ "-fsanitize-cfi-cross-dso" ]
+    c_family_flags += [ "-fsanitize-cfi-cross-dso" ]
   }
 }
 
@@ -104,7 +104,7 @@ sanitizer_rustflags("cfi.rustflags") {
 }
 
 variant("asan") {
-  common_flags = [ "-fsanitize=address" ]
+  c_family_flags = [ "-fsanitize=address" ]
   cflags = [
     # See https://fxbug.dev/42144902 and
     # https://github.com/google/sanitizers/issues/1017.
@@ -283,7 +283,7 @@ variant("lsan") {
 }
 
 variant("ubsan") {
-  common_flags = []
+  c_family_flags = []
   configs = []
   if (!_prebuilt_runtime) {
     # If not using the prebuilt runtime, then enable options appropriate for a
@@ -291,7 +291,7 @@ variant("ubsan") {
     # because how it's defined depends on the particular environment.
     configs += [ "//src/lib/ubsan-custom:ubsan" ]
   } else {
-    common_flags = [ "-fsanitize=undefined" ]
+    c_family_flags = [ "-fsanitize=undefined" ]
   }
 
   if (is_host) {
@@ -304,7 +304,7 @@ variant("ubsan") {
     # 3) we have binaries that depend on both these LLVM prebuilts and other libraries
     # Disabling this check on host tools for now allows us to enable UBSan on
     # host tools, which is a net win.
-    common_flags += [ "-fno-sanitize=vptr" ]
+    c_family_flags += [ "-fno-sanitize=vptr" ]
   }
 
   # If asan is also in use, it handles ubsan_default_options indirectly.
@@ -328,11 +328,11 @@ sanitizer_default_options("ubsan_default_options") {
 }
 
 variant("sancov") {
-  common_flags = [ "-fsanitize-coverage=trace-pc-guard" ]
+  c_family_flags = [ "-fsanitize-coverage=trace-pc-guard" ]
 }
 
 variant("tsan") {
-  common_flags = [ "-fsanitize=thread" ]
+  c_family_flags = [ "-fsanitize=thread" ]
   configs = [
     ":variant-libprefix",
     ":tsan.rustflags",
@@ -348,7 +348,7 @@ sanitizer_default_options("tsan_default_options") {
 }
 
 variant("hwasan") {
-  common_flags = [ "-fsanitize=hwaddress" ]
+  c_family_flags = [ "-fsanitize=hwaddress" ]
   configs = [
     ":variant-libprefix",
     ":hwasan.rustflags",

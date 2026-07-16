@@ -18,7 +18,7 @@ import("//build/toolchain/variant.gni")
 #     Provides a description of each type of coverage.
 #
 variant("fuzzer") {
-  common_flags = [ "-fsanitize=fuzzer-no-link" ]
+  c_family_flags = [ "-fsanitize=fuzzer-no-link" ]
 
   # See the note on the //build/config/sanitizers:rust-asan variant.
   # This config should only be used with Rust code to build staticlibs that are
