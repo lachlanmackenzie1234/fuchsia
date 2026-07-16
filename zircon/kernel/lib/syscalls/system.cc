@@ -95,9 +95,7 @@ extern "C" arch::AsmLabel mexec_asm, mexec_asm_end;
 
 class IdentityPageAllocator {
  public:
-  explicit IdentityPageAllocator(uintptr_t alloc_start) : alloc_start_(alloc_start) {
-    allocated_ = LIST_INITIAL_VALUE(allocated_);
-  }
+  explicit IdentityPageAllocator(uintptr_t alloc_start) : alloc_start_(alloc_start) {}
   ~IdentityPageAllocator() { pmm_free(&allocated_); }
 
   /* Allocates a page of memory that has the same physical and virtual
@@ -113,7 +111,7 @@ class IdentityPageAllocator {
   size_t mapping_id_ = 0;
   // Minimum physical/virtual address for all allocations.
   uintptr_t alloc_start_;
-  list_node allocated_;
+  VmPageDoublyLinkedList allocated_;
 };
 
 zx_status_t IdentityPageAllocator::InitializeAspace() {
@@ -132,7 +130,7 @@ zx_status_t IdentityPageAllocator::InitializeAspace() {
 
 zx_status_t alloc_pages_greater_than(paddr_t lower_bound, size_t count, size_t limit,
                                      paddr_t* paddrs) {
-  struct list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
 
   // We don't support partially completed requests. This function will either
   // allocate |count| pages or 0 pages. If we complete a partial allocation
@@ -143,15 +141,11 @@ zx_status_t alloc_pages_greater_than(paddr_t lower_bound, size_t count, size_t l
   while (count) {
     // TODO: replace with pmm routine that can allocate while excluding a range.
     size_t actual = 0;
-    list_node alloc_list = LIST_INITIAL_VALUE(alloc_list);
+    VmPageDoublyLinkedList alloc_list;
     zx_status_t status = pmm_alloc_range(lower_bound, count, &alloc_list);
     if (status == ZX_OK) {
       actual = count;
-      if (list_is_empty(&list)) {
-        list_move(&alloc_list, &list);
-      } else {
-        list_splice_after(&alloc_list, list_peek_tail(&list));
-      }
+      list.splice(list.end(), alloc_list);
     }
 
     for (size_t i = 0; i < actual; i++) {
@@ -168,13 +162,13 @@ zx_status_t alloc_pages_greater_than(paddr_t lower_bound, size_t count, size_t l
   }
 
   // mark all of the pages we allocated as WIRED.
-  vm_page_t* p;
-  list_for_every_entry (&list, p, vm_page_t, queue_node) {
-    p->set_state(vm_page_state::WIRED);
+  for (auto& p : list) {
+    p.set_state(vm_page_state::WIRED);
   }
 
   // Make sure we don't free the pages we just allocated.
   pmm_cleanup.cancel();
+  list.clear();
 
   return ZX_OK;
 }
@@ -199,7 +193,7 @@ zx_status_t IdentityPageAllocator::Allocate(void** result) {
   // the object is destroyed.
   vm_page_t* page = paddr_to_vm_page(pa);
   DEBUG_ASSERT(page);
-  list_add_tail(&allocated_, &page->queue_node);
+  allocated_.push_back(page);
 
   // The kernel address space may be in high memory which cannot be identity
   // mapped since all Kernel Virtual Addresses might be out of range of the
@@ -276,7 +270,7 @@ static zx_status_t vmo_coalesce_pages(zx_handle_t vmo_hdl, const size_t extra_by
   const size_t num_pages = RoundUpPageSize(vmo_size + extra_bytes) / kPageSize;
 
   paddr_t base_addr;
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   st = Pmm::Node().AllocContiguous(num_pages, PMM_ALLOC_FLAG_ANY, 0, &base_addr, &list);
   if (st != ZX_OK) {
     return st;
@@ -297,6 +291,7 @@ static zx_status_t vmo_coalesce_pages(zx_handle_t vmo_hdl, const size_t extra_by
   if (vaddr)
     *vaddr = dst_addr;
 
+  list.clear();
   return ZX_OK;
 }
 

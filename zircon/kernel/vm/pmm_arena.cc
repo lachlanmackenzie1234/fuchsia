@@ -76,8 +76,7 @@ void PmmArena::Init(const PmmArenaSelection& selected, PmmNode* node) {
 
   // add all pages that aren't part of the page array to the free list
   // pages part of the free array go to the WIRED state
-  list_node list;
-  list_initialize(&list);
+  VmPageDoublyLinkedList list;
   for (size_t i = 0; i < page_count; i++) {
     auto& p = page_array_[i];
 
@@ -85,7 +84,7 @@ void PmmArena::Init(const PmmArenaSelection& selected, PmmNode* node) {
     if (i >= array_start_index && i < array_end_index) {
       p.set_state(vm_page_state::WIRED);
     } else {
-      list_add_tail(&list, &p.queue_node);
+      list.push_back(&p);
     }
   }
 

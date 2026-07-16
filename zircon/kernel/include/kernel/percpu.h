@@ -12,7 +12,6 @@
 #include <stddef.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
-#include <zircon/listnode.h>
 
 #include <arch/ops.h>
 #include <fbl/intrusive_double_list.h>

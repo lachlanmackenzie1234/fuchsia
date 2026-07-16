@@ -26,10 +26,10 @@ constexpr size_t kAlignPages = 1ul << (kTestHeapAlignLog2 - kPageShift);
 // Helper that checks if there exists any contiguous blocks in the pmm. This can be used by tests to
 // attempt to avoid spurious failures.
 bool CanExpectContiguous() {
-  list_node_t pages = LIST_INITIAL_VALUE(pages);
+  VmPageDoublyLinkedList pages;
 
   auto cleanup = fit::defer([&pages]() {
-    if (!list_is_empty(&pages)) {
+    if (!pages.is_empty()) {
       pmm_free(&pages);
     }
   });
@@ -52,9 +52,8 @@ bool CanExpectContiguous() {
   //
   // See https://fxbug.dev/349402040 for context.
   bool heads_tails = true;
-  while (!list_is_empty(&pages)) {
-    vm_page_t* page = heads_tails ? list_remove_head_type(&pages, vm_page_t, queue_node)
-                                  : list_remove_tail_type(&pages, vm_page_t, queue_node);
+  while (!pages.is_empty()) {
+    vm_page_t* page = heads_tails ? pages.pop_front() : pages.pop_back();
     pmm_free_page(page);
     heads_tails = !heads_tails;
   }
@@ -542,21 +541,20 @@ bool virtual_alloc_contiguous_fallback_test() {
 
   EXPECT_OK(alloc.Init(vmar->base(), vmar->size(), 1, kTestHeapAlignLog2));
 
-  list_node_t pages = LIST_INITIAL_VALUE(pages);
+  VmPageDoublyLinkedList pages;
   auto return_pages = fit::defer([&pages] { pmm_free(&pages); });
   paddr_t paddr;
 
   // Now steal all the contiguous blocks out of the pmm.
-  list_node_t temp_pages = LIST_INITIAL_VALUE(temp_pages);
+  VmPageDoublyLinkedList temp_pages;
   while (pmm_alloc_contiguous(kAlignPages, 0, kTestHeapAlignLog2, &paddr, &temp_pages) == ZX_OK) {
     // Keep the first page and return the rest. This prevents us OOMing whilst still blocking future
     // allocations. We only need to hold one page since this allocation is size aligned and so no
     // page is a candidate for any other allocation.
-    vm_page_t* head_page = list_remove_head_type(&temp_pages, vm_page_t, queue_node);
+    vm_page_t* head_page = temp_pages.pop_front();
     DEBUG_ASSERT(head_page);
-    list_add_head(&pages, &head_page->queue_node);
+    pages.push_front(head_page);
     pmm_free(&temp_pages);
-    temp_pages = LIST_INITIAL_VALUE(temp_pages);
   }
 
   // A size aligned allocation should still work, as it should fall back to using non-contiguous

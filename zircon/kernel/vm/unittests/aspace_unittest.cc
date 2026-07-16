@@ -1953,14 +1953,13 @@ static bool arch_noncontiguous_map() {
 
   // Get some phys pages to test on
   paddr_t phys[3];
-  struct list_node phys_list = LIST_INITIAL_VALUE(phys_list);
+  VmPageDoublyLinkedList phys_list;
   zx_status_t status = pmm_alloc_pages(ktl::size(phys), 0, &phys_list);
   ASSERT_EQ(ZX_OK, status, "non contig map alloc");
   {
     size_t i = 0;
-    vm_page_t* p;
-    list_for_every_entry (&phys_list, p, vm_page_t, queue_node) {
-      phys[i] = p->paddr();
+    for (auto& p : phys_list) {
+      phys[i] = p.paddr();
       ++i;
     }
   }
@@ -2030,14 +2029,13 @@ static bool arch_noncontiguous_map_with_upgrade() {
 
   // Get some phys pages to test on
   paddr_t phys[3];
-  struct list_node phys_list = LIST_INITIAL_VALUE(phys_list);
+  VmPageDoublyLinkedList phys_list;
   zx_status_t status = pmm_alloc_pages(ktl::size(phys), 0, &phys_list);
   ASSERT_EQ(ZX_OK, status, "non contig map alloc");
   {
     size_t i = 0;
-    vm_page_t* p;
-    list_for_every_entry (&phys_list, p, vm_page_t, queue_node) {
-      phys[i] = p->paddr();
+    for (auto& p : phys_list) {
+      phys[i] = p.paddr();
       ++i;
     }
   }

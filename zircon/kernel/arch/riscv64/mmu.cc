@@ -371,7 +371,7 @@ class Riscv64ArchVmAspace::ConsistencyManager {
       : aspace_(aspace) {}
   ~ConsistencyManager() {
     Flush();
-    if (!list_is_empty(&to_free_)) {
+    if (!to_free_.is_empty()) {
       pmm_free(&to_free_);
     }
   }
@@ -464,14 +464,14 @@ class Riscv64ArchVmAspace::ConsistencyManager {
   // Queue a page for freeing that is dependent on TLB flushing. This is for pages that were
   // previously installed as page tables and they should not be reused until the non-terminal TLB
   // flush has occurred.
-  void FreePage(vm_page_t* page) { list_add_tail(&to_free_, &page->queue_node); }
+  void FreePage(vm_page_t* page) { to_free_.push_back(page); }
 
  private:
   // Maximum number of TLB entries we will queue before switching to ASID invalidation.
   static constexpr uint32_t kMaxPendingTlbRuns = 8;
 
   // vm_page_t's to release to the PMM after the TLB invalidation occurs.
-  list_node to_free_ = LIST_INITIAL_VALUE(to_free_);
+  VmPageDoublyLinkedList to_free_;
 
   // The aspace we are invalidating TLBs for.
   const Riscv64ArchVmAspace& aspace_;
@@ -1678,9 +1678,8 @@ vaddr_t Riscv64ArchVmAspace::PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, 
   return RoundUpPageSize(base);
 }
 
-void Riscv64ArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) {
-  while (list_node_t* node = list_remove_head(mmu_pages)) {
-    vm_page_t* page = reinterpret_cast<vm_page_t*>(node);
+void Riscv64ArchVmAspace::HandoffPageTablesFromPhysboot(VmPageDoublyLinkedList* mmu_pages) {
+  while (vm_page_t* page = mmu_pages->pop_front()) {
     page->set_state(vm_page_state::MMU);
 
     ktl::span entries{

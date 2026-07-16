@@ -19,7 +19,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zircon/listnode.h>
 #include <zircon/time.h>
 #include <zircon/tls.h>
 #include <zircon/types.h>
@@ -577,7 +576,7 @@ static int crash_pmm_use_after_free() {
 
   // Allocate.
   const size_t num_pages = 10000;
-  list_node pages = LIST_INITIAL_VALUE(pages);
+  VmPageDoublyLinkedList pages;
   zx_status_t status = pmm_alloc_pages(num_pages, 0, &pages);
   if (unlikely(status != ZX_OK)) {
     printf("error: failed to allocate (%d)\n", status);
@@ -585,7 +584,7 @@ static int crash_pmm_use_after_free() {
   }
 
   // Make note of address.
-  vm_page_t* last_page = list_peek_tail_type(&pages, vm_page_t, queue_node);
+  vm_page_t* last_page = &pages.back();
   void* va = paddr_to_physmap(last_page->paddr());
 
   // We're printing a little early because once we've returned the pages to the free list, we want

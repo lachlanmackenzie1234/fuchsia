@@ -10,7 +10,6 @@
 #include <lib/arch/cache.h>
 #include <lib/zx/result.h>
 #include <stdint.h>
-#include <zircon/listnode.h>
 
 #include <vm/page.h>
 #include <vm/physmap.h>
@@ -20,18 +19,18 @@ namespace arm_smmu {
 
 class PageCache {
  public:
-  PageCache() { list_initialize(&page_cache_); }
+  PageCache() = default;
 
   ~PageCache() {
     DEBUG_ASSERT(!cache_entries_);
     DEBUG_ASSERT(!in_flight_pages_);
-    DEBUG_ASSERT(list_is_empty(&page_cache_));
+    DEBUG_ASSERT(page_cache_.is_empty());
   }
 
   // Return a page to the cache which the caller had fetched using GetPage.
   void ReturnPage(vm_page_t* page) {
     DEBUG_ASSERT(in_flight_pages_ > 0);
-    list_add_head(&page_cache_, &page->queue_node);
+    page_cache_.push_front(page);
     ++cache_entries_;
     --in_flight_pages_;
   }
@@ -39,11 +38,11 @@ class PageCache {
   zx::result<vm_page_t*> GetPage() {
     vm_page_t* ret{nullptr};
 
-    if (!list_is_empty(&page_cache_)) {
+    if (!page_cache_.is_empty()) {
       DEBUG_ASSERT(cache_entries_ > 0);
       --cache_entries_;
       ++in_flight_pages_;
-      return zx::ok(list_remove_head_type(&page_cache_, vm_page_t, queue_node));
+      return zx::ok(page_cache_.pop_front());
     }
 
     DEBUG_ASSERT(cache_entries_ == 0);
@@ -76,16 +75,14 @@ class PageCache {
     // return the extra pages to the PMM.
     if (max_pages == 0) {
       pmm_free(&page_cache_);
-      DEBUG_ASSERT(list_is_empty(&page_cache_));
+      DEBUG_ASSERT(page_cache_.is_empty());
     } else {
-      list_node* split_point = list_peek_head(&page_cache_);
-      for (uint32_t i = 1; i < max_pages; ++i) {
-        split_point = list_next(&page_cache_, split_point);
+      auto split_point = page_cache_.begin();
+      for (uint32_t i = 1; i < max_pages; ++i, split_point++) {
       }
-      list_node free_me;
-      list_split_after(&page_cache_, split_point, &free_me);
+      VmPageDoublyLinkedList free_me = page_cache_.split_after(split_point);
       pmm_free(&free_me);
-      DEBUG_ASSERT(list_is_empty(&free_me));
+      DEBUG_ASSERT(free_me.is_empty());
     }
 
     cache_entries_ = max_pages;
@@ -95,7 +92,7 @@ class PageCache {
   uint32_t in_flight_pages() const { return in_flight_pages_; }
 
  private:
-  list_node page_cache_;
+  VmPageDoublyLinkedList page_cache_;
   uint32_t cache_entries_{0};
   uint32_t in_flight_pages_{0};
 };

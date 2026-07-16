@@ -40,8 +40,8 @@ class PageSlabAllocator {
  public:
   PageSlabAllocator() = default;
   ~PageSlabAllocator() {
-    ASSERT(list_is_empty(&full_slabs_));
-    ASSERT(list_is_empty(&available_slabs_));
+    ASSERT(full_slabs_.is_empty());
+    ASSERT(available_slabs_.is_empty());
   }
 
   // Allocates an area of uninitialized memory of AllocSize and returns a pointer to it, or nullptr
@@ -97,7 +97,7 @@ class PageSlabAllocator {
     const uint32_t offset = reinterpret_cast<uintptr_t>(ptr) % kPageSize;
     vm_page_t* page = PaddrToPage(physmap_to_paddr(ptr));
     ASSERT(page && page->state() == vm_page_state::SLAB);
-    DEBUG_ASSERT(list_in_list(&page->queue_node));
+    DEBUG_ASSERT(page->queue_node.InContainer());
     DEBUG_ASSERT(offset % AllocSize == 0);
     return {page, offset / AllocSize};
   }
@@ -107,12 +107,11 @@ class PageSlabAllocator {
     return reinterpret_cast<Entry*>(paddr_to_physmap(slab->paddr())) + index;
   }
   void DebugFreeAllSlabs() {
-    vm_page_t* p;
-    list_for_every_entry (&full_slabs_, p, vm_page_t, queue_node) {
-      profile_track_free(p->slab.profile_cookie, kPageSize);
+    for (auto& p : full_slabs_) {
+      profile_track_free(p.slab.profile_cookie, kPageSize);
     }
-    list_for_every_entry (&available_slabs_, p, vm_page_t, queue_node) {
-      profile_track_free(p->slab.profile_cookie, kPageSize);
+    for (auto& p : available_slabs_) {
+      profile_track_free(p.slab.profile_cookie, kPageSize);
     }
     Pmm::Node().FreeList(&full_slabs_);
     Pmm::Node().FreeList(&available_slabs_);
@@ -146,18 +145,18 @@ class PageSlabAllocator {
     slab->slab.peak_allocated = 0;
     slab->slab.allocated = 0;
     // Insert it into the available slabs.
-    list_add_head(&available_slabs_, &slab->queue_node);
+    available_slabs_.push_front(slab);
     allocated_slabs_++;
     return true;
   }
   Entry* Allocate() {
     // See if there are any slabs available.
-    if (list_is_empty(&available_slabs_)) {
+    if (available_slabs_.is_empty()) {
       if (!AddSlab()) {
         return nullptr;
       }
     }
-    vm_page_t* page = list_peek_head_type(&available_slabs_, vm_page_t, queue_node);
+    vm_page_t* page = &available_slabs_.front();
     Entry* entry;
     if (page->slab.free_slot == kEndOfList) {
       DEBUG_ASSERT(page->slab.peak_allocated < kAllocsPerSlab);
@@ -170,8 +169,8 @@ class PageSlabAllocator {
     page->slab.allocated++;
     if (page->slab.free_slot == kEndOfList && page->slab.peak_allocated == kAllocsPerSlab) {
       DEBUG_ASSERT(page->slab.allocated == kAllocsPerSlab);
-      list_delete(&page->queue_node);
-      list_add_head(&full_slabs_, &page->queue_node);
+      available_slabs_.erase(*page);
+      full_slabs_.push_front(page);
     } else {
       DEBUG_ASSERT(page->slab.allocated < kAllocsPerSlab);
     }
@@ -187,7 +186,7 @@ class PageSlabAllocator {
     DEBUG_ASSERT(slab->slab.allocated > 0);
     if (slab->slab.allocated == 1) {
       // Slab has become empty, can free it.
-      list_delete(&slab->queue_node);
+      available_slabs_.erase(*slab);
       allocated_slabs_--;
       FreeSlab(slab);
       return;
@@ -197,8 +196,8 @@ class PageSlabAllocator {
       // Slab is going from full to having space available, move to the correct list. We place at
       // the back of the list to encourage allocations, which happen on the head, to fill up a page
       // instead of constantly bouncing allocations into different, partially full, pages.
-      list_delete(&slab->queue_node);
-      list_add_tail(&available_slabs_, &slab->queue_node);
+      full_slabs_.erase(*slab);
+      available_slabs_.push_back(slab);
     }
     slab->slab.allocated--;
 
@@ -208,8 +207,8 @@ class PageSlabAllocator {
     slab->slab.free_slot = index;
   }
 
-  list_node_t full_slabs_ = LIST_INITIAL_VALUE(full_slabs_);
-  list_node_t available_slabs_ = LIST_INITIAL_VALUE(available_slabs_);
+  VmPageDoublyLinkedList full_slabs_;
+  VmPageDoublyLinkedList available_slabs_;
 
   // Track the total number of allocated slabs (i.e. pages), both full and available.
   size_t allocated_slabs_ = 0;

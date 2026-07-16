@@ -27,7 +27,7 @@ struct Range;
 }
 
 // flags for allocation routines below
-#define PMM_ALLOC_FLAG_ANY (0 << 0)     // no restrictions on which arena to allocate from
+#define PMM_ALLOC_FLAG_ANY (0 << 0)  // no restrictions on which arena to allocate from
 // The caller is able to wait and retry this allocation and so pmm allocation functions are allowed
 // to return ZX_ERR_SHOULD_WAIT, as opposed to ZX_ERR_NO_MEMORY, to indicate that the caller should
 // wait and try again. This is intended for the PMM to tell callers who are able to wait that memory
@@ -94,12 +94,13 @@ class PmmNode {
 
   // main allocator routines
   zx::result<vm_page_t*> AllocPage(uint alloc_flags);
-  zx_status_t AllocPages(size_t count, uint alloc_flags, list_node* list);
-  zx_status_t AllocRange(paddr_t address, size_t count, list_node* list);
+  zx_status_t AllocPages(size_t count, uint alloc_flags, VmPageDoublyLinkedList* list);
+  zx_status_t AllocRange(paddr_t address, size_t count, VmPageDoublyLinkedList* list);
   zx_status_t AllocContiguous(size_t count, uint alloc_flags, uint8_t alignment_log2, paddr_t* pa,
-                              list_node* list);
+                              VmPageDoublyLinkedList* list);
   void FreePage(vm_page* page, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
-  void FreeList(list_node* list, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
+  void FreeList(VmPageDoublyLinkedList* list,
+                PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
 
   // Calls the provided function, passing |page| back into it, serialized with any other calls to
   // |AllocLoanedPage|, |BeginFreeLoanedPage| and |FinishFreeLoanedPages|. This allows caller to
@@ -140,7 +141,7 @@ class PmmNode {
   // the provided |flph| into a |FinishFreeLoanedPages| call.
   void BeginFreeLoanedArray(
       vm_page_t** pages, size_t count,
-      fit::inline_function<void(vm_page_t**, size_t, list_node_t*)> release_list,
+      fit::inline_function<void(vm_page_t**, size_t, VmPageDoublyLinkedList*)> release_list,
       FreeLoanedPagesHolder& flph);
 
   void UnwirePage(vm_page* page);
@@ -150,7 +151,8 @@ class PmmNode {
   //
   // |delay_reuse| controls whether the newly loaned pages are eligile for immediate or delayed
   // reuse.
-  void BeginLoan(list_node* page_list, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
+  void BeginLoan(VmPageDoublyLinkedList* page_list,
+                 PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
 
   // Marks a page that had been previously provided to BeginLoan as cancelled. This page may be in
   // the FREE_LOANED state, or presently in use.
@@ -226,7 +228,7 @@ class PmmNode {
   zx_status_t GetArenaInfo(size_t count, uint64_t i, pmm_arena_info_t* buffer, size_t buffer_size);
 
   // add new pages to the free queue. used when boostrapping a PmmArena
-  void AddFreePages(list_node* list);
+  void AddFreePages(VmPageDoublyLinkedList* list);
 
   PageQueues* GetPageQueues() { return &page_queues_; }
 
@@ -318,11 +320,11 @@ class PmmNode {
 
   void FreePageHelperLocked(vm_page* page, bool already_filled) TA_REQ(lock_);
   void FreeLoanedPageHelperLocked(vm_page* page, bool already_filled) TA_REQ(loaned_list_lock_);
-  void FreeListLocked(list_node* list, bool already_filled, PmmOptDelayReuse delay_reuse)
-      TA_REQ(lock_);
+  void FreeListLocked(VmPageDoublyLinkedList* list, bool already_filled,
+                      PmmOptDelayReuse delay_reuse) TA_REQ(lock_);
   template <typename F>
-  void FreeLoanedListLocked(list_node* list, bool already_filled, PmmOptDelayReuse delay_reuse,
-                            F validator) TA_REQ(loaned_list_lock_);
+  void FreeLoanedListLocked(VmPageDoublyLinkedList* list, bool already_filled,
+                            PmmOptDelayReuse delay_reuse, F validator) TA_REQ(loaned_list_lock_);
 
   void SignalFreeMemoryChangeLocked() TA_REQ(lock_);
   void TripFreePagesLevelLocked() TA_REQ(lock_);
@@ -397,16 +399,15 @@ class PmmNode {
   ktl::atomic<uint64_t> loan_cancelled_count_ TA_GUARDED(loaned_list_lock_) = 0;
 
   // Free pages where !loaned.
-  list_node free_list_ TA_GUARDED(lock_) = LIST_INITIAL_VALUE(free_list_);
+  VmPageDoublyLinkedList free_list_ TA_GUARDED(lock_);
   // Free pages where loaned && !loan_cancelled.
   mutable DECLARE_MUTEX(PmmNode) loaned_list_lock_;
-  list_node free_loaned_list_ TA_GUARDED(loaned_list_lock_) = LIST_INITIAL_VALUE(free_loaned_list_);
+  VmPageDoublyLinkedList free_loaned_list_ TA_GUARDED(loaned_list_lock_);
 
   // The pages comprising the memory temporarily used during phys hand-off,
   // populated on Init(). It is the responsibility of EndHandoff() to free this
   // list.
-  list_node phys_handoff_temporary_list_ TA_GUARDED(lock_) =
-      LIST_INITIAL_VALUE(phys_handoff_temporary_list_);
+  VmPageDoublyLinkedList phys_handoff_temporary_list_;
 
   // The pages comprising the page-aligned regions of memory that we expect to
   // turn into VMOs to hand-off to userspace - as determined by
@@ -415,11 +416,10 @@ class PmmNode {
   // It is expected that this memory will be unwired and turned into VMOs by the
   // end of the phys hand-off phase, and it is the responsibility of
   // PmmNode::EndHandoff() to ensure afterward that this list is empty.
-  list_node phys_handoff_vmo_list_ TA_GUARDED(lock_) = LIST_INITIAL_VALUE(phys_handoff_vmo_list_);
+  VmPageDoublyLinkedList phys_handoff_vmo_list_ TA_GUARDED(lock_);
 
   // The pages intended to be permanently reserved.
-  list_node permanently_reserved_list_ TA_GUARDED(lock_) =
-      LIST_INITIAL_VALUE(permanently_reserved_list_);
+  VmPageDoublyLinkedList permanently_reserved_list_ TA_GUARDED(lock_);
 
   // Controls the behavior of requests that have the PMM_ALLOC_FLAG_CAN_WAIT.
   enum class ShouldWaitState {
@@ -583,9 +583,9 @@ inline uint32_t PmmNode::PageToIndex(const vm_page_t* page) TA_NO_THREAD_SAFETY_
 // other PmmNode methods.
 class FreeLoanedPagesHolder {
  public:
-  FreeLoanedPagesHolder() : pages_(LIST_INITIAL_VALUE(pages_)) {}
+  FreeLoanedPagesHolder() = default;
   ~FreeLoanedPagesHolder() {
-    ASSERT(list_is_empty(&pages_));
+    ASSERT(pages_.is_empty());
     ASSERT(waiters_.is_empty());
   }
 
@@ -602,7 +602,7 @@ class FreeLoanedPagesHolder {
   // ALLOC state with |owner| set to this object.
   // Although the lock cannot be annotated, this member is guarded by the relevant
   // PmmNode::loaned_list_lock_.
-  list_node_t pages_;
+  VmPageDoublyLinkedList pages_;
 
   struct Waiter : fbl::SinglyLinkedListable<Waiter*> {
     Event event;

@@ -708,12 +708,11 @@ class X86PageTableImpl : public X86PageTableBase {
       // We free the paging structures here rather than in Finish(), to allow
       // support deferring invoking pmm_free() until after we've left the page
       // table lock.
-      vm_page_t* p;
-      list_for_every_entry (&to_free_, p, vm_page_t, queue_node) {
-        DEBUG_ASSERT(p->state() == vm_page_state::MMU);
-        DEBUG_ASSERT(p->mmu.num_mappings == 0);
+      for (auto& p : to_free_) {
+        DEBUG_ASSERT(p.state() == vm_page_state::MMU);
+        DEBUG_ASSERT(p.mmu.num_mappings == 0);
       }
-      if (!list_is_empty(&to_free_)) {
+      if (!to_free_.is_empty()) {
         pmm_free(&to_free_);
       }
     }
@@ -722,7 +721,7 @@ class X86PageTableImpl : public X86PageTableBase {
       AssertHeld(pt_->lock_);
       DEBUG_ASSERT(page->state() == vm_page_state::MMU);
       DEBUG_ASSERT(page->mmu.num_mappings == 0);
-      list_add_tail(&to_free_, &page->queue_node);
+      to_free_.push_back(page);
       DEBUG_ASSERT(pt_->pages_ > 0);
       pt_->pages_--;
     }
@@ -771,7 +770,7 @@ class X86PageTableImpl : public X86PageTableBase {
     PendingTlbInvalidation tlb_;
 
     // vm_page_t's to relese to the PMM after the TLB invalidation occurs
-    list_node to_free_ = LIST_INITIAL_VALUE(to_free_);
+    VmPageDoublyLinkedList to_free_;
   };
 
   // given a page table entry, return a pointer to the next page table one level down
@@ -1168,7 +1167,7 @@ class X86PageTableImpl : public X86PageTableBase {
         DEBUG_ASSERT_MSG(lower_page->state() == vm_page_state::MMU,
                          "page %p state %u, paddr %#" PRIxPTR "\n", lower_page,
                          static_cast<uint32_t>(lower_page->state()), X86_VIRT_TO_PHYS(next_table));
-        DEBUG_ASSERT(!list_in_list(&lower_page->queue_node));
+        DEBUG_ASSERT(!lower_page->queue_node.InContainer());
 
         cm->queue_free(lower_page);
       }
@@ -1421,7 +1420,7 @@ class X86PageTableImpl : public X86PageTableBase {
         DEBUG_ASSERT_MSG(page->state() == vm_page_state::MMU,
                          "page %p state %u, paddr %#" PRIxPTR "\n", page,
                          static_cast<uint32_t>(page->state()), X86_VIRT_TO_PHYS(next_table));
-        DEBUG_ASSERT(!list_in_list(&page->queue_node));
+        DEBUG_ASSERT(!page->queue_node.InContainer());
 
         cm->queue_free(page);
       } else if ((pt_val & X86_MMU_PG_A) && non_terminal_action != NonTerminalAction::Retain) {

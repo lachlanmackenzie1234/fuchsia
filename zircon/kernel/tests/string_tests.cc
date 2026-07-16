@@ -297,8 +297,7 @@ static void validate_memset(void) {
 #include <lib/console.h>
 
 static int string_tests(int argc, const cmd_args* argv, uint32_t flags) {
-  list_node list;
-  list_initialize(&list);
+  VmPageDoublyLinkedList list;
 
   // free the physical pages on exit
   auto free_pages = fit::defer([&list]() {

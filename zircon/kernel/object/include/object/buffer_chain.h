@@ -72,8 +72,9 @@ class BufferChain {
 
   // Unfortunately, we don't yet know sizeof(BufferChain) so estimate and rely on static_asserts
   // further down to verify.
-  constexpr static size_t kSizeOfBufferChain =
-      sizeof(BufferList) + 2 * sizeof(list_node) + sizeof(size_t) + sizeof(BufferList::iterator);
+  constexpr static size_t kSizeOfBufferChain = sizeof(BufferList) +
+                                               2 * sizeof(VmPageDoublyLinkedList) + sizeof(size_t) +
+                                               sizeof(BufferList::iterator);
 
   // kContig is the number of bytes guaranteed to be stored contiguously in any buffer
   constexpr static size_t kContig = kRawDataSize - kSizeOfBufferChain;
@@ -119,7 +120,7 @@ class BufferChain {
     // We now have a list of pages.  Allocate a page for the initial Buffer and construct the
     // BufferChain within it.
     BufferChain::BufferList temp;
-    list_node used_pages = LIST_INITIAL_VALUE(used_pages);
+    VmPageDoublyLinkedList used_pages;
     zx_status_t status =
         AddNextBuffer(&unused_pages_result->page_list, &used_pages, &temp, temp.end());
     if (unlikely(status != ZX_OK)) {
@@ -135,9 +136,12 @@ class BufferChain {
   static void Free(BufferChain* chain) {
     // Remove the buffers and vm_page_t's from the chain *before* destroying it.
     BufferChain::BufferList buffers(ktl::move(*chain->buffers()));
-    list_node pages = LIST_INITIAL_VALUE(pages);
-    list_move(&chain->used_pages_, &pages);
-    list_splice_after(&chain->unused_pages_, &pages);
+    VmPageDoublyLinkedList pages;
+    pages = ktl::move(chain->used_pages_);
+    pages.splice(pages.begin(), chain->unused_pages_);
+
+    pages.splice(pages.end(), chain->used_pages_);
+    pages.splice(pages.end(), chain->unused_pages_);
 
     chain->~BufferChain();
 
@@ -145,11 +149,13 @@ class BufferChain {
       BufferChain::Buffer* buf = buffers.pop_front();
       buf->Buffer::~Buffer();
     }
-    page_cache_.Free(ktl::move(pages));
+    page_cache_.Free(page_cache::PageCache::PageList{ktl::move(pages)});
   }
 
   // Free unused pages.
-  void FreeUnusedBuffers() { page_cache_.Free(ktl::move(unused_pages_)); }
+  void FreeUnusedBuffers() {
+    page_cache_.Free(page_cache::PageCache::PageList{ktl::move(unused_pages_)});
+  }
 
   // Skips the specified number of bytes, so they won't be consumed by Append or AppendKernel.
   //
@@ -201,36 +207,38 @@ class BufferChain {
   static void InitializePageCache(uint32_t level);
 
  private:
-  explicit BufferChain(BufferList* buffers, list_node* unused_pages, list_node* used_pages) {
+  explicit BufferChain(BufferList* buffers, VmPageDoublyLinkedList* unused_pages,
+                       VmPageDoublyLinkedList* used_pages) {
     buffer_tail_ = buffers->begin();
     buffers_.swap(*buffers);
 
     buffer_offset_ = 0;
 
-    list_move(unused_pages, &unused_pages_);
-    list_move(used_pages, &used_pages_);
+    unused_pages_.splice(unused_pages_.end(), *unused_pages);
+    used_pages_.splice(used_pages_.end(), *used_pages);
 
     // |this| now lives inside the first buffer.
     buffers_.front().set_reserved(sizeof(BufferChain));
   }
 
   ~BufferChain() {
-    DEBUG_ASSERT(list_is_empty(&used_pages_));
-    DEBUG_ASSERT(list_is_empty(&unused_pages_));
+    DEBUG_ASSERT(used_pages_.is_empty());
+    DEBUG_ASSERT(unused_pages_.is_empty());
   }
 
   // Add a new Buffer to the end of |buffers| (marked by |buffer_tail|) by taking a page from the
   // |unused_pages| list. In doing so, this page will be moved to the |used_pages| list.
-  static zx_status_t AddNextBuffer(list_node* unused_pages, list_node* used_pages,
-                                   BufferList* buffers, BufferList::iterator buffer_tail) {
-    if (list_is_empty(unused_pages)) {
+  static zx_status_t AddNextBuffer(VmPageDoublyLinkedList* unused_pages,
+                                   VmPageDoublyLinkedList* used_pages, BufferList* buffers,
+                                   BufferList::iterator buffer_tail) {
+    if (unused_pages->is_empty()) {
       return ZX_ERR_OUT_OF_RANGE;
     }
-    vm_page_t* page = list_remove_head_type(unused_pages, vm_page, queue_node);
+    vm_page_t* page = unused_pages->pop_front();
     DEBUG_ASSERT(page != nullptr);
     DEBUG_ASSERT(page->state() == vm_page_state::ALLOC);
     page->set_state(vm_page_state::IPC);
-    list_add_tail(used_pages, &page->queue_node);
+    used_pages->push_back(page);
 
     void* va = paddr_to_physmap(page->paddr());
     if (buffers->is_empty()) {
@@ -290,12 +298,12 @@ class BufferChain {
   size_t buffer_offset_;
 
   // used_pages_ is a list of vm_page_t descriptors for the pages that back BufferList.
-  list_node used_pages_ = LIST_INITIAL_VALUE(used_pages_);
+  VmPageDoublyLinkedList used_pages_;
 
   // unused_pages is a list of vm_page_t descriptors for pages that have been allocated but have
   // not yet been used. These pages will be migrated to used_pages_ once they are needed for
   // the BufferList.
-  list_node unused_pages_ = LIST_INITIAL_VALUE(unused_pages_);
+  VmPageDoublyLinkedList unused_pages_;
 
   inline static page_cache::PageCache page_cache_;
 

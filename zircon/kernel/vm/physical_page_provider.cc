@@ -32,7 +32,7 @@ PhysicalPageProvider::~PhysicalPageProvider() {
     // If a failure is encountered during creation, we might have accumulated some pages which need
     // to be returned to the PMM. Initialization isn't complete and these pages haven't been used
     // yet, so no need to unloan and no need to delay reuse either.
-    if (unlikely(!list_is_empty(&free_list_))) {
+    if (unlikely(!free_list_.is_empty())) {
       Pmm::Node().FreeList(&free_list_, PmmOptDelayReuse::Default);
     }
     return;
@@ -44,7 +44,7 @@ PhysicalPageProvider::~PhysicalPageProvider() {
   // loaning pages are not expected to be destructed often (or at all) and so this is not presently
   // a needed optimization.
   UnloanRange(0, size_, &free_list_);
-  ASSERT(list_length(&free_list_) == size_ / kPageSize);
+  ASSERT(free_list_.size_slow() == size_ / kPageSize);
 
   const PmmOptDelayReuse delay_reuse =
       cow_pages_ ? cow_pages_->should_delay_reuse_on_free() : PmmOptDelayReuse::Default;
@@ -129,7 +129,7 @@ void PhysicalPageProvider::SwapAsyncRequest(PageRequest* old, PageRequest* new_r
   }
 }
 
-void PhysicalPageProvider::FreePages(list_node* pages) {
+void PhysicalPageProvider::FreePages(VmPageDoublyLinkedList* pages) {
   {
     // Check if we are detached, and if so put the pages straight in the free_list_ instead of
     // loaning them out, since we will be being closed soon and will only have to go and retrieve
@@ -139,11 +139,7 @@ void PhysicalPageProvider::FreePages(list_node* pages) {
     // pages back to the PMM.
     Guard<Mutex> guard{&mtx_};
     if (DetachedLocked() || phys_base_ == kInvalidPhysBase) {
-      if (list_is_empty(&free_list_)) {
-        list_move(pages, &free_list_);
-      } else {
-        list_splice_after(pages, list_peek_tail(&free_list_));
-      }
+      free_list_.splice(free_list_.end(), *pages);
       return;
     }
   }
@@ -220,7 +216,8 @@ bool PhysicalPageProvider::DequeueRequest(uint64_t* request_offset, uint64_t* re
   return true;
 }
 
-void PhysicalPageProvider::UnloanRange(uint64_t range_offset, uint64_t length, list_node_t* pages) {
+void PhysicalPageProvider::UnloanRange(uint64_t range_offset, uint64_t length,
+                                       VmPageDoublyLinkedList* pages) {
   // Notify borrowing config that an unloan is starting. This temporarily disables background
   // page borrowing/sweeping in ProcessLruQueue to avoid lock contention on the borrowing VMOs'
   // paged_vmo_lock_ (which are part of the active working set) between the LRU thread and this
@@ -316,7 +313,7 @@ void PhysicalPageProvider::UnloanRange(uint64_t range_offset, uint64_t length, l
     // Now that the page is definitely in the FREE_LOANED state, gain ownership from the PMM.
     Pmm::Node().EndLoan(page);
     DEBUG_ASSERT(page->state() == vm_page_state::ALLOC);
-    list_add_tail(pages, &page->queue_node);
+    pages->push_back(page);
   }  // for pages of request
 }
 
@@ -349,24 +346,22 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
 
     // These are ordered by cow_pages_ offsets (destination offsets), but may have gaps due to not
     // all the pages being loaned.
-    list_node unloaned_pages;
-    list_initialize(&unloaned_pages);
+    VmPageDoublyLinkedList unloaned_pages;
     UnloanRange(request_offset, request_length, &unloaned_pages);
 
-    list_node contiguous_pages = LIST_INITIAL_VALUE(contiguous_pages);
+    VmPageDoublyLinkedList contiguous_pages;
     // Process all the loaned pages by finding any contiguous runs and processing those as a batch.
     // There is no correctness reason to process them in batches, but it is more efficient for the
     // cow_pages_ to receive a run where possible instead of repeatedly being given single pages.
-    while (!list_is_empty(&unloaned_pages)) {
-      vm_page_t* page = list_peek_head_type(&unloaned_pages, vm_page_t, queue_node);
-      if (list_is_empty(&contiguous_pages) ||
-          list_peek_tail_type(&contiguous_pages, vm_page_t, queue_node)->paddr() + kPageSize ==
-              page->paddr()) {
-        list_delete(&page->queue_node);
-        list_add_tail(&contiguous_pages, &page->queue_node);
+    while (!unloaned_pages.is_empty()) {
+      vm_page_t* page = &unloaned_pages.front();
+      if (contiguous_pages.is_empty() ||
+          contiguous_pages.back().paddr() + kPageSize == page->paddr()) {
+        unloaned_pages.pop_front();
+        contiguous_pages.push_back(page);
         // Generally want to keep trying to find more contiguous pages, unless there are no more
         // pages.
-        if (!list_is_empty(&unloaned_pages)) {
+        if (!unloaned_pages.is_empty()) {
           continue;
         }
       }
@@ -393,15 +388,14 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
       // is (incorrectly) assuming that non-pinned pages necessarily remain cache clean once they
       // are cache clean.
       uint64_t supply_length = 0;
-      list_for_every_entry (&contiguous_pages, page, vm_page, queue_node) {
-        void* ptr = paddr_to_physmap(page->paddr());
+      for (auto& p : contiguous_pages) {
+        void* ptr = paddr_to_physmap(p.paddr());
         DEBUG_ASSERT(ptr);
         arch_zero_page(ptr);
         supply_length += kPageSize;
         arch_clean_invalidate_cache_range(reinterpret_cast<vaddr_t>(ptr), kPageSize);
       }
-      uint64_t supply_offset =
-          list_peek_head_type(&contiguous_pages, vm_page_t, queue_node)->paddr() - phys_base_;
+      uint64_t supply_offset = contiguous_pages.front().paddr() - phys_base_;
 
       VmPageSpliceList splice_list;
 
@@ -412,11 +406,11 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
           VmPageOrMarker page_or_marker = splice_list.Pop();
           if (page_or_marker.IsPage()) {
             vm_page_t* p = page_or_marker.ReleasePage();
-            DEBUG_ASSERT(!list_in_list(&p->queue_node));
-            list_add_tail(&contiguous_pages, &p->queue_node);
+            DEBUG_ASSERT(!p->queue_node.InContainer());
+            contiguous_pages.push_back(p);
           }
         }
-        if (!list_is_empty(&contiguous_pages)) {
+        if (!contiguous_pages.is_empty()) {
           Guard<Mutex> guard{&loaned_state_lock_};
           // We're about to return these pages to the PMM.  There is no need to delay their reuse
           // because we know these pages would have never been involved in a DMA, because they have
@@ -437,7 +431,7 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
         // Do not attempt to then supply the pages, move to the next range.
         continue;
       }
-      DEBUG_ASSERT(list_is_empty(&contiguous_pages));
+      DEBUG_ASSERT(contiguous_pages.is_empty());
 
       // First take the VMO lock before taking our lock to ensure lock ordering is correct. As we
       // hold a RefPtr we know that even if racing with OnClose this is a valid object.
@@ -467,7 +461,7 @@ zx_status_t PhysicalPageProvider::WaitOnEvent(Event* event,
         }
       }
     }
-    DEBUG_ASSERT(list_is_empty(&contiguous_pages) && list_is_empty(&unloaned_pages));
+    DEBUG_ASSERT(contiguous_pages.is_empty() && unloaned_pages.is_empty());
   }  // while have requests to process
 
   kcounter_add(physical_reclaim_total_requests, 1);

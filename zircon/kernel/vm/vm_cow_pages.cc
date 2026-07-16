@@ -119,7 +119,7 @@ bool IsZeroPage(vm_page_t* p) {
 
 void InitializeVmPage(vm_page_t* p) {
   DEBUG_ASSERT(p);
-  DEBUG_ASSERT(!list_in_list(&p->queue_node));
+  DEBUG_ASSERT(!p->queue_node.InContainer());
   // Page should be in the ALLOC state so we can transition it to the OBJECT state.
   DEBUG_ASSERT(p->state() == vm_page_state::ALLOC);
   p->set_state(vm_page_state::OBJECT);
@@ -328,7 +328,7 @@ class BatchPQRemove {
       if (is_loaned_) {
         Pmm::Node().BeginFreeLoanedArray(
             pages_, count_,
-            [](vm_page_t** pages, size_t count, list_node_t* free_list) {
+            [](vm_page_t** pages, size_t count, VmPageDoublyLinkedList* free_list) {
               pmm_page_queues()->RemoveArrayIntoList(pages, count, free_list);
             },
             freed_list_.Flph());
@@ -819,7 +819,7 @@ class VmCowPages::TreeWalkCursor
 bool VmCowRange::IsBoundedBy(uint64_t max) const { return InRange(offset, len, max); }
 
 // Allocates a new page and populates it with the data at |parent_paddr|.
-zx_status_t VmCowPages::AllocateCopyPage(paddr_t parent_paddr, list_node_t* alloc_list,
+zx_status_t VmCowPages::AllocateCopyPage(paddr_t parent_paddr, VmPageDoublyLinkedList* alloc_list,
                                          AnonymousPageRequest* request, vm_page_t** clone) {
   DEBUG_ASSERT(request || !(pmm_alloc_flags_ & PMM_ALLOC_FLAG_CAN_WAIT));
   DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
@@ -830,7 +830,7 @@ zx_status_t VmCowPages::AllocateCopyPage(paddr_t parent_paddr, list_node_t* allo
   if (request->has_page()) {
     p_clone = request->take_page();
   } else if (alloc_list) {
-    p_clone = list_remove_head_type(alloc_list, vm_page, queue_node);
+    p_clone = alloc_list->pop_front();
   }
 
   if (p_clone) {
@@ -901,7 +901,7 @@ void VmCowPages::RemovePageLocked(vm_page_t* page, DeferredOps& ops) {
         page, [](vm_page_t* page) { pmm_page_queues()->Remove(page); }, ops.FreedList(this).Flph());
   } else {
     pmm_page_queues()->Remove(page);
-    list_add_tail(ops.FreedList(this).List(), &page->queue_node);
+    ops.FreedList(this).List()->push_back(page);
   }
 }
 
@@ -919,7 +919,7 @@ zx_status_t VmCowPages::CacheAllocPage(uint alloc_flags, vm_page_t** p) {
     return result.error_value();
   }
 
-  vm_page_t* page = list_remove_head_type(&result->page_list, vm_page_t, queue_node);
+  vm_page_t* page = result->page_list.pop_front();
   DEBUG_ASSERT(page != nullptr);
   DEBUG_ASSERT(result->page_list.is_empty());
 
@@ -927,7 +927,7 @@ zx_status_t VmCowPages::CacheAllocPage(uint alloc_flags, vm_page_t** p) {
   return ZX_OK;
 }
 
-void VmCowPages::CacheFree(list_node_t* list, PmmOptDelayReuse delay_reuse) {
+void VmCowPages::CacheFree(VmPageDoublyLinkedList* list, PmmOptDelayReuse delay_reuse) {
   if (!page_cache_ || delay_reuse == PmmOptDelayReuse::Yes) {
     pmm_free(list, delay_reuse);
     return;
@@ -943,7 +943,7 @@ void VmCowPages::CacheFree(vm_page_t* p, PmmOptDelayReuse delay_reuse) {
   }
 
   page_cache::PageCache::PageList list;
-  list_add_tail(&list, &p->queue_node);
+  list.push_back(p);
 
   page_cache_.Free(ktl::move(list));
 }
@@ -2614,7 +2614,7 @@ VmPageOrMarker VmCowPages::CompleteAddNewPageLocked(AddPageTransaction& transact
   return CompleteAddPageLocked(transaction, VmPageOrMarker::Page(page), deferred);
 }
 
-zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pages,
+zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, VmPageDoublyLinkedList* pages,
                                           CanOverwriteSlot overwrite, bool zero,
                                           DeferredOps* deferred) {
   ASSERT(overwrite != CanOverwriteSlot::PageOrRef);
@@ -2623,12 +2623,12 @@ zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pa
   DEBUG_ASSERT(IsPageRounded(start_offset));
 
   uint64_t offset = start_offset;
-  while (vm_page_t* p = list_remove_head_type(pages, vm_page_t, queue_node)) {
+  while (vm_page_t* p = pages->pop_front()) {
     // Defer the range change update by passing false as we will do it in bulk at the end if needed.
     zx_status_t status = AddNewPageLocked(offset, p, overwrite, nullptr, zero, nullptr);
     if (status != ZX_OK) {
       // Put the page back on the list so that someone owns it and it'll get free'd.
-      list_add_head(pages, &p->queue_node);
+      pages->push_front(p);
       // Remove any pages we already placed.
       if (offset > start_offset) {
         uint32_t populated_slots_removed = 0;
@@ -2668,7 +2668,7 @@ zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pa
   return ZX_OK;
 }
 
-zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_list,
+zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, VmPageDoublyLinkedList* alloc_list,
                                            VmCowPages* page_owner, vm_page_t* page,
                                            uint64_t owner_offset, DeferredOps& deferred,
                                            AnonymousPageRequest* page_request,
@@ -2752,7 +2752,7 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_l
   return ZX_OK;
 }
 
-zx_status_t VmCowPages::ForkMarkerLocked(uint64_t offset, list_node_t* alloc_list,
+zx_status_t VmCowPages::ForkMarkerLocked(uint64_t offset, VmPageDoublyLinkedList* alloc_list,
                                          VmCowPages* marker_owner, VmPageOrMarkerRef marker,
                                          uint64_t owner_offset, DeferredOps& deferred,
                                          AnonymousPageRequest* page_request, vm_page_t** out_page) {
@@ -2824,7 +2824,7 @@ void VmCowPages::DecrementCowContentShareCount(const VmPageOrMarker& content, ui
       Pmm::Node().GetPageQueues()->Remove(removed_page);
       DEBUG_ASSERT(!page->is_loaned());
 
-      list_add_tail(list.List(), &page->queue_node);
+      list.List()->push_back(page);
     }
   } else {
     DEBUG_ASSERT(content.IsReference());
@@ -3953,8 +3953,7 @@ zx_status_t VmCowPages::CommitRangeLocked(VmCowRange range, DeferredOps& deferre
   // children that eventually depend on a page source, we skip preallocating memory to avoid
   // potentially overallocating pages if something else touches the vmo while we're blocked on the
   // request. Otherwise we optimize things by preallocating all the pages.
-  list_node page_list;
-  list_initialize(&page_list);
+  VmPageDoublyLinkedList page_list;
   if (!root_has_page_source()) {
     // make a pass through the list to find out how many pages we need to allocate
     size_t count = range.len / kPageSize;
@@ -3981,7 +3980,7 @@ zx_status_t VmCowPages::CommitRangeLocked(VmCowRange range, DeferredOps& deferre
   }
 
   auto list_cleanup = fit::defer([&page_list, this]() {
-    if (!list_is_empty(&page_list)) {
+    if (!page_list.is_empty()) {
       FreePages(&page_list);
     }
   });
@@ -6080,7 +6079,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
     if (old_page->IsPage()) {
       vm_page_t* page = old_page->ReleasePage();
       Pmm::Node().GetPageQueues()->Remove(page);
-      list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
+      deferred.FreedList(this).List()->push_back(page);
     } else if (old_page->IsReference()) {
       compression->Free(old_page->ReleaseReference());
     } else if (old_page->IsParentContent()) {
@@ -6291,7 +6290,7 @@ zx_status_t VmCowPages::FailPageRequestsLocked(VmCowRange range, zx_status_t err
   return ZX_OK;
 }
 
-zx_status_t VmCowPages::DirtyPages(VmCowRange range, list_node_t* alloc_list,
+zx_status_t VmCowPages::DirtyPages(VmCowRange range, VmPageDoublyLinkedList* alloc_list,
                                    AnonymousPageRequest* page_request) {
   canary_.Assert();
 
@@ -6413,7 +6412,7 @@ zx_status_t VmCowPages::DirtyPages(VmCowRange range, list_node_t* alloc_list,
     // Allocate the number of zero pages required upfront, so that we can fail the call early if the
     // page allocation fails. First determine how many pages we still need to allocate, based on the
     // number of existing pages in the list.
-    uint64_t alloc_list_len = list_length(alloc_list);
+    uint64_t alloc_list_len = alloc_list->size_slow();
     zero_pages_count = zero_pages_count > alloc_list_len ? zero_pages_count - alloc_list_len : 0;
 
     // First try to allocate all the pages at once. This is an optimization and avoids repeated
@@ -6451,7 +6450,7 @@ zx_status_t VmCowPages::DirtyPages(VmCowRange range, list_node_t* alloc_list,
           }
           return status;
         }
-        list_add_tail(alloc_list, &new_page->queue_node);
+        alloc_list->push_back(new_page);
         zero_pages_count--;
       }
     }
@@ -6527,7 +6526,7 @@ zx_status_t VmCowPages::DirtyPages(VmCowRange range, list_node_t* alloc_list,
     status = page_list_.ForEveryPageInRange(
         [this, &alloc_list, &deferred](const VmPageOrMarker* p, uint64_t off) {
           if (p->IsMarker() || p->IsIntervalSlot()) {
-            DEBUG_ASSERT(!list_is_empty(alloc_list));
+            DEBUG_ASSERT(!alloc_list->is_empty());
             AssertHeld(lock_ref());
 
             // AddNewPageLocked will also zero the page and update any mappings.
@@ -6536,7 +6535,7 @@ zx_status_t VmCowPages::DirtyPages(VmCowRange range, list_node_t* alloc_list,
             // want to pass a nullptr here instead of &deferred and perform a single batch update
             // later.
             zx_status_t status =
-                AddNewPageLocked(off, list_remove_head_type(alloc_list, vm_page, queue_node),
+                AddNewPageLocked(off, alloc_list->pop_front(),
                                  CanOverwriteSlot::ZeroMarkerOrInterval, nullptr, true, &deferred);
             // AddNewPageLocked will not fail with ZX_ERR_ALREADY_EXISTS as we can overwrite
             // markers and interval slots since they are zero, nor with ZX_ERR_NO_MEMORY as we don't

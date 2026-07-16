@@ -10,7 +10,6 @@
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <stdint.h>
-#include <zircon/listnode.h>
 #include <zircon/types.h>
 
 #include <fbl/array.h>

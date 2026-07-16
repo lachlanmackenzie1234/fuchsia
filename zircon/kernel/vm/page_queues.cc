@@ -209,19 +209,12 @@ uint64_t PageQueues::GetLruPagesCompressed() { return pq_lru_pages_compressed.Su
 PageQueues::PageQueues()
     : min_mru_rotate_time_(kDefaultMinMruRotateTime),
       max_mru_rotate_time_(kDefaultMaxMruRotateTime),
-      active_ratio_multiplier_(kDefaultActiveRatioMultiplier) {
-  for (uint32_t i = 0; i < PageQueueNumQueues; i++) {
-    list_initialize(&page_queues_[i]);
-  }
-  for (uint32_t i = 0; i < kNumIsolateQueues; i++) {
-    list_initialize(&isolate_queues_[i]);
-  }
-}
+      active_ratio_multiplier_(kDefaultActiveRatioMultiplier) {}
 
 PageQueues::~PageQueues() {
   StopThreads();
   for (uint32_t i = 0; i < PageQueueNumQueues; i++) {
-    DEBUG_ASSERT(list_is_empty(&page_queues_[i]));
+    DEBUG_ASSERT(page_queues_[i].is_empty());
   }
   for (size_t i = 0; i < page_queue_counts_.size(); i++) {
     DEBUG_ASSERT_MSG(page_queue_counts_[i] == 0, "i=%zu count=%zu", i,
@@ -723,8 +716,8 @@ void PageQueues::RotateReclaimQueues() {
 ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolateList() {
   Guard<CriticalMutex> guard{&list_lock_};
   for (auto& list : isolate_queues_) {
-    vm_page_t* head = list_peek_head_type(&list, vm_page_t, queue_node);
-    if (head) {
+    if (!list.is_empty()) {
+      vm_page_t* head = &list.front();
       PageQueue page_queue =
           static_cast<PageQueue>(head->object.get_page_queue_ref().load(ktl::memory_order_relaxed));
       DEBUG_ASSERT(page_queue == PageQueueReclaimIsolate);
@@ -821,13 +814,13 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
       }
       const PageQueue mru_queue = mru_gen_to_queue();
       const PageQueue lru_queue = gen_to_queue(lru);
-      list_node_t* list = &page_queues_[lru_queue];
+      VmPageDoublyLinkedList* list = &page_queues_[lru_queue];
 
       for (size_t iterations = 0;
-           !list_is_empty(list) && !deferred_list.Full() && isolate_remaining > 0;) {
+           !list->is_empty() && !deferred_list.Full() && isolate_remaining > 0;) {
         // Newer pages accumulate at the head of the list, while older pages are at the tail.
         // Pages are removed from the tail to ensure FIFO processing (oldest first).
-        vm_page_t* page = list_remove_tail_type(list, vm_page_t, queue_node);
+        vm_page_t* page = list->pop_back();
         PageQueue page_queue = static_cast<PageQueue>(
             page->object.get_page_queue_ref().load(ktl::memory_order_relaxed));
         DEBUG_ASSERT(page_queue >= PageQueueReclaimBase);
@@ -838,7 +831,7 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
         // and so we will fall back to the case of forcibly changing its age to the new lru gen.
         if (page_queue != lru_queue && queue_is_valid(page_queue, lru_queue, mru_queue)) {
           // Pages are added to the head because they are newer pages.
-          list_add_head(&page_queues_[page_queue], &page->queue_node);
+          page_queues_[page_queue].push_front(page);
 
           if (do_sweeping && !page->is_loaned() && queue_is_active(page_queue, mru_queue)) {
             deferred_list.AddLoanReplacement(page, this);
@@ -847,7 +840,7 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
           // Force it the isolate list, don't care about races. If we happened to access it at the
           // same time then too bad.
           // Aged pages go to the standard priority isolate queue.
-          list_node_t* target_queue = &isolate_queues_[kIsolateQueueStandard];
+          VmPageDoublyLinkedList* target_queue = &isolate_queues_[kIsolateQueueStandard];
           PageQueue old_queue = static_cast<PageQueue>(
               page->object.get_page_queue_ref().exchange(PageQueueReclaimIsolate));
           DEBUG_ASSERT(old_queue >= PageQueueReclaimBase);
@@ -856,7 +849,7 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
           page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
           // PeekIsolate peeks at the head. Pages are added to the tail of the isolate queue to
           // preserve relative age (older pages at the head, newer at the tail).
-          list_add_tail(target_queue, &page->queue_node);
+          target_queue->push_back(page);
           deferred_list.AddReclaimable(page, this);
           isolate_remaining--;
         }
@@ -865,7 +858,7 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
           break;
         }
       }
-      if (list_is_empty(list)) {
+      if (list->is_empty()) {
         // Note that we held the lock the entire time, and lru_gen_ is always modified with the lock
         // held, so this should always precisely set lru_gen_ to lru + 1.
         [[maybe_unused]] uint64_t prev = lru_gen_.fetch_add(1, ktl::memory_order_relaxed);
@@ -951,7 +944,7 @@ void PageQueues::SetQueueBacklinkLockedList(vm_page_t* page, void* object, uintp
   DEBUG_ASSERT(queue != PageQueueReclaimIsolate);
   DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
   DEBUG_ASSERT(!page->is_free());
-  DEBUG_ASSERT(!list_in_list(&page->queue_node));
+  DEBUG_ASSERT(!page->queue_node.InContainer());
   DEBUG_ASSERT(object);
   DEBUG_ASSERT(!page->object.get_object());
   DEBUG_ASSERT(page->object.get_page_offset() == 0);
@@ -961,7 +954,7 @@ void PageQueues::SetQueueBacklinkLockedList(vm_page_t* page, void* object, uintp
 
   DEBUG_ASSERT(page->object.get_page_queue_ref().load(ktl::memory_order_relaxed) == PageQueueNone);
   page->object.get_page_queue_ref().store(queue, ktl::memory_order_relaxed);
-  list_add_head(&page_queues_[queue], &page->queue_node);
+  page_queues_[queue].push_front(page);
   page_queue_counts_[queue].fetch_add(1, ktl::memory_order_relaxed);
 }
 
@@ -969,13 +962,13 @@ void PageQueues::MoveToQueueLockedList(vm_page_t* page, PageQueue queue) {
   DEBUG_ASSERT(queue != PageQueueReclaimIsolate);
   DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
   DEBUG_ASSERT(!page->is_free());
-  DEBUG_ASSERT(list_in_list(&page->queue_node));
+  DEBUG_ASSERT(page->queue_node.InContainer());
   DEBUG_ASSERT(page->object.get_object());
   uint32_t old_queue = page->object.get_page_queue_ref().exchange(queue, ktl::memory_order_relaxed);
   DEBUG_ASSERT(old_queue != PageQueueNone);
 
-  list_delete(&page->queue_node);
-  list_add_head(&page_queues_[queue], &page->queue_node);
+  page->queue_node.template RemoveFromContainer<vm_page_node_traits>();
+  page_queues_[queue].push_front(page);
   page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
   page_queue_counts_[queue].fetch_add(1, ktl::memory_order_relaxed);
 }
@@ -984,14 +977,14 @@ void PageQueues::MoveToIsolateLockedList(vm_page_t* page, size_t isolate_queue_i
   DEBUG_ASSERT(isolate_queue_index < kNumIsolateQueues);
   DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
   DEBUG_ASSERT(!page->is_free());
-  DEBUG_ASSERT(list_in_list(&page->queue_node));
+  DEBUG_ASSERT(page->queue_node.InContainer());
   DEBUG_ASSERT(page->object.get_object());
   uint32_t old_queue = page->object.get_page_queue_ref().exchange(PageQueueReclaimIsolate,
                                                                   ktl::memory_order_relaxed);
   DEBUG_ASSERT(old_queue != PageQueueNone);
 
-  list_delete(&page->queue_node);
-  list_add_tail(&isolate_queues_[isolate_queue_index], &page->queue_node);
+  page->queue_node.template RemoveFromContainer<vm_page_node_traits>();
+  isolate_queues_[isolate_queue_index].push_back(page);
   page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
   page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
 }
@@ -1178,7 +1171,7 @@ void PageQueues::ChangeObjectOffsetLockedList(vm_page_t* page, VmCowPages* objec
                                               uint64_t page_offset) {
   DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
   DEBUG_ASSERT(!page->is_free());
-  DEBUG_ASSERT(list_in_list(&page->queue_node));
+  DEBUG_ASSERT(page->queue_node.InContainer());
   DEBUG_ASSERT(object);
   DEBUG_ASSERT(page->object.get_object());
   page->object.set_object(object);
@@ -1193,7 +1186,7 @@ void PageQueues::RemoveLockedList(vm_page_t* page) {
   page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
   page->object.set_object(nullptr);
   page->object.set_page_offset(0);
-  list_delete(&page->queue_node);
+  page->queue_node.template RemoveFromContainer<vm_page_node_traits>();
 }
 
 void PageQueues::Remove(vm_page_t* page) {
@@ -1204,7 +1197,8 @@ void PageQueues::Remove(vm_page_t* page) {
   MaybeCheckActiveRatioAging(1);
 }
 
-void PageQueues::RemoveArrayIntoList(vm_page_t** pages, size_t count, list_node_t* out_list) {
+void PageQueues::RemoveArrayIntoList(vm_page_t** pages, size_t count,
+                                     VmPageDoublyLinkedList* out_list) {
   DEBUG_ASSERT(pages);
 
   for (size_t i = 0; i < count;) {
@@ -1214,7 +1208,7 @@ void PageQueues::RemoveArrayIntoList(vm_page_t** pages, size_t count, list_node_
     do {
       DEBUG_ASSERT(pages[i]);
       RemoveLockedList(pages[i]);
-      list_add_tail(out_list, &pages[i]->queue_node);
+      out_list->push_back(pages[i]);
       i++;
     } while (i < count && !BatchOpShouldDropLock(i));
   }
@@ -1367,8 +1361,8 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PopAnonymousZeroFork() {
   {
     Guard<CriticalMutex> guard{&list_lock_};
 
-    vm_page_t* page =
-        list_peek_tail_type(&page_queues_[PageQueueAnonymousZeroFork], vm_page_t, queue_node);
+    auto& q = page_queues_[PageQueueAnonymousZeroFork];
+    vm_page_t* page = q.is_empty() ? nullptr : &q.back();
     if (!page) {
       return ktl::nullopt;
     }
@@ -1473,14 +1467,12 @@ void PageQueues::EnableAnonymousReclaim(bool zero_forks) {
 
     // Migrate any existing pages into the reclaimable queues.
 
-    while (!list_is_empty(&page_queues_[PageQueueAnonymous])) {
-      vm_page_t* page =
-          list_peek_head_type(&page_queues_[PageQueueAnonymous], vm_page_t, queue_node);
+    while (!page_queues_[PageQueueAnonymous].is_empty()) {
+      vm_page_t* page = &page_queues_[PageQueueAnonymous].front();
       MoveToQueueLockedList(page, mru_queue);
     }
-    while (zero_forks && !list_is_empty(&page_queues_[PageQueueAnonymousZeroFork])) {
-      vm_page_t* page =
-          list_peek_head_type(&page_queues_[PageQueueAnonymousZeroFork], vm_page_t, queue_node);
+    while (zero_forks && !page_queues_[PageQueueAnonymousZeroFork].is_empty()) {
+      vm_page_t* page = &page_queues_[PageQueueAnonymousZeroFork].front();
       MoveToQueueLockedList(page, mru_queue);
     }
   }

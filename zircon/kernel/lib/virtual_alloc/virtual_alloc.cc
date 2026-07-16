@@ -254,7 +254,7 @@ void VirtualAlloc::FreePages(vaddr_t vaddr, size_t pages) {
 
 void VirtualAlloc::UnmapFreePages(vaddr_t vaddr, size_t pages) {
 #ifdef _KERNEL
-  list_node_t free_list = LIST_INITIAL_VALUE(free_list);
+  VmPageDoublyLinkedList free_list;
   LTRACEF("Unmapping %zu pages at %" PRIxPTR "\n", pages, vaddr);
   for (size_t i = 0; i < pages; i++) {
     paddr_t paddr;
@@ -263,7 +263,7 @@ void VirtualAlloc::UnmapFreePages(vaddr_t vaddr, size_t pages) {
     ZX_ASSERT(status == ZX_OK);
     vm_page_t *page = paddr_to_vm_page(paddr);
     ZX_ASSERT(page);
-    list_add_tail(&free_list, &page->queue_node);
+    free_list.push_back(page);
   }
   // As this is the kernel aspace we cannot tolerate enlarging the operation, as other CPUs may be
   // accessing the nearby portions and we cannot trigger faults.
@@ -284,7 +284,7 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
   constexpr uint kMmuFlags =
       ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
   ZX_ASSERT(num_pages > 0);
-  list_node_t alloc_pages = LIST_INITIAL_VALUE(alloc_pages);
+  VmPageDoublyLinkedList alloc_pages;
 
   size_t mapped_count = 0;
 
@@ -294,7 +294,7 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
           vaddr, mapped_count, ArchVmAspaceInterface::ArchUnmapOptions::None);
       ZX_ASSERT(status == ZX_OK);
     }
-    if (!list_is_empty(&alloc_pages)) {
+    if (!alloc_pages.is_empty()) {
       pmm_free(&alloc_pages);
     }
   });
@@ -304,7 +304,7 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
     if (align_pages > 1) {
       while (mapped_count + align_pages <= num_pages) {
         paddr_t paddr;
-        list_node_t contiguous_pages = LIST_INITIAL_VALUE(contiguous_pages);
+        VmPageDoublyLinkedList contiguous_pages;
         // Being in this path we know that align_pages is >1, which can only happen if our
         // align_log_2 is greater than the system kPageShift. As such we need to allocate
         // multiple contiguous pages at a greater than system page size alignment, and so we must
@@ -316,11 +316,10 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
           // fragmented. Drop out of this loop and attempt to finish with the single page mappings.
           break;
         }
-        vm_page_t *p, *temp;
-        list_for_every_entry_safe (&contiguous_pages, p, temp, vm_page_t, queue_node) {
-          p->set_state(allocated_page_state_);
+        for (auto &p : contiguous_pages) {
+          p.set_state(allocated_page_state_);
         }
-        list_splice_after(&contiguous_pages, &alloc_pages);
+        alloc_pages.splice(alloc_pages.begin(), contiguous_pages);
         status = VmAspace::kernel_aspace()->arch_aspace().MapContiguous(
             vaddr + mapped_count * kPageSize, paddr, align_pages, kMmuFlags);
         if (status != ZX_OK) {
@@ -330,30 +329,27 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
       }
       if (mapped_count == num_pages) {
         cleanup.cancel();
+        alloc_pages.clear();
         return ZX_OK;
       }
     }
   }
 
   // Allocate any remaining pages.
-  list_node_t remaining_pages = LIST_INITIAL_VALUE(remaining_pages);
+  VmPageDoublyLinkedList remaining_pages;
   zx_status_t status = pmm_alloc_pages(num_pages - mapped_count, 0, &remaining_pages);
   if (status != ZX_OK) {
     return status;
   }
 
-  vm_page_t *current_page = list_peek_head_type(&remaining_pages, vm_page_t, queue_node);
+  vm_page_t *current_page = &remaining_pages.front();
   ZX_ASSERT(current_page);
 
   // Place them specifically at the end of any already allocated pages. This ensures that if we
   // should iterate too far we will hit a null page and not one of our contiguous pages to ensure we
   // can never attempt to map something twice. Due to how list_node's work this does not affect the
   // current_page pointer we already retrieved.
-  if (list_is_empty(&alloc_pages)) {
-    list_move(&remaining_pages, &alloc_pages);
-  } else {
-    list_splice_after(&remaining_pages, list_peek_tail(&alloc_pages));
-  }
+  alloc_pages.splice(alloc_pages.end(), remaining_pages);
 
   while (mapped_count < num_pages) {
     constexpr size_t kBatchPages = 128;
@@ -364,7 +360,8 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
       ZX_ASSERT(current_page);
       current_page->set_state(allocated_page_state_);
       paddrs[page] = current_page->paddr();
-      current_page = list_next_type(&alloc_pages, &current_page->queue_node, vm_page_t, queue_node);
+      auto iter = ++alloc_pages.make_iterator(*current_page);
+      current_page = iter.IsValid() ? &*iter : nullptr;
     }
 
     status = VmAspace::kernel_aspace()->arch_aspace().Map(vaddr + mapped_count * kPageSize, paddrs,
@@ -380,6 +377,7 @@ zx_status_t VirtualAlloc::AllocMapPages(vaddr_t vaddr, size_t num_pages) {
   ZX_ASSERT(!current_page);
 
   cleanup.cancel();
+  alloc_pages.clear();
 
   LTRACEF("Mapped %zu pages at %" PRIxPTR "\n", num_pages, vaddr);
 #else

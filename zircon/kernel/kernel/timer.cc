@@ -35,7 +35,6 @@
 #include <trace.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
-#include <zircon/listnode.h>
 #include <zircon/time.h>
 #include <zircon/types.h>
 

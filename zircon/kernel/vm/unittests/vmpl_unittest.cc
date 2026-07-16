@@ -14,7 +14,7 @@ namespace {
 
 template <size_t count>
 ktl::array<vm_page_t*, count> GetPages() {
-  list_node pmm_page_list = LIST_INITIAL_VALUE(pmm_page_list);
+  VmPageDoublyLinkedList pmm_page_list;
   ktl::array<vm_page_t*, count> pages;
 
   if (pmm_alloc_pages(count, 0, &pmm_page_list) != ZX_OK) {
@@ -23,11 +23,11 @@ ktl::array<vm_page_t*, count> GetPages() {
   }
 
   uint32_t ix = 0;
-  vm_page_t* page;
-  list_for_every_entry (&pmm_page_list, page, vm_page_t, queue_node) {
-    pages[ix] = page;
+  for (auto& page : pmm_page_list) {
+    pages[ix] = &page;
     ix += 1;
   }
+  pmm_page_list.clear();
 
   return pages;
 }
@@ -35,7 +35,9 @@ ktl::array<vm_page_t*, count> GetPages() {
 template <size_t count>
 void UnlinkAndFreePages(const ktl::array<vm_page_t*, count>& pages) {
   for (auto& p : pages) {
-    p->queue_node = {};
+    if (p->queue_node.InContainer()) {
+      p->queue_node.template RemoveFromContainer<vm_page_node_traits>();
+    }
     pmm_free_page(p);
   }
 }
@@ -198,20 +200,19 @@ static bool vmpl_free_pages_test() {
     EXPECT_TRUE(AddMarker(&pl, (i * 2 + 1) * kPageSize));
   }
 
-  list_node_t list;
-  list_initialize(&list);
+  VmPageDoublyLinkedList list;
   pl.RemovePages(
       [&list](VmPageOrMarker* page_or_marker, uint64_t off) {
         if (page_or_marker->IsPage()) {
           vm_page_t* p = page_or_marker->ReleasePage();
-          list_add_tail(&list, &p->queue_node);
+          list.push_back(p);
         }
         *page_or_marker = VmPageOrMarker::Empty();
         return ZX_ERR_NEXT;
       },
       kPageSize * 2, (kCount - 1) * 2 * kPageSize);
   for (unsigned i = 1; i < kCount - 2; i++) {
-    EXPECT_TRUE(list_in_list(&test_pages[i]->queue_node), "Not in free list");
+    EXPECT_TRUE(test_pages[i]->queue_node.InContainer(), "Not in free list");
   }
 
   for (uint32_t i = 0; i < kCount; i++) {
@@ -244,17 +245,16 @@ static bool vmpl_free_pages_last_page_test() {
 
   EXPECT_EQ(page, pl.Lookup(0)->Page(), "unexpected page\n");
 
-  list_node_t list;
-  list_initialize(&list);
+  VmPageDoublyLinkedList list;
   pl.RemoveAllContent([&list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&list, &p.ReleasePage()->queue_node);
+      list.push_back(p.ReleasePage());
     }
   });
   EXPECT_TRUE(pl.IsEmpty(), "not empty\n");
 
-  EXPECT_EQ(list_length(&list), 1u, "too many pages");
-  EXPECT_EQ(list_remove_head_type(&list, vm_page_t, queue_node), page, "wrong page");
+  EXPECT_EQ(list.size_slow(), 1u, "too many pages");
+  EXPECT_EQ(list.pop_front(), page, "wrong page");
 
   pmm_free_page(page);
 
@@ -274,16 +274,15 @@ static bool vmpl_near_last_offset_free() {
       at_least_one = true;
       EXPECT_EQ(page, pl.Lookup(addr)->Page(), "unexpected page\n");
 
-      list_node_t list;
-      list_initialize(&list);
+      VmPageDoublyLinkedList list;
       pl.RemoveAllContent([&list](VmPageOrMarker&& p) {
         if (p.IsPage()) {
-          list_add_tail(&list, &p.ReleasePage()->queue_node);
+          list.push_back(p.ReleasePage());
         }
       });
 
-      EXPECT_EQ(list_length(&list), 1u, "too many pages");
-      EXPECT_EQ(list_remove_head_type(&list, vm_page_t, queue_node), page, "wrong page");
+      EXPECT_EQ(list.size_slow(), 1u, "too many pages");
+      EXPECT_EQ(list.pop_front(), page, "wrong page");
       EXPECT_TRUE(pl.IsEmpty(), "non-empty list\n");
     }
   }
@@ -589,12 +588,10 @@ static bool vmpl_page_gap_iter_test_body(vm_page_t** pages, uint32_t count, uint
   ASSERT_EQ(ZX_OK, s);
   ASSERT_EQ(stop_idx, idx);
 
-  list_node_t free_list;
-  list_initialize(&free_list);
-  list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
-  });
+  VmPageDoublyLinkedList free_list;
+  list.RemoveAllContent([&free_list](VmPageOrMarker&& p) { free_list.push_back(p.ReleasePage()); });
   ASSERT_TRUE(list.IsEmpty());
+  free_list.clear();
 
   END_TEST;
 }
@@ -612,7 +609,7 @@ static bool vmpl_page_gap_iter_test() {
       for (unsigned k = 0; k < kCount; k++) {
         if (j & (1 << k)) {
           // Ensure pages are ready to be added to a list in every iteration.
-          list_initialize(&pages[k]->queue_node);
+          ASSERT(!pages[i]->queue_node.InContainer());
           list[k] = pages[k];
         } else {
           list[k] = nullptr;
@@ -676,11 +673,10 @@ static bool vmpl_for_every_page_test() {
   list.ForEveryPageInRange(iter_fn, offsets[1], offsets[ktl::size(test_pages) - 1]);
   ASSERT_EQ(idx, ktl::size(offsets) - 1);
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
 
@@ -717,15 +713,15 @@ static bool vmpl_skip_last_gap_test() {
   EXPECT_EQ(saw_gap_start, 0u);
   EXPECT_EQ(saw_gap_end, 1ul * kPageSize);
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
 
-  test_page->queue_node = {};
+  free_list.clear();
+  ASSERT(!test_page->queue_node.InContainer());
   pmm_free_page(test_page);
 
   END_TEST;
@@ -776,14 +772,13 @@ static bool vmpl_contiguous_run_test() {
     EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(6u, list_length(&free_list));
+  EXPECT_EQ(6u, free_list.size_slow());
 
   UnlinkAndFreePages(test_pages);
 
@@ -839,14 +834,13 @@ static bool vmpl_contiguous_run_compare_test() {
     EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(5u, list_length(&free_list));
+  EXPECT_EQ(5u, free_list.size_slow());
 
   UnlinkAndFreePages(test_pages);
 
@@ -940,14 +934,13 @@ static bool vmpl_contiguous_traversal_end_test() {
     EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(3u, list_length(&free_list));
+  EXPECT_EQ(3u, free_list.size_slow());
 
   UnlinkAndFreePages(test_pages);
 
@@ -1041,14 +1034,13 @@ static bool vmpl_contiguous_traversal_error_test() {
     EXPECT_EQ(expected_offsets[i] * kPageSize, range_offsets[i]);
   }
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(3u, list_length(&free_list));
+  EXPECT_EQ(3u, free_list.size_slow());
 
   UnlinkAndFreePages(test_pages);
 
@@ -1564,16 +1556,16 @@ static bool vmpl_interval_add_page_test() {
 
   EXPECT_EQ(page_offset * kPageSize, page_off);
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(1u, list_length(&free_list));
+  EXPECT_EQ(1u, free_list.size_slow());
 
-  page->queue_node = {};
+  free_list.clear();
+  ASSERT(!page->queue_node.InContainer());
   pmm_free_page(page);
 
   END_TEST;
@@ -1639,16 +1631,16 @@ static bool vmpl_interval_add_page_slots_test() {
 
   EXPECT_EQ(page_offset * kPageSize, page_off);
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(1u, list_length(&free_list));
+  EXPECT_EQ(1u, free_list.size_slow());
 
-  page->queue_node = {};
+  free_list.clear();
+  ASSERT(!page->queue_node.InContainer());
   pmm_free_page(page);
 
   END_TEST;
@@ -1761,14 +1753,13 @@ static bool vmpl_interval_add_page_start_test() {
     EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(2u, list_length(&free_list));
+  EXPECT_EQ(2u, free_list.size_slow());
 
   UnlinkAndFreePages(pages);
 
@@ -1883,14 +1874,13 @@ static bool vmpl_interval_add_page_end_test() {
     EXPECT_EQ(expected_gaps[i] * kPageSize, gaps[i]);
   }
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(2u, list_length(&free_list));
+  EXPECT_EQ(2u, free_list.size_slow());
 
   UnlinkAndFreePages(pages);
 
@@ -1967,16 +1957,16 @@ static bool vmpl_interval_replace_slot_test() {
 
   EXPECT_EQ(expected_interval * kPageSize, page_off);
 
-  list_node_t free_list;
-  list_initialize(&free_list);
+  VmPageDoublyLinkedList free_list;
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
     if (p.IsPage()) {
-      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+      free_list.push_back(p.ReleasePage());
     }
   });
-  EXPECT_EQ(1u, list_length(&free_list));
+  EXPECT_EQ(1u, free_list.size_slow());
 
-  page->queue_node = {};
+  free_list.clear();
+  ASSERT(!page->queue_node.InContainer());
   pmm_free_page(page);
 
   END_TEST;

@@ -13,7 +13,6 @@
 #include <lib/zircon-internal/thread_annotations.h>
 #include <stdint.h>
 #include <zircon/errors.h>
-#include <zircon/listnode.h>
 #include <zircon/types.h>
 
 #include <fbl/array.h>

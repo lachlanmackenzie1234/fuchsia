@@ -63,7 +63,8 @@ zx_status_t pmm_get_arena_info(size_t count, uint64_t i, pmm_arena_info_t* buffe
 // allocated (see comment on |pmm_wait_till_should_retry_single_alloc|) passing
 // PMM_ALLOC_FLAG_CAN_WAIT here should be used as an optimistic fast path, and the caller should
 // have a fallback of allocating single pages.
-zx_status_t pmm_alloc_pages(size_t count, uint alloc_flags, list_node* list) __NONNULL((3));
+zx_status_t pmm_alloc_pages(size_t count, uint alloc_flags, VmPageDoublyLinkedList* list)
+    __NONNULL((3));
 
 // Allocate a single page of physical memory.
 zx_status_t pmm_alloc_page(uint alloc_flags, vm_page** p) __NONNULL((2));
@@ -71,13 +72,14 @@ zx_status_t pmm_alloc_page(uint alloc_flags, paddr_t* pa) __NONNULL((2));
 zx_status_t pmm_alloc_page(uint alloc_flags, vm_page** p, paddr_t* pa) __NONNULL((2, 3));
 
 // Allocate a specific range of physical pages, adding to the tail of the passed list.
-zx_status_t pmm_alloc_range(paddr_t address, size_t count, list_node* list) __NONNULL((3));
+zx_status_t pmm_alloc_range(paddr_t address, size_t count, VmPageDoublyLinkedList* list)
+    __NONNULL((3));
 
 // Allocate a run of contiguous pages, aligned on log2 byte boundary (0-31).
 // Return the base address of the run in the physical address pointer and
 // append the allocate page structures to the tail of the passed in list.
 zx_status_t pmm_alloc_contiguous(size_t count, uint alloc_flags, uint8_t align_log2, paddr_t* pa,
-                                 list_node* list) __NONNULL((4, 5));
+                                 VmPageDoublyLinkedList* list) __NONNULL((4, 5));
 
 // Unwires a page and sets it in the ALLOC state.
 void pmm_unwire_page(vm_page_t* page);
@@ -86,8 +88,8 @@ void pmm_unwire_page(vm_page_t* page);
 // PmmNode::AllocLoanedPage.
 //
 // |delay_reuse| specifies whether reuse of the pages (i.e. reallocation) should be delayed or not.
-void pmm_free(list_node* list, PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default)
-    __NONNULL((1));
+void pmm_free(VmPageDoublyLinkedList* list,
+              PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default) __NONNULL((1));
 
 // Free a single page. This page must not be a loaned page returned from PmmNode::AllocLoanedPage.
 //

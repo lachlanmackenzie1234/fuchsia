@@ -143,13 +143,13 @@ zx::result<vm_page_t*> CacheAllocPage() {
     return result.take_error();
   }
 
-  vm_page_t* page = list_remove_head_type(&result->page_list, vm_page_t, queue_node);
+  vm_page_t* page = result->page_list.pop_front();
   DEBUG_ASSERT(page != nullptr);
   DEBUG_ASSERT(result->page_list.is_empty());
   return zx::ok(page);
 }
 
-void CacheFreePages(list_node_t* list) {
+void CacheFreePages(VmPageDoublyLinkedList* list) {
   if (!page_cache) {
     pmm_free(list);
   } else {
@@ -162,7 +162,7 @@ void CacheFreePage(vm_page_t* p) {
     pmm_free_page(p);
   } else {
     page_cache::PageCache::PageList list;
-    list_add_tail(&list, &p->queue_node);
+    list.push_back(p);
 
     page_cache.Free(ktl::move(list));
   }
@@ -507,7 +507,7 @@ class ArmArchVmAspace::ConsistencyManager {
   ~ConsistencyManager() {
     Flush();
 
-    if (!list_is_empty(&to_free_)) {
+    if (!to_free_.is_empty()) {
       // Any page tables in the to_free_ list have been disconnected from tt_virt_ and are no longer
       // discoverable. Synchronize to ensure any previous readers have finished before freeing the
       // pages.
@@ -626,7 +626,7 @@ class ArmArchVmAspace::ConsistencyManager {
   // Queue a page for freeing that is dependent on TLB flushing. This is for pages that were
   // previously installed as page tables and they should not be reused until the non-terminal TLB
   // flush has occurred.
-  void FreePage(vm_page_t* page) { list_add_tail(&to_free_, &page->queue_node); }
+  void FreePage(vm_page_t* page) { to_free_.push_back(page); }
 
   Lock<CriticalMutex>* lock() const TA_RET_CAP(aspace_.lock_) { return &aspace_.lock_; }
   Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(aspace_.lock_) { return aspace_.lock_; }
@@ -655,7 +655,7 @@ class ArmArchVmAspace::ConsistencyManager {
   ArmArchVmAspace& aspace_;
 
   // vm_page_t's to release to the PMM after the TLB invalidation occurs.
-  list_node to_free_ = LIST_INITIAL_VALUE(to_free_);
+  VmPageDoublyLinkedList to_free_;
 
   // Pending ISB
   bool isb_pending_ = false;
@@ -2398,9 +2398,8 @@ void ArmArchVmAspace::ContextSwitch(ArmArchVmAspace* old_aspace, ArmArchVmAspace
   }
 }
 
-void ArmArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) {
-  while (list_node_t* node = list_remove_head(mmu_pages)) {
-    vm_page_t* page = reinterpret_cast<vm_page_t*>(node);
+void ArmArchVmAspace::HandoffPageTablesFromPhysboot(VmPageDoublyLinkedList* mmu_pages) {
+  while (vm_page_t* page = mmu_pages->pop_front()) {
     page->set_state(vm_page_state::MMU);
 
     ktl::span entries{

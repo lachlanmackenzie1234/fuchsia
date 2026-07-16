@@ -10,7 +10,6 @@
 #include <lib/kconcurrent/chainlock_transaction.h>
 #include <trace.h>
 #include <zircon/errors.h>
-#include <zircon/listnode.h>
 #include <zircon/types.h>
 
 #include <arch/ops.h>

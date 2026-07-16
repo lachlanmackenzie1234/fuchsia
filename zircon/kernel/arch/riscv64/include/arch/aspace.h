@@ -85,7 +85,7 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
 
   static void ContextSwitch(Riscv64ArchVmAspace* from, Riscv64ArchVmAspace* to);
 
-  static void HandoffPageTablesFromPhysboot(list_node_t* mmu_pages);
+  static void HandoffPageTablesFromPhysboot(VmPageDoublyLinkedList* mmu_pages);
 
   static constexpr bool HasNonTerminalAccessedFlag() { return false; }
 

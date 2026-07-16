@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
-#include <zircon/listnode.h>
 
 #include <arch/kernel_aspace.h>
 #include <arch/vm.h>

@@ -770,7 +770,7 @@ bool continuous_attribution_tracker_add_pages() {
     VmCowPages::DeferredOps deferred(vmo_cow.get());
     Guard<CriticalMutex> guard{vmo_cow->lock()};
 
-    list_node list = LIST_INITIAL_VALUE(list);
+    VmPageDoublyLinkedList list;
     const size_t count = 3;
     ASSERT_OK(pmm_alloc_pages(count, 0, &list));
     auto cleanup = fit::defer([&]() { pmm_free(&list); });

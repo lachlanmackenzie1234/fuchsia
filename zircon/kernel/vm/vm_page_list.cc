@@ -31,7 +31,7 @@ namespace {
 
 DECLARE_SINGLETON_CRITICAL_MUTEX(SlabLock);
 // Slab used for allocating all the page list nodes.
-constinit PageSlabAllocator<sizeof(VmPageListNode)> pln_slab_ TA_GUARDED(SlabLock::Get());
+PageSlabAllocator<sizeof(VmPageListNode)> pln_slab_ TA_GUARDED(SlabLock::Get());
 
 // Assert the size of the page list node to prevent accidental size changes.
 static_assert(sizeof(VmPageListNode) == 64);
@@ -1296,14 +1296,14 @@ VmPageSpliceList::~VmPageSpliceList() {
 }
 
 // static
-zx_status_t VmPageSpliceList::CreateFromPageList(uint64_t length, list_node* pages,
+zx_status_t VmPageSpliceList::CreateFromPageList(uint64_t length, VmPageDoublyLinkedList* pages,
                                                  VmPageSpliceList* splice) {
   // TODO(https://fxbug.dev/42170136): This method needs coverage in vmpl_unittests.
   DEBUG_ASSERT(pages);
-  DEBUG_ASSERT(list_length(pages) == length / kPageSize);
+  DEBUG_ASSERT(pages->size_slow() == length / kPageSize);
   splice->Initialize(length);
   uint64_t offset = 0;
-  while (vm_page_t* page = list_remove_head_type(pages, vm_page_t, queue_node)) {
+  while (vm_page_t* page = pages->pop_front()) {
     zx_status_t status = splice->Insert(offset, VmPageOrMarker::Page(page));
     if (status != ZX_OK) {
       return status;
@@ -1339,7 +1339,7 @@ zx_status_t VmPageSpliceList::Insert(uint64_t offset, VmPageOrMarker content) {
     // If the allocation failed, we need to free content.
     if (content.IsPage()) {
       vm_page_t* page = content.ReleasePage();
-      DEBUG_ASSERT(!list_in_list(&page->queue_node));
+      DEBUG_ASSERT(!page->queue_node.InContainer());
       pmm_free_page(page);
     } else if (content.IsReference()) {
       VmCompression* compression = Pmm::Node().GetPageCompression();

@@ -12,7 +12,6 @@
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <stdint.h>
-#include <zircon/listnode.h>
 #include <zircon/types.h>
 
 #include <fbl/array.h>
@@ -506,7 +505,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // ZX_ERR_SHOULD_WAIT is returned the caller should wait on |page_request|. |alloc_list| will hold
   // any pages that were allocated but not used in case of delayed PMM allocations, so that it can
   // be reused across multiple successive calls whilst ensuring forward progress.
-  zx_status_t DirtyPages(VmCowRange range, list_node_t* alloc_list,
+  zx_status_t DirtyPages(VmCowRange range, VmPageDoublyLinkedList* alloc_list,
                          AnonymousPageRequest* page_request);
 
   using DirtyRangeEnumerateFunction = VmObject::DirtyRangeEnumerateFunction;
@@ -603,7 +602,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // |overwrite| controls how the function handles pre-existing content in the range, however it is
   // not valid to specify the |CanOverwriteSlot::PageOrRef| option, as any pages or compressed
   // references that would get released as a consequence cannot be returned.
-  zx_status_t AddNewPagesLocked(uint64_t start_offset, list_node_t* pages,
+  zx_status_t AddNewPagesLocked(uint64_t start_offset, VmPageDoublyLinkedList* pages,
                                 CanOverwriteSlot overwrite, bool zero, DeferredOps* deferred)
       TA_REQ(lock());
 
@@ -863,7 +862,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //
   // Callers should avoid calling pmm_free() directly from inside VmCowPages, and instead should use
   // this helper.
-  void FreePages(list_node* pages) {
+  void FreePages(VmPageDoublyLinkedList* pages) {
     if (page_source_type() == PageSourceType::Anonymous ||
         page_source_type() == PageSourceType::UserPager) {
       CacheFree(pages, should_delay_reuse_on_free());
@@ -884,16 +883,15 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Callers should avoid calling pmm_free_page() directly from inside VmCowPages, and instead
   // should use this helper.
   void FreePage(vm_page_t* page) {
-    DEBUG_ASSERT(!list_in_list(&page->queue_node));
+    DEBUG_ASSERT(!page->queue_node.InContainer());
     if (page_source_type() == PageSourceType::Anonymous ||
         page_source_type() == PageSourceType::UserPager) {
       CacheFree(page, should_delay_reuse_on_free());
       return;
     }
     DEBUG_ASSERT(page_source_type() == PageSourceType::Contiguous);
-    list_node_t list;
-    list_initialize(&list);
-    list_add_tail(&list, &page->queue_node);
+    VmPageDoublyLinkedList list;
+    list.push_back(page);
     page_source_->FreePages(&list);
   }
 
@@ -1153,11 +1151,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   zx_status_t ReplaceReferenceWithPageLocked(VmPageOrMarkerRef page_or_mark, uint64_t offset,
                                              AnonymousPageRequest* page_request) TA_REQ(lock());
 
-  zx_status_t AllocateCopyPage(paddr_t parent_paddr, list_node_t* alloc_list,
+  zx_status_t AllocateCopyPage(paddr_t parent_paddr, VmPageDoublyLinkedList* alloc_list,
                                AnonymousPageRequest* request, vm_page_t** clone);
 
   static zx_status_t CacheAllocPage(uint alloc_flags, vm_page_t** p);
-  static void CacheFree(list_node_t* list, PmmOptDelayReuse delay_reuse);
+  static void CacheFree(VmPageDoublyLinkedList* list, PmmOptDelayReuse delay_reuse);
   static void CacheFree(vm_page_t* p, PmmOptDelayReuse delay_reuse);
 
   // Helper for allocating and initializing a loaned page.
@@ -1344,15 +1342,16 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //
   // |page| must not be the zero-page, as there is no need to do the complex page fork logic to
   // reduce memory consumption in that case.
-  zx_status_t CloneCowPageLocked(uint64_t offset, list_node_t* alloc_list, VmCowPages* page_owner,
-                                 vm_page_t* page, uint64_t owner_offset, DeferredOps& deferred,
-                                 AnonymousPageRequest* page_request, vm_page_t** out_page)
-      TA_REQ(lock()) TA_REQ(page_owner->lock());
+  zx_status_t CloneCowPageLocked(uint64_t offset, VmPageDoublyLinkedList* alloc_list,
+                                 VmCowPages* page_owner, vm_page_t* page, uint64_t owner_offset,
+                                 DeferredOps& deferred, AnonymousPageRequest* page_request,
+                                 vm_page_t** out_page) TA_REQ(lock()) TA_REQ(page_owner->lock());
 
-  zx_status_t ForkMarkerLocked(uint64_t offset, list_node_t* alloc_list, VmCowPages* marker_owner,
-                               VmPageOrMarkerRef marker, uint64_t owner_offset,
-                               DeferredOps& deferred, AnonymousPageRequest* page_request,
-                               vm_page_t** out_page) TA_REQ(lock()) TA_REQ(marker_owner->lock());
+  zx_status_t ForkMarkerLocked(uint64_t offset, VmPageDoublyLinkedList* alloc_list,
+                               VmCowPages* marker_owner, VmPageOrMarkerRef marker,
+                               uint64_t owner_offset, DeferredOps& deferred,
+                               AnonymousPageRequest* page_request, vm_page_t** out_page)
+      TA_REQ(lock()) TA_REQ(marker_owner->lock());
 
   // Helper function for reducing the share count of content in a hidden node, and freeing it if it
   // is no longer referenced.
@@ -1860,7 +1859,7 @@ class VmCowPages::LookupCursor {
   // know you will be looking up multiple absent pages and want to avoid repeatedly hitting the pmm
   // for single pages.
   // If a list is provided then ClearAllocList must be called prior to the cursor being destroyed.
-  void GiveAllocList(list_node_t* alloc_list) {
+  void GiveAllocList(VmPageDoublyLinkedList* alloc_list) {
     DEBUG_ASSERT(alloc_list);
     alloc_list_ = alloc_list;
   }
@@ -2108,26 +2107,26 @@ class VmCowPages::LookupCursor {
   bool is_valid_ = false;
 
   // Optional allocation list that will be used for any page allocations.
-  list_node_t* alloc_list_ = nullptr;
+  VmPageDoublyLinkedList* alloc_list_ = nullptr;
 
   friend VmCowPages;
 };
 
 class ScopedPageFreedList {
  public:
-  explicit ScopedPageFreedList() { list_initialize(&list_); }
+  explicit ScopedPageFreedList() = default;
 
-  ~ScopedPageFreedList() { ASSERT(list_is_empty(&list_)); }
+  ~ScopedPageFreedList() { ASSERT(list_.is_empty()); }
 
   void FreePages(VmCowPages* cow_pages) {
-    if (!list_is_empty(&list_)) {
+    if (!list_.is_empty()) {
       cow_pages->FreePages(&list_);
     }
     if (flph_.has_value()) {
       Pmm::Node().FinishFreeLoanedPages(*flph_);
     }
   }
-  list_node_t* List() { return &list_; }
+  VmPageDoublyLinkedList* List() { return &list_; }
   FreeLoanedPagesHolder& Flph() {
     if (!flph_.has_value()) {
       flph_.emplace();
@@ -2136,7 +2135,7 @@ class ScopedPageFreedList {
   }
 
  private:
-  list_node_t list_;
+  VmPageDoublyLinkedList list_;
   // The FLPH is a moderately large object and is wrapped in an optional to defer its construction
   // unless it is actually needed.
   ktl::optional<FreeLoanedPagesHolder> flph_;

@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <zircon/compiler.h>
-#include <zircon/listnode.h>
 #include <zircon/syscalls/log.h>
 #include <zircon/types.h>
 

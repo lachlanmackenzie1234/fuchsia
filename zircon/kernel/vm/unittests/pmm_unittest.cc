@@ -29,13 +29,12 @@ class ManagedPmmNode {
       ManagedPmmNode::kNumPages - kDefaultMemEventLowerBound + 1;
 
   ManagedPmmNode() {
-    list_node list = LIST_INITIAL_VALUE(list);
+    VmPageDoublyLinkedList list;
     ZX_ASSERT(pmm_alloc_pages(kNumPages, 0, &list) == ZX_OK);
-    vm_page_t* page;
-    list_for_every_entry (&list, page, vm_page_t, queue_node) {
+    for (auto& page : list) {
       // TODO: Prevent this page state from allowing AllocContiguous() to potentially find a run of
       // FREE pages involving some of these pages.
-      page->set_state(vm_page_state::FREE);
+      page.set_state(vm_page_state::FREE);
     }
     node_.AddFreePages(&list);
 
@@ -51,12 +50,11 @@ class ManagedPmmNode {
   }
 
   ~ManagedPmmNode() {
-    list_node list = LIST_INITIAL_VALUE(list);
+    VmPageDoublyLinkedList list;
     zx_status_t status = node_.AllocPages(kNumPages, 0, &list);
     ASSERT(status == ZX_OK);
-    vm_page_t* page;
-    list_for_every_entry (&list, page, vm_page_t, queue_node) {
-      page->set_state(vm_page_state::ALLOC);
+    for (auto& page : list) {
+      page.set_state(vm_page_state::ALLOC);
     }
     pmm_free(&list);
   }
@@ -138,12 +136,12 @@ static bool pmm_smoke_test() {
 // Allocates one page and frees it.
 static bool pmm_alloc_contiguous_one_test() {
   BEGIN_TEST;
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   paddr_t pa;
   size_t count = 1U;
   zx_status_t status = pmm_alloc_contiguous(count, 0, kPageShift, &pa, &list);
   ASSERT_EQ(ZX_OK, status, "pmm_alloc_contiguous returned failure\n");
-  ASSERT_EQ(count, list_length(&list), "pmm_alloc_contiguous list size is wrong");
+  ASSERT_EQ(count, list.size_slow(), "pmm_alloc_contiguous list size is wrong");
   ASSERT_NONNULL(paddr_to_physmap(pa));
   pmm_free(&list);
   END_TEST;
@@ -154,15 +152,15 @@ static bool pmm_node_multi_alloc_test() {
   BEGIN_TEST;
   ManagedPmmNode node;
   static constexpr size_t alloc_count = ManagedPmmNode::kNumPages / 2;
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
 
   zx_status_t status = node.node().AllocPages(alloc_count, 0, &list);
   EXPECT_EQ(ZX_OK, status, "pmm_alloc_pages a few pages");
-  EXPECT_EQ(alloc_count, list_length(&list), "pmm_alloc_pages a few pages list count");
+  EXPECT_EQ(alloc_count, list.size_slow(), "pmm_alloc_pages a few pages list count");
 
   status = node.node().AllocPages(alloc_count, 0, &list);
   EXPECT_EQ(ZX_OK, status, "pmm_alloc_pages a few pages");
-  EXPECT_EQ(2 * alloc_count, list_length(&list), "pmm_alloc_pages a few pages list count");
+  EXPECT_EQ(2 * alloc_count, list.size_slow(), "pmm_alloc_pages a few pages list count");
 
   node.node().FreeList(&list);
   END_TEST;
@@ -172,11 +170,11 @@ static bool pmm_node_multi_alloc_test() {
 static bool pmm_node_singleton_list_test() {
   BEGIN_TEST;
   ManagedPmmNode node;
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
 
   zx_status_t status = node.node().AllocPages(1, 0, &list);
   EXPECT_EQ(ZX_OK, status, "pmm_alloc_pages a few pages");
-  EXPECT_EQ(1ul, list_length(&list), "pmm_alloc_pages a few pages list count");
+  EXPECT_EQ(1ul, list.size_slow(), "pmm_alloc_pages a few pages list count");
 
   node.node().FreeList(&list);
   END_TEST;
@@ -195,7 +193,7 @@ static bool pmm_node_loan_borrow_cancel_reclaim_end() {
     PhysicalPageBorrowingConfig::Get().set_loaning_enabled(was_loaning_enabled);
   });
 
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
 
   constexpr uint64_t kLoanCount = ManagedPmmNode::kNumPages * 3 / 4;
   constexpr uint64_t kNotLoanCount = ManagedPmmNode::kNumPages - kLoanCount;
@@ -204,23 +202,22 @@ static bool pmm_node_loan_borrow_cancel_reclaim_end() {
 
   zx_status_t status = node.node().AllocPages(kLoanCount, 0, &list);
   EXPECT_EQ(ZX_OK, status, "pmm_alloc_pages a few pages");
-  EXPECT_EQ(kLoanCount, list_length(&list), "pmm_alloc_pages correct # pages");
+  EXPECT_EQ(kLoanCount, list.size_slow(), "pmm_alloc_pages correct # pages");
 
   uint32_t i = 0;
-  vm_page_t* page;
-  list_for_every_entry (&list, page, vm_page_t, queue_node) {
-    paddr[i] = page->paddr();
+  for (auto& page : list) {
+    paddr[i] = page.paddr();
     ++i;
   }
 
-  list_for_every_entry (&list, page, vm_page_t, queue_node) {
-    EXPECT_FALSE(page->is_loaned());
-    EXPECT_FALSE(page->is_loan_cancelled());
+  for (auto& page : list) {
+    EXPECT_FALSE(page.is_loaned());
+    EXPECT_FALSE(page.is_loan_cancelled());
   }
   node.node().BeginLoan(&list);
-  list_for_every_entry (&list, page, vm_page_t, queue_node) {
-    EXPECT_TRUE(page->is_loaned());
-    EXPECT_FALSE(page->is_loan_cancelled());
+  for (auto& page : list) {
+    EXPECT_TRUE(page.is_loaned());
+    EXPECT_FALSE(page.is_loan_cancelled());
   }
 
   EXPECT_EQ(kLoanCount, node.node().CountLoanedPages());
@@ -229,7 +226,7 @@ static bool pmm_node_loan_borrow_cancel_reclaim_end() {
   EXPECT_EQ(0u, node.node().CountLoanCancelledPages());
   EXPECT_EQ(0u, node.node().CountLoanedNotFreePages());
 
-  EXPECT_EQ(0u, list_length(&list));
+  EXPECT_EQ(0u, list.size_slow());
   vm_page_t* loaned_pages[kLoanCount] = {};
   status = node.AllocLoanedPages(kLoanCount, &loaned_pages[0]);
   EXPECT_EQ(ZX_OK, status, "pmm_alloc_pages PMM_ALLOC_FLAG_LOANED");
@@ -269,18 +266,18 @@ static bool pmm_node_loan_borrow_cancel_reclaim_end() {
   // Still not free; loan_cancelled means the page can't be allocated.
   EXPECT_EQ(kLoanCount, node.node().CountLoanedNotFreePages());
 
-  EXPECT_EQ(0u, list_length(&list));
+  EXPECT_EQ(0u, list.size_slow());
   status = node.AllocLoanedPages(kNotLoanCount + 1, &loaned_pages[0]);
   EXPECT_EQ(ZX_ERR_NO_RESOURCES, status, "try to allocate a loan_cancelled page");
 
-  EXPECT_EQ(0u, list_length(&list));
+  EXPECT_EQ(0u, list.size_slow());
   status = node.node().AllocPages(kNotLoanCount, PMM_ALLOC_FLAG_ANY, &list);
   EXPECT_EQ(ZX_OK, status, "allocate all the not-loaned pages");
 
-  list_for_every_entry (&list, page, vm_page_t, queue_node) {
-    EXPECT_FALSE(page->is_loaned());
+  for (auto& page : list) {
+    EXPECT_FALSE(page.is_loaned());
     for (i = 0; i < kLoanCount; ++i) {
-      if (paddr[i] == page->paddr()) {
+      if (paddr[i] == page.paddr()) {
         break;
       }
     }
@@ -290,14 +287,14 @@ static bool pmm_node_loan_borrow_cancel_reclaim_end() {
 
   node.node().FreeList(&list);
 
-  EXPECT_EQ(0u, list_length(&list));
+  EXPECT_EQ(0u, list.size_slow());
   for (uint32_t j = 0; j < kLoanCount; ++j) {
-    page = loaned_pages[j];
+    vm_page_t* page = loaned_pages[j];
     EXPECT_EQ(paddr[j], page->paddr());
     node.node().EndLoan(page);
     EXPECT_FALSE(page->is_loaned());
     EXPECT_FALSE(page->is_loan_cancelled());
-    list_add_tail(&list, &page->queue_node);
+    list.push_back(page);
   }
 
   node.node().FreeList(&list);
@@ -308,14 +305,14 @@ static bool pmm_node_loan_borrow_cancel_reclaim_end() {
   EXPECT_EQ(0u, node.node().CountLoanCancelledPages());
   EXPECT_EQ(0u, node.node().CountLoanedNotFreePages());
 
-  EXPECT_EQ(0u, list_length(&list));
+  EXPECT_EQ(0u, list.size_slow());
   status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
   EXPECT_EQ(ZX_OK, status, "allocate all pages");
-  EXPECT_EQ(ManagedPmmNode::kNumPages, list_length(&list));
+  EXPECT_EQ(ManagedPmmNode::kNumPages, list.size_slow());
 
-  list_for_every_entry (&list, page, vm_page_t, queue_node) {
-    EXPECT_FALSE(page->is_loaned());
-    EXPECT_FALSE(page->is_loan_cancelled());
+  for (auto& page : list) {
+    EXPECT_FALSE(page.is_loaned());
+    EXPECT_FALSE(page.is_loan_cancelled());
   }
 
   node.node().FreeList(&list);
@@ -333,11 +330,11 @@ static bool pmm_node_loan_borrow_cancel_reclaim_end() {
 static bool pmm_node_oversized_alloc_test() {
   BEGIN_TEST;
   ManagedPmmNode node;
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
 
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages + 1, 0, &list);
   EXPECT_EQ(ZX_ERR_NO_MEMORY, status, "pmm_alloc_pages failed to alloc");
-  EXPECT_TRUE(list_is_empty(&list), "pmm_alloc_pages list is empty");
+  EXPECT_TRUE(list.is_empty(), "pmm_alloc_pages list is empty");
 
   END_TEST;
 }
@@ -368,13 +365,13 @@ static bool pmm_node_free_mem_event_test() {
   EXPECT_FALSE(node.IsEventSignaled());
 
   // Allocate all but 1 of the pages to trigger the event.
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
 
   for (size_t i = 1; i < ManagedPmmNode::kDefaultMemEventAlloc; i++) {
     zx::result<vm_page_t*> result = node.node().AllocPage(0);
     ASSERT_OK(result.status_value());
     vm_page_t* page = *result;
-    list_add_tail(&list, &page->queue_node);
+    list.push_back(page);
     if (node.IsEventSignaled()) {
       printf("Event signaled at step %zu\n", i);
     }
@@ -387,19 +384,19 @@ static bool pmm_node_free_mem_event_test() {
     zx::result<vm_page_t*> result = node.node().AllocPage(0);
     ASSERT_OK(result.status_value());
     vm_page_t* page = *result;
-    list_add_tail(&list, &page->queue_node);
+    list.push_back(page);
   }
   EXPECT_TRUE(node.IsEventSignaled());
   node.UnsignalEvent();
 
   // Events are one-shot, and so putting a page back and allocating it again should not re-trigger
   // the event.
-  node.node().FreePage(list_remove_head_type(&list, vm_page_t, queue_node));
+  node.node().FreePage(list.pop_front());
   {
     zx::result<vm_page_t*> result = node.node().AllocPage(0);
     ASSERT_OK(result.status_value());
     vm_page_t* page = *result;
-    list_add_tail(&list, &page->queue_node);
+    list.push_back(page);
   }
   EXPECT_FALSE(node.IsEventSignaled());
 
@@ -407,7 +404,7 @@ static bool pmm_node_free_mem_event_test() {
   EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages - 1, 0));
 
   // Take one page off the list as our final page.
-  vm_page_t* page = list_remove_head_type(&list, vm_page_t, queue_node);
+  vm_page_t* page = list.pop_front();
 
   // Return the rest of the list.
   node.node().FreeList(&list);
@@ -425,7 +422,7 @@ static bool pmm_node_free_mem_event_test() {
 static bool pmm_node_low_mem_alloc_failure_test() {
   BEGIN_TEST;
   ManagedPmmNode node;
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
 
   // Put the node in an oom state and make sure allocation fails.
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kDefaultLowMemAlloc, 0, &list);
@@ -556,7 +553,7 @@ static bool pmm_node_stop_returning_should_wait_test() {
   ManagedPmmNode node;
 
   // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
   EXPECT_EQ(ZX_OK, status);
 
@@ -605,7 +602,7 @@ static bool pmm_node_stop_returning_should_wait_concurrent_test() {
   ManagedPmmNode node;
 
   // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
   EXPECT_EQ(ZX_OK, status);
 
@@ -672,7 +669,7 @@ static bool pmm_node_suspendable_wait_test() {
   ManagedPmmNode node;
 
   // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
   EXPECT_EQ(ZX_OK, status);
 
@@ -712,7 +709,7 @@ static bool pmm_node_non_suspendable_wait_test() {
   ManagedPmmNode node;
 
   // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
   EXPECT_EQ(ZX_OK, status);
 
@@ -753,7 +750,7 @@ static bool pmm_node_killed_wait_test() {
   ManagedPmmNode node;
 
   // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
   EXPECT_EQ(ZX_OK, status);
 
@@ -794,7 +791,7 @@ static bool pmm_node_suspend_then_killed_wait_test() {
   ManagedPmmNode node;
 
   // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
   EXPECT_EQ(ZX_OK, status);
 
@@ -1050,9 +1047,9 @@ static bool pmm_alloc_append_test() {
 
   ManagedPmmNode node;
 
-  list_node_t alloc_list = LIST_INITIAL_VALUE(alloc_list);
+  VmPageDoublyLinkedList alloc_list;
   auto cleanup = fit::defer([&]() {
-    if (!list_is_empty(&alloc_list)) {
+    if (!alloc_list.is_empty()) {
       node.node().FreeList(&alloc_list);
     }
   });
@@ -1061,8 +1058,7 @@ static bool pmm_alloc_append_test() {
   ASSERT_OK(node.node().AllocPages(1, 0u, &alloc_list));
 
   // Zero the page as a modification.
-  memset(paddr_to_physmap(list_peek_head_type(&alloc_list, vm_page_t, queue_node)->paddr()), 0,
-         kPageSize);
+  memset(paddr_to_physmap(alloc_list.front().paddr()), 0, kPageSize);
 
   // Now append more pages to the list. If this runs the checker on the page already in the list
   // that we modified then it will panic.

@@ -16,7 +16,7 @@
 //
 // The idea is to cause the system to briefly dip into an out of memory state.
 static int cmd_oom_dip() {
-  list_node list = LIST_INITIAL_VALUE(list);
+  VmPageDoublyLinkedList list;
   while (pmm_alloc_pages(1, 0, &list) != ZX_ERR_NO_MEMORY) {
   }
   pmm_free(&list);
@@ -59,7 +59,7 @@ static int cmd_oom(int argc, const cmd_args* argv) {
   while ((pages_till_oom = GetMemoryWatchdog().DebugNumBytesTillPressureLevel(
                                MemoryWatchdog::PressureLevel::kOutOfMemory) /
                            kPageSize) > 0) {
-    list_node list = LIST_INITIAL_VALUE(list);
+    VmPageDoublyLinkedList list;
     if (rate > 0) {
       uint64_t pages_leaked = 0;
       while (pages_leaked < pages_till_oom) {
@@ -75,6 +75,9 @@ static int cmd_oom(int argc, const cmd_args* argv) {
         printf("Leaked %lu pages\n", pages_till_oom);
       }
     }
+    // We are deliberately leaking the allocated pages, so clear the list structure
+    // without freeing the pages to avoid the empty assertion.
+    list.clear();
     // Ignore any errors under the assumption we had a racy allocation and try again next time
     // around the loop.
   }
@@ -153,7 +156,7 @@ static int cmd_mem(int argc, const cmd_args* argv, uint32_t flags) {
     }
 
     uint64_t pages_to_alloc, pages_to_free = 0;
-    list_node list = LIST_INITIAL_VALUE(list);
+    VmPageDoublyLinkedList list;
 
     if (step) {
       uint8_t s = MemoryWatchdog::PressureLevel::kNumLevels - 1;

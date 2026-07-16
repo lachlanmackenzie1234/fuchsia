@@ -81,12 +81,10 @@ constexpr uint16_t LastSlotBytes(uint64_t len) {
 }
 }  // namespace
 
-VmSlotPageStorage::VmSlotPageStorage() {
-  ktl::ranges::for_each(max_contig_remain_, [](auto& list) { list_initialize(&list); });
-}
+VmSlotPageStorage::VmSlotPageStorage() {}
 
 VmSlotPageStorage::~VmSlotPageStorage() {
-  ktl::ranges::for_each(max_contig_remain_, [](auto& list) { ASSERT(list_is_empty(&list)); });
+  ktl::ranges::for_each(max_contig_remain_, [](auto& list) { ASSERT(list.is_empty()); });
 }
 
 uint32_t VmSlotPageStorage::GetMetadata(CompressedRef ref) {
@@ -112,7 +110,7 @@ ktl::tuple<const void*, uint32_t, size_t> VmSlotPageStorage::CompressedData(
 std::pair<ktl::optional<VmCompressedStorage::CompressedRef>, vm_page_t*> VmSlotPageStorage::Store(
     vm_page_t* page, size_t len) {
   DEBUG_ASSERT(page);
-  DEBUG_ASSERT(!list_in_list(&page->queue_node));
+  DEBUG_ASSERT(!page->queue_node.InContainer());
 
   canary_.Assert();
   Guard<CriticalMutex> guard{&lock_};
@@ -135,10 +133,10 @@ std::pair<ktl::optional<VmCompressedStorage::CompressedRef>, vm_page_t*> VmSlotP
   // Search for an existing page to add to first, preferring to break up the smallest contiguous
   // slot run possible.
   auto target_list = ktl::find_if_not(max_contig_remain_.begin() + slots, max_contig_remain_.end(),
-                                      [](auto& list) { return list_is_empty(&list); });
+                                      [](auto& list) { return list.is_empty(); });
   if (target_list == max_contig_remain_.end()) {
     // No existing page available, convert the provided |page| into a zram page.
-    DEBUG_ASSERT(!list_in_list(&page->queue_node));
+    DEBUG_ASSERT(!page->queue_node.InContainer());
     page->set_state(vm_page_state::ZRAM);
     // |page| had the data starting at offset 0, so but bottom slots are initially allocated,
     // meaning the remainder are free.
@@ -146,14 +144,14 @@ std::pair<ktl::optional<VmCompressedStorage::CompressedRef>, vm_page_t*> VmSlotP
     page->zram.free_block_mask = SlotMask(slots, contig_free);
     data->slot_start = 0;
     data->page = page;
-    list_add_head(&max_contig_remain_[contig_free], &page->queue_node);
+    max_contig_remain_[contig_free].push_front(page);
     // We have consumed |page|, so do not return it to the caller.
     return {AllocToRefLocked(data), nullptr};
   }
 
   // Found a non-empty list, remove a page from it under the assumption that its max contiguous
   // slot run will change and so it's going to move lists anyway.
-  vm_page_t* target_page = list_remove_head_type(&*target_list, vm_page_t, queue_node);
+  vm_page_t* target_page = target_list->pop_front();
   // Find that part of the free mask to allocate from, and remove those slots from it.
   const uint8_t base = ContigBase(target_page->zram.free_block_mask, slots);
   const uint64_t alloc_mask = SlotMask(base, slots);
@@ -164,7 +162,7 @@ std::pair<ktl::optional<VmCompressedStorage::CompressedRef>, vm_page_t*> VmSlotP
   memcpy(data->data(), paddr_to_physmap(page->paddr()), len);
   // Re-insert the page into the, possibly changed, target list.
   const uint8_t contig_free = ContigFree(target_page->zram.free_block_mask);
-  list_add_head(&max_contig_remain_[contig_free], &target_page->queue_node);
+  max_contig_remain_[contig_free].push_front(target_page);
   // We copied out of |page| so return it to the caller.
   return {AllocToRefLocked(data), page};
 }
@@ -177,12 +175,15 @@ void VmSlotPageStorage::Free(CompressedRef ref) {
 
     // Lookup the metadata for this allocation.
     Allocation* data = RefToAllocLocked(ref);
-    DEBUG_ASSERT(list_in_list(&data->page->queue_node));
+    DEBUG_ASSERT(data->page->queue_node.InContainer());
     page = data->page;
 
     // Update stats tracking.
     total_compressed_item_size_ -= data->byte_size();
     stored_items_--;
+
+    // Save the old contig free slot count so we know which list the page was in.
+    const uint64_t old_contig_free = ContigFree(page->zram.free_block_mask);
 
     // Add the slots for this allocation back to the free mask of the page and then can release the
     // |Allocation|.
@@ -191,12 +192,11 @@ void VmSlotPageStorage::Free(CompressedRef ref) {
     ktl::destroy_at(data);
     allocator_.deallocate_bytes(data);
 
-    // Remove the page from its current list since it's cheaper to potentially re-insert than to
-    // work out what list it's currently in.
-    list_delete(&page->queue_node);
+    // Remove the page from its current list.
+    max_contig_remain_[old_contig_free].erase(*page);
     const uint64_t contig_free = ContigFree(page->zram.free_block_mask);
     if (contig_free != kNumSlots) {
-      list_add_head(&max_contig_remain_[contig_free], &page->queue_node);
+      max_contig_remain_[contig_free].push_front(page);
       // Page still in use, do not let it get freed.
       page = nullptr;
     }
@@ -216,7 +216,7 @@ VmSlotPageStorage::InternalMemoryUsage VmSlotPageStorage::GetInternalMemoryUsage
 VmSlotPageStorage::InternalMemoryUsage VmSlotPageStorage::GetInternalMemoryUsageLocked() const {
   uint64_t data_bytes = 0;
   for (const auto& list : max_contig_remain_) {
-    data_bytes += list_length(&list) * kPageSize;
+    data_bytes += list.size_slow() * kPageSize;
   }
   const uint64_t metadata_bytes = allocator_.MemoryUsage();
   return InternalMemoryUsage{.data_bytes = data_bytes, .metadata_bytes = metadata_bytes};

@@ -147,7 +147,7 @@ class PageProvider : public fbl::RefCounted<PageProvider> {
   virtual void SwapAsyncRequest(PageRequest* old, PageRequest* new_req) = 0;
   // Frees |pages|.
   // This will assert unless is_handling_free is true, in which case this will make the pages FREE.
-  virtual void FreePages(list_node* pages) {
+  virtual void FreePages(VmPageDoublyLinkedList* pages) {
     // If is_handling_free true, must implement FreePages().
     ASSERT(false);
   }
@@ -243,7 +243,7 @@ class PageSource final : public PageRequestInterface {
   }
 
   // Frees |pages|.
-  void FreePages(list_node* pages);
+  void FreePages(VmPageDoublyLinkedList* pages);
 
   // For asserting purposes only.  This gives the PageProvider a chance to check that a page is
   // consistent with any rules the PageProvider has re. which pages can go where in the VmCowPages.

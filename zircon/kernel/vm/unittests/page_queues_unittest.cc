@@ -12,7 +12,7 @@ namespace vm_unittest {
 
 static void InitializeTestPage(vm_page_t* page) {
   DEBUG_ASSERT(page);
-  DEBUG_ASSERT(!list_in_list(&page->queue_node));
+  DEBUG_ASSERT(!page->queue_node.InContainer());
   // Pages are constructed in the FREE state
   DEBUG_ASSERT(page->state() == vm_page_state::FREE);
   page->set_state(vm_page_state::OBJECT);

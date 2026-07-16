@@ -20,7 +20,6 @@ zx_status_t PmmMock::AllocPage(uint32_t alloc_flags, vm_page_t** p) {
   }
 
   std::unique_ptr<vm_page_t> page = std::make_unique<vm_page_t>();
-  list_initialize(&page->queue_node);
 
   // Allocate a separate 4k page for each vm_page.
   uint8_t* page_mem = new (std::align_val_t(kPageSize)) uint8_t[kPageSize];
@@ -37,13 +36,10 @@ zx_status_t PmmMock::AllocPage(uint32_t alloc_flags, vm_page_t** p) {
   return ZX_OK;
 }
 
-void PmmMock::Free(list_node* list) {
-  vm_page_t* p;
-  vm_page_t* temp;
-
+void PmmMock::Free(VmPageDoublyLinkedList* list) {
   std::lock_guard<std::mutex> guard(lock_);
-  list_for_every_entry_safe (list, p, temp, vm_page_t, queue_node) {
-    list_delete(&p->queue_node);
+  while (!list->is_empty()) {
+    vm_page_t* p = list->pop_front();
     uint8_t* ptr = p->paddr_priv.get();
     for (size_t i = 0; i < kPageSize; ++i) {
       ZX_ASSERT_MSG(ptr[i] == 0, "Page at paddr 0x%lx not zeroed at offset 0x%zx (val=0x%x)",
@@ -89,6 +85,6 @@ zx_status_t pmm_alloc_page(uint32_t alloc_flags, vm_page_t** p, paddr_t* pa) {
   return status;
 }
 
-void pmm_free(list_node* list) { PmmMock::Get().Free(list); }
+void pmm_free(VmPageDoublyLinkedList* list) { PmmMock::Get().Free(list); }
 
 vm_page_t* paddr_to_vm_page(paddr_t pa) { return PmmMock::Get().PaddrToVmPage(pa); }

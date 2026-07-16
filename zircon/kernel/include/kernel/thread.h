@@ -23,7 +23,6 @@
 #include <platform.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
-#include <zircon/listnode.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/syscalls/rseq.h>
 #include <zircon/syscalls/scheduler.h>

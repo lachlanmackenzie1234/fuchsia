@@ -112,25 +112,25 @@ zx_status_t pmm_alloc_page(uint alloc_flags, vm_page_t** page, paddr_t* pa) {
   return result.status_value();
 }
 
-zx_status_t pmm_alloc_pages(size_t count, uint alloc_flags, list_node* list) {
+zx_status_t pmm_alloc_pages(size_t count, uint alloc_flags, VmPageDoublyLinkedList* list) {
   VM_KTRACE_DURATION(3, "pmm_alloc_pages", ("count", count), ("alloc_flags", alloc_flags));
   return Pmm::Node().AllocPages(count, alloc_flags, list);
 }
 
-zx_status_t pmm_alloc_range(paddr_t address, size_t count, list_node* list) {
+zx_status_t pmm_alloc_range(paddr_t address, size_t count, VmPageDoublyLinkedList* list) {
   VM_KTRACE_DURATION(3, "pmm_alloc_range", ("address", ktrace::Pointer{address}), ("count", count));
   return Pmm::Node().AllocRange(address, count, list);
 }
 
 zx_status_t pmm_alloc_contiguous(size_t count, uint alloc_flags, uint8_t alignment_log2,
-                                 paddr_t* pa, list_node* list) {
+                                 paddr_t* pa, VmPageDoublyLinkedList* list) {
   VM_KTRACE_DURATION(3, "pmm_alloc_contiguous", ("count", count), ("alloc_flags", alloc_flags));
   // if we're called with a single page, just fall through to the regular allocation routine
   if (unlikely(count == 1 && alignment_log2 <= kPageShift)) {
     zx::result<vm_page_t*> result = Pmm::Node().AllocPage(alloc_flags);
     if (result.is_ok()) {
       vm_page_t* page = result.value();
-      list_add_tail(list, &page->queue_node);
+      list->push_back(page);
       *pa = page->paddr();
     }
     return result.status_value();
@@ -141,7 +141,7 @@ zx_status_t pmm_alloc_contiguous(size_t count, uint alloc_flags, uint8_t alignme
 
 void pmm_unwire_page(vm_page_t* page) { Pmm::Node().UnwirePage(page); }
 
-void pmm_free(list_node* list, PmmOptDelayReuse delay_reuse) {
+void pmm_free(VmPageDoublyLinkedList* list, PmmOptDelayReuse delay_reuse) {
   VM_KTRACE_DURATION(3, "pmm_free");
   Pmm::Node().FreeList(list, delay_reuse);
 }

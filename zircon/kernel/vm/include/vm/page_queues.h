@@ -152,7 +152,7 @@ class PageQueues {
   // Removes the page from any page list and returns ownership of the queue_node.
   void Remove(vm_page_t* page);
   // Batched version of Remove that also places all the pages in the specified list
-  void RemoveArrayIntoList(vm_page_t** page, size_t count, list_node_t* out_list);
+  void RemoveArrayIntoList(vm_page_t** page, size_t count, VmPageDoublyLinkedList* out_list);
 
   // Tells the page queue this page has been accessed, and it should have its position in the queues
   // updated.
@@ -658,7 +658,7 @@ class PageQueues {
   //
   // For specifics on how LRU and MRU generations map to LRU and MRU queues, see comments on
   // |lru_gen_| and |mru_gen_|.
-  ktl::array<list_node_t, PageQueueNumQueues> page_queues_ TA_GUARDED(list_lock_);
+  ktl::array<VmPageDoublyLinkedList, PageQueueNumQueues> page_queues_ TA_GUARDED(list_lock_);
 
   // When a page is in the PageQueueReclaimIsolate state, instead of being in the page_queues_ list
   // it is in, potentially one of several different, isolate_queues_ lists. This is just an
@@ -670,7 +670,7 @@ class PageQueues {
   // similarly any page in the isolate_queues_ list is exactly in the PageQueueReclaimIsolate state.
   // In this way the isolate_queues_ are considered reclaimable, and are part of active/inactive
   // tracking, but do not support the MarkAccessed fastpath.
-  ktl::array<list_node_t, kNumIsolateQueues> isolate_queues_ TA_GUARDED(list_lock_);
+  ktl::array<VmPageDoublyLinkedList, kNumIsolateQueues> isolate_queues_ TA_GUARDED(list_lock_);
 
   // The generation counts are monotonic increasing counters and used to represent the effective age
   // of the oldest and newest reclaimable queues. The page queues themselves are treated as a fixed

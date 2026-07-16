@@ -367,7 +367,7 @@ void* heap_page_alloc(size_t pages) {
     LTRACEF("pages %zu: va %p\n", pages, ret);
     return ret;
   } else {
-    list_node list = LIST_INITIAL_VALUE(list);
+    VmPageDoublyLinkedList list;
 
     paddr_t pa;
     zx_status_t status = pmm_alloc_contiguous(pages, 0, kPageShift, &pa, &list);
@@ -376,9 +376,7 @@ void* heap_page_alloc(size_t pages) {
     }
 
     // mark all of the allocated page as HEAP
-    vm_page_t *p, *temp;
-    list_for_every_entry_safe (&list, p, temp, vm_page_t, queue_node) {
-      list_delete(&p->queue_node);
+    while (vm_page_t* p = list.pop_front()) {
       p->set_state(vm_page_state::HEAP);
 #if __has_feature(address_sanitizer)
       void* const vaddr = paddr_to_physmap(p->paddr());
@@ -404,16 +402,15 @@ void heap_page_free(void* _ptr, size_t pages) {
   } else {
     uint8_t* ptr = (uint8_t*)_ptr;
 
-    list_node list;
-    list_initialize(&list);
+    VmPageDoublyLinkedList list;
 
     while (pages > 0) {
       vm_page_t* p = paddr_to_vm_page(vaddr_to_paddr(ptr));
       if (p) {
         DEBUG_ASSERT(p->state() == vm_page_state::HEAP);
-        DEBUG_ASSERT(!list_in_list(&p->queue_node));
+        DEBUG_ASSERT(!p->queue_node.InContainer());
 
-        list_add_tail(&list, &p->queue_node);
+        list.push_back(p);
       }
 
       ptr += kPageSize;

@@ -7,7 +7,6 @@
 #include <lib/fit/defer.h>
 #include <lib/page_cache.h>
 #include <lib/unittest/unittest.h>
-#include <zircon/listnode.h>
 
 #include <arch/ops.h>
 #include <kernel/auto_preempt_disabler.h>
@@ -48,7 +47,7 @@ bool page_cache_tests() {
     const size_t page_count = reserve_pages / 2;
     auto result = page_cache.Allocate(page_count);
     ASSERT_TRUE(result.is_ok());
-    EXPECT_EQ(page_count, list_length(&result->page_list));
+    EXPECT_EQ(page_count, result->page_list.size_slow());
     EXPECT_EQ(reserve_pages, result->available_pages);
   }
 
@@ -58,7 +57,7 @@ bool page_cache_tests() {
     const size_t page_count = reserve_pages / 2;
     auto result = page_cache.Allocate(page_count);
     ASSERT_TRUE(result.is_ok());
-    EXPECT_EQ(page_count, list_length(&result->page_list));
+    EXPECT_EQ(page_count, result->page_list.size_slow());
     EXPECT_EQ(page_count, result->available_pages);
   }
 
@@ -68,7 +67,7 @@ bool page_cache_tests() {
     const size_t page_count = reserve_pages * 2;
     auto result = page_cache.Allocate(page_count);
     ASSERT_TRUE(result.is_ok());
-    EXPECT_EQ(page_count, list_length(&result->page_list));
+    EXPECT_EQ(page_count, result->page_list.size_slow());
     EXPECT_EQ(reserve_pages, result->available_pages);
   }
 
@@ -77,11 +76,11 @@ bool page_cache_tests() {
     const size_t page_count = reserve_pages / 2;
     auto result = page_cache.Allocate(page_count);
     ASSERT_TRUE(result.is_ok());
-    EXPECT_EQ(page_count, list_length(&result->page_list));
+    EXPECT_EQ(page_count, result->page_list.size_slow());
     EXPECT_EQ(reserve_pages - page_count, result->available_pages);
 
     page_cache.Free(ktl::move(result->page_list));
-    EXPECT_EQ(0u, list_length(&result->page_list));
+    EXPECT_EQ(0u, result->page_list.size_slow());
 
     auto null_result = page_cache.Allocate(0);
     EXPECT_EQ(reserve_pages, null_result->available_pages);
@@ -92,28 +91,28 @@ bool page_cache_tests() {
     const size_t large_page_count = reserve_pages * 2;
     auto large_result = page_cache.Allocate(large_page_count);
     ASSERT_TRUE(large_result.is_ok());
-    EXPECT_EQ(large_page_count, list_length(&large_result->page_list));
+    EXPECT_EQ(large_page_count, large_result->page_list.size_slow());
     EXPECT_EQ(reserve_pages, large_result->available_pages);
 
     const size_t page_count = 1;
     auto result = page_cache.Allocate(page_count);
     ASSERT_TRUE(result.is_ok());
-    EXPECT_EQ(page_count, list_length(&result->page_list));
+    EXPECT_EQ(page_count, result->page_list.size_slow());
     EXPECT_EQ(reserve_pages - page_count, result->available_pages);
 
     page_cache.Free(ktl::move(large_result->page_list));
-    EXPECT_EQ(0u, list_length(&large_result->page_list));
+    EXPECT_EQ(0u, large_result->page_list.size_slow());
 
     auto null_result = page_cache.Allocate(0);
     EXPECT_EQ(reserve_pages, null_result->available_pages);
-    EXPECT_EQ(0u, list_length(&null_result->page_list));
+    EXPECT_EQ(0u, null_result->page_list.size_slow());
 
     page_cache.Free(ktl::move(result->page_list));
-    EXPECT_EQ(0u, list_length(&result->page_list));
+    EXPECT_EQ(0u, result->page_list.size_slow());
 
     auto null_result2 = page_cache.Allocate(0);
     EXPECT_EQ(reserve_pages, null_result2->available_pages);
-    EXPECT_EQ(0u, list_length(&null_result2->page_list));
+    EXPECT_EQ(0u, null_result2->page_list.size_slow());
   }
 
   // Verify that random should wait will work by repeatedly allocating and freeing a page until we

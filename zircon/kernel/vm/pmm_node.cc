@@ -60,18 +60,14 @@ void AsanUnpoisonPage(vm_page_t* p) {
 #endif  // __has_feature(address_sanitizer)
 }
 
-void ReturnPagesToFreeList(list_node* target_list, list_node* to_free,
+void ReturnPagesToFreeList(VmPageDoublyLinkedList* target_list, VmPageDoublyLinkedList* to_free,
                            PmmOptDelayReuse delay_reuse) {
   if (delay_reuse == PmmOptDelayReuse::Yes || __has_feature(address_sanitizer)) {
     // Put the page at the tail to maximize reuse distance.
-    if (!list_is_empty(target_list)) {
-      list_splice_after(to_free, list_peek_tail(target_list));
-    } else {
-      list_splice_after(to_free, target_list);
-    }
+    target_list->splice(target_list->end(), *to_free);
   } else {
     // splice list at the head of free_list_; free_loaned_list_.
-    list_splice_after(to_free, target_list);
+    target_list->splice(target_list->begin(), *to_free);
   }
 }
 
@@ -154,7 +150,7 @@ zx_status_t PmmNode::Init(ktl::span<const memalloc::Range> ranges) TA_NO_THREAD_
 
 void PmmNode::EndHandoff() {
   FreeList(&phys_handoff_temporary_list_);
-  ZX_ASSERT(list_is_empty(&phys_handoff_vmo_list_));
+  ZX_ASSERT(phys_handoff_temporary_list_.is_empty());
 }
 
 zx_status_t PmmNode::GetArenaInfo(size_t count, uint64_t i, pmm_arena_info_t* buffer,
@@ -185,17 +181,15 @@ zx_status_t PmmNode::GetArenaInfo(size_t count, uint64_t i, pmm_arena_info_t* bu
 }
 
 // called at boot time as arenas are brought online, no locks are acquired
-void PmmNode::AddFreePages(list_node* list) TA_NO_THREAD_SAFETY_ANALYSIS {
+void PmmNode::AddFreePages(VmPageDoublyLinkedList* list) TA_NO_THREAD_SAFETY_ANALYSIS {
   LTRACEF("list %p\n", list);
 
   uint64_t free_count = 0;
-  vm_page *temp, *page;
-  list_for_every_entry_safe (list, page, temp, vm_page, queue_node) {
-    list_delete(&page->queue_node);
+  while (vm_page_t* page = list->pop_front()) {
     DEBUG_ASSERT(!page->is_loaned());
     DEBUG_ASSERT(!page->is_loan_cancelled());
     DEBUG_ASSERT(page->is_free());
-    list_add_tail(&free_list_, &page->queue_node);
+    free_list_.push_back(page);
     ++free_count;
   }
   free_count_.fetch_add(free_count);
@@ -214,12 +208,11 @@ void PmmNode::FillFreePagesAndArm() {
     return;
   }
 
-  vm_page* page;
-  list_for_every_entry (&free_list_, page, vm_page, queue_node) {
-    checker_.FillPattern(page);
+  for (auto& page : free_list_) {
+    checker_.FillPattern(&page);
   }
-  list_for_every_entry (&free_loaned_list_, page, vm_page, queue_node) {
-    checker_.FillPattern(page);
+  for (auto& page : free_loaned_list_) {
+    checker_.FillPattern(&page);
   }
 
   // Now that every page has been filled, we can arm the checker.
@@ -241,18 +234,17 @@ void PmmNode::CheckAllFreePages() {
 
   uint64_t free_page_count = 0;
   uint64_t free_loaned_page_count = 0;
-  vm_page* page;
 
   dprintf(INFO, "PMM: checking free list...\n");
-  list_for_every_entry (&free_list_, page, vm_page, queue_node) {
-    checker_.AssertPattern(page);
+  for (auto& page : free_list_) {
+    checker_.AssertPattern(&page);
     ++free_page_count;
   }
   dprintf(INFO, "PMM: done checking free list\n");
 
   dprintf(INFO, "PMM: checking free loaned list...\n");
-  list_for_every_entry (&free_loaned_list_, page, vm_page, queue_node) {
-    checker_.AssertPattern(page);
+  for (auto& page : free_loaned_list_) {
+    checker_.AssertPattern(&page);
     ++free_loaned_page_count;
   }
   dprintf(INFO, "PMM: done checking free loaned list\n");
@@ -268,13 +260,12 @@ void PmmNode::PoisonAllFreePages() {
   Guard<Mutex> loaned_guard{&loaned_list_lock_};
   Guard<Mutex> free_guard{&lock_};
 
-  vm_page* page;
-  list_for_every_entry (&free_list_, page, vm_page, queue_node) {
-    AsanPoisonPage(page, kAsanPmmFreeMagic);
-  };
-  list_for_every_entry (&free_loaned_list_, page, vm_page, queue_node) {
-    AsanPoisonPage(page, kAsanPmmFreeMagic);
-  };
+  for (auto& page : free_list_) {
+    AsanPoisonPage(&page, kAsanPmmFreeMagic);
+  }
+  for (auto& page : free_loaned_list_) {
+    AsanPoisonPage(&page, kAsanPmmFreeMagic);
+  }
 }
 #endif  // __has_feature(address_sanitizer)
 
@@ -340,7 +331,7 @@ zx::result<vm_page_t*> PmmNode::AllocLoanedPage(
     Guard<Mutex> guard{&loaned_list_lock_};
     free_list_had_fill_pattern = FreePagesFilledLoanedLocked();
 
-    page = list_remove_head_type(&free_loaned_list_, vm_page, queue_node);
+    page = free_loaned_list_.pop_front();
     if (!page) {
       // Does not count as out of memory, so do not report an allocation failure, just tell the
       // caller we are out of resources.
@@ -381,7 +372,7 @@ zx::result<vm_page_t*> PmmNode::AllocPage(uint alloc_flags) {
       return zx::error(ZX_ERR_SHOULD_WAIT);
     }
 
-    page = list_remove_head_type(&free_list_, vm_page, queue_node);
+    page = free_list_.pop_front();
     if (!page) {
       // Allocation failures from the regular free list are likely to become user-visible.
       ReportAllocFailureLocked(
@@ -401,7 +392,7 @@ zx::result<vm_page_t*> PmmNode::AllocPage(uint alloc_flags) {
   return zx::ok(page);
 }
 
-zx_status_t PmmNode::AllocPages(size_t count, uint alloc_flags, list_node* list) {
+zx_status_t PmmNode::AllocPages(size_t count, uint alloc_flags, VmPageDoublyLinkedList* list) {
   LTRACEF("count %zu\n", count);
 
   DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
@@ -414,7 +405,7 @@ zx_status_t PmmNode::AllocPages(size_t count, uint alloc_flags, list_node* list)
     zx::result<vm_page_t*> result = AllocPage(alloc_flags);
     if (result.is_ok()) {
       vm_page_t* page = result.value();
-      list_add_tail(list, &page->queue_node);
+      list->push_back(page);
     }
     return result.status_value();
   }
@@ -423,7 +414,7 @@ zx_status_t PmmNode::AllocPages(size_t count, uint alloc_flags, list_node* list)
   // Holds the pages that we pull out of the PMMs free list. These pages may still need to have
   // their pattern checked (based on the bool above) before being appended to |list| and returned to
   // the caller.
-  list_node_t alloc_list = LIST_INITIAL_VALUE(alloc_list);
+  VmPageDoublyLinkedList alloc_list;
   {
     AutoPreemptDisabler preempt_disable;
     Guard<Mutex> guard{&lock_};
@@ -451,42 +442,38 @@ zx_status_t PmmNode::AllocPages(size_t count, uint alloc_flags, list_node* list)
       pmm_alloc_delayed.Add(1);
       return ZX_ERR_SHOULD_WAIT;
     }
-    list_node_t* node = &free_list_;
-    while (count > 0) {
-      node = list_next(&free_list_, node);
-      AllocPageHelperLocked(containerof(node, vm_page, queue_node));
-      --count;
+    auto node = free_list_.begin();
+    for (; count > 0; --count, node++) {
+      vm_page_t* page = &*node;
+      DEBUG_ASSERT(page);
+      AllocPageHelperLocked(page);
     }
+    node--;
 
     // Want to take the pages ranging from the start of the list (identified by which_list) up to
     // node, and place them in alloc_list. Due to how the listnode operations work, it's easier to
     // move the entire list into alloc_list, then split the pages that we are not allocating back
     // into which_list.
-    list_move(&free_list_, &alloc_list);
-    list_split_after(&alloc_list, node, &free_list_);
+    alloc_list = ktl::move(free_list_);
+    free_list_ = alloc_list.split_after(node);
   }
 
   // Check the pages we are allocating before appending them into the user's allocation list. Do
   // this check before since we must not existing pages in the user's allocation list, as they are
   // completely arbitrary pages and there's no reason to expect a fill pattern in them.
   if (free_list_had_fill_pattern) {
-    vm_page* page;
-    list_for_every_entry (&alloc_list, page, vm_page, queue_node) {
-      checker_.AssertPattern(page);
+    for (auto& page : alloc_list) {
+      checker_.AssertPattern(&page);
     }
   }
 
   // Append the checked list onto the user provided list.
-  if (list_is_empty(list)) {
-    list_move(&alloc_list, list);
-  } else {
-    list_splice_after(&alloc_list, list_peek_tail(list));
-  }
+  list->splice(list->end(), alloc_list);
 
   return ZX_OK;
 }
 
-zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) {
+zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, VmPageDoublyLinkedList* list) {
   LTRACEF("address %#" PRIxPTR ", count %zu\n", address, count);
 
   DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
@@ -494,7 +481,7 @@ zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) 
   DEBUG_ASSERT(list);
   // On error scenarios we will free the list, so make sure the caller didn't leave anything in
   // there.
-  DEBUG_ASSERT(list_is_empty(list));
+  DEBUG_ASSERT(list->is_empty());
 
   size_t allocated = 0;
   if (count == 0) {
@@ -530,11 +517,11 @@ zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) 
           break;
         }
 
-        list_delete(&page->queue_node);
+        free_list_.erase(*page);
 
         AllocPageHelperLocked(page);
 
-        list_add_tail(list, &page->queue_node);
+        list->push_back(page);
 
         allocated++;
         DecrementFreeCountLocked(1);
@@ -556,9 +543,8 @@ zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) 
   }
 
   if (free_list_had_fill_pattern) {
-    vm_page* page;
-    list_for_every_entry (list, page, vm_page, queue_node) {
-      checker_.AssertPattern(page);
+    for (auto& page : *list) {
+      checker_.AssertPattern(&page);
     }
   }
 
@@ -566,7 +552,7 @@ zx_status_t PmmNode::AllocRange(paddr_t address, size_t count, list_node* list) 
 }
 
 zx_status_t PmmNode::AllocContiguous(const size_t count, uint alloc_flags, uint8_t alignment_log2,
-                                     paddr_t* pa, list_node* list) {
+                                     paddr_t* pa, VmPageDoublyLinkedList* list) {
   DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
   LTRACEF("count %zu, align %u\n", count, alignment_log2);
 
@@ -600,18 +586,18 @@ zx_status_t PmmNode::AllocContiguous(const size_t count, uint alloc_flags, uint8
       DEBUG_ASSERT_MSG(p->is_free(), "p %p state %u\n", p, static_cast<uint32_t>(p->state()));
       // Loaned pages are never returned by FindFreeContiguous() above.
       DEBUG_ASSERT(!p->is_loaned());
-      DEBUG_ASSERT(list_in_list(&p->queue_node));
+      DEBUG_ASSERT(p->queue_node.InContainer());
 
       // Atomically (that is, in a single lock acquisition) remove this page from both the free list
       // and FREE state, ensuring it is owned by us.
-      list_delete(&p->queue_node);
+      free_list_.erase(*p);
       p->set_state(vm_page_state::ALLOC);
 
       DecrementFreeCountLocked(1);
       AsanUnpoisonPage(p);
       checker_.AssertPattern(p);
 
-      list_add_tail(list, &p->queue_node);
+      list->push_back(p);
     }
 
     return ZX_OK;
@@ -645,7 +631,7 @@ void PmmNode::InitReservedRange(const memalloc::Range& range) {
 
   ktl::string_view what =
       range.type == memalloc::Type::kReserved ? "hole in RAM"sv : memalloc::ToString(range.type);
-  list_node reserved = LIST_INITIAL_VALUE(reserved);
+  VmPageDoublyLinkedList reserved;
   zx_status_t status = pmm_alloc_range(range.addr, range.size / kPageSize, &reserved);
   if (status != ZX_OK) {
     dprintf(INFO, "PMM: unable to reserve [%#" PRIx64 ", %#" PRIx64 "): %.*s: %d\n", range.addr,
@@ -664,12 +650,11 @@ void PmmNode::InitReservedRange(const memalloc::Range& range) {
 
   // Otherwise, mark it as wired and merge it into the appropriate reserved
   // list.
-  vm_page_t* p;
-  list_for_every_entry (&reserved, p, vm_page_t, queue_node) {
-    p->set_state(vm_page_state::WIRED);
+  for (auto& p : reserved) {
+    p.set_state(vm_page_state::WIRED);
   }
 
-  list_node_t* list;
+  VmPageDoublyLinkedList* list;
   if (range.type == memalloc::Type::kTemporaryPhysHandoff) {
     list = &phys_handoff_temporary_list_;
   } else if (PhysHandoff::IsPhysVmoType(range.type)) {
@@ -677,11 +662,7 @@ void PmmNode::InitReservedRange(const memalloc::Range& range) {
   } else {
     list = &permanently_reserved_list_;
   }
-  if (list_is_empty(list)) {
-    list_move(&reserved, list);
-  } else {
-    list_splice_after(&reserved, list_peek_tail(list));
-  }
+  list->splice(list->end(), reserved);
 }
 
 void PmmNode::FreePageHelperLocked(vm_page* page, bool already_filled) {
@@ -753,23 +734,22 @@ void PmmNode::BeginFreeLoanedPage(vm_page_t* page,
   release_page(page);
 
   // pages freed individually shouldn't be in a queue
-  DEBUG_ASSERT(!list_in_list(&page->queue_node));
+  DEBUG_ASSERT(!page->queue_node.InContainer());
 
   DEBUG_ASSERT(!flph.used_);
   page->set_state(vm_page_state::ALLOC);
   page->alloc.owner = &flph;
-  list_add_head(&flph.pages_, &page->queue_node);
+  flph.pages_.push_front(page);
 }
 
 void PmmNode::FinishFreeLoanedPages(FreeLoanedPagesHolder& flph) {
-  if (list_is_empty(&flph.pages_)) {
+  if (flph.pages_.is_empty()) {
     return;
   }
   const bool fill = IsFreeFillEnabledRacy();
   if (fill) {
-    vm_page_t* p;
-    list_for_every_entry (&flph.pages_, p, vm_page_t, queue_node) {
-      checker_.FillPattern(p);
+    for (auto& p : flph.pages_) {
+      checker_.FillPattern(&p);
     }
   }
   AutoPreemptDisabler preempt_disable;
@@ -840,7 +820,7 @@ void PmmNode::FreePage(vm_page* page, PmmOptDelayReuse delay_reuse) {
   Guard<Mutex> guard{&lock_};
 
   // pages freed individually shouldn't be in a queue
-  DEBUG_ASSERT(!list_in_list(&page->queue_node));
+  DEBUG_ASSERT(!page->queue_node.InContainer());
 
   FreePageHelperLocked(page, fill);
 
@@ -848,52 +828,51 @@ void PmmNode::FreePage(vm_page* page, PmmOptDelayReuse delay_reuse) {
 
   if (delay_reuse == PmmOptDelayReuse::Yes || __has_feature(address_sanitizer)) {
     // Put the page at the tail to maximize reuse distance.
-    list_add_tail(&free_list_, &page->queue_node);
+    free_list_.push_back(page);
   } else {
-    list_add_head(&free_list_, &page->queue_node);
+    free_list_.push_front(page);
   }
 }
 
 template <typename F>
-void PmmNode::FreeLoanedListLocked(list_node* list, bool already_filled,
+void PmmNode::FreeLoanedListLocked(VmPageDoublyLinkedList* list, bool already_filled,
                                    PmmOptDelayReuse delay_reuse, F validator) {
   DEBUG_ASSERT(list);
 
   uint64_t count = 0;
-  {  // scope page
-    vm_page* page;
-    vm_page* temp;
-    list_for_every_entry_safe (list, page, temp, vm_page_t, queue_node) {
-      validator(page);
-      DEBUG_ASSERT(page->is_loaned());
-      FreeLoanedPageHelperLocked(page, already_filled);
-      if (page->is_loan_cancelled()) {
-        // Loaned cancelled pages do not go back on the free list.
-        list_delete(&page->queue_node);
-      } else {
-        count++;
-      }
+  auto iter = list->begin();
+  while (iter != list->end()) {
+    auto& page = *iter;
+    auto next = iter;
+    next++;
+
+    validator(&page);
+    DEBUG_ASSERT(page.is_loaned());
+    FreeLoanedPageHelperLocked(&page, already_filled);
+    if (page.is_loan_cancelled()) {
+      // Loaned cancelled pages do not go back on the free list.
+      list->erase(page);
+    } else {
+      count++;
     }
-  }  // end scope page
+    iter = next;
+  }
 
   ReturnPagesToFreeList(&free_loaned_list_, list, delay_reuse);
 
   IncrementFreeLoanedCountLocked(count);
 }
 
-void PmmNode::FreeListLocked(list_node* list, bool already_filled, PmmOptDelayReuse delay_reuse) {
+void PmmNode::FreeListLocked(VmPageDoublyLinkedList* list, bool already_filled,
+                             PmmOptDelayReuse delay_reuse) {
   DEBUG_ASSERT(list);
 
   uint64_t count = 0;
-  {  // scope page
-    vm_page* page;
-    vm_page* temp;
-    list_for_every_entry_safe (list, page, temp, vm_page_t, queue_node) {
-      DEBUG_ASSERT(!page->is_loaned());
-      FreePageHelperLocked(page, already_filled);
-      count++;
-    }
-  }  // end scope page
+  for (auto& page : *list) {
+    DEBUG_ASSERT(!page.is_loaned());
+    FreePageHelperLocked(&page, already_filled);
+    count++;
+  }
 
   ReturnPagesToFreeList(&free_list_, list, delay_reuse);
 
@@ -902,7 +881,7 @@ void PmmNode::FreeListLocked(list_node* list, bool already_filled, PmmOptDelayRe
 
 void PmmNode::BeginFreeLoanedArray(
     vm_page_t** pages, size_t count,
-    fit::inline_function<void(vm_page_t**, size_t, list_node_t*)> release_list,
+    fit::inline_function<void(vm_page_t**, size_t, VmPageDoublyLinkedList*)> release_list,
     FreeLoanedPagesHolder& flph) {
   AutoPreemptDisabler preempt_disable;
   // On entry we expect all pages to have a backlink.
@@ -911,28 +890,26 @@ void PmmNode::BeginFreeLoanedArray(
   }));
   Guard<Mutex> guard{&loaned_list_lock_};
   DEBUG_ASSERT(!flph.used_);
-  list_node_t free_list = LIST_INITIAL_VALUE(free_list);
+  VmPageDoublyLinkedList free_list;
   release_list(pages, count, &free_list);
   // Validate that the callback populated the free list correctly.
-  vm_page_t* p;
   size_t expected = 0;
-  list_for_every_entry (&free_list, p, vm_page_t, queue_node) {
-    p->set_state(vm_page_state::ALLOC);
-    p->alloc.owner = &flph;
-    DEBUG_ASSERT(pages[expected] == p);
+  for (auto& p : free_list) {
+    p.set_state(vm_page_state::ALLOC);
+    p.alloc.owner = &flph;
+    DEBUG_ASSERT(pages[expected] == &p);
     expected++;
   }
   DEBUG_ASSERT(expected == count);
-  list_splice_after(&free_list, &flph.pages_);
+  flph.pages_.splice(flph.pages_.begin(), free_list);
 }
 
-void PmmNode::FreeList(list_node* list, PmmOptDelayReuse delay_reuse) {
+void PmmNode::FreeList(VmPageDoublyLinkedList* list, PmmOptDelayReuse delay_reuse) {
   AutoPreemptDisabler preempt_disable;
   const bool fill = IsFreeFillEnabledRacy();
   if (fill) {
-    vm_page* page;
-    list_for_every_entry (list, page, vm_page, queue_node) {
-      checker_.FillPattern(page);
+    for (auto& page : *list) {
+      checker_.FillPattern(&page);
     }
   }
   Guard<Mutex> guard{&lock_};
@@ -943,7 +920,9 @@ void PmmNode::FreeList(list_node* list, PmmOptDelayReuse delay_reuse) {
 void PmmNode::UnwirePage(vm_page* page) {
   Guard<Mutex> guard{&lock_};
   ASSERT(page->state() == vm_page_state::WIRED);
-  list_delete(&page->queue_node);
+  if (page->queue_node.InContainer()) {
+    phys_handoff_vmo_list_.erase(*page);
+  }
   page->set_state(vm_page_state::ALLOC);
 }
 
@@ -1074,26 +1053,24 @@ bool PmmNode::has_alloc_failed_no_mem() {
   return alloc_failed_no_mem.load(ktl::memory_order_relaxed);
 }
 
-void PmmNode::BeginLoan(list_node* page_list, PmmOptDelayReuse delay_reuse) {
+void PmmNode::BeginLoan(VmPageDoublyLinkedList* page_list, PmmOptDelayReuse delay_reuse) {
   DEBUG_ASSERT(page_list);
   AutoPreemptDisabler preempt_disable;
   const bool fill = IsFreeFillEnabledRacy();
   if (fill) {
-    vm_page* page;
-    list_for_every_entry (page_list, page, vm_page, queue_node) {
-      checker_.FillPattern(page);
+    for (auto& page : *page_list) {
+      checker_.FillPattern(&page);
     }
   }
   Guard<Mutex> guard{&loaned_list_lock_};
 
   uint64_t loaned_count = 0;
-  vm_page* page;
-  list_for_every_entry (page_list, page, vm_page, queue_node) {
-    DEBUG_ASSERT(!page->is_loaned());
-    DEBUG_ASSERT(!page->is_free());
-    page->set_is_loaned();
+  for (auto& page : *page_list) {
+    DEBUG_ASSERT(!page.is_loaned());
+    DEBUG_ASSERT(!page.is_free());
+    page.set_is_loaned();
     ++loaned_count;
-    DEBUG_ASSERT(!page->is_loan_cancelled());
+    DEBUG_ASSERT(!page.is_loan_cancelled());
   }
   IncrementLoanedCountLocked(loaned_count);
 
@@ -1118,10 +1095,10 @@ void PmmNode::CancelLoan(vm_page_t* page) {
   IncrementLoanCancelledCountLocked(1);
   if (page->is_free_loaned()) {
     // Currently in free_loaned_list_.
-    DEBUG_ASSERT(list_in_list(&page->queue_node));
+    DEBUG_ASSERT(page->queue_node.InContainer());
     // Remove from free_loaned_list_ to prevent any new use until
     // after EndLoan.
-    list_delete(&page->queue_node);
+    free_loaned_list_.erase(*page);
     DecrementFreeLoanedCountLocked(1);
   }
 }
@@ -1145,7 +1122,7 @@ void PmmNode::EndLoan(vm_page_t* page) {
 
     // Already not in free_loaned_list_ (because loan_cancelled
     // already).
-    DEBUG_ASSERT(!list_in_list(&page->queue_node));
+    DEBUG_ASSERT(!page->queue_node.InContainer());
 
     page->clear_is_loaned();
     page->clear_is_loan_cancelled();

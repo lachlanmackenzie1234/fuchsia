@@ -41,7 +41,7 @@ class PhysicalPageProvider : public PageProvider {
   void SendAsyncRequest(PageRequest* request) final;
   void ClearAsyncRequest(PageRequest* request) final;
   void SwapAsyncRequest(PageRequest* old, PageRequest* new_req) final;
-  void FreePages(list_node* pages) final;
+  void FreePages(VmPageDoublyLinkedList* pages) final;
   bool DebugIsPageOk(vm_page_t* page, uint64_t offset) final;
   // This also calls pmm_delete_lender()
   void OnClose() final;
@@ -62,7 +62,7 @@ class PhysicalPageProvider : public PageProvider {
   // Helper that unloans any loaned pages in the specified range and puts them, in offset order, in
   // |pages|. Any pages that are not loaned will not be returned, and the caller must tolerate gaps
   // in the list.
-  void UnloanRange(uint64_t offset, uint64_t length, list_node_t* pages);
+  void UnloanRange(uint64_t offset, uint64_t length, VmPageDoublyLinkedList* pages);
 
   static constexpr paddr_t kInvalidPhysBase = static_cast<paddr_t>(-1);
   // Only written once, under mtx_, just after construction.  Reads after that don't need to be
@@ -93,7 +93,7 @@ class PhysicalPageProvider : public PageProvider {
 
   // To cease loaning pages all pages first become owned by the physical page provider and get
   // collected in |free_list_|, upon which they can be returned (i.e. freed) to the PMM.
-  list_node_t free_list_ TA_GUARDED(mtx_) = LIST_INITIAL_VALUE(free_list_);
+  VmPageDoublyLinkedList free_list_ TA_GUARDED(mtx_);
 
   // Queue of page_request_t's that have come in while packet_ is busy. The
   // head of this queue is sent to the port when packet_ is freed.

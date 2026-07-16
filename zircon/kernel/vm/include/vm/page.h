@@ -12,8 +12,8 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
-#include <zircon/listnode.h>
 
+#include <fbl/intrusive_double_list.h>
 #include <kernel/percpu.h>
 #include <ktl/atomic.h>
 #include <ktl/optional.h>
@@ -26,7 +26,9 @@ class FreeLoanedPagesHolder;
 // LINT.IfChange(vm_page)
 // core per page structure allocated at pmm arena creation time
 struct vm_page {
-  struct list_node queue_node = LIST_INITIAL_CLEARED_VALUE;
+  using NodeState =
+      fbl::DoublyLinkedListNodeState<vm_page*, fbl::NodeOptions::AllowRemoveFromContainer>;
+  NodeState queue_node;
 
   // read-only after being set up
   paddr_t paddr_priv = {};  // use paddr() accessor
@@ -263,10 +265,17 @@ struct vm_page {
 // Provide a type alias using modern syntax to avoid clang-tidy warnings.
 using vm_page_t = vm_page;
 
+struct vm_page_node_traits {
+  static vm_page_t::NodeState& node_state(vm_page& obj) { return obj.queue_node; }
+};
+
+using VmPageDoublyLinkedList = fbl::DoublyLinkedList<vm_page_t*, fbl::DefaultObjectTag,
+                                                     fbl::SizeOrder::N, vm_page_node_traits>;
+
 // assert expected offsets (the offsets in comments above) and natural alignments
 static_assert(offsetof(vm_page_t, queue_node) == 0x0);
 static_assert(offsetof(vm_page_t, queue_node) % alignof(decltype(vm_page_t::queue_node)) == 0);
-static_assert(offsetof(vm_page_t, queue_node) % alignof(list_node) == 0);
+static_assert(offsetof(vm_page_t, queue_node) % alignof(vm_page_t::NodeState) == 0);
 
 static_assert(offsetof(vm_page_t, paddr_priv) == 0x10);
 static_assert(offsetof(vm_page_t, paddr_priv) % alignof(decltype(vm_page_t::paddr_priv)) == 0);

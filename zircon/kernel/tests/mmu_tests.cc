@@ -271,12 +271,12 @@ static bool test_large_region_unmap() {
   END_TEST;
 }
 
-static list_node node = LIST_INITIAL_VALUE(node);
+static VmPageDoublyLinkedList node;
 static zx_status_t test_page_alloc_fn(uint unused, vm_page** p, paddr_t* pa) {
-  if (list_is_empty(&node)) {
+  if (node.is_empty()) {
     return ZX_ERR_NO_MEMORY;
   }
-  vm_page_t* page = list_remove_head_type(&node, vm_page_t, queue_node);
+  vm_page_t* page = node.pop_front();
   if (p) {
     *p = page;
   }
@@ -318,7 +318,7 @@ static bool test_mapping_oom() {
     for (unsigned i = 0; i < avail_mmu_pages; i++) {
       vm_page_t* page;
       ASSERT_EQ(pmm_alloc_page(0, &page), ZX_OK, "alloc fail");
-      list_add_head(&node, &page->queue_node);
+      node.push_front(page);
     }
 
     ArchVmAspace aspace(kAspaceBase, kAspaceSize, 0, test_page_alloc_fn);
@@ -336,14 +336,14 @@ static bool test_mapping_oom() {
       EXPECT_EQ(err, ZX_ERR_NO_MEMORY);
       avail_mmu_pages++;
       // validate that all of the pages were consumed
-      EXPECT_TRUE(list_is_empty(&node));
+      EXPECT_TRUE(node.is_empty());
     }
 
     // Destroying the aspace verifies that everything was cleaned up
     // when the mapping failed part way through.
     err = aspace.Destroy();
     ASSERT_EQ(err, ZX_OK, "destroy aspace");
-    ASSERT_TRUE(list_is_empty(&node));
+    ASSERT_TRUE(node.is_empty());
   }
 
   END_TEST;

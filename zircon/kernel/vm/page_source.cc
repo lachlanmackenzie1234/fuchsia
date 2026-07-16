@@ -345,7 +345,7 @@ zx_status_t PageSource::PopulateRequest(PageRequest* request, uint64_t offset, u
   return PopulateRequestLocked(request, offset, len, vmo_debug_info, type);
 }
 
-void PageSource::FreePages(list_node* pages) { page_provider_->FreePages(pages); }
+void PageSource::FreePages(VmPageDoublyLinkedList* pages) { page_provider_->FreePages(pages); }
 
 zx_status_t PageSource::PopulateRequestLocked(PageRequest* request, uint64_t offset, uint64_t len,
                                               VmoDebugInfo vmo_debug_info, page_request_type type) {

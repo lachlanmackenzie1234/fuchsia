@@ -11,7 +11,6 @@
 #include <string.h>
 #include <trace.h>
 #include <zircon/errors.h>
-#include <zircon/listnode.h>
 #include <zircon/types.h>
 
 #include <dev/interrupt.h>

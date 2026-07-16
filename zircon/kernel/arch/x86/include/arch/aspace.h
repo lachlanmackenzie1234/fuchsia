@@ -141,7 +141,7 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
 
   static void ContextSwitch(X86ArchVmAspace* from, X86ArchVmAspace* to);
 
-  static void HandoffPageTablesFromPhysboot(list_node_t* mmu_pages);
+  static void HandoffPageTablesFromPhysboot(VmPageDoublyLinkedList* mmu_pages);
 
   static constexpr vaddr_t NextUserPageTableOffset(vaddr_t va) {
     // This logic only works for 'regular' page sizes that match the hardware page sizes.

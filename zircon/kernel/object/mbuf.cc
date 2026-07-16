@@ -215,14 +215,14 @@ zx_status_t MBufChain::WriteStream(user_in_ptr<const char> src, size_t len, size
 }
 
 ktl::optional<fbl::DoublyLinkedList<MBufChain::MBuf*>> MBufChain::AllocMBufs(size_t num) {
-  list_node_t pages = LIST_INITIAL_VALUE(pages);
+  VmPageDoublyLinkedList pages;
   zx_status_t status = Pmm::Node().AllocPages(num, 0, &pages);
   if (status != ZX_OK) {
     return ktl::nullopt;
   }
   MBufList ret;
-  while (!list_is_empty(&pages)) {
-    vm_page_t* page = list_remove_head_type(&pages, vm_page_t, queue_node);
+  while (!pages.is_empty()) {
+    vm_page_t* page = pages.pop_front();
     MBuf* buf = reinterpret_cast<MBuf*>(paddr_to_physmap(page->paddr()));
     new (buf) MBuf(page);
     ret.push_front(buf);
@@ -231,13 +231,13 @@ ktl::optional<fbl::DoublyLinkedList<MBufChain::MBuf*>> MBufChain::AllocMBufs(siz
 }
 
 void MBufChain::FreeMBufs(MBufList&& bufs) {
-  list_node_t pages = LIST_INITIAL_VALUE(pages);
+  VmPageDoublyLinkedList pages;
 
   while (!bufs.is_empty()) {
     MBuf* buf = bufs.pop_front();
     vm_page_t* page = buf->page_;
     buf->~MBuf();
-    list_add_head(&pages, &page->queue_node);
+    pages.push_front(page);
   }
   Pmm::Node().FreeList(&pages);
 }

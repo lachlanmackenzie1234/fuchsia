@@ -13,7 +13,6 @@
 #include <trace.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
-#include <zircon/listnode.h>
 
 #include <new>
 
@@ -63,8 +62,8 @@ class PageCache {
   // Utility type for returning a list of pages via zx::result. Automatically
   // frees a non-empty list of pages on destruction to improve safety and
   // ergonomics.
-  struct PageList : list_node {
-    PageList() : list_node{this, this} {}
+  struct PageList : VmPageDoublyLinkedList {
+    PageList() = default;
 
     ~PageList() {
       if (!is_empty()) {
@@ -72,23 +71,17 @@ class PageCache {
       }
     }
 
-    PageList(list_node&& other) { list_move(&other, this); }
+    PageList(VmPageDoublyLinkedList&& other) { splice(end(), other); }
 
-    PageList(PageList&& other) noexcept { list_move(&other, this); }
+    PageList(PageList&& other) noexcept { splice(end(), other); }
 
     PageList& operator=(PageList&& other) noexcept {
-      list_node temp = LIST_INITIAL_VALUE(temp);
-      list_move(&other, &temp);
-
       if (!is_empty()) {
         pmm_free(this);
       }
-
-      list_move(&temp, this);
+      splice(end(), other);
       return *this;
     }
-
-    bool is_empty() const { return list_is_empty(this); }
 
     PageList(const PageList&) = delete;
     PageList& operator=(const PageList&) = delete;
@@ -189,17 +182,15 @@ class PageCache {
     DEBUG_ASSERT(requested_pages > 0);
 
     entry.available_pages -= requested_pages;
-    list_node* node = list_prev(&entry.free_list, &entry.free_list);
+    PageList return_pages;
     for (size_t i = 0; i < requested_pages; i++) {
-      vm_page* page = containerof(node, vm_page, queue_node);
+      vm_page_t* page = entry.free_list.pop_back();
+      DEBUG_ASSERT(page);
       page->set_state(vm_page_state::ALLOC);
-      node = list_prev(&entry.free_list, node);
+      return_pages.push_front(page);
     }
 
     CountHitPages(requested_pages);
-
-    list_node return_pages = LIST_INITIAL_VALUE(return_pages);
-    list_split_after(&entry.free_list, node ? node : &entry.free_list, &return_pages);
 
     return AllocateResult{ktl::move(return_pages), entry.available_pages};
   }
@@ -211,30 +202,32 @@ class PageCache {
 
     size_t free_count = 0;
     size_t return_count = 0;
-    list_node return_list = LIST_INITIAL_VALUE(return_list);
+    PageList return_list;
 
     // Filter out non-borrowed pages to return to the free list. Pages remaining
     // in page_list are freed to the PMM outside the lock in the PageList dtor.
-    list_node* node;
-    list_node* temp;
-    list_for_every_safe(page_list, node, temp) {
-      vm_page* page = containerof(node, vm_page, queue_node);
-      DEBUG_ASSERT(!page->is_loaned());
-      if (entry.available_pages < reserve_pages_) {
-        page->set_state(vm_page_state::CACHE);
+    auto iter = page_list->begin();
+    while (iter != page_list->end()) {
+      auto& page = *iter;
+      auto next = iter;
+      next++;
 
-        list_delete(node);
-        list_add_tail(&return_list, node);
+      DEBUG_ASSERT(!page.is_loaned());
+      if (entry.available_pages < reserve_pages_) {
+        page.set_state(vm_page_state::CACHE);
+        page_list->erase(page);
+        return_list.push_back(&page);
 
         entry.available_pages++;
         return_count++;
       } else {
         free_count++;
       }
+      iter = next;
     }
 
     // Return the selected pages to the free list.
-    list_splice_after(&return_list, &entry.free_list);
+    entry.free_list.splice(entry.free_list.begin(), return_list);
     CountReturnPages(return_count);
     CountFreePages(free_count);
   }
@@ -259,7 +252,7 @@ class PageCache {
     // sufficient to fulfill the request without falling back to the PMM.
     Guard<Mutex> cache_guard{&entry.cache_lock};
 
-    list_node return_list = LIST_INITIAL_VALUE(return_list);
+    PageList return_list;
 
     // Re-validate the request after acquiring the locks. Another thread may
     // have filled the cache sufficiently already.
@@ -270,7 +263,7 @@ class PageCache {
       CountRefillPages(refill_pages);
       CountMissPages(requested_pages);
 
-      list_node page_list = LIST_INITIAL_VALUE(page_list);
+      VmPageDoublyLinkedList page_list;
       zx_status_t status;
 
       // Release the cache lock while calling into the PMM to permit other
@@ -284,7 +277,7 @@ class PageCache {
         if (status == ZX_ERR_SHOULD_WAIT) {
           vm_page_t* page = nullptr;
           while (pages > 0 && (status = pmm_alloc_page(alloc_flags, &page)) == ZX_OK) {
-            list_add_tail(&page_list, &page->queue_node);
+            page_list.push_back(page);
             pages--;
           }
         }
@@ -293,10 +286,10 @@ class PageCache {
         // Even if allocating all the pages failed, may have received a few. If so, put them into
         // the cache and then see if we have enough for the actual requested allocation. Since this
         // is an uncommon edge cases do not try and be too optimal with the implementation.
-        while (!list_is_empty(&page_list)) {
-          vm_page_t* page = list_remove_head_type(&page_list, vm_page_t, queue_node);
+        while (!page_list.is_empty()) {
+          vm_page_t* page = page_list.pop_front();
           page->set_state(vm_page_state::CACHE);
-          list_add_tail(&entry.free_list, &page->queue_node);
+          entry.free_list.push_back(page);
           entry.available_pages++;
         }
         if (requested_pages <= entry.available_pages) {
@@ -306,18 +299,22 @@ class PageCache {
       }
 
       // Set the page state of the refill pages and find the end of the refill list.
-      list_node* node = &page_list;
-      for (size_t i = 0; i < refill_pages; i++) {
-        node = list_next(&page_list, node);
-        vm_page* page = containerof(node, vm_page, queue_node);
-        page->set_state(vm_page_state::CACHE);
-      }
-      DEBUG_ASSERT(node != nullptr);
+      if (refill_pages > 0) {
+        auto node = page_list.begin();
+        for (size_t i = 0; i < refill_pages; i++, node++) {
+          vm_page_t* page = &*node;
+          DEBUG_ASSERT(page);
+          page->set_state(vm_page_state::CACHE);
+        }
+        node--;
 
-      // Separate the return list from the refill list and add the latter to the
-      // free list.
-      list_split_after(&page_list, node, &return_list);
-      list_splice_after(&page_list, &entry.free_list);
+        // Separate the return list from the refill list and add the latter to the
+        // free list.
+        return_list = page_list.split_after(node);
+      } else {
+        return_list = ktl::move(page_list);
+      }
+      entry.free_list.splice(entry.free_list.begin(), page_list);
 
       entry.available_pages += refill_pages;
     } else if (requested_pages > 0) {

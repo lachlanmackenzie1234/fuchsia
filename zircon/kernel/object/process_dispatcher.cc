@@ -15,7 +15,6 @@
 #include <lib/page/size.h>
 #include <string.h>
 #include <trace.h>
-#include <zircon/listnode.h>
 #include <zircon/rights.h>
 
 #include <fbl/alloc_checker.h>

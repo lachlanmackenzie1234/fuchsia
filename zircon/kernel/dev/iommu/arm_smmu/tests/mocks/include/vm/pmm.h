@@ -10,7 +10,6 @@
 #include <lib/fit/defer.h>
 #include <sys/types.h>
 #include <zircon/assert.h>
-#include <zircon/listnode.h>
 #include <zircon/types.h>
 
 #include <memory>
@@ -27,7 +26,7 @@ class PmmMock {
   static PmmMock& Get() { return instance_; }
 
   zx_status_t AllocPage(uint32_t alloc_flags, vm_page_t** p);
-  void Free(list_node* list);
+  void Free(VmPageDoublyLinkedList* list);
   size_t GetAllocatedPageCount();
   vm_page_t* PaddrToVmPage(paddr_t pa);
 
@@ -52,6 +51,6 @@ zx_status_t pmm_alloc_page(uint32_t alloc_flags, vm_page_t** p, paddr_t* pa);
 
 vm_page_t* paddr_to_vm_page(paddr_t pa);
 
-void pmm_free(list_node* list);
+void pmm_free(VmPageDoublyLinkedList* list);
 
 #endif  // ZIRCON_KERNEL_DEV_IOMMU_ARM_SMMU_TESTS_MOCKS_INCLUDE_VM_PMM_H_

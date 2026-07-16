@@ -399,9 +399,7 @@ zx_status_t VmObjectPaged::CreateContiguous(uint32_t pmm_alloc_flags, uint64_t s
     return ZX_OK;
   }
 
-  // allocate the pages
-  list_node page_list;
-  list_initialize(&page_list);
+  VmPageDoublyLinkedList page_list;
 
   size_t num_pages = size / kPageSize;
   paddr_t pa;
@@ -1803,10 +1801,9 @@ zx_status_t VmObjectPaged::DirtyPages(uint64_t offset, uint64_t len) {
   // cannot successfully dirty the entire range atomically, we can just hold on to the allocated
   // pages and use them for the next call. This ensures that we are making forward progress with
   // each successive call to DirtyPages.
-  list_node alloc_list;
-  list_initialize(&alloc_list);
+  VmPageDoublyLinkedList alloc_list;
   auto alloc_list_cleanup = fit::defer([&alloc_list, this]() -> void {
-    if (!list_is_empty(&alloc_list)) {
+    if (!alloc_list.is_empty()) {
       cow_pages_->FreePages(&alloc_list);
     }
   });

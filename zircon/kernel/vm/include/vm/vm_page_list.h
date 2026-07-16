@@ -1799,7 +1799,7 @@ class VmPageSpliceList final {
 
   // For use by PhysicalPageProvider.  The user-pager path doesn't use this. This returns a
   // finalized list.
-  static zx_status_t CreateFromPageList(uint64_t length, list_node* pages,
+  static zx_status_t CreateFromPageList(uint64_t length, VmPageDoublyLinkedList* pages,
                                         VmPageSpliceList* splice);
 
   // Initialize the list with the given range. Can only be done once, and must be done before

@@ -133,7 +133,7 @@ class VmSlotPageStorage final : public VmCompressedStorage {
   // Maintain a list of pages for every possible max contiguous free slots in those pages. The 0
   // entry, i.e. pages that have no free slots, represent completely full pages and are tracked for
   // consistency
-  ktl::array<list_node_t, kNumSlots> max_contig_remain_ TA_GUARDED(lock_);
+  ktl::array<VmPageDoublyLinkedList, kNumSlots> max_contig_remain_ TA_GUARDED(lock_);
 
   // Every `Data` represents a page that has been compressed. Being able to store 2^24 `Data`
   // items means tracking 2^24 pages that have been compressed, which if uncompressed would
