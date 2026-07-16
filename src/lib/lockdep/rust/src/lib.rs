@@ -54,6 +54,13 @@ mod enabled {
             Self { name, flags: 0, state_storage: LockClassStateStorage::uninit() }
         }
 
+        pub const fn with_flags(
+            name: &'static ::kstring::interned_string::InternedString,
+            flags: u16,
+        ) -> Self {
+            Self { name, flags, state_storage: LockClassStateStorage::uninit() }
+        }
+
         #[inline]
         pub const fn get(&self) -> *mut core::ffi::c_void {
             self.state_storage.0.get() as *mut _
@@ -76,6 +83,13 @@ mod disabled {
 
     impl LockClassRegistration {
         pub const fn new(_name: &'static ::kstring::interned_string::InternedString) -> Self {
+            Self
+        }
+
+        pub const fn with_flags(
+            _name: &'static ::kstring::interned_string::InternedString,
+            _flags: u16,
+        ) -> Self {
             Self
         }
 
