@@ -71,6 +71,8 @@
     offer: [
         {
             config: [
+                "fuchsia.device.BootItemInterfaceFlipLowMacBit",
+                "fuchsia.device.BootItemInterfaceForNodeName",
                 "fuchsia.network.PrimaryInterface",
                 "fuchsia.zircon.namegen",
                 "fuchsia.zircon.nodename",

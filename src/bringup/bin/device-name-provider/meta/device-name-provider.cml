@@ -24,6 +24,9 @@
             service: "fuchsia.hardware.network.Service",
         },
         {
+            protocol: [ "fuchsia.boot.Items" ],
+        },
+        {
             config: "fuchsia.network.PrimaryInterface",
             key: "primary_interface",
             availability: "optional",
@@ -46,6 +49,20 @@
             type: "string",
             max_size: 10,
             default: "1",
+        },
+        {
+            config: "fuchsia.device.BootItemInterfaceForNodeName",
+            key: "boot_item_interface_for_node_name",
+            availability: "optional",
+            type: "uint8",
+            default: 0,
+        },
+        {
+            config: "fuchsia.device.BootItemInterfaceFlipLowMacBit",
+            key: "boot_item_interface_flip_low_mac_bit",
+            availability: "optional",
+            type: "bool",
+            default: false,
         },
     ],
     expose: [

@@ -2,33 +2,42 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/offer.shard.cml",
-        "syslog/offer.shard.cml",
-    ],
+    include: [ "//src/bringup/bin/device-name-provider/meta/integration-test-realm-common.shard.cml" ],
     children: [
         {
-            name: "device-name-provider",
-            url: "fuchsia-pkg://fuchsia.com/device-name-provider-tests#meta/device-name-provider.cm",
+            name: "fake-boot-items",
+            url: "fake_boot_items#meta/fake_boot_items.cm",
+        },
+    ],
+    capabilities: [
+        {
+            config: "use_boot_item",
+            type: "bool",
+            value: true,
         },
         {
-            name: "integration-test",
-            url: "fuchsia-pkg://fuchsia.com/device-name-provider-tests#meta/integration-test-component.cm",
+            config: "fuchsia.device.BootItemInterfaceForNodeName",
+            type: "uint8",
+            value: 0,
+        },
+        {
+            config: "fuchsia.device.BootItemInterfaceFlipLowMacBit",
+            type: "bool",
+            value: false,
         },
     ],
     offer: [
         {
-            protocol: "fuchsia.device.NameProvider",
-            from: "#device-name-provider",
-            to: "#integration-test",
+            protocol: "fuchsia.boot.Items",
+            from: "#fake-boot-items",
+            to: "#device-name-provider",
         },
         {
             config: [
-                "fuchsia.network.PrimaryInterface",
-                "fuchsia.zircon.namegen",
-                "fuchsia.zircon.nodename",
+                "fuchsia.device.BootItemInterfaceFlipLowMacBit",
+                "fuchsia.device.BootItemInterfaceForNodeName",
             ],
-            from: "void",
+            from: "self",
             to: "#device-name-provider",
             availability: "optional",
         },

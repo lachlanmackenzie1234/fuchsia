@@ -10,7 +10,11 @@
     ],
     offer: [
         {
-            config: [ "fuchsia.network.PrimaryInterface" ],
+            config: [
+                "fuchsia.device.BootItemInterfaceFlipLowMacBit",
+                "fuchsia.device.BootItemInterfaceForNodeName",
+                "fuchsia.network.PrimaryInterface",
+            ],
             from: "parent",
             to: "#device_name_provider",
             availability: "optional",
@@ -30,7 +34,10 @@
             to: "#device_name_provider",
         },
         {
-            protocol: "fuchsia.boot.WriteOnlyLog",
+            protocol: [
+                "fuchsia.boot.Items",
+                "fuchsia.boot.WriteOnlyLog",
+            ],
             from: "parent",
             to: "#device_name_provider",
         },

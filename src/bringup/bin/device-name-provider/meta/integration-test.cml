@@ -11,5 +11,11 @@
     },
     use: [
         { protocol: "fuchsia.device.NameProvider" },
+        {
+            config: "use_boot_item",
+            from: "parent",
+            type: "bool",
+            key: "use_boot_item",
+        },
     ],
 }

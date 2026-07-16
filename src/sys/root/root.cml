@@ -67,6 +67,8 @@
         },
         {
             config: [
+                "fuchsia.device.BootItemInterfaceFlipLowMacBit",
+                "fuchsia.device.BootItemInterfaceForNodeName",
                 "fuchsia.driver.index.StopOnIdleTimeoutMillis",
                 "fuchsia.network.PrimaryInterface",
                 "fuchsia.sysmem.ContiguousGuardPagesUnused",

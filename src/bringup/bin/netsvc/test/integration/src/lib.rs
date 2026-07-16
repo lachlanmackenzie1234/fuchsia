@@ -43,6 +43,10 @@ const DISABLE_CONFIGURATION: &str = "fuchsia.netsvc.disable";
 const NETBOOT_CONFIGURATION: &str = "fuchsia.netsvc.netboot";
 const ADVERTISE_CONFIGURATION: &str = "fuchsia.netsvc.advertise";
 const ALL_FEATURES_CONFIGURATION: &str = "fuchsia.netsvc.all-features";
+const BOOT_ITEM_INTERFACE_FOR_NODE_NAME_CONFIGURATION: &str =
+    "fuchsia.device.BootItemInterfaceForNodeName";
+const BOOT_ITEM_INTERFACE_FLIP_LOW_MAC_BIT_CONFIGURATION: &str =
+    "fuchsia.device.BootItemInterfaceFlipLowMacBit";
 
 const BUFFER_SIZE: usize = 2048;
 
@@ -293,6 +297,27 @@ where
                                 capability: Some(
                                     fidl_fuchsia_netemul::ExposedCapability::Configuration(
                                         NAMEGEN_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        BOOT_ITEM_INTERFACE_FOR_NODE_NAME_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        BOOT_ITEM_INTERFACE_FLIP_LOW_MAC_BIT_CONFIGURATION
+                                            .to_string(),
                                     ),
                                 ),
                                 ..Default::default()

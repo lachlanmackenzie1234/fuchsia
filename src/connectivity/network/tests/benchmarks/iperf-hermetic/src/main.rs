@@ -21,6 +21,10 @@ const NAME_PROVIDER_MONIKER: &str = "device-name-provider";
 const PRIMARY_INTERFACE_CONFIGURATION: &str = "fuchsia.network.PrimaryInterface";
 const NAMEGEN_CONFIGURATION: &str = "fuchsia.zircon.namegen";
 const NODENAME_CONFIGURATION: &str = "fuchsia.zircon.nodename";
+const BOOT_ITEM_INTERFACE_FOR_NODE_NAME_CONFIGURATION: &str =
+    "fuchsia.device.BootItemInterfaceForNodeName";
+const BOOT_ITEM_INTERFACE_FLIP_LOW_MAC_BIT_CONFIGURATION: &str =
+    "fuchsia.device.BootItemInterfaceFlipLowMacBit";
 const CUSTOM_ARTIFACTS_PATH: &str = "/custom_artifacts";
 
 fn iperf_component<'a>(
@@ -86,6 +90,18 @@ fn device_name_provider_component() -> fnetemul::ChildDef {
             fidl_fuchsia_netemul::Capability::ChildDep(fidl_fuchsia_netemul::ChildDep {
                 capability: Some(fidl_fuchsia_netemul::ExposedCapability::Configuration(
                     NODENAME_CONFIGURATION.to_string(),
+                )),
+                ..Default::default()
+            }),
+            fidl_fuchsia_netemul::Capability::ChildDep(fidl_fuchsia_netemul::ChildDep {
+                capability: Some(fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                    BOOT_ITEM_INTERFACE_FOR_NODE_NAME_CONFIGURATION.to_string(),
+                )),
+                ..Default::default()
+            }),
+            fidl_fuchsia_netemul::Capability::ChildDep(fidl_fuchsia_netemul::ChildDep {
+                capability: Some(fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                    BOOT_ITEM_INTERFACE_FLIP_LOW_MAC_BIT_CONFIGURATION.to_string(),
                 )),
                 ..Default::default()
             }),
