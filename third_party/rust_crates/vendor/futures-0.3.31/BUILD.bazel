@@ -82,7 +82,7 @@ rust_library(
     version = "0.3.31",
     deps = [
         "//third_party/rust_crates/vendor/futures-channel-0.3.31:futures_channel",
-        "//third_party/rust_crates/vendor/futures-core-0.3.31:futures_core",
+        "//third_party/rust_crates/vendor/futures-core-0.3.32:futures_core",
         "//third_party/rust_crates/vendor/futures-executor-0.3.31:futures_executor",
         "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
         "//third_party/rust_crates/vendor/futures-sink-0.3.31:futures_sink",

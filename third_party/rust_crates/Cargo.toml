@@ -311,7 +311,7 @@ askama = "0.15.6"
 async-fs = "2.2.0"
 cargo_metadata = "0.23.1"
 crossterm = "0.19"
-fuse3 = { version = "0.6.1", features = ["tokio-runtime", "unprivileged"] }
+fuse3 = { version = "0.9.0", features = ["tokio-runtime", "unprivileged"] }
 home = "0.5.12"
 hyper-rustls = { version = "0.24.2", default-features = false, features = ["rustls-native-certs"] }
 indoc = "2.0.7"
@@ -453,6 +453,7 @@ ring = { path = "forks/ring-0.17.8" }
 semver = { path = "forks/semver-1.0.28" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
+trait-make = { path = "forks/trait-make" }
 trust-dns-proto = { path = "forks/trust-dns-proto-0.22.0" }
 trust-dns-resolver = { path = "forks/trust-dns-resolver-0.22.0" }
 valico = { path = "forks/valico-4.0.0" }
@@ -635,7 +636,7 @@ uses_fuchsia_license = true
 [gn.package.futures-channel."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-channel" ]
 
-[gn.package.futures-core."0.3.31"]
+[gn.package.futures-core."0.3.32"]
 env_vars = [ "CARGO_PKG_NAME=futures-core" ]
 
 [gn.package.futures-macro."0.3.31"]
@@ -1322,7 +1323,7 @@ configs = [
   "//third_party/rust_crates/configs/balanced:optimize_moderate"
 ]
 [gn.package.zerocopy."0.8.48".platform."cfg(not(kernel))"]
-rustflags = [ "--cfg=feature=\\\"alloc\\\"" ]
+rustflags = [ "--cfg=feature=\\\"alloc\\\"", "--cfg=feature=\\\"std\\\"" ]
 
 [gn.package.zerocopy-derive."0.8.48"]
 # See https://github.com/google/zerocopy/issues/1792

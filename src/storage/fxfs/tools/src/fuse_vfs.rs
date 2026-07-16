@@ -5,7 +5,6 @@
 use crate::fuse_attr::{create_file_attr, to_fxfs_time};
 use crate::fuse_errors::{FuseErrorParser, FxfsResult};
 use crate::fuse_fs::{FuseFs, FuseStrParser};
-use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use fuchsia as _;
 use fuse3::Result;
@@ -722,18 +721,14 @@ impl FuseFs {
 /// FUSE VFS calls the inner Fxfs functions to handle the FUSE calls.
 /// Some of the function parameters (i.e., request, mode, mask, fh, flags, unique
 /// and lock_owner) are not supported by Fxfs and hence are ignored.
-#[async_trait]
+#[allow(refining_impl_trait)]
 impl FuseFilesystem for FuseFs {
-    // Stream of directory entries without attributes.
-    type DirEntryStream = Iter<IntoIter<Result<DirectoryEntry>>>;
-
-    // Stream of directory entries with attributes.
-    type DirEntryPlusStream = Iter<IntoIter<Result<DirectoryEntryPlus>>>;
-
     /// Initialize filesystem. Called before any other filesystem method.
-    async fn init(&self, _req: Request) -> Result<()> {
+    async fn init(&self, _req: Request) -> Result<ReplyInit> {
         info!("init");
-        Ok(())
+        // Advertise 1 MiB (1 << 20 bytes) maximum write buffer size, a common size for
+        // modern FUSE drivers to enable efficient I/O chunks.
+        Ok(ReplyInit { max_write: std::num::NonZeroU32::new(1 << 20).unwrap() })
     }
 
     /// Gracefully close filesystem. Currently fuse3 cannot handle unmount gracefully,
@@ -845,6 +840,7 @@ impl FuseFilesystem for FuseFs {
         _fh: u64,
         offset: u64,
         data: &[u8],
+        _write_flags: u32,
         _flags: u32,
     ) -> Result<ReplyWrite> {
         let inode = self.fuse_inode_to_object_id(inode);
@@ -1020,7 +1016,7 @@ impl FuseFilesystem for FuseFs {
         parent: u64,
         _fh: u64,
         offset: i64,
-    ) -> Result<ReplyDirectory<Self::DirEntryStream>> {
+    ) -> Result<ReplyDirectory<Iter<IntoIter<Result<DirectoryEntry>>>>> {
         let parent = self.fuse_inode_to_object_id(parent);
         info!("readdir (parent={:?})", parent);
         self.readdir_fxfs(parent, offset).await.fxfs_result_to_fuse_result()
@@ -1037,7 +1033,7 @@ impl FuseFilesystem for FuseFs {
         _fh: u64,
         offset: u64,
         _lock_owner: u64,
-    ) -> Result<ReplyDirectoryPlus<Self::DirEntryPlusStream>> {
+    ) -> Result<ReplyDirectoryPlus<Iter<IntoIter<Result<DirectoryEntryPlus>>>>> {
         let parent = self.fuse_inode_to_object_id(parent);
         info!("readdirplus (parent={:?})", parent);
         self.readdirplus_fxfs(parent, offset).await.fxfs_result_to_fuse_result()
@@ -1877,7 +1873,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -1905,7 +1901,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -1933,7 +1929,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -1973,7 +1969,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -2007,7 +2003,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -2035,7 +2031,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -2063,7 +2059,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -2091,7 +2087,7 @@ mod tests {
             )
             .await
             .expect("create failed");
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -2174,7 +2170,7 @@ mod tests {
             .await
             .expect("create failed");
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
@@ -2204,13 +2200,13 @@ mod tests {
             .await
             .expect("create failed");
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 1, b"aa", DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 1, b"aa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, 2u32);
@@ -2241,13 +2237,13 @@ mod tests {
             .await
             .expect("create failed");
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 4, b"aaa", DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 4, b"aaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, 3u32);
@@ -2278,13 +2274,13 @@ mod tests {
             .await
             .expect("create failed");
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 5, b"aaa", DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 5, b"aaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, 3u32);
@@ -2315,13 +2311,13 @@ mod tests {
             .await
             .expect("create failed");
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 6, b"aaa", DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 6, b"aaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, 3u32);
@@ -2352,7 +2348,7 @@ mod tests {
             .await
             .expect("create failed");
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, b"", DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, b"", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, 0u32);
@@ -2371,7 +2367,7 @@ mod tests {
         let fs = FuseFs::new_in_memory(String::new()).await;
 
         let write_res =
-            fs.write(new_fake_request(), INVALID_INODE, 0, 0, TEST_DATA, DEFAULT_FLAG).await;
+            fs.write(new_fake_request(), INVALID_INODE, 0, 0, TEST_DATA, 0, DEFAULT_FLAG).await;
         assert_eq!(write_res.is_err(), true);
         let err: Errno = libc::ENOENT.into();
         assert_eq!(write_res.err().unwrap(), err);
@@ -2388,8 +2384,9 @@ mod tests {
             .mkdir(new_fake_request(), dir.object_id(), OsStr::new("foo"), DEFAULT_FILE_MODE, 0)
             .await
             .expect("mkdir failed");
-        let write_res =
-            fs.write(new_fake_request(), mkdir_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG).await;
+        let write_res = fs
+            .write(new_fake_request(), mkdir_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
+            .await;
         assert_eq!(write_res.is_err(), true);
         let err: Errno = libc::EISDIR.into();
         assert_eq!(write_res.err().unwrap(), err);
@@ -2535,7 +2532,7 @@ mod tests {
             .expect("create failed");
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
@@ -2575,7 +2572,7 @@ mod tests {
             .expect("create failed");
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
@@ -2615,7 +2612,7 @@ mod tests {
             .expect("create failed");
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
@@ -2760,7 +2757,7 @@ mod tests {
             .expect("mkdir failed");
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
@@ -2796,7 +2793,7 @@ mod tests {
             .expect("mkdir failed");
 
         let write_reply = fs
-            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+            .write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
         assert_eq!(write_reply.written, TEST_DATA.len() as u32);
@@ -3117,7 +3114,7 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3146,7 +3143,7 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3175,7 +3172,7 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3204,7 +3201,7 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3243,11 +3240,11 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3307,11 +3304,11 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3371,11 +3368,11 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3435,11 +3432,11 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3499,11 +3496,11 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3563,11 +3560,11 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3627,11 +3624,11 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3681,7 +3678,7 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply_new.attr.ino, 0, 0, b"aaaaaa", 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 
@@ -3720,7 +3717,7 @@ mod tests {
             .await
             .expect("create failed");
 
-        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, DEFAULT_FLAG)
+        fs.write(new_fake_request(), create_reply.attr.ino, 0, 0, TEST_DATA, 0, DEFAULT_FLAG)
             .await
             .expect("write failed");
 

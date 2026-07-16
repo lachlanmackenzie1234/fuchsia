@@ -1,5 +1,6 @@
 //! reply structures.
 use std::ffi::OsString;
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -15,12 +16,10 @@ use crate::raw::abi::{fuse_file_lock, fuse_lk_out};
 use crate::{FileType, Result, Timestamp};
 
 /// file attributes
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct FileAttr {
     /// Inode number
     pub ino: u64,
-    /// Generation
-    pub generation: u64,
     /// Size in bytes
     pub size: u64,
     /// Size in blocks
@@ -64,21 +63,34 @@ impl From<FileAttr> for fuse_attr {
             atime: attr.atime.sec as u64,
             mtime: attr.mtime.sec as u64,
             ctime: attr.ctime.sec as u64,
+            #[cfg(target_os = "macos")]
+            crtime: attr.crtime.sec as u64,
             atimensec: attr.atime.nsec,
             mtimensec: attr.mtime.nsec,
             ctimensec: attr.ctime.nsec,
+            #[cfg(target_os = "macos")]
+            crtimensec: attr.crtime.nsec,
             mode: mode_from_kind_and_perm(attr.kind, attr.perm),
             nlink: attr.nlink,
             uid: attr.uid,
             gid: attr.gid,
             rdev: attr.rdev,
             blksize: attr.blksize,
-            padding: 0,
+            #[cfg(target_os = "macos")]
+            flags: attr.flags,
+            _padding: 0,
         }
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+/// init reply
+pub struct ReplyInit {
+    /// the max write size
+    pub max_write: NonZeroU32,
+}
+
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// entry reply.
 pub struct ReplyEntry {
     /// the attribute TTL.
@@ -105,7 +117,7 @@ impl From<ReplyEntry> for fuse_entry_out {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// reply attr.
 pub struct ReplyAttr {
     /// the attribute TTL.
@@ -125,6 +137,7 @@ impl From<ReplyAttr> for fuse_attr_out {
     }
 }
 
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// data reply.
 pub struct ReplyData {
     /// the data.
@@ -137,7 +150,7 @@ impl From<Bytes> for ReplyData {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// open reply.
 pub struct ReplyOpen {
     /// the file handle id.
@@ -155,12 +168,12 @@ impl From<ReplyOpen> for fuse_open_out {
         fuse_open_out {
             fh: opened.fh,
             open_flags: opened.flags,
-            padding: 0,
+            _padding: 0,
         }
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// write reply.
 pub struct ReplyWrite {
     /// the data written.
@@ -171,12 +184,12 @@ impl From<ReplyWrite> for fuse_write_out {
     fn from(written: ReplyWrite) -> Self {
         fuse_write_out {
             size: written.written,
-            padding: 0,
+            _padding: 0,
         }
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// statfs reply.
 pub struct ReplyStatFs {
     /// the number of blocks in the filesystem.
@@ -209,21 +222,21 @@ impl From<ReplyStatFs> for fuse_statfs_out {
                 bsize: stat_fs.bsize,
                 namelen: stat_fs.namelen,
                 frsize: stat_fs.frsize,
-                padding: 0,
+                _padding: 0,
                 spare: [0; 6],
             },
         }
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// xattr reply.
 pub enum ReplyXAttr {
     Size(u32),
     Data(Bytes),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// directory entry.
 pub struct DirectoryEntry {
     /// entry inode.
@@ -241,8 +254,18 @@ pub struct ReplyDirectory<S: Stream<Item = Result<DirectoryEntry>>> {
     pub entries: S,
 }
 
+impl<S: Stream<Item = Result<DirectoryEntry>> + std::fmt::Debug> std::fmt::Debug
+    for ReplyDirectory<S>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReplyDirectory")
+            .field("entries", &self.entries)
+            .finish()
+    }
+}
+
 #[cfg(feature = "file-lock")]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// file lock reply.
 pub struct ReplyLock {
     /// starting offset for lock.
@@ -273,7 +296,7 @@ impl From<ReplyLock> for fuse_lk_out {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// crate reply.
 pub struct ReplyCreated {
     /// the attribute TTL.
@@ -294,7 +317,7 @@ impl From<ReplyCreated> for (fuse_entry_out, fuse_open_out) {
 
         let entry_out = fuse_entry_out {
             nodeid: attr.ino,
-            generation: attr.generation,
+            generation: created.generation,
             entry_valid: created.ttl.as_secs(),
             attr_valid: created.ttl.as_secs(),
             entry_valid_nsec: created.ttl.subsec_micros(),
@@ -305,14 +328,14 @@ impl From<ReplyCreated> for (fuse_entry_out, fuse_open_out) {
         let open_out = fuse_open_out {
             fh: created.fh,
             open_flags: created.flags,
-            padding: 0,
+            _padding: 0,
         };
 
         (entry_out, open_out)
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 // TODO need more detail
 /// bmap reply.
 pub struct ReplyBmap {
@@ -333,7 +356,7 @@ pub struct ReplyIoctl {
     pub out_iovs: u32,
 }*/
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 // TODO need more detail
 /// poll reply
 pub struct ReplyPoll {
@@ -344,12 +367,12 @@ impl From<ReplyPoll> for fuse_poll_out {
     fn from(poll: ReplyPoll) -> Self {
         fuse_poll_out {
             revents: poll.revents,
-            padding: 0,
+            _padding: 0,
         }
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// directory entry with attribute
 pub struct DirectoryEntryPlus {
     /// the entry inode.
@@ -375,7 +398,17 @@ pub struct ReplyDirectoryPlus<S: Stream<Item = Result<DirectoryEntryPlus>>> {
     pub entries: S,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+impl<S: Stream<Item = Result<DirectoryEntryPlus>> + std::fmt::Debug> std::fmt::Debug
+    for ReplyDirectoryPlus<S>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReplyDirectoryPlus")
+            .field("entries", &self.entries)
+            .finish()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// the lseek reply.
 pub struct ReplyLSeek {
     /// lseek offset.
@@ -390,7 +423,7 @@ impl From<ReplyLSeek> for fuse_lseek_out {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 /// copy_file_range reply.
 pub struct ReplyCopyFileRange {
     /// data copied size.
@@ -401,7 +434,7 @@ impl From<ReplyCopyFileRange> for fuse_write_out {
     fn from(copied: ReplyCopyFileRange) -> Self {
         fuse_write_out {
             size: copied.copied as u32,
-            padding: 0,
+            _padding: 0,
         }
     }
 }

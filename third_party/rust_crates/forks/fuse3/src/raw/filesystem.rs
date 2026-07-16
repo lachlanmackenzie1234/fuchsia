@@ -1,8 +1,7 @@
 use std::ffi::OsStr;
 
-use async_trait::async_trait;
 use bytes::Bytes;
-use futures_util::stream::Stream;
+use futures_util::stream::{Empty, Stream};
 
 use crate::notify::Notify;
 use crate::raw::reply::*;
@@ -10,22 +9,11 @@ use crate::raw::request::Request;
 use crate::{Inode, Result, SetAttr};
 
 #[allow(unused_variables)]
-#[async_trait]
+#[trait_make::make(Send)]
 /// Inode based filesystem trait.
-///
-/// # Notes:
-///
-/// this trait is defined with async_trait, you can use
-/// [`async_trait`](https://docs.rs/async-trait) to implement it, or just implement it directly.
 pub trait Filesystem {
-    /// dir entry stream given by [`readdir`][Filesystem::readdir].
-    type DirEntryStream: Stream<Item = Result<DirectoryEntry>> + Send;
-
-    /// dir entry plus stream given by [`readdirplus`][Filesystem::readdirplus].
-    type DirEntryPlusStream: Stream<Item = Result<DirectoryEntryPlus>> + Send;
-
     /// initialize filesystem. Called before any other filesystem method.
-    async fn init(&self, req: Request) -> Result<()>;
+    async fn init(&self, req: Request) -> Result<ReplyInit>;
 
     /// clean up filesystem. Called on filesystem exit which is fuseblk, in normal fuse filesystem,
     /// kernel may call forget for root. There is some discuss for this
@@ -184,7 +172,10 @@ pub trait Filesystem {
     /// exception to this is when the file has been opened in `direct_io` mode, in which case the
     /// return value of the write system call will reflect the return value of this operation. `fh`
     /// will contain the value set by the open method, or will be undefined if the open method
-    /// didn't set any value.
+    /// didn't set any value. When `write_flags` contains
+    /// [`FUSE_WRITE_CACHE`](crate::raw::flags::FUSE_WRITE_CACHE), means the write operation is a
+    /// delay write.
+    #[allow(clippy::too_many_arguments)]
     async fn write(
         &self,
         req: Request,
@@ -192,6 +183,7 @@ pub trait Filesystem {
         fh: u64,
         offset: u64,
         data: &[u8],
+        write_flags: u32,
         flags: u32,
     ) -> Result<ReplyWrite> {
         Err(libc::ENOSYS.into())
@@ -296,14 +288,14 @@ pub trait Filesystem {
     /// read directory. `offset` is used to track the offset of the directory entries. `fh` will
     /// contain the value set by the [`opendir`][Filesystem::opendir] method, or will be
     /// undefined if the [`opendir`][Filesystem::opendir] method didn't set any value.
-    async fn readdir(
-        &self,
+    async fn readdir<'a>(
+        &'a self,
         req: Request,
         parent: Inode,
         fh: u64,
         offset: i64,
-    ) -> Result<ReplyDirectory<Self::DirEntryStream>> {
-        Err(libc::ENOSYS.into())
+    ) -> Result<ReplyDirectory<impl Stream<Item = Result<DirectoryEntry>> + Send + 'a>> {
+        Err::<ReplyDirectory<Empty<_>>, _>(libc::ENOSYS.into())
     }
 
     /// release an open directory. For every [`opendir`][Filesystem::opendir] call there will
@@ -479,15 +471,16 @@ pub trait Filesystem {
 
     /// read directory entries, but with their attribute, like [`readdir`][Filesystem::readdir]
     /// + [`lookup`][Filesystem::lookup] at the same time.
-    async fn readdirplus(
-        &self,
+    async fn readdirplus<'a>(
+        &'a self,
         req: Request,
         parent: Inode,
         fh: u64,
         offset: u64,
         lock_owner: u64,
-    ) -> Result<ReplyDirectoryPlus<Self::DirEntryPlusStream>> {
-        Err(libc::ENOSYS.into())
+    ) -> Result<ReplyDirectoryPlus<impl Stream<Item = Result<DirectoryEntryPlus>> + Send + 'a>>
+    {
+        Err::<ReplyDirectoryPlus<Empty<_>>, _>(libc::ENOSYS.into())
     }
 
     /// rename a file or directory with flags.

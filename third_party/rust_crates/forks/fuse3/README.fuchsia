@@ -13,8 +13,9 @@ This will only be host-side and likely only used by the local storage team.
 
 * What differs from upstream? Include a changelog if feasible.
 
-Cargo.toml has been modified to depend on nix 0.29 instead of 0.26.0 which has some bugs.
-(Fuchsia uses nix 0.29.0 at time of writing)
+Updated to upstream 0.9.0.
+Cargo.toml has been modified to depend on nix 0.29 instead of 0.31 (Fuchsia uses nix 0.29.0 at time of writing).
+src/raw/connection/tokio.rs was modified to use AsRawFd with nix::fcntl::fcntl for compatibility with nix 0.29.
 
 examples/ has been removed as it isn't required and contained unsafe codeblocks. Removing was easier than reviewing.
 

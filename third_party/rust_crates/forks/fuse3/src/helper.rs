@@ -1,6 +1,5 @@
 use std::mem;
 
-use bincode::{DefaultOptions, Options};
 use nix::sys::stat::mode_t;
 
 use crate::FileType;
@@ -27,35 +26,32 @@ pub fn get_first_null_position(data: impl AsRef<[u8]>) -> Option<usize> {
 #[cfg(target_os = "linux")]
 #[allow(trivial_numeric_casts)]
 /// returns the mode for a given file kind and permission
-pub fn mode_from_kind_and_perm(kind: FileType, perm: u16) -> u32 {
-    mode_t::from(kind) | perm as mode_t
+pub const fn mode_from_kind_and_perm(kind: FileType, perm: u16) -> u32 {
+    kind.const_into_mode_t() | perm as mode_t
 }
 
 // Some platforms like Linux x86_64 have mode_t = u32, and lint warns of a trivial_numeric_casts.
 // But others like macOS x86_64 have mode_t = u16, requiring a typecast. So, just silence lint.
-#[cfg(all(not(target_os = "linux"), target_os = "freebsd"))]
+#[cfg(all(
+    not(target_os = "linux"),
+    any(target_os = "freebsd", target_os = "macos")
+))]
 #[allow(trivial_numeric_casts)]
 /// returns the mode for a given file kind and permission
-pub fn mode_from_kind_and_perm(kind: FileType, perm: u16) -> u32 {
-    (mode_t::from(kind) | perm as mode_t) as u32
+pub const fn mode_from_kind_and_perm(kind: FileType, perm: u16) -> u32 {
+    (kind.const_into_mode_t() | perm as mode_t) as u32
 }
 
 /// returns the permission for a given file kind and mode
-pub fn perm_from_mode_and_kind(kind: FileType, mode: mode_t) -> u16 {
-    (mode ^ mode_t::from(kind)) as u16
+#[allow(clippy::unnecessary_cast)] // Not unnecessary on all platforms.
+pub const fn perm_from_mode_and_kind(kind: FileType, mode: mode_t) -> u16 {
+    (mode ^ kind.const_into_mode_t()) as u16
 }
 
 #[inline]
-pub fn get_padding_size(dir_entry_size: usize) -> usize {
+pub const fn get_padding_size(dir_entry_size: usize) -> usize {
     // 64bit align
     let entry_size = (dir_entry_size + mem::size_of::<u64>() - 1) & !(mem::size_of::<u64>() - 1);
 
     entry_size - dir_entry_size
-}
-
-pub fn get_bincode_config() -> impl Options {
-    DefaultOptions::new()
-        .with_little_endian()
-        .allow_trailing_bytes()
-        .with_fixint_encoding()
 }

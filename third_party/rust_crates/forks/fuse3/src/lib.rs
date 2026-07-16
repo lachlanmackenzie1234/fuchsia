@@ -9,29 +9,43 @@
 //! # Features:
 //!
 //! - `file-lock`: enable POSIX file lock feature.
-//! - `async-std-runtime`: use [async_std](https://docs.rs/async-std) runtime.
-//! - `tokio-runtime`: use [tokio](https://docs.rs/tokio) runtime.
+//! - `async-io-runtime`: use [async_io](https://docs.rs/async-io) and
+//!   [async-global-executor](https://docs.rs/async-global-executor) to drive async io and task.
+//! - `tokio-runtime`: use [tokio](https://docs.rs/tokio) runtime to drive async io and task.
 //! - `unprivileged`: allow mount filesystem without root permission by using `fusermount3`.
 //!
 //! # Notes:
 //!
-//! You must enable `async-std-runtime` or `tokio-runtime` feature.
+//! You must enable `async-io-runtime` or `tokio-runtime` feature.
 
-use std::{
-    convert::TryInto,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-/// re-export [`async_trait`][async_trait::async_trait].
-pub use async_trait::async_trait;
+#[cfg(target_os = "macos")]
+use std::io::ErrorKind;
+#[cfg(any(
+    all(target_os = "linux", feature = "unprivileged"),
+    target_os = "macos"
+))]
+use std::io::{self};
+#[cfg(target_os = "macos")]
+use std::path::Path;
+#[cfg(any(
+    all(target_os = "linux", feature = "unprivileged"),
+    target_os = "macos"
+))]
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 pub use errno::Errno;
 pub use helper::{mode_from_kind_and_perm, perm_from_mode_and_kind};
 pub use mount_options::MountOptions;
 use nix::sys::stat::mode_t;
 use raw::abi::{
-    fuse_setattr_in, FATTR_ATIME, FATTR_ATIME_NOW, FATTR_CTIME, FATTR_GID, FATTR_LOCKOWNER,
-    FATTR_MODE, FATTR_MTIME, FATTR_MTIME_NOW, FATTR_SIZE, FATTR_UID,
+    FATTR_ATIME, FATTR_ATIME_NOW, FATTR_CTIME, FATTR_GID, FATTR_LOCKOWNER, FATTR_MODE, FATTR_MTIME,
+    FATTR_MTIME_NOW, FATTR_SIZE, FATTR_UID, fuse_setattr_in,
 };
+#[cfg(target_os = "macos")]
+use raw::abi::{FATTR_BKUPTIME, FATTR_CHGTIME, FATTR_CRTIME, FATTR_FLAGS};
 
 mod errno;
 mod helper;
@@ -47,7 +61,7 @@ pub type Inode = u64;
 pub type Result<T> = std::result::Result<T, Errno>;
 
 /// File types
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum FileType {
     /// Named pipe (S_IFIFO)
     NamedPipe,
@@ -65,9 +79,10 @@ pub enum FileType {
     Socket,
 }
 
-impl From<FileType> for mode_t {
-    fn from(kind: FileType) -> Self {
-        match kind {
+impl FileType {
+    /// convert [`FileType`] into [`mode_t`]
+    pub const fn const_into_mode_t(self) -> mode_t {
+        match self {
             FileType::NamedPipe => libc::S_IFIFO,
             FileType::CharDevice => libc::S_IFCHR,
             FileType::BlockDevice => libc::S_IFBLK,
@@ -76,6 +91,12 @@ impl From<FileType> for mode_t {
             FileType::Symlink => libc::S_IFLNK,
             FileType::Socket => libc::S_IFSOCK,
         }
+    }
+}
+
+impl From<FileType> for mode_t {
+    fn from(kind: FileType) -> Self {
+        kind.const_into_mode_t()
     }
 }
 
@@ -160,6 +181,26 @@ impl From<&fuse_setattr_in> for SetAttr {
             set_attr.ctime = fsai2ts!(setattr_in.ctime, setattr_in.ctimensec);
         }
 
+        #[cfg(target_os = "macos")]
+        if setattr_in.valid & FATTR_CRTIME > 0 {
+            set_attr.ctime = fsai2ts!(setattr_in.crtime, setattr_in.crtimensec);
+        }
+
+        #[cfg(target_os = "macos")]
+        if setattr_in.valid & FATTR_CHGTIME > 0 {
+            set_attr.ctime = fsai2ts!(setattr_in.chgtime, setattr_in.chgtimensec);
+        }
+
+        #[cfg(target_os = "macos")]
+        if setattr_in.valid & FATTR_BKUPTIME > 0 {
+            set_attr.ctime = fsai2ts!(setattr_in.bkuptime, setattr_in.bkuptimensec);
+        }
+
+        #[cfg(target_os = "macos")]
+        if setattr_in.valid & FATTR_FLAGS > 0 {
+            set_attr.flags = Some(setattr_in.flags);
+        }
+
         set_attr
     }
 }
@@ -169,7 +210,7 @@ impl From<&fuse_setattr_in> for SetAttr {
 /// Nearly the same as a `libc::timespec`, except for the width of the nsec
 /// field.
 // Could implement From for Duration, and/or libc::timespec, if desired
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Timestamp {
     pub sec: i64,
     pub nsec: u32,
@@ -193,5 +234,25 @@ impl From<SystemTime> for Timestamp {
             sec: d.as_secs().try_into().unwrap_or(i64::MAX),
             nsec: d.subsec_nanos(),
         }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "unprivileged"))]
+fn find_fusermount3() -> io::Result<PathBuf> {
+    which::which("fusermount3")
+        .map_err(|err| io::Error::other(format!("find fusermount3 binary failed {err:?}")))
+}
+
+#[cfg(target_os = "macos")]
+fn find_macfuse_mount() -> io::Result<PathBuf> {
+    if Path::new("/Library/Filesystems/macfuse.fs/Contents/Resources/mount_macfuse").exists() {
+        Ok(PathBuf::from(
+            "/Library/Filesystems/macfuse.fs/Contents/Resources/mount_macfuse",
+        ))
+    } else {
+        Err(io::Error::new(
+            ErrorKind::NotFound,
+            "macfuse mount binary not found, Please install macfuse first.",
+        ))
     }
 }

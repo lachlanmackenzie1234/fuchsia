@@ -287,6 +287,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-notify"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63273b0e33b8941a02eabc1684f0230d3011ea45117351beb94c69253065a194"
+dependencies = [
+ "event-listener",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "async-ringbuf"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1128,16 +1139,6 @@ dependencies = [
  "getrandom 0.4.3",
  "hybrid-array",
  "rand_core 0.10.1",
-]
-
-[[package]]
-name = "cstr"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68523903c8ae5aacfa32a0d9ae60cadeb764e1da14ee0d26b1f3089f13a54636"
-dependencies = [
- "proc-macro2",
- "quote",
 ]
 
 [[package]]
@@ -2063,7 +2064,7 @@ dependencies = [
  "vt100",
  "vte",
  "walkdir",
- "which 8.0.4",
+ "which",
  "winnow 0.7.13",
  "x509-cert 0.2.5",
  "x509-cert 0.3.0",
@@ -2077,21 +2078,19 @@ dependencies = [
 
 [[package]]
 name = "fuse3"
-version = "0.6.1"
+version = "0.9.0"
 dependencies = [
- "async-trait",
- "bincode",
+ "async-notify",
  "bytes",
- "cstr",
- "futures-channel",
  "futures-util",
  "libc",
  "nix 0.29.0",
- "serde",
  "slab",
  "tokio",
  "tracing",
- "which 4.0.2",
+ "trait-make",
+ "which",
+ "zerocopy",
 ]
 
 [[package]]
@@ -2121,9 +2120,9 @@ dependencies = [
 
 [[package]]
 name = "futures-core"
-version = "0.3.31"
+version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05f29059c0c2090612e8d742178b0580d2dc940c837851ad723096f87af6663e"
+checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
 
 [[package]]
 name = "futures-executor"
@@ -5607,6 +5606,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "trait-make"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
 name = "trust-dns-proto"
 version = "0.22.0"
 dependencies = [
@@ -5982,16 +5990,6 @@ version = "1.0.4+wasi-0.2.12"
 [[package]]
 name = "wasm-bindgen"
 version = "0.2.125"
-
-[[package]]
-name = "which"
-version = "4.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87c14ef7e1b8b8ecfc75d5eca37949410046e66f15d185c01d70824f1f8111ef"
-dependencies = [
- "libc",
- "thiserror 1.0.69",
-]
 
 [[package]]
 name = "which"

@@ -1,17 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::fmt::{self, Debug, Formatter};
-use std::iter::FromIterator;
 use std::path::PathBuf;
-use std::vec::IntoIter;
 
-#[cfg(all(not(feature = "tokio-runtime"), feature = "async-std-runtime"))]
-use async_std::sync::RwLock;
-use async_trait::async_trait;
+#[cfg(all(not(feature = "tokio-runtime"), feature = "async-io-runtime"))]
+use async_lock::RwLock;
 use bytes::Bytes;
-use futures_util::stream::{self, Iter, Stream, StreamExt};
+use futures_util::stream::{self, Stream, StreamExt};
 use slab::Slab;
-#[cfg(all(not(feature = "async-std-runtime"), feature = "tokio-runtime"))]
+#[cfg(all(not(feature = "async-io-runtime"), feature = "tokio-runtime"))]
 use tokio::sync::RwLock;
 
 use super::inode_generator::InodeGenerator;
@@ -60,14 +57,14 @@ impl InodeNameManager {
     }
 
     fn remove_name(&mut self, name: &Name) {
-        if let Some(inode) = self.name_to_inode.remove(name) {
-            if let Some(names) = self.inode_to_names.get_mut(&inode) {
-                names.remove(name);
+        if let Some(inode) = self.name_to_inode.remove(name)
+            && let Some(names) = self.inode_to_names.get_mut(&inode)
+        {
+            names.remove(name);
 
-                if names.is_empty() {
-                    self.inode_to_names.remove(&inode);
-                    self.inode_generator.release_inode(inode);
-                }
+            if names.is_empty() {
+                self.inode_to_names.remove(&inode);
+                self.inode_generator.release_inode(inode);
             }
         }
     }
@@ -83,7 +80,7 @@ impl InodeNameManager {
     }
 
     fn contains_name(&self, name: &Name) -> bool {
-        self.name_to_inode.get(name).is_some()
+        self.name_to_inode.contains_key(name)
     }
 
     fn insert_name(&mut self, name: Name) -> Inode {
@@ -140,20 +137,20 @@ impl<FS> InodePathBridge<FS> {
 
 impl<FS> Debug for InodePathBridge<FS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InodePathBridge").finish()
+        f.debug_struct("InodePathBridge").finish_non_exhaustive()
     }
 }
 
-#[async_trait]
 impl<FS> Filesystem for InodePathBridge<FS>
 where
-    FS: PathFilesystem + Send + Sync,
+    FS: PathFilesystem + Send + Sync + 'static,
 {
-    type DirEntryStream = Iter<IntoIter<Result<DirectoryEntry>>>;
-    type DirEntryPlusStream = Iter<IntoIter<Result<DirectoryEntryPlus>>>;
+    async fn init(&self, req: Request) -> Result<ReplyInit> {
+        let reply_init = self.path_filesystem.init(req).await?;
 
-    async fn init(&self, req: Request) -> Result<()> {
-        self.path_filesystem.init(req).await
+        Ok(ReplyInit {
+            max_write: reply_init.max_write,
+        })
     }
 
     async fn destroy(&self, req: Request) {
@@ -574,6 +571,7 @@ where
         fh: u64,
         offset: u64,
         data: &[u8],
+        write_flags: u32,
         flags: u32,
     ) -> Result<ReplyWrite> {
         let path = self
@@ -589,6 +587,7 @@ where
                 fh,
                 offset,
                 data,
+                write_flags,
                 flags,
             )
             .await
@@ -729,7 +728,7 @@ where
         parent: u64,
         fh: u64,
         offset: i64,
-    ) -> Result<ReplyDirectory<Self::DirEntryStream>> {
+    ) -> Result<ReplyDirectory<impl Stream<Item = Result<DirectoryEntry>> + Send + '_>> {
         let mut inode_name_manager = self.inode_name_manager.write().await;
         let parent_path = inode_name_manager
             .get_absolute_path(parent)
@@ -1039,7 +1038,8 @@ where
         fh: u64,
         offset: u64,
         lock_owner: u64,
-    ) -> Result<ReplyDirectoryPlus<Self::DirEntryPlusStream>> {
+    ) -> Result<ReplyDirectoryPlus<impl Stream<Item = Result<DirectoryEntryPlus>> + Send + '_>>
+    {
         let mut inode_name_manager = self.inode_name_manager.write().await;
         let parent_path = inode_name_manager
             .get_absolute_path(parent)

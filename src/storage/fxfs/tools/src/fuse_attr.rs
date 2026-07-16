@@ -21,7 +21,6 @@ pub fn create_attr(
 ) -> FileAttr {
     FileAttr {
         ino: id,
-        generation: 0,
         size,
         blocks: 0,
         atime: SystemTime::UNIX_EPOCH.into(),

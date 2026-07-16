@@ -1,19 +1,19 @@
 use std::io;
 use std::path::Path;
 
+use crate::MountOptions;
 use crate::path::inode_path_bridge::InodePathBridge;
 use crate::path::path_filesystem::PathFilesystem;
 use crate::raw;
-use crate::MountOptions;
 
-#[cfg(any(feature = "async-std-runtime", feature = "tokio-runtime"))]
+#[cfg(any(feature = "async-io-runtime", feature = "tokio-runtime"))]
 #[derive(Debug)]
 /// fuse filesystem session, path based.
 pub struct Session {
     mount_options: MountOptions,
 }
 
-#[cfg(any(feature = "async-std-runtime", feature = "tokio-runtime"))]
+#[cfg(any(feature = "async-io-runtime", feature = "tokio-runtime"))]
 impl Session {
     /// new a fuse filesystem session.
     pub fn new(mount_options: MountOptions) -> Self {
@@ -21,8 +21,7 @@ impl Session {
     }
 
     #[cfg(feature = "unprivileged")]
-    /// mount the filesystem without root permission. This function will block until the filesystem
-    /// is unmounted.
+    /// mount the filesystem without root permission.
     pub async fn mount_with_unprivileged<P, FS>(
         self,
         fs: FS,
@@ -39,6 +38,7 @@ impl Session {
             .await
     }
 
+    /// mount the filesystem with root permission.
     pub async fn mount<P, FS>(self, fs: FS, mount_path: P) -> io::Result<raw::MountHandle>
     where
         P: AsRef<Path>,

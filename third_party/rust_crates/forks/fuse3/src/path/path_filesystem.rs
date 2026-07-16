@@ -1,37 +1,19 @@
 use std::ffi::OsStr;
 
-use async_trait::async_trait;
 use bytes::Bytes;
-use futures_util::stream::Stream;
+use futures_util::stream::{Empty, Stream};
 
-#[cfg(feature = "file-lock")]
-use super::reply::ReplyLock;
-use super::reply::{
-    DirectoryEntry, DirectoryEntryPlus, ReplyAttr, ReplyBmap, ReplyCopyFileRange, ReplyCreated,
-    ReplyData, ReplyDirectory, ReplyDirectoryPlus, ReplyEntry, ReplyLSeek, ReplyOpen, ReplyPoll,
-    ReplyStatFs, ReplyWrite, ReplyXAttr,
-};
 use super::Request;
+use super::reply::*;
 use crate::notify::Notify;
 use crate::{Result, SetAttr};
 
 #[allow(unused_variables)]
-#[async_trait]
+#[trait_make::make(Send)]
 /// Path based filesystem trait.
-///
-/// # Notes:
-///
-/// this trait is defined with async_trait, you can use
-/// [`async_trait`](https://docs.rs/async-trait) to implement it, or just implement it directly.
 pub trait PathFilesystem {
-    /// dir entry stream given by [`readdir`][PathFilesystem::readdir].
-    type DirEntryStream: Stream<Item = Result<DirectoryEntry>> + Send;
-
-    /// dir entry plus stream given by [`readdirplus`][PathFilesystem::readdirplus].
-    type DirEntryPlusStream: Stream<Item = Result<DirectoryEntryPlus>> + Send;
-
     /// initialize filesystem. Called before any other filesystem method.
-    async fn init(&self, req: Request) -> Result<()>;
+    async fn init(&self, req: Request) -> Result<ReplyInit>;
 
     /// clean up filesystem. Called on filesystem exit which is fuseblk, in normal fuse filesystem,
     /// kernel may call forget for root. There is some discuss for this
@@ -194,7 +176,10 @@ pub trait PathFilesystem {
     /// exception to this is when the file has been opened in `direct_io` mode, in which case the
     /// return value of the write system call will reflect the return value of this operation. `fh`
     /// will contain the value set by the open method, or will be undefined if the open method
-    /// didn't set any value. when `path` is None, it means the path may be deleted.
+    /// didn't set any value. When `path` is None, it means the path may be deleted. When
+    /// `write_flags` contains [`FUSE_WRITE_CACHE`](crate::raw::flags::FUSE_WRITE_CACHE), means the
+    /// write operation is a delay write.
+    #[allow(clippy::too_many_arguments)]
     async fn write(
         &self,
         req: Request,
@@ -202,6 +187,7 @@ pub trait PathFilesystem {
         fh: u64,
         offset: u64,
         data: &[u8],
+        write_flags: u32,
         flags: u32,
     ) -> Result<ReplyWrite> {
         Err(libc::ENOSYS.into())
@@ -317,14 +303,14 @@ pub trait PathFilesystem {
     /// read directory. `offset` is used to track the offset of the directory entries. `fh` will
     /// contain the value set by the [`opendir`][PathFilesystem::opendir] method, or will be
     /// undefined if the [`opendir`][PathFilesystem::opendir] method didn't set any value.
-    async fn readdir(
-        &self,
+    async fn readdir<'a>(
+        &'a self,
         req: Request,
-        path: &OsStr,
+        path: &'a OsStr,
         fh: u64,
         offset: i64,
-    ) -> Result<ReplyDirectory<Self::DirEntryStream>> {
-        Err(libc::ENOSYS.into())
+    ) -> Result<ReplyDirectory<impl Stream<Item = Result<DirectoryEntry>> + Send + 'a>> {
+        Err::<ReplyDirectory<Empty<_>>, _>(libc::ENOSYS.into())
     }
 
     /// release an open directory. For every [`opendir`][PathFilesystem::opendir] call there will
@@ -500,15 +486,16 @@ pub trait PathFilesystem {
 
     /// read directory entries, but with their attribute, like [`readdir`][PathFilesystem::readdir]
     /// + [`lookup`][PathFilesystem::lookup] at the same time.
-    async fn readdirplus(
-        &self,
+    async fn readdirplus<'a>(
+        &'a self,
         req: Request,
-        parent: &OsStr,
+        parent: &'a OsStr,
         fh: u64,
         offset: u64,
         lock_owner: u64,
-    ) -> Result<ReplyDirectoryPlus<Self::DirEntryPlusStream>> {
-        Err(libc::ENOSYS.into())
+    ) -> Result<ReplyDirectoryPlus<impl Stream<Item = Result<DirectoryEntryPlus>> + Send + 'a>>
+    {
+        Err::<ReplyDirectoryPlus<Empty<_>>, _>(libc::ENOSYS.into())
     }
 
     /// rename a file or directory with flags.
