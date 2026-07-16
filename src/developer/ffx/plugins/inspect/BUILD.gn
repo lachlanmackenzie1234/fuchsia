@@ -67,7 +67,7 @@ rustc_library("ffx_inspect") {
   ]
 
   test_deps = [
-    "//src/developer/ffx/lib/testing:lib_fdomain",
+    "//src/developer/ffx/lib/testing:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",

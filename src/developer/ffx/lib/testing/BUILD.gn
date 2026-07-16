@@ -6,50 +6,25 @@ import("//build/rust/rustc_library.gni")
 
 assert(is_host, "testing_lib is for use with the host toolchain only")
 
-template("testing_lib") {
-  _with_unit_tests = true
-  if (defined(invoker.with_unit_tests)) {
-    _with_unit_tests = invoker.with_unit_tests
-  }
-  rustc_library(target_name) {
-    name = "testing_lib"
-    version = "0.1.0"
-    edition = "2024"
-    with_unit_tests = _with_unit_tests
-
-    visibility = [
-      ":*",
-      "//src/developer/ffx/plugins/component/*",
-      "//src/developer/ffx/plugins/inspect/*",
-      "//src/developer/ffx/plugins/log/*",
-      "//src/developer/ffx/plugins/target/*",
-      "//src/developer/ffx/plugins/test/*",
-    ]
-
-    sources = [
-      "src/fake_rcs.rs",
-      "src/lib.rs",
-    ]
-    deps = invoker.deps
-
-    features = []
-    if (defined(invoker.features)) {
-      features += invoker.features
-    }
-  }
-}
-
-testing_lib("lib") {
+rustc_library("lib") {
+  name = "testing_lib"
+  version = "0.1.0"
+  edition = "2024"
   with_unit_tests = true
-  deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_flex",
-    "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust_flex",
-    "//src/developer/ffx/lib/rcs:lib",
-  ]
-}
 
-testing_lib("lib_fdomain") {
-  with_unit_tests = false
+  visibility = [
+    ":*",
+    "//src/developer/ffx/plugins/component/*",
+    "//src/developer/ffx/plugins/inspect/*",
+    "//src/developer/ffx/plugins/log/*",
+    "//src/developer/ffx/plugins/target/*",
+    "//src/developer/ffx/plugins/test/*",
+  ]
+
+  sources = [
+    "src/fake_rcs.rs",
+    "src/lib.rs",
+  ]
   deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain_flex",
@@ -60,6 +35,7 @@ testing_lib("lib_fdomain") {
     "//src/lib/fdomain/client",
     "//src/lib/fuchsia-async",
   ]
+
   features = [ "fdomain" ]
 }
 
@@ -74,7 +50,6 @@ group("testing") {
 
   deps = [
     ":lib",
-    ":lib_fdomain",
     ":tests",
   ]
 }

@@ -36,7 +36,7 @@ ffx_plugin("ffx_component_debug") {
   test_deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
-    "//src/developer/ffx/lib/testing:lib_fdomain",
+    "//src/developer/ffx/lib/testing:lib",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",

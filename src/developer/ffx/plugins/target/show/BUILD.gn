@@ -42,7 +42,7 @@ ffx_plugin("ffx_target_show") {
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust_fdomain",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/connectivity/lib/net-declare",
-    "//src/developer/ffx/lib/testing:lib_fdomain",
+    "//src/developer/ffx/lib/testing:lib",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:serde_json",

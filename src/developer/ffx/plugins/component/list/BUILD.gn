@@ -21,7 +21,7 @@ ffx_plugin("ffx_component_list") {
     "//third_party/rust_crates:serde",
   ]
   test_deps = [
-    "//src/developer/ffx/lib/testing:lib_fdomain",
+    "//src/developer/ffx/lib/testing:lib",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//src/sys/lib/moniker",
