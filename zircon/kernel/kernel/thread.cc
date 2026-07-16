@@ -1342,18 +1342,19 @@ void Thread::Current::DoSuspend() {
   }
 }
 
-void Thread::SignalSampleStack(Timer* timer, zx_time_t, void* per_cpu_state) {
+void Thread::SignalSampleStack(Timer* timer, zx_time_t, void* session_id) {
   // Regardless of if the thread is marked to be sampled or not we'll set the sample_stack thread
   // signal. This reduces the time we spend in the interrupt context and means we don't need to grab
   // a lock here. When we handle the thread signal in ProcessPendingSignals we'll check if the
   // thread actually needs to be sampled.
   Thread* current_thread = Thread::Current::Get();
+  current_thread->sampling_session_.store(reinterpret_cast<uint64_t>(session_id));
   current_thread->canary_.Assert();
   current_thread->set_signals(THREAD_SIGNAL_SAMPLE_STACK);
 
   // We set the timer here as opposed to when we handle the THREAD_SIGNAL_SAMPLE_STACK as a thread
   // could be suspended or killed before the sample signal is handled.
-  reinterpret_cast<sampler::internal::PerCpuState*>(per_cpu_state)->SetTimer();
+  sampler::gThreadSampler.RescheduleMarking();
 }
 
 void Thread::Current::DoSampleStack(GeneralRegsSource source, void* gregs) {
@@ -1373,8 +1374,9 @@ void Thread::Current::DoSampleStack(GeneralRegsSource source, void* gregs) {
     // If a thread was marked to be sampled but was first suspended, it may now be long after the
     // sampling session has ended. sampler::SampleThread grabs the global state, checks if it's
     // still valid.
-    auto sampler_result = SamplerDispatcher::SampleThread(current_thread->pid(),
-                                                          current_thread->tid(), source, gregs);
+    auto sampler_result =
+        SamplerDispatcher::SampleThread(current_thread->pid(), current_thread->tid(), source, gregs,
+                                        current_thread->sampling_session_.load());
     if (sampler_result.is_error()) {
       kcounter_add(thread_sampling_failed, 1);
     }

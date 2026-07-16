@@ -36,8 +36,8 @@ zx::result<> SamplerDispatcher::Stop() { return sampler::gThreadSampler.Stop(); 
 zx::result<> SamplerDispatcher::Start() { return sampler::gThreadSampler.Start(); }
 
 zx::result<> SamplerDispatcher::SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
-                                             const void* gregs) {
-  return sampler::gThreadSampler.SampleThread(pid, tid, source, gregs);
+                                             const void* gregs, uint64_t session_id) {
+  return sampler::gThreadSampler.SampleThread(pid, tid, source, gregs, session_id);
 }
 
 ktl::pair<zx_status_t, size_t> SamplerDispatcher::ReadUser(user_out_ptr<void> ptr, size_t len) {

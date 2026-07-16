@@ -24,6 +24,9 @@
 // ZX_ERR_ALREADY_EXISTS until the existing sampler is released.
 namespace sampler {
 sampler::ThreadSampler gThreadSampler{};
+
+void sampler_percpu_init() { gThreadSampler.ScheduleMarking(); }
+void sampler_percpu_shutdown() { gThreadSampler.CancelMarking(); }
 }  // namespace sampler
 
 zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
@@ -34,6 +37,11 @@ zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
   if (state != SamplingState::Unallocated) {
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
+
+  if (config.period == 0) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  sample_period_ = config.period;
 
   const size_t num_cpus = percpu::processor_count();
   if (!per_cpu_state_) {
@@ -95,20 +103,9 @@ zx::result<> sampler::ThreadSampler::Start() {
   }
 
   DEBUG_ASSERT(!per_cpu_state_.empty());
-  for (sampler::internal::PerCpuState& state : per_cpu_state_) {
-    state.EnableWrites();
-  }
 
   SetState(SamplingState::Running);
-  mp_sync_exec(
-      mp_ipi_target::ALL, 0,
-      [](void* sampler) {
-        ktl::optional<PerCpuStateRef> ref =
-            reinterpret_cast<ThreadSampler*>(sampler)->GetPerCpuState(arch_curr_cpu_num());
-        DEBUG_ASSERT(ref.has_value());
-        ref->Get().SetTimer();
-      },
-      this);
+  mp_sync_exec(mp_ipi_target::ALL, 0, [](void*) { gThreadSampler.ScheduleMarking(); }, nullptr);
   return zx::ok();
 }
 
@@ -125,22 +122,13 @@ void sampler::ThreadSampler::StopLocked() {
   // We start by disabling new writes, timers, and buffer references. Then we need to wait for any
   // that are in flight to finish.
   SetState(SamplingState::Stopping);
-  for (sampler::internal::PerCpuState& state : per_cpu_state_) {
-    state.DisableWrites();
-  }
 
+  session_id_.fetch_add(1);
   // We could be racing with the timer callback here. If the timer callback is currently executing,
   // we could end up in a state where the timer is canceled, but we don't reset the kPendingTimer
   // bits. As the timer callback occurs with interrupts disabled, we cancel the timers on the CPUs
   // they trigger to serialize the cancelation with a potential callback.
-  mp_sync_exec(
-      mp_ipi_target::ALL, 0,
-      [](void* sampler) {
-        reinterpret_cast<ThreadSampler*>(sampler)
-            ->per_cpu_state_[arch_curr_cpu_num()]
-            .CancelTimer();
-      },
-      this);
+  mp_sync_exec(mp_ipi_target::ALL, 0, [](void*) { gThreadSampler.CancelMarking(); }, nullptr);
 
   // Some timers may not have not been able to be canceled, so we need to wait for any samples that
   // have already started to finish.
@@ -149,35 +137,26 @@ void sampler::ThreadSampler::StopLocked() {
   zx_instant_mono_t next_warn_time = zx_time_add_duration(current_mono_time(), warn_duration);
   int64_t warn_events = 0;
   constexpr zx_duration_t max_sleep_duration = ZX_SEC(1);
-  for (const sampler::internal::PerCpuState& i : per_cpu_state_) {
-    bool pending_writes = (state_.load(ktl::memory_order_acquire) & kBufferRefCountMask) != 0;
-    while (i.PendingTimer() || pending_writes) {
-      // Warn if we have spend an 'unreasonable' amount of time waiting.
-      if (current_mono_time() > next_warn_time) {
-        warn_events++;
-        printf("WARNING: Waited more than %ld seconds for sampling to finish\n",
-               (warn_events * warn_duration) / ZX_SEC(1));
-        next_warn_time = zx_time_add_duration(next_warn_time, warn_duration);
-      }
-      Thread::Current::SleepRelative(sleep_duration);
-      // Scale up the sleep duration to balance being initially responsive and not consuming
-      // excessive CPU.
-      sleep_duration = ktl::min(sleep_duration * 2, max_sleep_duration);
+  const uint64_t pending_operations_mask = kBufferRefCountMask | kMarkingsScheduledMask;
+  while (state_.load(ktl::memory_order_acquire) & pending_operations_mask) {
+    // Warn if we have spend an 'unreasonable' amount of time waiting.
+    if (current_mono_time() > next_warn_time) {
+      warn_events++;
+      printf("WARNING: Waited more than %ld seconds for sampling to finish\n",
+             (warn_events * warn_duration) / ZX_SEC(1));
+      next_warn_time = zx_time_add_duration(next_warn_time, warn_duration);
     }
+    Thread::Current::SleepRelative(sleep_duration);
+    // Scale up the sleep duration to balance being initially responsive and not consuming
+    // excessive CPU.
+    sleep_duration = ktl::min(sleep_duration * 2, max_sleep_duration);
   }
 
-  // At this point, there are no longer pending writes. There may still be threads:
+  // At this point, there are no longer pending writes or marks. There may still be threads that
+  // have been marked to be sampled, but have not yet attempted a sample.
   //
-  // 1) signaled to be sampled but haven't reached ProcessPendingSignals yet, or
-  // 2) are mid taking a sample but haven't yet reserved a PendingWrite
-  //
-  // For 1): Such threads will block on on getting the dispatcher lock which we currently hold to
-  // read the state. When they acquire it, they will see that the session is no longer running and
-  // skip taking a sample.
-  //
-  // For 2): Threads will check the PerCpuState and see that writes are disabled and will skip
-  // writing the sample. While taking a sample, threads have taken an fbl::RefPtr to the sampling
-  // state so that the PerCpuStates are not at risk of being destroyed.
+  // As the sampler has static lifetime, these threads can safely access `state_` and will see that
+  // the session is no longer running, aborting their attempt at a sample.
   SetState(SamplingState::Configured);
 }
 
@@ -208,7 +187,8 @@ zx::result<> sampler::ThreadSampler::Destroy() {
 }
 
 zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
-                                                  GeneralRegsSource source, const void* gregs) {
+                                                  GeneralRegsSource source, const void* gregs,
+                                                  uint64_t session_id) {
   // We are going to attempt a usercopy below which might fault, so interrupts cannot be disabled.
   DEBUG_ASSERT(!arch_ints_disabled());
   // We need to be a little bit careful here because we could be racing with a Stop operation. The
@@ -231,6 +211,12 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
   // If we find that writes are disabled, we throw away our sample as it's no longer safe to write
   // to the buffers.
   if (State() != SamplingState::Running) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+
+  // If the session ids don't match, this sample request is one that got _way_ delayed from a
+  // previous session.
+  if (session_id != session_id_.load()) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -315,10 +301,10 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
     }
   }
   // Up until this point, interrupts are enabled so that we can handle faults when doing usercopies.
-  // However, once we want to write, we aren't using a concurrent writing algorithm. We need to
-  // ensure we don't get interrupted or context switched while we are writing. Otherwise, we could
-  // SetPendingWrite, get context switched out, and then have another thread attempt to
-  // SetPendingWrite which would assert.
+  // However, once we want to write, we need to disable interrupts as underlying buffer writing
+  // algorithm assumes a single writer. We ensure we don't get interrupted or context switched while
+  // we are writing. Otherwise, we could get context switched out, and then have another thread
+  // attempt to write.
   InterruptDisableGuard irqd;
 
   ktl::optional<PerCpuStateRef> token = GetPerCpuState(arch_curr_cpu_num());
@@ -415,4 +401,60 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(const sampler::R
     bytes_read += result.value();
   }
   return {ZX_OK, bytes_read};
+}
+
+void sampler::ThreadSampler::ScheduleMarking() {
+  DEBUG_ASSERT(arch_ints_disabled());
+
+  // sampler_percpu_init and an IPI from  ThreadSampler::Start IPI might race if we attempt to Start
+  // a session while a core is being onlined. We handle this race by clearing our state out first
+  // then resetting it.
+  //
+  // CancelMarking is safe to call even if no timer is set -- it'll only decrement the refcount if a
+  // timer was actually canceled.
+  CancelMarking();
+
+  uint64_t expected = state_.load();
+  bool success;
+  // We only want to schedule a sample while we are running.
+  do {
+    SamplingState s = static_cast<SamplingState>(expected & kStateMask);
+    if (s != SamplingState::Running) {
+      return;
+    }
+    DEBUG_ASSERT((expected & kMarkingsScheduledMask) != kMarkingsScheduledMask);
+    const uint64_t desired = expected + kMarkingsScheduledIncrement;
+    success = state_.compare_exchange_weak(expected, desired, ktl::memory_order_acq_rel,
+                                           ktl::memory_order_relaxed);
+  } while (!success);
+
+  Deadline deadline = Deadline::after_mono(sample_period_);
+  uint64_t session_id = session_id_.load();
+
+  percpu::GetCurrent().sampling_timer.Set(deadline, Thread::SignalSampleStack,
+                                          reinterpret_cast<void*>(session_id));
+}
+
+void sampler::ThreadSampler::RescheduleMarking() {
+  DEBUG_ASSERT(arch_ints_disabled());
+  uint64_t expected = state_.load(ktl::memory_order_acquire);
+  SamplingState s = static_cast<SamplingState>(expected & kStateMask);
+  if (s != SamplingState::Running) {
+    uint64_t result = state_.fetch_sub(kMarkingsScheduledIncrement, ktl::memory_order_acq_rel);
+    DEBUG_ASSERT((result & kMarkingsScheduledMask) != 0);
+    return;
+  }
+  Deadline deadline = Deadline::after_mono(sample_period_);
+  uint64_t session_id = session_id_.load();
+  percpu::GetCurrent().sampling_timer.Set(deadline, Thread::SignalSampleStack,
+                                          reinterpret_cast<void*>(session_id));
+}
+
+void sampler::ThreadSampler::CancelMarking() {
+  DEBUG_ASSERT(arch_ints_disabled());
+  bool cancelled = percpu::GetCurrent().sampling_timer.Cancel();
+  if (cancelled) {
+    uint64_t prev = state_.fetch_sub(kMarkingsScheduledIncrement);
+    DEBUG_ASSERT((prev & kMarkingsScheduledMask) != 0);
+  }
 }

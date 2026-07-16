@@ -40,6 +40,7 @@ source_set("top") {
     "//zircon/kernel/lib/lockup_detector",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/thread-stack",
+    "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/userabi",
     "//zircon/kernel/lib/version",
     "//zircon/kernel/phys:boot-constants",

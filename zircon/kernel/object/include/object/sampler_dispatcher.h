@@ -38,10 +38,10 @@ class SamplerDispatcher : public SoloDispatcher<SamplerDispatcher, ZX_DEFAULT_SA
   //     a) does a large number of user copies, and
   //     b) allocates a large amount of stack space
   //
-  // It should only be called from Thread::Current::ProcessPendingSignals where we can be user that
+  // It should only be called from Thread::Current::ProcessPendingSignals where we can be sure that
   // the user copies are safe to do and where the current stack size should be relatively shallow.
   static zx::result<> SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
-                                   const void* gregs);
+                                   const void* gregs, uint64_t session_id);
 
   // Read out the data contained in the sampler buffers into `ptr` return the number of bytes
   // written. The Sampling state must be Stopped before calling this function.

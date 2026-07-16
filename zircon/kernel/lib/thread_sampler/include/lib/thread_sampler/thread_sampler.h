@@ -151,10 +151,21 @@ class ThreadSampler {
     return ktl::make_optional<PerCpuStateRef>(state_, per_cpu_state_[cpu_num]);
   }
 
+  // Atomically request the current cpu mark a thread for sampling if the session is Running.
+  void ScheduleMarking();
+
+  // Atomically rerequest the current cpu mark a thread for sampling if the session is Running.
+  // Avoids modifying the ref count unless the session has stopped.
+  void RescheduleMarking();
+
+  // Atomically cancel a request that the current cpu mark a thread for sampling.
+  void CancelMarking();
+
   // Given information about a thread and its registers, walk its userstack and write out a sample
   // if sampling is enabled.
   zx::result<> SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
-                            const void* gregs) TA_EXCL(ThreadSamplerLock::Get());
+                            const void* gregs, uint64_t session_id)
+      TA_EXCL(ThreadSamplerLock::Get());
 
  private:
   friend class ::thread_sampler_tests::TestThreadSampler;
@@ -184,23 +195,43 @@ class ThreadSampler {
   //  - Reading
   // state_ is eight bytes composed as:
   //
-  // RR RR RR RR RR BB BB SS
+  // RR RR RR MM MM BB BB SS
   //
   // SS: 8 bits, SamplingState
   // BB: 16 bits, BufferRefCount
-  // RR: 40 bits, Reserved
+  // MM: 16 bits, MarkingsScheduled
+  // RR: 24 bits, Reserved
   static constexpr uint64_t kStateMaskShift = 0;
   static constexpr uint64_t kStateMask = 0xFF << kStateMaskShift;
 
   static constexpr uint64_t kBufferRefCountShift = 8;
-  static constexpr uint64_t kBufferRefCountIncrement = 1ul << kBufferRefCountShift;
+  static constexpr uint64_t kBufferRefCountIncrement = uint64_t{1} << kBufferRefCountShift;
   static constexpr uint64_t kBufferRefCountMask = uint64_t{0xFFFF} << kBufferRefCountShift;
 
+  static constexpr uint64_t kMarkingsScheduledShift = 24;
+  static constexpr uint64_t kMarkingsScheduledIncrement = uint64_t{1} << kMarkingsScheduledShift;
+  static constexpr uint64_t kMarkingsScheduledMask = uint64_t{0xFFFF} << kMarkingsScheduledShift;
+
   ktl::atomic<uint64_t> state_ = 0;
+
+  // The current session. Monotonically increasing.
+  //
+  // Used to prevent scheduled markings from being so delayed that they trigger in
+  // a subsequent session by marking threads which which session_id their next sample is intended
+  // for.
+  RelaxedAtomic<uint64_t> session_id_ = 0;
+
   fbl::Array<sampler::internal::PerCpuState> per_cpu_state_{nullptr};
+  zx_duration_t sample_period_{0};
 };
 
 extern ThreadSampler gThreadSampler;
+
+// Joins the sampling session on the current cpu if one exists.
+void sampler_percpu_init();
+
+// Exit the sampling session on the current cpu if one exists.
+void sampler_percpu_shutdown();
 
 }  // namespace sampler
 

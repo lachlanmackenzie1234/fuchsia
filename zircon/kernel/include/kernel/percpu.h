@@ -107,6 +107,10 @@ struct percpu {
   // functions.  See also gLockupDetectorPerCpuState.
   Timer lockup_detector_timer{ZX_CLOCK_BOOT};
 
+  // When thread sampling is enabled, we use this timer to periodically mark that the active thread
+  // should be sampled when safe to do so.
+  Timer sampling_timer{ZX_CLOCK_MONOTONIC};
+
   // The accumulated memory stall timers for this CPU.
   StallAccumulator memory_stall_accumulator;
 

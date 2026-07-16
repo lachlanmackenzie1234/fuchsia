@@ -22,6 +22,7 @@
 #include <lib/heap.h>
 #include <lib/jtrace/jtrace.h>
 #include <lib/lockup_detector.h>
+#include <lib/thread_sampler/thread_sampler.h>
 #include <lib/userabi/userboot.h>
 #include <platform.h>
 #include <string.h>
@@ -187,6 +188,10 @@ void lk_main(PhysHandoff* handoff) {
   lockup_init();
   lockup_percpu_init();
 
+  // Initialize the thread sampler. This needs to be done after the
+  // platform timer is configured.
+  sampler::sampler_percpu_init();
+
   // initialize the system topology
   dprintf(SPEW, "initializing system topology\n");
   topology_init();
@@ -279,6 +284,7 @@ void lk_secondary_cpu_entry() {
   lk_init_level(LK_INIT_FLAG_SECONDARY_CPUS, LK_INIT_LEVEL_THREADING, LK_INIT_LEVEL_LAST);
 
   lockup_percpu_init();
+  sampler::sampler_percpu_init();
 
   dprintf(SPEW, "entering scheduler on cpu %u\n", cpu);
   thread_secondary_cpu_entry();

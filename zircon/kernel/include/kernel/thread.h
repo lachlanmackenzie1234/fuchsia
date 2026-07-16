@@ -942,7 +942,7 @@ struct Thread : public ChainLockable {
 
   // Request a thread to check if it should sample its backtrace. When the thread returns to
   // usermode, it will take a sample of its userstack if sampling is enabled.
-  static void SignalSampleStack(Timer* t, zx_instant_mono_t, void* per_cpu_state);
+  static void SignalSampleStack(Timer* t, zx_instant_mono_t, void* session_id);
 
   // All of these operations implicitly operate on the current thread.
   struct Current {
@@ -1489,6 +1489,10 @@ struct Thread : public ChainLockable {
   //
   // Must be accessed only by the current thread.
   page_map::Accessor<zx_rseq_t> rseq_accessor_;
+
+  // The sampling session this thread is associated with.
+  static constexpr uint64_t kInvalidSamplingSession = -1;
+  RelaxedAtomic<uint64_t> sampling_session_{kInvalidSamplingSession};
 
   // Used to track threads that have set |migrate_fn_|. This is used to migrate
   // threads before a CPU is taken offline.
