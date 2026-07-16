@@ -21,8 +21,6 @@ import fidl_fuchsia_io as f_io
 import fuchsia_controller_py as fuchsia_controller
 import fuchsia_inspect
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp_using_sl4f
 from honeydew.affordances.connectivity.bluetooth.gap import gap_using_fc
@@ -60,6 +58,7 @@ from honeydew.transports.serial import serial as serial_interface
 from honeydew.transports.serial import serial_using_unix_socket
 from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing import custom_types
+from parameterized import param, parameterized
 
 # pylint: disable=protected-access
 

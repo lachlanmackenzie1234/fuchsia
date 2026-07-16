@@ -14,7 +14,6 @@ import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_controller_py as fc
 from fuchsia_controller_py import Channel, Context, FcTransportStatus
-
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,

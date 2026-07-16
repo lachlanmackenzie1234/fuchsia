@@ -10,7 +10,6 @@ from unittest import mock
 
 import fidl_fuchsia_media_sessions2 as media_session
 import fuchsia_controller_py as fc
-
 from honeydew import affordances_capable, errors
 from honeydew.affordances.media import media, media_using_fc
 from honeydew.affordances.media.errors import MediaError

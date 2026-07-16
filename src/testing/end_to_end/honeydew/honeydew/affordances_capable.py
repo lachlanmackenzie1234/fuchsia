@@ -7,7 +7,6 @@ import abc
 from collections.abc import Awaitable, Callable
 
 import fuchsia_inspect
-
 from honeydew.typing import custom_types
 
 

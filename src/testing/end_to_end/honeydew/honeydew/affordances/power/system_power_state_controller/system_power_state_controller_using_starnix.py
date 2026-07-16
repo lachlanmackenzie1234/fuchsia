@@ -13,7 +13,6 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import fuchsia_inspect
-
 from honeydew import affordances_capable, errors
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller as system_power_state_controller_interface,

@@ -10,7 +10,6 @@ import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_internal as f_wlan_internal
-
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusResponse,

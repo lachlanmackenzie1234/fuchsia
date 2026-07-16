@@ -6,7 +6,6 @@
 from enum import StrEnum
 
 import fidl_fuchsia_bluetooth as f_bt
-
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (

@@ -11,7 +11,6 @@ from datetime import timedelta
 import fidl_fuchsia_test_audio as fta
 from fidl import AsyncSocket
 from fuchsia_controller_py import Socket
-
 from honeydew import errors
 from honeydew.affordances.virtual_audio import audio
 from honeydew.affordances.virtual_audio import errors as virtual_audio_errors

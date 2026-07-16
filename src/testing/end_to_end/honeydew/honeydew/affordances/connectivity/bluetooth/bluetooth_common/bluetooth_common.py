@@ -7,7 +7,6 @@ will depend on."""
 import abc
 
 import fidl_fuchsia_bluetooth as f_bt
-
 from honeydew.affordances.connectivity.bluetooth.utils import (
     types as bluetooth_types,
 )

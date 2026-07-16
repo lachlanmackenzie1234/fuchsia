@@ -16,8 +16,6 @@ import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_le as f_ble_controller
 import fuchsia_controller_py as fc
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.le import le_using_fc
 from honeydew.affordances.connectivity.bluetooth.utils import (
@@ -27,6 +25,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import types as bt_types
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from parameterized import param, parameterized
 
 _SAMPLE_LE_KNOWN_DEVICES_OUTPUT: list[f_ble_controller.Peer] = [
     f_ble_controller.Peer(

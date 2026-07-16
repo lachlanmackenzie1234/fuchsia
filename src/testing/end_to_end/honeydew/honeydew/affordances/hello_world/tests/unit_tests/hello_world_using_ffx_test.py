@@ -7,11 +7,10 @@ import unittest
 from collections.abc import Callable
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew.affordances.hello_world import errors as hello_world_errors
 from honeydew.affordances.hello_world import hello_world_using_ffx
 from honeydew.transports.ffx import ffx as ffx_transport
+from parameterized import param, parameterized
 
 _TARGET_NAME: str = "fuchsia-emulator"
 

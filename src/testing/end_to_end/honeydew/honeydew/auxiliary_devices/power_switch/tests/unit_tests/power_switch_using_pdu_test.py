@@ -7,8 +7,6 @@ import unittest
 from typing import Any
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import (
     power_switch,
@@ -16,6 +14,7 @@ from honeydew.auxiliary_devices.power_switch import (
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.utils import host_shell
+from parameterized import param, parameterized
 
 _MOCK_PDU_HOST: str = "pdu-host-123"
 _MOCK_PDU_USERNAME: str = "pdu_user"

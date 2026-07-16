@@ -4,7 +4,6 @@
 """Contains errors raised by WLAN affordances."""
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-
 from honeydew import errors
 
 

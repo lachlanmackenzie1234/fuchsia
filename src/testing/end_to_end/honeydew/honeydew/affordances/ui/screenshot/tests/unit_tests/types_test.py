@@ -9,10 +9,9 @@ import unittest
 from array import array
 
 import png
-from parameterized import param, parameterized
-
 from honeydew.affordances.ui.screenshot.types import ScreenshotImage
 from honeydew.affordances.ui.user_input.types import Pixel, Size
+from parameterized import param, parameterized
 
 # Disabling pylint to reduce verbosity for widely used trivial types
 # pylint: disable=g-importing-member

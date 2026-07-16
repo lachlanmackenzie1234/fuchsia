@@ -8,9 +8,8 @@ import logging
 import os
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew.typing import custom_types
+from mobly import asserts, test_runner
 
 _LOGGER = logging.getLogger(__name__)
 

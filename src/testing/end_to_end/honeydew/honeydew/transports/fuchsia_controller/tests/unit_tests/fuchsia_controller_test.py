@@ -9,7 +9,6 @@ from typing import Any
 from unittest import mock
 
 import fuchsia_controller_py as fuchsia_controller
-
 from honeydew import affordances_capable
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.fuchsia_controller import errors as fc_errors

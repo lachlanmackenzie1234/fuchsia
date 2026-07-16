@@ -26,7 +26,6 @@ import fidl_fuchsia_hwinfo as f_hwinfo
 import fidl_fuchsia_io as f_io
 import fuchsia_controller_py as fcp
 import fuchsia_inspect
-
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.bluetooth.avrcp import (
     avrcp,

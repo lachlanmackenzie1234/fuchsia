@@ -9,8 +9,6 @@ from typing import Any, cast
 from unittest import mock
 
 import fidl_fuchsia_bluetooth as f_bt
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
     bluetooth_common_using_sl4f,
@@ -24,6 +22,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 from honeydew.transports.sl4f import errors as sl4f_errors
 from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing.custom_types import MacAddress
+from parameterized import param, parameterized
 
 _SAMPLE_ADDRESS_OUTPUT: dict[str, Any] = {
     "id": "",

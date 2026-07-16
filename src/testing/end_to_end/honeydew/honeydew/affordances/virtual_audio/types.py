@@ -9,7 +9,6 @@ from dataclasses import dataclass
 import fidl_fuchsia_test_audio as fta
 from fidl import AsyncSocket
 from fuchsia_controller_py import Socket
-
 from honeydew.affordances.virtual_audio.errors import VirtualAudioError
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)

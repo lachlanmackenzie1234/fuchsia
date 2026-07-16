@@ -7,7 +7,6 @@ import abc
 from collections.abc import Awaitable, Callable
 
 import fuchsia_inspect
-
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp
 from honeydew.affordances.connectivity.bluetooth.gap import gap
 from honeydew.affordances.connectivity.bluetooth.le import le

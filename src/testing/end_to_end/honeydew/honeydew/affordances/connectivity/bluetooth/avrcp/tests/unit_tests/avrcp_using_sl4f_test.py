@@ -9,14 +9,13 @@ from typing import Any, cast
 from unittest import mock
 
 import fidl_fuchsia_bluetooth as f_bt
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp_using_sl4f
 from honeydew.affordances.connectivity.bluetooth.utils import (
     types as bluetooth_types,
 )
 from honeydew.transports.sl4f import sl4f as sl4f_transport
+from parameterized import param, parameterized
 
 _SAMPLE_RECEIVED_REQUESTS: dict[str, Any] = {
     "id": "",

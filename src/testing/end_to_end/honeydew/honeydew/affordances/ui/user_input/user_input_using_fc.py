@@ -10,7 +10,6 @@ import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
 import fuchsia_controller_py as fcp
-
 from honeydew import errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.ui.user_input import errors as user_input_errors

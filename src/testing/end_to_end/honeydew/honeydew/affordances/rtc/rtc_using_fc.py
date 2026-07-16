@@ -7,7 +7,6 @@ import datetime
 
 import fidl_fuchsia_hardware_rtc as frtc
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
-
 from honeydew import affordances_capable
 from honeydew.affordances.rtc import rtc
 from honeydew.affordances.rtc.errors import HoneydewRtcError

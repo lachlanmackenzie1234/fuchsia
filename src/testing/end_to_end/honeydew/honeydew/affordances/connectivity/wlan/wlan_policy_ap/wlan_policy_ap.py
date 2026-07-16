@@ -6,7 +6,6 @@
 import abc
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,

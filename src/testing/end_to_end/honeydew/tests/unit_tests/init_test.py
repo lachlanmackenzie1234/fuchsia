@@ -8,7 +8,6 @@ from typing import Any
 from unittest import mock
 
 import fuchsia_controller_py as fuchsia_controller
-
 import honeydew
 from honeydew import errors
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice

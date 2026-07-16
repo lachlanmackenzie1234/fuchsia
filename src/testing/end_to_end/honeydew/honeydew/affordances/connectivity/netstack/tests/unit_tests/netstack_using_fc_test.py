@@ -16,7 +16,6 @@ import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
 import fuchsia_controller_py as fc
 from fuchsia_controller_py import Channel, ZxStatus
-
 from honeydew import affordances_capable
 from honeydew import errors as honeydew_errors
 from honeydew.affordances.connectivity.netstack import netstack_using_fc

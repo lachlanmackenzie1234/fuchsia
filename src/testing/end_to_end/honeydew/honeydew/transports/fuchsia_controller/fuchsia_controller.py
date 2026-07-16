@@ -6,7 +6,6 @@
 import logging
 
 import fuchsia_controller_py as fuchsia_controller
-
 from honeydew.affordances_capable import FuchsiaDeviceIpChange
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.fuchsia_controller import errors as fc_errors

@@ -10,7 +10,6 @@ from typing import Any
 from unittest import mock
 
 import fuchsia_inspect
-
 from honeydew import errors
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import types as ffx_types

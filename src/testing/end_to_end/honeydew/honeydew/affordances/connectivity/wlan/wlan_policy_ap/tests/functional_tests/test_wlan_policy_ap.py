@@ -9,8 +9,6 @@ import time
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from mobly import asserts, test_runner
-
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
     PortClass,
@@ -22,6 +20,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     OperatingBand,
     OperatingState,
 )
+from mobly import asserts, test_runner
 
 # Time to wait for a WLAN interface to become available.
 WLAN_INTERFACE_TIMEOUT = 30

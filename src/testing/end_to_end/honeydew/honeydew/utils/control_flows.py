@@ -10,9 +10,8 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import TypeVar
 
-from mobly import signals
-
 from honeydew.utils.deadline import Deadline
+from mobly import signals
 
 T = TypeVar("T")
 

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from importlib import resources as impresources
 
 import png
-
 from honeydew.affordances.ui.user_input import types as ui_types
 
 _BYTES_PER_PIXEL: int = 4

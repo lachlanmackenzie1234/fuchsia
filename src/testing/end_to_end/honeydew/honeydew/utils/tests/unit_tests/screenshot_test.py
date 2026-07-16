@@ -5,11 +5,10 @@
 
 import unittest
 
-from parameterized import param, parameterized
-
 from honeydew.affordances.ui.screenshot.types import ScreenshotImage
 from honeydew.affordances.ui.user_input.types import Size
 from honeydew.utils import screenshot
+from parameterized import param, parameterized
 
 
 class ScreenshotUtilsTest(unittest.TestCase):

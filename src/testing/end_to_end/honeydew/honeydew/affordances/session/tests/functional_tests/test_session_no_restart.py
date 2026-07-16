@@ -6,13 +6,12 @@
 import logging
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew import errors
 from honeydew.affordances.session import errors as session_errors
 from honeydew.affordances.session import session_using_ffx
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import common
+from mobly import asserts, test_runner
 
 _LOGGER = logging.getLogger(__name__)
 

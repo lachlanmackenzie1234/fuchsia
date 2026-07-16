@@ -13,12 +13,11 @@ import asyncio
 import logging
 
 import fuchsia_base_test
-from mobly import expects, test_runner
-
 from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub,
     usb_power_hub_using_dmc,
 )
+from mobly import expects, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

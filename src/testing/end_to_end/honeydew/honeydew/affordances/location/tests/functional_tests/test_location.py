@@ -6,9 +6,8 @@
 import logging
 
 import fuchsia_base_test
-from mobly import test_runner
-
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

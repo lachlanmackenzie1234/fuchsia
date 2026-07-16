@@ -7,9 +7,8 @@ import logging
 
 import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew.affordances.connectivity.bluetooth.utils import types as bt_types
+from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

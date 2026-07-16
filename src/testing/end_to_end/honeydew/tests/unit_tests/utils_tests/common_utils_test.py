@@ -9,10 +9,9 @@ from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew import errors
 from honeydew.utils import common
+from parameterized import param, parameterized
 
 CONFIG_DICT: dict[str, Any] = {
     "affordances": {

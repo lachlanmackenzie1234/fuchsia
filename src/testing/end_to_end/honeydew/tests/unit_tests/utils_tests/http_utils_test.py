@@ -13,10 +13,9 @@ from http.client import RemoteDisconnected
 from typing import Any
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew import errors
 from honeydew.utils import http_utils
+from parameterized import param, parameterized
 
 # pylint: disable=protected-access
 _PARAMS: dict[str, Any] = {

@@ -8,10 +8,9 @@ import unittest
 from collections.abc import Callable
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew import errors
 from honeydew.utils import host_shell
+from parameterized import param, parameterized
 
 
 def _custom_test_name_func(

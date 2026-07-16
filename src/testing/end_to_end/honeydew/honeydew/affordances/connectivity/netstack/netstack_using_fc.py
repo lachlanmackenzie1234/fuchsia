@@ -13,7 +13,6 @@ import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
 import fuchsia_async_extension
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
-
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.netstack import netstack
 from honeydew.affordances.connectivity.netstack.errors import (

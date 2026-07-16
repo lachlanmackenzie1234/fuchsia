@@ -7,9 +7,8 @@ import logging
 import time
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew.affordances.session import errors as session_errors
+from mobly import asserts, test_runner
 
 _LOGGER = logging.getLogger(__name__)
 

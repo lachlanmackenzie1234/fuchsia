@@ -15,7 +15,6 @@ import fidl_fuchsia_wlan_sme as f_wlan_sme
 import fuchsia_async_extension
 from fidl._client import FidlClient
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
-
 from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors

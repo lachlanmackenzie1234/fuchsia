@@ -14,8 +14,6 @@ from unittest import mock
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
 import fuchsia_controller_py as fc
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
     bluetooth_common_using_fc,
@@ -30,6 +28,7 @@ from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
 from honeydew.typing.custom_types import MacAddress
+from parameterized import param, parameterized
 
 BluetoothAcceptPairing = bluetooth_types.BluetoothAcceptPairing
 BluetoothConnectionType = bluetooth_types.BluetoothConnectionType

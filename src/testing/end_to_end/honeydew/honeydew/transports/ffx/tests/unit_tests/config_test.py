@@ -8,7 +8,6 @@ from typing import Any
 from unittest import mock
 
 import fuchsia_controller_py as fuchsia_controller
-
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.utils import host_shell
 

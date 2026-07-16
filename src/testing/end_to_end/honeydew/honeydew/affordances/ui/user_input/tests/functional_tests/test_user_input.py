@@ -7,12 +7,11 @@ import os
 from typing import Optional
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew import errors
 from honeydew.affordances.ui.screenshot import types
 from honeydew.affordances.ui.user_input import types as ui_custom_types
 from honeydew.utils import common
+from mobly import asserts, test_runner
 
 INPUT_APP = (
     "fuchsia-pkg://fuchsia.com/flatland-examples#meta/"

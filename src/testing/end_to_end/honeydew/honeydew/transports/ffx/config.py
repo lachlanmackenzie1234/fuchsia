@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import fuchsia_controller_py as fuchsia_controller
-
 from honeydew import errors
 
 _FFX_BINARY: str = "ffx"

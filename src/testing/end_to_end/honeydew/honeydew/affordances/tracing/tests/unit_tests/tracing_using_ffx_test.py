@@ -12,13 +12,12 @@ from typing import Any, cast
 from unittest import mock
 
 import fidl_fuchsia_tracing as f_tracing
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable
 from honeydew.affordances.tracing import tracing_using_ffx
 from honeydew.affordances.tracing.errors import TracingError, TracingStateError
 from honeydew.transports.ffx import ffx
 from honeydew.transports.ffx.errors import FfxCommandError
+from parameterized import param, parameterized
 
 
 def _custom_test_name_func(

@@ -9,8 +9,6 @@ from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import (
     power_switch,
@@ -18,6 +16,7 @@ from honeydew.auxiliary_devices.power_switch import (
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.utils import host_shell
+from parameterized import param, parameterized
 
 _MOCK_OS_ENVIRON: dict[str, str] = {"DMC_PATH": "/tmp/foo/bar"}
 

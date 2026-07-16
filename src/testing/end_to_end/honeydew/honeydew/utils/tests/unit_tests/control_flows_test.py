@@ -7,9 +7,6 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
-from mobly import signals
-from parameterized import param, parameterized
-
 from honeydew.utils.control_flows import (
     RetryAbortingError,
     repeat_until_deadline,
@@ -17,6 +14,8 @@ from honeydew.utils.control_flows import (
     retry_until_deadline,
 )
 from honeydew.utils.deadline import Deadline
+from mobly import signals
+from parameterized import param, parameterized
 
 
 class _RetryAbortingErrorSubClass(RetryAbortingError):

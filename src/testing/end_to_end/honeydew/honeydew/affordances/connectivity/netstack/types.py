@@ -11,7 +11,6 @@ from ipaddress import IPv4Address, IPv6Address
 
 import fidl_fuchsia_net as f_net
 import fidl_fuchsia_net_interfaces as f_net_interfaces
-
 from honeydew.typing.custom_types import MacAddress
 
 

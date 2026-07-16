@@ -9,7 +9,6 @@ import logging
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
 import fuchsia_controller_py as fc
-
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
     bluetooth_common,

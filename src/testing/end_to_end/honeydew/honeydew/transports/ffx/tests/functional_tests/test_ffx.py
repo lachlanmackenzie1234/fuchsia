@@ -6,10 +6,9 @@
 import logging
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.typing import custom_types
+from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

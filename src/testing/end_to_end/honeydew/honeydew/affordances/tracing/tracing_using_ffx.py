@@ -10,7 +10,6 @@ import tempfile
 from datetime import datetime
 
 import fidl_fuchsia_tracing as f_tracing
-
 from honeydew import affordances_capable
 from honeydew.affordances.tracing import tracing
 from honeydew.affordances.tracing.errors import TracingError, TracingStateError

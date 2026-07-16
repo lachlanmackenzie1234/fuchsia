@@ -6,13 +6,12 @@
 import logging
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew.auxiliary_devices.power_switch import (
     power_switch,
     power_switch_using_dmc,
     power_switch_using_pdu,
 )
+from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

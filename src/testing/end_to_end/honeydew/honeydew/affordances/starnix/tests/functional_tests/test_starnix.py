@@ -4,9 +4,8 @@
 """Mobly test for Starnix affordance."""
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew import errors
+from mobly import asserts, test_runner
 
 
 class StarnixAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):

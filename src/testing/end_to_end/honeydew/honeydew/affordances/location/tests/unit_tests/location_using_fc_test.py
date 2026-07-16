@@ -9,7 +9,6 @@ from unittest import mock
 
 import fidl_fuchsia_location_namedplace as f_location_namedplace
 from fuchsia_controller_py import FcTransportStatus
-
 from honeydew import affordances_capable
 from honeydew.affordances.location import location_using_fc
 from honeydew.affordances.location.errors import HoneydewLocationError

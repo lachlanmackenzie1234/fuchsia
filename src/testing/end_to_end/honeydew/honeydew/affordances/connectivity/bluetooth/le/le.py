@@ -9,7 +9,6 @@ from collections.abc import Sequence
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_le as f_ble_controller
-
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
     bluetooth_common,
 )

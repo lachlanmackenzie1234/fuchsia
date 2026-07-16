@@ -8,7 +8,6 @@ from typing import Any
 
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
-
 from honeydew.affordances.connectivity.bluetooth.utils import (
     errors as bt_errors,
 )

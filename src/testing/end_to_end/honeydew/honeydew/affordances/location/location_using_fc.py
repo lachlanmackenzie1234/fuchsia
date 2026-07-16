@@ -8,7 +8,6 @@ import logging
 import fidl_fuchsia_location_namedplace as f_location_namedplace
 import fuchsia_async_extension
 from fuchsia_controller_py import FcTransportStatus
-
 from honeydew import affordances_capable, errors
 from honeydew.affordances.location import location
 from honeydew.affordances.location.errors import HoneydewLocationError

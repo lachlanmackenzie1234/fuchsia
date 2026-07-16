@@ -9,8 +9,6 @@ from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable, errors
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
@@ -18,6 +16,7 @@ from honeydew.transports.sl4f import errors as sl4f_errors
 from honeydew.transports.sl4f import sl4f
 from honeydew.typing import custom_types
 from honeydew.utils import http_utils
+from parameterized import param, parameterized
 
 # pylint: disable=protected-access
 

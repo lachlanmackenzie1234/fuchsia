@@ -6,11 +6,10 @@
 import logging
 
 import fuchsia_base_test
-from mobly import asserts, test_runner
-
 from honeydew.affordances.connectivity.netstack.errors import (
     HoneydewNetstackError,
 )
+from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

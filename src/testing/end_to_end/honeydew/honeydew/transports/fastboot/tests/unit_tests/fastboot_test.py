@@ -11,8 +11,6 @@ from importlib import resources
 from typing import Any
 from unittest import mock
 
-from parameterized import param, parameterized
-
 from honeydew import affordances_capable, errors
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
@@ -24,6 +22,7 @@ from honeydew.transports.ffx import ffx
 from honeydew.transports.serial import errors as serial_errors
 from honeydew.transports.serial import serial as serial_interface
 from honeydew.utils import host_shell
+from parameterized import param, parameterized
 
 _USB_BASED_DEVICE_NAME: str = "fuchsia-d88c-799b-0e3a"
 _USB_BASED_FASTBOOT_NODE_ID: str = "0B190YCABZZ2ML"

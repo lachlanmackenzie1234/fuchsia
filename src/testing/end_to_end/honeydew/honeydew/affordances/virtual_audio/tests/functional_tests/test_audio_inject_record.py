@@ -9,9 +9,8 @@ import time
 from datetime import timedelta
 
 import fuchsia_base_test
-from mobly import test_runner
-
 from honeydew.affordances.virtual_audio.types import WaitForQuietResult
+from mobly import test_runner
 
 _AUDIO_FILE_INPUT = "audio_runtime_deps/sine_wave.wav"
 _LOGGER: logging.Logger = logging.getLogger(__name__)

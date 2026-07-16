@@ -13,7 +13,6 @@ import fidl_fuchsia_tracing_controller as f_tracingcontroller
 import fuchsia_controller_py as fc
 from fidl import AsyncSocket
 from fuchsia_controller_py import ZxStatus
-
 from honeydew import affordances_capable
 from honeydew.affordances.tracing import tracing
 from honeydew.affordances.tracing.errors import TracingError, TracingStateError
