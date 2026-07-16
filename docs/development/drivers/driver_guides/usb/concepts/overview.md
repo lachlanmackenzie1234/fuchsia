@@ -62,13 +62,16 @@ details necessary to read and write physical packets from or to the actual bus.
 
 Note: that the hub driver is one example of a class-specific device driver.
 
-In general, USB device drivers encode transfer requests into a `usb_request_t`
-structure. These request structs generally have an asynchronous callback
-associated with them to be executed upon transfer completion. For the most
-part, the USB stack functions by the higher order device drivers publishing
-requests to a queue of outstanding requests. As these requests are serviced,
-their respective callbacks are invoked notifying the upper layers that the
-request is complete.
+In general, USB device drivers interact with endpoints using the FIDL protocol
+[`fuchsia.hardware.usb.endpoint.Endpoint`][endpoint-fidl] and structure transfer
+requests into [`fuchsia.hardware.usb.request.Request`][request-fidl] objects.
+C++ helper classes like [`usb::EndpointClient`][endpoint-client] and
+[`usb::FidlRequest`][request-fidl-h] exist to make usage easier. Instead of
+allocating requests per transfer, drivers pre-register VMO data buffers using
+`RegisterVmos` (or `EndpointClient::AddRequests`). Higher-level device drivers
+publish requests to an endpoint queue using `QueueRequests`. As transfers are
+serviced by hardware, the USB stack notifies upper layers via an asynchronous
+`OnCompletion` event carrying a vector of completed requests and transfer statuses.
 
 ## Hub driver
 
@@ -113,7 +116,8 @@ communication between the different parts of the USB stack.
 
 The host controller interface (HCI) driver exists at the bottom layer of the USB
 stack when operating in host mode. This is the entity responsible for
-translating outstanding `usb_request_t` into the necessary hardware directives
+translating outstanding FIDL endpoint requests
+(`fuchsia.hardware.usb.request.Request`) into the necessary hardware directives
 capable of servicing the request.
 
 The HCI driver is distinguished from the DCI driver in that it contains
@@ -130,7 +134,8 @@ performs the rest of the device enumeration.
 
 The device controller interface(DCI) driver exists at the bottom layer of the
 USB stack when operating in device mode. This is the entity responsible for
-translating outstanding `usb_request_t` into the necessary hardware directives
+translating outstanding FIDL endpoint requests
+(`fuchsia.hardware.usb.request.Request`) into the necessary hardware directives
 capable of servicing the request.
 
 The DCI driver is distinguished from the HCI driver in that it serves to present
@@ -145,3 +150,8 @@ result in multiple packets going each direction.
 <!-- xref -->
 
 [USB 2.0 spec]: https://www.usb.org/document-library/usb-20-specification
+[endpoint-fidl]: /sdk/fidl/fuchsia.hardware.usb.endpoint/endpoint.fidl
+[request-fidl]: /sdk/fidl/fuchsia.hardware.usb.request/request.fidl
+[endpoint-client]: /src/devices/usb/lib/usb-endpoint/include/usb-endpoint/usb-endpoint-client.h
+[request-fidl-h]: /src/devices/usb/lib/usb/include/usb/request-fidl.h
+

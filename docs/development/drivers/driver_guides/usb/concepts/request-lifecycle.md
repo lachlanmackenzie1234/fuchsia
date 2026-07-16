@@ -6,167 +6,268 @@
 
 # Lifecycle of a USB request
 
-Caution: This page may contain information that is specific to the legacy
-version of the driver framework (DFv1).
+This document describes the lifecycle of USB transfer requests in Fuchsia using the
+[`fuchsia.hardware.usb.endpoint.Endpoint`][endpoint-fidl] FIDL protocol and the
+[`usb::EndpointClient`][endpoint-client] helper library.
 
 ## Glossary
 
-*   HCI -- Host Controller Interface: A host controller interface driver is
-    responsible for queueing USB requests to hardware, and managing the state
-    of connected devices while operating as a USB host.
-*   DCI -- Device controller interface: A device controller interface is
-    responsible for queueing USB requests to a USB host that the device is
-    connected to.
+*   **HCI (Host Controller Interface)**: A host controller interface driver is
+    responsible for servicing USB requests to hardware and managing connected
+    devices in host mode.
+*   **DCI (Device Controller Interface)**: A device controller interface driver is
+    responsible for servicing USB requests received from or transmitted to a USB host
+    when operating in peripheral mode.
+*   **Endpoint Protocol**: The [`fuchsia.hardware.usb.endpoint.Endpoint`][endpoint-fidl]
+    FIDL protocol that encapsulates endpoint operations, VMO registration, request queueing,
+    and completion events.
+*   **Endpoint Client**: The [`usb::EndpointClient`][endpoint-client] C++ helper class
+    that manages endpoint connections, pre-registered VMO pools, request allocation, and
+    completion event dispatching.
 
-## Allocation
+---
 
-The first step in a USB request's lifecycle is allocation. USB requests contain
-data from all of the drivers in the request stack in a single allocation. Each
-driver that is upstream of a USB device driver should provide a
-[GetRequestSize](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#96) method --
-which returns the size it needs to contain its local request context. When a
-USB device driver allocates a request, it should invoke this method to
-determine the size of the parent's request context.
+## Overview of Request Lifecycle
 
-Note: It is important to ensure that the lifetime of a request does not exceed
-the lifetime of your driver. If your driver is released with outstanding
-requests, you will encounter a use-after-free scenario when the parent tries to
-send the request back to you by invoking your callback. Drivers should not
-reply to unbind until all outstanding requests have been returned.
-
-### C example {#c-example}
-
-```c
-size_t parent_req_size = usb_get_request_size(&usb);
-usb_request_t* request;
-usb_request_alloc(&request, transfer_length, endpoint_addr,
-parent_req_size+sizeof(your_context_struct_t));
-usb_request_complete_callback_t complete = {
-      .callback = usb_request_complete,
-      .ctx = your_context_pointer,
-};
-your_context_pointer.completion = complete;
-usb_request_queue(&usb, request, &complete);
-...
-
-void usb_request_complete(void* cookie, usb_request_t* request) {
-    your_context_struct_t data;
-    // memcpy is needed to ensure alignment
-    memcpy(&data, cookie, sizeof(data));
-    // Do something here to process the response
-    // ...
-
-    // Requeue the request
-    usb_request_queue(&data.usb, request, &data.completion);
-}
+```
++-----------------------------------------------------------------------------------+
+| 1. Registration Phase                                                             |
+|    Driver initializes usb::EndpointClient and pre-registers VMO data buffers      |
+|    via AddRequests() / RegisterVmos(). VMOs are mapped locally once.               |
++-----------------------------------------------------------------------------------+
+                                        |
+                                        v
++-----------------------------------------------------------------------------------+
+| 2. Queueing & Submission Phase                                                    |
+|    Driver gets request from pool (GetRequest()), populates data (CopyTo()),       |
+|    flushes CPU cache (CacheFlush()), and submits via QueueRequests().             |
++-----------------------------------------------------------------------------------+
+                                        |
+                                        v
++-----------------------------------------------------------------------------------+
+| 3. Processing Phase                                                               |
+|    Endpoint Server (HCI or DCI driver) processes requests and transfers data      |
+|    over physical hardware.                                                        |
++-----------------------------------------------------------------------------------+
+                                        |
+                                        v
++-----------------------------------------------------------------------------------+
+| 4. Completion Phase                                                               |
+|    Endpoint Server sends vectorized OnCompletion FIDL event.                      |
+|    EndpointClient invalidates cache (CacheFlushInvalidate()) and returns requests  |
+|    back to pool via PutRequest().                                                 |
++-----------------------------------------------------------------------------------+
+                                        |
+                                        v
++-----------------------------------------------------------------------------------+
+| 5. Teardown / Cancellation Phase                                                  |
+|    Driver cancels pending requests via CancelAll() and releases endpoint resources |
+|    via ep_client.Close().                                                         |
++-----------------------------------------------------------------------------------+
 ```
 
-### C++ example
+---
 
-```c++
-parent_req_size = usb.GetRequestSize();
-std::optional<usb::Request<void>> req;
-status = usb::Request<void>::Alloc(&req, transfer_length,
-endpoint_addr, parent_req_size);
-usb_request_complete_callback_t complete = {
-      .callback =
-          [](void* ctx, usb_request_t* request) {
-            static_cast<YourDeviceClass*>(ctx)->YourHandlerFunction(request);
-          },
-      .ctx = this,
-  };
-usb.RequestQueue(req->take(), &complete);
-```
+## 1. Allocation & VMO Registration
 
-### C++ example (with lambdas)
+Fuchsia USB drivers pre-register VMO buffers up-front at endpoint initialization time
+rather than allocating request context dynamically per transfer.
 
-```c++
-size_t parent_size = usb_.GetRequestSize();
-using Request = usb::CallbackRequest<sizeof(std::max_align_t) * 4>;
-std::optional<Request> request;
-Request::Alloc(&request, max_packet_size, endpoint_address,
-parent_size, [=](Request request) {
-    // Do some processing here.
-    // ...
-    // Re-queue the request
-    Request::Queue(std::move(request), usb_client_);
+Pre-registered VMOs are associated with unique `VmoId` values using the `RegisterVmos`
+FIDL method. The underlying endpoint server saves these VMOs, while `usb::EndpointClient`
+maps the VMO memory into the client process and populates a thread-safe free request pool
+([`usb::FidlRequestPool`][request-fidl-h]).
+
+_**NOTE:** Pre-registered VMOs and requests are bound to the lifetime of the `Endpoint` client
+channel. When `usb::EndpointClient::Close()` is called or the endpoint channel is closed, all
+registered VMOs are automatically unregistered and their mapped virtual addresses are freed._
+
+---
+
+## 2. Submission & Cache Management
+
+Requests are submitted to an endpoint queue using the `QueueRequests` FIDL method (or via
+`usb::EndpointClient::operator->()`).
+
+### Cache Maintenance Obligations
+
+Because USB controllers write to or read from pre-registered physical memory regions (VMOs),
+clients are responsible for maintaining CPU cache coherency:
+
+*   **Before Outbound (TX) Write Requests**:
+    The client must call `req.CacheFlush(...)` (or `zx_cache_flush` with `ZX_CACHE_FLUSH_DATA`)
+    on mapped buffers to ensure written CPU data is flushed to main RAM before hardware transmission.
+*   **After Inbound (RX) Read Requests**:
+    Upon receiving a completion event, the client must call `req.CacheFlushInvalidate(...)`
+    (or `zx_cache_flush` with `ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE`) on mapped
+    buffers to invalidate stale CPU caches before reading data.
+
+---
+
+## 3. Asynchronous Completion
+
+When hardware servicing finishes, the Endpoint server notifies the client by issuing a
+vectorized FIDL event:
+
+```fidl
+strict -> OnCompletion(resource struct {
+    completion vector<Completion>:REQUEST_MAX;
 });
 ```
 
-## Submission
+Each [`Completion`][endpoint-fidl] table contains:
+*   `request`: The completed `fuchsia.hardware.usb.request.Request`.
+*   `status`: Transfer completion status code (`zx.Status`).
+*   `transfer_size`: Total bytes successfully transferred.
+*   `wake_lease`: Optional wake eventpair if the transfer brought system out of suspend.
 
-You can submit requests using the
-[RequestQueue](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#22) method,
-or -- in the case of CallbackRequests (as seen [here](#c-example)), using
-`Request::Queue` or simply `request.Queue(client)`. In all cases, ownership of
-the USB request is transferred to the parent driver (usually `usb-device`).
+When using `usb::EndpointClient`, incoming completion events are dispatched automatically to the
+driver's designated member callback function.
 
-The typical lifecycle of a USB request (from a device driver to either a host
-controller or device controller is as follows):
+---
 
-*   The USB device driver queues the request
-*   The `usb-device` core driver receives the request, and now owns the request
-    object.
-*   The `usb-device` core driver injects its own callback (if the direct flag
-    is not set), or passes through the request (if the direct flag is set) to
-    the HCI or DCI driver.
-*   The HCI or DCI driver now owns the request. The HCI or DCI driver submits
-    this request to hardware.
-*   The request completes. When this happens, if the direct flag was set, the
-    callback in the device driver is invoked, and the device driver now owns
-    the request. If the direct flag is not set, the usb-device (core) driver
-    now owns the request.
-*   If the core driver owns the request; it is added to a queue for dispatch by
-    another thread.
-*   The core driver eventually invokes the callback, and the request is now
-    owned by the device driver. The device driver can now re-submit the
-    request.
+## 4. Cancellation & Shutdown
 
-## Cancellation
+Drivers can cancel outstanding transfer requests by invoking `CancelAll()` on the endpoint client.
+All pending transfers are completed asynchronously with `ZX_ERR_CANCELED` status and returned to
+the caller.
 
-Requests may be cancelled by invoking
-[CancelAll](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#89). When
-[CancelAll](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#89) completes, all
-requests are owned by the caller. Drivers implementing a
-[CancelAll](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#89) function (such
-as the usb-device core driver and any HCI/DCI drivers) are responsible for
-transferring ownership to their children with a `ZX_ERR_CANCELLED` status code.
+During driver unbind or teardown, the driver must close endpoint clients using `ep_client.Close()`
+to safely cancel pending transfers, unregister VMOs, and unbind FIDL event listeners.
 
-## Implementation notes for writers of HCI, DCI, or filter drivers
+---
 
-### Implementing [GetRequestSize](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#96)
+## Modern C++ Example
 
-The value returned by
-[GetRequestSize](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#96) should
-equal the value of your parent's
-[GetRequestSize](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#96) + the size
-of your request context, including any padding that would be necessary to
-ensure proper alignment of your data structures (if applicable). If you are
-implementing an HCI or DCI driver, you must include `sizeof(usb_request_t)` in
-your size calculation in addition to any other data structures that you are
-storing. `usb_request_t` has no special alignment requirements, so it is not
-necessary to add padding for that structure.
+The following example demonstrates how to implement a USB client driver using `usb::EndpointClient`
+and `usb::FidlRequest`:
 
-### Implementing [RequestQueue](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#22)
+```cpp
+#include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <usb-endpoint/usb-endpoint-client.h>
+#include <usb/request-fidl.h>
 
-Implementors of
-[RequestQueue](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#22) temporarily
-assumes ownership of the USB request from its client driver. As an implementor
-of [RequestQueue](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#22), you are
-allowed to access all fields of the `usb_request_t`, as well as any private
-data that you have appended to the `usb_request_t` structure (by requesting
-additional space through
-[GetRequestSize](/sdk/banjo/fuchsia.hardware.usb/usb.fidl#96)), but you
-are not allowed to modify any data outside of your private area, which starts
-at `parent_req_size` bytes (past the end of `usb_request_t`).
+class SampleUsbDriver : public fdf::DriverBase {
+ public:
+  SampleUsbDriver(fdf::DriverStartArgs start_args,
+                  fdf::UnownedSynchronizedDispatcher dispatcher)
+      : DriverBase("SampleUsbDriver", std::move(start_args), std::move(dispatcher)),
+        bulk_in_ep_(usb::EndpointType::BULK, this,
+                    std::mem_fn(&SampleUsbDriver::OnBulkInComplete)) {}
 
-## Example USB request stack (HCI)
+  zx::result<> Start() override {
+    // 1. Connect and initialize endpoint client channel
+    uint8_t ep_addr = 0x81;  // IN bulk endpoint address
+    zx_status_t status = bulk_in_ep_.Init(ep_addr, function_client_, dispatcher());
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
 
-xHCI (host controller) -> `usb-bus` -> `usb-device` (core USB device driver) ->
-`usb-mass-storage`
+    // 2. Pre-register VMO buffers and populate request pool (e.g. 4 buffers of 512 bytes)
+    constexpr size_t kBufferCount = 4;
+    constexpr size_t kMaxPacketSize = 512;
+    size_t allocated = bulk_in_ep_.AddRequests(
+        kBufferCount, kMaxPacketSize, fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
+    if (allocated != kBufferCount) {
+      return zx::error(ZX_ERR_NO_MEMORY);
+    }
 
-## Example USB request stack (DCI)
+    // 3. Queue initial pre-buffered requests
+    QueueBulkInRequests();
+    return zx::ok();
+  }
 
-`dwc2` (device-side controller) -> `usb-peripheral` (peripheral core driver) ->
-`usb-function` (core function driver) -> `usb-cdc-netdev` (ethernet
-peripheral mode driver)
+  void PrepareStop(fdf::PrepareStopCompleter completer) override {
+    // Graceful cancellation and teardown during driver stop
+    bulk_in_ep_.Close();
+    completer(zx::ok());
+  }
+
+ private:
+  void QueueBulkInRequests() {
+    std::vector<fuchsia_hardware_usb_request::Request> reqs;
+
+    while (!bulk_in_ep_.RequestsEmpty()) {
+      auto fidl_req = bulk_in_ep_.GetRequest();
+      if (!fidl_req) break;
+
+      // Extract raw request object for FIDL transmission
+      reqs.push_back(fidl_req->take_request());
+    }
+
+    if (!reqs.empty()) {
+      auto result = bulk_in_ep_->QueueRequests(std::move(reqs));
+      if (!result.ok()) {
+        fdf::error("Failed to queue endpoint requests: {}", result.FormatDescription());
+      }
+    }
+  }
+
+  // 4. Vectorized completion handler
+  void OnBulkInComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+    for (auto& completion : completions) {
+      zx_status_t status = completion.status().value_or(ZX_ERR_INTERNAL);
+      uint64_t bytes_transferred = completion.transfer_size().value_or(0);
+
+      if (status == ZX_OK) {
+        usb::FidlRequest fidl_req(std::move(completion.request().value()));
+
+        // Invalidate CPU cache after inbound read transfer
+        fidl_req.CacheFlushInvalidate(bulk_in_ep_.GetMapped());
+
+        // Process payload data from mapped VMO
+        std::vector<uint8_t> buffer(bytes_transferred);
+        fidl_req.CopyFrom(0, buffer.data(), bytes_transferred, bulk_in_ep_.GetMapped());
+        ProcessData(buffer);
+
+        // Recycle request back to free pool
+        bulk_in_ep_.PutRequest(std::move(fidl_req));
+      }
+    }
+
+    // Re-queue available requests to keep pipeline filled
+    QueueBulkInRequests();
+  }
+
+  void ProcessData(const std::vector<uint8_t>& data) {
+    // Process received packet...
+  }
+
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunction> function_client_;
+  usb::EndpointClient<SampleUsbDriver> bulk_in_ep_;
+};
+```
+
+---
+
+## Example USB Request Stacks
+
+### Host Stack (HCI)
+
+```
+xHCI Host Controller -> USB Bus -> USB Core Device Driver -> Class Driver (e.g. usb-audio, usb-hid)
+```
+
+### Peripheral Stack (DCI)
+
+```
+DCI Controller (dwc3 / dwc2) -> Peripheral Core Driver -> Function Driver (e.g. usb-cdc-function, ums-function)
+```
+
+---
+
+## See Also
+
++ [USB System Overview](overview.md)
++ [`fuchsia.hardware.usb.endpoint` FIDL Protocol][endpoint-fidl]
++ [`fuchsia.hardware.usb.request` FIDL Types][request-fidl]
++ [`usb::EndpointClient` C++ Helper Library][endpoint-client]
+
+<!-- xref -->
+
+[endpoint-fidl]: /sdk/fidl/fuchsia.hardware.usb.endpoint/endpoint.fidl
+[request-fidl]: /sdk/fidl/fuchsia.hardware.usb.request/request.fidl
+[endpoint-client]: /src/devices/usb/lib/usb-endpoint/include/usb-endpoint/usb-endpoint-client.h
+[request-fidl-h]: /src/devices/usb/lib/usb/include/usb/request-fidl.h
