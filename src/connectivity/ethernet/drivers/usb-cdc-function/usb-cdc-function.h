@@ -50,8 +50,8 @@ class UsbCdcFunction : public fdf::DriverBase2,
  public:
   static constexpr std::string_view kDriverName = "usb_cdc_function";
   static constexpr uint8_t kPortId = 1;
-  static constexpr size_t kTxDepth = 16;
-  static constexpr size_t kRxDepth = 16;
+  static constexpr size_t kTxDepth = 64;
+  static constexpr size_t kRxDepth = 64;
   static constexpr fdf_arena_tag_t kArenaTag = 'CDCE';
 
   UsbCdcFunction()

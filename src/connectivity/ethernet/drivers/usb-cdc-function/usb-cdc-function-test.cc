@@ -653,8 +653,8 @@ TEST_F(UsbCdcTest, Inspect) {
 
     auto* bulk_out = hierarchy.GetByPath({"usb-cdc-function", "bulk_out"});
     ASSERT_TRUE(bulk_out != nullptr);
-    auto err_out = usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, kRxDataSize,
-                                                      std::nullopt, 16, kRxDataSize);
+    auto err_out = usb_inspect::VerifyEndpointInspect(
+        bulk_out, std::nullopt, kRxDataSize, std::nullopt, UsbCdcFunction::kRxDepth, kRxDataSize);
     EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
   });
 }
