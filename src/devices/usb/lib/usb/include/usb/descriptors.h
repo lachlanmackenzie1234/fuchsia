@@ -6,6 +6,7 @@
 #define SRC_DEVICES_USB_LIB_USB_INCLUDE_USB_DESCRIPTORS_H_
 
 #include <endian.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 
 // maximum number of endpoints per device
 #define USB_MAX_EPS 32
@@ -119,13 +120,6 @@
 #define USB_ENDPOINT_OUT 0x00
 #define USB_ENDPOINT_DIR_MASK 0x80
 #define USB_ENDPOINT_NUM_MASK 0x1F
-
-/* Endpoint types (bm_attributes) */
-#define USB_ENDPOINT_CONTROL 0x00
-#define USB_ENDPOINT_ISOCHRONOUS 0x01
-#define USB_ENDPOINT_BULK 0x02
-#define USB_ENDPOINT_INTERRUPT 0x03
-#define USB_ENDPOINT_TYPE_MASK 0x03
 
 /* Endpoint synchronization type (bm_attributes) */
 #define USB_ENDPOINT_NO_SYNCHRONIZATION 0x00
@@ -307,8 +301,12 @@ typedef struct {
 #define usb_ep_direction(ep) ((ep)->b_endpoint_address & USB_ENDPOINT_DIR_MASK)
 // usb_ep_direction2() useful with you have b_endpoint_address outside of a descriptor.
 #define usb_ep_direction2(addr) ((addr) & USB_ENDPOINT_DIR_MASK)
-#define usb_ep_type(ep) ((ep)->bm_attributes & USB_ENDPOINT_TYPE_MASK)
-#define usb_ep_type2(ep) ((ep).bm_attributes() & USB_ENDPOINT_TYPE_MASK)  // FIDL endpoint
+#define usb_ep_type(ep)                                       \
+  static_cast<fuchsia_hardware_usb_descriptor::EndpointType>( \
+      (ep)->bm_attributes & fuchsia_hardware_usb_descriptor::kEndpointTypeMask)
+#define usb_ep_type2(ep)                                      \
+  static_cast<fuchsia_hardware_usb_descriptor::EndpointType>( \
+      (ep).bm_attributes() & fuchsia_hardware_usb_descriptor::kEndpointTypeMask)  // FIDL endpoint
 #define usb_ep_sync_type(ep) ((ep)->bm_attributes & USB_ENDPOINT_SYNCHRONIZATION_MASK)
 // Max packet size is in bits 10..0
 #define usb_ep_max_packet(ep) (le16toh((ep)->w_max_packet_size) & 0x07FF)

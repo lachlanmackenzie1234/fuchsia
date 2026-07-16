@@ -10,6 +10,7 @@
 #include "usb/usb.h"
 
 namespace {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class UsbCdcEcmTest : public zxtest::Test {
  public:
@@ -138,7 +139,7 @@ TEST_F(UsbCdcEcmTest, ParseUsbDescriptorTest) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_IN,
-      .bm_attributes = USB_ENDPOINT_INTERRUPT,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kInterrupt),
       .w_max_packet_size = 0,
       .b_interval = 0,
   };
@@ -161,7 +162,7 @@ TEST_F(UsbCdcEcmTest, ParseUsbDescriptorTest) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_IN,
-      .bm_attributes = USB_ENDPOINT_BULK,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = 0,
       .b_interval = 0,
   };
@@ -171,7 +172,7 @@ TEST_F(UsbCdcEcmTest, ParseUsbDescriptorTest) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_OUT,
-      .bm_attributes = USB_ENDPOINT_BULK,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = 0,
       .b_interval = 0,
   };

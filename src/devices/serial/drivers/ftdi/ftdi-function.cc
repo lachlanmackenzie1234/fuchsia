@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <assert.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/component/cpp/node_properties.h>
 #include <stdio.h>
@@ -30,6 +31,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace fake_ftdi_function {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class FakeFtdiFunction : public fdf::DriverBase2,
                          public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
@@ -227,7 +229,7 @@ zx::result<> FakeFtdiFunction::Start(fdf::DriverContext context) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_IN,  // set later
-      .bm_attributes = USB_ENDPOINT_BULK,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = htole16(BULK_MAX_PACKET),
       .b_interval = 0,
   };
@@ -235,7 +237,7 @@ zx::result<> FakeFtdiFunction::Start(fdf::DriverContext context) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_OUT,  // set later
-      .bm_attributes = USB_ENDPOINT_BULK,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = htole16(BULK_MAX_PACKET),
       .b_interval = 0,
   };

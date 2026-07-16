@@ -71,12 +71,13 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
     }
   }
 
-  void SetupEndpoint(uint8_t ep_address, uint8_t ep_type, uint16_t max_packet_size) {
+  void SetupEndpoint(uint8_t ep_address, fdescriptor::EndpointType ep_type,
+                     uint16_t max_packet_size) {
     fdescriptor::wire::UsbEndpointDescriptor ep_desc{
         .b_length = sizeof(fdescriptor::wire::UsbEndpointDescriptor),
         .b_descriptor_type = USB_DT_ENDPOINT,
         .b_endpoint_address = ep_address,
-        .bm_attributes = ep_type,
+        .bm_attributes = static_cast<uint8_t>(ep_type),
         .w_max_packet_size = max_packet_size,
         .b_interval = 0,
     };
@@ -118,13 +119,13 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
     EXPECT_EQ(result->vmos[0].id(), vmo_id);
   }
 
-  void QueueRequest(uint8_t vmo_id, uint64_t offset, uint64_t size, uint8_t ep_type,
-                    bool short_bit = false) {
+  void QueueRequest(uint8_t vmo_id, uint64_t offset, uint64_t size,
+                    fdescriptor::EndpointType ep_type, bool short_bit = false) {
     QueueRequests(1, vmo_id, offset, size, ep_type, short_bit);
   }
 
-  void QueueRequests(size_t count, uint8_t vmo_id, uint64_t offset, uint64_t size, uint8_t ep_type,
-                     bool short_bit = false) {
+  void QueueRequests(size_t count, uint8_t vmo_id, uint64_t offset, uint64_t size,
+                     fdescriptor::EndpointType ep_type, bool short_bit = false) {
     std::vector<frequest::Request> reqs;
     for (size_t i = 0; i < count; i++) {
       frequest::Buffer buffer = frequest::Buffer::WithVmoId(vmo_id);
@@ -138,7 +139,7 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
       regions.push_back(std::move(region));
 
       frequest::RequestInfo req_info =
-          (ep_type == USB_ENDPOINT_BULK)
+          (ep_type == fdescriptor::EndpointType::kBulk)
               ? frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{})
               : frequest::RequestInfo::WithInterrupt(frequest::InterruptRequestInfo{});
 
@@ -237,7 +238,7 @@ TEST_P(Dwc3EndpointsTest, InterruptEndpointQueueAndComplete) {
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
 
   // Interrupt endpoints are always using a single-transfer setup.
-  SetupEndpoint(ep_address, USB_ENDPOINT_INTERRUPT, 64);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kInterrupt, 64);
   RegisterVmo(1, 4096);
 
   // Initially transfer state is kIdle.
@@ -258,7 +259,7 @@ TEST_P(Dwc3EndpointsTest, InterruptEndpointQueueAndComplete) {
   });
 
   // Client queues a request.
-  QueueRequest(1, 0, 64, USB_ENDPOINT_INTERRUPT);
+  QueueRequest(1, 0, 64, fdescriptor::EndpointType::kInterrupt);
   WaitForState(ep_num, TransferState::kStartingSingle);
 
   // Trigger started event to initialize rsrc_id and transition to active.
@@ -295,7 +296,7 @@ TEST_P(Dwc3EndpointsTest, BulkEndpointQueueAndComplete) {
   const uint8_t ep_address = 0x02;
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
 
-  SetupEndpoint(ep_address, USB_ENDPOINT_BULK, 512);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
   RegisterVmo(1, 4096);
 
   // Host sends Not Ready event.
@@ -303,7 +304,7 @@ TEST_P(Dwc3EndpointsTest, BulkEndpointQueueAndComplete) {
   dut_.runtime().RunUntilIdle();
 
   // Queue first request.
-  QueueRequest(1, 0, 512, USB_ENDPOINT_BULK);
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
   auto expected_starting_state =
       enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
   WaitForState(ep_num, expected_starting_state);
@@ -314,7 +315,7 @@ TEST_P(Dwc3EndpointsTest, BulkEndpointQueueAndComplete) {
   });
 
   // Queue second request.
-  QueueRequest(1, 512, 512, USB_ENDPOINT_BULK);
+  QueueRequest(1, 512, 512, fdescriptor::EndpointType::kBulk);
   WaitForQueuedCount(ep_num, 1u);
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -403,7 +404,7 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequests) {
   const uint8_t ep_address = 0x02;
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
 
-  SetupEndpoint(ep_address, USB_ENDPOINT_BULK, 512);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
   RegisterVmo(1, 4096);
 
   // Host sends Not Ready event.
@@ -411,8 +412,8 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequests) {
   dut_.runtime().RunUntilIdle();
 
   // Queue two requests.
-  QueueRequest(1, 0, 512, USB_ENDPOINT_BULK);
-  QueueRequest(1, 512, 512, USB_ENDPOINT_BULK);
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  QueueRequest(1, 512, 512, fdescriptor::EndpointType::kBulk);
   WaitForQueuedCount(ep_num, 1u);
 
   auto expected_starting_state =
@@ -476,7 +477,7 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsOnControllerStop) {
   const uint8_t ep_address = 0x02;
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
 
-  SetupEndpoint(ep_address, USB_ENDPOINT_BULK, 512);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
   RegisterVmo(1, 4096);
 
   // Host sends Not Ready event.
@@ -484,7 +485,7 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsOnControllerStop) {
   dut_.runtime().RunUntilIdle();
 
   // Queue two requests.
-  QueueRequests(2, 1, 0, 512, USB_ENDPOINT_BULK);
+  QueueRequests(2, 1, 0, 512, fdescriptor::EndpointType::kBulk);
   WaitForActiveCount(ep_num, enqueue_many ? 2 : 1);
 
   auto expected_starting_state =
@@ -539,7 +540,7 @@ TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
   const uint8_t ep_num = UsbAddressToEpNum(ep_address);
 
   // Configure endpoint as Bulk IN with max packet size 512.
-  SetupEndpoint(ep_address, USB_ENDPOINT_BULK, 512);
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
   RegisterVmo(1, 4096);
 
   // Host sends Not Ready event.
@@ -548,7 +549,7 @@ TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
 
   // Queue a request with short_bit = true, size = 512 (multiple of max packet
   // size).
-  QueueRequest(1, 0, 512, USB_ENDPOINT_BULK, /*short_bit=*/true);
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk, /*short_bit=*/true);
 
   // Wait for the endpoint state to become starting.
   bool enqueue_many = GetParam();

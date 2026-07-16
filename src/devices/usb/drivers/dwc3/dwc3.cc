@@ -1024,7 +1024,7 @@ void Dwc3::HandleConnectionDoneEvent() {
   if (ep0_max_packet) {
     std::array eps{&ep0_.out, &ep0_.in};
     for (Endpoint* ep : eps) {
-      ep->type = USB_ENDPOINT_CONTROL;
+      ep->type = fdescriptor::EndpointType::kControl;
       ep->interval = 0;
       ep->max_packet_size = ep0_max_packet;
       CmdEpSetConfig(*ep, true);
@@ -1200,9 +1200,9 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
     return;
   }
 
-  uint8_t ep_type = usb_ep_type2(request.ep_descriptor());
+  auto ep_type = usb_ep_type2(request.ep_descriptor());
 
-  if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
+  if (ep_type == fdescriptor::EndpointType::kIsochronous) {
     fdf::error("isochronous endpoints are not supported");
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
@@ -1357,24 +1357,24 @@ void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
   auto info{fendpoint::EndpointInfo::WithControl(fendpoint::ControlEndpointInfo{})};
 
   switch (uep_->ep.type) {
-    case USB_ENDPOINT_CONTROL:
+    case fdescriptor::EndpointType::kControl:
       // Set up above.
       break;
-    case USB_ENDPOINT_ISOCHRONOUS: {
+    case fdescriptor::EndpointType::kIsochronous: {
       fendpoint::IsochronousEndpointInfo isoc;
       isoc.lead_time(1);
       info.isochronous(std::move(isoc));
       break;
     }
-    case USB_ENDPOINT_BULK:
+    case fdescriptor::EndpointType::kBulk:
       info.bulk(fendpoint::BulkEndpointInfo{});
       break;
-    case USB_ENDPOINT_INTERRUPT:
+    case fdescriptor::EndpointType::kInterrupt:
       info.interrupt(fendpoint::InterruptEndpointInfo{});
       break;
     default:
       // In theory, this should never happen unless a new EP type is added to the spec.
-      fdf::error("unknown usb endpoint type: 0x{:x}", uep_->ep.type);
+      fdf::error("unknown usb endpoint type: 0x{:x}", static_cast<uint8_t>(uep_->ep.type));
       completer.Reply(zx::error(ZX_ERR_BAD_STATE));
   }
 

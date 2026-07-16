@@ -71,7 +71,7 @@ void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
       .FromValue(0)
       .set_FIFO_NUM(fifo_num)
       .set_MAX_PACKET_SIZE(ep.max_packet_size)
-      .set_EP_TYPE(ep.type)
+      .set_EP_TYPE(static_cast<uint32_t>(ep.type))
       .set_ACTION(action)
       .WriteTo(mmio);
   DEPCFG_DEPCMDPAR1::Get(ep_num)
@@ -163,8 +163,8 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
                       "%s: Called before rsrc_id was initialized with a valid value "
                       "ep.ep_num=%d ep.enabled=%d ep.type=%d ep.transfer_state=%d "
                       "ep.stalled=%d ep.rsrc_id=0x%08x",
-                      __func__, ep_num, ep.enabled, ep.type, ep.transfer_state, ep.stalled,
-                      rsrc_id);
+                      __func__, ep_num, ep.enabled, static_cast<uint8_t>(ep.type),
+                      ep.transfer_state, ep.stalled, rsrc_id);
 
   DEPCMDPAR0::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);

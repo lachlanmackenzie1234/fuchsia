@@ -4,6 +4,7 @@
 
 #include "asix-88772b.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/c/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <inttypes.h>
@@ -21,6 +22,8 @@
 
 #include <usb/usb-request.h>
 #include <usb/usb.h>
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 #define READ_REQ_COUNT 8
 #define WRITE_REQ_COUNT 4
@@ -645,13 +648,13 @@ static zx_status_t ax88772b_bind(void* ctx, zx_device_t* device) {
   usb_endpoint_descriptor_t* endp = usb_desc_iter_next_endpoint(&iter);
   while (endp) {
     if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_out_addr = endp->b_endpoint_address;
       }
     } else {
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_in_addr = endp->b_endpoint_address;
-      } else if (usb_ep_type(endp) == USB_ENDPOINT_INTERRUPT) {
+      } else if (usb_ep_type(endp) == fdescriptor::EndpointType::kInterrupt) {
         intr_addr = endp->b_endpoint_address;
       }
     }

@@ -4,6 +4,7 @@
 
 #include "src/devices/usb/drivers/xhci/usb-xhci.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/ddk/hw/arch_ops.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
@@ -41,6 +42,7 @@
 #include "src/devices/usb/drivers/xhci/xhci-enumeration.h"
 
 namespace usb_xhci {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace {
 
@@ -53,9 +55,10 @@ uint32_t RoundUp(uint32_t dividend, uint32_t divisor) { return 1 + (dividend - 1
 
 // Computes the interval value for a specified endpoint.
 int ComputeInterval(const usb_endpoint_descriptor_t* ep, usb_speed_t speed) {
-  uint8_t ep_type = ep->bm_attributes & USB_ENDPOINT_TYPE_MASK;
+  fdescriptor::EndpointType ep_type = usb_ep_type(ep);
   uint8_t interval = ep->b_interval;
-  if (ep_type == USB_ENDPOINT_CONTROL || ep_type == USB_ENDPOINT_BULK) {
+  if (ep_type == fdescriptor::EndpointType::kControl ||
+      ep_type == fdescriptor::EndpointType::kBulk) {
     if (speed == USB_SPEED_HIGH) {
       interval = std::clamp(interval, static_cast<uint8_t>(1), static_cast<uint8_t>(16));
       return Log2(interval);
@@ -67,7 +70,8 @@ int ComputeInterval(const usb_endpoint_descriptor_t* ep, usb_speed_t speed) {
   // now we deal with interrupt and isochronous endpoints
   // first make sure bInterval is in legal range
   // See table 6-12 in xHCI specification section 6.2.3.6
-  if (ep_type == USB_ENDPOINT_INTERRUPT && (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL)) {
+  if (ep_type == fdescriptor::EndpointType::kInterrupt &&
+      (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL)) {
     interval = static_cast<uint8_t>(std::clamp(static_cast<int>(interval), 1, 255));
   } else {
     interval = static_cast<uint8_t>(std::clamp(static_cast<int>(interval), 1, 16));
@@ -77,7 +81,7 @@ int ComputeInterval(const usb_endpoint_descriptor_t* ep, usb_speed_t speed) {
     case USB_SPEED_LOW:
       return Log2(interval) + 3;  // + 3 to convert 125us to 1ms
     case USB_SPEED_FULL:
-      if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
+      if (ep_type == fdescriptor::EndpointType::kIsochronous) {
         return (interval - 1) + 3;
       } else {
         return Log2(interval) + 3;
@@ -764,11 +768,11 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciEnableEndpoint(
         reinterpret_cast<unsigned char*>(control) + (slot_size_bytes_ * (2 + index)));
 
     // See section 4.3.6
-    uint32_t ep_type = ep_desc->bm_attributes & USB_ENDPOINT_TYPE_MASK;
-    if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
+    fdescriptor::EndpointType ep_type = usb_ep_type(ep_desc);
+    if (ep_type == fdescriptor::EndpointType::kIsochronous) {
       state->GetEndpoint(index - 1).transfer_ring().SetIsochronous();
     }
-    uint32_t ep_index = ep_type;
+    uint32_t ep_index = static_cast<uint32_t>(ep_type);
     if ((ep_desc->b_endpoint_address & USB_ENDPOINT_DIR_MASK) == USB_ENDPOINT_IN) {
       ep_index += 4;
     }
@@ -785,12 +789,13 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciEnableEndpoint(
       max_burst = ss_com_desc->b_max_burst;
     } else {
       // TODO: Handle special case for interrupt/isochronous endpoints
-      if ((slot_context->SPEED() == USB_SPEED_HIGH) && (ep_type == USB_ENDPOINT_ISOCHRONOUS)) {
+      if ((slot_context->SPEED() == USB_SPEED_HIGH) &&
+          (ep_type == fdescriptor::EndpointType::kIsochronous)) {
         max_burst = (le16toh((ep_desc)->w_max_packet_size) >> 11) & 3;
       }
     }
     endpoint_context->set_MaxBurstSize(max_burst);
-    if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
+    if (ep_type == fdescriptor::EndpointType::kIsochronous) {
       endpoint_context->set_MAX_ESIT_PAYLOAD_LOW((ep_desc->w_max_packet_size & 0x07FF) *
                                                  (max_burst + 1));
     }

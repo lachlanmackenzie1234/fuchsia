@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -28,6 +29,7 @@
 constexpr int BULK_MAX_PACKET = 512;
 
 namespace one_endpoint_hid_function {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace ffdf = fuchsia_driver_framework;
 namespace fhidbus = fuchsia_hardware_hidbus;
@@ -147,7 +149,7 @@ zx::result<> FakeUsbHidFunction::Start(fdf::DriverContext context) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_IN,  // set later
-      .bm_attributes = USB_ENDPOINT_INTERRUPT,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kInterrupt),
       .w_max_packet_size = htole16(BULK_MAX_PACKET),
       .b_interval = 8,
   };

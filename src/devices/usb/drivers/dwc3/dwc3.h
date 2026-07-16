@@ -136,8 +136,9 @@ class Dwc3 : public fdf::DriverBase2,
 
   // Gating flag to enable enqueueing multiple TRBs at once for a given endpoint
   // type.
-  bool AllowEnqueueManyTRBs(uint8_t ep_type) const {
-    return enable_enqueue_many_trbs_ && ep_type == USB_ENDPOINT_BULK;
+  bool AllowEnqueueManyTRBs(fuchsia_hardware_usb_descriptor::EndpointType ep_type) const {
+    return enable_enqueue_many_trbs_ &&
+           ep_type == fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
   }
 
   // For testing.
@@ -213,7 +214,8 @@ class Dwc3 : public fdf::DriverBase2,
     uint32_t rsrc_id{kInvalidResourceId};  // resource ID for current_req
 
     const uint8_t ep_num{0};
-    uint8_t type{0};  // control, bulk, interrupt or isochronous
+    fuchsia_hardware_usb_descriptor::EndpointType type{
+        fuchsia_hardware_usb_descriptor::EndpointType::kControl};
     uint8_t interval{0};
     uint16_t max_packet_size{0};
     bool enabled{false};

@@ -29,6 +29,8 @@
 #include <gtest/gtest.h>
 #include <usb/descriptors.h>
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 #include "lib/driver/fake-platform-device/cpp/fake-pdev.h"
 #include "lib/driver/testing/cpp/driver_test.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
@@ -136,7 +138,7 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
       .b_length = sizeof(fuchsia_hardware_usb_descriptor::wire::UsbEndpointDescriptor),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = 0x02,  // EP 2 OUT
-      .bm_attributes = USB_ENDPOINT_BULK,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = 1024,
       .b_interval = 0,
   };
@@ -286,7 +288,7 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
 
   const auto* type = ep2_out->node().get_property<inspect::UintPropertyValue>("type");
   ASSERT_NE(nullptr, type) << "Endpoint 'type' property was not found!";
-  EXPECT_EQ(static_cast<uint64_t>(USB_ENDPOINT_BULK), type->value());
+  EXPECT_EQ(static_cast<uint64_t>(fdescriptor::EndpointType::kBulk), type->value());
 
   const auto* enabled = ep2_out->node().get_property<inspect::BoolPropertyValue>("enabled");
   ASSERT_NE(nullptr, enabled) << "Endpoint 'enabled' property was not found!";
@@ -339,7 +341,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoTooSmall) {
   // Configure EP1 IN (0x81) with max packet size 512 (which is > 128)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x81;
-  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -374,7 +376,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoSufficient) {
   // Configure EP1 IN (0x81) with max packet size 512 (which is == 512)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x81;
-  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -405,7 +407,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoIndexOob) {
   // Since DWC_USB31_NUM_IN_EPS is 4, fifo_num 5 is OOB.
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x8A;
-  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -440,7 +442,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoTooSmall) {
   // Configure EP1 OUT (0x01) with max packet size 512 (which is > 128)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x01;
-  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -475,7 +477,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoSufficient) {
   // Configure EP1 OUT (0x01) with max packet size 512 (which is == 512)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x01;
-  ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 

@@ -4,6 +4,7 @@
 
 #include "usb-audio-device.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/fit/defer.h>
 #include <string.h>
@@ -426,11 +427,12 @@ void UsbAudioDevice::ParseMidiStreamingIfc(DescriptorListMemory::Iterator* iter,
 
         // If this is not a bulk transfer endpoint, then we are not quite sure what to do with
         // it.  Log a warning and skip it.
-        if (usb_ep_type(ep_desc) != USB_ENDPOINT_BULK) {
+        if (usb_ep_type(ep_desc) != fuchsia_hardware_usb_descriptor::EndpointType::kBulk) {
           LOG(WARNING,
               "Skipping Non-bulk transfer endpoint (%u) found for MIDI streaming interface "
               "(iid %u, alt %u)",
-              usb_ep_type(ep_desc), info.ifc->b_interface_number, info.ifc->b_alternate_setting);
+              static_cast<uint8_t>(usb_ep_type(ep_desc)), info.ifc->b_interface_number,
+              info.ifc->b_alternate_setting);
           continue;
         }
 

@@ -43,6 +43,7 @@ test("usb-wrapper-test-bin") {
   deps = [
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.composite:fuchsia.hardware.usb.composite_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/lib/fdio",
     "//src/devices/lib/driver",
     "//src/devices/testing/fake-bti",

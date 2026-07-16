@@ -30,6 +30,7 @@ fuchsia_cc_driver("ums-function-driver") {
   deps = [
     ":usb_ums_bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_cpp",

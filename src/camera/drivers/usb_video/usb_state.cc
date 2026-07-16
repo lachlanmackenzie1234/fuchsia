@@ -281,7 +281,7 @@ zx_status_t UsbState::StopStreaming() {
 
 UsbState::~UsbState() {}
 
-zx_status_t UsbState::Allocate(uint64_t size, int ep_type) {
+zx_status_t UsbState::Allocate(uint64_t size, fdescriptor::EndpointType ep_type) {
   if (streaming_state_ != StreamingState::STOPPED && streaming_state_ != StreamingState::READY) {
     zxlogf(ERROR, "Failed to allocate usb requests because state != STOPPED or READY");
     return ZX_ERR_BAD_STATE;
@@ -311,7 +311,7 @@ zx_status_t UsbState::Allocate(uint64_t size, int ep_type) {
 
   // So, if this is the first time allocating requests for an isochronous stream, allocate
   // the maximum bandwidth instead.
-  if ((ep_type == USB_ENDPOINT_ISOCHRONOUS) && (allocated_req_size_ == 0)) {
+  if ((ep_type == fdescriptor::EndpointType::kIsochronous) && (allocated_req_size_ == 0)) {
     for (const auto& setting : streaming_settings_.endpoint_settings) {
       if (setting.isoc_bandwidth > size) {
         size = setting.isoc_bandwidth;
@@ -374,7 +374,8 @@ zx_status_t UsbState::SetFormat(fuchsia::camera::VideoFormat video_format) {
   // Find a setting that supports the required bandwidth.
   for (const auto& setting : streaming_settings_.endpoint_settings) {
     // For bulk transfers, we use the first (and only) setting.
-    if (setting.ep_type == USB_ENDPOINT_BULK || setting.isoc_bandwidth >= required_bandwidth) {
+    if (setting.ep_type == fdescriptor::EndpointType::kBulk ||
+        setting.isoc_bandwidth >= required_bandwidth) {
       best_setting = &setting;
       break;
     }
@@ -385,7 +386,7 @@ zx_status_t UsbState::SetFormat(fuchsia::camera::VideoFormat video_format) {
   }
 
   uint64_t allocate_req_size = best_setting->isoc_bandwidth;
-  if (best_setting->ep_type == USB_ENDPOINT_BULK) {
+  if (best_setting->ep_type == fdescriptor::EndpointType::kBulk) {
     allocate_req_size =
         std::min(usb_get_max_transfer_size(&usb_, usb_ep_addr_),
                  static_cast<uint64_t>(negotiation_result->dwMaxPayloadTransferSize));

@@ -24,6 +24,7 @@
 #include <usb/usb.h>
 
 namespace usb_fastboot_function {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 // The higher the value of `kBulkRequestSize`, the higher the speed. But if set too high, the driver
 // will start crashing more often due to memory error. Note that we allow up to 16 requests to be
@@ -132,7 +133,7 @@ class UsbFastbootFunction
     // This should be changed if/when the fastboot CLI logic (ffx and upstream fastboot tool) knows
     // how to handle interface alt-configs.
     usb_interface_descriptor_t placehodler_intf;
-  } descriptors_ = {
+  } descriptors_ [[maybe_unused]] = {
       .fastboot_intf =
           {
               .b_length = sizeof(usb_interface_descriptor_t),
@@ -150,7 +151,7 @@ class UsbFastbootFunction
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = 0,  // set later during AllocEp
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = htole16(uint16_t{kPacketSize}),
               .b_interval = 0,
           },
@@ -159,7 +160,7 @@ class UsbFastbootFunction
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = 0,  // set later during AllocEp
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = htole16(uint16_t{kPacketSize}),
               .b_interval = 0,
           },

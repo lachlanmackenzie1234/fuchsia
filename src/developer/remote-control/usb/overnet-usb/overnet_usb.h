@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.overnet/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -38,6 +39,7 @@
 namespace fdf {
 using namespace fuchsia_driver_framework;
 }
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class OvernetUsb;
 
@@ -328,7 +330,7 @@ class OvernetUsb : public fdf::DriverBase2,
     usb_interface_descriptor_t data_interface;
     usb_endpoint_descriptor_t out_ep;
     usb_endpoint_descriptor_t in_ep;
-  } __PACKED descriptors_ = {
+  } __PACKED descriptors_ [[maybe_unused]] = {
       .data_interface =
           {
               .b_length = sizeof(usb_interface_descriptor_t),
@@ -348,7 +350,7 @@ class OvernetUsb : public fdf::DriverBase2,
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = 0,  // set later
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = htole16(kMaxPacketSize),
               .b_interval = 0,
           },
@@ -356,7 +358,7 @@ class OvernetUsb : public fdf::DriverBase2,
           .b_length = sizeof(usb_endpoint_descriptor_t),
           .b_descriptor_type = USB_DT_ENDPOINT,
           .b_endpoint_address = 0,  // set later
-          .bm_attributes = USB_ENDPOINT_BULK,
+          .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
           .w_max_packet_size = htole16(kMaxPacketSize),
           .b_interval = 0,
       }};

@@ -4,6 +4,7 @@
 
 #include "usb-audio-stream-interface.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/fit/defer.h>
 
 #include <algorithm>
@@ -528,7 +529,7 @@ zx_status_t UsbAudioStreamInterface::Format::Init(DescriptorListMemory::Iterator
             "interface (iid %u, alt_id %u, ep_addr %u)",
             interface_hdr_->b_interface_number, alt_id(), ep_desc->b_endpoint_address);
       } else {
-        if ((usb_ep_type(ep_desc) != USB_ENDPOINT_ISOCHRONOUS) ||
+        if ((usb_ep_type(ep_desc) != fuchsia_hardware_usb_descriptor::EndpointType::kIsochronous) ||
             (usb_ep_sync_type(ep_desc) == USB_ENDPOINT_NO_SYNCHRONIZATION)) {
           LOG(WARNING,
               "Skipping endpoint descriptor with unsupported attributes "

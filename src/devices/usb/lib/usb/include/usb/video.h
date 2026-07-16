@@ -131,7 +131,7 @@ typedef struct {
 typedef struct {
     uint8_t bLength;
     uint8_t bDescriptorType;        // USB_VIDEO_CS_ENDPOINT
-    uint8_t bDescriptorSubtype;     // USB_ENDPOINT_INTERRUPT
+    uint8_t bDescriptorSubtype;     // EndpointType::kInterrupt
     uint16_t wMaxTransferSize;
 } __PACKED usb_video_vc_interrupt_endpoint_desc;
 

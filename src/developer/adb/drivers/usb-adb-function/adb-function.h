@@ -26,6 +26,7 @@
 #include <usb/usb.h>
 
 namespace usb_adb_function {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 constexpr uint32_t kBulkTxCount = 16;
 constexpr uint32_t kBulkRxCount = 16;
@@ -169,7 +170,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
     usb_interface_descriptor_t adb_intf;
     usb_endpoint_descriptor_t bulk_out_ep;
     usb_endpoint_descriptor_t bulk_in_ep;
-  } descriptors_ = {
+  } descriptors_ [[maybe_unused]] = {
       .adb_intf =
           {
               .b_length = sizeof(usb_interface_descriptor_t),
@@ -187,7 +188,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = 0,  // set later during AllocEp
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = htole16(kBulkMaxPacket),
               .b_interval = 0,
           },
@@ -196,7 +197,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = 0,  // set later during AllocEp
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = htole16(kBulkMaxPacket),
               .b_interval = 0,
           },

@@ -30,6 +30,7 @@ fuchsia_cc_driver("usb-cdc-acm-driver") {
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.composite:fuchsia.hardware.usb.composite_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/lib/driver/outgoing/cpp",
     "//sdk/lib/stdcompat",
     "//src/devices/lib/driver",
@@ -79,6 +80,7 @@ fuchsia_cc_driver("fake-usb-cdc-acm-driver") {
   sources = [ "usb-cdc-acm-function.cc" ]
   deps = [
     ":usb_cdc_acm_function_bind",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/lib/driver/component/cpp",

@@ -5,11 +5,14 @@
 #ifndef SRC_DEVICES_ML_DRIVERS_USB_HARRIET_USB_HARRIET_H_
 #define SRC_DEVICES_ML_DRIVERS_USB_HARRIET_USB_HARRIET_H_
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
+
 #include <ddktl/device.h>
 #include <ddktl/protocol/empty-protocol.h>
 #include <usb/usb.h>
 
 namespace usb_harriet {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class Harriet;
 using HarrietBase = ddk::Device<Harriet>;

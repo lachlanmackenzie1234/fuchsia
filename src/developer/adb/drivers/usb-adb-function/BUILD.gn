@@ -26,6 +26,7 @@ source_set("usb-adb-common") {
   public_deps = [
     ":usb_adb_bind",
     "//sdk/fidl/fuchsia.hardware.adb:fuchsia.hardware.adb_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",

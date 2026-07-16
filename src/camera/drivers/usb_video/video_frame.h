@@ -5,6 +5,7 @@
 #ifndef SRC_CAMERA_DRIVERS_USB_VIDEO_VIDEO_FRAME_H_
 #define SRC_CAMERA_DRIVERS_USB_VIDEO_VIDEO_FRAME_H_
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/fit/function.h>
 #include <lib/fzl/vmo-pool.h>
 
@@ -16,6 +17,7 @@
 #include "src/camera/drivers/usb_video/usb_state.h"
 
 namespace camera::usb_video {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 // VideoFrame represents one frame of a video stream.  Instances of this class
 // are created when a new frame is detected, and destroyed when the frame is fully
@@ -70,7 +72,8 @@ class VideoFrame {
   };
 
   bool HasPayloadHeader() const {
-    return usb_state_.EndpointType() != USB_ENDPOINT_BULK || bulk_payload_bytes_ == 0;
+    return usb_state_.EndpointType() != fdescriptor::EndpointType::kBulk ||
+           bulk_payload_bytes_ == 0;
   }
 
   bool IsPayloadComplete(usb_request_t* req);

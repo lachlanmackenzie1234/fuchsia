@@ -5,6 +5,7 @@
 #ifndef SRC_CONNECTIVITY_ETHERNET_DRIVERS_ASIX_88179_ASIX_88179_H_
 #define SRC_CONNECTIVITY_ETHERNET_DRIVERS_ASIX_88179_ASIX_88179_H_
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <lib/ddk/device.h>
 #include <lib/operation/ethernet.h>
@@ -22,6 +23,7 @@
 #include <usb/usb.h>
 
 namespace eth {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class Asix88179Ethernet;
 

@@ -5,6 +5,7 @@
 #include "src/devices/usb/drivers/usb-peripheral/usb-peripheral.h"
 
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/wire_test_base.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
@@ -52,6 +53,7 @@ inline std::ostream& operator<<(std::ostream& os, const UsbPeripheral::DeviceSta
 
 namespace usb_peripheral::test {
 namespace {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 using inspect::testing::BoolIs;
 using inspect::testing::NameMatches;
@@ -1592,7 +1594,7 @@ TEST_F(UsbPeripheralFunctionTest, AllocResources) {
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = ep1_addr,
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = 512,
           },
       .ep2 =
@@ -1600,7 +1602,7 @@ TEST_F(UsbPeripheralFunctionTest, AllocResources) {
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = ep2_addr,
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = 512,
           },
   };

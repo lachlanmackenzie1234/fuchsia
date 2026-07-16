@@ -6,6 +6,7 @@
 #define SRC_DEVICES_SERIAL_DRIVERS_USB_CDC_ACM_USB_CDC_ACM_H_
 
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/stdcompat/span.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,7 @@
 #include "sdk/lib/driver/outgoing/cpp/outgoing_directory.h"
 
 namespace usb_cdc_acm_serial {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class UsbCdcAcmDevice;
 using DeviceType = ddk::Device<UsbCdcAcmDevice, ddk::Unbindable>;

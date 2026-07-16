@@ -32,6 +32,7 @@ namespace usb_hid {
 
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace fhidbus = fuchsia_hardware_hidbus;
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 #define to_usb_hid(d) containerof(d, usb_hid_device_t, hiddev)
 
@@ -383,7 +384,7 @@ void UsbHidbus::FindDescriptors(usb::Interface interface, const usb_hid_descript
       *hid_desc = reinterpret_cast<const usb_hid_descriptor_t*>(&descriptor);
     } else if (descriptor.b_descriptor_type == USB_DT_ENDPOINT) {
       auto endpt_desc = reinterpret_cast<const usb_endpoint_descriptor_t*>(&descriptor);
-      if (usb_ep_type(endpt_desc) == USB_ENDPOINT_INTERRUPT) {
+      if (usb_ep_type(endpt_desc) == fdescriptor::EndpointType::kInterrupt) {
         switch (usb_ep_direction(endpt_desc)) {
           case USB_ENDPOINT_IN:
             *endptin = endpt_desc;

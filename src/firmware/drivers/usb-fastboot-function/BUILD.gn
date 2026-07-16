@@ -39,6 +39,7 @@ source_set("usb-fastboot-function-common") {
   public_deps = [
     ":bind",
     "//sdk/fidl/fuchsia.hardware.fastboot:fuchsia.hardware.fastboot_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",

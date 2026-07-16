@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.ftdi/cpp/wire.h>
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <lib/ddk/device.h>
 #include <lib/stdcompat/span.h>
@@ -26,6 +27,7 @@
 #include "sdk/lib/driver/outgoing/cpp/outgoing_directory.h"
 
 namespace ftdi_serial {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 constexpr uint16_t kFtdiTypeR = 0x0600;
 constexpr uint16_t kFtdiTypeBm = 0x0400;

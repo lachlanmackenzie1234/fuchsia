@@ -110,14 +110,14 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
     for (const auto& endpoint : interface.GetEndpointList()) {
       const usb_endpoint_descriptor_t* endpoint_desc = endpoint.descriptor();
       if (usb_ep_direction(endpoint_desc) == USB_ENDPOINT_OUT &&
-          usb_ep_type(endpoint_desc) == USB_ENDPOINT_BULK) {
+          usb_ep_type(endpoint_desc) == fdescriptor::EndpointType::kBulk) {
         if (tx_ep.has_value()) {
           zxlogf(ERROR, "Multiple tx endpoint descriptors");
           return zx::error(ZX_ERR_NOT_SUPPORTED);
         }
         tx_ep = EcmEndpoint(endpoint_desc);
       } else if (usb_ep_direction(endpoint_desc) == USB_ENDPOINT_IN &&
-                 usb_ep_type(endpoint_desc) == USB_ENDPOINT_BULK) {
+                 usb_ep_type(endpoint_desc) == fdescriptor::EndpointType::kBulk) {
         if (rx_ep.has_value()) {
           zxlogf(ERROR, "Multiple rx endpoint descriptors");
           return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -177,7 +177,7 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
     for (const auto& endpoint : interface.GetEndpointList()) {
       const usb_endpoint_descriptor_t* endpoint_desc = endpoint.descriptor();
       if (usb_ep_direction(endpoint_desc) == USB_ENDPOINT_IN &&
-          usb_ep_type(endpoint_desc) == USB_ENDPOINT_INTERRUPT) {
+          usb_ep_type(endpoint_desc) == fdescriptor::EndpointType::kInterrupt) {
         if (int_ep.has_value()) {
           zxlogf(ERROR, "Multiple interrupt endpoint descriptors");
           return zx::error(ZX_ERR_NOT_SUPPORTED);

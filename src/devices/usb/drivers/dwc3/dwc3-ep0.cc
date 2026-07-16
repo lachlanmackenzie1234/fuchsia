@@ -29,7 +29,7 @@ zx_status_t Dwc3::Ep0Init() {
   const std::array eps{&ep0_.out, &ep0_.in};
   for (Endpoint* ep : eps) {
     ep->max_packet_size = kEp0MaxPacketSize;
-    ep->type = USB_ENDPOINT_CONTROL;
+    ep->type = fdescriptor::EndpointType::kControl;
     ep->interval = 0;
   }
   ep0_.out.usb_endpoint_address = 0x00;
@@ -61,7 +61,7 @@ void Dwc3::Ep0StartEndpoints() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0StartEndpoints");
   fdf::debug("Dwc3::Ep0StartEndpoints");
 
-  ep0_.in.type = USB_ENDPOINT_CONTROL;
+  ep0_.in.type = fdescriptor::EndpointType::kControl;
   ep0_.in.interval = 0;
   CmdEpSetConfig(ep0_.in, true);
 

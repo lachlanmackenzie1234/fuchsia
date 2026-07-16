@@ -6,6 +6,7 @@
 #define SRC_UI_INPUT_DRIVERS_USB_HID_USB_HID_H_
 
 #include <fidl/fuchsia.hardware.hidbus/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
 #include <fuchsia/hardware/usb/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>

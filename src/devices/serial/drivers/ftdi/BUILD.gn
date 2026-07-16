@@ -41,6 +41,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.ftdi:fuchsia.hardware.ftdi_cpp",
     "//sdk/fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_cpp",
     "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/lib/driver/outgoing/cpp",
     "//src/devices/usb/lib/usb",
     "//src/lib/ddktl",
@@ -94,6 +95,7 @@ fuchsia_cc_driver("ftdi-fake-usb-driver") {
   deps = [
     ":ftdi_function_bind",
     "//sdk/fidl/fuchsia.hardware.ftdi:fuchsia.hardware.ftdi_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/lib/driver/component/cpp",

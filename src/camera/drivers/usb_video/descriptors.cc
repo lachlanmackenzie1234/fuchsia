@@ -496,7 +496,7 @@ zx::result<StreamingSetting> LoadStreamingSettings(usb_desc_iter_t* iter) {
     zxlogf(ERROR, "No alternate settings given");
     return zx::error(ZX_ERR_BAD_STATE);
   }
-  if (settings.endpoint_settings[0].ep_type == USB_ENDPOINT_BULK) {
+  if (settings.endpoint_settings[0].ep_type == fdescriptor::EndpointType::kBulk) {
     if (settings.endpoint_settings.size() > 1 || settings.endpoint_settings[0].alt_setting != 0) {
       zxlogf(ERROR, "bulk endpoint shall support only alternate setting zero.");
       return zx::error(ZX_ERR_BAD_STATE);
@@ -505,9 +505,10 @@ zx::result<StreamingSetting> LoadStreamingSettings(usb_desc_iter_t* iter) {
     // For isochronous endpoints, just make sure all the types are consistent:
     for (const StreamingEndpointSetting& setting : settings.endpoint_settings) {
       // The streaming settings should all be of the same type,
-      // in this case all USB_ENDPOINT_ISOCHRONOUS.
-      if (setting.ep_type != USB_ENDPOINT_ISOCHRONOUS) {
-        zxlogf(ERROR, "expected isochronous endpoint, got %u", setting.ep_type);
+      // in this case all isochronous (`EndpointType::kIsochronous`).
+      if (setting.ep_type != fdescriptor::EndpointType::kIsochronous) {
+        zxlogf(ERROR, "expected isochronous endpoint, got %u",
+               static_cast<uint8_t>(setting.ep_type));
         return zx::error(ZX_ERR_BAD_STATE);
       }
     }

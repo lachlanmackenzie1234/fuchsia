@@ -5,6 +5,7 @@
 #include "qmi-usb-transport.h"
 
 #include <endian.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/zx/channel.h>
@@ -35,6 +36,7 @@
 #define ETHERNET_INITIAL_RECV_DELAY 0
 
 namespace telephony_snoop = fuchsia_telephony_snoop;
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 // TODO(jiamingw): investigate whether it can be replaced by eth::Operation
 typedef struct txn_info {
@@ -811,14 +813,14 @@ zx_status_t Device::Bind() __TA_NO_THREAD_SAFETY_ANALYSIS {
         break;
       }
       if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
-        if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+        if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
           bulk_out_addr = endp->b_endpoint_address;
           bulk_max_packet = usb_ep_max_packet(endp);
         }
       } else {
-        if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+        if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
           bulk_in_addr = endp->b_endpoint_address;
-        } else if (usb_ep_type(endp) == USB_ENDPOINT_INTERRUPT) {
+        } else if (usb_ep_type(endp) == fdescriptor::EndpointType::kInterrupt) {
           intr_addr = endp->b_endpoint_address;
           intr_max_packet = usb_ep_max_packet(endp);
         }

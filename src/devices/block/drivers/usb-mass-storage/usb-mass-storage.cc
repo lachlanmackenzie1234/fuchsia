@@ -5,6 +5,7 @@
 #include "usb-mass-storage.h"
 
 #include <endian.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/block-device.h>
@@ -22,6 +23,7 @@
 #include <usb/usb.h>
 
 namespace ums {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 namespace {
 
 constexpr uint8_t kPlaceholderTarget = 0;
@@ -189,12 +191,12 @@ zx_status_t UsbMassStorageDevice::Init() {
   for (auto ep_itr : interfaces->begin()->GetEndpointList()) {
     const usb_endpoint_descriptor_t* endp = ep_itr.descriptor();
     if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_out_addr = endp->b_endpoint_address;
         bulk_out_max_packet = usb_ep_max_packet(endp);
       }
     } else {
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_in_addr = endp->b_endpoint_address;
         bulk_in_max_packet = usb_ep_max_packet(endp);
       }

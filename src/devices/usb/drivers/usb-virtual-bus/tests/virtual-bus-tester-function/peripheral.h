@@ -15,6 +15,7 @@
 #include <usb/descriptors.h>
 
 namespace virtualbus {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class TestFunction : public fdf::DriverBase2,
                      public fidl::Server<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> {
@@ -56,7 +57,7 @@ class TestFunction : public fdf::DriverBase2,
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = USB_ENDPOINT_OUT,
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = 512,
               .b_interval = 0,
           },
@@ -65,7 +66,7 @@ class TestFunction : public fdf::DriverBase2,
               .b_length = sizeof(usb_endpoint_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               .b_endpoint_address = USB_ENDPOINT_IN,
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = 512,
               .b_interval = 0,
           },

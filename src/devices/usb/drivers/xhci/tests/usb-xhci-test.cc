@@ -21,6 +21,8 @@
 
 namespace usb_xhci {
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 struct FakeTRB;
 struct FakePhysAddr {
   uint64_t magic;
@@ -346,11 +348,12 @@ class XhciHarness : public ::testing::Test {
 
   void RequestQueue(TestRequest request) {
     static const usb_protocol_ops_t ops = {
-        .request_queue = [](void* ctx, usb_request_t* usb_request,
-                             const usb_request_complete_callback_t* complete_cb) {
-          auto* driver = static_cast<UsbXhci*>(ctx);
-          driver->UsbHciRequestQueue(usb_request, complete_cb);
-        },
+        .request_queue =
+            [](void* ctx, usb_request_t* usb_request,
+               const usb_request_complete_callback_t* complete_cb) {
+              auto* driver = static_cast<UsbXhci*>(ctx);
+              driver->UsbHciRequestQueue(usb_request, complete_cb);
+            },
     };
     usb_protocol_t proto = {
         .ops = &ops,
@@ -413,7 +416,7 @@ class XhciHarness : public ::testing::Test {
 
   void EnableEndpoint(uint32_t device_id, uint8_t ep_num, bool is_in_endpoint) {
     usb_endpoint_descriptor_t ep_desc = {};
-    ep_desc.bm_attributes = USB_ENDPOINT_BULK;
+    ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
     ep_desc.b_endpoint_address = ep_num | (is_in_endpoint ? 0x80 : 0);
     driver_test().driver()->UsbHciEnableEndpoint(device_id, &ep_desc, nullptr);
   }

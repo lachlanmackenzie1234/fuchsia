@@ -65,7 +65,7 @@ zx::result<VideoFrame::PayloadHeader> VideoFrame::PayloadHeader::ParseHeader(usb
 }
 
 bool VideoFrame::IsPayloadComplete(usb_request_t* req) {
-  if (usb_state_.EndpointType() == USB_ENDPOINT_ISOCHRONOUS) {
+  if (usb_state_.EndpointType() == fdescriptor::EndpointType::kIsochronous) {
     return true;
   }
   bulk_payload_bytes_ += req->response.actual;

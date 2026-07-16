@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/usb/descriptor/c/banjo.h>
 
 #include <usb/hid.h>
@@ -9,6 +10,7 @@
 #include <zxtest/zxtest.h>
 
 namespace usb {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 struct usb_hid_descriptor_for_test_t {
   uint8_t bLength;
@@ -625,7 +627,7 @@ TEST_F(BinaryHidDescriptorTest, TestBinaryHidDescriptor) {
       } else if (descriptor.b_descriptor_type == USB_DT_ENDPOINT) {
         endpoint_desc = reinterpret_cast<const usb_endpoint_descriptor_t*>(&descriptor);
         EXPECT_EQ(usb_ep_direction(endpoint_desc), USB_ENDPOINT_IN);
-        EXPECT_EQ(usb_ep_type(endpoint_desc), USB_ENDPOINT_INTERRUPT);
+        EXPECT_EQ(usb_ep_type(endpoint_desc), fdescriptor::EndpointType::kInterrupt);
       }
     }
   }

@@ -1165,7 +1165,7 @@ zx::result<> RndisFunction::Start(fdf::DriverContext context) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = notification_addr,
-      .bm_attributes = USB_ENDPOINT_INTERRUPT,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kInterrupt),
       .w_max_packet_size = htole16(kNotificationMaxPacketSize),
       .b_interval = 1,
   };
@@ -1184,7 +1184,7 @@ zx::result<> RndisFunction::Start(fdf::DriverContext context) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = bulk_in_addr,
-      .bm_attributes = USB_ENDPOINT_BULK,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = htole16(512),
       .b_interval = 0,
   };
@@ -1192,7 +1192,7 @@ zx::result<> RndisFunction::Start(fdf::DriverContext context) {
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = bulk_out_addr,
-      .bm_attributes = USB_ENDPOINT_BULK,
+      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = htole16(512),
       .b_interval = 0,
   };

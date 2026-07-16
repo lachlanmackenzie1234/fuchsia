@@ -1416,10 +1416,10 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   }
 
   bool is_in = usb_ep_direction2(ep_addr);
-  uint8_t ep_type = usb_ep_type2(request.ep_descriptor());
+  fdescriptor::EndpointType ep_type = usb_ep_type2(request.ep_descriptor());
   uint16_t max_packet_size = usb_ep_max_packet2(request.ep_descriptor());
 
-  if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
+  if (ep_type == fdescriptor::EndpointType::kIsochronous) {
     fdf::error("Dwc2::ConfigureEndpoint: isochronous endpoints are not supported");
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
@@ -1454,7 +1454,7 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   DEPCTL::Get(ep_num)
       .FromValue(0)
       .set_mps(ep->max_packet_size)
-      .set_eptype(ep_type)
+      .set_eptype(static_cast<uint8_t>(ep_type))
       .set_setd0pid(1)
       .set_txfnum(is_in ? ep_num : 0)
       .set_usbactep(1)

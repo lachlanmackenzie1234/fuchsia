@@ -4,11 +4,13 @@
 
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/host.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 
 #include <usb/request-cpp.h>
 
 namespace virtualbus {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 void Device::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
   if (request.is_in()) {
@@ -78,12 +80,12 @@ zx::result<> Device::Start(fdf::DriverContext context) {
   for (auto& interface : *usb_interface_list) {
     for (auto ep_itr : interface.GetEndpointList()) {
       if (usb_ep_direction(ep_itr.descriptor()) == USB_ENDPOINT_OUT) {
-        if (usb_ep_type(ep_itr.descriptor()) == USB_ENDPOINT_BULK) {
+        if (usb_ep_type(ep_itr.descriptor()) == fdescriptor::EndpointType::kBulk) {
           bulk_out_addr_ = ep_itr.descriptor()->b_endpoint_address;
         }
       }
       if (usb_ep_direction(ep_itr.descriptor()) == USB_ENDPOINT_IN) {
-        if (usb_ep_type(ep_itr.descriptor()) == USB_ENDPOINT_BULK) {
+        if (usb_ep_type(ep_itr.descriptor()) == fdescriptor::EndpointType::kBulk) {
           bulk_in_addr_ = ep_itr.descriptor()->b_endpoint_address;
         }
       }

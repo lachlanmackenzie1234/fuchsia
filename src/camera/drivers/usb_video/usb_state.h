@@ -128,7 +128,7 @@ class UsbState {
   }
 
   // Can only be called after format has been set
-  uint32_t EndpointType() const __TA_EXCLUDES(lock_) {
+  fdescriptor::EndpointType EndpointType() const __TA_EXCLUDES(lock_) {
     fbl::AutoLock lock(&lock_);
     ZX_ASSERT(streaming_state_ != StreamingState::STOPPED);
     return ep_type_;
@@ -143,7 +143,7 @@ class UsbState {
   // Returns immediately if the list already contains large enough usb
   // requests, otherwise frees existing requests before allocating new ones.
   // The current streaming state must be StreamingState::STOPPED.
-  zx_status_t Allocate(uint64_t size, int ep_type) __TA_REQUIRES(lock_);
+  zx_status_t Allocate(uint64_t size, fdescriptor::EndpointType ep_type) __TA_REQUIRES(lock_);
 
   // when we get a request, send it to the callback and put it back in the queue:
   void RequestComplete(usb_request_t* req) __TA_EXCLUDES(lock_);
@@ -176,7 +176,7 @@ class UsbState {
   // These variables are set by SetFormat().
   std::optional<usb_video_vc_probe_and_commit_controls> negotiation_result_ = std::nullopt;
   uint8_t alt_setting_ = 0;
-  int ep_type_ = 0;
+  fdescriptor::EndpointType ep_type_ = fdescriptor::EndpointType::kControl;
 
   // The frequency given by the control header:
   uint32_t dev_clock_frequency_hz_ = 0;

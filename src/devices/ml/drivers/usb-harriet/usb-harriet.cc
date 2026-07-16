@@ -45,17 +45,18 @@ zx_status_t Harriet::Create(zx_device_t* parent) {
   for (auto& intf : *intfs) {
     auto ep_itr = intf.GetEndpointList().cbegin();
     do {
-      uint8_t ep_type = usb_ep_type(ep_itr->descriptor());
+      fdescriptor::EndpointType ep_type = usb_ep_type(ep_itr->descriptor());
       switch (ep_type) {
-        case USB_ENDPOINT_BULK:
-        case USB_ENDPOINT_INTERRUPT:
-          zxlogf(DEBUG, "%s %s EP 0x%x", ep_type == USB_ENDPOINT_BULK ? "BULK" : "INTERRUPT",
+        case fdescriptor::EndpointType::kBulk:
+        case fdescriptor::EndpointType::kInterrupt:
+          zxlogf(DEBUG, "%s %s EP 0x%x",
+                 ep_type == fdescriptor::EndpointType::kBulk ? "BULK" : "INTERRUPT",
                  usb_ep_direction(ep_itr->descriptor()) == USB_ENDPOINT_OUT ? "OUT" : "IN",
                  ep_itr->descriptor()->b_endpoint_address);
           break;
         default:
-          zxlogf(DEBUG, "found additional unexpected EP, type: %u addr 0x%x", ep_type,
-                 ep_itr->descriptor()->b_endpoint_address);
+          zxlogf(DEBUG, "found additional unexpected EP, type: %u addr 0x%x",
+                 static_cast<uint8_t>(ep_type), ep_itr->descriptor()->b_endpoint_address);
       }
     } while (ep_itr++ != intf.GetEndpointList().end());
   }

@@ -252,7 +252,8 @@ class Endpoint {
 //   for (const auto& interface : *interfaces) {
 //     for (auto& endpoint : interface.GetEndpointList()) {
 //       if (usb_ep_direction(endpoint.descriptor()) == USB_ENDPOINT_IN &&
-//           usb_ep_type(endpoint.descriptor()) == USB_ENDPOINT_INTERRUPT) {
+//           usb_ep_type(endpoint.descriptor()) ==
+//           static_cast<uint8_t>(fdescriptor::EndpointType::kInterrupt)) {
 //         return std::make_optional<usb_endpoint_descriptor_t>(*endpoint.descriptor());
 //       }
 //     }

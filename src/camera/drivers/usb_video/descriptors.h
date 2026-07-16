@@ -5,6 +5,7 @@
 #ifndef SRC_CAMERA_DRIVERS_USB_VIDEO_DESCRIPTORS_H_
 #define SRC_CAMERA_DRIVERS_USB_VIDEO_DESCRIPTORS_H_
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/camera/cpp/fidl.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <lib/zx/result.h>
@@ -15,6 +16,10 @@
 #include <usb/video.h>
 
 namespace camera::usb_video {
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+// enum class UvcPixelFormat...
 
 enum class UvcPixelFormat {
   INVALID,  // default value, not supported
@@ -56,8 +61,8 @@ struct StreamingEndpointSetting {
   // Only meaningful for isochronous endpoints:
   const uint32_t isoc_bandwidth;
 
-  // USB_ENDPOINT_BULK or USB_ENDPOINT_ISOCHRONOUS
-  const int ep_type;
+  // EndpointType::kBulk or EndpointType::kIsochronous
+  const fdescriptor::EndpointType ep_type;
 };
 
 struct StreamingSetting {

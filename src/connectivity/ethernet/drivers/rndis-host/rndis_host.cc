@@ -4,6 +4,7 @@
 
 #include "rndis_host.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/c/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <lib/ddk/binding_driver.h>
@@ -21,6 +22,8 @@
 #include <usb/cdc.h>
 #include <usb/usb-request.h>
 #include <usb/usb.h>
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 #define READ_REQ_COUNT 8
 #define WRITE_REQ_COUNT 4
@@ -647,7 +650,7 @@ static zx_status_t rndishost_bind(void* ctx, zx_device_t* parent) {
         }
         for (const auto& endp : interface.GetEndpointList()) {
           if (usb_ep_direction(endp.descriptor()) == USB_ENDPOINT_IN &&
-              usb_ep_type(endp.descriptor()) == USB_ENDPOINT_INTERRUPT) {
+              usb_ep_type(endp.descriptor()) == fdescriptor::EndpointType::kInterrupt) {
             intr_addr = endp.descriptor()->b_endpoint_address;
           }
         }
@@ -657,11 +660,11 @@ static zx_status_t rndishost_bind(void* ctx, zx_device_t* parent) {
         }
         for (const auto& endp : interface.GetEndpointList()) {
           if (usb_ep_direction(endp.descriptor()) == USB_ENDPOINT_OUT) {
-            if (usb_ep_type(endp.descriptor()) == USB_ENDPOINT_BULK) {
+            if (usb_ep_type(endp.descriptor()) == fdescriptor::EndpointType::kBulk) {
               bulk_out_addr = endp.descriptor()->b_endpoint_address;
             }
           } else if (usb_ep_direction(endp.descriptor()) == USB_ENDPOINT_IN) {
-            if (usb_ep_type(endp.descriptor()) == USB_ENDPOINT_BULK) {
+            if (usb_ep_type(endp.descriptor()) == fdescriptor::EndpointType::kBulk) {
               bulk_in_addr = endp.descriptor()->b_endpoint_address;
             }
           }

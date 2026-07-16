@@ -4,6 +4,7 @@
 
 #include "../usb-mass-storage.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
@@ -16,6 +17,7 @@
 #include "src/lib/testing/predicates/status.h"
 
 namespace {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 constexpr uint8_t kBlockSize = 5;
 
@@ -28,10 +30,10 @@ const usb_descriptor kDescriptors[] = {
     usb_interface_descriptor_t{sizeof(usb_descriptor), USB_DT_INTERFACE, 0, 0, 2, 8, 7, 0x50, 0},
     // IN endpoint
     usb_endpoint_descriptor_t{sizeof(usb_descriptor), USB_DT_ENDPOINT, USB_DIR_IN,
-                              USB_ENDPOINT_BULK, 64, 0},
+                              static_cast<uint8_t>(fdescriptor::EndpointType::kBulk), 64, 0},
     // OUT endpoint
     usb_endpoint_descriptor_t{sizeof(usb_descriptor), USB_DT_ENDPOINT, USB_DIR_OUT,
-                              USB_ENDPOINT_BULK, 64, 0}};
+                              static_cast<uint8_t>(fdescriptor::EndpointType::kBulk), 64, 0}};
 
 struct Packet;
 struct Packet : fbl::DoublyLinkedListable<fbl::RefPtr<Packet>>, fbl::RefCounted<Packet> {

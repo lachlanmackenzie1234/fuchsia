@@ -5,6 +5,7 @@
 #ifndef SRC_CONNECTIVITY_ETHERNET_DRIVERS_USB_CDC_ECM_USB_CDC_ECM_LIB_H_
 #define SRC_CONNECTIVITY_ETHERNET_DRIVERS_USB_CDC_ECM_USB_CDC_ECM_LIB_H_
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/c/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <fuchsia/hardware/usb/descriptor/c/banjo.h>
@@ -23,6 +24,7 @@
 #include <usb/usb.h>
 
 namespace usb_cdc_ecm {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class EcmEndpoint {
  public:

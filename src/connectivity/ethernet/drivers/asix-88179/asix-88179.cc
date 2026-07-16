@@ -922,13 +922,13 @@ zx_status_t Asix88179Ethernet::Initialize() {
   for (auto endpoint : interface->GetEndpointList()) {
     const usb_endpoint_descriptor_t* endp = endpoint.descriptor();
     if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_out_address = endp->b_endpoint_address;
       }
     } else {
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_in_address = endp->b_endpoint_address;
-      } else if (usb_ep_type(endp) == USB_ENDPOINT_INTERRUPT) {
+      } else if (usb_ep_type(endp) == fdescriptor::EndpointType::kInterrupt) {
         interrupt_address = endp->b_endpoint_address;
       }
     }

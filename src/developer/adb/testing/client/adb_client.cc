@@ -4,6 +4,7 @@
 
 #include "src/developer/adb/testing/client/adb_client.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
@@ -21,6 +22,8 @@
 
 #include "src/developer/adb/third_party/adb/adb-protocol.h"
 #include "src/developer/adb/third_party/adb/types.h"
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 AdbClientImpl::AdbClientImpl(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
@@ -380,7 +383,7 @@ zx_status_t AdbClientImpl::FindAdbInterface(std::string_view instance, const uin
       FX_LOGS(INFO) << "Found ADB interface";
       usb_endpoint_descriptor_t* ep = nullptr;
       while ((ep = usb_desc_iter_next_endpoint(&iter)) != nullptr) {
-        if (usb_ep_type(ep) == USB_ENDPOINT_BULK) {
+        if (usb_ep_type(ep) == fdescriptor::EndpointType::kBulk) {
           if (usb_ep_direction(ep) == USB_ENDPOINT_IN) {
             bulk_in_addr_ = ep->b_endpoint_address;
           } else {

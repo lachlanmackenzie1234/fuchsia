@@ -184,14 +184,14 @@ zx_status_t Device::Bind() {
   usb_endpoint_descriptor_t* endp = usb_desc_iter_next_endpoint(&config_desc_iter);
   while (endp) {
     if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fuchsia_hardware_usb_descriptor::EndpointType::kBulk) {
         bulk_out_endp_desc_ = *endp;
       }
     } else {
       ZX_ASSERT(usb_ep_direction(endp) == USB_ENDPOINT_IN);
-      if (usb_ep_type(endp) == USB_ENDPOINT_BULK) {
+      if (usb_ep_type(endp) == fuchsia_hardware_usb_descriptor::EndpointType::kBulk) {
         bulk_in_endp_desc_ = *endp;
-      } else if (usb_ep_type(endp) == USB_ENDPOINT_INTERRUPT) {
+      } else if (usb_ep_type(endp) == fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt) {
         intr_endp_desc_ = *endp;
       }
     }
@@ -535,7 +535,7 @@ void Device::ReadIsocInterfaces(usb_desc_iter_t* config_desc_iter) {
     usb_endpoint_descriptor_t* out = nullptr;
     usb_endpoint_descriptor_t* endp = usb_desc_iter_next_endpoint(config_desc_iter);
     while (endp) {
-      if (usb_ep_type(endp) == USB_ENDPOINT_ISOCHRONOUS) {
+      if (usb_ep_type(endp) == fuchsia_hardware_usb_descriptor::EndpointType::kIsochronous) {
         if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
           out = endp;
         } else {

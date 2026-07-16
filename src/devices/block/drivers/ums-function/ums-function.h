@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_UMS_FUNCTION_UMS_FUNCTION_H_
 
 #include <endian.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
@@ -25,6 +26,7 @@
 #include <usb/ums.h>
 
 namespace ums {
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class UmsFunction : public fdf::DriverBase2,
                     public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
@@ -149,7 +151,7 @@ class UmsFunction : public fdf::DriverBase2,
               .b_length = sizeof(usb_endpoint_info_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               //      .b_endpoint_address set later
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = htole16(UmsFunction::kBulkMaxPacket),
               .b_interval = 0,
           },
@@ -158,7 +160,7 @@ class UmsFunction : public fdf::DriverBase2,
               .b_length = sizeof(usb_endpoint_info_descriptor_t),
               .b_descriptor_type = USB_DT_ENDPOINT,
               //      .b_endpoint_address set later
-              .bm_attributes = USB_ENDPOINT_BULK,
+              .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
               .w_max_packet_size = htole16(UmsFunction::kBulkMaxPacket),
               .b_interval = 0,
           },

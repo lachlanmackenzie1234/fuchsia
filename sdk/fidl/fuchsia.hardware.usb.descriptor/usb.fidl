@@ -88,3 +88,6 @@ type EndpointType = strict enum : uint8 {
     BULK = 2;
     INTERRUPT = 3;
 };
+
+/// Mask for bits [1:0] of `bmAttributes` used to extract the `EndpointType`.
+const ENDPOINT_TYPE_MASK uint8 = 0x03;
