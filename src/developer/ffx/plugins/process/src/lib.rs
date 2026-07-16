@@ -25,7 +25,7 @@ use processes_data::{processed, raw};
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use write_human_readable_output::{
     pretty_print_invalid_koids, pretty_print_processes_data, pretty_print_processes_name_and_koid,
 };
@@ -347,7 +347,7 @@ fn write_symbolized_stack_traces(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     use std::sync::LazyLock;
     static EXPECTED_PROCESSES_DATA: LazyLock<raw::ProcessesData> =

@@ -22,7 +22,7 @@ use fho::{FfxMain, FfxTool};
 use futures::FutureExt;
 use log_command_fdomain::LogEntry;
 use std::io::Write;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 async fn cmd_impl(
     ctx: &EnvironmentContext,

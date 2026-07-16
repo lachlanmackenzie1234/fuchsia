@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write as _;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
-use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 
 pub mod server;
 mod server_impl;

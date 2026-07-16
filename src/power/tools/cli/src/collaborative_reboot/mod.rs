@@ -34,7 +34,7 @@ pub async fn collaborative_reboot(
 #[cfg(test)]
 mod tests {
     use ffx_writer::TestBuffers;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     use super::*;
 

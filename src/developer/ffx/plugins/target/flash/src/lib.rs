@@ -39,7 +39,7 @@ use std::io::{Write, stderr, stdin, stdout};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use structured_ui::{Interface, TextUi};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use tempfile::TempDir;
 use termion::{color, style};
 use thiserror::Error;

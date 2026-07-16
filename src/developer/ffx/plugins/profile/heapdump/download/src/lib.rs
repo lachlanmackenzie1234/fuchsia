@@ -14,7 +14,7 @@ use ffx_profile_heapdump_common::{
 use ffx_profile_heapdump_download_args::DownloadCommand;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("ffx_profile_heapdump"))]

@@ -38,7 +38,7 @@ mod test {
     use super::*;
     use fdomain_fuchsia_settings::{DisplayRequest, DisplaySettings};
     use ffx_setui_display_args::SetArgs;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_get() {

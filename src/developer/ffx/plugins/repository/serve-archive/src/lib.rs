@@ -21,8 +21,7 @@ use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, Result};
 use package_tool::{RepoCreateCommand, RepoPublishCommand, cmd_repo_create, cmd_repo_publish};
 use std::marker::PhantomData;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
-use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 use tempfile::TempDir;
 
 #[async_trait(?Send)]

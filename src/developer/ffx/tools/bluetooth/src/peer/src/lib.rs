@@ -17,7 +17,7 @@ use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
 use prettytable::{Row, Table, format, row};
 use std::cmp::Ordering;
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("bluetooth.enabled"))]

@@ -6,29 +6,25 @@ use async_trait::async_trait;
 use fdomain_client::fidl::DiscoverableProtocolMarker;
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnvWith};
-use fidl::encoding::DefaultFuchsiaResourceDialect;
-use fidl::endpoints::Proxy;
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use crate::connect_to_rcs;
-
 #[allow(dead_code)] // TODO(https://fxbug.dev/421409514)
 /// The implementation of the decorator returned by [`moniker`].
-pub struct WithMoniker<P, D> {
+pub struct WithMoniker<P> {
     moniker: String,
     timeout: Duration,
-    _p: PhantomData<(fn() -> P, D)>,
+    _p: PhantomData<fn() -> P>,
 }
 
-impl<P, D> WithMoniker<P, D> {
+impl<P> WithMoniker<P> {
     pub fn new(moniker: impl Into<String>) -> Self {
         Self { moniker: moniker.into(), timeout: DEFAULT_PROXY_TIMEOUT, _p: PhantomData }
     }
 }
 
 #[async_trait(?Send)]
-impl<P> TryFromEnvWith for WithMoniker<P, fdomain_client::fidl::FDomainResourceDialect>
+impl<P> TryFromEnvWith for WithMoniker<P>
 where
     P: fdomain_client::fidl::Proxy + 'static,
     P::Protocol: fdomain_client::fidl::DiscoverableProtocolMarker,
@@ -39,44 +35,16 @@ where
         self,
         env: &FhoEnvironment,
     ) -> std::result::Result<Self::Output, Self::Error> {
-        let rcs_instance = crate::fdomain::connect_to_rcs(&env).await?;
+        let rcs_instance = crate::connect_to_rcs(&env).await?;
         if let Ok(proxy) =
             rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs_instance, self.timeout)
                 .await
         {
             return Ok(proxy);
         }
-        crate::fdomain::open_moniker_fdomain(
-            &rcs_instance,
-            rcs_fdomain::OpenDirType::ExposedDir,
-            &self.moniker,
-            self.timeout,
-        )
-        .await
-    }
-}
-
-#[async_trait(?Send)]
-impl<P> TryFromEnvWith for WithMoniker<P, DefaultFuchsiaResourceDialect>
-where
-    P: Proxy + 'static,
-    P::Protocol: fidl::endpoints::DiscoverableProtocolMarker,
-{
-    type Output = P;
-    type Error = ffx_command_error::Error;
-    async fn try_from_env_with(
-        self,
-        env: &FhoEnvironment,
-    ) -> std::result::Result<Self::Output, Self::Error> {
-        let rcs_instance = connect_to_rcs(&env).await?;
-        if let Ok(proxy) =
-            rcs::toolbox::connect_with_timeout::<P::Protocol>(&rcs_instance, self.timeout).await
-        {
-            return Ok(proxy);
-        }
         crate::remote_control_proxy::open_moniker(
             &rcs_instance,
-            rcs::OpenDirType::ExposedDir,
+            rcs_fdomain::OpenDirType::ExposedDir,
             &self.moniker,
             self.timeout,
         )
@@ -103,12 +71,12 @@ impl ExposedDirectoryConnector {
 
 #[async_trait(?Send)]
 impl TryFromEnvWith for ExposedDirectoryConnector {
-    type Output = flex_fuchsia_io::DirectoryProxy;
+    type Output = fdomain_fuchsia_io::DirectoryProxy;
     type Error = ffx_command_error::Error;
 
     async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
-        let rcs = crate::fdomain::connect_to_rcs(env).await?;
-        let proxy = rcs_fdomain::open_with_timeout_at::<flex_fuchsia_io::DirectoryMarker>(
+        let rcs = crate::connect_to_rcs(env).await?;
+        let proxy = rcs_fdomain::open_with_timeout_at::<fdomain_fuchsia_io::DirectoryMarker>(
             self.timeout,
             &self.moniker,
             rcs_fdomain::OpenDirType::ExposedDir,
@@ -157,13 +125,13 @@ where
     type Error = ffx_command_error::Error;
 
     async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
-        let rcs = crate::fdomain::connect_to_rcs(env).await?;
+        let rcs = crate::connect_to_rcs(env).await?;
         if let Ok(proxy) =
             rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs, self.timeout).await
         {
             return Ok(Some(proxy));
         }
-        let output = match crate::fdomain::open_moniker_fdomain(
+        let output = match crate::remote_control_proxy::open_moniker(
             &rcs,
             rcs_fdomain::OpenDirType::ExposedDir,
             &self.moniker,

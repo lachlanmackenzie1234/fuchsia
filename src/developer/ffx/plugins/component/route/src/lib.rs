@@ -11,7 +11,7 @@ use ffx_component::rcs;
 use ffx_component_route_args::RouteCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct RouteTool {

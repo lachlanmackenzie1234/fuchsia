@@ -4,14 +4,12 @@
 
 use std::time::Duration;
 
+use fdomain_client::fidl::Proxy;
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnv as _};
-use fidl::encoding::DefaultFuchsiaResourceDialect;
-use fidl::endpoints::Proxy;
 
 mod daemon_proxy;
 mod fake_injector;
-pub mod fdomain;
 mod from_toolbox;
 mod host_ssh_addr;
 mod nodename;
@@ -27,7 +25,9 @@ pub use fake_injector::FakeInjector;
 pub use from_toolbox::toolbox;
 pub use host_ssh_addr::HostAddrHolder;
 pub use nodename::NodenameHolder;
-pub use remote_control_proxy::{RemoteControlProxyHolder, fake_async_proxy, fake_proxy};
+pub use remote_control_proxy::{
+    RemoteControlProxyHolder, fake_async_proxy, fake_daemon_proxy, fake_proxy, open_moniker,
+};
 pub use ssh_addr::SshAddrHolder;
 pub use target_info_query::TargetInfoQueryHolder;
 pub use target_proxy::TargetProxyHolder;
@@ -53,9 +53,7 @@ const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(15);
 ///     foo_proxy: FooProxy,
 /// }
 /// ```
-pub fn moniker<P: Proxy>(
-    moniker: impl AsRef<str>,
-) -> WithMoniker<P, DefaultFuchsiaResourceDialect> {
+pub fn moniker<P: Proxy>(moniker: impl AsRef<str>) -> WithMoniker<P> {
     WithMoniker::new(moniker.as_ref())
 }
 

@@ -10,7 +10,7 @@ use ffx_component::rcs::connect_to_realm_query_f;
 use ffx_component_show_args::ComponentShowCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 #[derive(FfxTool)]
 pub struct ShowTool {
     #[command]

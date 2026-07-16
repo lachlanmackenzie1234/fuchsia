@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{ConfigurationInterfaces, SetupProxy, SetupSetting
 use ffx_setui_setup_args::Setup;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -66,7 +66,7 @@ async fn command(
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::SetupRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

@@ -9,7 +9,7 @@ use ffx_wipe_args::WipeCommand;
 use ffx_writer::MachineWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool};
 use std::io::{Write, stdin};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use zx_status::Status;
 
 #[derive(FfxTool)]
@@ -90,7 +90,7 @@ async fn wipe_target(factory_reset: FactoryResetProxy) -> fho::Result<()> {
 mod tests {
     use super::*;
     use fdomain_fuchsia_recovery::FactoryResetRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_wipe_target() -> fho::Result<()> {

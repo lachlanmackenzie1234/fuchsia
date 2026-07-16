@@ -15,7 +15,7 @@ use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool, deferred};
-use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
+use target_holders::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct StartTool {

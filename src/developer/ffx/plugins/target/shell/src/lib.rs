@@ -10,7 +10,7 @@ use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use futures::{FutureExt as _, TryFutureExt as _};
 use socket_to_stdio::Stdout;
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 #[derive(FfxTool)]
 pub struct ShellTool {

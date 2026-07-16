@@ -14,7 +14,7 @@ use fuchsia_triage::{
 use std::env;
 use std::io::Write;
 use std::path::PathBuf;
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 use tempfile::tempdir;
 use triage_app_lib::file_io::{config_from_files, diagnostics_from_directory};
 
@@ -150,7 +150,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::sync::LazyLock;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     macro_rules! test_file {
         (config $filename:expr) => {

@@ -35,12 +35,12 @@ mod test {
     use super::*;
     use fidl_fuchsia_developer_ffx::TestingRequest;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use target_holders::fake_proxy;
+    use target_holders::fake_daemon_proxy;
 
     #[fuchsia::test]
     async fn test_hang_with_no_text() {
         static HUNG: AtomicBool = AtomicBool::new(false);
-        let proxy = fake_proxy(|req| match req {
+        let proxy = fake_daemon_proxy(|req| match req {
             TestingRequest::Hang { .. } => {
                 HUNG.store(true, Ordering::SeqCst);
             }

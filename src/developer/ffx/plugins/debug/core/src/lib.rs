@@ -18,7 +18,7 @@ use fuchsia_fs_fdomain::directory::{open_directory_async, open_file_async};
 use futures::StreamExt;
 use std::io::{BufRead, Write};
 use std::process::Command;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 use tempfile::{NamedTempFile, TempPath};
 use zx_status::Status;
 

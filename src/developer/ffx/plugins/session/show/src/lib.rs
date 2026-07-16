@@ -9,7 +9,7 @@ use ffx_session_show_args::SessionShowCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
 use rcs_fdomain as rcs;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 const DETAILS_FAILURE: &str = "Could not get session information from the target. This may be
 because there are no running sessions, or because the target is using a product configuration

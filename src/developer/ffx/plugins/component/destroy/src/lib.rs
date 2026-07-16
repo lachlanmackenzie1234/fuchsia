@@ -16,7 +16,7 @@ use moniker::Moniker;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct DestroyTool {

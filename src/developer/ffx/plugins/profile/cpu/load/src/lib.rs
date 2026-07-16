@@ -10,7 +10,7 @@ use fdomain_fuchsia_power_metrics::{self as fmetrics, CpuLoad, Metric};
 use ffx_cpu_load_args as args_mod;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
+use target_holders::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct CpuLoadTool {
@@ -150,7 +150,7 @@ mod tests {
     use futures::StreamExt;
     use futures::channel::mpsc;
     use std::time::Duration;
-    use target_holders::fdomain::{fake_async_proxy, fake_proxy};
+    use target_holders::{fake_async_proxy, fake_proxy};
 
     // Create a metrics-logger that expects a specific request type (Start, StartForever, or
     // Stop), and returns a specific error

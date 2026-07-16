@@ -10,7 +10,7 @@ use ::fdomain_fuchsia_bluetooth_pandora::{
 use ::ffx_bluetooth_pandora_args::{PandoraCommand, PandoraSubCommand};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use ffx_writer::{SimpleWriter, ToolIO as _};
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("bluetooth.enabled"))]

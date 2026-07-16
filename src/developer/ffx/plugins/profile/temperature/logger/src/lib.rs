@@ -9,7 +9,7 @@ use fdomain_fuchsia_power_metrics::{self as fmetrics, Metric, StatisticsArgs, Te
 use ffx_temperature_logger_args as args_mod;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct TemperatureLoggerTool {
@@ -114,13 +114,13 @@ mod tests {
     use futures::StreamExt;
     use futures::channel::mpsc;
     use std::time::Duration;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     // Create a metrics-logger that expects a specific request type (Start, StartForever, or
     // Stop), and returns a specific error
     macro_rules! make_logger {
         ($client:expr, $request_type:tt, $error_type:tt) => {
-            target_holders::fdomain::fake_proxy($client, move |req| match req {
+            target_holders::fake_proxy($client, move |req| match req {
                 fmetrics::RecorderRequest::$request_type { responder, .. } => {
                     responder.send(Err(fmetrics::RecorderError::$error_type)).unwrap();
                 }

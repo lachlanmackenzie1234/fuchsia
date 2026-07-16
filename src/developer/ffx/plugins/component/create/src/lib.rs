@@ -10,7 +10,7 @@ use ffx_component::rcs::{connect_to_lifecycle_controller_f, connect_to_realm_que
 use ffx_component_create_args::CreateComponentCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct CreateTool {

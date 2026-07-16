@@ -37,7 +37,7 @@ use serde::Serialize;
 use std::io::{Write, stdin};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use termion::{color, style};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;

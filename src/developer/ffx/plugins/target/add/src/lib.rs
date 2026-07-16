@@ -145,12 +145,12 @@ mod test {
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_developer_ffx as ffx;
     use fidl_fuchsia_net as net;
-    use target_holders::fake_proxy;
+    use target_holders::fake_daemon_proxy;
 
     fn setup_fake_target_collection<T: 'static + Fn(ffx::TargetAddrInfo) + Send>(
         test: T,
     ) -> TargetCollectionProxy {
-        fake_proxy(move |req| match req {
+        fake_daemon_proxy(move |req| match req {
             ffx::TargetCollectionRequest::AddTarget {
                 ip, config: _, add_target_responder, ..
             } => {

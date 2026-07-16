@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use std::io::{BufRead, IsTerminal, stdin};
 use std::time::Duration;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use tempfile::Builder;
 use termion::{color, style};
 
@@ -1134,7 +1134,7 @@ mod tests {
     async fn test_stop_no_active_session() {
         use fdomain_fuchsia_cpu_profiler::{ManagerError, SessionManagerRequest};
         use ffx_writer::TestBuffers;
-        use target_holders::fdomain::fake_proxy;
+        use target_holders::fake_proxy;
         let client = fdomain_local::local_client_empty();
 
         let session_manager = fake_proxy(std::sync::Arc::clone(&client), move |req| match req {

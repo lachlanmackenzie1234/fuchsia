@@ -24,7 +24,7 @@ use std::fs::File;
 use std::io::{self, BufReader, stdin};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 use vfs::directory::helper::DirectlyMutable;
 
 mod analytics;

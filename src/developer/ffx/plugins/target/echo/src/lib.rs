@@ -9,7 +9,7 @@ use fho::{FfxError, FfxMain, FfxTool};
 use schemars::JsonSchema;
 use serde::Serialize;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 use thiserror::Error;
 
 #[derive(FfxError, Error, Debug)]

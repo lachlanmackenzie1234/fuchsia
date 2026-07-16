@@ -264,7 +264,7 @@ mod tests {
     use super::*;
     use fdomain_local;
     use futures::TryStreamExt;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     struct MockPackageServerRunner {
         server_running: bool,

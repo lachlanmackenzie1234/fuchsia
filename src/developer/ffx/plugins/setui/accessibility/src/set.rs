@@ -38,7 +38,7 @@ async fn command(proxy: AccessibilityProxy, options: SetArgs) -> WatchOrSetResul
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::{AccessibilityRequest, ColorBlindnessType};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

@@ -17,7 +17,7 @@ use std::io::{BufRead, Write};
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 pub use ffx_zxdb::debug_agent::{DebugAgentSocket, DebuggerProxy};
 
@@ -81,9 +81,7 @@ async fn choose_debug_agent(launcher_proxy: &fdebugger::LauncherProxy) -> Result
 }
 
 fn is_allowed_in_agent_env(cmd: &ConnectCommand) -> bool {
-    cmd.zxdb_args
-        .iter()
-        .any(|arg| arg == "--enable-debug-adapter")
+    cmd.zxdb_args.iter().any(|arg| arg == "--enable-debug-adapter")
 }
 
 async fn connect_tool_impl(

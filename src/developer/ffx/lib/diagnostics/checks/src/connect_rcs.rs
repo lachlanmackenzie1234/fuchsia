@@ -57,7 +57,7 @@ where
                 })
                 .await?;
             let moniker = "/core/hwinfo";
-            let product_proxy: ProductProxy = target_holders::fdomain::open_moniker_fdomain(
+            let product_proxy: ProductProxy = target_holders::open_moniker(
                 &proxy,
                 rcs::OpenDirType::ExposedDir,
                 moniker,

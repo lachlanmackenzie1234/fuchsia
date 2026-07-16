@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::AccessibilityProxy;
 use ffx_setui_accessibility_args::{Accessibility, SubCommandEnum};
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 pub use utils;
 

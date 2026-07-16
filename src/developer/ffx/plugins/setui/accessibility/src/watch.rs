@@ -21,7 +21,7 @@ async fn command(proxy: AccessibilityProxy) -> WatchOrSetResult {
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::{AccessibilityRequest, AccessibilitySettings};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn validate_accessibility_watch() -> Result<()> {

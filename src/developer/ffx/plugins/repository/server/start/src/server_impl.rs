@@ -34,8 +34,7 @@ use std::fs;
 use std::sync::Arc;
 use target_connector::Connector;
 use target_errors::FfxTargetError;
-use target_holders::fdomain::RemoteControlProxyHolder;
-use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 use tuf::metadata::RawSignedMetadata;
 
 const REPO_CONNECT_TIMEOUT_CONFIG: &str = "repository.connect_timeout_secs";
@@ -764,7 +763,6 @@ mod test {
     use std::time;
     use target_behavior::{ConnectionBehavior, target_interface};
     use target_connector::Connector;
-
     use test_case::test_case;
     use timeout::timeout;
     use tuf::crypto::Ed25519PrivateKey;

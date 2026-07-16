@@ -32,7 +32,7 @@ pub async fn debugcmd(cmd: DebugCommand, proxy: fdebug::DebugProxy) -> Result<()
 #[cfg(feature = "fdomain")]
 #[cfg(test)]
 mod tests {
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     use super::*;
 

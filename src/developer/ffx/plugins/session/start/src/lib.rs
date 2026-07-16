@@ -9,7 +9,7 @@ use ffx_session_start_args::SessionStartCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
 use std::io::Write;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 const STARTING_SESSION: &str = "Starting the default session\n";
 
@@ -55,7 +55,7 @@ mod test {
     use super::*;
     use fdomain_fuchsia_session::LifecycleRequest;
     use ffx_writer::{Format, TestBuffers};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_start_session() {

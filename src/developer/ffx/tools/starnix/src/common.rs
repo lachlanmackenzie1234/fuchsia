@@ -9,7 +9,7 @@ use fdomain_fuchsia_developer_remotecontrol as rc;
 use fdomain_fuchsia_starnix_container::{ControllerMarker, ControllerProxy};
 use rcs_fdomain as rcs;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const SESSION_CONTAINER: &str = "core/session-manager/session:session/container";

@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use target_behavior::ConnectionBehavior;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 const NODENAME: &str = "Rust";
 

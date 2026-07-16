@@ -11,7 +11,7 @@ use fdomain_fuchsia_settings::{DeviceType, InputProxy, InputState};
 use ffx_setui_input_args::Input;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -78,7 +78,7 @@ mod test {
         DeviceState, DeviceStateSource, DeviceType, InputDevice, InputRequest, InputSettings,
         SourceState, ToggleStateFlags,
     };
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     /// Creates a one-item list of input devices with the given properties.

@@ -34,14 +34,14 @@ mod test {
     use super::*;
     use fidl_fuchsia_developer_ffx::TestingRequest;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use target_holders::fake_proxy;
+    use target_holders::fake_daemon_proxy;
 
     #[fuchsia::test]
     async fn test_crash_with_no_text() {
         // XXX(raggi): if we can bound the lifetime of the testing proxy setup as
         // desired by the test, then we could avoid the need for the static.
         static CRASHED: AtomicBool = AtomicBool::new(false);
-        let proxy = fake_proxy(|req| match req {
+        let proxy = fake_daemon_proxy(|req| match req {
             TestingRequest::Crash { .. } => {
                 CRASHED.store(true, Ordering::SeqCst);
             }

@@ -8,7 +8,7 @@ use fdomain_fuchsia_wlan_policy as wlan_policy;
 use ffx_wlan_client_args as arg_types;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct ClientTool {

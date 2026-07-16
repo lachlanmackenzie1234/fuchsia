@@ -37,7 +37,7 @@ use std::io::{Write, stdout};
 use std::ops::Deref as _;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 /// Error code returned if connecting to Test Manager fails.
 pub static SETUP_FAILED_CODE: LazyLock<i32> =

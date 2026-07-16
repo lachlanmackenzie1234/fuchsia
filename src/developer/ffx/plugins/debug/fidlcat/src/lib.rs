@@ -12,7 +12,7 @@ use fho::{Deferred, FfxContext, FfxMain, FfxTool, deferred};
 use fuchsia_async::unblock;
 use sdk::SdkVersion;
 use std::process::Command;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 struct ProcessArguments {
     arguments: Vec<String>,

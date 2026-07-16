@@ -16,8 +16,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
-use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 use thiserror::Error;
 use timeout::TimeoutError;
 

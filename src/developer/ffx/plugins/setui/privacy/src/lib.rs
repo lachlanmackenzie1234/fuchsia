@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{PrivacyProxy, PrivacySettings};
 use ffx_setui_privacy_args::Privacy;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -66,7 +66,7 @@ async fn command(proxy: PrivacyProxy, user_data_sharing_consent: Option<bool>) -
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::PrivacyRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

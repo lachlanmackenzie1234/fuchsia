@@ -9,7 +9,7 @@ use ffx_session_restart_args::SessionRestartCommand;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use std::io::Write;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 #[derive(FfxTool)]
 pub struct RestartTool {
     #[command]
@@ -50,7 +50,7 @@ pub async fn restart_impl(
 mod test {
     use super::*;
     use fdomain_fuchsia_session::RestarterRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_restart_session() {

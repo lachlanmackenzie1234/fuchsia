@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
 use std::io;
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 use url::Url;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
@@ -153,8 +153,7 @@ mod test {
     use std::str::FromStr;
     use std::sync::Arc;
     use target_behavior::{ConnectionBehavior, target_interface};
-    use target_holders::FakeInjector;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::{FakeInjector, fake_proxy};
 
     const TARGET_NAME: &str = "some-target";
     const VALID_TEST_RULE: &str = r#"{
@@ -275,18 +274,19 @@ mod test {
 
     impl FakeTarget {
         fn new(host_address: Option<SshHostAddrInfo>) -> (Self, TargetProxy) {
-            let target_proxy: TargetProxy = target_holders::fake_proxy(move |req| match req {
-                TargetRequest::Identity { responder, .. } => {
-                    let ssh_host_address = host_address.clone();
-                    fasync::Task::local(async move {
-                        responder
-                            .send(&to_target_info("Foo".to_string(), ssh_host_address))
-                            .unwrap();
-                    })
-                    .detach();
-                }
-                _ => panic!("unexpected request: {:?}", req),
-            });
+            let target_proxy: TargetProxy =
+                target_holders::fake_daemon_proxy(move |req| match req {
+                    TargetRequest::Identity { responder, .. } => {
+                        let ssh_host_address = host_address.clone();
+                        fasync::Task::local(async move {
+                            responder
+                                .send(&to_target_info("Foo".to_string(), ssh_host_address))
+                                .unwrap();
+                        })
+                        .detach();
+                    }
+                    _ => panic!("unexpected request: {:?}", req),
+                });
             (Self, target_proxy)
         }
     }

@@ -14,7 +14,7 @@ use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use moniker::Moniker;
 use std::io::Write;
-use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
+use target_holders::{RemoteControlProxyHolder, moniker};
 
 const SESSION_MANAGER_MONIKER: &str = "/core/session-manager";
 
@@ -95,7 +95,7 @@ async fn resolve_config_capabilities(
 mod test {
     use super::*;
     use fdomain_fuchsia_session::LauncherRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_launch_session() {
@@ -126,7 +126,7 @@ mod test {
         const SESSION_URL: &str = "Session URL";
 
         let client = fdomain_local::local_client_empty();
-        let proxy = target_holders::fdomain::fake_proxy(client.clone(), |req| match req {
+        let proxy = target_holders::fake_proxy(client.clone(), |req| match req {
             LauncherRequest::Launch { configuration: _, responder } => {
                 let _ = responder.send(Ok(()));
             }

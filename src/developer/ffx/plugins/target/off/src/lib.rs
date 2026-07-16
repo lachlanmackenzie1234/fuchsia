@@ -9,7 +9,7 @@ use fdomain_fuchsia_hardware_power_statecontrol::{
 use ffx_off_args::OffCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct OffTool {
@@ -59,7 +59,7 @@ async fn off(admin_proxy: AdminProxy, _cmd: OffCommand) -> fho::Result<()> {
 mod test {
     use super::*;
     use fdomain_fuchsia_hardware_power_statecontrol::AdminRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     fn setup_fake_admin_server() -> AdminProxy {
         let client = fdomain_local::local_client_empty();

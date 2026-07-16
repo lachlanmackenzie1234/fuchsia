@@ -11,7 +11,7 @@ use ffx_debug_crash_args::CrashCommand;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct CrashTool {

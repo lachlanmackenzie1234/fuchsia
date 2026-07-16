@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::io::{Stdin, stdin};
 use std::path::{Component, PathBuf};
 use std::time::Duration;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use term_grid::Grid;
 #[cfg_attr(test, allow(unused))]
 use termion::terminal_size;
@@ -867,7 +867,7 @@ mod tests {
     use std::io::Write;
     use std::matches;
     use std::sync::Arc;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use tempfile::{Builder, NamedTempFile, TempDir};
 
     #[test]

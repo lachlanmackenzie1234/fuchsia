@@ -11,7 +11,7 @@ use ffx_component_explore_args::ExploreComponentCommand;
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
 use socket_to_stdio::Stdout;
-use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
+use target_holders::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct ExploreTool {

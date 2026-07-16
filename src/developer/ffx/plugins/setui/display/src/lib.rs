@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::DisplayProxy;
 use ffx_setui_display_args::{Display, SubCommandEnum};
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 pub use utils;
 
@@ -56,7 +56,7 @@ mod test {
     use super::*;
     use fdomain_fuchsia_settings::{DisplayRequest, DisplaySettings};
     use ffx_setui_display_args::{Field, GetArgs, SetArgs};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_run_command() {

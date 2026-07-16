@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{IntlProxy, IntlSettings};
 use ffx_setui_intl_args::Intl;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -59,7 +59,7 @@ mod test {
     use super::*;
     use fdomain_fuchsia_intl::{LocaleId, TemperatureUnit, TimeZoneId};
     use fdomain_fuchsia_settings::{HourCycle, IntlRequest};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

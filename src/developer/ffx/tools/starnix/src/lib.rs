@@ -11,8 +11,7 @@ use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
-use target_holders::{NodenameHolder, SshAddrHolder};
+use target_holders::{NodenameHolder, RemoteControlProxyHolder, SshAddrHolder};
 
 pub mod common;
 use common::connect_to_rcs;

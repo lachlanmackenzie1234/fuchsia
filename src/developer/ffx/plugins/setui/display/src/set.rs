@@ -27,7 +27,7 @@ async fn command(proxy: DisplayProxy, settings: DisplaySettings) -> WatchOrSetRe
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::{DisplayRequest, LowLightMode, Theme, ThemeMode, ThemeType};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

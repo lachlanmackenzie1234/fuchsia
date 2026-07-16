@@ -19,7 +19,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 // Reads all of the contents of the given file from the current seek
 // offset to end of file, returning the content. It errors if the seek pointer
@@ -222,7 +222,7 @@ mod test {
     use ffx_writer::{Format as WriterFormat, TestBuffers};
     use futures::TryStreamExt;
     use std::os::unix::ffi::OsStrExt;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use tempfile::tempdir;
 
     fn serve_fake_file(server: fdomain_client::fidl::ServerEnd<fio::FileMarker>) {

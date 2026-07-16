@@ -28,7 +28,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 use timeout::timeout;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);

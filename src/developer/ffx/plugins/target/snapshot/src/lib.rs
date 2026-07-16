@@ -25,7 +25,7 @@ use std::fs;
 use std::io::{Write, stderr, stdin, stdout};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 const SNAPSHOT_GCS_BUCKET: &'static str = "snapshot.bucket";
 const SNAPSHOT_WEB_VIEWER_BASE: &'static str = "snapshot.web_viewer";
@@ -344,7 +344,7 @@ mod test {
     use fdomain_fuchsia_feedback::{Annotations, DataProviderRequest, Snapshot};
     use ffx_writer::{Format, TestBuffers};
     use futures::TryStreamExt;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     fn serve_fake_file(server: fdomain_client::fidl::ServerEnd<fio::FileMarker>) {
         fuchsia_async::Task::local(async move {

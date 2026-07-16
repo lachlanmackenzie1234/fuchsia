@@ -25,8 +25,7 @@ use serde_json;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io;
-use target_holders::HostAddrHolder;
-use target_holders::fdomain::toolbox;
+use target_holders::{HostAddrHolder, toolbox};
 use url::Url;
 use zx_types::{ZX_ERR_ACCESS_DENIED, ZX_ERR_ALREADY_EXISTS, ZX_ERR_INVALID_ARGS};
 
@@ -298,8 +297,7 @@ mod test {
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
     use target_behavior::{ConnectionBehavior, target_interface};
-    use target_holders::FakeInjector;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::{FakeInjector, fake_proxy};
     use tempfile::TempDir;
 
     const REPO_NAME: &str = "some-name";
@@ -530,18 +528,19 @@ mod test {
 
     impl FakeTarget {
         fn new(host_address: Option<SshHostAddrInfo>) -> (Self, TargetProxy) {
-            let target_proxy: TargetProxy = target_holders::fake_proxy(move |req| match req {
-                TargetRequest::Identity { responder, .. } => {
-                    let ssh_host_address = host_address.clone();
-                    fasync::Task::local(async move {
-                        responder
-                            .send(&to_target_info("Foo".to_string(), ssh_host_address))
-                            .unwrap();
-                    })
-                    .detach();
-                }
-                _ => panic!("unexpected request: {:?}", req),
-            });
+            let target_proxy: TargetProxy =
+                target_holders::fake_daemon_proxy(move |req| match req {
+                    TargetRequest::Identity { responder, .. } => {
+                        let ssh_host_address = host_address.clone();
+                        fasync::Task::local(async move {
+                            responder
+                                .send(&to_target_info("Foo".to_string(), ssh_host_address))
+                                .unwrap();
+                        })
+                        .detach();
+                    }
+                    _ => panic!("unexpected request: {:?}", req),
+                });
             (Self, target_proxy)
         }
     }

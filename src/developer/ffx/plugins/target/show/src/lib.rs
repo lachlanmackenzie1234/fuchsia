@@ -22,8 +22,7 @@ use show::{
 use std::net::IpAddr;
 use std::time::Duration;
 use target_behavior::{ConnectionBehavior, DirectConnector};
-use target_holders::TargetProxyHolder;
-use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
+use target_holders::{RemoteControlProxyHolder, TargetProxyHolder, moniker};
 use timeout::timeout;
 
 mod show;
@@ -363,7 +362,7 @@ mod tests {
     use net_declare::std_socket_addr;
     use serde_json::Value;
     use std::sync::Arc;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     const IPV4_ADDR: [u8; 4] = [127, 0, 0, 1];
 
@@ -414,7 +413,7 @@ mod tests {
 
     fn setup_fake_target_server() -> Deferred<TargetProxyHolder> {
         Deferred::from_output(Ok({
-            target_holders::fake_proxy::<TargetProxy>(move |req| match req {
+            target_holders::fake_daemon_proxy::<TargetProxy>(move |req| match req {
                 TargetRequest::GetSshAddress { responder, .. } => {
                     responder
                         .send(&TargetIpAddrInfo::Ip(TargetIp {

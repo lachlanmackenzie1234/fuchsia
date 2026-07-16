@@ -11,7 +11,7 @@ use ffx_target_repository_deregister_args::DeregisterCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, Result, bug, return_bug, return_user_error, user_error};
 use pkg::{PkgServerInstanceInfo as _, PkgServerInstances};
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 use zx_status::Status;
 
 const REPOSITORY_URL_PREFIX: &str = "fuchsia-pkg://";
@@ -156,7 +156,7 @@ mod test {
     use std::net::Ipv4Addr;
     use std::process;
     use std::sync::Arc;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     async fn setup_fake_repo_manager_server(
         client: Arc<fdomain_client::Client>,

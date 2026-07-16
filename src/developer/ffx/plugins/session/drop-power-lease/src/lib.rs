@@ -8,7 +8,7 @@ use fdomain_fuchsia_session_power::HandoffProxy;
 use ffx_session_drop_power_lease_args::SessionDropPowerLeaseCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, user_error};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct DropPowerLeaseTool {
@@ -59,7 +59,7 @@ pub async fn drop_power_lease_impl<W: std::io::Write>(
 mod test {
     use super::*;
     use fdomain_fuchsia_session_power::HandoffRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_drop_power_lease() {

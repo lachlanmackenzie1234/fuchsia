@@ -27,7 +27,7 @@ use serde::Serialize;
 use std::io::Write;
 use std::thread::sleep;
 use std::time::Duration;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 use crate::detailed::process_snapshot_detailed;
 use crate::statistics::CommandMemoryStatistics;

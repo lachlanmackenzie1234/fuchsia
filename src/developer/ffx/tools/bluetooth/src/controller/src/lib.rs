@@ -12,7 +12,7 @@ use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{HostId, HostInfo, addresses_to_custom_string};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, row};
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 pub mod device_class;
 pub mod local_name;

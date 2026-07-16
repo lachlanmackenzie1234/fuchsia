@@ -16,7 +16,7 @@ use ffx_profile_heapdump_snapshot_args::SnapshotCommand;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use std::io::Write;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("ffx_profile_heapdump"))]

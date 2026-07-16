@@ -25,8 +25,7 @@ use fuchsia_audio_fdomain::device::Selector;
 use futures::{AsyncWrite, FutureExt};
 use serde::Serialize;
 use std::io::{Read, Write};
-use target_holders::fdomain::moniker;
-use target_holders::{exposed_dir, optional_moniker};
+use target_holders::{exposed_dir, moniker, optional_moniker};
 use zx_status::Status;
 
 mod connect;

@@ -188,7 +188,7 @@ pub mod tests {
             _ => unimplemented!(),
         };
 
-        target_holders::fdomain::fake_proxy(client, callback)
+        target_holders::fake_proxy(client, callback)
     }
 
     pub fn fake_audio_recorder(client: Arc<fdomain_client::Client>) -> fac::RecorderProxy {
@@ -235,6 +235,6 @@ pub mod tests {
             _ => unimplemented!(),
         };
 
-        target_holders::fdomain::fake_proxy(client, callback)
+        target_holders::fake_proxy(client, callback)
     }
 }

@@ -11,7 +11,7 @@ use fdomain_fuchsia_memory_debug::MemoryPressureProxy;
 use ffx_profile_memory_signal_args::SignalCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct MemorySignalTool {

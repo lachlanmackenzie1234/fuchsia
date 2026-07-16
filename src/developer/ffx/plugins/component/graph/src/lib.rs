@@ -10,7 +10,7 @@ use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_component_graph_args::ComponentGraphCommand;
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct GraphTool {

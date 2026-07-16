@@ -13,7 +13,7 @@ use ffx_audio_play_args::{AudioRenderUsageExtended, PlayCommand};
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
 use std::io::Read;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct PlayTool {

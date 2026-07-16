@@ -8,7 +8,7 @@ use fdomain_fuchsia_exception::ProcessLimboProxy;
 use ffx_debug_limbo_args::{LimboCommand, LimboSubCommand};
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use zx_status::Status;
 use zx_types::{ZX_ERR_NOT_FOUND, ZX_ERR_UNAVAILABLE};
 

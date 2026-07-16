@@ -14,7 +14,7 @@ use ffx_component::rcs::{
 use ffx_component_doctor_args::DoctorCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct DoctorTool {

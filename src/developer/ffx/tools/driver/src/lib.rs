@@ -14,7 +14,7 @@ use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use fidl as _;
 use rcs_fdomain as rcs;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 mod args;
 

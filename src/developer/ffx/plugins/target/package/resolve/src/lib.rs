@@ -11,7 +11,7 @@ use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, Result, user_error};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -90,7 +90,7 @@ mod test {
 
     async fn setup_fake_package_resolver_proxy(urls: Vec<String>) -> PackageResolverProxy {
         let client = fdomain_local::local_client_empty();
-        let proxy = target_holders::fdomain::fake_proxy(client, move |req| match req {
+        let proxy = target_holders::fake_proxy(client, move |req| match req {
             PackageResolverRequest::Resolve { payload, responder } => {
                 if let Some(package_url) = payload.package_url {
                     if urls.contains(&package_url) {

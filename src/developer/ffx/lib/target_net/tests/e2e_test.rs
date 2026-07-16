@@ -12,7 +12,7 @@ use net_declare::std_socket_addr;
 use std::net::SocketAddr;
 use std::pin::pin;
 use std::time::Duration;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);

@@ -21,7 +21,7 @@ use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool, user_error};
 use net_cli_fdomain as net_cli;
 use std::ops::Deref as _;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 const NETSTACK_MONIKER_SUFFIX: &str = "/netstack";
 const DHCPD_MONIKER_SUFFIX: &str = "/dhcpd";

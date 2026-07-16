@@ -295,7 +295,7 @@ mod test {
     use regex::Regex;
     use std::net::IpAddr;
     use target_behavior::DirectConnector;
-    use target_holders::fake_proxy;
+    use target_holders::fake_daemon_proxy;
 
     fn tab_list_cmd(nodename: Option<String>) -> ListCommand {
         ListCommand { nodename, format: Format::Tabular, ..Default::default() }
@@ -325,7 +325,7 @@ mod test {
         num_tests: usize,
         vsock: bool,
     ) -> ffx::TargetCollectionProxy {
-        fake_proxy(move |req| match req {
+        fake_daemon_proxy(move |req| match req {
             ffx::TargetCollectionRequest::ListTargets { query, reader, .. } => {
                 let reader = reader.into_proxy();
                 let fidl_values: Vec<FidlTargetInfo> =

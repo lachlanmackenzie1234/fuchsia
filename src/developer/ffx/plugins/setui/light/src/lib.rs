@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{LightProxy, LightState};
 use ffx_setui_light_args::LightGroup;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -84,7 +84,7 @@ mod test {
     use fdomain_fuchsia_settings::{
         LightGroup as LightGroupSettings, LightRequest, LightType, LightValue,
     };
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     const TEST_NAME: &str = "test_name";

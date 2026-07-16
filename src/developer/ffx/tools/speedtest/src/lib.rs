@@ -15,7 +15,7 @@ use fuchsia_async as fasync;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
 use speedtest_fdomain::client;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct SpeedtestTool {

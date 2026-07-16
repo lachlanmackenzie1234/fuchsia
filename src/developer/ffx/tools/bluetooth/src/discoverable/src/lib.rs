@@ -9,7 +9,7 @@ use fdomain_fuchsia_bluetooth_affordances::{
     HostControllerProxy, HostControllerSetDiscoverabilityRequest,
 };
 use ffx_writer::{SimpleWriter, ToolIO as _};
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("bluetooth.enabled"))]

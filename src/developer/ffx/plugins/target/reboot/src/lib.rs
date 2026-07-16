@@ -13,8 +13,7 @@ use ffx_reboot_args::RebootCommand;
 use ffx_writer::MachineWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool};
 use fidl_fuchsia_developer_ffx::{TargetRebootError, TargetRebootState};
-use target_holders::TargetProxyHolder;
-use target_holders::fdomain::moniker;
+use target_holders::{TargetProxyHolder, moniker};
 use tokio::sync::mpsc::channel;
 
 const NETSVC_NOT_FOUND: &str = "The Fuchsia target's netsvc address could not be determined.\n\
@@ -202,10 +201,10 @@ mod test {
     use super::*;
     use fdomain_fuchsia_hardware_power_statecontrol::AdminRequest;
     use fidl_fuchsia_developer_ffx::{TargetProxy, TargetRequest};
-    use target_holders::fake_proxy;
+    use target_holders::fake_daemon_proxy;
 
     fn setup_fake_target_server(cmd: RebootCommand) -> TargetProxyHolder {
-        TargetProxyHolder::from(fake_proxy::<TargetProxy>(move |req| match req {
+        TargetProxyHolder::from(fake_daemon_proxy::<TargetProxy>(move |req| match req {
             TargetRequest::Reboot { state: _, responder } => {
                 assert!(!(cmd.bootloader && cmd.recovery));
                 responder.send(Ok(())).unwrap();
@@ -246,7 +245,7 @@ mod test {
     #[fuchsia::test]
     async fn test_reboot_direct_from_product() -> fho::Result<()> {
         let client = fdomain_local::local_client_empty();
-        let admin_proxy = target_holders::fdomain::fake_proxy(client, |req| match req {
+        let admin_proxy = target_holders::fake_proxy(client, |req| match req {
             AdminRequest::Shutdown { options, responder } => {
                 assert_eq!(options.action, Some(ShutdownAction::Reboot));
                 responder.send(Ok(())).unwrap();
@@ -259,7 +258,7 @@ mod test {
     #[fuchsia::test]
     async fn test_reboot_direct_from_product_bootloader() -> fho::Result<()> {
         let client = fdomain_local::local_client_empty();
-        let admin_proxy = target_holders::fdomain::fake_proxy(client, |req| match req {
+        let admin_proxy = target_holders::fake_proxy(client, |req| match req {
             AdminRequest::Shutdown { options, responder } => {
                 assert_eq!(options.action, Some(ShutdownAction::RebootToBootloader));
                 responder.send(Ok(())).unwrap();
@@ -272,7 +271,7 @@ mod test {
     #[fuchsia::test]
     async fn test_reboot_direct_from_product_recovery() -> fho::Result<()> {
         let client = fdomain_local::local_client_empty();
-        let admin_proxy = target_holders::fdomain::fake_proxy(client, |req| match req {
+        let admin_proxy = target_holders::fake_proxy(client, |req| match req {
             AdminRequest::Shutdown { options, responder } => {
                 assert_eq!(options.action, Some(ShutdownAction::RebootToRecovery));
                 responder.send(Ok(())).unwrap();
@@ -293,7 +292,7 @@ mod test {
         // We can pass a dummy admin proxy since it won't be used
         let client = fdomain_local::local_client_empty();
         let mut admin_proxy =
-            Deferred::from_output(Ok(target_holders::fdomain::fake_proxy(client, |_req| {
+            Deferred::from_output(Ok(target_holders::fake_proxy(client, |_req| {
                 panic!("unexpected request")
             })));
 
@@ -324,18 +323,18 @@ mod test {
         let cmd = RebootCommand { bootloader: false, recovery: false };
 
         // target_proxy should NOT be used.
-        let target_proxy =
-            Deferred::from_output(Ok(TargetProxyHolder::from(fake_proxy::<TargetProxy>(|_req| {
-                panic!("target proxy should not be used in strict mode");
-            }))));
+        let target_proxy = Deferred::from_output(Ok(TargetProxyHolder::from(fake_daemon_proxy::<
+            TargetProxy,
+        >(|_req| {
+            panic!("target proxy should not be used in strict mode");
+        }))));
 
         // admin_proxy MIGHT be used if discovery succeeds, but even if it doesn't,
         // we just want to ensure target_proxy isn't used.
         let client = fdomain_local::local_client_empty();
-        let admin_proxy =
-            Deferred::from_output(Ok(target_holders::fdomain::fake_proxy(client, |_req| {
-                // If we get here, great! But we might fail discovery first.
-            })));
+        let admin_proxy = Deferred::from_output(Ok(target_holders::fake_proxy(client, |_req| {
+            // If we get here, great! But we might fail discovery first.
+        })));
 
         let tool = RebootTool { context, cmd, target_proxy, admin_proxy };
 

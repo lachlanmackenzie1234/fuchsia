@@ -16,7 +16,7 @@ use prettytable::format::FormatBuilder;
 use prettytable::{Table, row};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 #[derive(FfxTool)]
 pub struct ListTool {
@@ -208,7 +208,7 @@ mod test {
     use fdomain_fuchsia_pkg_rewrite::{EditTransactionRequest, EngineRequest, RuleIteratorRequest};
     use ffx_writer::{Format, TestBuffers};
     use futures::TryStreamExt;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     macro_rules! rule {
         ($host_match:expr => $host_replacement:expr,

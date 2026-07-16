@@ -17,7 +17,7 @@ use futures::channel::oneshot;
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 use std::future::Future;
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct AddTool {
@@ -116,7 +116,7 @@ mod test {
     use assert_matches::assert_matches;
     use fdomain_fuchsia_element::{self as felement, ManagerRequest};
     use futures::poll;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_add_element() {

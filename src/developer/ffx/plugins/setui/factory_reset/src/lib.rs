@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{FactoryResetProxy, FactoryResetSettings};
 use ffx_setui_factory_reset_args::FactoryReset;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -69,7 +69,7 @@ async fn command(
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::FactoryResetRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{NightModeProxy, NightModeSettings};
 use ffx_setui_night_mode_args::NightMode;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -66,7 +66,7 @@ async fn command(proxy: NightModeProxy, night_mode_enabled: Option<bool>) -> Wat
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::NightModeRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

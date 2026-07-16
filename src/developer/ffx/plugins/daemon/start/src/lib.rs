@@ -77,7 +77,7 @@ mod test {
     use super::*;
     use ffx_config::EnvironmentContext;
     use target_behavior::{ConnectionBehavior, target_interface};
-    use target_holders::{FakeInjector, fake_proxy};
+    use target_holders::{FakeInjector, fake_daemon_proxy};
 
     async fn create_fake_injector_with_result(
         context: &EnvironmentContext,
@@ -87,7 +87,7 @@ mod test {
             daemon_factory_force_autostart_closure: Box::new(move || {
                 Box::pin(async move {
                     if succeeds {
-                        let fake_daemon_proxy = fake_proxy(|_req| unimplemented!());
+                        let fake_daemon_proxy = fake_daemon_proxy(|_req| unimplemented!());
                         Ok(fake_daemon_proxy)
                     } else {
                         anyhow::bail!("daemon failed")

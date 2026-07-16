@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::ops::Deref;
-use std::time::Duration;
-
 use async_trait::async_trait;
 use errors::FfxError;
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use ffx_command_error::{FfxContext as _, Result};
 use fho::{FhoEnvironment, TryFromEnv};
-use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use std::ops::Deref;
+use std::sync::Arc;
+use std::time::Duration;
 use target_behavior::{ConnectionBehavior, target_interface};
 
 #[derive(Clone, Debug)]
@@ -37,8 +37,18 @@ impl TryFromEnv for RemoteControlProxyHolder {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         match *behavior {
-            ConnectionBehavior::DaemonConnector(ref daemon) => {
-                match daemon.remote_factory().await {
+            ConnectionBehavior::DirectConnector(ref dc) => {
+                let conn = dc
+                    .resolution()
+                    .await
+                    .map_err(|e| e.into_command_error())?
+                    .get_connection(env.environment_context())
+                    .await
+                    .map_err(|e| e.into_command_error())?;
+                return conn.rcs_proxy_fdomain().await.bug().map(Into::into).map_err(Into::into);
+            }
+            ConnectionBehavior::DaemonConnector(ref dc) => {
+                match dc.remote_factory_fdomain().await {
                     Ok(p) => Ok(p.into()),
                     Err(e) => {
                         let doctor_tip = "Please check the connection to the target; `ffx doctor -v` may help diagnose the issue.";
@@ -55,24 +65,13 @@ impl TryFromEnv for RemoteControlProxyHolder {
                     }
                 }
             }
-            ConnectionBehavior::DirectConnector(ref direct) => {
-                let conn = direct
-                    .resolution()
-                    .await
-                    .map_err(|e| e.into_command_error())?
-                    .get_connection(env.environment_context())
-                    .await
-                    .map_err(|e| e.into_command_error())?;
-                conn.rcs_proxy().await.bug().map(Into::into).map_err(Into::into)
-            }
         }
     }
 }
 
-#[allow(dead_code)] // TODO(https://fxbug.dev/421409514)
 pub async fn open_moniker<P>(
     rcs: &RemoteControlProxy,
-    capability_set: rcs::OpenDirType,
+    capability_set: rcs_fdomain::OpenDirType,
     moniker: &str,
     timeout: Duration,
 ) -> Result<P>
@@ -80,7 +79,7 @@ where
     P: Proxy + 'static,
     P::Protocol: DiscoverableProtocolMarker,
 {
-    rcs::open_with_timeout::<P::Protocol>(
+    rcs_fdomain::open_with_timeout::<P::Protocol>(
         timeout,
         moniker,
         capability_set,
@@ -93,30 +92,50 @@ where
     })
 }
 
-/// Sets up a fake proxy of type `T` handing requests to the given callback and returning
-/// their responses.
+/// Sets up a fake FDomain proxy of type `T` handing requests to the given
+/// callback and returning their responses.
 ///
 /// This is basically the same thing as `ffx_plugin` used to generate for
 /// each proxy argument, but uses a generic instead of text replacement.
-pub fn fake_proxy<T: fidl::endpoints::Proxy>(
-    mut handle_request: impl FnMut(fidl::endpoints::Request<T::Protocol>) + 'static,
+pub fn fake_proxy<T: fdomain_client::fidl::Proxy>(
+    client: Arc<fdomain_client::Client>,
+    mut handle_request: impl FnMut(fdomain_client::fidl::Request<T::Protocol>) + 'static,
 ) -> T {
-    fake_async_proxy(async move |req| {
+    fake_async_proxy(client, async move |req| {
         handle_request(req);
     })
 }
 
-/// Sets up a fake proxy of type `T` handing requests to the given callback and returning
-/// their responses.
+/// Sets up a fake FIDL proxy of type `T` handing requests to the given
+/// callback and returning their responses.
+pub fn fake_daemon_proxy<T: fidl::endpoints::Proxy>(
+    mut handle_request: impl FnMut(fidl::endpoints::Request<T::Protocol>) + 'static,
+) -> T {
+    use futures::stream::TryStreamExt;
+    let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<T::Protocol>();
+    fuchsia_async::Task::local(async move {
+        while let Ok(Some(req)) = stream.try_next().await {
+            handle_request(req);
+        }
+    })
+    .detach();
+    proxy
+}
+
+/// Sets up a fake FDomain proxy of type `T` handing requests to the given
+/// callback and returning their responses.
 ///
 /// This is basically the same thing as `ffx_plugin` used to generate for
 /// each proxy argument, but uses a generic instead of text replacement.
-pub fn fake_async_proxy<T: fidl::endpoints::Proxy>(
-    mut handle_request: impl AsyncFnMut(fidl::endpoints::Request<T::Protocol>) + 'static,
+pub fn fake_async_proxy<T: fdomain_client::fidl::Proxy>(
+    client: Arc<fdomain_client::Client>,
+    mut handle_request: impl AsyncFnMut(fdomain_client::fidl::Request<T::Protocol>) + 'static,
 ) -> T {
     use futures::TryStreamExt;
-    let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<T::Protocol>();
+    let (proxy, mut stream) = client.create_proxy_and_stream::<T::Protocol>();
     fuchsia_async::Task::local(async move {
+        // Capture the client so it doesn't go out of scope
+        let _client = client;
         while let Ok(Some(req)) = stream.try_next().await {
             handle_request(req).await;
         }

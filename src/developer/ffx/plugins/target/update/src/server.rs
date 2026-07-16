@@ -17,8 +17,7 @@ use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
-use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 use timeout::timeout;
 use zx_status::Status;
 
@@ -456,8 +455,7 @@ pub(crate) mod tests {
     use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
     use std::sync::{Arc, Mutex};
     use target_behavior::ConnectionBehavior;
-    use target_holders::fdomain::RemoteControlProxyHolder;
-    use target_holders::{FakeInjector, HostAddrHolder};
+    use target_holders::{FakeInjector, HostAddrHolder, RemoteControlProxyHolder};
 
     pub(crate) struct FakeTestEnv {
         pub context: EnvironmentContext,
@@ -470,7 +468,7 @@ pub(crate) mod tests {
     impl FakeTestEnv {
         pub(crate) async fn new(test_env: &TestEnv) -> Self {
             let fake_rcs_proxy: RemoteControlProxy =
-                target_holders::fake_proxy(move |req| handle_rcs_proxy_request(req));
+                target_holders::fake_daemon_proxy(move |req| handle_rcs_proxy_request(req));
             let fdomain_client = fdomain_local::local_client(move || {
                 let (client_end, mut stream) = fidl::endpoints::create_request_stream::<
                     fidl_fuchsia_developer_remotecontrol::RemoteControlMarker,

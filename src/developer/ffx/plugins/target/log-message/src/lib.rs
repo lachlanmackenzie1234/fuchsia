@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use ffx_target_log_message_args::LogMessageCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 pub struct LogMessageTool {
@@ -49,7 +49,7 @@ mod test {
     use super::*;
     use diagnostics_log_types::Severity;
     use fdomain_fuchsia_developer_remotecontrol as rcs;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     const EXPECTED_TAG: &str = "some tag";
     const EXPECTED_MESSAGE: &str = "some message";

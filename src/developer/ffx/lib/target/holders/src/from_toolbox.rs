@@ -2,22 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{DEFAULT_PROXY_TIMEOUT, connect_to_rcs};
 use async_trait::async_trait;
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnvWith};
-use fidl::encoding::DefaultFuchsiaResourceDialect;
-use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
 use std::marker::PhantomData;
 
-/// The implementation of the decorator returned by [`toolbox`] and
-/// [`toolbox_or`].
-pub struct WithToolbox<P, D> {
-    pub(crate) _p: PhantomData<(fn() -> P, D)>,
+use crate::{DEFAULT_PROXY_TIMEOUT, connect_to_rcs};
+
+/// The implementation of the decorator returned by [`toolbox`].
+pub struct WithToolbox<P> {
+    pub(crate) _p: PhantomData<fn() -> P>,
 }
 
 #[async_trait(?Send)]
-impl<P> TryFromEnvWith for WithToolbox<P, DefaultFuchsiaResourceDialect>
+impl<P> TryFromEnvWith for WithToolbox<P>
 where
     P: Proxy + 'static,
     P::Protocol: DiscoverableProtocolMarker,
@@ -28,12 +27,13 @@ where
         // start off by connecting to rcs
         let rcs = connect_to_rcs(env).await?;
         let proxy =
-            rcs::toolbox::connect_with_timeout::<P::Protocol>(&rcs, DEFAULT_PROXY_TIMEOUT).await?;
+            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs, DEFAULT_PROXY_TIMEOUT)
+                .await?;
         Ok(proxy)
     }
 }
 
 /// Uses the `/toolbox` to find the given proxy.
-pub fn toolbox<P: Proxy>() -> WithToolbox<P, DefaultFuchsiaResourceDialect> {
+pub fn toolbox<P: Proxy>() -> WithToolbox<P> {
     WithToolbox { _p: PhantomData::default() }
 }

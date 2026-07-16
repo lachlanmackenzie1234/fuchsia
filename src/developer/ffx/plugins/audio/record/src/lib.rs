@@ -15,7 +15,7 @@ use ffx_audio_record_args::{AudioCaptureUsageExtended, RecordCommand};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
 use futures::{AsyncWrite, FutureExt};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct RecordTool {

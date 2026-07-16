@@ -15,7 +15,7 @@ use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, row};
 use serde::Serialize;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 /// Representation of the [fheapdump_client::StoredSnapshot] FIDL type for machine output.
 #[derive(Serialize)]

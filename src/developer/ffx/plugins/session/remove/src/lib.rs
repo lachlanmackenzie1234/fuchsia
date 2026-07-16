@@ -8,7 +8,7 @@ use fdomain_fuchsia_element::ManagerProxy;
 use ffx_session_remove_args::SessionRemoveCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct RemoveTool {
@@ -48,7 +48,7 @@ pub async fn remove_impl<W: std::io::Write>(
 mod test {
     use super::*;
     use fdomain_fuchsia_element::ManagerRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_remove_element() {

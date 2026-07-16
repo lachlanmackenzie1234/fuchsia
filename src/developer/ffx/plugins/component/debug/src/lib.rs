@@ -15,7 +15,7 @@ use ffx_writer::{MachineWriter, ToolIO};
 use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool, deferred};
 use serde::Serialize;
-use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
+use target_holders::{RemoteControlProxyHolder, moniker};
 use zx_types::zx_koid_t;
 
 #[derive(Serialize)]

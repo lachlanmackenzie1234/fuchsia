@@ -215,7 +215,7 @@ async fn get_output(collector: &CollectorProxy) -> anyhow::Result<raw::MemoryMon
 mod tests {
     use super::*;
     use futures::AsyncWriteExt;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     use std::sync::LazyLock;
     static EXPECTED_CAPTURE: LazyLock<raw::Capture> = LazyLock::new(|| raw::Capture {

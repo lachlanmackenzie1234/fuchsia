@@ -23,7 +23,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use speedtest::{BytesFormatter, Throughput};
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 use termion as _;
 

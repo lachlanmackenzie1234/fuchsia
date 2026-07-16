@@ -8,7 +8,7 @@ use fdomain_fuchsia_session_window::ManagerProxy;
 use ffx_wm_cycle_args::WMCycleCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct CycleTool {
@@ -45,7 +45,7 @@ pub async fn cycle_impl<W: std::io::Write>(
 mod test {
     use super::*;
     use fdomain_fuchsia_session_window::ManagerRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_cycle() {

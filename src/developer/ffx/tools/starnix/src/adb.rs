@@ -5,12 +5,14 @@
 use anyhow::Context;
 use argh::{ArgsInfo, FromArgs};
 use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_starnix_container as fstarcontainer;
 use fdomain_fuchsia_starnix_container::ControllerProxy;
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
 use fho::{FfxContext, Result, return_bug, return_user_error};
+use fuchsia_async as fasync;
 use futures::io::AsyncReadExt;
 use futures::stream::StreamExt;
 use futures::{FutureExt, channel};
@@ -27,10 +29,8 @@ use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use target_connector::Connector;
-use target_holders::SshAddrHolder;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::{RemoteControlProxyHolder, SshAddrHolder};
 use tokio::net::{TcpListener, TcpStream};
-use {fdomain_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync};
 
 use crate::common::*;
 

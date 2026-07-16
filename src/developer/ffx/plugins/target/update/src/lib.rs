@@ -31,8 +31,7 @@ use pkg::PkgServerInstanceInfo as _;
 use std::path::PathBuf;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
-use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder, moniker};
 
 mod server;
 
@@ -798,7 +797,7 @@ mod tests {
     use futures::prelude::*;
     use mock_installer_fdomain::MockUpdateInstallerService;
     use std::sync::Arc;
-    use target_holders::fdomain::{fake_async_proxy, fake_proxy};
+    use target_holders::{fake_async_proxy, fake_proxy};
 
     async fn perform_channel_provider_test<V, O>(
         argument: args::channel::Command,

@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{KeyboardProxy, KeyboardSettings};
 use ffx_setui_keyboard_args::Keyboard;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("setui"))]
@@ -62,7 +62,7 @@ async fn command(proxy: KeyboardProxy, keyboard: Keyboard) -> WatchOrSetResult {
 mod test {
     use super::*;
     use fdomain_fuchsia_settings::KeyboardRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

@@ -58,7 +58,7 @@ mod test {
     use super::*;
     use fdomain_fuchsia_settings::{AccessibilityRequest, CaptionFontFamily, EdgeStyle};
     use fdomain_fuchsia_ui_types::ColorRgba;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     const TEST_COLOR: ColorRgba = ColorRgba { red: 238.0, green: 23.0, blue: 128.0, alpha: 255.0 };

@@ -18,7 +18,7 @@ use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext;
 use fidl_fuchsia_net_ext as fnet_ext;
 use log::error;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 async fn connect_to_protocol<S: fdomain_client::fidl::DiscoverableProtocolMarker>(
     remote_control: &fremotecontrol::RemoteControlProxy,

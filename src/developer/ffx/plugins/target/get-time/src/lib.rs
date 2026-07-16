@@ -13,7 +13,7 @@ use std::io::Write;
 pub struct TimeInfo {
     pub nanoseconds: i64,
 }
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 #[target(direct)]
@@ -61,7 +61,7 @@ mod test {
     use super::*;
     use fdomain_fuchsia_developer_remotecontrol as rcs;
     use ffx_writer::{Format, TestBuffers};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     fn setup_fake_time_server_proxy() -> rcs::RemoteControlProxy {
         let client = fdomain_local::local_client_empty();

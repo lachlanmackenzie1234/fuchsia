@@ -9,7 +9,7 @@ use fho::{Error, FfxContext as _, FfxMain, FfxTool, Result, bug, exit_with_code,
 use futures::stream::StreamExt as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::fdomain::toolbox;
+use target_holders::toolbox;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]

@@ -62,24 +62,22 @@ pub fn setup_fake_archive_accessor(
     expected_data: Vec<FakeAccessorData>,
 ) -> ArchiveAccessorProxy {
     let proxy =
-        target_holders::fdomain::fake_proxy::<ArchiveAccessorProxy>(client.clone(), move |req| {
-            match req {
-                ArchiveAccessorRequest::StreamDiagnostics { parameters, stream, responder } => {
-                    for data in expected_data.iter() {
-                        if data.parameters == parameters {
-                            setup_fake_accessor_provider(stream, data.responses.clone()).unwrap();
-                            responder.send().expect("should send");
-                            return;
-                        }
+        target_holders::fake_proxy::<ArchiveAccessorProxy>(client.clone(), move |req| match req {
+            ArchiveAccessorRequest::StreamDiagnostics { parameters, stream, responder } => {
+                for data in expected_data.iter() {
+                    if data.parameters == parameters {
+                        setup_fake_accessor_provider(stream, data.responses.clone()).unwrap();
+                        responder.send().expect("should send");
+                        return;
                     }
-                    unreachable!(
-                        "{:#?} did not match any expected parameters: {:#?}",
-                        parameters,
-                        expected_data.iter().map(|d| d.parameters.clone()).collect::<Vec<_>>()
-                    );
                 }
-                _ => unreachable!("We don't expect any other call"),
+                unreachable!(
+                    "{:#?} did not match any expected parameters: {:#?}",
+                    parameters,
+                    expected_data.iter().map(|d| d.parameters.clone()).collect::<Vec<_>>()
+                );
             }
+            _ => unreachable!("We don't expect any other call"),
         });
     proxy
 }

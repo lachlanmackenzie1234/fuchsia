@@ -55,7 +55,7 @@ pub fn setup_fake_rcs(
     let capability_handlers = config.capability_handlers;
     let identify_host_handler = config.identify_host_handler;
 
-    let proxy = target_holders::fdomain::fake_proxy::<RemoteControlProxy>(client, move |req| {
+    let proxy = target_holders::fake_proxy::<RemoteControlProxy>(client, move |req| {
         let querier = Rc::clone(&mock_realm_query);
         let identify_host_response = identify_host_response.clone();
         let identify_host_handler = identify_host_handler.clone();

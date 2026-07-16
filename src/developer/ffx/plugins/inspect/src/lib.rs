@@ -16,7 +16,7 @@ use iquery_fdomain::commands::{
 use serde::Serialize;
 use std::fmt;
 use std::io::Write;
-use target_holders::fdomain::{RemoteControlProxyHolder, toolbox};
+use target_holders::{RemoteControlProxyHolder, toolbox};
 
 mod accessor_provider;
 mod apply_selectors;

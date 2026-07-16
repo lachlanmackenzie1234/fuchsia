@@ -24,7 +24,7 @@ use log_command_fdomain::{
 use std::io::Write;
 use std::pin::pin;
 use target_connector::Connector;
-use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::RemoteControlProxyHolder;
 use tokio::signal::ctrl_c;
 use transactional_symbolizer::{RealSymbolizerProcess, TransactionalSymbolizer};
 

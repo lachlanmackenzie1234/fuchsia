@@ -177,12 +177,12 @@ mod test {
 
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;
-    use target_holders::fake_proxy;
+    use target_holders::fake_daemon_proxy;
 
     fn setup_fake_target_collection_proxy<T: 'static + Fn(String) -> bool + Send>(
         test: T,
     ) -> ffx::TargetCollectionProxy {
-        fake_proxy(move |req| match req {
+        fake_daemon_proxy(move |req| match req {
             ffx::TargetCollectionRequest::RemoveTarget { target_id, responder } => {
                 let result = test(target_id);
                 responder.send(result).unwrap();

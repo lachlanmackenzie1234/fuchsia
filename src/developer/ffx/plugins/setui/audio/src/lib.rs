@@ -8,7 +8,7 @@ use fdomain_fuchsia_settings::{AudioProxy, AudioSettings2};
 use ffx_setui_audio_args::Audio;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
@@ -61,7 +61,7 @@ mod test {
     use super::*;
     use fdomain_fuchsia_media::AudioRenderUsage2;
     use fdomain_fuchsia_settings::AudioRequest;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
     use test_case::test_case;
 
     #[fuchsia::test]

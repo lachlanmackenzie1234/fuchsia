@@ -9,7 +9,7 @@ use fdomain_fuchsia_power_metrics::{self as fmetrics, GpuUsage, Metric};
 use ffx_gpu_usage_args as args_mod;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 #[derive(FfxTool)]
 pub struct GpuUsageTool {
     #[command]
@@ -105,7 +105,7 @@ mod tests {
     use futures::StreamExt;
     use futures::channel::mpsc;
     use std::time::Duration;
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     // Create a metrics-logger that expects a specific request type (Start, StartForever, or
     // Stop), and returns a specific error

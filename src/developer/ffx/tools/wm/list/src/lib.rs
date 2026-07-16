@@ -8,7 +8,7 @@ use fdomain_fuchsia_session_window::ManagerProxy;
 use ffx_wm_list_args::WMListCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::fdomain::moniker;
+use target_holders::moniker;
 
 #[derive(FfxTool)]
 pub struct ListTool {
@@ -55,7 +55,7 @@ pub async fn list_impl<W: std::io::Write>(
 mod test {
     use super::*;
     use fdomain_fuchsia_session_window::{ListedView, ManagerRequest};
-    use target_holders::fdomain::fake_proxy;
+    use target_holders::fake_proxy;
 
     #[fuchsia::test]
     async fn test_list() {
