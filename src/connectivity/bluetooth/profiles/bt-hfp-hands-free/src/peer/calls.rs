@@ -786,7 +786,7 @@ impl Stream for Calls {
             // sent to the FIDL client if there is a WatchNextState hanging get outstanding.  Since
             // the peer believes the call is terminated, we can ignore any CallOutput yielded
             // by this stream caused by incoming FIDL requests.
-            while let Poll::Ready(_) = call.poll_next_unpin(context) {}
+            while let Poll::Ready(Some(_)) = call.poll_next_unpin(context) {}
         }
 
         // Now that we've run every terminated call, we can filter out those that have successfully reported
@@ -1017,5 +1017,68 @@ mod test {
         let next_call_hang = watch_next_call_continue_fut.now_or_never();
         // The NextcCall is never ready to be sent to clients.
         assert_matches!(next_call_hang, None);
+    }
+
+    #[fuchsia::test]
+    async fn terminated_call_stream_none_does_not_infinite_loop() {
+        let mut calls = Calls::new(PEER_ID);
+
+        // Insert a new call and populate its state and number.
+        let call_index = calls.insert_new_call().expect("Insert new call");
+        calls
+            .set_queried_call_info(
+                call_index,
+                Direction::MobileOriginated,
+                CallState::OutgoingAlerting,
+                /* multiparty */ false,
+                Some(Number::from_non_at_string("+1 212 555 0100").expect("valid test number")),
+            )
+            .expect("Set queried call info");
+
+        // Establish a hanging get request for the next call from the
+        // peer handler client.
+        let (peer_handler_proxy, mut peer_handler_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_hfp::PeerHandlerMarker>();
+        let watch_next_call_fut = peer_handler_proxy.watch_next_call();
+        let watch_next_call_request_fut = peer_handler_request_stream.next();
+        let (watch_next_call_request_result_option, watch_next_call_continue_fut) =
+            match select(watch_next_call_fut, watch_next_call_request_fut)
+                .now_or_never()
+                .expect("Select hanging")
+            {
+                Either::Left(_) => panic!("WatchNextCall future terminated early."),
+                Either::Right((req, wnc)) => (req, wnc),
+            };
+        let watch_next_call_request = watch_next_call_request_result_option
+            .expect("Call request stream closed")
+            .expect("FIDL error on CallRequestStream");
+        let watch_next_call_responder = match watch_next_call_request {
+            fidl_hfp::PeerHandlerRequest::WatchNextCall { responder } => responder,
+            req => panic!("Unexpected PeerHandler request {req:?}."),
+        };
+        calls.handle_watch_next_call(watch_next_call_responder);
+
+        // Pump the calls stream once to fulfill the hanging get request
+        // and attach the request stream to the call.
+        let _ = calls.next().now_or_never();
+
+        let next_call = watch_next_call_continue_fut
+            .now_or_never()
+            .expect("watch_next_call hanging")
+            .expect("FIDL Error on watch_next_call");
+        let call_proxy = next_call.call.expect("Missing client end").into_proxy();
+
+        // Drop the client proxy handle so the underlying request stream
+        // closes and stops yielding items.
+        drop(call_proxy);
+
+        // Transition the call state to terminated so it is moved to the
+        // terminated calls queue.
+        calls.set_call_state_by_indicator(CallIndicator::Call(call_indicators::Call::None));
+
+        // Polling the calls stream should not enter an infinite loop, and
+        // no stream items should be yielded.
+        let call_output = calls.next().now_or_never();
+        assert_matches!(call_output, None);
     }
 }
