@@ -9,7 +9,7 @@ from typing import Any, Final
 
 from daemon_manager.manager import UDS_PATH, DaemonManager, DaemonManagerError
 
-DAEMON_STARTUP_TIMEOUT_SECS: Final[float] = 10.0
+DAEMON_STARTUP_TIMEOUT_SECS: Final[float] = 30.0
 
 
 from cli.commands.base import BaseCommand

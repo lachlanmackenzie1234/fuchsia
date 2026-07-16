@@ -121,7 +121,7 @@ class DaemonManager:
 
             try:
                 response_line = await asyncio.wait_for(
-                    reader.readline(), timeout=5.0
+                    reader.readline(), timeout=self.startup_timeout
                 )
             except asyncio.TimeoutError:
                 raise DaemonHandshakeError("Handshake timeout")
@@ -190,7 +190,7 @@ class DaemonManager:
 
             try:
                 response_line = await asyncio.wait_for(
-                    reader.readline(), timeout=5.0
+                    reader.readline(), timeout=self.startup_timeout
                 )
             except asyncio.TimeoutError:
                 raise DaemonConnectionError(
@@ -345,7 +345,7 @@ class DaemonManager:
                 await writer.drain()
                 try:
                     response_line = await asyncio.wait_for(
-                        reader.readline(), timeout=5.0
+                        reader.readline(), timeout=self.startup_timeout
                     )
                 except asyncio.TimeoutError:
                     raise DaemonConnectionError(
