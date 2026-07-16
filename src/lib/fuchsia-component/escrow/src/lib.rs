@@ -127,7 +127,13 @@ mod everything {
                         // we not asked for our process lifecycle handle then at this point we'd
                         // have our process unceremoniously stopped, so it's fine to do the same
                         // thing manually.
-                        process::abort();
+                        //
+                        // We use exit code 1 because this function is only used by components that
+                        // would not otherwise have a process lifecycle handle were it not a
+                        // requirement for escrowing their state, and if they didn't have the
+                        // handle they'd be stopped by the ELF runner terminating their process,
+                        // which results in a non-zero exit code.
+                        process::exit(1);
                     }
                 }
             }));
