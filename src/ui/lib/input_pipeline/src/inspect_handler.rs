@@ -567,7 +567,6 @@ mod tests {
                 },
                 "002_mouse_event": {
                     event_time: AnyProperty,
-                    location_absolute: { x: 7.0f64, y: 15.0f64},
                     wheel_delta_v: {
                         ticks: 5i64,
                         physical_pixel: 8.0f64,
@@ -585,16 +584,10 @@ mod tests {
                     event_time: AnyProperty,
                     injector_contacts: {
                         add: {
-                            "1": {
-                                position_x_mm: 10.0f64,
-                                position_y_mm: 30.0f64,
-                            },
+                            "1": {},
                         },
                         change: {
-                            "1": {
-                                position_x_mm: 11.0f64,
-                                position_y_mm: 31.0f64,
-                            },
+                            "1": {},
                         },
                         remove: {},
                     },
@@ -604,14 +597,8 @@ mod tests {
                     event_time: AnyProperty,
                     pressed_buttons: Vec::<u64>::new(),
                     injector_contacts: {
-                        "1": {
-                            position_x_mm: 0.0f64,
-                            position_y_mm: 0.0f64,
-                        },
-                        "2": {
-                            position_x_mm: 10.0f64,
-                            position_y_mm: 10.0f64,
-                        },
+                        "1": {},
+                        "2": {},
                     },
                 },
                 "005_light_sensor_event": {

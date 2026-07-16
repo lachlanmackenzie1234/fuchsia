@@ -75,6 +75,7 @@ pub async fn handle_input(
     supported_input_devices: Vec<String>,
     light_sensor_configuration: Option<LightSensorConfiguration>,
     enable_merge_touch_events: bool,
+    visual_debugging_level: u8,
 ) -> Result<InputPipeline, Error> {
     let input_handlers_node = node.create_child("input_handlers");
     let metrics_logger = metrics::MetricsLogger::new(incoming);
@@ -164,6 +165,7 @@ pub async fn handle_input(
             focus_chain_publisher,
             input_handlers_node,
             metrics_logger.clone(),
+            visual_debugging_level,
         )
         .await,
         node,
@@ -358,6 +360,8 @@ async fn register_mouse_related_input_handlers(
     assembly
 }
 
+const VISUAL_DEBUGGING_LEVEL_INFO_PLATFORM: u8 = 2;
+
 async fn build_input_pipeline_assembly(
     incoming: &Incoming,
     scene_manager: Rc<dyn SceneManagerTrait>,
@@ -371,6 +375,7 @@ async fn build_input_pipeline_assembly(
     focus_chain_publisher: FocusChainProviderPublisher,
     input_handlers_node: inspect::Node,
     metrics_logger: metrics::MetricsLogger,
+    visual_debugging_level: u8,
 ) -> InputPipelineAssembly {
     let mut assembly = InputPipelineAssembly::new(metrics_logger.clone());
     {
@@ -380,7 +385,8 @@ async fn build_input_pipeline_assembly(
             node.create_child("input_pipeline_entry"),
             assembly,
             &supported_input_devices,
-            /* displays_recent_events = */ true,
+            /* displays_recent_events = */
+            visual_debugging_level >= VISUAL_DEBUGGING_LEVEL_INFO_PLATFORM,
         );
 
         if supported_input_devices.contains(&input_device::InputDeviceType::Keyboard) {

@@ -172,21 +172,7 @@ impl MouseEvent {
     }
 
     pub fn record_inspect(&self, node: &fuchsia_inspect::Node) {
-        match self.location {
-            MouseLocation::Relative(pos) => {
-                node.record_child("location_relative", move |location_node| {
-                    location_node.record_double("x", f64::from(pos.counts.x));
-                    location_node.record_double("y", f64::from(pos.counts.y));
-                })
-            }
-            MouseLocation::Absolute(pos) => {
-                node.record_child("location_absolute", move |location_node| {
-                    location_node.record_double("x", f64::from(pos.x));
-                    location_node.record_double("y", f64::from(pos.y));
-                })
-            }
-        };
-
+        // Note: location coordinates (`self.location`) are omitted to avoid exposing sensitive user behavior.
         if let Some(wheel_delta_v) = &self.wheel_delta_v {
             node.record_child("wheel_delta_v", move |wheel_delta_v_node| {
                 wheel_delta_v_node.record_int("ticks", wheel_delta_v.ticks);

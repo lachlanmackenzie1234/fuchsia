@@ -89,10 +89,6 @@ impl TouchScreenEvent {
                 contacts_node.record_child(phase_str, move |phase_node| {
                     for contact in contacts.iter() {
                         phase_node.record_child(contact.id.to_string(), move |contact_node| {
-                            contact_node
-                                .record_double("position_x_mm", f64::from(contact.position.x));
-                            contact_node
-                                .record_double("position_y_mm", f64::from(contact.position.y));
                             if let Some(pressure) = contact.pressure {
                                 contact_node.record_int("pressure", pressure);
                             }
@@ -155,8 +151,6 @@ impl TouchpadEvent {
         node.record_child("injector_contacts", move |contacts_node| {
             for contact in contacts_clone.iter() {
                 contacts_node.record_child(contact.id.to_string(), move |contact_node| {
-                    contact_node.record_double("position_x_mm", f64::from(contact.position.x));
-                    contact_node.record_double("position_y_mm", f64::from(contact.position.y));
                     if let Some(pressure) = contact.pressure {
                         contact_node.record_int("pressure", pressure);
                     }

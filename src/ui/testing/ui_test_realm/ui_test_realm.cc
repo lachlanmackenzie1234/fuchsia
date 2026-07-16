@@ -439,6 +439,7 @@ void UITestRealm::ConfigureSceneOwner() {
               component_testing::Config{.name = "fuchsia.ui.SupportedInputDevices"},
               component_testing::Config{.name = "fuchsia.ui.ViewingDistance"},
               component_testing::Config{.name = "fuchsia.ui.Prefetch"},
+              component_testing::Config{.name = "fuchsia.ui.VisualDebuggingLevel"},
           },
       .source = component_testing::ChildRef{"scene_manager_config"},
       .targets = {component_testing::ChildRef{kSceneManagerName}},

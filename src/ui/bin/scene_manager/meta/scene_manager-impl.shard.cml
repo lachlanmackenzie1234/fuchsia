@@ -113,6 +113,11 @@
             key: "prefetch",
             type: "bool",
         },
+        {
+            config: "fuchsia.ui.VisualDebuggingLevel",
+            key: "visual_debugging_level",
+            type: "uint8",
+        },
     ],
     expose: [
         {

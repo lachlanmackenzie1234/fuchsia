@@ -174,6 +174,7 @@ pub async fn start(
         attach_a11y_view,
         enable_merge_touch_events,
         prefetch,
+        visual_debugging_level,
         ..
     } = Config::from_vmo(&config).expect("bad config vmo");
 
@@ -274,6 +275,7 @@ pub async fn start(
         supported_input_devices,
         light_sensor_configuration,
         enable_merge_touch_events,
+        visual_debugging_level,
     )
     .await
     {

@@ -108,6 +108,7 @@
                 "fuchsia.ui.Prefetch",
                 "fuchsia.ui.SupportedInputDevices",
                 "fuchsia.ui.ViewingDistance",
+                "fuchsia.ui.VisualDebuggingLevel",
             ],
             from: "parent",
             to: [ "#scene_manager" ],

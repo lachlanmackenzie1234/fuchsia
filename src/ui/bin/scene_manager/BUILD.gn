@@ -171,6 +171,7 @@ fuchsia_structured_config_values2("config_for_test") {
     attach_a11y_view = true
     enable_merge_touch_events = false
     prefetch = false
+    visual_debugging_level = 0
   }
 }
 
