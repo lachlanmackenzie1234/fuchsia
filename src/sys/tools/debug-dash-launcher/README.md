@@ -5,4 +5,4 @@ scope of a chosen component in the topology.
 
 This component is the backend of the `ffx component explore` plugin.
 
-This component is only available in non-eng builds and is to be used for debugging purposes only.
+This component is only available in eng builds and is to be used for debugging purposes only.
