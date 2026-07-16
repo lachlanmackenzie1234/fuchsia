@@ -144,7 +144,7 @@ fn bpf_trace_printk<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_trace_printk");
+    track_stub!(TODO("https://fxbug.dev/534355500"), "bpf_trace_printk");
     0.into()
 }
 
@@ -225,7 +225,7 @@ fn bpf_ktime_get_boot_ns<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_ktime_get_boot_ns");
+    track_stub!(TODO("https://fxbug.dev/534355721"), "bpf_ktime_get_boot_ns");
     0.into()
 }
 
@@ -281,7 +281,7 @@ fn bpf_ktime_get_coarse_ns<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_ktime_get_coarse_ns");
+    track_stub!(TODO("https://fxbug.dev/534355976"), "bpf_ktime_get_coarse_ns");
     0.into()
 }
 
@@ -293,7 +293,7 @@ fn bpf_probe_read_str<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_probe_read_str");
+    track_stub!(TODO("https://fxbug.dev/534355560"), "bpf_probe_read_str");
     0.into()
 }
 
@@ -305,7 +305,7 @@ fn bpf_get_smp_processor_id<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_get_smp_processor_id");
+    track_stub!(TODO("https://fxbug.dev/534354909"), "bpf_get_smp_processor_id");
     0.into()
 }
 
@@ -588,7 +588,7 @@ fn bpf_sk_fullsock<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_fullsock");
+    track_stub!(TODO("https://fxbug.dev/534355421"), "bpf_sk_fullsock");
     0.into()
 }
 
@@ -644,7 +644,7 @@ fn bpf_sk_lookup_tcp<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_lookup_tcp");
+    track_stub!(TODO("https://fxbug.dev/534355706"), "bpf_sk_lookup_tcp");
     0.into()
 }
 
@@ -656,7 +656,7 @@ fn bpf_sk_lookup_udp<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_lookup_udp");
+    track_stub!(TODO("https://fxbug.dev/534355185"), "bpf_sk_lookup_udp");
     0.into()
 }
 
@@ -668,7 +668,7 @@ fn bpf_sk_release<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_release");
+    track_stub!(TODO("https://fxbug.dev/534355132"), "bpf_sk_release");
     0.into()
 }
 
@@ -680,7 +680,7 @@ fn bpf_get_netns_cookie<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_get_netns_cookie");
+    track_stub!(TODO("https://fxbug.dev/534354509"), "bpf_get_netns_cookie");
     const DEFAULT_NETWORK_NAMESPACE_COOKIE: u64 = 1;
     DEFAULT_NETWORK_NAMESPACE_COOKIE.into()
 }
