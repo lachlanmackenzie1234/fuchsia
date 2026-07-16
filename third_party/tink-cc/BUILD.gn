@@ -8,6 +8,7 @@ config("tink_config") {
     "-Wno-deprecated-declarations",
     "-Wno-deprecated-copy",
     "-Wno-extra-semi",
+    "-Wno-defaulted-function-deleted",
   ]
   include_dirs = [
     "$root_gen_dir/third_party/tink-cc/src",

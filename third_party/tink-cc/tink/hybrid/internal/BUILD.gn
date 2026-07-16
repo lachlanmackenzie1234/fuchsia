@@ -18,10 +18,9 @@ source_set("hpke_context") {
     ":hpke_util",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
     "//third_party/abseil-cpp/absl/strings",
-    "//third_party/tink-cc/tink/util:secret_data",
-    "//third_party/tink-cc/tink/util:status",
-    "//third_party/tink-cc/tink/util:statusor",
+    "//third_party/tink-cc/tink:secret_data",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
@@ -41,6 +40,9 @@ source_set("hpke_context_boringssl") {
     "//third_party/abseil-cpp/absl/status",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/boringssl:crypto",
+    "//third_party/tink-cc/tink/internal:call_with_core_dump_protection",
+    "//third_party/tink-cc/tink/internal:dfsan_forwarders",
+    "//third_party/tink-cc/tink/internal:secret_buffer",
     "//third_party/tink-cc/tink/internal:ssl_unique_ptr",
     "//third_party/tink-cc/tink/subtle:subtle_util",
     "//third_party/tink-cc/tink/util:secret_data",
@@ -61,13 +63,20 @@ source_set("hpke_decrypt") {
   public_deps = [
     ":hpke_context",
     ":hpke_util",
+    "//third_party/abseil-cpp/absl/log:absl_check",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
+    "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/strings:string_view",
     "//third_party/tink-cc/proto:hpke_proto",
     "//third_party/tink-cc/tink:hybrid_decrypt",
+    "//third_party/tink-cc/tink:insecure_secret_key_access",
+    "//third_party/tink-cc/tink:partial_key_access",
+    "//third_party/tink-cc/tink:secret_data",
+    "//third_party/tink-cc/tink/hybrid:hpke_parameters",
+    "//third_party/tink-cc/tink/hybrid:hpke_private_key",
     "//third_party/tink-cc/tink/util:secret_data",
-    "//third_party/tink-cc/tink/util:status",
     "//third_party/tink-cc/tink/util:statusor",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
@@ -86,10 +95,14 @@ source_set("hpke_encrypt") {
     ":hpke_util",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
+    "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/strings:string_view",
     "//third_party/tink-cc/proto:hpke_proto",
     "//third_party/tink-cc/tink:hybrid_encrypt",
-    "//third_party/tink-cc/tink/util:status",
+    "//third_party/tink-cc/tink:partial_key_access",
+    "//third_party/tink-cc/tink/hybrid:hpke_parameters",
+    "//third_party/tink-cc/tink/hybrid:hpke_public_key",
     "//third_party/tink-cc/tink/util:statusor",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
@@ -125,6 +138,7 @@ source_set("hpke_private_key_manager") {
     ":hpke_key_manager_util",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/boringssl:crypto",
     "//third_party/tink-cc/proto:hpke_proto",
@@ -135,7 +149,9 @@ source_set("hpke_private_key_manager") {
     "//third_party/tink-cc/tink:hybrid_decrypt",
     "//third_party/tink-cc/tink:key_manager",
     "//third_party/tink-cc/tink/internal:ec_util",
+    "//third_party/tink-cc/tink/internal:mlkem_util",
     "//third_party/tink-cc/tink/internal:ssl_unique_ptr",
+    "//third_party/tink-cc/tink/internal:xwing_util",
     "//third_party/tink-cc/tink/subtle:common_enums",
     "//third_party/tink-cc/tink/util:constants",
     "//third_party/tink-cc/tink/util:secret_data",
@@ -184,12 +200,11 @@ source_set("hpke_util") {
   ]
   public_deps = [
     "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/tink-cc/proto:hpke_proto",
     "//third_party/tink-cc/tink/internal:ec_util",
     "//third_party/tink-cc/tink/subtle:common_enums",
-    "//third_party/tink-cc/tink/util:status",
-    "//third_party/tink-cc/tink/util:statusor",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
@@ -205,34 +220,169 @@ source_set("hpke_util_boringssl") {
   public_deps = [
     ":hpke_util",
     "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/boringssl:crypto",
     "//third_party/tink-cc/proto:hpke_proto",
-    "//third_party/tink-cc/tink/util:status",
     "//third_party/tink-cc/tink/util:statusor",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
 
-# CC Library : config_v0
-source_set("config_v0") {
+# CC Library : config_2026
+source_set("config_2026") {
   configs += [ "//build/config:no_rtti" ]
   configs -= [ "//build/config:no_rtti" ]
   sources = [
-    "//third_party/tink-cc/src/tink/hybrid/internal/config_v0.cc",
-    "//third_party/tink-cc/src/tink/hybrid/internal/config_v0.h",
+    "//third_party/tink-cc/src/tink/hybrid/internal/config_2026.cc",
+    "//third_party/tink-cc/src/tink/hybrid/internal/config_2026.h",
   ]
   public_deps = [
+    ":hpke_decrypt",
+    ":hpke_encrypt",
     ":hpke_private_key_manager",
     ":hpke_public_key_manager",
     "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
     "//third_party/tink-cc/tink:configuration",
+    "//third_party/tink-cc/tink:hybrid_decrypt",
+    "//third_party/tink-cc/tink:hybrid_encrypt",
     "//third_party/tink-cc/tink/hybrid:ecies_aead_hkdf_private_key_manager",
     "//third_party/tink-cc/tink/hybrid:ecies_aead_hkdf_public_key_manager",
+    "//third_party/tink-cc/tink/hybrid:hpke_private_key",
+    "//third_party/tink-cc/tink/hybrid:hpke_proto_serialization",
+    "//third_party/tink-cc/tink/hybrid:hpke_public_key",
     "//third_party/tink-cc/tink/hybrid:hybrid_decrypt_wrapper",
     "//third_party/tink-cc/tink/hybrid:hybrid_encrypt_wrapper",
     "//third_party/tink-cc/tink/internal:configuration_impl",
-    "//third_party/tink-cc/tink/util:status",
+  ]
+  public_configs = [ "//third_party/tink-cc:tink_config" ]
+}
+
+# CC Library : ecies_aead_hkdf_dem_helper
+source_set("ecies_aead_hkdf_dem_helper") {
+  configs += [ "//build/config:no_rtti" ]
+  configs -= [ "//build/config:no_rtti" ]
+  sources = [
+    "//third_party/tink-cc/src/tink/hybrid/internal/ecies_aead_hkdf_dem_helper.cc",
+    "//third_party/tink-cc/src/tink/hybrid/internal/ecies_aead_hkdf_dem_helper.h",
+  ]
+  public_deps = [
+    "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
+    "//third_party/abseil-cpp/absl/strings:string_view",
+    "//third_party/tink-cc/proto:aes_ctr_hmac_aead_proto",
+    "//third_party/tink-cc/proto:aes_ctr_proto",
+    "//third_party/tink-cc/proto:aes_gcm_proto",
+    "//third_party/tink-cc/proto:aes_siv_proto",
+    "//third_party/tink-cc/proto:common_proto",
+    "//third_party/tink-cc/proto:hmac_proto",
+    "//third_party/tink-cc/proto:tink_proto",
+    "//third_party/tink-cc/proto:xchacha20_poly1305_proto",
+    "//third_party/tink-cc/tink:aead",
+    "//third_party/tink-cc/tink:deterministic_aead",
+    "//third_party/tink-cc/tink:secret_data",
+    "//third_party/tink-cc/tink/aead:aes_ctr_hmac_aead_key_manager",
+    "//third_party/tink-cc/tink/daead/subtle:aead_or_daead",
+    "//third_party/tink-cc/tink/subtle:aes_gcm_boringssl",
+    "//third_party/tink-cc/tink/subtle:aes_siv_boringssl",
+    "//third_party/tink-cc/tink/subtle:xchacha20_poly1305_boringssl",
+    "//third_party/tink-cc/tink/util:errors",
+    "//third_party/tink-cc/tink/util:secret_data",
+    "//third_party/tink-cc/tink/util:validation",
+  ]
+  public_configs = [ "//third_party/tink-cc:tink_config" ]
+}
+
+# CC Library : ecies_proto_serialization_impl
+source_set("ecies_proto_serialization_impl") {
+  configs += [ "//build/config:no_rtti" ]
+  configs -= [ "//build/config:no_rtti" ]
+  sources = [
+    "//third_party/tink-cc/src/tink/hybrid/internal/ecies_proto_serialization_impl.cc",
+    "//third_party/tink-cc/src/tink/hybrid/internal/ecies_proto_serialization_impl.h",
+  ]
+  public_deps = [
+    "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
+    "//third_party/abseil-cpp/absl/strings:str_format",
+    "//third_party/abseil-cpp/absl/strings:string_view",
+    "//third_party/abseil-cpp/absl/types:optional",
+    "//third_party/tink-cc/tink:big_integer",
+    "//third_party/tink-cc/tink:ec_point",
+    "//third_party/tink-cc/tink:insecure_secret_key_access",
+    "//third_party/tink-cc/tink:partial_key_access",
+    "//third_party/tink-cc/tink:restricted_data",
+    "//third_party/tink-cc/tink:secret_data",
+    "//third_party/tink-cc/tink:secret_key_access_token",
+    "//third_party/tink-cc/tink/aead/internal:aes_ctr_hmac_proto_structs",
+    "//third_party/tink-cc/tink/aead/internal:aes_gcm_proto_format",
+    "//third_party/tink-cc/tink/aead/internal:xchacha20_poly1305_proto_format",
+    "//third_party/tink-cc/tink/daead/internal:aes_siv_proto_format",
+    "//third_party/tink-cc/tink/hybrid:ecies_parameters",
+    "//third_party/tink-cc/tink/hybrid:ecies_private_key",
+    "//third_party/tink-cc/tink/hybrid:ecies_public_key",
+    "//third_party/tink-cc/tink/internal:bn_encoding_util",
+    "//third_party/tink-cc/tink/internal:common_proto_enums",
+    "//third_party/tink-cc/tink/internal:key_parser",
+    "//third_party/tink-cc/tink/internal:key_serializer",
+    "//third_party/tink-cc/tink/internal:mutable_serialization_registry",
+    "//third_party/tink-cc/tink/internal:parameters_parser",
+    "//third_party/tink-cc/tink/internal:parameters_serializer",
+    "//third_party/tink-cc/tink/internal:proto_key_serialization",
+    "//third_party/tink-cc/tink/internal:proto_parameters_serialization",
+    "//third_party/tink-cc/tink/internal:proto_parser_enum_field",
+    "//third_party/tink-cc/tink/internal:proto_parser_fields",
+    "//third_party/tink-cc/tink/internal:proto_parser_message",
+    "//third_party/tink-cc/tink/internal:proto_parser_options",
+    "//third_party/tink-cc/tink/internal:proto_parser_secret_data_field",
+    "//third_party/tink-cc/tink/internal:serialization_registry",
+    "//third_party/tink-cc/tink/internal:tink_proto_structs",
+    "//third_party/tink-cc/tink/internal:util",
+    "//third_party/tink-cc/tink/mac/internal:hmac_proto_structs",
+    "//third_party/tink-cc/tink/util:secret_data",
+  ]
+  public_configs = [ "//third_party/tink-cc:tink_config" ]
+}
+
+# CC Library : hpke_proto_serialization_impl
+source_set("hpke_proto_serialization_impl") {
+  configs += [ "//build/config:no_rtti" ]
+  configs -= [ "//build/config:no_rtti" ]
+  sources = [
+    "//third_party/tink-cc/src/tink/hybrid/internal/hpke_proto_serialization_impl.cc",
+    "//third_party/tink-cc/src/tink/hybrid/internal/hpke_proto_serialization_impl.h",
+  ]
+  public_deps = [
+    "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
+    "//third_party/abseil-cpp/absl/strings:string_view",
+    "//third_party/abseil-cpp/absl/types:optional",
+    "//third_party/tink-cc/tink:insecure_secret_key_access",
+    "//third_party/tink-cc/tink:partial_key_access",
+    "//third_party/tink-cc/tink:restricted_data",
+    "//third_party/tink-cc/tink:secret_data",
+    "//third_party/tink-cc/tink:secret_key_access_token",
+    "//third_party/tink-cc/tink/hybrid:hpke_parameters",
+    "//third_party/tink-cc/tink/hybrid:hpke_private_key",
+    "//third_party/tink-cc/tink/hybrid:hpke_public_key",
+    "//third_party/tink-cc/tink/internal:key_parser",
+    "//third_party/tink-cc/tink/internal:key_serializer",
+    "//third_party/tink-cc/tink/internal:mutable_serialization_registry",
+    "//third_party/tink-cc/tink/internal:parameters_parser",
+    "//third_party/tink-cc/tink/internal:parameters_serializer",
+    "//third_party/tink-cc/tink/internal:proto_key_serialization",
+    "//third_party/tink-cc/tink/internal:proto_parameters_serialization",
+    "//third_party/tink-cc/tink/internal:proto_parser_enum_field",
+    "//third_party/tink-cc/tink/internal:proto_parser_fields",
+    "//third_party/tink-cc/tink/internal:proto_parser_message",
+    "//third_party/tink-cc/tink/internal:proto_parser_secret_data_field",
+    "//third_party/tink-cc/tink/internal:serialization_registry",
+    "//third_party/tink-cc/tink/internal:tink_proto_structs",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }

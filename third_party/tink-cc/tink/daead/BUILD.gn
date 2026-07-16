@@ -31,6 +31,19 @@ source_set("deterministic_aead_parameters") {
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
 
+# CC Library : deterministic_aead_key
+source_set("deterministic_aead_key") {
+  configs += [ "//build/config:no_rtti" ]
+  configs -= [ "//build/config:no_rtti" ]
+  sources = [ "//third_party/tink-cc/src/tink/daead/deterministic_aead_key.h" ]
+  public_deps = [
+    ":deterministic_aead_parameters",
+    "//third_party/abseil-cpp/absl/strings",
+    "//third_party/tink-cc/tink:key",
+  ]
+  public_configs = [ "//third_party/tink-cc:tink_config" ]
+}
+
 # CC Library : aes_siv_parameters
 source_set("aes_siv_parameters") {
   configs += [ "//build/config:no_rtti" ]
@@ -44,6 +57,31 @@ source_set("aes_siv_parameters") {
     "//third_party/abseil-cpp/absl/status",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/tink-cc/tink:parameters",
+    "//third_party/tink-cc/tink/util:status",
+    "//third_party/tink-cc/tink/util:statusor",
+  ]
+  public_configs = [ "//third_party/tink-cc:tink_config" ]
+}
+
+# CC Library : aes_siv_key
+source_set("aes_siv_key") {
+  configs += [ "//build/config:no_rtti" ]
+  configs -= [ "//build/config:no_rtti" ]
+  sources = [
+    "//third_party/tink-cc/src/tink/daead/aes_siv_key.cc",
+    "//third_party/tink-cc/src/tink/daead/aes_siv_key.h",
+  ]
+  public_deps = [
+    ":aes_siv_parameters",
+    ":deterministic_aead_key",
+    "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
+    "//third_party/abseil-cpp/absl/strings",
+    "//third_party/abseil-cpp/absl/types:optional",
+    "//third_party/tink-cc/tink:key",
+    "//third_party/tink-cc/tink:partial_key_access_token",
+    "//third_party/tink-cc/tink:restricted_data",
+    "//third_party/tink-cc/tink/internal:output_prefix_util",
     "//third_party/tink-cc/tink/util:status",
     "//third_party/tink-cc/tink/util:statusor",
   ]

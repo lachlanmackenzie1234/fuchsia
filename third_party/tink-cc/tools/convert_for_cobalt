@@ -353,22 +353,19 @@ def MakeTargetRef(dep, dirpath):
     dirpath, name = ParseTargetSpec(dep)
     return TinkBaseTargetRef(dirpath, name)
 
-  absl_prefix = '@com_google_absl'
+  absl_prefix = '@abseil-cpp'
   if dep.startswith(absl_prefix):
     dep = dep[len(absl_prefix):]
     dirpath, name = ParseTargetSpec(dep)
     return AbslTargetRef(dirpath, name)
 
-  if dep == '@com_google_protobuf//:protobuf_lite':
-    return ProtobufLiteTargetRef()
-
-  if dep == '@com_google_protobuf//:protobuf':
+  if dep == '@protobuf':
     return ProtobufLiteTargetRef()
 
   if dep == '@rapidjson':
     return RapidJsonTargetRef()
 
-  googletest_prefix = '@com_google_googletest'
+  googletest_prefix = '@googletest'
   if dep.startswith(googletest_prefix):
     dep = dep[len(googletest_prefix):]
     dirpath, name = ParseTargetSpec(dep)

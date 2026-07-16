@@ -17,27 +17,22 @@ source_set("constants") {
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
 
-# CC Library : secret_data_internal
-source_set("secret_data_internal") {
-  configs += [ "//build/config:no_rtti" ]
-  configs -= [ "//build/config:no_rtti" ]
-  sources = [ "//third_party/tink-cc/src/tink/util/secret_data_internal.h" ]
-  public_deps = [
-    "//third_party/abseil-cpp/absl/base:config",
-    "//third_party/abseil-cpp/absl/base:core_headers",
-    "//third_party/boringssl:crypto",
-  ]
-  public_configs = [ "//third_party/tink-cc:tink_config" ]
-}
-
 # CC Library : secret_data
 source_set("secret_data") {
   configs += [ "//build/config:no_rtti" ]
   configs -= [ "//build/config:no_rtti" ]
   sources = [ "//third_party/tink-cc/src/tink/util/secret_data.h" ]
   public_deps = [
-    ":secret_data_internal",
-    "//third_party/abseil-cpp/absl/strings",
+    ":secret_data_internal_class",
+    "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/log:check",
+    "//third_party/abseil-cpp/absl/strings:string_view",
+    "//third_party/abseil-cpp/absl/types:span",
+    "//third_party/boringssl:crypto",
+    "//third_party/tink-cc/tink:secret_data",
+    "//third_party/tink-cc/tink/internal:call_with_core_dump_protection",
+    "//third_party/tink-cc/tink/internal:safe_stringops",
+    "//third_party/tink-cc/tink/internal:sanitizing_allocator",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
@@ -49,11 +44,13 @@ source_set("secret_proto") {
   sources = [ "//third_party/tink-cc/src/tink/util/secret_proto.h" ]
   public_deps = [
     ":secret_data",
-    ":status",
-    ":statusor",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/status:statusor",
     "//third_party/protobuf:protobuf_lite",
+    "//third_party/tink-cc/tink:secret_data",
+    "//third_party/tink-cc/tink/internal:call_with_core_dump_protection",
+    "//third_party/tink-cc/tink/internal:secret_buffer",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
@@ -97,7 +94,10 @@ source_set("status") {
   configs += [ "//build/config:no_rtti" ]
   configs -= [ "//build/config:no_rtti" ]
   sources = [ "//third_party/tink-cc/src/tink/util/status.h" ]
-  public_deps = [ "//third_party/abseil-cpp/absl/status" ]
+  public_deps = [
+    "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/status",
+  ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
 
@@ -108,6 +108,7 @@ source_set("statusor") {
   sources = [ "//third_party/tink-cc/src/tink/util/statusor.h" ]
   public_deps = [
     ":status",
+    "//third_party/abseil-cpp/absl/base:core_headers",
     "//third_party/abseil-cpp/absl/status:statusor",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
@@ -151,9 +152,11 @@ source_set("input_stream_util") {
     ":secret_data",
     ":statusor",
     "//third_party/abseil-cpp/absl/algorithm:container",
+    "//third_party/abseil-cpp/absl/status:statusor",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/types:span",
     "//third_party/tink-cc/tink:input_stream",
+    "//third_party/tink-cc/tink/internal:secret_buffer",
   ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }
@@ -167,5 +170,24 @@ source_set("keyset_util") {
     "//third_party/tink-cc/src/tink/util/keyset_util.h",
   ]
   public_deps = [ "//third_party/tink-cc/proto:tink_proto" ]
+  public_configs = [ "//third_party/tink-cc:tink_config" ]
+}
+
+# CC Library : secret_data_internal_class
+source_set("secret_data_internal_class") {
+  configs += [ "//build/config:no_rtti" ]
+  configs -= [ "//build/config:no_rtti" ]
+  sources =
+      [ "//third_party/tink-cc/src/tink/util/secret_data_internal_class.h" ]
+  public_deps = [
+    "//third_party/abseil-cpp/absl/crc:crc32c",
+    "//third_party/abseil-cpp/absl/status",
+    "//third_party/abseil-cpp/absl/strings:string_view",
+    "//third_party/abseil-cpp/absl/types:span",
+    "//third_party/tink-cc/tink/internal:call_with_core_dump_protection",
+    "//third_party/tink-cc/tink/internal:endian",
+    "//third_party/tink-cc/tink/internal:safe_stringops",
+    "//third_party/tink-cc/tink/internal:secret_buffer",
+  ]
   public_configs = [ "//third_party/tink-cc:tink_config" ]
 }

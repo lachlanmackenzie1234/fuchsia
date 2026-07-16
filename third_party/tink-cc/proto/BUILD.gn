@@ -127,6 +127,14 @@ proto_library("aes_gcm_siv_proto") {
   sources = [ "//third_party/tink-cc/src/proto/aes_gcm_siv.proto" ]
 }
 
+# Proto Library : x_aes_gcm_proto
+proto_library("x_aes_gcm_proto") {
+  cc_generator_options = "lite"
+  proto_in_dir = "//third_party/tink-cc/src"
+  extra_configs = [ "//third_party/tink-cc:tink_config" ]
+  sources = [ "//third_party/tink-cc/src/proto/x_aes_gcm.proto" ]
+}
+
 # Proto Library : aes_eax_proto
 proto_library("aes_eax_proto") {
   cc_generator_options = "lite"
@@ -178,4 +186,20 @@ proto_library("hpke_proto") {
   proto_in_dir = "//third_party/tink-cc/src"
   extra_configs = [ "//third_party/tink-cc:tink_config" ]
   sources = [ "//third_party/tink-cc/src/proto/hpke.proto" ]
+}
+
+# Proto Library : ml_dsa_proto
+proto_library("ml_dsa_proto") {
+  cc_generator_options = "lite"
+  proto_in_dir = "//third_party/tink-cc/src"
+  extra_configs = [ "//third_party/tink-cc:tink_config" ]
+  sources = [ "//third_party/tink-cc/src/proto/ml_dsa.proto" ]
+}
+
+# Proto Library : slh_dsa_proto
+proto_library("slh_dsa_proto") {
+  cc_generator_options = "lite"
+  proto_in_dir = "//third_party/tink-cc/src"
+  extra_configs = [ "//third_party/tink-cc:tink_config" ]
+  sources = [ "//third_party/tink-cc/src/proto/slh_dsa.proto" ]
 }

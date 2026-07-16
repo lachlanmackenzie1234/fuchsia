@@ -505,7 +505,7 @@
              path="third_party/tink-cc/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/tink-crypto/tink-cc"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="dd8d5a5d88cc213731a356577c9b6628827fff8c"/>
+             revision="a800cc4583ba761b89193d81b540aa78d3823c53"/>
     <project name="third_party/tpm2-tss"
              path="third_party/tpm2-tss/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/tpm2-software/tpm2-tss"

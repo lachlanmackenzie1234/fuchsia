@@ -44,7 +44,7 @@ source_set("global_registry") {
     "//third_party/tink-cc/src/tink/config/global_registry.h",
   ]
   public_deps = [
-    "//third_party/abseil-cpp/absl/log:check",
+    "//third_party/abseil-cpp/absl/log:absl_check",
     "//third_party/tink-cc/tink:configuration",
     "//third_party/tink-cc/tink:key_gen_configuration",
     "//third_party/tink-cc/tink/internal:configuration_impl",
