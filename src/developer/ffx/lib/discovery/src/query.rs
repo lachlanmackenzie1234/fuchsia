@@ -160,6 +160,9 @@ impl TryFrom<String> for TargetInfoQuery {
             // and want to preserve that across the client/daemon boundary
             return Ok(Self::Id(String::from(&s[3..])));
         }
+        if s.starts_with("serial:") {
+            return Ok(Self::Id(String::from(&s[7..])));
+        }
         if s.starts_with("usb:cid:") {
             let cid = s["usb:cid:".len()..]
                 .parse()
@@ -301,6 +304,16 @@ mod test {
         match q {
             TargetInfoQuery::Id(s) if s == serial => {}
             _ => panic!("parsing of ID query failed"),
+        }
+    }
+
+    #[test]
+    fn test_serial_query() {
+        let serial = "abcdef";
+        let q = TargetInfoQuery::try_from(format!("serial:{serial}")).unwrap();
+        match q {
+            TargetInfoQuery::Id(s) if s == serial => {}
+            _ => panic!("parsing of serial query failed"),
         }
     }
 
@@ -487,5 +500,11 @@ mod test {
         let str_input = "[fe80::1%invalidscope]:8022";
         let res = TargetInfoQuery::try_from(str_input);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_serial_to_string_becomes_id() {
+        let q = TargetInfoQuery::try_from("serial:123456").unwrap();
+        assert_eq!(String::from(q), "id:123456");
     }
 }

@@ -411,6 +411,7 @@ pub fn check_strict_constraints(ffx: &Ffx, requires_target: bool) -> Result<()> 
             Some(t) => match netext::parse_address_parts(t.as_str()) {
                 Err(_) => {
                     let valid_prefix = t.starts_with("id:")
+                        || t.starts_with("serial:")
                         || t.starts_with("usb:cid:")
                         || t.starts_with("vsock:cid:");
                     if !valid_prefix {
@@ -826,6 +827,22 @@ mod test {
                     "echo",
                 ],
                 name: "id prefix is okay".into(),
+                expected_errors: vec![],
+            },
+            TestCase {
+                inputs: vec![
+                    "ffx",
+                    "--strict",
+                    "--log-output",
+                    "/tmp/out.log",
+                    "--target",
+                    "serial:1234567890AB",
+                    "--machine",
+                    "json",
+                    "target",
+                    "echo",
+                ],
+                name: "serial prefix is okay".into(),
                 expected_errors: vec![],
             },
         ];
