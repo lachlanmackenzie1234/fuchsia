@@ -120,21 +120,36 @@ func (w *LineWriter) Write(data []byte) (int, error) {
 	lines := bytes.SplitAfter(data, []byte("\n"))
 	written := 0
 	for _, line := range lines {
-		if bytes.HasSuffix(line, []byte("\n")) {
-			toWrite := []byte{}
-			if w.prefix != "" {
-				toWrite = append(toWrite, []byte(w.prefix+": ")...)
-			}
-			toWrite = append(toWrite, w.line...)
-			n, err := w.writer.Write(append(toWrite, line...))
-			written += int(math.Max(0, float64(n-len(toWrite))))
-			if err != nil {
-				return written, err
-			}
-			w.line = []byte{}
-		} else {
+		if !bytes.HasSuffix(line, []byte("\n")) {
 			w.line = append(w.line, line...)
+			written += len(line)
+			continue
 		}
+
+		toWrite := []byte{}
+		if w.prefix != "" {
+			toWrite = append(toWrite, []byte(w.prefix+": ")...)
+		}
+		toWrite = append(toWrite, w.line...)
+		fullLine := append(toWrite, line...)
+
+		// b/532619063: Filter out Goldfish out-of-bound warning spam from AEMU to prevent overflowing
+		// and truncating the 100MB Swarming artifact log buffer. Once the upstream QEMU patch from
+		// b/407710119 is included in prebuilt AEMU/QEMU binaries rolled into Fuchsia, we can get rid of
+		// this override
+		if bytes.Contains(fullLine, []byte("goldfish_address_space_area is out-of-bound")) {
+			written += len(line)
+			w.line = []byte{}
+			continue
+		}
+
+		n, err := w.writer.Write(fullLine)
+		written += int(math.Max(0, float64(n-len(toWrite))))
+		if err != nil {
+			return written, err
+		}
+
+		w.line = []byte{}
 	}
 	return len(data), nil
 }

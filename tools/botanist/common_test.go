@@ -90,3 +90,23 @@ func TestStdioWriters(t *testing.T) {
 		}
 	}
 }
+
+func TestLineWriterFiltersGoldfishOobWarning(t *testing.T) {
+	var w strings.Builder
+	lw := NewLineWriter(&w, "ffx")
+
+	lines := []string{
+		"normal startup line 1\n",
+		"emulator: Warning: A write to goldfish_address_space_area is out-of-bound and is ignored. Offset = 0x3fc4b3000, size = 1\n",
+		"normal startup line 2\n",
+	}
+	write(t, lw, lines)
+
+	output := w.String()
+	if strings.Contains(output, "goldfish_address_space_area is out-of-bound") {
+		t.Errorf("expected Goldfish OOB warning to be filtered, but got: %s", output)
+	}
+	if !strings.Contains(output, "ffx: normal startup line 1\n") || !strings.Contains(output, "ffx: normal startup line 2\n") {
+		t.Errorf("expected normal lines in output, got: %s", output)
+	}
+}
