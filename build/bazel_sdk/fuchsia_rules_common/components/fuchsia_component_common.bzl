@@ -78,12 +78,14 @@ is suitable to be included in a package. The component can include any
 number of dependencies which will be included in the final package.
 """,
     implementation = _fuchsia_component_common_impl,
+    # Prefer mandatory attributes to ensure wrapping macros intentionally set them.
     attrs = {
         "deps": attr.label_list(
             doc = """A list of targets that this component depends on.
 
             The necessary files for each target will be included in the final package.
             """,
+            mandatory = False,
         ),
         "moniker": attr.string(
             doc = """The moniker to run the component under.
@@ -92,6 +94,8 @@ number of dependencies which will be included in the final package.
 
             Use only for non-test, non-driver, and non-session components.
             """,
+            # Cannot be mandatory because it is a string.
+            mandatory = False,
         ),
         "compiled_manifest": attr.label(
             doc = "The `fuchsia_component_manifest` target.",
@@ -101,9 +105,8 @@ number of dependencies which will be included in the final package.
         "component_name": attr.string(
             doc = """The name of the component.
 
-            This value will override any component name values that were
-            set on the component manifest.
-            Defaults to the component manifest file's basename.
+            This value will override the component name value in the `compiled_manifest`.
+            Defaults to the basename of the `compiled_manifest` file.
             """,
             mandatory = False,
         ),
@@ -112,6 +115,7 @@ number of dependencies which will be included in the final package.
 
             Controls how the SDK runs the component.
             """,
+            mandatory = True,
         ),
         "is_test": attr.bool(
             doc = """True if this is a test component.
@@ -119,6 +123,7 @@ number of dependencies which will be included in the final package.
             Controls how the SDK runs the component.
             This is independent of the `testonly` attribute.
             """,
+            mandatory = True,
         ),
     },
 )

@@ -88,12 +88,12 @@ number of dependencies which will be included in the final package.
     implementation = _fx_component_impl,
     inherit_attrs = fuchsia_component_common,
     attrs = {
+        # The behavior is different from that documented for the inherited attribute.
         "component_name": attr.string(
             doc = """The name of the component.
 
-            This value will override any component name values that were
-            set on the component manifest.
-            Defaults to label name of this target.
+            This value will override the component name value in the `compiled_manifest`.
+            Defaults to the `name` of this target.
             """,
             mandatory = False,
         ),
