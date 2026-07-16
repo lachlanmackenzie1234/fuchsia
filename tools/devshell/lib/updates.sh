@@ -72,7 +72,9 @@ function is-listening-on-port {
       return 0
     fi
   else
-    if ss -f inet -f inet6 -an exclude time-wait exclude fin-wait-1 | awk '{print $5}' | grep ":${port}$" > /dev/null; then
+    # List all open tcp sockets (excluding freshly disconnected ones); extract
+    # their local address; check whether any port matches the argument.
+    if ss -t -f inet -f inet6 -an exclude time-wait exclude fin-wait-1 | awk '{print $4}' | grep ":${port}$" > /dev/null; then
       return 0
     fi
   fi
