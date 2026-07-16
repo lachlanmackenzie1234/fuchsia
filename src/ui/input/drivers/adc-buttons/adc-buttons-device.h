@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.adc/cpp/fidl.h>
+#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/logging/cpp/logger.h>

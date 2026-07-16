@@ -4,7 +4,9 @@
 
 #include "adc-buttons.h"
 
+#include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/driver/fidl.h>
+#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>

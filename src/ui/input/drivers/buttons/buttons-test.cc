@@ -5,6 +5,7 @@
 #include "buttons.h"
 
 #include <fidl/fuchsia.hardware.gpio/cpp/wire_test_base.h>
+#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>

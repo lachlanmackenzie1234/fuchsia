@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
-#include <fidl/fuchsia.input.report/cpp/wire.h>
+#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/wire.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/power/cpp/wake-lease.h>

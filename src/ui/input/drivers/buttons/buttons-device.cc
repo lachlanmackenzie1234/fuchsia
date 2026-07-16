@@ -4,6 +4,7 @@
 
 #include "buttons-device.h"
 
+#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/clock.h>
 #include <zircon/assert.h>
