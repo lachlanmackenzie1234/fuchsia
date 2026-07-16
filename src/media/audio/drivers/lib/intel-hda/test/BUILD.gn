@@ -18,7 +18,10 @@ test("intel-hda-utils-test") {
       configs -= fdio_config
     }
   }
-  sources = [ "utils_test.cc" ]
+  sources = [
+    "clock_test.cc",
+    "utils_test.cc",
+  ]
   deps = [
     "//sdk/lib/fdio",
     "//src/media/audio/drivers/lib/intel-hda",

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ABS_CLOCK_CLOCK_H_
-#define ABS_CLOCK_CLOCK_H_
+#ifndef SRC_MEDIA_AUDIO_DRIVERS_LIB_INTEL_HDA_INCLUDE_INTEL_HDA_UTILS_CLOCK_H_
+#define SRC_MEDIA_AUDIO_DRIVERS_LIB_INTEL_HDA_INCLUDE_INTEL_HDA_UTILS_CLOCK_H_
 
 #include <lib/zx/time.h>
 #include <zircon/time.h>
@@ -57,6 +57,8 @@ class RealClock final : public Clock {
 class FakeClock : public Clock {
  public:
   // Create a FakeClock.
+  //
+  // Use std::shared_ptr or similar if we want to share, but for now we keep it as is.
   FakeClock();
   FakeClock(zx::time start_time);
   ~FakeClock();
@@ -78,4 +80,4 @@ class FakeClock : public Clock {
 
 }  // namespace abs_clock
 
-#endif  // ABS_CLOCK_CLOCK_H_
+#endif  // SRC_MEDIA_AUDIO_DRIVERS_LIB_INTEL_HDA_INCLUDE_INTEL_HDA_UTILS_CLOCK_H_

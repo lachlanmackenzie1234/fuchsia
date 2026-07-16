@@ -46,7 +46,6 @@ source_set("system_metrics_daemon_lib") {
     "//src/lib/timekeeper",
     "//src/lib/timekeeper:system",
     "//third_party/cobalt/src/lib/client/cpp:buckets_config",
-    "//zircon/system/ulib/abs_clock",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/trace-provider",
     "//zircon/system/ulib/zx",

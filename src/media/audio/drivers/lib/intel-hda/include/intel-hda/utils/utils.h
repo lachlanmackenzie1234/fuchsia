@@ -16,10 +16,10 @@
 #include <type_traits>
 #include <utility>
 
-#include <abs_clock/clock.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
+#include <intel-hda/utils/clock.h>
 #include <intel-hda/utils/codec-caps.h>
 
 #include "src/graphics/display/lib/edid/edid.h"

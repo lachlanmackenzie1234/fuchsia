@@ -10,6 +10,7 @@ zx_library("intel-hda") {
     "intel-hda/utils/codec-commands.h",
     "intel-hda/utils/codec-caps.h",
     "intel-hda/utils/utils.h",
+    "intel-hda/utils/clock.h",
     "intel-hda/utils/intel-hda-proto.h",
     "intel-hda/utils/intel-audio-dsp-ipc.h",
     "intel-hda/utils/nhlt.h",
@@ -25,6 +26,7 @@ zx_library("intel-hda") {
     "codec-utils/dai-base.cc",
     "codec-utils/stream-base.cc",
     "codec-utils/streamconfig-base.cc",
+    "utils/clock.cc",
     "utils/codec-caps.cc",
     "utils/utils.cc",
   ]
@@ -37,7 +39,6 @@ zx_library("intel-hda") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//src/graphics/display/lib/edid",
     "//src/media/audio/drivers/lib/audio-driver-proto",
-    "//zircon/system/ulib/abs_clock",
     "//zircon/system/ulib/mmio-ptr",
     "//zircon/system/ulib/zx",
   ]
@@ -46,7 +47,6 @@ zx_library("intel-hda") {
     "//src/lib/ddk",
     "//src/media/audio/drivers/lib/audio-driver-proto",
     "//src/media/audio/drivers/lib/audio-proto-utils",
-    "//zircon/system/ulib/abs_clock",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/mmio-ptr",
     "//zircon/system/ulib/sync",

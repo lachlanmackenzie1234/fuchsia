@@ -16,7 +16,6 @@ import("//build/fuzz.gni")
 group("tests") {
   testonly = true
   deps = [
-    "abs_clock:tests",
     "affine:tests",
     "bitmap:tests",
     "closure-queue:tests",

@@ -12,8 +12,8 @@
 #include <iterator>
 #include <utility>
 
-#include <abs_clock/clock.h>
 #include <fbl/algorithm.h>
+#include <intel-hda/utils/clock.h>
 
 namespace audio {
 namespace intel_hda {
