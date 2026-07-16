@@ -1438,7 +1438,7 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
     if (max_packet_size > (metadata_.tx_fifo_sizes()[ep_num - 1] * 4)) {
       fdf::error(
           "Dwc2::ConfigureEndpoint: IN  endpoint {} max packet size {} is larger than "
-          "allocated TX FIFO space %d",
+          "allocated TX FIFO space {}",
           ep_num, max_packet_size, metadata_.tx_fifo_sizes()[ep_num - 1] * 4);
       completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
       return;
