@@ -237,15 +237,14 @@ zx::result<> FakeUsbCdcAcmFunction::Start(fdf::DriverContext context) {
     return bulk_out_endpoints.take_error();
   }
 
-  fuchsia_hardware_usb_function::EndpointResource in_res;
-  in_res.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn);
-  in_res.endpoint(std::move(bulk_in_endpoints->server));
-  ep_res.emplace_back(std::move(in_res));
+  ep_res.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kIn, std::move(bulk_in_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), kBulkMaxPacket));
 
-  fuchsia_hardware_usb_function::EndpointResource out_res;
-  out_res.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kOut);
-  out_res.endpoint(std::move(bulk_out_endpoints->server));
-  ep_res.emplace_back(std::move(out_res));
+  ep_res.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kOut,
+      std::move(bulk_out_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), kBulkMaxPacket));
 
   fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(1);

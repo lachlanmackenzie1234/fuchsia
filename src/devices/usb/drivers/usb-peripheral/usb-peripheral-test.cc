@@ -64,6 +64,17 @@ using inspect::testing::UintIs;
 using ::testing::AllOf;
 using ::testing::Contains;
 
+namespace {
+fuchsia_hardware_usb_endpoint::wire::EndpointInfo BulkEpInfo(fidl::AnyArena& arena) {
+  return fuchsia_hardware_usb_endpoint::wire::EndpointInfo::WithBulk(
+      arena, fuchsia_hardware_usb_endpoint::wire::BulkEndpointInfo::Builder(arena).Build());
+}
+fuchsia_hardware_usb_endpoint::wire::EndpointInfo InterruptEpInfo(fidl::AnyArena& arena) {
+  return fuchsia_hardware_usb_endpoint::wire::EndpointInfo::WithInterrupt(
+      arena, fuchsia_hardware_usb_endpoint::wire::InterruptEndpointInfo::Builder(arena).Build());
+}
+}  // namespace
+
 class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
  public:
   FakeDevice() = default;
@@ -72,6 +83,23 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
     return fdci::UsbDciService::InstanceHandler(
         {.device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                            fidl::kIgnoreBindingClosure)});
+  }
+
+  enum class EpType {
+    kBulk,
+    kInterrupt,
+    kIsochronous,
+  };
+  struct EndpointCaps {
+    uint8_t ep_address;
+    uint32_t max_packet_size_limit;
+    std::vector<EpType> supported_types;
+  };
+
+  void SetHardwareInfo(std::vector<EndpointCaps> caps, bool supports_dynamic) {
+    caps_ = std::move(caps);
+    supports_dynamic_ = supports_dynamic;
+    has_caps_ = true;
   }
 
   // fdci::UsbDci protocol.
@@ -147,16 +175,73 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   }
 
   void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (!has_caps_) {
+      completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+      return;
+    }
+
+    fidl::Arena arena;
+    auto endpoints =
+        fidl::VectorView<fuchsia_hardware_usb_dci::wire::EndpointInfo>(arena, caps_.size());
+    for (size_t i = 0; i < caps_.size(); i++) {
+      auto types = fidl::VectorView<fuchsia_hardware_usb_dci::wire::SupportedEndpointInfo>(
+          arena, caps_[i].supported_types.size());
+      for (size_t j = 0; j < caps_[i].supported_types.size(); j++) {
+        fuchsia_hardware_usb_descriptor::wire::EndpointType ep_type =
+            fuchsia_hardware_usb_descriptor::wire::EndpointType::kBulk;
+        switch (caps_[i].supported_types[j]) {
+          case EpType::kBulk:
+            ep_type = fuchsia_hardware_usb_descriptor::wire::EndpointType::kBulk;
+            break;
+          case EpType::kInterrupt:
+            ep_type = fuchsia_hardware_usb_descriptor::wire::EndpointType::kInterrupt;
+            break;
+          case EpType::kIsochronous:
+            ep_type = fuchsia_hardware_usb_descriptor::wire::EndpointType::kIsochronous;
+            break;
+        }
+        types[j] = fuchsia_hardware_usb_dci::wire::SupportedEndpointInfo::Builder(arena)
+                       .endpoint_type(ep_type)
+                       .max_packet_size_limit(static_cast<uint16_t>(caps_[i].max_packet_size_limit))
+                       .Build();
+      }
+
+      endpoints[i] = fuchsia_hardware_usb_dci::wire::EndpointInfo::Builder(arena)
+                         .ep_address(caps_[i].ep_address)
+                         .supported_types(types)
+                         .Build();
+    }
+
+    auto info = fuchsia_hardware_usb_dci::wire::DciHardwareInfo::Builder(arena)
+                    .endpoints(endpoints)
+                    .supports_dynamic_ep_sizing(supports_dynamic_)
+                    .Build();
+
+    completer.ReplySuccess(info);
   }
 
   void AllocEndpoint(AllocEndpointRequestView req,
                      AllocEndpointCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (!supports_dynamic_) {
+      completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+      return;
+    }
+    alloc_called_ = true;
+    if (max_allocs_.has_value() && alloc_count_ >= *max_allocs_) {
+      completer.ReplyError(ZX_ERR_NO_RESOURCES);
+      return;
+    }
+    alloc_count_++;
+    if (req->direction() == fuchsia_hardware_usb_descriptor::wire::EndpointDirection::kIn) {
+      completer.ReplySuccess(next_in_ep_++);
+    } else {
+      completer.ReplySuccess(next_out_ep_++);
+    }
   }
 
   void FreeEndpoint(FreeEndpointRequestView req, FreeEndpointCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    freed_endpoints_.push_back(req->ep_address);
+    completer.ReplySuccess();
   }
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fdci::UsbDci> metadata,
@@ -186,6 +271,10 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
     return ep;
   }
 
+  void set_max_allocs(size_t max) { max_allocs_ = max; }
+  const std::vector<uint8_t>& freed_endpoints() const { return freed_endpoints_; }
+  void clear_freed_endpoints() { freed_endpoints_.clear(); }
+
   bool fail_stall_ = false;
   std::vector<uint8_t> set_stalls_;
   std::vector<uint8_t> clear_stalls_;
@@ -197,6 +286,9 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   bool fail_disable_ = false;
   std::vector<uint8_t> disabled_endpoints_;
 
+  bool alloc_called() const { return alloc_called_; }
+  void reset_alloc_called() { alloc_called_ = false; }
+
  private:
   bool controller_started_ = false;
   libsync::Completion set_interface_called_;
@@ -204,6 +296,16 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   fidl::ServerBindingGroup<fdci::UsbDci> bindings_;
   std::optional<fidl::ClientEnd<fdci::UsbDciInterface>> client_;
   std::map<uint8_t, fidl::ServerEnd<fendpoint::Endpoint>> endpoints_;
+
+  std::vector<EndpointCaps> caps_;
+  bool supports_dynamic_ = false;
+  bool has_caps_ = false;
+  bool alloc_called_ = false;
+  uint8_t next_in_ep_ = 0x81;
+  uint8_t next_out_ep_ = 0x01;
+  std::vector<uint8_t> freed_endpoints_;
+  std::optional<size_t> max_allocs_;
+  size_t alloc_count_ = 0;
 };
 
 class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctionInterface>,
@@ -623,6 +725,7 @@ class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
 
   zx::result<std::vector<uint8_t>> CreateTestRawFunctionDescriptors(
       fidl::WireSyncClient<ffunction::UsbFunction>& function_client) {
+    fidl::Arena arena;
     uint8_t interface_num = 0xFF;
     uint8_t ep_out = 0xFF;
     uint8_t ep_in = 0xFF;
@@ -633,6 +736,8 @@ class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
       return ep_ends1.take_error();
     }
     endpoints[0].direction = fdescriptor::wire::EndpointDirection::kOut;
+    endpoints[0].ep_info = BulkEpInfo(arena);
+    endpoints[0].max_packet_size = 512;
     endpoints[0].endpoint = std::move(ep_ends1->server);
 
     zx::result ep_ends2 = fidl::CreateEndpoints<fendpoint::Endpoint>();
@@ -640,6 +745,8 @@ class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
       return ep_ends2.take_error();
     }
     endpoints[1].direction = fdescriptor::wire::EndpointDirection::kIn;
+    endpoints[1].ep_info = BulkEpInfo(arena);
+    endpoints[1].max_packet_size = 512;
     endpoints[1].endpoint = std::move(ep_ends2->server);
 
     fidl::WireResult res = function_client->AllocResources(
@@ -1530,8 +1637,12 @@ TEST_F(UsbPeripheralFunctionTest, AllocResources) {
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 2);
   endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
   endpoints[0].endpoint = std::move(ep_endpoints1.server);
   endpoints[1].direction = fdescriptor::wire::EndpointDirection::kOut;
+  endpoints[1].ep_info = BulkEpInfo(arena);
+  endpoints[1].max_packet_size = 512;
   endpoints[1].endpoint = std::move(ep_endpoints2.server);
 
   auto strings = fidl::VectorView<fidl::StringView>(arena, 2);
@@ -1626,6 +1737,8 @@ TEST_F(UsbPeripheralFunctionTest, ResourceCleanupOnClose) {
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
   endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1667,6 +1780,8 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   {
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
     endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+    endpoints[0].ep_info = BulkEpInfo(arena);
+    endpoints[0].max_packet_size = 512;
     auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1691,6 +1806,8 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   {
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
     endpoints[0].direction = fdescriptor::wire::EndpointDirection::kOut;
+    endpoints[0].ep_info = BulkEpInfo(arena);
+    endpoints[0].max_packet_size = 512;
     auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1717,6 +1834,8 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   {
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
     endpoints[0].direction = fdescriptor::wire::EndpointDirection::kOut;
+    endpoints[0].ep_info = BulkEpInfo(arena);
+    endpoints[0].max_packet_size = 512;
     auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1746,6 +1865,8 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
     auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, total_in_eps);
     for (size_t i = 0; i < total_in_eps; i++) {
       endpoints[i].direction = fdescriptor::wire::EndpointDirection::kIn;
+      endpoints[i].ep_info = BulkEpInfo(arena);
+      endpoints[i].max_packet_size = 512;
       auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
       endpoints[i].endpoint = std::move(ep_endpoints.server);
     }
@@ -1775,6 +1896,8 @@ TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
   endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1818,6 +1941,8 @@ TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
   endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1865,6 +1990,8 @@ TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
   endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1947,6 +2074,8 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
   endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -1994,6 +2123,8 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   fidl::Arena arena;
   auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
   endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
   auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
@@ -2851,6 +2982,175 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, ConfiguredGetStatusTests) {
     EXPECT_EQ(res_get2->value()->read[0], 0);  // cleared
     EXPECT_EQ(res_get2->value()->read[1], 0);
   }
+}
+
+class UsbPeripheralAllocationTest : public UsbPeripheralHarness<false> {
+ public:
+  usb_peripheral_config::Config GetDriverConfig() override {
+    usb_peripheral_config::Config config;
+    config.functions() = {"test"};
+    return config;
+  }
+};
+
+TEST_F(UsbPeripheralAllocationTest, BestFit) {
+  dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    std::vector<FakeDevice::EndpointCaps> caps = {
+        {0x81, 64, {FakeDevice::EpType::kBulk, FakeDevice::EpType::kInterrupt}},
+        {0x82, 512, {FakeDevice::EpType::kBulk, FakeDevice::EpType::kInterrupt}},
+        {0x01, 512, {FakeDevice::EpType::kBulk, FakeDevice::EpType::kInterrupt}},
+    };
+    env.dci().SetHardwareInfo(std::move(caps), false);
+  });
+
+  StartDriverWithConfig(GetDriverConfig());
+
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  auto function_client = std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 3);
+
+  auto ep_endpoints1 = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = InterruptEpInfo(arena);
+  endpoints[0].max_packet_size = 16;
+  endpoints[0].endpoint = std::move(ep_endpoints1.server);
+
+  auto ep_endpoints2 = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[1].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[1].ep_info = BulkEpInfo(arena);
+  endpoints[1].max_packet_size = 512;
+  endpoints[1].endpoint = std::move(ep_endpoints2.server);
+
+  auto ep_endpoints3 = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[2].direction = fdescriptor::wire::EndpointDirection::kOut;
+  endpoints[2].ep_info = BulkEpInfo(arena);
+  endpoints[2].max_packet_size = 512;
+  endpoints[2].endpoint = std::move(ep_endpoints3.server);
+
+  fidl::WireResult res = function_client->AllocResources(1, endpoints, {});
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_TRUE(res->is_ok()) << zx_status_get_string(res->error_value());
+
+  auto* response = res->value();
+  ASSERT_EQ(response->endpoint_addrs.size(), 3u);
+  EXPECT_EQ(response->endpoint_addrs[0], 0x81);
+  EXPECT_EQ(response->endpoint_addrs[1], 0x82);
+  EXPECT_EQ(response->endpoint_addrs[2], 0x01);
+  // Verify inspect
+  this->dut().RunInDriverContext([](UsbPeripheral& peripheral) {
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(peripheral.inspector());
+    auto* node = hierarchy.GetByPath({"usb-peripheral", "hardware_info"});
+    ASSERT_NE(node, nullptr);
+    EXPECT_THAT(*node,
+                NodeMatches(PropertyList(Contains(BoolIs("supports_dynamic_ep_sizing", false)))));
+
+    auto* ep_81 = hierarchy.GetByPath({"usb-peripheral", "hardware_info", "ep_0x81"});
+    ASSERT_NE(ep_81, nullptr);
+    EXPECT_THAT(*ep_81, NodeMatches(PropertyList(Contains(UintIs("max_packet_size_limit", 64)))));
+    EXPECT_THAT(
+        *ep_81,
+        NodeMatches(PropertyList(Contains(StringIs("supported_types", "bulk, interrupt")))));
+
+    auto* ep_82 = hierarchy.GetByPath({"usb-peripheral", "hardware_info", "ep_0x82"});
+    ASSERT_NE(ep_82, nullptr);
+    EXPECT_THAT(*ep_82, NodeMatches(PropertyList(Contains(UintIs("max_packet_size_limit", 512)))));
+    EXPECT_THAT(
+        *ep_82,
+        NodeMatches(PropertyList(Contains(StringIs("supported_types", "bulk, interrupt")))));
+
+    auto* ep_01 = hierarchy.GetByPath({"usb-peripheral", "hardware_info", "ep_0x01"});
+    ASSERT_NE(ep_01, nullptr);
+    EXPECT_THAT(*ep_01, NodeMatches(PropertyList(Contains(UintIs("max_packet_size_limit", 512)))));
+    EXPECT_THAT(
+        *ep_01,
+        NodeMatches(PropertyList(Contains(StringIs("supported_types", "bulk, interrupt")))));
+  });
+}
+
+TEST_F(UsbPeripheralAllocationTest, Dynamic) {
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().SetHardwareInfo({}, true); });
+
+  StartDriverWithConfig(GetDriverConfig());
+
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  auto function_client = std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 2);
+
+  auto ep_endpoints1 = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
+  endpoints[0].endpoint = std::move(ep_endpoints1.server);
+
+  auto ep_endpoints2 = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[1].direction = fdescriptor::wire::EndpointDirection::kOut;
+  endpoints[1].ep_info = BulkEpInfo(arena);
+  endpoints[1].max_packet_size = 512;
+  endpoints[1].endpoint = std::move(ep_endpoints2.server);
+
+  fidl::WireResult res = function_client->AllocResources(1, endpoints, {});
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_TRUE(res->is_ok()) << zx_status_get_string(res->error_value());
+
+  auto* response = res->value();
+  ASSERT_EQ(response->endpoint_addrs.size(), 2u);
+  EXPECT_EQ(response->endpoint_addrs[0], 0x81);
+  EXPECT_EQ(response->endpoint_addrs[1], 0x01);
+
+  bool alloc_called = false;
+  dut().RunInEnvironmentTypeContext(
+      [&](UsbPeripheralTestEnvironment& env) { alloc_called = env.dci().alloc_called(); });
+  EXPECT_TRUE(alloc_called);
+}
+
+TEST_F(UsbPeripheralAllocationTest, AllocationRollback) {
+  dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    env.dci().SetHardwareInfo({}, true);
+    // Limit allocations to 1. The second one will fail.
+    env.dci().set_max_allocs(1);
+    env.dci().clear_freed_endpoints();
+  });
+
+  StartDriverWithConfig(GetDriverConfig());
+
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  auto function_client = std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 2);
+
+  auto ep_endpoints1 = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
+  endpoints[0].endpoint = std::move(ep_endpoints1.server);
+
+  auto ep_endpoints2 = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[1].direction = fdescriptor::wire::EndpointDirection::kOut;
+  endpoints[1].ep_info = BulkEpInfo(arena);
+  endpoints[1].max_packet_size = 512;
+  endpoints[1].endpoint = std::move(ep_endpoints2.server);
+
+  // This should fail because we only allow 1 allocation, but we requested 2.
+  fidl::WireResult res = function_client->AllocResources(1, endpoints, {});
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_TRUE(res->is_error());
+  EXPECT_EQ(res->error_value(), ZX_ERR_NO_RESOURCES);
+
+  // Verify that the first endpoint (0x81) was freed.
+  std::vector<uint8_t> freed_endpoints;
+  dut().RunInEnvironmentTypeContext(
+      [&](UsbPeripheralTestEnvironment& env) { freed_endpoints = env.dci().freed_endpoints(); });
+  ASSERT_EQ(freed_endpoints.size(), 1u);
+  EXPECT_EQ(freed_endpoints[0], 0x81);
 }
 
 }  // namespace

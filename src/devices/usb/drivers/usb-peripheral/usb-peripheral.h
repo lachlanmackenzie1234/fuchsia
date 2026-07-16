@@ -294,6 +294,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   void CommonControl(const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
                      cpp20::span<uint8_t> write_buffer,
                      fit::callback<void(zx::result<std::vector<uint8_t>>)> completer);
+  zx_status_t InitializeDci(fidl::ClientEnd<fuchsia_hardware_usb_dci::UsbDci> dci_client_end);
 
   // For mapping b_endpoint_address value to/from index in range 0 - 31.
   static inline uint8_t EpAddressToIndex(uint8_t addr) {
@@ -321,18 +322,50 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   zx_status_t AllocInterfaceLocked(size_t function_index, uint8_t* out_intf_num)
       __TA_REQUIRES(lock_);
+  // Main entry point for endpoint allocation. Decides which allocation strategy to use
+  // based on DCI capabilities:
+  // 1. If DCI supports dynamic sizing, delegates to the DCI driver (AllocEndpointDynamicLocked).
+  // 2. If DCI reports hardware info but not dynamic sizing, uses a local best-fit algorithm
+  //    based on reported endpoint capabilities (AllocEndpointBestFitLocked).
+  // 3. If DCI does not support GetHardwareInfo (legacy), falls back to static sequential
+  //    allocation (AllocEndpointLegacyLocked).
   zx_status_t AllocEndpointLocked(size_t function_index,
                                   fuchsia_hardware_usb_descriptor::EndpointDirection direction,
-                                  uint8_t* out_address) __TA_REQUIRES(lock_);
+                                  fuchsia_hardware_usb_endpoint::wire::EndpointInfo ep_info,
+                                  uint32_t max_packet_size, uint8_t* out_address)
+      __TA_REQUIRES(lock_);
+
+  // Allocates an endpoint by calling the DCI driver's AllocEndpoint FIDL method.
+  // Used when DCI supports dynamic endpoint sizing.
+  zx_status_t AllocEndpointDynamicLocked(
+      size_t function_index, fuchsia_hardware_usb_descriptor::EndpointDirection direction,
+      fuchsia_hardware_usb_endpoint::wire::EndpointInfo ep_info, uint32_t max_packet_size,
+      uint8_t* out_address) __TA_REQUIRES(lock_);
+
+  // Allocates an endpoint by choosing the best fit from the static list of endpoints
+  // reported by the DCI driver via GetHardwareInfo.
+  // Used when DCI does not support dynamic sizing but provides hardware info.
+  zx_status_t AllocEndpointBestFitLocked(
+      size_t function_index, fuchsia_hardware_usb_descriptor::EndpointDirection direction,
+      fuchsia_hardware_usb_endpoint::wire::EndpointInfo ep_info, uint32_t max_packet_size,
+      uint8_t* out_address) __TA_REQUIRES(lock_);
+
+  // Legacy sequential allocation. Assigns the next available endpoint number.
+  // Used when DCI does not support GetHardwareInfo.
+  zx_status_t AllocEndpointLegacyLocked(
+      size_t function_index, fuchsia_hardware_usb_descriptor::EndpointDirection direction,
+      uint8_t* out_address) __TA_REQUIRES(lock_);
   zx_status_t AllocStringDescLocked(std::optional<size_t> function_index, std::string desc,
                                     uint8_t* out_index) __TA_REQUIRES(lock_);
+  void FreeEndpointInternalLocked(uint8_t index, std::string_view context) __TA_REQUIRES(lock_);
+
   zx_status_t AllocStringDesc(std::optional<size_t> function_index, std::string desc,
                               uint8_t* out_index) __TA_EXCLUDES(lock_);
 
   bool AllFunctionsRegistered() const __TA_REQUIRES(lock_);
 
-  UsbFunction& GetFunction(size_t index);
-  const UsbFunction& GetFunction(size_t index) const;
+  UsbFunction& GetFunction(size_t index) __TA_REQUIRES(lock_);
+  const UsbFunction& GetFunction(size_t index) const __TA_REQUIRES(lock_);
 
   void Connect(fidl::ServerEnd<fuchsia_hardware_usb_peripheral::Device> request) {
     TRACE_DURATION("usb-peripheral", __func__);
@@ -346,6 +379,19 @@ class UsbPeripheral : public fdf::DriverBase2,
   std::vector<std::shared_ptr<UsbFunction>> functions_;
 
   fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci_;
+  struct DciSupportedEndpointInfo {
+    fuchsia_hardware_usb_descriptor::wire::EndpointType endpoint_type =
+        fuchsia_hardware_usb_descriptor::wire::EndpointType::kBulk;
+    uint16_t max_packet_size_limit = 0;
+    uint64_t min_lead_time = 0;
+  };
+  struct DciEndpointInfo {
+    uint8_t ep_address = 0;
+    std::vector<DciSupportedEndpointInfo> supported_types;
+  };
+  bool supports_dynamic_ep_sizing_ = false;
+  std::vector<DciEndpointInfo> dci_endpoints_;
+  bool has_dci_hardware_info_ = false;
   // USB device descriptor set via ioctl_usb_peripheral_set_device_desc()
   usb_device_descriptor_t device_desc_ = {};
   // Map from endpoint index to function index.
@@ -404,9 +450,18 @@ class UsbPeripheral : public fdf::DriverBase2,
       fit::bind_member<&UsbPeripheral::Connect>(this)};
   std::shared_ptr<fdf::Namespace> incoming_;
 
+  struct InspectEndpoint {
+    inspect::Node node;
+    inspect::UintProperty max_packet_size_limit;
+    inspect::StringProperty supported_types;
+  };
+
   std::optional<inspect::ComponentInspector> inspector_;
   inspect::Node usb_peripheral_node_;
   usb_inspect::DciInspect dci_inspect_;
+  inspect::Node hardware_info_node_;
+  inspect::BoolProperty supports_dynamic_ep_sizing_property_;
+  std::vector<InspectEndpoint> inspect_endpoints_;
 };
 
 }  // namespace usb_peripheral

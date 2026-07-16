@@ -1073,20 +1073,17 @@ zx::result<> RndisFunction::Start(fdf::DriverContext context) {
   }
 
   std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
-  fuchsia_hardware_usb_function::EndpointResource res_intr;
-  res_intr.direction(fdescriptor::EndpointDirection::kIn);
-  res_intr.endpoint(std::move(intr_ep_res->server));
-  resources.emplace_back(std::move(res_intr));
+  resources.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fdescriptor::EndpointDirection::kIn, std::move(intr_ep_res->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithInterrupt({}), kNotificationMaxPacketSize));
 
-  fuchsia_hardware_usb_function::EndpointResource res_in;
-  res_in.direction(fdescriptor::EndpointDirection::kIn);
-  res_in.endpoint(std::move(in_ep_res->server));
-  resources.emplace_back(std::move(res_in));
+  resources.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fdescriptor::EndpointDirection::kIn, std::move(in_ep_res->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), 512));
 
-  fuchsia_hardware_usb_function::EndpointResource res_out;
-  res_out.direction(fdescriptor::EndpointDirection::kOut);
-  res_out.endpoint(std::move(out_ep_res->server));
-  resources.emplace_back(std::move(res_out));
+  resources.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fdescriptor::EndpointDirection::kOut, std::move(out_ep_res->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), 512));
 
   fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(2);

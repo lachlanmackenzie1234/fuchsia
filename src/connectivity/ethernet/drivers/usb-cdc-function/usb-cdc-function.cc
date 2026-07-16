@@ -565,28 +565,25 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
     return intr_endpoints.take_error();
   }
   std::vector<ffunction::EndpointResource> resources;
-  ffunction::EndpointResource intr_resource;
-  intr_resource.direction(fdescriptor::EndpointDirection::kIn);
-  intr_resource.endpoint(std::move(intr_endpoints->server));
-  resources.emplace_back(std::move(intr_resource));
+  resources.push_back(ffunction::EndpointResource(
+      fdescriptor::EndpointDirection::kIn, std::move(intr_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithInterrupt({}), INTR_MAX_PACKET));
 
   zx::result bulk_in_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (bulk_in_endpoints.is_error()) {
     return bulk_in_endpoints.take_error();
   }
-  ffunction::EndpointResource bulk_in_resource;
-  bulk_in_resource.direction(fdescriptor::EndpointDirection::kIn);
-  bulk_in_resource.endpoint(std::move(bulk_in_endpoints->server));
-  resources.emplace_back(std::move(bulk_in_resource));
+  resources.push_back(ffunction::EndpointResource(
+      fdescriptor::EndpointDirection::kIn, std::move(bulk_in_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), BULK_MAX_PACKET));
 
   zx::result bulk_out_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (bulk_out_endpoints.is_error()) {
     return bulk_out_endpoints.take_error();
   }
-  ffunction::EndpointResource bulk_out_resource;
-  bulk_out_resource.direction(fdescriptor::EndpointDirection::kOut);
-  bulk_out_resource.endpoint(std::move(bulk_out_endpoints->server));
-  resources.emplace_back(std::move(bulk_out_resource));
+  resources.push_back(ffunction::EndpointResource(
+      fdescriptor::EndpointDirection::kOut, std::move(bulk_out_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), BULK_MAX_PACKET));
 
   fidl::Request<ffunction::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(2);

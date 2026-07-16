@@ -374,15 +374,12 @@ zx::result<> UsbFastbootFunction::Start(fdf::DriverContext context) {
   }
 
   std::vector<ffunction::EndpointResource> resources;
-  ffunction::EndpointResource out_res;
-  out_res.direction(fdescriptor::EndpointDirection::kOut);
-  out_res.endpoint(std::move(bulk_out_endpoints->server));
-  resources.emplace_back(std::move(out_res));
-
-  ffunction::EndpointResource in_res;
-  in_res.direction(fdescriptor::EndpointDirection::kIn);
-  in_res.endpoint(std::move(bulk_in_endpoints->server));
-  resources.emplace_back(std::move(in_res));
+  resources.push_back(ffunction::EndpointResource(
+      fdescriptor::EndpointDirection::kOut, std::move(bulk_out_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), kPacketSize));
+  resources.push_back(ffunction::EndpointResource(
+      fdescriptor::EndpointDirection::kIn, std::move(bulk_in_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), kPacketSize));
 
   fidl::Request<ffunction::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(2);

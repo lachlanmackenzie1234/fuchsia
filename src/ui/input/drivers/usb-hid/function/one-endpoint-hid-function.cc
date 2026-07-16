@@ -172,8 +172,9 @@ zx::result<> FakeUsbHidFunction::Start(fdf::DriverContext context) {
   }
 
   std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
-  endpoints.push_back(
-      {fuchsia_hardware_usb_descriptor::EndpointDirection::kIn, std::move(endpoints_res->server)});
+  endpoints.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kIn, std::move(endpoints_res->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithInterrupt({}), BULK_MAX_PACKET));
 
   fuchsia_hardware_usb_function::UsbFunctionAllocResourcesRequest alloc_req;
   alloc_req.interface_count() = 1;

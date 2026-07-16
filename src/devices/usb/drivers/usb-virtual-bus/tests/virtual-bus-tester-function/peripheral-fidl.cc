@@ -74,15 +74,13 @@ zx::result<> FidlTestFunction::Start(fdf::DriverContext context) {
   ep_in_client_ = std::move(ep_in->client);
 
   std::vector<ffunction::EndpointResource> endpoints;
-  ffunction::EndpointResource ep_out_res;
-  ep_out_res.direction(fdescriptor::EndpointDirection::kOut);
-  ep_out_res.endpoint(std::move(ep_out->server));
-  endpoints.push_back(std::move(ep_out_res));
+  endpoints.push_back(
+      ffunction::EndpointResource(fdescriptor::EndpointDirection::kOut, std::move(ep_out->server),
+                                  fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), 512));
 
-  ffunction::EndpointResource ep_in_res;
-  ep_in_res.direction(fdescriptor::EndpointDirection::kIn);
-  ep_in_res.endpoint(std::move(ep_in->server));
-  endpoints.push_back(std::move(ep_in_res));
+  endpoints.push_back(
+      ffunction::EndpointResource(fdescriptor::EndpointDirection::kIn, std::move(ep_in->server),
+                                  fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), 512));
 
   ffunction::UsbFunctionAllocResourcesRequest alloc_req;
   alloc_req.interface_count(1);

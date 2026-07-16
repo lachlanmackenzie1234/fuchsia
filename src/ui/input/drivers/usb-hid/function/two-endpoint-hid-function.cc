@@ -184,17 +184,14 @@ zx::result<> FakeUsbHidFunction::Start(fdf::DriverContext context) {
     return endpoints_out_res.take_error();
   }
 
-  fuchsia_hardware_usb_function::EndpointResource ep_in;
-  ep_in.direction() = fuchsia_hardware_usb_descriptor::EndpointDirection::kIn;
-  ep_in.endpoint() = std::move(endpoints_res->server);
-
-  fuchsia_hardware_usb_function::EndpointResource ep_out;
-  ep_out.direction() = fuchsia_hardware_usb_descriptor::EndpointDirection::kOut;
-  ep_out.endpoint() = std::move(endpoints_out_res->server);
-
   std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
-  endpoints.push_back(std::move(ep_in));
-  endpoints.push_back(std::move(ep_out));
+  endpoints.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kIn, std::move(endpoints_res->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithInterrupt({}), BULK_MAX_PACKET));
+  endpoints.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kOut,
+      std::move(endpoints_out_res->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithInterrupt({}), BULK_MAX_PACKET));
 
   fuchsia_hardware_usb_function::UsbFunctionAllocResourcesRequest alloc_req;
   alloc_req.interface_count() = 1;

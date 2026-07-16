@@ -549,18 +549,12 @@ zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
   }
 
   std::vector<ffunction::EndpointResource> resources;
-  {
-    ffunction::EndpointResource res;
-    res.direction(fdescriptor::EndpointDirection::kOut);
-    res.endpoint(std::move(bulk_out_endpoints->server));
-    resources.emplace_back(std::move(res));
-  }
-  {
-    ffunction::EndpointResource res;
-    res.direction(fdescriptor::EndpointDirection::kIn);
-    res.endpoint(std::move(bulk_in_endpoints->server));
-    resources.emplace_back(std::move(res));
-  }
+  resources.push_back(ffunction::EndpointResource(
+      fdescriptor::EndpointDirection::kOut, std::move(bulk_out_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), kBulkMaxPacket));
+  resources.push_back(ffunction::EndpointResource(
+      fdescriptor::EndpointDirection::kIn, std::move(bulk_in_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), kBulkMaxPacket));
 
   fidl::Request<ffunction::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(1);

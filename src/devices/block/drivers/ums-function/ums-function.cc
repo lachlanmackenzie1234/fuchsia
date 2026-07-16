@@ -809,8 +809,10 @@ zx_status_t UmsFunction::Init(fdf::DriverContext& context) {
   auto [out_client, out_server] = fidl::Endpoints<fendpoint::Endpoint>::Create();
 
   std::vector<ffunction::EndpointResource> ep_resources;
-  ep_resources.emplace_back(fdescriptor::EndpointDirection::kIn, std::move(in_server));
-  ep_resources.emplace_back(fdescriptor::EndpointDirection::kOut, std::move(out_server));
+  ep_resources.emplace_back(fdescriptor::EndpointDirection::kIn, std::move(in_server),
+                            fendpoint::EndpointInfo::WithBulk({}), kBulkMaxPacket);
+  ep_resources.emplace_back(fdescriptor::EndpointDirection::kOut, std::move(out_server),
+                            fendpoint::EndpointInfo::WithBulk({}), kBulkMaxPacket);
 
   fidl::Result alloc = function_->AllocResources({{
       .interface_count = 1,

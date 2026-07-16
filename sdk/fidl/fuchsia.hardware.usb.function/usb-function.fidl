@@ -85,6 +85,10 @@ closed protocol UsbFunction {
         endpoints vector<@generated_name("EndpointResource") resource struct {
             direction fuchsia.hardware.usb.descriptor.EndpointDirection;
             endpoint server_end:fuchsia.hardware.usb.endpoint.Endpoint;
+            /// Information about the endpoint (e.g. Bulk, Interrupt).
+            ep_info fuchsia.hardware.usb.endpoint.EndpointInfo;
+            /// The maximum packet size the endpoint supports.
+            max_packet_size uint32;
         }>:MAX_ENDPOINTS;
         strings vector<string:MAX_STRING_LEN>:MAX_STRINGS;
     }) -> (struct {

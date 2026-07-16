@@ -44,18 +44,52 @@ namespace ffunction = fuchsia_hardware_usb_function;
 namespace fperipheral = fuchsia_hardware_usb_peripheral;
 namespace fphy = fuchsia_hardware_usb_phy;
 
+}  // namespace usb_peripheral
+
+namespace fendpoint = fuchsia_hardware_usb_endpoint;
+
+namespace std {
+
+template <>
+struct formatter<fendpoint::wire::EndpointInfo> : formatter<string_view> {
+  auto format(const fendpoint::wire::EndpointInfo& info, format_context& ctx) const {
+    string_view name = "unknown";
+    switch (info.Which()) {
+      case fendpoint::wire::EndpointInfo::Tag::kBulk:
+        name = "bulk";
+        break;
+      case fendpoint::wire::EndpointInfo::Tag::kControl:
+        name = "control";
+        break;
+      case fendpoint::wire::EndpointInfo::Tag::kIsochronous:
+        name = "isochronous";
+        break;
+      case fendpoint::wire::EndpointInfo::Tag::kInterrupt:
+        name = "interrupt";
+        break;
+      default:
+        break;
+    }
+    return formatter<string_view>::format(name, ctx);
+  }
+};
+
+}  // namespace std
+
+namespace usb_peripheral {
+
 zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
   fidl::Arena arena;
   auto result = dci_.buffer(arena)->CancelAll(ep_address);
 
   if (!result.ok()) {
-    fdf::error("Failed to send CancelAll request: {}", result.status_string());
+    fdf::error("CancelAll failed (framework): {}", result.status_string());
     return result.status();
   }
   if (result->is_error()) {
     if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-      fdf::error("Failed to cancel all: {}", zx_status_get_string(result->error_value()));
+      fdf::error("CancelAll failed (DCI error): {}", zx_status_get_string(result->error_value()));
     }
     return result->error_value();
   }
@@ -137,11 +171,14 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
     // DCI FIDL is not available. Return OK because we could be using Banjo DCI instead.
     // In the future when we remove banjo. This should be an error.
     if (!result.ok()) {
-      fdf::info("Failed to send SetInterface request: {}", result.status_string());
+      fdf::info("SetInterface failed (framework): {}", result.status_string());
     } else if (result->is_error()) {
-      fdf::error("Failed to set interface: {}", zx_status_get_string(result->error_value()));
+      fdf::error("SetInterface failed (DCI error): {}",
+                 zx_status_get_string(result->error_value()));
     } else {
-      dci_.Bind(std::move(*dci_fidl));
+      if (zx_status_t status = InitializeDci(std::move(*dci_fidl)); status != ZX_OK) {
+        return zx::error(status);
+      }
     }
   }
 
@@ -193,15 +230,13 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   }
 
   auto config = context.take_config<usb_peripheral_config::Config>();
-
   PeripheralConfigParser peripheral_config = {};
-
   zx_status_t status;
   if (!config.kboot_functions().empty()) {
     fdf::debug("-driver.usb.peripheral kboot overrides: {}", config.kboot_functions());
     status = peripheral_config.AddFunctions(config.kboot_functions() | std::views::split(','));
   } else {
-    status = peripheral_config.AddFunctions(std::views::all(config.functions()));
+    status = peripheral_config.AddFunctions(config.functions());
   }
 
   if (status != ZX_OK) {
@@ -249,7 +284,6 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   }
 
   usb_monitor_.Start();
-
   return zx::ok();
 }
 
@@ -335,6 +369,7 @@ zx_status_t UsbPeripheral::AllocStringDescLocked(std::optional<size_t> function_
 zx::result<uint8_t> UsbPeripheral::ValidateFunction(size_t function_index, void* descriptors,
                                                     size_t length) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
+  fbl::AutoLock lock(&lock_);
   auto* intf_desc = static_cast<usb_interface_descriptor_t*>(descriptors);
   uint8_t num_interfaces = 0;
   if (intf_desc->b_descriptor_type == USB_DT_INTERFACE) {
@@ -586,11 +621,12 @@ zx_status_t UsbPeripheral::StartController() {
   auto result = dci_.buffer(arena)->StartController();
 
   if (!result.ok()) {
-    fdf::error("Failed to send StartController request: {}", result.status_string());
+    fdf::error("StartController failed (framework): {}", result.status_string());
     return ZX_ERR_INTERNAL;
   }
   if (result->is_error()) {
-    fdf::error("Failed to start controller: {}", zx_status_get_string(result->error_value()));
+    fdf::error("StartController failed (DCI error): {}",
+               zx_status_get_string(result->error_value()));
     return result->error_value();
   }
 
@@ -615,11 +651,12 @@ zx_status_t UsbPeripheral::StopController() {
     auto result = dci_.buffer(arena)->StopController();
 
     if (!result.ok()) {
-      fdf::error("Failed to send StopController request: {}", result.status_string());
+      fdf::error("StopController failed (framework): {}", result.status_string());
       return ZX_ERR_INTERNAL;
     }
     if (result->is_error()) {
-      fdf::error("Failed to stop controller: {}", zx_status_get_string(result->error_value()));
+      fdf::error("StopController failed (DCI error): {}",
+                 zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -654,11 +691,186 @@ zx_status_t UsbPeripheral::AllocInterfaceLocked(size_t function_index, uint8_t* 
   return ZX_ERR_NO_RESOURCES;
 }
 
-zx_status_t UsbPeripheral::AllocEndpointLocked(size_t function_index,
-                                               fdescriptor::EndpointDirection direction,
-                                               uint8_t* out_address) {
+namespace {
+
+fdescriptor::wire::EndpointType EndpointInfoToType(
+    const fuchsia_hardware_usb_endpoint::wire::EndpointInfo& ep_info) {
+  switch (ep_info.Which()) {
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kControl:
+      return fdescriptor::wire::EndpointType::kControl;
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kIsochronous:
+      return fdescriptor::wire::EndpointType::kIsochronous;
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kBulk:
+      return fdescriptor::wire::EndpointType::kBulk;
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kInterrupt:
+      return fdescriptor::wire::EndpointType::kInterrupt;
+    default:
+      return fdescriptor::wire::EndpointType::kBulk;
+  }
+}
+
+const char* EndpointTypeToString(fdescriptor::wire::EndpointType type) {
+  switch (type) {
+    case fdescriptor::wire::EndpointType::kControl:
+      return "control";
+    case fdescriptor::wire::EndpointType::kIsochronous:
+      return "isochronous";
+    case fdescriptor::wire::EndpointType::kBulk:
+      return "bulk";
+    case fdescriptor::wire::EndpointType::kInterrupt:
+      return "interrupt";
+    default:
+      return "unknown";
+  }
+}
+
+const char* EndpointInfoToString(const fuchsia_hardware_usb_endpoint::wire::EndpointInfo& ep_info) {
+  switch (ep_info.Which()) {
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kControl:
+      return "control";
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kIsochronous:
+      return "isochronous";
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kBulk:
+      return "bulk";
+    case fuchsia_hardware_usb_endpoint::wire::EndpointInfo::Tag::kInterrupt:
+      return "interrupt";
+    default:
+      return "unknown";
+  }
+}
+
+}  // namespace
+
+zx_status_t UsbPeripheral::AllocEndpointLocked(
+    size_t function_index, fdescriptor::EndpointDirection direction,
+    fuchsia_hardware_usb_endpoint::wire::EndpointInfo ep_info, uint32_t max_packet_size,
+    uint8_t* out_address) {
+  std::string type_str = EndpointInfoToString(ep_info);
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index, "direction",
-                 fidl::ToUnderlying(direction));
+                 fidl::ToUnderlying(direction), "type", type_str, "max_packet_size",
+                 max_packet_size);
+
+  if (!has_dci_hardware_info_) {
+    return AllocEndpointLegacyLocked(function_index, direction, out_address);
+  }
+
+  if (supports_dynamic_ep_sizing_) {
+    return AllocEndpointDynamicLocked(function_index, direction, ep_info, max_packet_size,
+                                      out_address);
+  }
+
+  return AllocEndpointBestFitLocked(function_index, direction, ep_info, max_packet_size,
+                                    out_address);
+}
+
+zx_status_t UsbPeripheral::AllocEndpointDynamicLocked(
+    size_t function_index, fdescriptor::EndpointDirection direction,
+    fuchsia_hardware_usb_endpoint::wire::EndpointInfo ep_info, uint32_t max_packet_size,
+    uint8_t* out_address) {
+  fidl::Arena arena;
+  auto alloc_req = fuchsia_hardware_usb_dci::wire::EndpointAllocationRequest::Builder(arena)
+                       .direction(direction)
+                       .endpoint_type(EndpointInfoToType(ep_info))
+                       .max_packet_size(static_cast<uint16_t>(max_packet_size))
+                       .Build();
+
+  auto result = dci_->AllocEndpoint(alloc_req);
+  if (!result.ok()) {
+    fdf::error("AllocEndpoint failed (framework): {}", result.status_string());
+    return result.status();
+  }
+  if (result->is_error()) {
+    fdf::error("AllocEndpoint failed (DCI error): {}", zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  uint8_t ep_addr = result->value()->ep_address;
+
+  auto cleanup = fit::defer([this, ep_addr]() {
+    auto free_result = dci_->FreeEndpoint(ep_addr);
+    if (!free_result.ok()) {
+      fdf::warn("FreeEndpoint failed during validation cleanup (framework): {}",
+                free_result.status_string());
+    } else if (free_result->is_error()) {
+      fdf::warn("FreeEndpoint failed during validation cleanup (DCI error): {}",
+                zx_status_get_string(free_result->error_value()));
+    }
+  });
+
+  uint8_t index = EpAddressToIndex(ep_addr);
+  if (index == 0 || index == 16 || index >= std::size(endpoint_map_)) {
+    fdf::error("DCI returned invalid endpoint address {:#x}", ep_addr);
+    return ZX_ERR_BAD_STATE;
+  }
+  if (endpoint_map_[index].has_value()) {
+    fdf::error("DCI returned already allocated endpoint address {:#x}", ep_addr);
+    return ZX_ERR_ALREADY_BOUND;
+  }
+  endpoint_map_[index] = function_index;
+  *out_address = ep_addr;
+
+  cleanup.cancel();
+  return ZX_OK;
+}
+
+zx_status_t UsbPeripheral::AllocEndpointBestFitLocked(
+    size_t function_index, fdescriptor::EndpointDirection direction,
+    fuchsia_hardware_usb_endpoint::wire::EndpointInfo ep_info, uint32_t max_packet_size,
+    uint8_t* out_address) {
+  std::optional<size_t> best_index;
+  uint32_t best_fit_size = UINT32_MAX;
+  fdescriptor::wire::EndpointType req_type = EndpointInfoToType(ep_info);
+
+  for (size_t i = 0; i < dci_endpoints_.size(); i++) {
+    const auto& ep = dci_endpoints_[i];
+
+    // Check direction.
+    bool ep_is_in = (ep.ep_address & 0x80) != 0;
+    bool req_is_in = (direction == fdescriptor::EndpointDirection::kIn);
+    if (ep_is_in != req_is_in) {
+      continue;
+    }
+
+    // Check if already allocated.
+    uint8_t ep_index = EpAddressToIndex(ep.ep_address);
+    if (endpoint_map_[ep_index].has_value()) {
+      continue;
+    }
+
+    // Check type support and size limit.
+    std::optional<uint32_t> ep_max_limit;
+    for (const auto& st : ep.supported_types) {
+      if (st.endpoint_type == req_type) {
+        ep_max_limit = st.max_packet_size_limit;
+        break;
+      }
+    }
+    if (!ep_max_limit.has_value() || *ep_max_limit < max_packet_size) {
+      continue;
+    }
+
+    // Check if it is a better fit.
+    if (*ep_max_limit < best_fit_size) {
+      best_fit_size = *ep_max_limit;
+      best_index = i;
+    }
+  }
+
+  if (!best_index.has_value()) {
+    std::string type_str = EndpointInfoToString(ep_info);
+    fdf::error("No suitable endpoint found for type {}, size {}", type_str, max_packet_size);
+    return ZX_ERR_NO_RESOURCES;
+  }
+
+  const auto& ep = dci_endpoints_[*best_index];
+  uint8_t ep_index = EpAddressToIndex(ep.ep_address);
+  endpoint_map_[ep_index] = function_index;
+  *out_address = ep.ep_address;
+  return ZX_OK;
+}
+
+zx_status_t UsbPeripheral::AllocEndpointLegacyLocked(size_t function_index,
+                                                     fdescriptor::EndpointDirection direction,
+                                                     uint8_t* out_address) {
   uint8_t start, end;
 
   if (direction == fdescriptor::EndpointDirection::kOut) {
@@ -684,60 +896,80 @@ zx_status_t UsbPeripheral::AllocEndpointLocked(size_t function_index,
   return ZX_ERR_NO_RESOURCES;
 }
 
+void UsbPeripheral::FreeEndpointInternalLocked(uint8_t index, std::string_view context) {
+  if (index >= std::size(endpoint_map_)) {
+    return;
+  }
+  // Physical endpoint 0 (index 0 for OUT, index 16 for IN) is the default
+  // control endpoint and is managed by the controller, not dynamically allocated.
+  if (index == 0 || index == 16) {
+    return;
+  }
+  if (!supports_dynamic_ep_sizing_) {
+    return;
+  }
+  uint8_t ep_addr = EpIndexToAddress(index);
+  auto result = dci_->FreeEndpoint(ep_addr);
+  if (!result.ok()) {
+    fdf::error("FreeEndpoint {:#x} failed in {} (framework): {}", ep_addr, context,
+               result.status_string());
+  } else if (result->is_error()) {
+    fdf::error("FreeEndpoint {:#x} failed in {} (DCI error): {}", ep_addr, context,
+               zx_status_get_string(result->error_value()));
+  }
+}
+
 zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
     size_t function_index, uint8_t interface_count,
-    std::span<ffunction::EndpointResource> endpoints, std::span<std::string> strings) {
+    std::span<fuchsia_hardware_usb_function::EndpointResource> endpoints,
+    std::span<std::string> strings) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
-  fbl::AutoLock lock(&lock_);
 
   ResourceAllocations allocations;
-
-  // Save current state for rollback if needed.
   std::vector<uint8_t> allocated_strings;
+  zx_status_t status = ZX_OK;
 
-  auto cleanup = fit::defer([&]() {
-    // Lock is held beyond the deferred action.
-    ([]() __TA_ASSERT(lock_) {})();
-    UsbFunction& function = GetFunction(function_index);
-    UsbConfiguration& configuration = configurations_[function.configuration()];
+  auto cleanup = fit::defer([this, function_index, &allocations, &allocated_strings]() {
+    fbl::AutoLock lock(&lock_);
+    auto& function = GetFunction(function_index);
+    ZX_ASSERT(function.configuration() < configurations_.size());
+    auto& configuration = configurations_[function.configuration()];
     for (uint8_t intf : allocations.interface_nums) {
-      configuration.interface_map[intf].reset();
+      if (intf < std::size(configuration.interface_map) &&
+          configuration.interface_map[intf] == function_index) {
+        configuration.interface_map[intf].reset();
+      }
+    }
+    for (uint8_t str_idx : allocated_strings) {
+      strings_[str_idx - 1].allocated = false;
+      strings_[str_idx - 1].text.clear();
+      strings_[str_idx - 1].function_index.reset();
     }
     for (uint8_t ep_addr : allocations.endpoint_addrs) {
-      endpoint_map_[EpAddressToIndex(ep_addr)].reset();
-    }
-    for (uint8_t string_index : allocated_strings) {
-      StringDescriptor& string_descriptor = strings_[string_index - 1];
-      string_descriptor.text.clear();
-      string_descriptor.function_index.reset();
-      string_descriptor.allocated = false;
-    }
-    while (!strings_.empty() && !strings_.back().allocated) {
-      strings_.pop_back();
+      FreeEndpointInternalLocked(EpAddressToIndex(ep_addr), "rollback");
+      uint8_t index = EpAddressToIndex(ep_addr);
+      if (index < std::size(endpoint_map_) && endpoint_map_[index] == function_index) {
+        endpoint_map_[index].reset();
+      }
     }
   });
 
+  fbl::AutoLock lock(&lock_);
+
+  // Allocate interfaces
   for (uint8_t i = 0; i < interface_count; i++) {
     uint8_t intf_num;
-    zx_status_t status = AllocInterfaceLocked(function_index, &intf_num);
+    status = AllocInterfaceLocked(function_index, &intf_num);
     if (status != ZX_OK) {
       return zx::error(status);
     }
     allocations.interface_nums.push_back(intf_num);
   }
 
-  for (ffunction::EndpointResource& ep : endpoints) {
-    uint8_t ep_addr;
-    zx_status_t status = AllocEndpointLocked(function_index, ep.direction(), &ep_addr);
-    if (status != ZX_OK) {
-      return zx::error(status);
-    }
-    allocations.endpoint_addrs.push_back(ep_addr);
-  }
-
-  for (std::string& str : strings) {
+  // Allocate strings
+  for (const std::string& str : strings) {
     uint8_t str_idx;
-    zx_status_t status = AllocStringDescLocked(function_index, std::move(str), &str_idx);
+    status = AllocStringDescLocked(function_index, str, &str_idx);
     if (status != ZX_OK) {
       return zx::error(status);
     }
@@ -745,13 +977,25 @@ zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
     allocated_strings.push_back(str_idx);
   }
 
+  // Allocate endpoints
+  for (const auto& ep : endpoints) {
+    uint8_t ep_addr;
+    fidl::Arena arena;
+    auto wire_ep_info = fidl::ToWire(arena, ep.ep_info());
+    status = AllocEndpointLocked(function_index, ep.direction(), wire_ep_info, ep.max_packet_size(),
+                                 &ep_addr);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    allocations.endpoint_addrs.push_back(ep_addr);
+  }
+
   // If all allocations succeeded, connect endpoints.
   for (size_t i = 0; i < endpoints.size(); i++) {
     if (!endpoints[i].endpoint().is_valid()) {
       continue;
     }
-    zx_status_t status =
-        ConnectToEndpoint(allocations.endpoint_addrs[i], std::move(endpoints[i].endpoint()));
+    status = ConnectToEndpoint(allocations.endpoint_addrs[i], std::move(endpoints[i].endpoint()));
     if (status != ZX_OK) {
       return zx::error(status);
     }
@@ -759,6 +1003,96 @@ zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
 
   cleanup.cancel();
   return zx::ok(std::move(allocations));
+}
+
+zx_status_t UsbPeripheral::InitializeDci(
+    fidl::ClientEnd<fuchsia_hardware_usb_dci::UsbDci> dci_client_end) {
+  dci_ = fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci>(std::move(dci_client_end));
+
+  auto result = dci_->GetHardwareInfo();
+  if (!result.ok()) {
+    if (result.status() == ZX_ERR_NOT_SUPPORTED) {
+      fdf::info("DCI driver does not support GetHardwareInfo, falling back to legacy mode");
+      return ZX_OK;
+    }
+    fdf::error("GetHardwareInfo failed (framework): {}", result.status_string());
+    return result.status();
+  }
+  if (result->is_error()) {
+    if (result->error_value() == ZX_ERR_NOT_SUPPORTED) {
+      fdf::info("DCI driver does not support GetHardwareInfo, falling back to legacy mode");
+      return ZX_OK;
+    }
+    fdf::error("GetHardwareInfo failed (DCI error): {}",
+               zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+
+  const auto& info = result->value()->info;
+  has_dci_hardware_info_ = true;
+
+  hardware_info_node_ = usb_peripheral_node_.CreateChild("hardware_info");
+  if (info.has_supports_dynamic_ep_sizing()) {
+    supports_dynamic_ep_sizing_ = info.supports_dynamic_ep_sizing();
+    supports_dynamic_ep_sizing_property_ =
+        hardware_info_node_.CreateBool("supports_dynamic_ep_sizing", supports_dynamic_ep_sizing_);
+  }
+
+  if (!info.has_endpoints() || info.endpoints().empty()) {
+    return ZX_OK;
+  }
+
+  for (const auto& ep : info.endpoints()) {
+    DciEndpointInfo local_ep;
+    if (!ep.has_ep_address()) {
+      fdf::error("DCI endpoint info missing address, ignoring");
+      continue;
+    }
+    uint8_t ep_addr = ep.ep_address();
+    uint8_t ep_index = EpAddressToIndex(ep_addr);
+    if (ep_index == 0 || ep_index == 16 || ep_index >= USB_MAX_EPS) {
+      fdf::error("DCI reported invalid endpoint address {:#x}, ignoring", ep_addr);
+      continue;
+    }
+    local_ep.ep_address = ep_addr;
+    uint32_t max_packet_limit_overall = 0;
+    std::string types_str = "";
+    if (ep.has_supported_types()) {
+      for (const auto& type_info : ep.supported_types()) {
+        if (!type_info.has_endpoint_type() || !type_info.has_max_packet_size_limit()) {
+          continue;
+        }
+        DciSupportedEndpointInfo st{
+            .endpoint_type = type_info.endpoint_type(),
+            .max_packet_size_limit = type_info.max_packet_size_limit(),
+            .min_lead_time = type_info.has_min_lead_time() ? type_info.min_lead_time() : 0,
+        };
+        local_ep.supported_types.push_back(st);
+        if (st.max_packet_size_limit > max_packet_limit_overall) {
+          max_packet_limit_overall = st.max_packet_size_limit;
+        }
+        if (!types_str.empty()) {
+          types_str += ", ";
+        }
+        types_str += EndpointTypeToString(st.endpoint_type);
+      }
+    }
+    dci_endpoints_.push_back(local_ep);
+
+    // Add to inspect
+    std::string ep_name = std::format("ep_{:#04x}", ep_addr);
+    auto ep_node = hardware_info_node_.CreateChild(ep_name);
+    auto max_limit_prop = ep_node.CreateUint("max_packet_size_limit", max_packet_limit_overall);
+    auto types_prop = ep_node.CreateString("supported_types", types_str);
+
+    inspect_endpoints_.push_back(InspectEndpoint{
+        .node = std::move(ep_node),
+        .max_packet_size_limit = std::move(max_limit_prop),
+        .supported_types = std::move(types_prop),
+    });
+  }
+
+  return ZX_OK;
 }
 
 bool UsbPeripheral::ValidateEndpoint(size_t function_index, uint8_t ep_address) const {
@@ -1403,10 +1737,13 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
         return;
       }
       std::shared_ptr<UsbFunction> function;
-      auto function_index = endpoint_map_[ep_index];
-      if (function_index.has_value()) {
-        if (function_index.value() < functions_.size()) {
-          function = functions_[function_index.value()];
+      {
+        fbl::AutoLock lock(&lock_);
+        auto function_index = endpoint_map_[ep_index];
+        if (function_index.has_value()) {
+          if (function_index.value() < functions_.size()) {
+            function = functions_[function_index.value()];
+          }
         }
       }
       if (function) {
@@ -1720,9 +2057,10 @@ void UsbPeripheral::ReleaseResourcesLocked(size_t function_index) {
   }
 
   // Clear entries in endpoint_map_.
-  for (auto& ep : endpoint_map_) {
-    if (ep == function_index) {
-      ep.reset();
+  for (size_t i = 0; i < std::size(endpoint_map_); i++) {
+    if (endpoint_map_[i] == function_index) {
+      FreeEndpointInternalLocked(static_cast<uint8_t>(i), "release");
+      endpoint_map_[i].reset();
     }
   }
 

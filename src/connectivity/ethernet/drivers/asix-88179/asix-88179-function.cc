@@ -178,28 +178,26 @@ zx::result<> FakeUsbAx88179Function::Start(fdf::DriverContext context) {
   }
 
   std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
-  fuchsia_hardware_usb_function::EndpointResource res1;
-  res1.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn);
-  res1.endpoint(std::move(endpoints->server));
-  resources.emplace_back(std::move(res1));
+  resources.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kIn, std::move(endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithInterrupt({}), INTR_MAX_PACKET));
 
   zx::result bulk_in_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (bulk_in_endpoints.is_error()) {
     return bulk_in_endpoints.take_error();
   }
-  fuchsia_hardware_usb_function::EndpointResource res2;
-  res2.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn);
-  res2.endpoint(std::move(bulk_in_endpoints->server));
-  resources.emplace_back(std::move(res2));
+  resources.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kIn, std::move(bulk_in_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), BULK_MAX_PACKET));
 
   zx::result bulk_out_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (bulk_out_endpoints.is_error()) {
     return bulk_out_endpoints.take_error();
   }
-  fuchsia_hardware_usb_function::EndpointResource res3;
-  res3.direction(fuchsia_hardware_usb_descriptor::EndpointDirection::kOut);
-  res3.endpoint(std::move(bulk_out_endpoints->server));
-  resources.emplace_back(std::move(res3));
+  resources.push_back(fuchsia_hardware_usb_function::EndpointResource(
+      fuchsia_hardware_usb_descriptor::EndpointDirection::kOut,
+      std::move(bulk_out_endpoints->server),
+      fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk({}), BULK_MAX_PACKET));
 
   fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(1);
