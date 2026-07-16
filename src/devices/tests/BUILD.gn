@@ -26,6 +26,7 @@ group("tests") {
     "fhcp:tests",
     "fidl-bindlib-generation:tests",
     "fidl-service:tests",
+    "hang-on-stop:tests",
     "isolateddevmgr:tests",
     "multibind-composite-test:tests",
 
@@ -64,6 +65,7 @@ group("drivers") {
     "fidl-bindlib-generation:drivers",
     "fidl-service:child",
     "fidl-service:parent",
+    "hang-on-stop:component",
     "isolateddevmgr:isolateddevmgr-test-driver",
     "multibind-composite-test/drivers",
     "nonbindable:drivers",
