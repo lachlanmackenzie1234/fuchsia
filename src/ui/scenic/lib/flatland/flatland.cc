@@ -1858,13 +1858,6 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
     return;
   }
 
-  auto* image = flatland1_content_.FindImage(content_kv->second);
-  if (!image) {
-    error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
-  }
-
   if (color.red() < 0.f || color.red() > 1.f || isinf(color.red()) || isnan(color.red()) ||
       color.green() < 0.f || color.green() > 1.f || isinf(color.green()) || isnan(color.green()) ||
       color.blue() < 0.f || color.blue() > 1.f || isinf(color.blue()) || isnan(color.blue()) ||
@@ -1880,13 +1873,42 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
                        << "  rgba=" << color.red() << "," << color.green() << "," << color.blue()
                        << "," << color.alpha() << "  size=" << size.width() << "x" << size.height();
 
-  image->blend_mode =
-      color.alpha() < 1.f ? BlendMode::kPremultipliedAlpha() : BlendMode::kReplace();
-  image->collection_id = allocation::kInvalidId;
-  image->identifier = allocation::kInvalidImageId;
-  image->multiply_color = {color.red(), color.green(), color.blue(), color.alpha()};
-  matrices_[content_kv->second].SetScale(
-      {static_cast<float>(size.width()), static_cast<float>(size.height())});
+  if (config_.use_flatland2_uberstruct_schema) {
+    auto* layer = GetFacadeLayerObject(content_kv->second);
+    if (!layer || !std::holds_alternative<LayerObject::SolidColorContent>(layer->content)) {
+      error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+    auto& solid_color = std::get<LayerObject::SolidColorContent>(layer->content);
+    solid_color.color =
+        std::array<float, 4>{color.red(), color.green(), color.blue(), color.alpha()};
+    layer->display_rect = types::Rectangle({
+        .x = 0,
+        .y = 0,
+        .width = static_cast<int32_t>(size.width()),
+        .height = static_cast<int32_t>(size.height()),
+    });
+    // Flatland1 clients cannot explicitly specify the blend mode for a solid fill; it is implicitly
+    // defined based on the alpha value.  This is a performance optimization; the visual results
+    // would be identical if `kPremultipliedAlpha` was used unconditionally.
+    layer->blend_mode = color.alpha() < 1.f ? types::BlendMode::kPremultipliedAlpha()
+                                            : types::BlendMode::kReplace();
+  } else {
+    auto* image = flatland1_content_.FindImage(content_kv->second);
+    if (!image) {
+      error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+    image->blend_mode =
+        color.alpha() < 1.f ? BlendMode::kPremultipliedAlpha() : BlendMode::kReplace();
+    image->collection_id = allocation::kInvalidId;
+    image->identifier = allocation::kInvalidImageId;
+    image->multiply_color = {color.red(), color.green(), color.blue(), color.alpha()};
+    matrices_[content_kv->second].SetScale(
+        {static_cast<float>(size.width()), static_cast<float>(size.height())});
+  }
 }
 
 void Flatland::ReleaseFilledRect(ReleaseFilledRectRequest& request,
@@ -1909,13 +1931,22 @@ void Flatland::ReleaseFilledRect(ContentId rect_id) {
     return;
   }
 
-  auto* image = flatland1_content_.FindImage(content_kv->second);
-
-  if (!image) {
-    error_reporter_->ERROR() << "ReleaseFilledRect failed, content_id " << rect_id
-                             << " has no metadata.";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
+  if (config_.use_flatland2_uberstruct_schema) {
+    auto* solid_color = GetFacadeLayerSolidColorContent(content_kv->second);
+    if (!solid_color) {
+      error_reporter_->ERROR() << "ReleaseFilledRect failed, content_id " << rect_id
+                               << " has no metadata.";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+  } else {
+    auto* image = flatland1_content_.FindImage(content_kv->second);
+    if (!image) {
+      error_reporter_->ERROR() << "ReleaseFilledRect failed, content_id " << rect_id
+                               << " has no metadata.";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
   }
 
   bool erased_from_graph = transform_graph_.ReleaseTransform(content_kv->second);
