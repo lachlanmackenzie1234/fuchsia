@@ -231,25 +231,45 @@ fn bpf_ktime_get_boot_ns<C: EbpfProgramContext>(
 
 fn bpf_probe_read_user<C: EbpfProgramContext>(
     _context: &mut C::RunContext<'_>,
-    _: BpfValue,
-    _: BpfValue,
-    _: BpfValue,
+    dst: BpfValue,
+    size: BpfValue,
+    _src: BpfValue,
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_probe_read_user");
+    track_stub!(TODO("https://fxbug.dev/534354547"), "bpf_probe_read_user");
+    // The real helper copies `size` bytes from user memory into `dst`. Until
+    // that is implemented, zero `dst`: the verifier models it as written
+    // (`output: true`), so leaving it untouched would let the program read back
+    // uninitialized executor memory.
+    let size = size.as_usize();
+    if size > 0 {
+        // SAFETY: the verifier guarantees `dst` points to `size` writable bytes
+        // (MemoryParameter { output: true, size: Reference { index: 1 } }).
+        unsafe { std::ptr::write_bytes(dst.as_ptr::<u8>(), 0, size) };
+    }
     0.into()
 }
 
 fn bpf_probe_read_user_str<C: EbpfProgramContext>(
     _context: &mut C::RunContext<'_>,
-    _: BpfValue,
-    _: BpfValue,
-    _: BpfValue,
+    dst: BpfValue,
+    size: BpfValue,
+    _src: BpfValue,
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_probe_read_user_str");
+    track_stub!(TODO("https://fxbug.dev/534355539"), "bpf_probe_read_user_str");
+    // The real helper copies a NUL-terminated string from user memory into
+    // `dst`. Until that is implemented, zero `dst`: the verifier models it as
+    // written (`output: true`), so leaving it untouched would let the program
+    // read back uninitialized executor memory.
+    let size = size.as_usize();
+    if size > 0 {
+        // SAFETY: the verifier guarantees `dst` points to `size` writable bytes
+        // (MemoryParameter { output: true, size: Reference { index: 1 } }).
+        unsafe { std::ptr::write_bytes(dst.as_ptr::<u8>(), 0, size) };
+    }
     0.into()
 }
 
@@ -1028,5 +1048,42 @@ mod tests {
         unsafe {
             assert_eq!(*(ptr1_query.as_ptr::<u64>()), 0x1111111111111111);
         }
+    }
+
+    /// Regression test: the verifier models the probe_read_user{,_str}
+    /// destination as written (`output: true`), but the runtime helpers are
+    /// stubs. They must zero the destination so a program cannot read back
+    /// uninitialized executor memory. Without the fix the sentinel bytes below
+    /// survive the call.
+    ///
+    /// TODO("https://fxbug.dev/534354547","https://fxbug.dev/534355539"): Replace
+    /// these tests when the real helpers are implemented.
+    #[fuchsia::test]
+    fn test_probe_read_user_zeroes_destination() {
+        let mut context = TestRunContext { map_refs: vec![] };
+
+        // Stand in for stale executor-stack memory with a non-zero sentinel.
+        let mut dst = [0xAAu8; 8];
+        let ret = bpf_probe_read_user::<TestContext>(
+            &mut context,
+            BpfValue::from(dst.as_mut_ptr()),
+            BpfValue::from(dst.len() as u64),
+            BpfValue::default(),
+            BpfValue::default(),
+            BpfValue::default(),
+        );
+        assert_eq!(ret.as_u64(), 0);
+        assert_eq!(dst, [0u8; 8], "probe_read_user left the destination uninitialized");
+
+        let mut dst_str = [0xBBu8; 8];
+        let _ = bpf_probe_read_user_str::<TestContext>(
+            &mut context,
+            BpfValue::from(dst_str.as_mut_ptr()),
+            BpfValue::from(dst_str.len() as u64),
+            BpfValue::default(),
+            BpfValue::default(),
+            BpfValue::default(),
+        );
+        assert_eq!(dst_str, [0u8; 8], "probe_read_user_str left the destination uninitialized");
     }
 }
