@@ -15,8 +15,8 @@ use bssl_sys::{
     EC_GROUP_get0_generator, EC_GROUP_new_by_curve_name, EC_POINT, EC_POINT_add, EC_POINT_copy,
     EC_POINT_free, EC_POINT_get_affine_coordinates_GFp, EC_POINT_invert, EC_POINT_is_at_infinity,
     EC_POINT_mul, EC_POINT_new, EC_POINT_set_affine_coordinates_GFp,
-    EC_POINT_set_compressed_coordinates_GFp, ERR_get_error, ERR_reason_error_string,
-    NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, OPENSSL_free,
+    EC_POINT_set_compressed_coordinates_GFp, EC_wpa3_sae_hash_to_curve_p256, ERR_get_error,
+    ERR_reason_error_string, NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, OPENSSL_free,
 };
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::cmp::Ordering;
@@ -469,6 +469,26 @@ impl EcPoint {
         Ok(point)
     }
 
+    #[allow(dead_code)]
+    pub fn new_wpa3_sae_hash_to_curve_p256(
+        group: &EcGroup,
+        salt: &[u8],
+        ikm: &[u8],
+    ) -> Result<Self, Error> {
+        let point = Self::new(group)?;
+        one_or_error(unsafe {
+            EC_wpa3_sae_hash_to_curve_p256(
+                group.0.as_ptr(),
+                point.0.as_ptr(),
+                salt.as_ptr(),
+                salt.len(),
+                ikm.as_ptr(),
+                ikm.len(),
+            )
+        })?;
+        Ok(point)
+    }
+
     /// Converts a point on a curve to its affine coordinates.
     pub fn to_affine_coords(
         &self,
@@ -746,6 +766,14 @@ mod tests {
     const GIX: &'static str = "0xDAD0B65394221CF9B051E1FECA5787D098DFE637FC90B9EF945D0C3772581180";
     const GIY: &'static str = "0x5271A0461CDB8252D61F1C456FA3E59AB1F45B33ACCF5F58389E0577B8990BB3";
 
+    // IEEE Std 802.11-2020 J.10
+    const TEST_PT_X: &'static str =
+        "0xb6e38c98750c684b5d17c3d8c9a4100b39931279187ca6cced5f37ef46ddfa97";
+    const TEST_PT_Y: &'static str =
+        "0x5687e972e50f73e3898861e7edad21bea7d5f622df88243bb804920ae8e647fa";
+    const TEST_SALT: &'static [u8] = b"byteme";
+    const TEST_IKM: &'static [u8] = b"mekmitasdigoatpsk4internet";
+
     #[test]
     fn ec_group_params() {
         let group = EcGroup::new(EcGroupId::P256).unwrap();
@@ -799,5 +827,22 @@ mod tests {
         let (gix, giy) = gi.to_affine_coords(&group, &ctx).unwrap();
         assert_eq!(gix, bn(GIX));
         assert_eq!(giy, bn(GIY));
+    }
+
+    #[test]
+    fn ec_wpa3_sae_hash_to_curve_p256_test() {
+        let group = EcGroup::new(EcGroupId::P256).unwrap();
+        let ctx = BignumCtx::new().unwrap();
+        let point = EcPoint::new_wpa3_sae_hash_to_curve_p256(&group, TEST_SALT, TEST_IKM).unwrap();
+        let (x, y) = point.to_affine_coords(&group, &ctx).unwrap();
+        assert_eq!(x, bn(TEST_PT_X));
+        assert_eq!(y, bn(TEST_PT_Y));
+    }
+
+    #[test]
+    fn ec_wpa3_sae_hash_to_curve_p256_wrong_group() {
+        let group = EcGroup::new(EcGroupId::P384).unwrap();
+        let result = EcPoint::new_wpa3_sae_hash_to_curve_p256(&group, TEST_SALT, TEST_IKM);
+        assert!(result.is_err());
     }
 }
