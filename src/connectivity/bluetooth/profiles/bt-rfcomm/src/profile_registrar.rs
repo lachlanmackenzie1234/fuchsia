@@ -353,7 +353,7 @@ impl ProfileRegistrar {
     ///
     /// At least one service in `services` must request RFCOMM. The RFCOMM-requesting services are
     /// assigned ServerChannels. The services are registered together with any existing RFCOMM
-    /// services.
+    /// services. Assumes `services` contain valid `ServiceDefinition` records.
     ///
     /// Returns a stream of `ConnectionReceiverEvent`s. The event stream should be actively polled
     /// in order to detect when the client terminates the advertisement.
@@ -471,9 +471,21 @@ impl ProfileRegistrar {
                 };
                 trace!("Advertise request: {services_local:?}");
 
+                // Validate that all ServiceDefinitions request RFCOMM at most once while checking
+                // whether any service in the advertisement requests RFCOMM.
+                let requests_rfcomm = match service_definitions_request_rfcomm(&services_local) {
+                    Ok(requests_rfcomm) => requests_rfcomm,
+                    Err(e) => {
+                        warn!("Advertise request contains invalid ServiceDefinition: {e}");
+                        let _ = responder
+                            .send(Err(fidl_fuchsia_bluetooth::ErrorCode::InvalidArguments));
+                        return None;
+                    }
+                };
+
                 // Non-RFCOMM requesting advertisements can be forwarded directly to the upstream
                 // Profile server.
-                if !service_definitions_request_rfcomm(&services_local) {
+                if !requests_rfcomm {
                     Self::forward_advertisement_upstream(
                         self.profile_upstream.clone(),
                         original_payload,
@@ -646,6 +658,7 @@ mod tests {
     };
     use async_utils::PollExt;
     use fidl::endpoints::{create_proxy, create_proxy_and_stream};
+    use fuchsia_bluetooth::profile::DataElement;
     use futures::{Future, FutureExt, SinkExt};
     use std::pin::pin;
 
@@ -1533,7 +1546,6 @@ mod tests {
     #[fuchsia::test]
     fn add_managed_advertisement_upstream_failure_rolls_back_registration() {
         let (mut exec, server, mut upstream_requests) = setup_server();
-
         let (service_sender, handler_fut) = setup_handler_fut(server);
         let mut handler_fut = pin!(handler_fut);
         exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
@@ -1596,5 +1608,29 @@ mod tests {
 
         expect_stream_pending(&mut exec, &mut connection_stream1);
         expect_stream_terminated(&mut exec, &mut connection_stream2);
+    }
+
+    #[fuchsia::test]
+    fn advertise_multiple_rfcomm_descriptors_is_error() {
+        let (mut exec, server, _upstream_requests) = setup_server();
+        let (service_sender, handler_fut) = setup_handler_fut(server);
+        let mut handler_fut = pin!(handler_fut);
+        exec.run_until_stalled(&mut handler_fut).expect_pending("server active");
+
+        let client = new_client(&mut exec, service_sender, &mut handler_fut);
+
+        let mut def = rfcomm_service_definition(None);
+        def.additional_protocol_descriptor_lists = vec![vec![ProtocolDescriptor {
+            protocol: bredr::ProtocolIdentifier::Rfcomm,
+            params: vec![DataElement::Uint8(0)],
+        }]];
+        let invalid_service = bredr::ServiceDefinition::try_from(&def).unwrap();
+
+        let (_connection_stream, adv_fut) = make_advertise_request(&client, vec![invalid_service]);
+        let mut adv_fut = pin!(adv_fut);
+
+        let _ = exec.run_until_stalled(&mut handler_fut);
+        let res = exec.run_until_stalled(&mut adv_fut);
+        assert_matches!(res, Poll::Ready(Err(fidl_fuchsia_bluetooth::ErrorCode::InvalidArguments)));
     }
 }
