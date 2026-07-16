@@ -550,14 +550,41 @@ impl Pool {
         Ok(alloc.into())
     }
 
+    fn get_slice_layout<K: AllocKind>(&self, desc: &super::Descriptor<K>) -> (usize, usize) {
+        let vmo_id = usize::from(desc.vmo_id());
+        if vmo_id >= self.vmo_offsets.len() - 1 {
+            panic!("invalid vmo_id {} for vmo_offsets of len {}", vmo_id, self.vmo_offsets.len());
+        }
+        let vmo_offset = self.vmo_offsets[vmo_id];
+        let next_vmo_offset = self.vmo_offsets[vmo_id + 1];
+
+        let desc_offset = desc.offset();
+        let head_len = u64::from(desc.head_length());
+        let data_len = u64::from(desc.data_length());
+
+        let total_offset = desc_offset
+            .checked_add(head_len)
+            .and_then(|o| usize::try_from(o).ok())
+            .and_then(|o| o.checked_add(vmo_offset))
+            .unwrap_or_else(|| panic!("offset calculation overflowed"));
+
+        let len =
+            usize::try_from(data_len).unwrap_or_else(|_| panic!("data_length overflowed usize"));
+
+        let end = total_offset
+            .checked_add(len)
+            .unwrap_or_else(|| panic!("end offset calculation overflowed"));
+
+        if end > next_vmo_offset {
+            panic!("slice end {} out of VMO bounds {}", end, next_vmo_offset);
+        }
+
+        (total_offset, len)
+    }
+
     fn get_slice<'a, K: AllocKind>(&self, desc: &'a DescId<K>) -> &'a [u8] {
         let desc = self.descriptors.borrow(desc);
-        let vmo_id = desc.vmo_id();
-        let vmo_offset = self.vmo_offsets[usize::from(vmo_id)];
-        let offset = vmo_offset
-            + usize::try_from(desc.offset() + u64::from(desc.head_length()))
-                .expect("usize must hold u64");
-        let len = usize::try_from(desc.data_length()).expect("usize must hold u32");
+        let (offset, len) = self.get_slice_layout(&desc);
         // Safety: The descriptor is describing a buffer from this pool. It must
         // be valid to create a slice into that region. We hold a immutable
         // reference to the underlying descriptor, this means no one else should
@@ -570,12 +597,7 @@ impl Pool {
 
     fn get_slice_mut<'a, K: AllocKind>(&self, desc: &'a mut DescId<K>) -> &'a mut [u8] {
         let desc = self.descriptors.borrow_mut(desc);
-        let vmo_id = desc.vmo_id();
-        let vmo_offset = self.vmo_offsets[usize::from(vmo_id)];
-        let offset = vmo_offset
-            + usize::try_from(desc.offset() + u64::from(desc.head_length()))
-                .expect("usize must hold u64");
-        let len = usize::try_from(desc.data_length()).expect("usize must hold u32");
+        let (offset, len) = self.get_slice_layout(&*desc);
         // Safety: The descriptor is describing a buffer from this pool. It must
         // be valid to create a slice into that region. We hold a mutable
         // reference to the underlying descriptor, this means we are currently
@@ -2415,5 +2437,27 @@ mod tests {
         }
         let counter_after = state.rx_frame_counter.load(atomic::Ordering::SeqCst);
         assert_eq!(counter_before, counter_after);
+    }
+
+    #[test]
+    #[should_panic(expected = "slice end")]
+    fn get_slice_out_of_bounds_panic() {
+        let mut config = default_config();
+        config.buffer_layout.length = 64;
+        config.buffer_stride = NonZeroU64::new(64).unwrap();
+        config.tx_vmos = vec![TxVmoConfig { vmo_id: DEFAULT_VMO_ID, num_buffers: 1 }];
+        config.num_rx_buffers = NonZeroU16::new(1).unwrap();
+
+        let (mut pool, _descriptors_vmo, _data_vmos) = Pool::new_test_pool(config);
+        Arc::get_mut(&mut pool)
+            .expect("there are multiple owners of the underlying VMO")
+            .fill_sentinel_bytes();
+
+        let mut buffer = pool.alloc_tx_buffer_now_or_never(10).expect("failed to alloc buffer");
+        {
+            let mut desc = buffer.alloc.descriptor_mut();
+            desc.set_data_length(4093);
+        }
+        let _slice = buffer.as_slice_mut();
     }
 }
