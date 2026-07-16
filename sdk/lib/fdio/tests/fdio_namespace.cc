@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <latch>
+#include <sstream>
 #include <thread>
 
 #include <fbl/unique_fd.h>
