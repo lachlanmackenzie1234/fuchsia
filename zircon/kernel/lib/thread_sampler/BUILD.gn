@@ -17,10 +17,7 @@ library_headers("headers") {
 static_library("thread_sampler") {
   public_deps = [ ":headers" ]
 
-  sources = [
-    "per_cpu_state.cc",
-    "thread_sampler.cc",
-  ]
+  sources = [ "thread_sampler.cc" ]
   deps = [
     "//sdk/lib/fit",
     "//src/performance/lib/fxt",

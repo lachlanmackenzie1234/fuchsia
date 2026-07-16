@@ -7,7 +7,6 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/fit/defer.h>
 #include <lib/fxt/serializer.h>
-#include <lib/thread_sampler/per_cpu_state.h>
 #include <lib/thread_sampler/thread_sampler.h>
 #include <lib/zx/time.h>
 
@@ -30,7 +29,7 @@ void sampler_percpu_shutdown() { gThreadSampler.CancelMarking(); }
 }  // namespace sampler
 
 zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
-  fbl::Array<sampler::internal::PerCpuState> per_cpu_state;
+  fbl::Array<percpu_writer::Buffer> per_cpu_buffers;
   Guard<Mutex> guard(ThreadSamplerLock::Get());
   SamplingState state = State();
 
@@ -41,16 +40,15 @@ zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
   if (config.period == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  sample_period_ = config.period;
 
   const size_t num_cpus = percpu::processor_count();
-  if (!per_cpu_state_) {
+  if (!per_cpu_buffers_) {
     // Perform the allocations for the state without the lock held as this may potentially block
     // waiting for memory.
     zx::result<> result;
     guard.CallUnlocked([&]() {
       fbl::AllocChecker ac;
-      per_cpu_state = fbl::MakeArray<sampler::internal::PerCpuState>(&ac, num_cpus);
+      per_cpu_buffers = fbl::MakeArray<percpu_writer::Buffer>(&ac, num_cpus);
       if (!ac.check()) {
         result = zx::error(ZX_ERR_NO_MEMORY);
         return;
@@ -58,11 +56,13 @@ zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
 
       // Even though the buffer is per_cpu, we are fine to set up each cpu state here on a single
       // cpu. When we start sampling, we call mp_sync_exec which will synchronize the written
-      // per_cpu_states.
-      for (unsigned i = 0; i < num_cpus; i++) {
-        if (zx::result<> setup_result = per_cpu_state[i].SetUp(config, i);
-            setup_result.is_error()) {
-          result = setup_result.take_error();
+      // per_cpu_buffers.
+      for (size_t i = 0; i < num_cpus; i++) {
+        zx_status_t init_res =
+            per_cpu_buffers[i].Init(static_cast<uint32_t>(config.buffer_size), "sampler",
+                                    fxt::ThreadRef{fxt::Koid{0}, fxt::Koid{i}});
+        if (init_res != ZX_OK) {
+          result = zx::error(init_res);
           return;
         }
       }
@@ -77,21 +77,17 @@ zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
   }
-  // Re-check whether there is per_cpu_state_ as this may have changed while the lock was dropped.
-  // If we raced and someone else allocated state before us this is fine and we will just drop the
-  // local allocation.
-  if (per_cpu_state_) {
-    // We don't have a method of atomically tracking outstanding sample request, so it's possible
-    // that an outstanding sample has a reference to the per_cpu_states. Instead, we Clear the
-    // buffers which is safe as we use a lockless spsc buffer.
-    for (unsigned i = 0; i < num_cpus; i++) {
-      per_cpu_state_[i].Drain();
-    }
-  } else {
-    ASSERT(per_cpu_state);
-    per_cpu_state_ = ktl::move(per_cpu_state);
+  // Re-check whether there if per_cpu_buffers_ exists as this may have changed while the lock was
+  // dropped. If we raced and someone else allocated state before us this is fine and we will just
+  // drop the local allocation.
+  if (per_cpu_buffers_) {
+    return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
 
+  ASSERT(per_cpu_buffers);
+
+  per_cpu_buffers_ = ktl::move(per_cpu_buffers);
+  sample_period_ = config.period;
   SetState(SamplingState::Configured);
   return zx::ok();
 }
@@ -102,7 +98,7 @@ zx::result<> sampler::ThreadSampler::Start() {
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
-  DEBUG_ASSERT(!per_cpu_state_.empty());
+  DEBUG_ASSERT(!per_cpu_buffers_.empty());
 
   SetState(SamplingState::Running);
   mp_sync_exec(mp_ipi_target::ALL, 0, [](void*) { gThreadSampler.ScheduleMarking(); }, nullptr);
@@ -181,7 +177,7 @@ zx::result<> sampler::ThreadSampler::Destroy() {
   // It's now safe to destroy our cpu states. This will destroy the mappings and pinnings that the
   // kernel keeps to write to.
   SetState(SamplingState::Unallocated);
-  per_cpu_state_.reset();
+  per_cpu_buffers_.reset();
 
   return zx::ok();
 }
@@ -307,11 +303,11 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
   // attempt to write.
   InterruptDisableGuard irqd;
 
-  ktl::optional<PerCpuStateRef> token = GetPerCpuState(arch_curr_cpu_num());
+  ktl::optional<PerCpuBufferRef> token = GetBufferRef(arch_curr_cpu_num());
   if (!token) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
-  sampler::internal::PerCpuState& cpu_state = token->Get();
+  percpu_writer::Buffer& cpu_state = token->Get();
   constexpr fxt::StringRef<fxt::RefType::kId> empty_string{0};
   const fxt::ThreadRef current_thread{pid, tid};
 
@@ -340,7 +336,7 @@ void sampler::ThreadSampler::FinishRead(sampler::ReadToken&& token) {
     // cleaning the buffers as to not corrupt the read. However, now we're responsible for the
     // remaining buffer clean up.
     SetState(SamplingState::Unallocated);
-    per_cpu_state_.reset();
+    per_cpu_buffers_.reset();
   } else {
     // No additional action is needed.
     SetState(SamplingState::Configured);
@@ -355,9 +351,9 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(const sampler::R
   // We can't be holding any locks.
   lockdep::AssertNoLocksHeld();
 
-  const size_t num_buffers = per_cpu_state_.size();
+  const size_t num_buffers = per_cpu_buffers_.size();
   // All buffers are the same size.
-  const size_t buffer_size = per_cpu_state_[0].BufferSize();
+  const size_t buffer_size = per_cpu_buffers_[0].Size();
 
   // The caller can query the required buffer size by passing in a nulltpr.
   if (!ptr) {
@@ -365,7 +361,7 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(const sampler::R
   }
 
   // If the per-CPU buffers have not been initialized, there's nothing to do, so return early.
-  if (!per_cpu_state_) {
+  if (!per_cpu_buffers_) {
     return {ZX_OK, 0};
   }
 
@@ -392,7 +388,7 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(const sampler::R
   };
 
   for (uint32_t i = 0; i < num_buffers; i++) {
-    const zx::result<size_t> result = per_cpu_state_[i].Read(copy_fn, static_cast<uint32_t>(len));
+    const zx::result<size_t> result = per_cpu_buffers_[i].Read(copy_fn, static_cast<uint32_t>(len));
     if (result.is_error()) {
       // If we copied some data from a previous buffer, we have to return the fact that we did so
       // here. Otherwise, that data will be lost.

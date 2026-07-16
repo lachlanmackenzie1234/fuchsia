@@ -31,7 +31,9 @@ namespace thread_sampler_tests {
 // callbacks sampling sets assume a static lifetime for the sampler.
 class TestThreadSampler {
  public:
-  static auto& get_per_cpu_state(sampler::ThreadSampler& sampler) { return sampler.per_cpu_state_; }
+  static auto& get_per_cpu_buffers(sampler::ThreadSampler& sampler) {
+    return sampler.per_cpu_buffers_;
+  }
   static auto& get_state(sampler::ThreadSampler& sampler) { return sampler.state_; }
   static void set_state(sampler::ThreadSampler& sampler,
                         sampler::SamplingState s) TA_NO_THREAD_SAFETY_ANALYSIS {
@@ -53,12 +55,12 @@ class TestThreadSampler {
 
   static void SampleThread(sampler::ThreadSampler& sampler, zx_koid_t pid, zx_koid_t tid,
                            GeneralRegsSource source, void* gregs) {
-    ktl::optional<sampler::ThreadSampler::PerCpuStateRef> buffers =
-        sampler.GetPerCpuState(arch_curr_cpu_num());
+    ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> buffers =
+        sampler.GetBufferRef(arch_curr_cpu_num());
     if (!buffers) {
       return;
     }
-    sampler::internal::PerCpuState& cpu_state = buffers->Get();
+    percpu_writer::Buffer& cpu_state = buffers->Get();
 
     constexpr size_t kMaxUserBacktraceSize = 64;
     vaddr_t bt[kMaxUserBacktraceSize]{};
@@ -121,7 +123,7 @@ class TestThreadSampler {
       // We should now be able to read the records
       size_t num_cpus = arch_max_num_cpus();
       for (unsigned i = 0; i < num_cpus; ++i) {
-        sampler::internal::PerCpuState& s = TestThreadSampler::get_per_cpu_state(test_state)[i];
+        percpu_writer::Buffer& s = TestThreadSampler::get_per_cpu_buffers(test_state)[i];
 
         // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
         // tid + 1 blob size = 70
@@ -178,7 +180,7 @@ class TestThreadSampler {
       ASSERT_EQ(sampler::SamplingState::Configured, sampler.State());
       ASSERT_TRUE(sampler.Start().is_ok());
       ASSERT_EQ(sampler::SamplingState::Running, sampler.State());
-      ktl::optional<sampler::ThreadSampler::PerCpuStateRef> ref = sampler.GetPerCpuState(0);
+      ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(0);
       ASSERT_TRUE(ref.has_value());
       ASSERT_EQ(sampler::SamplingState::Running, sampler.State());
       uint64_t ref_count = TestThreadSampler::get_buffer_ref_count(sampler);
@@ -203,7 +205,7 @@ class TestThreadSampler {
       sampler::ThreadSampler& sampler = sampler::gThreadSampler;
       // We shouldn't be able to get a buffer reference if we don't have buffers.
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
         ASSERT_FALSE(ref.has_value());
       }
       // Construct a thread sampler state and initialize it
@@ -215,28 +217,28 @@ class TestThreadSampler {
 
       // We shouldn't be able to get the buffers unless we're running.
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
         ASSERT_FALSE(ref.has_value());
       }
       ASSERT_TRUE(sampler.Start().is_ok());
 
       for (cpu_num_t i = 0; i < arch_max_num_cpus(); i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
         ASSERT_TRUE(ref.has_value());
       }
 
-      ktl::optional<sampler::ThreadSampler::PerCpuStateRef> bad_ref =
-          sampler.GetPerCpuState(arch_max_num_cpus());
+      ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> bad_ref =
+          sampler.GetBufferRef(arch_max_num_cpus());
       ASSERT_FALSE(bad_ref.has_value());
 
       ASSERT_TRUE(sampler.Stop().is_ok());
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
         ASSERT_FALSE(ref.has_value());
       }
       ASSERT_TRUE(sampler.Destroy().is_ok());
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
         ASSERT_FALSE(ref.has_value());
       }
     }

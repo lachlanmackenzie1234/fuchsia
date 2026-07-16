@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_THREAD_SAMPLER_H_
 
 #include <arch.h>
-#include <lib/thread_sampler/per_cpu_state.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls-next.h>
@@ -117,23 +116,22 @@ class ThreadSampler {
   ktl::pair<zx_status_t, size_t> ReadUser(const sampler::ReadToken& token, user_out_ptr<void> ptr,
                                           size_t len) TA_EXCL(ThreadSamplerLock::Get());
 
-  class PerCpuStateRef {
+  class PerCpuBufferRef {
    public:
-    explicit PerCpuStateRef(ktl::atomic<uint64_t>& state,
-                            sampler::internal::PerCpuState& per_cpu_state)
-        : per_cpu_state_(per_cpu_state), state_(state) {}
-    ~PerCpuStateRef() { state_.fetch_sub(kBufferRefCountIncrement, ktl::memory_order_acq_rel); }
-    sampler::internal::PerCpuState& Get() { return per_cpu_state_; }
+    explicit PerCpuBufferRef(ktl::atomic<uint64_t>& state, percpu_writer::Buffer& buffer)
+        : buffer_(buffer), state_(state) {}
+    ~PerCpuBufferRef() { state_.fetch_sub(kBufferRefCountIncrement, ktl::memory_order_acq_rel); }
+    percpu_writer::Buffer& Get() { return buffer_; }
 
    private:
-    sampler::internal::PerCpuState& per_cpu_state_;
+    percpu_writer::Buffer& buffer_;
     ktl::atomic<uint64_t>& state_;
   };
 
-  // Atomically acquire a reference to the buffers and ensure that the buffers are not destroyed
-  // until the reference is released.
-  ktl::optional<PerCpuStateRef> GetPerCpuState(cpu_num_t cpu_num) {
-    if (cpu_num >= per_cpu_state_.size()) {
+  // Atomically acquire a reference to the buffer for `cpu_num` and ensure that the buffers are not
+  // destroyed until the reference is released.
+  ktl::optional<PerCpuBufferRef> GetBufferRef(cpu_num_t cpu_num) {
+    if (cpu_num >= per_cpu_buffers_.size()) {
       return ktl::nullopt;
     }
     uint64_t expected = state_.load(ktl::memory_order_relaxed);
@@ -148,7 +146,7 @@ class ThreadSampler {
       success = state_.compare_exchange_weak(expected, desired, ktl::memory_order_acq_rel,
                                              ktl::memory_order_relaxed);
     } while (!success);
-    return ktl::make_optional<PerCpuStateRef>(state_, per_cpu_state_[cpu_num]);
+    return ktl::make_optional<PerCpuBufferRef>(state_, per_cpu_buffers_[cpu_num]);
   }
 
   // Atomically request the current cpu mark a thread for sampling if the session is Running.
@@ -170,7 +168,6 @@ class ThreadSampler {
  private:
   friend class ::thread_sampler_tests::TestThreadSampler;
   DECLARE_SINGLETON_MUTEX(ThreadSamplerLock);
-
   void SetState(SamplingState new_state) TA_REQ(ThreadSamplerLock::Get()) {
     // While the SamplingState component of `state_` won't change out from under us as we require a
     // mutex to change it, the writes in flight counter could change, so we use a cmpxchg loop to
@@ -186,10 +183,10 @@ class ThreadSampler {
 
   void StopLocked() TA_REQ(ThreadSamplerLock::Get());
 
-  // per_cpu_state_ and state_ may be READ without acquiring the ThreadSamplerLock.
+  // per_cpu_buffers_ and state_ may be READ without acquiring the ThreadSamplerLock.
   // However, the lock must be acquired to WRITE them.
   //
-  // per_cpu_state_ must not be modified while the session is in the states:
+  // per_cpu_buffers_ must not be modified while the session is in the states:
   //  - Configured
   //  - Running
   //  - Reading
@@ -221,7 +218,7 @@ class ThreadSampler {
   // for.
   RelaxedAtomic<uint64_t> session_id_ = 0;
 
-  fbl::Array<sampler::internal::PerCpuState> per_cpu_state_{nullptr};
+  fbl::Array<percpu_writer::Buffer> per_cpu_buffers_{nullptr};
   zx_duration_t sample_period_{0};
 };
 
