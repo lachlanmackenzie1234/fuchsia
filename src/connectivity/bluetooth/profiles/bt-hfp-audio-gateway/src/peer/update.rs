@@ -154,9 +154,11 @@ impl From<AgUpdate> for ProcedureRequest {
             AgUpdate::PhoneStatusIndicator(status) => {
                 vec![status.into()]
             }
-            AgUpdate::SubscriberNumbers(numbers) => {
-                numbers.into_iter().map(build_cnum_response).chain(once(at::Response::Ok)).collect()
-            }
+            AgUpdate::SubscriberNumbers(numbers) => numbers
+                .into_iter()
+                .filter_map(build_cnum_response)
+                .chain(once(at::Response::Ok))
+                .collect(),
             AgUpdate::CurrentCalls(calls) => calls
                 .into_iter()
                 .filter_map(build_clcc_response)

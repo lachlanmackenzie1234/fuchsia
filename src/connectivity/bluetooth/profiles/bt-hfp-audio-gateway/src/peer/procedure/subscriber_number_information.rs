@@ -89,20 +89,23 @@ impl Procedure for SubscriberNumberInformationProcedure {
     }
 }
 
-/// Build an AT CNUM response from a number. See HFP v1.8, Section 4.34.2 for information on the
-/// +CNUM fields.
-pub fn build_cnum_response(number: String) -> at::Response {
-    at::success(at::Success::Cnum {
+/// Build an AT CNUM response from a number string. See HFP v1.8, Section
+/// 4.34.2 for information on the +CNUM fields. Returns `None` if the provided
+/// number is invalid.
+pub fn build_cnum_response(number: impl AsRef<str>) -> Option<at::Response> {
+    // Validate the validity of the provided number string.
+    let valid_number = bt_hfp::call::Number::from_non_at_string(number.as_ref()).ok()?;
+    Some(at::success(at::Success::Cnum {
         // Unsupported, shall be left blank.
         alpha: "".into(),
-        number,
+        number: valid_number.to_at_string(),
         // Format: no changes to the number presentation required
         ty: 128,
         // Unsupported, shall be left blank.
         speed: "".into(),
         // Indicates voice service.
         service: 4,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -156,11 +159,31 @@ mod tests {
             x => panic!("Unexpected message: {:?}", x),
         };
         let req = proc.ag_update(update, &mut SlcState::default());
-        let cnum_response = build_cnum_response(number);
+        let cnum_response = build_cnum_response(&number).expect("valid number");
         assert_matches!(
             req,
             ProcedureRequest::SendMessages(msgs) if msgs == vec![cnum_response, at::Response::Ok]
         );
         assert!(proc.is_terminated());
+    }
+
+    #[test]
+    fn build_cnum_response_valid_numbers_success() {
+        let expected_cnum = at::success(at::Success::Cnum {
+            alpha: "".into(),
+            number: "\"1234567\"".into(),
+            ty: 128,
+            speed: "".into(),
+            service: 4,
+        });
+
+        assert_eq!(build_cnum_response("1234567"), Some(expected_cnum.clone()));
+        assert_eq!(build_cnum_response("\"1234567\""), Some(expected_cnum));
+    }
+
+    #[test]
+    fn build_cnum_response_invalid_numbers_failure() {
+        assert_eq!(build_cnum_response("12345\r\n+CIEV: 1,1\r\n"), None);
+        assert_eq!(build_cnum_response("123\"456"), None);
     }
 }

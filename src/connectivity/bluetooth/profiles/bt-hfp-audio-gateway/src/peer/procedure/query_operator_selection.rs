@@ -15,25 +15,45 @@ use log::info;
 /// Defined in HFP v1.9, Section 4.8.
 pub const MAX_LONG_ALPHANUMERIC_NAME_SIZE: usize = 16;
 
-/// Formats the provided `name` to conform to the current network operator format.
-pub fn format_operator_name(format: at::NetworkOperatorNameFormat, mut name: String) -> String {
+/// Strips enclosing double quotes from `s`, if present.
+fn strip_quotes(s: &str) -> &str {
+    s.trim_matches('"')
+}
+
+/// Formats the provided `name` to conform to the current network operator
+/// format. Returns `None` if the provided operator name is invalid.
+pub fn format_operator_name(
+    format: at::NetworkOperatorNameFormat,
+    name: impl AsRef<str>,
+) -> Option<String> {
+    let name_str = name.as_ref();
+    if !is_valid_operator_name(name_str) {
+        return None;
+    }
+    let mut raw_name = strip_quotes(name_str).to_string();
+
     match format {
         at::NetworkOperatorNameFormat::LongAlphanumeric => {
-            if name.len() > MAX_LONG_ALPHANUMERIC_NAME_SIZE {
-                let full_name = name.clone();
-                name.truncate(MAX_LONG_ALPHANUMERIC_NAME_SIZE);
-                info!("Truncating network operator name \"{}\" to \"{}\"", full_name, name);
+            let max_raw_len = MAX_LONG_ALPHANUMERIC_NAME_SIZE.saturating_sub(2);
+            if raw_name.chars().count() > max_raw_len {
+                let full_name = raw_name.clone();
+                raw_name = raw_name.chars().take(max_raw_len).collect();
+                info!("Truncating network operator name \"{}\" to \"{}\"", full_name, raw_name);
             }
         }
     }
-    name
+    Some(format!("\"{}\"", raw_name))
 }
 
 /// Returns true if the network operator name is valid.
-/// An operator name is valid if it does not contain control characters or double quotes.
-/// Note that *all* double quotes are rejected.
+/// An operator name is valid if it does not contain control characters or
+/// internal quotes. Note that double quotes enclosing the string (at the start
+/// and end) are allowed.
 pub fn is_valid_operator_name(name: &str) -> bool {
-    !name.chars().any(|c| c.is_ascii_control() || c == '"')
+    if name.chars().any(|c| c.is_ascii_control()) {
+        return false;
+    }
+    !strip_quotes(name).contains('"')
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -106,7 +126,7 @@ impl Procedure for QueryOperatorProcedure {
                 self.state.transition(/* skip_set_format= */ self.state.is_start());
                 let response = Box::new(move |network_name: Option<String>| {
                     let name = network_name
-                        .map(|n| format!("\"{}\"", format_operator_name(format, n)))
+                        .and_then(|n| format_operator_name(format, n))
                         .unwrap_or_else(String::new);
                     AgUpdate::NetworkOperatorName(format, name)
                 });
@@ -341,7 +361,7 @@ mod tests {
         let result = response_closure(Some("Fuchsia Telecom Network".to_string()));
         assert_matches!(
             result,
-            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"Fuchsia Telecom \""
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"Fuchsia Teleco\""
         );
     }
 
@@ -386,6 +406,129 @@ mod tests {
         assert_matches!(
             result,
             AgUpdate::NetworkOperatorName(f, name) if f == format && name == ""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_control_characters_filtered() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        // Network operator names containing control characters should be
+        // filtered to an empty string.
+        let result = response_closure(Some("Foo-Mobile\r\n+CIEV: 1,1\r\n".to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == ""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_quotes_filtered() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        // Network operator names containing internal double quotes should be
+        // filtered to an empty string.
+        let result = response_closure(Some("My\"Operator".to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == ""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_enclosing_quotes_allowed() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        // Network operator names enclosed in double quotes are allowed and
+        // formatted cleanly.
+        let result = response_closure(Some("\"Foo-Mobile\"".to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"Foo-Mobile\""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_multiple_enclosing_quotes_allowed() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        // Network operator names with multiple sets of enclosing double quotes
+        // are allowed and formatted cleanly.
+        let result = response_closure(Some("\"\"Foo-Mobile\"\"".to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"Foo-Mobile\""
+        );
+    }
+
+    #[test]
+    fn operator_name_formatting_multibyte_truncate_no_panic() {
+        let mut p = QueryOperatorProcedure::new();
+        let mut state = SlcState::default();
+
+        let format = at::NetworkOperatorNameFormat::LongAlphanumeric;
+        let update1 = at::Command::Cops { three: 3, format };
+        let _ = p.hf_update(update1, &mut state);
+
+        let update2 = at::Command::CopsRead {};
+        let response_closure = match p.hf_update(update2, &mut state) {
+            ProcedureRequest::Request(SlcRequest::GetNetworkOperatorName { response }) => response,
+            x => panic!("Expected get network operator request but got: {:?}", x),
+        };
+
+        // Multi-byte UTF-8 operator names should be truncated by
+        // character count without panicking on byte boundaries, taking
+        // into account the two surrounding quotes.
+        let long_multibyte_name = "Foo-Mobile🛜🛜🛜🛜🛜🛜🛜🛜🛜🛜";
+        assert!(long_multibyte_name.len() > MAX_LONG_ALPHANUMERIC_NAME_SIZE);
+        let result = response_closure(Some(long_multibyte_name.to_string()));
+        assert_matches!(
+            result,
+            AgUpdate::NetworkOperatorName(f, name) if f == format && name == "\"Foo-Mobile🛜🛜🛜🛜\""
         );
     }
 }
