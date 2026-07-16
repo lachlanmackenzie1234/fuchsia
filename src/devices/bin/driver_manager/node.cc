@@ -2514,14 +2514,18 @@ void Node::PrepareDictionary(fit::callback<void(zx::result<>)> callback) {
         ->dictionary_util()
         .CopyExportDictionary(
             to_export.value(),
-            [this, callback = std::move(callback)](
+            [weak_self = weak_from_this(), callback = std::move(callback)](
                 zx::result<fuchsia_component_sandbox::DictionaryRef> result) mutable {
+              std::shared_ptr self = weak_self.lock();
+              if (!self) {
+                return;
+              }
               if (result.is_error()) {
                 callback(result.take_error());
                 return;
               }
 
-              offers_dictionary_ = std::move(result.value());
+              self->offers_dictionary_ = std::move(result.value());
               callback(zx::ok());
             });
     return;
@@ -2590,8 +2594,12 @@ void Node::PrepareDictionary(fit::callback<void(zx::result<>)> callback) {
 
   std::shared_ptr<ResultAsyncSharder<ShardResult>> sharder = std::make_shared<
       ResultAsyncSharder<ShardResult>>(
-      total_shards,
-      [this, callback = std::move(callback)](zx::result<std::vector<ShardResult>> result) mutable {
+      total_shards, [weak_self = weak_from_this(), callback = std::move(callback)](
+                        zx::result<std::vector<ShardResult>> result) mutable {
+        std::shared_ptr self = weak_self.lock();
+        if (!self) {
+          return;
+        }
         if (result.is_error()) {
           callback(result.take_error());
           return;
@@ -2616,44 +2624,52 @@ void Node::PrepareDictionary(fit::callback<void(zx::result<>)> callback) {
         std::unordered_map<std::string, fidl::ClientEnd<fuchsia_component_sandbox::DirReceiver>>
             map;
 
-        for (auto& offer : offers()) {
+        for (auto& offer : self->offers()) {
           if (offer.transport != OfferTransport::Dictionary || !dirs.contains(offer.service_name)) {
             continue;
           }
 
           auto [client, server] = fidl::Endpoints<fuchsia_component_sandbox::DirReceiver>::Create();
           map[offer.service_name] = std::move(client);
-          dir_receivers_.emplace_back(std::move(server), std::move(dirs[offer.service_name]),
-                                      dispatcher_);
+          self->dir_receivers_.emplace_back(std::move(server), std::move(dirs[offer.service_name]),
+                                            self->dispatcher_);
           dirs.erase(offer.service_name);
         }
 
-        (*node_manager_)
+        (*self->node_manager_)
             ->dictionary_util()
             .CreateDictionaryWith(
                 std::move(map),
-                [this, callback = std::move(callback)](
+                [weak_self, callback = std::move(callback)](
                     zx::result<fuchsia_component_sandbox::CapabilityId> result) mutable {
+                  std::shared_ptr self = weak_self.lock();
+                  if (!self) {
+                    return;
+                  }
                   if (!result.is_ok()) {
                     callback(result.take_error());
                     return;
                   }
 
-                  ZX_ASSERT_MSG(!subtree_dictionary_ref_.has_value(),
-                                "Cannot set dictionary_ref_ on node %s", name().c_str());
-                  dictionary_ref_ = result.value();
-                  (*node_manager_)
+                  ZX_ASSERT_MSG(!self->subtree_dictionary_ref_.has_value(),
+                                "Cannot set dictionary_ref_ on node %s", self->name().c_str());
+                  self->dictionary_ref_ = result.value();
+                  (*self->node_manager_)
                       ->dictionary_util()
                       .CopyExportDictionary(
-                          dictionary_ref_.value(),
-                          [this, callback = std::move(callback)](
+                          self->dictionary_ref_.value(),
+                          [weak_self, callback = std::move(callback)](
                               zx::result<fuchsia_component_sandbox::DictionaryRef> result) mutable {
+                            std::shared_ptr self = weak_self.lock();
+                            if (!self) {
+                              return;
+                            }
                             if (result.is_error()) {
                               callback(result.take_error());
                               return;
                             }
 
-                            offers_dictionary_ = std::move(result.value());
+                            self->offers_dictionary_ = std::move(result.value());
                             callback(zx::ok());
                           });
                 });
