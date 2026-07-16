@@ -108,18 +108,12 @@ zx_status_t Sherlock::AudioInit() {
   using fuchsia_hardware_clockimpl::wire::InitCall;
 
   uint8_t tdm_instance_id = 1;
+  // Grant only the EE audio registers. Neither T931_GPIO_BASE nor T931_GPIO_AO_BASE
+  // (Always-On GPIO) is mapped or required by the aml-g12-tdm driver on Sherlock.
   static const std::vector<fpbus::Mmio> audio_mmios{
       {{
           .base = T931_EE_AUDIO_BASE,
           .length = T931_EE_AUDIO_LENGTH,
-      }},
-      {{
-          .base = T931_GPIO_BASE,
-          .length = T931_GPIO_LENGTH,
-      }},
-      {{
-          .base = T931_GPIO_AO_BASE,
-          .length = T931_GPIO_AO_LENGTH,
       }},
   };
 
