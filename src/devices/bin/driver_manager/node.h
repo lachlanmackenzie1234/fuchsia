@@ -173,6 +173,8 @@ class NodeManager {
   virtual MemoryAttributor& memory_attributor() { ZX_PANIC("Unimplemented memory_attributor"); }
 
   virtual ResourceId GetNextResourceId() { return 0; }
+
+  virtual void RebootSystem() {}
 };
 
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
@@ -717,6 +719,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   bool can_multibind_composites_ = true;
 
   bool host_restart_on_crash_ = false;
+  bool is_driver_host_root_ = false;
 
   std::vector<fuchsia_driver_framework::NodeSymbol> symbols_;
 

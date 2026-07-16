@@ -1872,6 +1872,7 @@ void Node::StartDriver(
   }
 
   host_restart_on_crash_ = host_restart_on_crash;
+  is_driver_host_root_ = !colocate;
 
   if (colocate && !driver_host()) {
     fdf_log::error(
@@ -2838,6 +2839,12 @@ void Node::OnDriverHostFidlError(fidl::UnbindInfo info) {
       RestartNode();
     }
     return;
+  }
+
+  bool is_crash = (info.status() != ZX_OK && info.status() != ZX_ERR_CANCELED);
+  if (is_crash && is_driver_host_root_ && node_manager_.has_value()) {
+    fdf_log::error("Node {} driver host crashed. Rebooting system.", name());
+    node_manager_.value()->RebootSystem();
   }
 
   // If the driver fails to bind to the node, don't remove the node.

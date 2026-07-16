@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -113,6 +114,16 @@ int main(int argc, char** argv) {
     cpu_element_mgr.emplace(std::move(cpu_element_result.value()));
   }
 
+  std::optional<fidl::ClientEnd<fuchsia_hardware_power_statecontrol::Admin>> statecontrol_admin;
+  zx::result statecontrol_admin_result =
+      component::Connect<fuchsia_hardware_power_statecontrol::Admin>();
+  if (statecontrol_admin_result.is_ok()) {
+    statecontrol_admin.emplace(std::move(statecontrol_admin_result.value()));
+  } else {
+    fdf_log::warn("Failed to connect to fuchsia.hardware.power.statecontrol.Admin: {}",
+                  statecontrol_admin_result.status_string());
+  }
+
   auto capability_store_result = component::Connect<fuchsia_component_sandbox::CapabilityStore>();
   if (capability_store_result.is_error()) {
     return capability_store_result.error_value();
@@ -167,7 +178,7 @@ int main(int argc, char** argv) {
               .power_suspend_enabled = config.power_suspend_enabled(),
           }},
           std::move(topology_client), std::nullopt, std::move(cpu_element_mgr),
-          config.wait_for_suspending_token());
+          config.wait_for_suspending_token(), std::move(statecontrol_admin));
   // Setup devfs.
   std::shared_ptr<driver_manager::Devfs> devfs;
   driver_runner->root_node()->SetupDevfsForRootNode(devfs);

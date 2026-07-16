@@ -47,6 +47,7 @@ namespace fio = fuchsia_io;
 namespace frunner = fuchsia_component_runner;
 namespace fcomponent = fuchsia_component;
 namespace fdecl = fuchsia_component_decl;
+namespace fpower = fuchsia_hardware_power_statecontrol;
 
 using InspectStack = std::stack<std::pair<inspect::Node*, const driver_manager::Node*>>;
 
@@ -300,7 +301,8 @@ DriverRunner::DriverRunner(
     fidl::ClientEnd<fuchsia_power_broker::Topology> topology_client,
     std::optional<DynamicLinkerArgs> dynamic_linker_args,
     std::optional<fidl::ClientEnd<fuchsia_power_system::CpuElementManager>> cpu_element_mgr,
-    bool wait_for_storage_token_from_driver_)
+    bool wait_for_storage_token_from_driver_,
+    std::optional<fidl::ClientEnd<fpower::Admin>> statecontrol_admin)
     : driver_index_(std::move(driver_index), dispatcher),
       loader_service_factory_(std::move(loader_service_factory)),
       dictionary_util_(std::move(capability_store), dispatcher),
@@ -353,6 +355,11 @@ DriverRunner::DriverRunner(
   if (topology_client.is_valid()) {
     power_topology_ =
         fidl::Client<fuchsia_power_broker::Topology>(std::move(topology_client), dispatcher);
+  }
+
+  if (statecontrol_admin.has_value()) {
+    statecontrol_admin_ =
+        fidl::Client<fpower::Admin>(std::move(statecontrol_admin.value()), dispatcher_);
   }
 }
 
@@ -1821,6 +1828,34 @@ std::unordered_set<const DriverHost*> DriverRunner::DriverHostsWithDriverUrl(std
              });
 
   return result_hosts;
+}
+
+void DriverRunner::RebootSystem() {
+  if (!statecontrol_admin_.is_valid()) {
+    fdf_log::error("Cannot reboot system: statecontrol_admin_ is not connected.");
+    return;
+  }
+
+  fpower::ShutdownOptions options{{
+      .action = fpower::ShutdownAction::kReboot,
+      .reasons = {{fpower::ShutdownReason::kCriticalComponentFailure}},
+  }};
+
+  statecontrol_admin_->Shutdown(std::move(options))
+      .Then([](fidl::Result<fpower::Admin::Shutdown>& result) {
+        if (result.is_error()) {
+          if (result.error_value().is_framework_error()) {
+            fdf_log::error("Shutdown request failed (FIDL error): {}",
+                           result.error_value().framework_error().FormatDescription());
+          } else {
+            zx_status_t status = result.error_value().domain_error();
+            if (status != ZX_ERR_ALREADY_EXISTS) {
+              fdf_log::error("Shutdown request failed (domain error): {}",
+                             zx_status_get_string(status));
+            }
+          }
+        }
+      });
 }
 
 }  // namespace driver_manager

@@ -48,6 +48,10 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
 
   driver_manager::ResourceId GetNextResourceId() override { return next_resource_id_++; }
 
+  void RebootSystem() override { reboot_system_called_ = true; }
+
+  bool reboot_system_called_ = false;
+
  private:
   driver_manager::MemoryAttributor attributor_{async_get_default_dispatcher()};
   driver_manager::ResourceId next_resource_id_ = 0;

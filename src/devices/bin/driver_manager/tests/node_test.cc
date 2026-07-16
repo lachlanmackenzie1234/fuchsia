@@ -107,8 +107,8 @@ class FakeDriverHost : public driver_manager::DriverHost {
     cb(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
 
-  void CloseDriver(std::string node_name) {
-    drivers_[node_name].Close(ZX_OK);
+  void CloseDriver(std::string node_name, zx_status_t status = ZX_OK) {
+    drivers_[node_name].Close(status);
     clients_[node_name].reset();
   }
 
@@ -259,7 +259,9 @@ class FakeNodeManager : public TestNodeManagerBase {
     return last_cpu_token_override_;
   }
 
-  void CloseDriverForNode(std::string node_name) { driver_host_.CloseDriver(node_name); }
+  void CloseDriverForNode(std::string node_name, zx_status_t status = ZX_OK) {
+    driver_host_.CloseDriver(node_name, status);
+  }
 
   FakeDriverHost& driver_host() { return driver_host_; }
 
@@ -353,7 +355,8 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
 class Dfv2NodeTest : public DriverManagerTestBase {
  public:
   struct StartDriverOptions {
-    bool host_restart_on_crash;
+    bool host_restart_on_crash = false;
+    bool colocate = false;
   };
 
   void SetUp() override {
@@ -366,7 +369,8 @@ class Dfv2NodeTest : public DriverManagerTestBase {
   }
 
   void StartTestDriver(std::shared_ptr<driver_manager::Node> node,
-                       StartDriverOptions options = {.host_restart_on_crash = false}) {
+                       StartDriverOptions options = {.host_restart_on_crash = false,
+                                                     .colocate = false}) {
     std::vector<fuchsia_data::DictionaryEntry> program_entries = {
         {{
             .key = "binary",
@@ -376,7 +380,7 @@ class Dfv2NodeTest : public DriverManagerTestBase {
         {{
             .key = "colocate",
             .value = std::make_unique<fuchsia_data::DictionaryValue>(
-                fuchsia_data::DictionaryValue::WithStr("false")),
+                fuchsia_data::DictionaryValue::WithStr(options.colocate ? "true" : "false")),
         }},
     };
 
@@ -752,11 +756,75 @@ TEST_F(Dfv2NodeTest, RestartOnCrashComposite) {
   ASSERT_EQ(1u, parent_node_2->children().size());
 
   // Simulate a crash by closing the driver side of channels.
-  node_manager->CloseDriverForNode("composite");
+  node_manager->CloseDriverForNode("composite", ZX_ERR_PEER_CLOSED);
   RunLoopUntilIdle();
+
+  // The node manager should NOT have been asked to reboot the system.
+  ASSERT_FALSE(node_manager->reboot_system_called_);
 
   // The node should come back to running state.
   ASSERT_EQ(driver_manager::NodeState::kRunning, composite->GetNodeState());
+}
+
+TEST_F(Dfv2NodeTest, RebootOnCrash) {
+  auto parent_node = CreateNode("parent");
+  StartTestDriver(parent_node, {.host_restart_on_crash = false});
+  ASSERT_TRUE(parent_node->HasDriverComponent());
+  ASSERT_EQ(driver_manager::NodeState::kRunning, parent_node->GetNodeState());
+
+  // Simulate a crash by closing the driver side of channels.
+  node_manager->CloseDriverForNode("parent", ZX_ERR_PEER_CLOSED);
+  RunLoopUntilIdle();
+
+  // The node manager should have been asked to reboot the system.
+  ASSERT_TRUE(node_manager->reboot_system_called_);
+}
+
+TEST_F(Dfv2NodeTest, NoRebootOnCleanClose) {
+  auto parent_node = CreateNode("parent");
+  StartTestDriver(parent_node, {.host_restart_on_crash = false});
+  ASSERT_TRUE(parent_node->HasDriverComponent());
+  ASSERT_EQ(driver_manager::NodeState::kRunning, parent_node->GetNodeState());
+
+  // Simulate a clean channel closure (non-crash) by closing with ZX_OK.
+  node_manager->CloseDriverForNode("parent", ZX_OK);
+  RunLoopUntilIdle();
+
+  // The node manager should NOT have been asked to reboot the system.
+  ASSERT_FALSE(node_manager->reboot_system_called_);
+}
+
+TEST_F(Dfv2NodeTest, NoRebootOnCanceledClose) {
+  auto parent_node = CreateNode("parent");
+  StartTestDriver(parent_node, {.host_restart_on_crash = false});
+  ASSERT_TRUE(parent_node->HasDriverComponent());
+  ASSERT_EQ(driver_manager::NodeState::kRunning, parent_node->GetNodeState());
+
+  // Simulate a local cancellation (non-crash) by closing with ZX_ERR_CANCELED.
+  node_manager->CloseDriverForNode("parent", ZX_ERR_CANCELED);
+  RunLoopUntilIdle();
+
+  // The node manager should NOT have been asked to reboot the system.
+  ASSERT_FALSE(node_manager->reboot_system_called_);
+}
+
+TEST_F(Dfv2NodeTest, ColocatedChildCrashNoReboot) {
+  auto parent_node = CreateNode("parent");
+  StartTestDriver(parent_node, {.host_restart_on_crash = false, .colocate = false});
+  ASSERT_TRUE(parent_node->HasDriverComponent());
+  ASSERT_EQ(driver_manager::NodeState::kRunning, parent_node->GetNodeState());
+
+  auto child_node = CreateNode("child", parent_node);
+  StartTestDriver(child_node, {.host_restart_on_crash = false, .colocate = true});
+  ASSERT_TRUE(child_node->HasDriverComponent());
+  ASSERT_EQ(driver_manager::NodeState::kRunning, child_node->GetNodeState());
+
+  // Simulate a crash of the child driver by closing the child's channel with an error.
+  node_manager->CloseDriverForNode("child", ZX_ERR_PEER_CLOSED);
+  RunLoopUntilIdle();
+
+  // The node manager should NOT have been asked to reboot the system.
+  ASSERT_FALSE(node_manager->reboot_system_called_);
 }
 
 TEST_F(Dfv2NodeTest, TestCompositeNodeProperties) {

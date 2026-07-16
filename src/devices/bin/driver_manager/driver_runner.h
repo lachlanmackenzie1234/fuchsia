@@ -11,6 +11,7 @@
 #include <fidl/fuchsia.driver.host/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
 #include <fidl/fuchsia.driver.token/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/fidl.h>
 #include <fidl/fuchsia.ldsvc/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
@@ -93,7 +94,9 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt,
                std::optional<fidl::ClientEnd<fuchsia_power_system::CpuElementManager>>
                    cpu_element_mgr = std::nullopt,
-               bool wait_for_storage_token = false);
+               bool wait_for_storage_token = false,
+               std::optional<fidl::ClientEnd<fuchsia_hardware_power_statecontrol::Admin>>
+                   statecontrol_admin = std::nullopt);
 
   // fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager> interface
   void AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& completer) override;
@@ -243,6 +246,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   std::optional<fuchsia_power_broker::DependencyToken> StorageElementToken() override;
 
+  void RebootSystem() override;
+
   void CreateStoragePowerElement(fuchsia_power_broker::DependencyToken driver_token,
                                  fuchsia_power_broker::PowerLevel power_level,
                                  fit::callback<void()> post_creation);
@@ -380,6 +385,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   std::optional<fuchsia_power_broker::DependencyToken> all_drivers_token_;
   std::shared_ptr<AllDriversElement> all_drivers_;
+
+  fidl::Client<fuchsia_hardware_power_statecontrol::Admin> statecontrol_admin_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);

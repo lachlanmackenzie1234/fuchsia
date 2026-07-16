@@ -60,7 +60,10 @@
             default: false,
         },
         {
-            protocol: [ "fuchsia.power.system.CpuElementManager" ],
+            protocol: [
+                "fuchsia.hardware.power.statecontrol.Admin",
+                "fuchsia.power.system.CpuElementManager",
+            ],
             availability: "optional",
         },
         {
