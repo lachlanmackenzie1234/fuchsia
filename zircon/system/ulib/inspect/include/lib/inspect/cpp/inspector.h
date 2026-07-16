@@ -56,6 +56,87 @@ struct InspectStats final {
   size_t utilization_per_ten_k;
 };
 
+class Inspector;
+
+template <template <typename> typename Ptr>
+concept SmartPtrRestricted = std::is_same_v<Ptr<void>, std::shared_ptr<void>> ||
+                             std::is_same_v<Ptr<void>, std::weak_ptr<void>>;
+
+template <template <typename> typename Ptr>
+  requires SmartPtrRestricted<Ptr>
+struct InspectorContext {
+  // The root node for the Inspector.
+  //
+  // Smart pointers (shared or weak) are used to manage the lifetime of the
+  // underlying data.
+  Ptr<Node> root_;
+
+  // The internal state for this inspector.
+  //
+  // Smart pointers (shared or weak) are used to manage the lifetime of the
+  // underlying data.
+  Ptr<internal::State> state_;
+
+  // Internally stored values owned by this Inspector.
+  //
+  // Smart pointers (shared or weak) are used to manage the lifetime of the
+  // underlying data.
+  Ptr<ValueList> value_list_;
+
+  // Mutex for the value list.
+  Ptr<std::mutex> value_mutex_;
+
+  explicit operator bool() const {
+    return is_valid(root_) && is_valid(state_) && is_valid(value_list_) && is_valid(value_mutex_);
+  }
+
+  template <typename T>
+  [[nodiscard]] static bool is_valid(const std::shared_ptr<T>& p) {
+    return p != nullptr;
+  }
+
+  template <typename T>
+  [[nodiscard]] static bool is_valid(const std::weak_ptr<T>& p) {
+    return !p.expired();
+  }
+};
+
+namespace internal {
+using WeakContext = InspectorContext<std::weak_ptr>;
+using StrongContext = InspectorContext<std::shared_ptr>;
+}  // namespace internal
+
+// A weak handle to an Inspector.
+//
+// Can be safely captured by value in lazy node callbacks.
+// Using WeakInspector avoids:
+// 1. Reference cycles: Capturing a strong Inspector by value in a callback owned
+//    by that Inspector creates a cycle, preventing destruction.
+// 2. Dangling pointers: Capturing a strong Inspector by reference (or raw pointer)
+//    is unsafe because Inspector is copyable. The original Inspector instance
+//    might be destroyed while a copy keeps the underlying state (and the callback)
+//    alive.
+class WeakInspector final {
+ public:
+  WeakInspector() = default;
+
+  // Attempts to promote this weak handle to a strong Inspector handle.
+  //
+  // Returns a full-fledged copy of the original Inspector if all internal shared
+  // objects are still alive, or a no-op Inspector (which evaluates to false in
+  // boolean contexts) if the original Inspector was destroyed.
+  Inspector lock() const;
+
+  // Returns true if the underlying state has not been destroyed.
+  explicit operator bool() const { return bool(ctx_); }
+
+ private:
+  friend class Inspector;
+  WeakInspector(internal::WeakContext ctx) : ctx_(std::move(ctx)) {}
+
+  internal::WeakContext ctx_;
+};
+
 // The entry point into the Inspection API.
 //
 // An Inspector wraps a particular tree of Inspect data.
@@ -105,22 +186,25 @@ class Inspector final {
   // Inspector when accessed.
   void CreateStatsNode();
 
+  // Returns a weak handle to this Inspector.
+  WeakInspector AsWeak() const;
+
   // Boolean value of an Inspector is whether it is actually backed by a VMO.
   //
   // This method returns false if and only if Node operations on the Inspector are no-ops.
-  explicit operator bool() const { return state_ != nullptr; }
+  explicit operator bool() const { return bool(ctx_); }
 
   // Emplace a value to be owned by this Inspector.
   template <typename T>
   void emplace(T value) {
-    std::lock_guard<std::mutex> guard(*value_mutex_);
-    value_list_->emplace(std::move(value));
+    std::lock_guard<std::mutex> guard(*ctx_.value_mutex_);
+    ctx_.value_list_->emplace(std::move(value));
   }
 
   // Clear the recorded values owned by this Inspector.
   void ClearRecorded() {
-    std::lock_guard<std::mutex> guard(*value_mutex_);
-    value_list_->clear();
+    std::lock_guard<std::mutex> guard(*ctx_.value_mutex_);
+    ctx_.value_list_->clear();
   }
 
   // Gets the names of the inspectors linked off of this inspector.
@@ -137,25 +221,19 @@ class Inspector final {
   void AtomicUpdate(AtomicUpdateCallbackFn callback);
 
  private:
+  friend class WeakInspector;
   friend std::shared_ptr<internal::State> internal::GetState(const Inspector* inspector);
 
-  // The root node for the Inspector.
-  //
-  // Shared pointers are used so Inspector is copyable.
-  std::shared_ptr<Node> root_;
+  Inspector(internal::StrongContext ctx) : ctx_{std::move(ctx)} {
+    if (!ctx_) {
+      ctx_.root_ = std::make_shared<Node>();
+      ctx_.state_ = nullptr;
+      ctx_.value_list_ = std::make_shared<ValueList>();
+      ctx_.value_mutex_ = std::make_shared<std::mutex>();
+    }
+  }
 
-  // The internal state for this inspector.
-  //
-  // Shared pointers are used so Inspector is copyable.
-  std::shared_ptr<internal::State> state_;
-
-  // Internally stored values owned by this Inspector.
-  //
-  // Shared pointers are used so Inspector is copyable.
-  std::shared_ptr<ValueList> value_list_;
-
-  // Mutex for the value list.
-  std::shared_ptr<std::mutex> value_mutex_;
+  internal::StrongContext ctx_;
 };
 
 }  // namespace inspect
