@@ -298,7 +298,8 @@ trust-dns-resolver = { version = "0.22.0", default-features = false, features = 
 ttf-parser = "0.25.1"
 unicode-normalization = "0.1"
 vk-sys = "0.7.0"
-x509-cert = "0.2.5"
+x509-cert = "0.3.0"
+x509-cert-0_2_5 = { package = "x509-cert", version = "0.2.5" }
 zeroize = "1.8.1"
 # keep-sorted end
 
@@ -1317,7 +1318,6 @@ rustflags = []
 
 [gn.package.x509-cert."0.2.5"]
 groups = [
-  { name = "x509-cert" },
   { name = "x509-cert-0.2" }
 ]
 

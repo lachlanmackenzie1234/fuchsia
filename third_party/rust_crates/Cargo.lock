@@ -2078,7 +2078,8 @@ dependencies = [
  "walkdir",
  "which 8.0.4",
  "winnow 0.7.13",
- "x509-cert",
+ "x509-cert 0.2.5",
+ "x509-cert 0.3.0",
  "xattr",
  "xml-rs",
  "zerocopy",
@@ -6052,6 +6053,18 @@ dependencies = [
  "const-oid 0.9.6",
  "der 0.7.10",
  "spki 0.7.3",
+ "tls_codec",
+]
+
+[[package]]
+name = "x509-cert"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "105ef4642d9cb137ef83d623d0e4bf08b8adf69e9918ca904a174adb6d3d038b"
+dependencies = [
+ "const-oid 0.10.2",
+ "der 0.8.1",
+ "spki 0.8.0",
  "tls_codec",
 ]
 

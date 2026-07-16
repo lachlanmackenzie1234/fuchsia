@@ -3247,8 +3247,26 @@ alias(
 )
 
 alias(
-    name = "x509-cert",
+    name = "x509_cert_0_2_5-0.2.5",
     actual = "//third_party/rust_crates/vendor/x509-cert-0.2.5:x509_cert",
+    tags = ["manual"],
+)
+
+alias(
+    name = "x509_cert_0_2_5",
+    actual = "//third_party/rust_crates/vendor/x509-cert-0.2.5:x509_cert",
+    tags = ["manual"],
+)
+
+alias(
+    name = "x509-cert-0.3.0",
+    actual = "//third_party/rust_crates/vendor/x509-cert-0.3.0:x509_cert",
+    tags = ["manual"],
+)
+
+alias(
+    name = "x509-cert",
+    actual = "//third_party/rust_crates/vendor/x509-cert-0.3.0:x509_cert",
     tags = ["manual"],
 )
 

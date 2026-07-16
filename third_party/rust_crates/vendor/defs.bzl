@@ -559,7 +559,8 @@ _NORMAL_DEPENDENCIES = {
             "ttf-parser": Label("//third_party/rust_crates/vendor/ttf-parser-0.25.1:ttf_parser"),
             "unicode-normalization": Label("//third_party/rust_crates/vendor/unicode-normalization-0.1.24:unicode_normalization"),
             "vk-sys": Label("//third_party/rust_crates/vendor/vk-sys-0.7.0:vk_sys"),
-            "x509-cert": Label("//third_party/rust_crates/vendor/x509-cert-0.2.5:x509_cert"),
+            "x509-cert": Label("//third_party/rust_crates/vendor/x509-cert-0.3.0:x509_cert"),
+            "x509_cert_0_2_5": Label("//third_party/rust_crates/vendor/x509-cert-0.2.5:x509_cert"),
             "zeroize": Label("//third_party/rust_crates/vendor/zeroize-1.8.1:zeroize"),
         },
     },
@@ -577,6 +578,7 @@ _NORMAL_ALIASES = {
             Label("//third_party/rust_crates/vendor/der-0.7.10:der"): "der_0_7_10",
             Label("//third_party/rust_crates/vendor/pkcs8-0.10.2:pkcs8"): "pkcs8_0_10_2",
             Label("//third_party/rust_crates/vendor/spki-0.7.3:spki"): "spki_0_7_3",
+            Label("//third_party/rust_crates/vendor/x509-cert-0.2.5:x509-cert"): "x509_cert_0_2_5",
         },
     },
 }

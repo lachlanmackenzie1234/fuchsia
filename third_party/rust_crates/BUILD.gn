@@ -2446,10 +2446,6 @@ group("winnow-0.7.13") {
 }
 
 if (current_os == "fuchsia") {
-  group("x509-cert") {
-    public_deps = [ ":x509-cert-v0_2_5" ]
-  }
-
   group("x509-cert-0.2") {
     public_deps = [ ":x509-cert-v0_2_5" ]
   }
@@ -2458,6 +2454,18 @@ if (current_os == "fuchsia") {
 if (current_os == "fuchsia") {
   group("x509-cert-0.2.5") {
     public_deps = [ ":x509-cert-v0_2_5" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("x509-cert") {
+    public_deps = [ ":x509-cert-v0_3_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("x509-cert-0.3.0") {
+    public_deps = [ ":x509-cert-v0_3_0" ]
   }
 }
 
@@ -5969,6 +5977,7 @@ rustc_library("const-oid-v0_10_2") {
     "--cap-lints=allow",
     "-Cmetadata=c30a96ec7c78b05d",
     "-Cextra-filename=-c30a96ec7c78b05d",
+    "--cfg=feature=\"db\"",
   ]
 
   visibility = [ ":*" ]
@@ -24496,6 +24505,45 @@ rustc_library("x509-cert-v0_2_5") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":x509-cert-v0_2_5.license" ]
+}
+
+license("x509-cert-v0_3_0.license") {
+  public_package_name = "x509_cert"
+  license_files = [
+    "//third_party/rust_crates/vendor/x509-cert-0.3.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/x509-cert-0.3.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("x509-cert-v0_3_0") {
+  crate_name = "x509_cert"
+  source_root = "//third_party/rust_crates/vendor/x509-cert-0.3.0/src/lib.rs"
+  output_name = "x509_cert-281803c7cfde17fd"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":const-oid-v0_10_2" ]
+  deps += [ ":der-v0_8_1" ]
+  deps += [ ":spki-v0_8_0" ]
+  deps += [ ":tls_codec-v0_4_2" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=281803c7cfde17fd",
+    "-Cextra-filename=-281803c7cfde17fd",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"pem\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":x509-cert-v0_3_0.license" ]
 }
 
 license("xattr-v1_6_1.license") {
