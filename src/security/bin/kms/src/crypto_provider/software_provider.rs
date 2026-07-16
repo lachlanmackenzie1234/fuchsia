@@ -6,8 +6,9 @@ use crate::crypto_provider::mundane_provider::MundaneSoftwareProvider;
 use crate::crypto_provider::{
     AsymmetricProviderKey, CryptoProvider, CryptoProviderError, ProviderKey, SealingProviderKey,
 };
-use aes_gcm::aead::AeadInPlace;
-use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce, Tag};
+use aes_gcm::aead::AeadInOut;
+use aes_gcm::aead::inout::InOutBuf;
+use aes_gcm::{Aes256Gcm, KeyInit};
 use fidl_fuchsia_kms::{AsymmetricKeyAlgorithm, KeyProvider};
 use rkyv;
 use serde::{Deserialize, Serialize};
@@ -76,17 +77,20 @@ impl ProviderKey for SoftwareSealingKey {
 
 impl SealingProviderKey for SoftwareSealingKey {
     fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoProviderError> {
-        let key = Key::<Aes256Gcm>::from_slice(&self.inner_key.key);
-        let cipher = Aes256Gcm::new(key);
-        let mut iv = Nonce::default();
+        let cipher = Aes256Gcm::new_from_slice(&self.inner_key.key).unwrap();
+        let mut iv = [0u8; AES_IV_SIZE];
         mundane::bytes::rand(&mut iv);
         let mut cipher_text = data.to_vec();
         // We use empty Additional Authentication Data (AAD).
         let tag = cipher
-            .encrypt_in_place_detached(&iv, &[], &mut cipher_text)
+            .encrypt_inout_detached(
+                (&iv[..]).try_into().unwrap(),
+                &[],
+                InOutBuf::from(&mut cipher_text[..]),
+            )
             .expect("buffer is large enough");
         let output = rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(
-            &EncryptedData { iv: iv.into(), cipher_text, tag: tag.into() },
+            &EncryptedData { iv, cipher_text, tag: tag.into() },
             Vec::new(),
         )
         .map_err(|err| {
@@ -96,8 +100,7 @@ impl SealingProviderKey for SoftwareSealingKey {
     }
 
     fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoProviderError> {
-        let key = Key::<Aes256Gcm>::from_slice(&self.inner_key.key);
-        let cipher = Aes256Gcm::new(key);
+        let cipher = Aes256Gcm::new_from_slice(&self.inner_key.key).unwrap();
         let encrypted_data: EncryptedData =
             rkyv::from_bytes::<EncryptedData, rkyv::rancor::Failure>(data).map_err(|err| {
                 CryptoProviderError::new(&format!(
@@ -105,11 +108,17 @@ impl SealingProviderKey for SoftwareSealingKey {
                     err
                 ))
             })?;
-        let iv = Nonce::from_slice(&encrypted_data.iv);
         let mut plain_text = encrypted_data.cipher_text.to_vec();
-        let tag = Tag::from_slice(&encrypted_data.tag);
         // We use empty Additional Authentication Data (AAD).
-        if cipher.decrypt_in_place_detached(iv, &[], &mut plain_text, tag).is_err() {
+        if cipher
+            .decrypt_inout_detached(
+                (&encrypted_data.iv[..]).try_into().unwrap(),
+                &[],
+                InOutBuf::from(&mut plain_text[..]),
+                (&encrypted_data.tag[..]).try_into().unwrap(),
+            )
+            .is_err()
+        {
             Err(CryptoProviderError::new("failed to decrypt data"))
         } else {
             Ok(plain_text)

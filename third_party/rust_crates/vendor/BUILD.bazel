@@ -43,26 +43,26 @@ alias(
 )
 
 alias(
-    name = "aes-gcm-0.10.3",
-    actual = "//third_party/rust_crates/vendor/aes-gcm-0.10.3:aes_gcm",
+    name = "aes-gcm-0.11.0",
+    actual = "//third_party/rust_crates/vendor/aes-gcm-0.11.0:aes_gcm",
     tags = ["manual"],
 )
 
 alias(
     name = "aes-gcm",
-    actual = "//third_party/rust_crates/vendor/aes-gcm-0.10.3:aes_gcm",
+    actual = "//third_party/rust_crates/vendor/aes-gcm-0.11.0:aes_gcm",
     tags = ["manual"],
 )
 
 alias(
-    name = "aes-gcm-siv-0.11.1",
-    actual = "//third_party/rust_crates/vendor/aes-gcm-siv-0.11.1:aes_gcm_siv",
+    name = "aes-gcm-siv-0.12.0-rc.3",
+    actual = "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.0-rc.3:aes_gcm_siv",
     tags = ["manual"],
 )
 
 alias(
     name = "aes-gcm-siv",
-    actual = "//third_party/rust_crates/vendor/aes-gcm-siv-0.11.1:aes_gcm_siv",
+    actual = "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.0-rc.3:aes_gcm_siv",
     tags = ["manual"],
 )
 

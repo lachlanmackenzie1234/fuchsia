@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use aes_gcm_siv::aead::Aead;
-use aes_gcm_siv::{Aes128GcmSiv, Aes256GcmSiv, Key, KeyInit};
+use aes_gcm_siv::{Aes128GcmSiv, Aes256GcmSiv, KeyInit};
 
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -169,7 +169,7 @@ pub struct Nonce([u8; AES256_GCM_SIV_NONCE_SIZE]);
 
 impl Nonce {
     fn as_crypto_nonce(&self) -> &aes_gcm_siv::Nonce {
-        aes_gcm_siv::Nonce::from_slice(&self.0)
+        (&self.0[..]).try_into().unwrap()
     }
 }
 
@@ -333,7 +333,7 @@ impl KeyBagManager {
 
                 let entry = match wrapping_key {
                     WrappingKey::Aes128(bytes) => {
-                        let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(bytes));
+                        let cipher = Aes128GcmSiv::new_from_slice(bytes).unwrap();
                         let wrapped = cipher
                             .encrypt(nonce.as_crypto_nonce(), &key.0[..])
                             .map_err(|_| Error::Internal)
@@ -341,7 +341,7 @@ impl KeyBagManager {
                         WrappedKey::Aes128GcmSivWrapped(nonce, wrapped)
                     }
                     WrappingKey::Aes256(bytes) => {
-                        let cipher = Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(bytes));
+                        let cipher = Aes256GcmSiv::new_from_slice(bytes).unwrap();
                         let wrapped = cipher
                             .encrypt(nonce.as_crypto_nonce(), &key.0[..])
                             .map_err(|_| Error::Internal)
@@ -380,11 +380,11 @@ impl KeyBagManager {
         // if the wrong key type is specified, to minimize information leakage.
         let decrypt_res = match wrapping_key {
             WrappingKey::Aes128(wrap_bytes) => {
-                let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(wrap_bytes));
+                let cipher = Aes128GcmSiv::new_from_slice(wrap_bytes).unwrap();
                 cipher.decrypt(nonce.as_crypto_nonce(), &bytes[..])
             }
             WrappingKey::Aes256(wrap_bytes) => {
-                let cipher = Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(wrap_bytes));
+                let cipher = Aes256GcmSiv::new_from_slice(wrap_bytes).unwrap();
                 cipher.decrypt(nonce.as_crypto_nonce(), &bytes[..])
             }
         };

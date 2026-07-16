@@ -27,8 +27,8 @@ edition = "2024"
 [dependencies]
 # keep-sorted start
 aes = "0.9.1"
-aes-gcm = "0.10.3"
-aes-gcm-siv = { version = "0.11.1", features = ["std"] }
+aes-gcm = "0.11.0"
+aes-gcm-siv = "0.12.0-rc.3"
 ansi_term = "0.12.0"
 anyhow = "1.0.102"
 arbitrary = { version = "1.4.2", features = ["derive"] }
@@ -520,12 +520,6 @@ require_feature_reviews = [
 [gn.package.adler2."2.0.1"]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.aead."0.5.2"]
-license_files = ["LICENSE-APACHE"]
-
-[gn.package.aes."0.8.4"]
-rustflags = [ "--cfg=aes_armv8" ]
-license_files = ["LICENSE-APACHE"]
 
 [gn.package.aes."0.9.1"]
 license_files = ["LICENSE-APACHE"]

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use aes_gcm_siv::aead::{Aead as _, Payload};
-use aes_gcm_siv::{Aes128GcmSiv, Key, KeyInit as _, Nonce};
+use aes_gcm_siv::{Aes128GcmSiv, KeyInit as _};
 use anyhow::Error;
 use crypt_policy::{KeyConsumer, KeySource, Policy, unseal_sources};
 use fidl::endpoints::{ClientEnd, create_request_stream};
@@ -50,8 +50,8 @@ async fn unwrap_zxcrypt_key(policy: Policy, wrapped_key: &[u8]) -> Result<Vec<u8
 
         let header_size = std::mem::size_of::<ZxcryptHeader>();
 
-        match Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&wrap_key)).decrypt(
-            &Nonce::from_slice(&wrap_iv),
+        match Aes128GcmSiv::new_from_slice(&wrap_key).unwrap().decrypt(
+            (&wrap_iv[..]).try_into().unwrap(),
             Payload { msg: &wrapped_key[header_size..], aad: &wrapped_key[..header_size] },
         ) {
             Ok(unwrapped) => return Ok(unwrapped),
@@ -86,9 +86,10 @@ async fn create_zxcrypt_key(policy: Policy) -> Result<([u8; 16], Vec<u8>, Vec<u8
         hk.expand("wrap key 0".as_bytes(), &mut wrap_key).unwrap();
         hk.expand("wrap iv 0".as_bytes(), &mut wrap_iv).unwrap();
 
-        let wrapped = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&wrap_key))
+        let wrapped = Aes128GcmSiv::new_from_slice(&wrap_key)
+            .unwrap()
             .encrypt(
-                &Nonce::from_slice(&wrap_iv),
+                (&wrap_iv[..]).try_into().unwrap(),
                 Payload { msg: &unwrapped_key, aad: &header.as_bytes() },
             )
             .unwrap();

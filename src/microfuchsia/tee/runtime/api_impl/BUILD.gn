@@ -64,7 +64,6 @@ rustc_library("api_impl") {
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:num-traits",
     "//third_party/rust_crates:p256",
-    "//third_party/rust_crates:rand_core",
     "//third_party/rust_crates:rsa",
     "//third_party/rust_crates:sha1",
     "//third_party/rust_crates:sha2",

@@ -15,12 +15,12 @@ use cbc::{Decryptor as CbcDecryptor, Encryptor as CbcEncryptor};
 use cmac::Cmac;
 use ecb::{Decryptor as EcbDecryptor, Encryptor as EcbEncryptor};
 use hmac::Hmac;
-use rand_core::{CryptoRng, RngCore};
+use rsa::rand_core::{self, CryptoRng, RngCore};
 use rsa::traits::{
     PaddingScheme as RsaPaddingScheme, PublicKeyParts as _, SignatureScheme as RsaSignatureScheme,
 };
 use rsa::{Oaep, Pss, RsaPrivateKey};
-use sha1::digest::{DynDigest as Digest, crypto_common};
+use sha1::digest::DynDigest as Digest;
 use sha1::{Sha1, digest};
 use sha2::{Sha224, Sha256, Sha384, Sha512};
 use tee_internal::{
@@ -70,47 +70,24 @@ pub(crate) struct Rng {}
 
 impl RngCore for Rng {
     fn next_u32(&mut self) -> u32 {
-        let val = 0u32;
-        self.fill_bytes(&mut val.to_le_bytes());
-        val
+        rand_core::impls::next_u32_via_fill(self)
     }
 
     fn next_u64(&mut self) -> u64 {
-        let val = 0u64;
-        self.fill_bytes(&mut val.to_le_bytes());
-        val
+        rand_core::impls::next_u64_via_fill(self)
     }
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
         zx::cprng_draw(dest)
     }
-}
 
-impl CryptoRng for Rng {}
-
-// Add a second implementation for `Rng` to satisfy the mismatched dependency
-// version with crypto_common. This can be removed once crypto_common uses
-// rand_core 0.9+.
-impl crypto_common::rand_core::RngCore for Rng {
-    fn next_u32(&mut self) -> u32 {
-        RngCore::next_u32(self)
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        RngCore::next_u64(self)
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        RngCore::fill_bytes(self, dest)
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), crypto_common::rand_core::Error> {
-        RngCore::fill_bytes(self, dest);
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        self.fill_bytes(dest);
         Ok(())
     }
 }
 
-impl crypto_common::rand_core::CryptoRng for Rng {}
+impl CryptoRng for Rng {}
 
 // A MAC abstraction conveniently shaped for our API glue needs.
 trait Mac {

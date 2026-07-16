@@ -8,7 +8,7 @@
 //! IMPORTANT: This implementation is insecure!
 
 use aes_gcm_siv::aead::Aead as _;
-use aes_gcm_siv::{Aes128GcmSiv, Key, KeyInit as _, Nonce};
+use aes_gcm_siv::{Aes128GcmSiv, KeyInit as _};
 use fidl::endpoints::{ClientEnd, create_request_stream};
 use fidl_fuchsia_security_keymint::{
     AdminMarker, AdminRequest, AdminRequestStream, DeleteError, SealError, SealingKeysMarker,
@@ -80,7 +80,7 @@ impl Inner {
 
         // Cipher should be stable for a given key_info so that we can unseal secrets
         // after an epoch bump (which triggers a blob upgrade but shouldn't break decryption).
-        let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&key_bytes));
+        let cipher = Aes128GcmSiv::new_from_slice(&key_bytes).unwrap();
         let key_blobs = vec![blob_for_key(key_info, epoch)];
         SealingKey { cipher, key_blobs }
     }
@@ -122,7 +122,7 @@ impl Inner {
         }
         let sealed_secret = sealing_key
             .cipher
-            .encrypt(&Nonce::from_slice(&Self::IV), &secret[..])
+            .encrypt((&Self::IV[..]).try_into().unwrap(), &secret[..])
             .map_err(|e| {
                 warn!("Failed to seal secret: {}", e);
                 SealError::FailedSeal
@@ -158,7 +158,7 @@ impl Inner {
         }
         let secret = sealing_key
             .cipher
-            .decrypt(&Nonce::from_slice(&Self::IV), &sealed_secret[..])
+            .decrypt((&Self::IV[..]).try_into().unwrap(), &sealed_secret[..])
             .map_err(|e| {
                 warn!("Failed to unseal secret: {}", e);
                 UnsealError::FailedUnseal

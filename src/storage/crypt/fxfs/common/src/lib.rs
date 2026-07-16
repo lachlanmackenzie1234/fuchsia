@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use aes_gcm_siv::aead::Aead;
-use aes_gcm_siv::{Aes256GcmSiv, Key, KeyInit as _, Nonce};
+use aes_gcm_siv::{Aes256GcmSiv, KeyInit as _, Nonce};
 use async_trait::async_trait;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{
@@ -31,10 +31,7 @@ struct Cipher {
 
 impl Cipher {
     fn new(wrapping_key: [u8; 32]) -> Self {
-        Self {
-            aes_gcm_siv: Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&wrapping_key)),
-            wrapping_key,
-        }
+        Self { aes_gcm_siv: Aes256GcmSiv::new_from_slice(&wrapping_key).unwrap(), wrapping_key }
     }
 
     fn encrypt(&self, nonce: &Nonce, plaintext: &[u8]) -> Result<Vec<u8>, zx::Status> {

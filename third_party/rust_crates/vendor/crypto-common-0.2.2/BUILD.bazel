@@ -52,6 +52,10 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "getrandom",
+        "rand_core",
+    ],
     crate_root = "src/lib.rs",
     edition = "2024",
     rustc_flags = [
@@ -73,6 +77,8 @@ rust_library(
     }),
     version = "0.2.2",
     deps = [
+        "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
         "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array",
+        "//third_party/rust_crates/vendor/rand_core-0.10.1:rand_core",
     ],
 )
