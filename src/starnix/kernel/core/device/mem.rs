@@ -231,7 +231,7 @@ pub fn open_kmsg(
         Syslog::validate_access(current_task, SyslogAccess::DevKmsgRead)?;
     }
     let subscription = if flags.can_read() {
-        Some(Syslog::snapshot_then_subscribe(&current_task)?.into())
+        Some(Syslog::snapshot_then_subscribe(current_task.kernel())?.into())
     } else {
         None
     };
@@ -264,7 +264,7 @@ impl FileOps for DevKmsg {
                     return Ok(0);
                 };
                 let mut guard = subscription.lock();
-                *guard = Syslog::snapshot_then_subscribe(current_task)?;
+                *guard = Syslog::snapshot_then_subscribe(current_task.kernel())?;
                 Ok(0)
             }
             SeekTarget::End(0) => {
@@ -272,7 +272,7 @@ impl FileOps for DevKmsg {
                     return Ok(0);
                 };
                 let mut guard = subscription.lock();
-                *guard = Syslog::subscribe(current_task)?;
+                *guard = Syslog::subscribe(current_task.kernel())?;
                 Ok(0)
             }
             SeekTarget::Data(0) => {

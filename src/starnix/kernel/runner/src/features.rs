@@ -12,7 +12,7 @@ use starnix_consent_sync::init as consent_sync_init;
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
-use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SystemLimits, ThreadLockupDetector};
+use starnix_core::task::{Kernel, KernelFeatures, SystemLimits, ThreadLockupDetector};
 use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
@@ -37,6 +37,7 @@ use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
 use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
 use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_modules_wakeup_test::register_wakeup_test_device;
+use std::sync::Arc;
 
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -507,9 +508,7 @@ pub fn parse_features(
 
 /// Runs all the features that are enabled in `system_task.kernel()`.
 
-pub fn run_container_features(system_task: &CurrentTask, features: &Features) -> Result<(), Error> {
-    let kernel = system_task.kernel();
-
+pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Result<(), Error> {
     if features.framebuffer {
         let framebuffer = Framebuffer::device_init(
             kernel,

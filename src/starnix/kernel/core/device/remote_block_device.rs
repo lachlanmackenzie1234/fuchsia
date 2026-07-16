@@ -369,9 +369,8 @@ fn open_remote_block_device(
     Ok(current_task.kernel().remote_block_device_registry.open(id.minor())?.create_file_ops())
 }
 
-pub fn remote_block_device_init(current_task: &CurrentTask) {
-    current_task
-        .kernel()
+pub fn remote_block_device_init(kernel: &Kernel) {
+    kernel
         .device_registry
         .register_major(
             "remote-block".into(),
@@ -422,7 +421,7 @@ mod tests {
     async fn test_remote_block_device_registry() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(&current_task);
+            remote_block_device_init(kernel);
             let registry = kernel.remote_block_device_registry.clone();
             let server =
                 VmoBackedServer::new(2, 512, &[]).expect("Failed to create VmoBackedServer");
@@ -475,7 +474,7 @@ mod tests {
     async fn test_read_write_past_eof() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(&current_task);
+            remote_block_device_init(kernel);
             let registry = kernel.remote_block_device_registry.clone();
             let server =
                 VmoBackedServer::new(2, 512, &[]).expect("Failed to create VmoBackedServer");
@@ -509,7 +508,7 @@ mod tests {
     async fn test_unaligned_read_write_spanning_blocks() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(&current_task);
+            remote_block_device_init(kernel);
             let registry = kernel.remote_block_device_registry.clone();
             // 3 blocks of 512 bytes = 1536 bytes
             let server =
@@ -561,7 +560,7 @@ mod tests {
     async fn test_exact_eof_boundary() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(&current_task);
+            remote_block_device_init(kernel);
             let registry = kernel.remote_block_device_registry.clone();
             // 2 blocks of 512 bytes = 1024 bytes
             let server =
@@ -607,7 +606,7 @@ mod tests {
     async fn test_rmw_preserves_data() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            remote_block_device_init(&current_task);
+            remote_block_device_init(kernel);
             let registry = kernel.remote_block_device_registry.clone();
             // 3 blocks of 512 bytes = 1536 bytes
             // Initialize with a known pattern (0xFF)

@@ -748,7 +748,7 @@ async fn create_container(
     kernel.kthreads.init(system_task).source_context("initializing kthreads")?;
     let system_task = kernel.kthreads.system_task();
 
-    kernel.syslog.init(&system_task).source_context("initializing syslog")?;
+    kernel.syslog.init(&kernel).source_context("initializing syslog")?;
 
     kernel.hrtimer_manager.init(system_task).source_context("initializing HrTimer manager")?;
 
@@ -775,11 +775,11 @@ async fn create_container(
     // Run all common features that were specified in the .cml.
     {
         log_info!("Running container features.");
-        run_container_features(&system_task, &features)?;
+        run_container_features(&kernel, &features)?;
     }
 
     log_info!("Initializing remote block devices.");
-    init_remote_block_devices(&system_task).source_context("initalizing remote block devices")?;
+    init_remote_block_devices(&kernel).source_context("initalizing remote block devices")?;
 
     // If there is an init binary path, run it, optionally waiting for the
     // startup_file_path to be created. The task struct is still used
@@ -977,8 +977,8 @@ fn mount_filesystems(
     Ok(())
 }
 
-fn init_remote_block_devices(system_task: &CurrentTask) -> Result<(), Error> {
-    remote_block_device_init(system_task);
+fn init_remote_block_devices(kernel: &Kernel) -> Result<(), Error> {
+    remote_block_device_init(kernel);
     let entries = match std::fs::read_dir("/block") {
         Ok(entries) => entries,
         Err(e) => {
@@ -1003,10 +1003,9 @@ fn init_remote_block_devices(system_task: &CurrentTask) -> Result<(), Error> {
         }
         let name = entry.file_name();
         let name_str = name.to_str().unwrap();
-        system_task
-            .kernel()
+        kernel
             .remote_block_device_registry
-            .create_remote_block_device(system_task.kernel(), &name_str, client_end)
+            .create_remote_block_device(kernel, &name_str, client_end)
             .with_source_context(|| format!("creating remote block device: {name_str}"))?;
     }
     Ok(())

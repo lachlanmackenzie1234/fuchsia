@@ -5,7 +5,8 @@
 use crate::security;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{
-    CurrentTask, EventHandler, ThreadLockupDetector, WaitCallback, WaitCanceler, WaitQueue, Waiter,
+    CurrentTask, EventHandler, Kernel, ThreadLockupDetector, WaitCallback, WaitCanceler, WaitQueue,
+    Waiter,
 };
 use crate::vfs::OutputBuffer;
 use diagnostics_data::{Data, Logs, LogsData, Severity};
@@ -46,9 +47,9 @@ pub enum SyslogAccess {
 }
 
 impl Syslog {
-    pub fn init(&self, system_task: &CurrentTask) -> Result<(), anyhow::Error> {
+    pub fn init(&self, kernel: &Kernel) -> Result<(), anyhow::Error> {
         let state = self.state.clone();
-        system_task.kernel.inspect_node.record_lazy_child("syslog", move || {
+        kernel.inspect_node.record_lazy_child("syslog", move || {
             let state = state.clone();
             async move {
                 let inspector = Inspector::default();
@@ -62,7 +63,7 @@ impl Syslog {
             .boxed()
         });
 
-        let subscription = LogSubscription::snapshot_then_subscribe(system_task)?;
+        let subscription = LogSubscription::snapshot_then_subscribe(kernel)?;
         self.syscall_subscription.set(subscription.into()).expect("syslog inititialized once");
         Ok(())
     }
@@ -104,12 +105,12 @@ impl Syslog {
         Ok(())
     }
 
-    pub fn snapshot_then_subscribe(current_task: &CurrentTask) -> Result<LogSubscription, Errno> {
-        LogSubscription::snapshot_then_subscribe(current_task)
+    pub fn snapshot_then_subscribe(kernel: &Kernel) -> Result<LogSubscription, Errno> {
+        LogSubscription::snapshot_then_subscribe(kernel)
     }
 
-    pub fn subscribe(current_task: &CurrentTask) -> Result<LogSubscription, Errno> {
-        LogSubscription::subscribe(current_task)
+    pub fn subscribe(kernel: &Kernel) -> Result<LogSubscription, Errno> {
+        LogSubscription::subscribe(kernel)
     }
 
     fn subscription(
@@ -170,12 +171,8 @@ impl GrantedSyslog<'_> {
         }
     }
 
-    pub fn read_all(
-        &self,
-        current_task: &CurrentTask,
-        out: &mut dyn OutputBuffer,
-    ) -> Result<i32, Errno> {
-        let mut subscription = LogSubscription::snapshot(current_task)?;
+    pub fn read_all(&self, kernel: &Kernel, out: &mut dyn OutputBuffer) -> Result<i32, Errno> {
+        let mut subscription = LogSubscription::snapshot(kernel)?;
         let mut buffer = ResultBuffer::new(out.available());
         while let Some(log_result) = subscription.next() {
             buffer.push(log_result?);
@@ -231,23 +228,20 @@ impl LogSubscription {
         }
     }
 
-    fn snapshot(current_task: &CurrentTask) -> Result<LogIterator, Errno> {
-        LogIterator::new(&current_task.kernel.syslog, fdiagnostics::StreamMode::Snapshot)
+    fn snapshot(kernel: &Kernel) -> Result<LogIterator, Errno> {
+        LogIterator::new(&kernel.syslog, fdiagnostics::StreamMode::Snapshot)
     }
 
-    fn subscribe(current_task: &CurrentTask) -> Result<Self, Errno> {
-        Self::new_listening(current_task, fdiagnostics::StreamMode::Subscribe)
+    fn subscribe(kernel: &Kernel) -> Result<Self, Errno> {
+        Self::new_listening(kernel, fdiagnostics::StreamMode::Subscribe)
     }
 
-    fn snapshot_then_subscribe(current_task: &CurrentTask) -> Result<Self, Errno> {
-        Self::new_listening(current_task, fdiagnostics::StreamMode::SnapshotThenSubscribe)
+    fn snapshot_then_subscribe(kernel: &Kernel) -> Result<Self, Errno> {
+        Self::new_listening(kernel, fdiagnostics::StreamMode::SnapshotThenSubscribe)
     }
 
-    fn new_listening(
-        current_task: &CurrentTask,
-        mode: fdiagnostics::StreamMode,
-    ) -> Result<Self, Errno> {
-        let iterator = LogIterator::new(&current_task.kernel.syslog, mode)?;
+    fn new_listening(kernel: &Kernel, mode: fdiagnostics::StreamMode) -> Result<Self, Errno> {
+        let iterator = LogIterator::new(&kernel.syslog, mode)?;
         let (snd, receiver) = mpsc::sync_channel(1);
         let waiters = Arc::new(WaitQueue::default());
         let waiters_clone = waiters.clone();
@@ -270,7 +264,7 @@ impl LogSubscription {
             .with_debug_name("syslog-listener")
             .with_sync_closure(closure)
             .build();
-        current_task.kernel().kthreads.spawner().spawn_from_request(req);
+        kernel.kthreads.spawner().spawn_from_request(req);
 
         Ok(Self { receiver, waiters, pending: Default::default() })
     }
