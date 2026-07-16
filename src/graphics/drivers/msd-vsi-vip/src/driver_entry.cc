@@ -34,8 +34,7 @@ constexpr char kDriverName[] = "vsi-vip";
 
 class NpuDevice : public msd::MagmaDriverBase {
  public:
-  // TODO(425948010) - disable this once clients switch to the Trusted service
-  constexpr static bool kServeUntrustedService = true;
+  constexpr static bool kServeUntrustedService = false;
   explicit NpuDevice() : msd::MagmaDriverBase(kDriverName, kServeUntrustedService) {}
 
   zx::result<> MagmaStart(fdf::DriverContext& context) override;
