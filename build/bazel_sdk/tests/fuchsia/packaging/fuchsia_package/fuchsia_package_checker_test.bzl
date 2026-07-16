@@ -87,9 +87,16 @@ def _verify_package_resources(package_info, attr):
             # perform similar validation.
             print("Skipping resource validation for `expected_generated_blobs` test.")
         else:
-            fail("Unexpected number of resources in package: {} instead of {}".format(
+            expected_keys = attr.expected_blobs_to_file_names.keys() + expected_meta_resource_dests
+            missing = [k for k in expected_keys if k not in dest_to_resource]
+            extra = [k for k in dest_to_resource if k not in expected_keys]
+            fail("Unexpected resources in package: {} instead of {}\nMissing: {}\nExtra: {}\nExpected Resources: {}\nActual Resources: {}".format(
                 num_package_resources,
                 num_expected_resources,
+                missing,
+                extra,
+                expected_keys,
+                dest_to_resource.keys(),
             ))
 
     for (dest, name) in attr.expected_blobs_to_file_names.items():
