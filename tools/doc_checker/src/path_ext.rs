@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use std::ffi::OsStr;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 /// Extension methods for `std::path::Path` specific to Fuchsia
 /// documentation checking.
@@ -29,10 +29,8 @@ pub trait DocPathExt {
 
 impl DocPathExt for Path {
     fn is_ignored_doc(&self) -> bool {
-        self.components().any(|c| match c {
-            Component::Normal(name) => name == OsStr::new("skills"),
-            _ => false,
-        })
+        self.components()
+            .any(|c| matches!(c, Component::Normal(name) if name == OsStr::new("skills")))
     }
 
     fn is_navbar_doc(&self) -> bool {
@@ -46,12 +44,51 @@ impl DocPathExt for Path {
     fn is_hidden_doc(&self, root_dir: &Path, reference_docs_root: Option<&Path>) -> bool {
         let rel_p = self
             .strip_prefix(root_dir)
-            .or_else(|_| reference_docs_root.map(|r| self.strip_prefix(r)).unwrap_or(Ok(self)))
-            .unwrap_or(self);
-        rel_p.components().any(|c| match c {
-            Component::Normal(s) => s.to_str().unwrap_or_default().starts_with('_'),
-            _ => false,
+            .ok()
+            .or_else(|| reference_docs_root.and_then(|r| self.strip_prefix(r).ok()));
+
+        rel_p.map_or(false, |p| {
+            p.components().any(|c| {
+                matches!(c, Component::Normal(s) if s.to_str().unwrap_or_default().starts_with('_'))
+            })
         })
+    }
+}
+
+/// Standard path normalization that resolves '.' and '..' components without accessing the filesystem.
+/// Returns `Err` if the path escapes the root (i.e. starts with '..').
+#[allow(dead_code)]
+pub fn normalize_path(path: &Path) -> anyhow::Result<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(p) => normalized.push(p.as_os_str()),
+            Component::RootDir => normalized.push("/"),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    anyhow::bail!(
+                        "Cannot normalize {}, references parent beyond root.",
+                        path.display()
+                    );
+                }
+            }
+            Component::Normal(p) => normalized.push(p),
+        }
+    }
+    Ok(normalized)
+}
+
+/// Normalizes the path and verifies it remains within the specified `root_dir`.
+/// If the normalized path is outside `root_dir`, returns an error.
+#[allow(dead_code)]
+pub fn normalize_and_validate_path(path: &Path, root_dir: &Path) -> anyhow::Result<PathBuf> {
+    let normalized = normalize_path(&root_dir.join(path))?;
+    let normalized_root = normalize_path(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
+    if normalized.starts_with(&normalized_root) {
+        Ok(normalized)
+    } else {
+        anyhow::bail!("Included markdown file {:?} escapes workspace root.", path)
     }
 }
 
@@ -60,7 +97,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    #[test]
+    #[fuchsia::test]
     fn test_is_ignored_doc() {
         assert!(Path::new("docs/skills/SKILL.md").is_ignored_doc());
         assert!(Path::new("vendor/google/skills/yaml/config.yaml").is_ignored_doc());
@@ -68,21 +105,21 @@ mod tests {
         assert!(!Path::new("docs/_toc.yaml").is_ignored_doc());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_is_navbar_doc() {
         assert!(Path::new("docs/navbar.md").is_navbar_doc());
         assert!(Path::new("navbar.md").is_navbar_doc());
         assert!(!Path::new("docs/README.md").is_navbar_doc());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_is_macos_hidden_doc() {
         assert!(Path::new("docs/._README.md").is_macos_hidden_doc());
         assert!(Path::new("._index.md").is_macos_hidden_doc());
         assert!(!Path::new("docs/README.md").is_macos_hidden_doc());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_is_hidden_doc() {
         let root_dir = PathBuf::from("/home/user/fuchsia");
         let ref_dir = PathBuf::from("/home/user/reference_docs");
@@ -108,7 +145,7 @@ mod tests {
         assert!(p5.is_hidden_doc(&root_dir, Some(&ref_dir)));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_is_hidden_doc_with_underscore_in_workspace_roots() {
         // Scenario where workspace path contains underscore (e.g., /home/user/_workspace)
         let root_dir = PathBuf::from("/home/user/_workspace/fuchsia");
@@ -127,5 +164,37 @@ mod tests {
 
         let p4 = PathBuf::from("/home/user/_workspace/reference/_internal/helper.md");
         assert!(p4.is_hidden_doc(&root_dir, Some(&ref_dir)));
+    }
+
+    #[fuchsia::test]
+    fn test_normalize_path() {
+        assert_eq!(normalize_path(Path::new("a/b/../c")).unwrap(), PathBuf::from("a/c"));
+        assert_eq!(normalize_path(Path::new("./a/b/.")).unwrap(), PathBuf::from("a/b"));
+        assert_eq!(normalize_path(Path::new("/a/b/c")).unwrap(), PathBuf::from("/a/b/c"));
+        assert!(normalize_path(Path::new("a/../../b")).is_err());
+    }
+
+    #[fuchsia::test]
+    fn test_normalize_and_validate_path() {
+        let root_dir = PathBuf::from("/home/user/fuchsia");
+
+        // Valid relative path
+        assert_eq!(
+            normalize_and_validate_path(Path::new("docs/getting-started.md"), &root_dir).unwrap(),
+            PathBuf::from("/home/user/fuchsia/docs/getting-started.md")
+        );
+
+        // Valid absolute path
+        assert_eq!(
+            normalize_and_validate_path(
+                Path::new("/home/user/fuchsia/docs/getting-started.md"),
+                &root_dir
+            )
+            .unwrap(),
+            PathBuf::from("/home/user/fuchsia/docs/getting-started.md")
+        );
+
+        // Escaping root path
+        assert!(normalize_and_validate_path(Path::new("../external/file.md"), &root_dir).is_err());
     }
 }
