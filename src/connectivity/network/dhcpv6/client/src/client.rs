@@ -220,7 +220,6 @@ const IA_PD_IAID: v6::IAID = v6::IAID::new(0);
 /// Creates a state machine for the input client config.
 fn create_state_machine(
     duid: Option<dhcpv6_core::ClientDuid>,
-    transaction_id: [u8; 3],
     ClientConfig {
         information_config,
         non_temporary_address_config,
@@ -282,7 +281,6 @@ fn create_state_machine(
                 Err(ClientError::UnsupportedConfigs)
             } else {
                 Ok(dhcpv6_core::client::ClientStateMachine::start_stateless(
-                    transaction_id,
                     information_option_codes,
                     StdRng::from_os_rng(),
                     now,
@@ -294,7 +292,6 @@ fn create_state_machine(
             _configure_non_temporary_addresses,
             configured_delegated_prefixes,
         ) => Ok(dhcpv6_core::client::ClientStateMachine::start_stateful(
-            transaction_id,
             if let Some(duid) = duid {
                 duid
             } else {
@@ -325,18 +322,15 @@ fn subnet_to_address_with_prefix(prefix: Subnet<Ipv6Addr>) -> fnet::Ipv6AddressW
 
 impl<S: for<'a> AsyncSocket<'a>> Client<S> {
     /// Starts the client in `config`.
-    ///
-    /// Input `transaction_id` is used to label outgoing messages and match incoming ones.
     pub(crate) async fn start(
         duid: Option<dhcpv6_core::ClientDuid>,
-        transaction_id: [u8; 3],
         config: ClientConfig,
         interface_id: fnet::InterfaceId,
         socket_fn: impl FnOnce() -> std::io::Result<S>,
         server_addr: SocketAddr,
         request_stream: ClientRequestStream,
     ) -> Result<Self, ClientError> {
-        let (state_machine, actions) = create_state_machine(duid, transaction_id, config)?;
+        let (state_machine, actions) = create_state_machine(duid, config)?;
         let mut client = Self {
             state_machine,
             interface_id,
@@ -822,7 +816,6 @@ pub(crate) async fn serve_client(
     let (request_stream, control_handle) = request.into_stream_and_control_handle();
     let mut client = match Client::<fasync::net::UdpSocket>::start(
         duid,
-        dhcpv6_core::client::transaction_id(),
         config,
         interface_id,
         || create_socket(addr, interface_id),
@@ -971,7 +964,6 @@ mod tests {
             assert_matches!(
                 create_state_machine(
                     prefix_delegation_config.is_some().then(|| CLIENT_ID.into()),
-                    [1, 2, 3],
                     ClientConfig {
                         information_config: Default::default(),
                         non_temporary_address_config: Default::default(),
@@ -1184,7 +1176,6 @@ mod tests {
                     );
                     let _: Client<fasync::net::UdpSocket> = Client::start(
                         stateful.then(|| CLIENT_ID.into()),
-                        [1, 2, 3], /* transaction ID */
                         ClientConfig {
                             information_config: information_config.clone(),
                             non_temporary_address_config: non_temporary_address_config.clone(),
@@ -1308,7 +1299,6 @@ mod tests {
     #[fuchsia::test]
     fn test_client_should_respond_to_dns_watch_requests() {
         let mut exec = fasync::TestExecutor::new();
-        let transaction_id = [1, 2, 3];
 
         let (client_proxy, client_stream) = create_proxy_and_stream::<ClientMarker>();
 
@@ -1317,7 +1307,6 @@ mod tests {
         let mut client = exec
             .run_singlethreaded(Client::<fasync::net::UdpSocket>::start(
                 None,
-                transaction_id,
                 STATELESS_CLIENT_CONFIG,
                 1, /* interface ID */
                 || Ok(client_socket),
@@ -1325,6 +1314,13 @@ mod tests {
                 client_stream,
             ))
             .expect("failed to create test client");
+
+        let ReceivedMessage { transaction_id: initial_transaction_id, client_id: _ } = exec
+            .run_singlethreaded(assert_received_message(
+                &server_socket,
+                client_addr,
+                v6::MessageType::InformationRequest,
+            ));
 
         type WatchServersResponseFut = <fnet_dhcpv6::ClientProxy as fnet_dhcpv6::ClientProxyInterface>::WatchServersResponseFut;
         type WatchServersResponse = <WatchServersResponseFut as Future>::Output;
@@ -1355,7 +1351,11 @@ mod tests {
                     .expect("request stream closed");
             }
 
-            async fn refresh_client(&mut self) {
+            async fn refresh_client(
+                &mut self,
+                server_socket: &fasync::net::UdpSocket,
+                client_addr: SocketAddr,
+            ) -> [u8; 3] {
                 // Make the client ready for another reply immediately on signal, so it can
                 // start receiving updates without waiting for the full refresh timeout which is
                 // unrealistic in tests.
@@ -1370,6 +1370,13 @@ mod tests {
                         .handle_timeout(dhcpv6_core::client::ClientTimerType::Refresh)
                         .await
                         .expect("test client failed to handle timeout");
+                    let ReceivedMessage { transaction_id, client_id: _ } = assert_received_message(
+                        server_socket,
+                        client_addr,
+                        v6::MessageType::InformationRequest,
+                    )
+                    .await;
+                    transaction_id
                 } else {
                     panic!("no refresh timer is scheduled and refresh is requested in test");
                 }
@@ -1416,7 +1423,7 @@ mod tests {
             exec.run_singlethreaded(send_msg_with_options(
                 &server_socket,
                 client_addr,
-                transaction_id,
+                initial_transaction_id,
                 v6::MessageType::Reply,
                 &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&[])],
             ))
@@ -1430,7 +1437,8 @@ mod tests {
             assert_matches!(exec.run_until_stalled(&mut pin!(test.run())), Poll::Pending);
 
             // Send a list of DNS servers, the watcher should be updated accordingly.
-            exec.run_singlethreaded(test.refresh_client());
+            let transaction_id =
+                exec.run_singlethreaded(test.refresh_client(&server_socket, client_addr));
             let dns_servers = [net_ip_v6!("fe80::1:2")];
             exec.run_singlethreaded(send_msg_with_options(
                 &server_socket,
@@ -1461,7 +1469,8 @@ mod tests {
             );
 
             // Send the same list of DNS servers, should not update watcher.
-            exec.run_singlethreaded(test.refresh_client());
+            let transaction_id =
+                exec.run_singlethreaded(test.refresh_client(&server_socket, client_addr));
             let dns_servers = [net_ip_v6!("fe80::1:2")];
             exec.run_singlethreaded(send_msg_with_options(
                 &server_socket,
@@ -1480,7 +1489,8 @@ mod tests {
             assert_matches!(exec.run_until_stalled(&mut pin!(test.run())), Poll::Pending);
 
             // Send a different list of DNS servers, should update watcher.
-            exec.run_singlethreaded(test.refresh_client());
+            let transaction_id =
+                exec.run_singlethreaded(test.refresh_client(&server_socket, client_addr));
             let dns_servers = [net_ip_v6!("fe80::1:2"), net_ip_v6!("1234::5:6")];
             exec.run_singlethreaded(send_msg_with_options(
                 &server_socket,
@@ -1513,7 +1523,8 @@ mod tests {
             // last time.
             let mut test = Test::new(&mut client, &client_proxy);
 
-            exec.run_singlethreaded(test.refresh_client());
+            let transaction_id =
+                exec.run_singlethreaded(test.refresh_client(&server_socket, client_addr));
             exec.run_singlethreaded(send_msg_with_options(
                 &server_socket,
                 client_addr,
@@ -1529,15 +1540,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_client_should_respond_with_dns_servers_on_first_watch_if_non_empty() {
-        let transaction_id = [1, 2, 3];
-
         let (client_proxy, client_stream) = create_proxy_and_stream::<ClientMarker>();
 
         let (client_socket, client_addr) = create_test_socket();
         let (server_socket, server_addr) = create_test_socket();
         let client = Client::<fasync::net::UdpSocket>::start(
             None,
-            transaction_id,
             STATELESS_CLIENT_CONFIG,
             1, /* interface ID */
             || Ok(client_socket),
@@ -1547,11 +1555,18 @@ mod tests {
         .await
         .expect("failed to create test client");
 
+        let ReceivedMessage { transaction_id: initial_txid, client_id: _ } = assert_received_message(
+            &server_socket,
+            client_addr,
+            v6::MessageType::InformationRequest,
+        )
+        .await;
+
         let dns_servers = [net_ip_v6!("fe80::1:2"), net_ip_v6!("1234::5:6")];
         send_msg_with_options(
             &server_socket,
             client_addr,
-            transaction_id,
+            initial_txid,
             v6::MessageType::Reply,
             &[v6::DhcpOption::ServerId(&[4, 5, 6]), v6::DhcpOption::DnsServers(&dns_servers)],
         )
@@ -1606,7 +1621,6 @@ mod tests {
         let (server_socket, server_addr) = create_test_socket();
         let mut client = Client::<fasync::net::UdpSocket>::start(
             Some(CLIENT_ID.into()),
-            [1, 2, 3],
             ClientConfig {
                 information_config: Default::default(),
                 non_temporary_address_config: Default::default(),
@@ -1858,7 +1872,6 @@ mod tests {
         let (_server_socket, server_addr) = create_test_socket();
         let mut client = Client::<fasync::net::UdpSocket>::start(
             None,
-            [1, 2, 3], /* transaction ID */
             STATELESS_CLIENT_CONFIG,
             1, /* interface ID */
             || Ok(client_socket),
@@ -1920,7 +1933,6 @@ mod tests {
         let (server_socket, server_addr) = create_test_socket();
         let mut client = Client::<fasync::net::UdpSocket>::start(
             None,
-            [1, 2, 3], /* transaction ID */
             STATELESS_CLIENT_CONFIG,
             1, /* interface ID */
             || Ok(client_socket),
@@ -1931,7 +1943,7 @@ mod tests {
         .expect("failed to create test client");
 
         // Starting the client in stateless should send an information request out.
-        let ReceivedMessage { client_id, transaction_id: _ } = assert_received_message(
+        let ReceivedMessage { client_id, transaction_id: initial_txid } = assert_received_message(
             &server_socket,
             client_addr,
             v6::MessageType::InformationRequest,
@@ -1970,7 +1982,7 @@ mod tests {
         send_msg_with_options(
             &server_socket,
             client_addr,
-            [1, 2, 3],
+            initial_txid,
             v6::MessageType::Reply,
             &[v6::DhcpOption::ServerId(&[4, 5, 6])],
         )
@@ -2043,7 +2055,6 @@ mod tests {
         let (server_socket, server_addr) = create_test_socket();
         let mut client = Client::<fasync::net::UdpSocket>::start(
             Some(CLIENT_ID.into()),
-            [1, 2, 3], /* transaction ID */
             ClientConfig {
                 information_config: Default::default(),
                 non_temporary_address_config: AddressConfig {
@@ -2080,7 +2091,6 @@ mod tests {
         let (server_socket, server_addr) = create_test_socket();
         let mut client = Client::<fasync::net::UdpSocket>::start(
             None,
-            [1, 2, 3], /* transaction ID */
             STATELESS_CLIENT_CONFIG,
             1, /* interface ID */
             || Ok(client_socket),
@@ -2147,7 +2157,6 @@ mod tests {
 
         let mut client = Client::<StubSocket>::start(
             None,
-            [1, 2, 3], /* transaction ID */
             STATELESS_CLIENT_CONFIG,
             1, /* interface ID */
             || Ok(StubSocket {}),
