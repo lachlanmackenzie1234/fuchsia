@@ -19,6 +19,7 @@
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/event.h>
+#include <lib/zx/thread.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -486,17 +487,33 @@ zx::result<> Sysmem::Initialize(const CreateArgs& create_args) {
     }
     auto role_manager = fidl::SyncClient(std::move(*role_manager_result));
     ZX_DEBUG_ASSERT(role_manager.is_valid());
-    zx::thread dup_self;
-    zx_status_t dup_status = zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_self);
-    ZX_ASSERT(dup_status == ZX_OK);
-    fuchsia_scheduler::RoleManagerSetRoleRequest set_role_request;
-    set_role_request.target() = fuchsia_scheduler::RoleTarget::WithThread(std::move(dup_self));
-    set_role_request.role().emplace().role() = "fuchsia.sysmem";
-    auto set_role_result = role_manager->SetRole(std::move(set_role_request));
-    if (!set_role_result.is_ok()) {
-      LOG(ERROR, "role_manager->SetRole() failed: %s",
-          set_role_result.error_value().FormatDescription().c_str());
-      return zx::error(ZX_ERR_INTERNAL);
+    auto set_thread_role = [&role_manager](const char* role_name,
+                                           const zx::unowned_thread& thr) -> zx::result<> {
+      zx::thread thr_dup;
+      zx_status_t dup_status = thr->duplicate(ZX_RIGHT_SAME_RIGHTS, &thr_dup);
+      if (dup_status != ZX_OK) {
+        LOG(ERROR, "failed to duplicate thread handle for %s: %s", role_name,
+            zx_status_get_string(dup_status));
+        return zx::error(dup_status);
+      }
+      fuchsia_scheduler::RoleManagerSetRoleRequest set_role_request;
+      set_role_request.target() = fuchsia_scheduler::RoleTarget::WithThread(std::move(thr_dup));
+      set_role_request.role().emplace().role() = role_name;
+      auto set_role_result = role_manager->SetRole(std::move(set_role_request));
+      if (!set_role_result.is_ok()) {
+        LOG(ERROR, "role_manager->SetRole() failed for thread %s: %s", role_name,
+            set_role_result.error_value().FormatDescription().c_str());
+        return zx::error(ZX_ERR_INTERNAL);
+      }
+      return zx::ok();
+    };
+    if (auto status = set_thread_role("fuchsia.sysmem", zx::thread::self()); status.is_error()) {
+      return status.take_error();
+    }
+    if (auto status = set_thread_role("fuchsia.sysmem.loop",
+                                      zx::unowned_thread(thrd_get_zx_handle(loop_thrd_)));
+        status.is_error()) {
+      return status.take_error();
     }
   }
 

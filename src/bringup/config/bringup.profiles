@@ -9,6 +9,7 @@
     "fuchsia.tee.default": { "priority": 16 },
     // some sysmem clients have deadline_params, but some don't; avoid boosting to deadline profile
     "fuchsia.sysmem": { "priority": 28 },
+    "fuchsia.sysmem.loop": { "priority": 28 },
 
     // Fuchsia driver profiles.
     "fuchsia.devices.block.drivers.ftl.device": { "capacity": "400us", "period": "2ms" },
