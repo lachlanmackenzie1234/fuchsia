@@ -21,13 +21,15 @@ use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::{error, info};
 use std::sync::Arc;
 
+const PHY_PATH: &str = "/dev/class/wlanphy";
+
 fn serve_phys(
     phys: Arc<device::PhyMap>,
     inspect_tree: Arc<inspect::WlanMonitorTree>,
     phy_event_sender: mpsc::Sender<(u16, device::PhyEvent)>,
 ) -> BoxFuture<'static, Result<std::convert::Infallible, Error>> {
     info!("Serving real device environment");
-    let fut = device::serve_phys(phys, inspect_tree, phy_event_sender);
+    let fut = device::serve_phys(phys, inspect_tree, PHY_PATH, phy_event_sender);
     Box::pin(fut)
 }
 
