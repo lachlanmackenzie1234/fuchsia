@@ -289,20 +289,8 @@ impl InputController {
     }
 
     async fn handle_camera_event(&mut self, is_muted: bool) -> Result<Option<()>, InputError> {
-        let old_state = self
-            .get_stored_info()
-            .await
-            .input_device_state
-            .get_source_state(
-                InputDeviceType::CAMERA,
-                DEFAULT_CAMERA_NAME.to_string(),
-                DeviceStateSource::SOFTWARE,
-            )
-            .map_err(|e| {
-                InputError::UnexpectedError(
-                    format!("Could not find camera software state: {e:?}").into(),
-                )
-            })?;
+        let stored_info = self.get_stored_info().await;
+        let old_state = Self::get_cam_sw_state_from(&stored_info.input_device_state)?;
         if old_state.has_state(DeviceState::MUTED) != is_muted {
             check_publish(
                 self.set_sw_camera_mute(is_muted, DEFAULT_CAMERA_NAME.to_string()).await,
@@ -491,20 +479,26 @@ impl InputController {
             ));
         }
 
-        // Commit the new input_devices to storage.
-        for input_device in input_devices {
+        // Update the function-scoped storage cache with the requested changes. This will allow us
+        // to determine if any camera state has changed, necessary for the logic which follows.
+        for input_device in &input_devices {
             input_info.input_device_state.insert_device(input_device.clone(), source);
-            self.input_device_state.insert_device(input_device, source);
         }
 
         // If the device has a camera, it should successfully get the sw state, and
         // push the state if it has changed. If the device does not have a camera,
         // it should be None both here and above, and thus not detect a change.
-        let modified_cam_state = self.get_cam_sw_state().ok();
+        let modified_cam_state = Self::get_cam_sw_state_from(&input_info.input_device_state).ok();
         if cam_state != modified_cam_state
             && let Some(state) = modified_cam_state
         {
             self.push_cam_sw_state(state).await?;
+        }
+
+        // All prerequisites are done, and camera changes are committed to the hardware. We can now
+        // finalize the update by updating our cache, and queue the write to storage.
+        for input_device in input_devices {
+            self.input_device_state.insert_device(input_device, source);
         }
 
         self.store
@@ -515,9 +509,9 @@ impl InputController {
             .map_err(InputError::WriteFailure)
     }
 
-    /// Pulls the current software state of the camera from the device state.
-    fn get_cam_sw_state(&self) -> Result<DeviceState, InputError> {
-        self.input_device_state
+    /// Pulls the software state of the camera from the given `input_state`.
+    fn get_cam_sw_state_from(input_state: &InputState) -> Result<DeviceState, InputError> {
+        input_state
             .get_source_state(
                 InputDeviceType::CAMERA,
                 DEFAULT_CAMERA_NAME.to_string(),
@@ -528,6 +522,11 @@ impl InputController {
                     format!("Could not find camera software state: {e:?}").into(),
                 )
             })
+    }
+
+    /// Pulls the current software state of the camera from the device state.
+    fn get_cam_sw_state(&self) -> Result<DeviceState, InputError> {
+        Self::get_cam_sw_state_from(&self.input_device_state)
     }
 
     /// Set the camera state into an error condition.
@@ -796,5 +795,155 @@ mod tests {
             }
             _ => panic!("Expected MaximumInputDeviceLimitReached, got {res:?}"),
         }
+    }
+
+    async fn handle_camera3_device(
+        mut stream: fidl_fuchsia_camera3::DeviceRequestStream,
+        camera_muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        use futures::StreamExt;
+        use std::sync::atomic::Ordering;
+        while let Some(Ok(req)) = stream.next().await {
+            if let fidl_fuchsia_camera3::DeviceRequest::SetSoftwareMuteState { muted, responder } =
+                req
+            {
+                camera_muted.store(muted, Ordering::Relaxed);
+                let _ = responder.send();
+            }
+        }
+    }
+
+    async fn handle_camera3_device_watcher(
+        mut stream: fidl_fuchsia_camera3::DeviceWatcherRequestStream,
+        camera_muted: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        use futures::StreamExt;
+        while let Some(Ok(req)) = stream.next().await {
+            #[allow(unreachable_patterns)]
+            match req {
+                fidl_fuchsia_camera3::DeviceWatcherRequest::WatchDevices { responder } => {
+                    let _ = responder.send(&[fidl_fuchsia_camera3::WatchDevicesEvent::Added(1)]);
+                }
+                fidl_fuchsia_camera3::DeviceWatcherRequest::ConnectToDevice {
+                    id: _,
+                    request,
+                    control_handle: _,
+                } => {
+                    let camera_muted = camera_muted.clone();
+                    fasync::Task::local(handle_camera3_device(request.into_stream(), camera_muted))
+                        .detach();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    // This tests the bug documented in https://fxbug.dev/521503847. This test validates that
+    // the in-memory cached state of the Settings service doesn't commit changes prior to
+    // updating the hardware state. If that were to happen, the camera hardware could get "stuck"
+    // in its current state, while further updates are rejected due to the internal cache believing
+    // that the update is already applied.
+    async fn test_set_input_states_retry_on_failure() {
+        use fidl::endpoints::DiscoverableProtocolMarker;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+
+        let camera_muted = Arc::new(AtomicBool::new(false));
+        let camera_muted_clone = camera_muted.clone();
+
+        // Mock the camera service, rejecting the first call (count == 1) to simulate a failure.
+        let service_context = Rc::new(ServiceContext::new(Some(Box::new(
+            move |service_name: &str, channel: zx::Channel| {
+                let count = call_count_clone.fetch_add(1, Ordering::Relaxed);
+                let camera_muted_clone = camera_muted_clone.clone();
+                let service_name = service_name.to_string();
+                Box::pin(async move {
+                    if count == 1 {
+                        return Err(anyhow::Error::msg("injected failure"));
+                    }
+                    if service_name != fidl_fuchsia_camera3::DeviceWatcherMarker::PROTOCOL_NAME {
+                        return Err(anyhow::Error::msg("unsupported service"));
+                    }
+                    let stream = fidl::endpoints::ServerEnd::<
+                        fidl_fuchsia_camera3::DeviceWatcherMarker,
+                    >::new(channel)
+                    .into_stream();
+                    fasync::Task::local(handle_camera3_device_watcher(stream, camera_muted_clone))
+                        .detach();
+                    Ok(())
+                })
+            },
+        ))));
+
+        // Initialize the mocked "persistent" storage.
+        let storage_factory = InMemoryStorageFactory::new();
+        storage_factory
+            .initialize::<InputController>()
+            .await
+            .expect("controller should have impls");
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+
+        let mut controller = InputController::create_with_config::<InMemoryStorageFactory>(
+            service_context,
+            InputConfiguration {
+                devices: vec![InputDeviceConfiguration {
+                    device_name: DEFAULT_CAMERA_NAME.to_string(),
+                    device_type: InputDeviceType::CAMERA,
+                    source_states: vec![SourceState {
+                        source: DeviceStateSource::SOFTWARE,
+                        state: 0, // AVAILABLE
+                    }],
+                    mutable_toggle_state: 0,
+                }],
+            },
+            &storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await;
+
+        let _ = controller.restore().await;
+
+        // Verify initial state is AVAILABLE (not muted).
+        let camera_state = controller
+            .input_device_state
+            .get_state(InputDeviceType::CAMERA, DEFAULT_CAMERA_NAME.to_string())
+            .unwrap();
+        assert!(!camera_state.has_state(DeviceState::MUTED));
+
+        // Create a request to MUTE the camera. The hardware API call will fail on this request,
+        // due to the previously configured mock camera service.
+        let mute_device = InputDevice {
+            name: DEFAULT_CAMERA_NAME.to_string(),
+            device_type: InputDeviceType::CAMERA,
+            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
+            state: DeviceState::MUTED,
+        };
+
+        let res = controller
+            .set_input_states(vec![mute_device.clone()], DeviceStateSource::SOFTWARE)
+            .await;
+        assert!(res.is_err());
+        assert_eq!(call_count.load(Ordering::Relaxed), 2);
+        assert!(!camera_muted.load(Ordering::Relaxed));
+
+        // Attempt to mute again. If the bug this test tracks is present, this will skip
+        // push_cam_sw_state and return Ok, because the service thinks the state is already MUTED
+        // due to the in-memory state being updated despite the hardware update failing.
+        let res2 =
+            controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+
+        // If the bug is fixed, we expect that the camera service will have been called again, the
+        // result was okay and the mute state was properly updated.
+        assert_eq!(call_count.load(Ordering::Relaxed), 3);
+        assert!(res2.is_ok());
+        assert!(camera_muted.load(Ordering::Relaxed));
     }
 }

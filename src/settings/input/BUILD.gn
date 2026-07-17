@@ -41,7 +41,10 @@ rustc_library("settings_input") {
   ]
 
   test_deps = [
+    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_rust",
+    "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/settings/camera_watcher_agent:settings_camera_watcher_agent",
