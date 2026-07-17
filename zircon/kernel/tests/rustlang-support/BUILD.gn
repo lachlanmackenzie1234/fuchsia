@@ -34,6 +34,7 @@ kernel_rust_mod("test_mod") {
   visibility = [ ":*" ]
   sources = [ "test_submod.rs" ]
   public_deps = [ ":test_dep_pub_mod" ]
+  deps = [ ":test_dep_rename_mod" ]
 }
 
 kernel_rust_mod("test_dep_pub_mod") {
@@ -51,4 +52,12 @@ kernel_rust_mod("test_dep_priv_mod") {
   visibility = [ ":*" ]
   sources = []
   deps = [ "test_macro" ]
+}
+
+kernel_rust_mod("test_dep_rename_mod") {
+  testonly = true
+  visibility = [ ":*" ]
+  output_name = "test_dep_renamed_mod"
+  source_root = "test_dep_was_renamed_mod.rs"
+  sources = [ "test_dep_was_renamed_mod.rs" ]
 }

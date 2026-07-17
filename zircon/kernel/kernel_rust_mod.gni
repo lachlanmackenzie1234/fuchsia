@@ -268,7 +268,7 @@ template("kernel_rust_mod") {
         data_deps += gen_deps
       }
 
-      _mod_path = rebase_path("$gen_dir/$name.rs", root_build_dir)
+      _mod_path = rebase_path("$gen_dir/$output.rs", root_build_dir)
       _mod_use_list = [ "    $output_name," ]
       metadata = {
         # Start the empty lists before forwarding any invoker metadata.
