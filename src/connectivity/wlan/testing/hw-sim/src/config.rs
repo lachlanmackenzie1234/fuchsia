@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_wlan_common as fidl_common;
-use fidl_fuchsia_wlan_device as fidl_device;
+
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use fidl_fuchsia_wlan_tap as wlantap;
@@ -79,8 +79,8 @@ pub(crate) fn create_wlantap_config(
     }
 }
 
-fn create_2_4_ghz_band_info() -> fidl_device::BandInfo {
-    fidl_device::BandInfo {
+fn create_2_4_ghz_band_info() -> wlantap::BandInfo {
+    wlantap::BandInfo {
         band: fidl_ieee80211::WlanBand::TwoGhz,
         ht_caps: Some(Box::new(fidl_ieee80211::HtCapabilities {
             bytes: fake_ht_capabilities().as_bytes().try_into().unwrap(),

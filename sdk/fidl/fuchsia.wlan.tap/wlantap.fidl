@@ -7,10 +7,20 @@ library fuchsia.wlan.tap;
 using fuchsia.wlan.common;
 using fuchsia.wlan.internal;
 using fuchsia.wlan.driver;
-using fuchsia.wlan.device;
 using fuchsia.wlan.softmac;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using zx;
+
+/// IEEE Std 802.11-2016 defines 12 values in dot11SupportedDataRatesRxTable
+const MAX_NUM_RATES uint8 = 12;
+
+type BandInfo = struct {
+    band ieee80211.WlanBand;
+    ht_caps box<ieee80211.HtCapabilities>;
+    vht_caps box<ieee80211.VhtCapabilities>;
+    rates vector<uint8>:MAX_NUM_RATES;
+    operating_channels vector<uint8>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
+};
 
 /// Describes the capabilities of the fake wlantap-phy device to be created.
 type WlantapPhyConfig = struct {
@@ -20,7 +30,7 @@ type WlantapPhyConfig = struct {
     mac_role fuchsia.wlan.common.WlanMacRole;
     supported_phys vector<ieee80211.WlanPhyType>:fuchsia.wlan.common.MAX_SUPPORTED_PHY_TYPES;
     hardware_capability fuchsia.wlan.driver.WlanSoftmacHardwareCapability;
-    bands vector<fuchsia.wlan.device.BandInfo>:8;
+    bands vector<BandInfo>:8;
     name string:32; // Arbitrary maximum size of 32 chosen to satisfy FidlLint
     quiet bool;
     discovery_support fuchsia.wlan.softmac.DiscoverySupport;
