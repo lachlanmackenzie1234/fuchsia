@@ -62,15 +62,12 @@ rustc_bindgen_golden("async_sys_bindgen_golden") {
 
   type_blocklist = [ "zx_.*" ]
 
-  include_dirs = [
-    "//zircon/system/public",
-    "//sdk/lib/async/include",
-  ]
-
   fuchsia_api_level = "HEAD"
 
   notice_year = 2025
   raw_lines = [ "use zx_types::*;" ]
+
+  deps = [ "//sdk/lib/async" ]
 }
 
 fuchsia_unittest_package("sys_tests") {

@@ -101,14 +101,7 @@ rustc_bindgen("fbl-bindings.bindgen") {
   include_dirs = [
     "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/${current_target_tuple}/c++/v1",
     "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/c++/v1",
-    "//sdk/lib/stdcompat/include",
-    "//sdk/lib/zircon-assert",
-    "//zircon/system/public",
-    "//zircon/system/ulib/fbl/include",
   ]
-  if (is_kernel) {
-    include_dirs += [ "//zircon/kernel/lib/libc/include" ]
-  }
 
   additional_clang_flags = [
     "-x",

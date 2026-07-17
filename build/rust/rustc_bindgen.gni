@@ -329,21 +329,32 @@ template("rustc_bindgen") {
         _api_level,
       ]
     }
-    if (defined(invoker.additional_clang_flags)) {
-      foreach(x, invoker.additional_clang_flags) {
-        args += [ "--clang-flag=${x}" ]
-      }
-    }
-    if (defined(sysroot) && sysroot != "") {
-      args +=
-          [ "--clang-flag=--sysroot=" + rebase_path(sysroot, root_build_dir) ]
-    }
     _clang_resource_dir =
         "${rebased_clang_dir}/${clang_target_toolchain_info.resource_dir}"
     args += [
       "--clang-resource-dir",
       _clang_resource_dir,
     ]
+
+    # All flags after "--" go directly to clang.
+    args += [
+      "--",
+
+      "{{defines}}",
+      "{{include_dirs}}",
+      "{{cflags}}",
+    ]
+
+    # TODO(https://fxbug.dev/512840182): {{cflags_c}} vs. {{cflags_cc}} as
+    # well.
+
+    if (defined(sysroot) && sysroot != "") {
+      args += [ "--sysroot=" + rebase_path(sysroot, root_build_dir) ]
+    }
+
+    if (defined(invoker.additional_clang_flags)) {
+      args += invoker.additional_clang_flags
+    }
   }
 }
 

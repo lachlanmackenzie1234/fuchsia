@@ -51,6 +51,10 @@ library_headers("headers") {
     # <lib/counters.h> has #include <lib/special-sections/special-sections.h>.
     "//zircon/kernel/lib/special-sections:headers",
   ]
+
+  if (is_kernel) {
+    public_deps += [ "//zircon/kernel/lib/libc:headers" ]
+  }
 }
 
 group("tests") {
@@ -86,11 +90,7 @@ rustc_bindgen("counters-bindings.bindgen") {
   include_dirs = [
     "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/${current_target_tuple}/c++/v1",
     "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/c++/v1",
-    "//zircon/kernel/lib/counters/include",
   ]
-  if (is_kernel) {
-    include_dirs += [ "//zircon/kernel/lib/libc/include" ]
-  }
 
   additional_clang_flags = [
     "-x",

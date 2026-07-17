@@ -23,6 +23,12 @@ FUCHSIA_NOTICE_HEADER = """// Copyright %s The Fuchsia Authors. All rights reser
 
 
 def post_process_args(args):
+    if args.extra_clang_flags:
+        assert (
+            args.extra_clang_flags[0] == "--"
+        ), "extra_clang_flags should always be passed after --"
+        args.extra_clang_flags.pop(0)
+
     # Process complex structures
     replacements = []
     if args.replacement:
@@ -33,7 +39,7 @@ def post_process_args(args):
                 replacements.append([r[0], r[1]])
             else:
                 raise ValueError(
-                    f"Invalid replacement: {r}. Expected 1 or 2 arguments."
+                    f"Invalid replacement: {r}. Expected 1 or 2 arguments.",
                 )
     args.compiled_replacements = [
         (re.compile(x[0]), x[1]) for x in replacements
@@ -48,12 +54,14 @@ class Bindgen:
         if len(input_files) > 1:
             output_dir = os.path.dirname(os.path.abspath(output_file))
             with tempfile.TemporaryDirectory(
-                dir=output_dir, suffix="_bindgen_tmp"
+                dir=output_dir,
+                suffix="_bindgen_tmp",
             ) as tmpdir:
                 wrapper_file = os.path.join(tmpdir, "wrapper.h")
                 with open(wrapper_file, "w") as f:
-                    for header in input_files:
-                        f.write(f'#include "{header}"\n')
+                    f.writelines(
+                        f'#include "{header}"\n' for header in input_files
+                    )
 
                 abs_wrapper_file = os.path.abspath(wrapper_file)
                 self._run_bindgen_impl(
@@ -169,14 +177,14 @@ class Bindgen:
         for i in self.args.include_dir:
             args += ["-I", i]
 
-        args += self.args.clang_flag
+        args += self.args.extra_clang_flags
 
         subprocess.check_call(
             args,
             env={"RUSTFMT": self.args.rustfmt},
         )
 
-        with open(depfile_path, "r") as f:
+        with open(depfile_path) as f:
             depfile_contents = f.read()
 
         if depfile_out:
@@ -192,7 +200,7 @@ class Bindgen:
                         abs_dep = os.path.abspath(dep)
                     else:
                         abs_dep = os.path.abspath(
-                            os.path.join(INITIAL_CWD, dep)
+                            os.path.join(INITIAL_CWD, dep),
                         )
 
                     if (
@@ -207,7 +215,7 @@ class Bindgen:
 
                 if not target.startswith("/"):
                     abs_target = os.path.abspath(
-                        os.path.join(INITIAL_CWD, target)
+                        os.path.join(INITIAL_CWD, target),
                     )
                     target = os.path.relpath(abs_target, INITIAL_CWD)
                 else:
@@ -256,10 +264,15 @@ def main():
         help="Input C header file",
     )
     parser.add_argument(
-        "--output", required=True, type=os.path.abspath, help="Output Rust file"
+        "--output",
+        required=True,
+        type=os.path.abspath,
+        help="Output Rust file",
     )
     parser.add_argument(
-        "--depfile", type=os.path.abspath, help="Output depfile path"
+        "--depfile",
+        type=os.path.abspath,
+        help="Output depfile path",
     )
     parser.add_argument(
         "--bindgen",
@@ -404,11 +417,12 @@ def main():
         default="",
         help="Clang: Define __Fuchsia_API_level__.",
     )
+
     parser.add_argument(
-        "--clang-flag",
-        action="append",
+        "extra_clang_flags",
+        nargs=argparse.REMAINDER,
         default=[],
-        help="Clang: Additional command line flags to pass to clang.",
+        help="Additional arguments forwarded to clang (must begin with --)",
     )
 
     args = parser.parse_args()

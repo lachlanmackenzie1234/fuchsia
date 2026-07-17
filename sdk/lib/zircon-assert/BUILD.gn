@@ -48,6 +48,8 @@ if (is_fuchsia) {
   # by the C library, an empty group is adequate.
   # LINT.IfChange
   group("zircon-assert") {
+    public_deps = [ ":headers" ]
+
     metadata = {
       # Used by //build/ninja_implicit_inputs:manifest. This is a special
       # way to tell that both headers belong to the current target.
@@ -121,8 +123,10 @@ source_set("headers") {
   # for other ones.
   public = []
 
-  # <zircon/assert.h> includes <zircon/compiler.h>
-  public_deps = [ "//zircon/system/public" ]
+  if (!is_fuchsia) {
+    # <zircon/assert.h> includes <zircon/compiler.h>
+    public_deps = [ "//zircon/system/public" ]
+  }
 
   metadata = {
     # Used by //build/ninja_implicit_inputs:manifest

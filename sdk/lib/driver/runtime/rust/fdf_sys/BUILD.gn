@@ -65,13 +65,6 @@ rustc_bindgen_golden("fdf_sys_bindgen_golden") {
     "async_.*",
   ]
 
-  include_dirs = [
-    "//zircon/system/public",
-    "//sdk/lib/driver/runtime/include",
-    "//sdk/lib/async/include",
-    "//sdk",
-  ]
-
   fuchsia_api_level = "HEAD"
 
   notice_year = 2024
@@ -79,6 +72,8 @@ rustc_bindgen_golden("fdf_sys_bindgen_golden") {
     "use libasync_sys::*;",
     "use zx_types::*;",
   ]
+
+  deps = [ "//sdk/lib/driver/runtime:driver_runtime" ]
 }
 
 fuchsia_unittest_package("fdf_sys_tests") {

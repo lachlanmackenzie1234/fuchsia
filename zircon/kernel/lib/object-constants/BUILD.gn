@@ -10,6 +10,10 @@ import("//build/rust/rustc_library.gni")
 
 library_headers("headers") {
   headers = [ "lib/object-constants.h" ]
+
+  if (is_kernel) {
+    public_deps = [ "//zircon/kernel/lib/libc:headers" ]
+  }
 }
 
 source_set("object-constants") {
@@ -27,11 +31,7 @@ rustc_bindgen("object-constants-bindings.bindgen") {
   include_dirs = [
     "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/${current_target_tuple}/c++/v1",
     "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/c++/v1",
-    "//zircon/kernel/lib/object-constants/include",
   ]
-  if (is_kernel) {
-    include_dirs += [ "//zircon/kernel/lib/libc/include" ]
-  }
 
   additional_clang_flags = [
     "-x",
