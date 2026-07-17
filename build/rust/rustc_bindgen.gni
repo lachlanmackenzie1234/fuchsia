@@ -11,9 +11,9 @@ import("//build/rust/config.gni")
 import("//build/testing/config.gni")
 import("//build/testing/golden_files.gni")
 
-# TODO(https://fxbug.dev/512840182): This is bindgen's own current default
-# version to target. Let's use a more recent default.
-default_bindgen_rust_version = "1.82.0"
+# Might as well always default to using the bleeding edge, just as we do with
+# our toolchain.
+default_bindgen_rust_version = "nightly"
 
 # Defines a target that runs rust bindgen on C header files.
 #
