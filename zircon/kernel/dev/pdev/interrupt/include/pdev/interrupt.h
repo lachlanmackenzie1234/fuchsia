@@ -13,6 +13,8 @@
 #include <dev/interrupt.h>
 #include <kernel/cpu.h>
 
+__BEGIN_CDECLS
+
 // Invokes the handler for the given vector if one is registered. If true is
 // returned a handler was present, otherwise false is returned.
 bool pdev_invoke_int_if_present(interrupt_vector_t vector);
@@ -54,5 +56,7 @@ struct pdev_interrupt_ops {
 };
 
 void pdev_register_interrupts(const struct pdev_interrupt_ops* ops);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_DEV_PDEV_INTERRUPT_INCLUDE_PDEV_INTERRUPT_H_

@@ -15,6 +15,8 @@
 #include <kernel/cpu.h>
 #include <kernel/mp.h>
 
+__BEGIN_CDECLS
+
 constexpr uint32_t MAX_MSI_IRQS = 32;
 constexpr uint32_t MAX_INTERRUPTS = 1024;
 
@@ -197,5 +199,7 @@ void msi_free_block(msi_block_t* block);
 // NULL handler will effectively unregister a handler for a given msi_id within the
 // block.
 void msi_register_handler(const msi_block_t* block, uint msi_id, interrupt_handler_t handler);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_DEV_INTERRUPT_INCLUDE_DEV_INTERRUPT_H_
