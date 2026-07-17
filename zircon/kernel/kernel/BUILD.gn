@@ -103,7 +103,10 @@ group("kernel-tests") {
 }
 
 source_set("ffi") {
-  sources = [ "thread_ffi.cc" ]
+  sources = [
+    "stats_ffi.cc",
+    "thread_ffi.cc",
+  ]
   deps = [
     "//zircon/kernel/lib/kconcurrent",
     "//zircon/kernel/lib/ktl",
@@ -117,6 +120,7 @@ rustc_library("kernel-rs") {
   sources = [
     "lib.rs",
     "relaxed_atomic.rs",
+    "stats.rs",
     "thread.rs",
     "types.rs",
   ]

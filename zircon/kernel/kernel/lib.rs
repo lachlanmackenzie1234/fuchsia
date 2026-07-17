@@ -5,5 +5,6 @@
 #![no_std]
 
 pub mod relaxed_atomic;
+pub mod stats;
 pub mod thread;
 pub mod types;
