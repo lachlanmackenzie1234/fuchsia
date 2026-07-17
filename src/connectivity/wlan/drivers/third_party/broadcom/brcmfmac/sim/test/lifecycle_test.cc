@@ -15,7 +15,7 @@
  */
 #include <zircon/errors.h>
 
-#include "fidl/fuchsia.wlan.phyimpl/cpp/wire_types.h"
+#include "fidl/fuchsia.wlan.phy/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
 
 namespace wlan::brcmfmac {
@@ -33,26 +33,25 @@ class LifecycleTest : public SimTest {
 };
 
 TEST_F(LifecycleTest, CreateIfaceInvalidArgsFails) {
-  auto req =
-      fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_).Build();
-  auto result = client_.buffer(test_arena_)->CreateIface(req);
+  fuchsia_wlan_phy::WlanPhyCreateIfaceRequest req;
+  auto result = client_->CreateIface(std::move(req));
 
-  ASSERT_TRUE(result.ok());
-  ASSERT_TRUE(result->is_error());
-  ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
+  ASSERT_TRUE(result.is_error());
+  ASSERT_TRUE(result.error_value().is_domain_error());
+  ASSERT_EQ(result.error_value().domain_error(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST_F(LifecycleTest, CreateIfaceInvalidRoleFails) {
   auto [local, _remote] = make_channel();
-  auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
-                 .role(static_cast<wlan_common::WlanMacRole>(999))
-                 .mlme_channel(std::move(local))
-                 .Build();
-  auto result = client_.buffer(test_arena_)->CreateIface(req);
+  fuchsia_wlan_phy::WlanPhyCreateIfaceRequest req{{
+      .role = static_cast<wlan_common::WlanMacRole>(999),
+      .mlme_channel = std::move(local),
+  }};
+  auto result = client_->CreateIface(std::move(req));
 
-  ASSERT_TRUE(result.ok());
-  ASSERT_TRUE(result->is_error());
-  ASSERT_EQ(result->error_value(), ZX_ERR_INVALID_ARGS);
+  ASSERT_TRUE(result.is_error());
+  ASSERT_TRUE(result.error_value().is_domain_error());
+  ASSERT_EQ(result.error_value().domain_error(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST_F(LifecycleTest, CreateMultipleClientIfaceFails) {
@@ -60,36 +59,34 @@ TEST_F(LifecycleTest, CreateMultipleClientIfaceFails) {
   {
     // First call to create iface with client role should succeed
     auto [local, _remote] = make_channel();
-    auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
-                   .role(wlan_common::WlanMacRole::kClient)
-                   .mlme_channel(std::move(local))
-                   .Build();
-    auto result = client_.buffer(test_arena_)->CreateIface(req);
-    ASSERT_TRUE(result.ok() && !result->is_error());
-    iface_id = result->value()->iface_id();
+    fuchsia_wlan_phy::WlanPhyCreateIfaceRequest req{{
+        .role = wlan_common::WlanMacRole::kClient,
+        .mlme_channel = std::move(local),
+    }};
+    auto result = client_->CreateIface(std::move(req));
+    ASSERT_TRUE(result.is_ok());
+    iface_id = result->iface_id().value();
   }
 
   {
     // Second call to create iface with client role fails
     auto [local, _remote] = make_channel();
-    auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
-                   .role(wlan_common::WlanMacRole::kClient)
-                   .mlme_channel(std::move(local))
-                   .Build();
-    auto result = client_.buffer(test_arena_)->CreateIface(req);
-    ASSERT_TRUE(result.ok());
-    ASSERT_TRUE(result->is_error());
-    ASSERT_EQ(result->error_value(), ZX_ERR_NO_RESOURCES);
+    fuchsia_wlan_phy::WlanPhyCreateIfaceRequest req{{
+        .role = wlan_common::WlanMacRole::kClient,
+        .mlme_channel = std::move(local),
+    }};
+    auto result = client_->CreateIface(std::move(req));
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error());
+    ASSERT_EQ(result.error_value().domain_error(), ZX_ERR_NO_RESOURCES);
   }
 
   {
     // destroy client iface manually to clean up
-    auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplDestroyIfaceRequest::Builder(test_arena_)
-                   .iface_id(iface_id)
-                   .Build();
+    fuchsia_wlan_phy::WlanPhyDestroyIfaceRequest req{{.iface_id = iface_id}};
 
-    auto result = client_.buffer(test_arena_)->DestroyIface(req);
-    ASSERT_TRUE(result.ok() && !result->is_error());
+    auto result = client_->DestroyIface(req);
+    ASSERT_TRUE(result.is_ok());
   }
 }
 
@@ -98,33 +95,31 @@ TEST_F(LifecycleTest, DestroyIfaceWithoutIfaceIdFails) {
   {
     // First call to create iface with client role should succeed
     auto [local, _remote] = make_channel();
-    auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
-                   .role(wlan_common::WlanMacRole::kClient)
-                   .mlme_channel(std::move(local))
-                   .Build();
-    auto result = client_.buffer(test_arena_)->CreateIface(req);
-    ASSERT_TRUE(result.ok() && !result->is_error());
-    iface_id = result->value()->iface_id();
+    fuchsia_wlan_phy::WlanPhyCreateIfaceRequest req{{
+        .role = wlan_common::WlanMacRole::kClient,
+        .mlme_channel = std::move(local),
+    }};
+    auto result = client_->CreateIface(std::move(req));
+    ASSERT_TRUE(result.is_ok());
+    iface_id = result->iface_id().value();
   }
 
   {
     // destroy client iface without iface_id fails
-    auto req =
-        fuchsia_wlan_phyimpl::wire::WlanPhyImplDestroyIfaceRequest::Builder(test_arena_).Build();
+    fuchsia_wlan_phy::WlanPhyDestroyIfaceRequest req;
 
-    auto result = client_.buffer(test_arena_)->DestroyIface(req);
-    ASSERT_TRUE(result.ok());
-    ASSERT_TRUE(result->is_error());
+    auto result = client_->DestroyIface(req);
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error());
+    ASSERT_EQ(result.error_value().domain_error(), ZX_ERR_INVALID_ARGS);
   }
 
   {
     // destroy client iface manually to clean up
-    auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplDestroyIfaceRequest::Builder(test_arena_)
-                   .iface_id(iface_id)
-                   .Build();
+    fuchsia_wlan_phy::WlanPhyDestroyIfaceRequest req{{.iface_id = iface_id}};
 
-    auto result = client_.buffer(test_arena_)->DestroyIface(req);
-    ASSERT_TRUE(result.ok() && !result->is_error());
+    auto result = client_->DestroyIface(req);
+    ASSERT_TRUE(result.is_ok());
   }
 }
 
@@ -133,13 +128,13 @@ TEST_F(LifecycleTest, FullmacInitMultipleCallsFails) {
   {
     // First call to create iface with client role should succeed
     auto [local, _remote] = make_channel();
-    auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
-                   .role(wlan_common::WlanMacRole::kClient)
-                   .mlme_channel(std::move(local))
-                   .Build();
-    auto result = client_.buffer(test_arena_)->CreateIface(req);
-    ASSERT_TRUE(result.ok() && !result->is_error());
-    iface_id = result->value()->iface_id();
+    fuchsia_wlan_phy::WlanPhyCreateIfaceRequest req{{
+        .role = wlan_common::WlanMacRole::kClient,
+        .mlme_channel = std::move(local),
+    }};
+    auto result = client_->CreateIface(std::move(req));
+    ASSERT_TRUE(result.is_ok());
+    iface_id = result->iface_id().value();
   }
 
   {
@@ -174,12 +169,10 @@ TEST_F(LifecycleTest, FullmacInitMultipleCallsFails) {
 
   {
     // destroy client iface manually to clean up
-    auto req = fuchsia_wlan_phyimpl::wire::WlanPhyImplDestroyIfaceRequest::Builder(test_arena_)
-                   .iface_id(iface_id)
-                   .Build();
+    fuchsia_wlan_phy::WlanPhyDestroyIfaceRequest req{{.iface_id = iface_id}};
 
-    auto result = client_.buffer(test_arena_)->DestroyIface(req);
-    ASSERT_TRUE(result.ok() && !result->is_error());
+    auto result = client_->DestroyIface(req);
+    ASSERT_TRUE(result.is_ok());
   }
 }
 

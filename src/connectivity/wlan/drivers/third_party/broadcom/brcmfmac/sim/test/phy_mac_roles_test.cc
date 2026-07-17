@@ -21,13 +21,11 @@ void PhyMacRolesTest::Init() { ASSERT_EQ(SimTest::Init(), ZX_OK); }
 
 TEST_F(PhyMacRolesTest, VerifyMacRoles) {
   Init();
-  auto result = client_.buffer(test_arena_)->GetSupportedMacRoles();
-  ASSERT_TRUE(result.ok());
-  ASSERT_FALSE(result->is_error());
-  ASSERT_TRUE(result->value()->has_supported_mac_roles());
-  EXPECT_EQ(result->value()->supported_mac_roles().size(), 2u);
-  EXPECT_EQ(result->value()->supported_mac_roles().data()[0], wlan_common::WlanMacRole::kClient);
-  EXPECT_EQ(result->value()->supported_mac_roles().data()[1], wlan_common::WlanMacRole::kAp);
+  auto result = client_->GetSupportedMacRoles();
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_EQ(result->supported_mac_roles()->size(), 2u);
+  EXPECT_EQ(result->supported_mac_roles().value()[0], fuchsia_wlan_common::WlanMacRole::kClient);
+  EXPECT_EQ(result->supported_mac_roles().value()[1], fuchsia_wlan_common::WlanMacRole::kAp);
 }
 
 }  // namespace wlan::brcmfmac

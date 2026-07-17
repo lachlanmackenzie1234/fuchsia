@@ -22,7 +22,7 @@
 #include "zircon/system/ulib/sync/include/lib/sync/cpp/completion.h"
 
 namespace wlan_fullmac_wire = fuchsia_wlan_fullmac::wire;
-namespace wlan_phyimpl_wire = fuchsia_wlan_phyimpl::wire;
+namespace wlan_phy_wire = fuchsia_wlan_phy::wire;
 
 namespace wlan::brcmfmac {
 
@@ -320,7 +320,7 @@ class SimTest : public ::zxtest::Test, public simulation::StationIfc {
   // Keep track of the ifaces we created during test by iface id.
   std::map<uint16_t, SimInterface*> ifaces_;
 
-  fdf::WireSyncClient<fuchsia_wlan_phyimpl::WlanPhyImpl> client_;
+  fidl::SyncClient<fuchsia_wlan_phy::WlanPhy> client_;
   fidl::WireSyncClient<fuchsia_factory_wlan::Iovar> factory_client_;
   fdf::Arena test_arena_;
 

@@ -51,8 +51,8 @@ TEST_F(PhyResetTest, SuspendResumeHooksCalled) {
     return ZX_OK;
   });
 
-  auto res = client_.buffer(test_arena_)->Reset();
-  EXPECT_TRUE(res.ok() && !res->is_error());
+  auto res = client_->Reset();
+  EXPECT_TRUE(res.is_ok());
 
   EXPECT_TRUE(suspend_called);
   EXPECT_TRUE(resume_called);
@@ -65,8 +65,8 @@ TEST_F(PhyResetTest, ResetDestroysExistingInterface) {
   uint32_t count = DeviceCount();
   EXPECT_GT(count, 0);
 
-  auto res = client_.buffer(test_arena_)->Reset();
-  EXPECT_TRUE(res.ok() && !res->is_error());
+  auto res = client_->Reset();
+  EXPECT_TRUE(res.is_ok());
 
   WaitForDeviceCount(count - 1);
 
@@ -78,11 +78,11 @@ TEST_F(PhyResetTest, ResetDestroysExistingInterface) {
 }
 
 TEST_F(PhyResetTest, ConsecutiveResets) {
-  auto res = client_.buffer(test_arena_)->Reset();
-  EXPECT_TRUE(res.ok() && !res->is_error());
+  auto res = client_->Reset();
+  EXPECT_TRUE(res.is_ok());
 
-  res = client_.buffer(test_arena_)->Reset();
-  EXPECT_TRUE(res.ok() && !res->is_error());
+  res = client_->Reset();
+  EXPECT_TRUE(res.is_ok());
 }
 
 }  // namespace

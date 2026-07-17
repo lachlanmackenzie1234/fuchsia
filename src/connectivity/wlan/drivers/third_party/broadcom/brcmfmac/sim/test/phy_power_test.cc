@@ -29,37 +29,37 @@ class PhyPowerTest : public SimTest {
 void PhyPowerTest::Init() { ASSERT_EQ(SimTest::Init(), ZX_OK); }
 
 zx_status_t PhyPowerTest::PowerDown() {
-  auto result = client_.buffer(test_arena_)->PowerDown();
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    return result->error_value();
+  auto result = client_->PowerDown();
+  if (result.is_error()) {
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
   return ZX_OK;
 }
 
 zx_status_t PhyPowerTest::PowerUp() {
-  auto result = client_.buffer(test_arena_)->PowerUp();
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    return result->error_value();
+  auto result = client_->PowerUp();
+  if (result.is_error()) {
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
   return ZX_OK;
 }
 
 zx_status_t PhyPowerTest::Reset() {
-  auto result = client_.buffer(test_arena_)->Reset();
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    return result->error_value();
+  auto result = client_->Reset();
+  if (result.is_error()) {
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
   return ZX_OK;
 }
 
 zx_status_t PhyPowerTest::GetPowerState(bool* power_on) {
-  auto result = client_.buffer(test_arena_)->GetPowerState();
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    return result->error_value();
+  auto result = client_->GetPowerState();
+  if (result.is_error()) {
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
   return ZX_OK;
 }

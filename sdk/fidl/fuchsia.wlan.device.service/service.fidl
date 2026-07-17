@@ -195,6 +195,11 @@ closed protocol DeviceMonitor {
     strict CreateIface(table {
         1: phy_id uint16;
         2: role fuchsia.wlan.common.WlanMacRole;
+        /// The initial station address set from configuration layer.
+        ///
+        /// Excluding this field or providing a MAC address with all zeroes
+        /// will result in the driver assigning a MAC address that may
+        /// or may not be randomized.
         3: sta_address ieee80211.MacAddr;
     }) -> (table {
         1: iface_id uint16;

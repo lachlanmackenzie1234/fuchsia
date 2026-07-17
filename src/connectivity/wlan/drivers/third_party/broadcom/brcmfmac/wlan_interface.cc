@@ -46,7 +46,7 @@ WlanInterface::WlanInterface(
 
 void WlanInterface::Create(
     wlan::brcmfmac::Device* device, const char* name, wireless_dev* wdev,
-    fuchsia_wlan_common_wire::WlanMacRole role, uint16_t iface_id,
+    fuchsia_wlan_common::WlanMacRole role, uint16_t iface_id,
     fit::callback<void(zx::result<std::unique_ptr<WlanInterface>>)>&& on_complete) {
   std::unique_ptr<WlanInterface> interface(
       new WlanInterface(device, device->NetDev().NetDevIfcClient().Clone(),
@@ -252,8 +252,8 @@ void WlanInterface::ServiceConnectHandler(
 
 zx_status_t WlanInterface::GetSupportedMacRoles(
     struct brcmf_pub* drvr,
-    fuchsia_wlan_common::wire::WlanMacRole
-        out_supported_mac_roles_list[fuchsia_wlan_common::wire::kMaxSupportedMacRoles],
+    fuchsia_wlan_common::WlanMacRole
+        out_supported_mac_roles_list[fuchsia_wlan_common::kMaxSupportedMacRoles],
     uint8_t* out_supported_mac_roles_count) {
   // The default client iface at bsscfgidx 0 is always assumed to exist by the driver.
   if (!drvr->iflist[0]) {
@@ -263,11 +263,11 @@ zx_status_t WlanInterface::GetSupportedMacRoles(
 
   size_t len = 0;
   if (brcmf_feat_is_enabled(drvr, BRCMF_FEAT_STA)) {
-    out_supported_mac_roles_list[len] = fuchsia_wlan_common::wire::WlanMacRole::kClient;
+    out_supported_mac_roles_list[len] = fuchsia_wlan_common::WlanMacRole::kClient;
     ++len;
   }
   if (brcmf_feat_is_enabled(drvr, BRCMF_FEAT_AP)) {
-    out_supported_mac_roles_list[len] = fuchsia_wlan_common::wire::WlanMacRole::kAp;
+    out_supported_mac_roles_list[len] = fuchsia_wlan_common::WlanMacRole::kAp;
     ++len;
   }
   *out_supported_mac_roles_count = len;
@@ -275,17 +275,12 @@ zx_status_t WlanInterface::GetSupportedMacRoles(
   return ZX_OK;
 }
 
-zx_status_t WlanInterface::SetCountry(brcmf_pub* drvr,
-                                      const fuchsia_wlan_phyimpl_wire::WlanPhyCountry* country) {
-  if (country == nullptr) {
-    BRCMF_ERR("Empty country from the parameter.");
-    return ZX_ERR_INVALID_ARGS;
-  }
+zx_status_t WlanInterface::SetCountry(brcmf_pub* drvr, const std::array<uint8_t, 2>& country) {
   return brcmf_set_country(drvr, country);
 }
 
-zx_status_t WlanInterface::GetCountry(brcmf_pub* drvr, uint8_t* cc_code) {
-  return brcmf_get_country(drvr, cc_code);
+zx_status_t WlanInterface::GetCountry(brcmf_pub* drvr, std::array<uint8_t, 2>* out_country) {
+  return brcmf_get_country(drvr, out_country);
 }
 
 zx_status_t WlanInterface::ClearCountry(brcmf_pub* drvr) { return brcmf_clear_country(drvr); }
@@ -345,29 +340,29 @@ void WlanInterface::handle_unknown_method(
 
 void WlanInterface::QuerySecuritySupport(QuerySecuritySupportCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  fuchsia_wlan_common::wire::SecuritySupport resp;
-  fidl::Arena arena;
+  fuchsia_wlan_common::SecuritySupport resp;
   if (wdev_ != nullptr) {
-    brcmf_if_query_security_support(wdev_->netdev, &resp, arena);
+    brcmf_if_query_security_support(wdev_->netdev, &resp);
   }
+  fidl::Arena arena;
   completer.ReplySuccess(
       fuchsia_wlan_fullmac::wire::WlanFullmacImplQuerySecuritySupportResponse::Builder(arena)
-          .resp(resp)
+          .resp(fidl::ToWire(arena, resp))
           .Build());
 }
 
 void WlanInterface::QuerySpectrumManagementSupport(
     QuerySpectrumManagementSupportCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  fuchsia_wlan_common::wire::SpectrumManagementSupport resp;
-  fidl::Arena arena;
+  fuchsia_wlan_common::SpectrumManagementSupport resp;
   if (wdev_ != nullptr) {
-    brcmf_if_query_spectrum_management_support(wdev_->netdev, &resp, arena);
+    brcmf_if_query_spectrum_management_support(wdev_->netdev, &resp);
   }
+  fidl::Arena arena;
   completer.ReplySuccess(
       fuchsia_wlan_fullmac::wire::WlanFullmacImplQuerySpectrumManagementSupportResponse::Builder(
           arena)
-          .resp(resp)
+          .resp(fidl::ToWire(arena, resp))
           .Build());
 }
 

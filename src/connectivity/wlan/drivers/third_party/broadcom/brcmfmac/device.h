@@ -16,7 +16,8 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.factory.wlan/cpp/fidl.h>
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/fidl.h>
+#include <fidl/fuchsia.wlan.phy/cpp/fidl.h>
+#include <fidl/fuchsia.wlan.phy/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
@@ -47,7 +48,7 @@ namespace brcmfmac {
 
 class DeviceInspect;
 class WlanInterface;
-class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
+class Device : public fidl::Server<fuchsia_wlan_phy::WlanPhy>,
                public fidl::WireAsyncEventHandler<fdf::NodeController>,
                public fidl::WireServer<fuchsia_factory_wlan::Iovar>,
                public ::wlan::drivers::components::NetworkDevice::Callbacks {
@@ -57,7 +58,7 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
 
   // Device Initialization
   zx_status_t InitServerDispatcher();
-  zx_status_t InitWlanPhyImpl();
+  zx_status_t InitWlanPhy();
   zx_status_t InitDevice(fdf::OutgoingDirectory& outgoing,
                          const std::shared_ptr<fdf::Namespace>& incoming);
   void InitPhyDevice();
@@ -77,35 +78,29 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   virtual std::shared_ptr<fdf::OutgoingDirectory>& Outgoing() = 0;
   virtual fdf_dispatcher_t* GetDriverDispatcher() = 0;
 
-  // WlanPhyImpl interface implementation.
-  void Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) override;
-  void GetSupportedMacRoles(fdf::Arena& arena,
-                            GetSupportedMacRolesCompleter::Sync& completer) override;
-  void CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
-                   CreateIfaceCompleter::Sync& completer) override;
-  void DestroyIface(DestroyIfaceRequestView request, fdf::Arena& arena,
-                    DestroyIfaceCompleter::Sync& completer) override;
-  void SetCountry(SetCountryRequestView request, fdf::Arena& arena,
-                  SetCountryCompleter::Sync& completer) override;
-  void GetCountry(fdf::Arena& arena, GetCountryCompleter::Sync& completer) override;
-  void ClearCountry(fdf::Arena& arena, ClearCountryCompleter::Sync& completer) override;
-  void SetPowerSaveMode(SetPowerSaveModeRequestView request, fdf::Arena& arena,
+  // WlanPhy interface implementation.
+  void Init(InitRequest& request, InitCompleter::Sync& completer) override;
+  void GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) override;
+  void CreateIface(CreateIfaceRequest& request, CreateIfaceCompleter::Sync& completer) override;
+  void DestroyIface(DestroyIfaceRequest& request, DestroyIfaceCompleter::Sync& completer) override;
+  void SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) override;
+  void GetCountry(GetCountryCompleter::Sync& completer) override;
+  void ClearCountry(ClearCountryCompleter::Sync& completer) override;
+  void SetPowerSaveMode(SetPowerSaveModeRequest& request,
                         SetPowerSaveModeCompleter::Sync& completer) override;
-  void GetPowerSaveMode(fdf::Arena& arena, GetPowerSaveModeCompleter::Sync& completer) override;
-  void PowerDown(fdf::Arena& arena, PowerDownCompleter::Sync& completer) override;
-  void PowerUp(fdf::Arena& arena, PowerUpCompleter::Sync& completer) override;
-  void Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) override;
-  void GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& completer) override;
-  void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
+  void GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) override;
+  void PowerDown(PowerDownCompleter::Sync& completer) override;
+  void PowerUp(PowerUpCompleter::Sync& completer) override;
+  void Reset(ResetCompleter::Sync& completer) override;
+  void GetPowerState(GetPowerStateCompleter::Sync& completer) override;
+  void SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request,
                             SetBtCoexistenceModeCompleter::Sync& completer) override;
-  void SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
+  void SetTxPowerScenario(SetTxPowerScenarioRequest& request,
                           SetTxPowerScenarioCompleter::Sync& completer) override;
-  void ResetTxPowerScenario(fdf::Arena& arena,
-                            ResetTxPowerScenarioCompleter::Sync& completer) override;
-  void GetTxPowerScenario(fdf::Arena& arena, GetTxPowerScenarioCompleter::Sync& completer) override;
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override {}
+  void ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) override;
+  void GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) override;
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_wlan_phy::WlanPhy> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   // NetworkDevice::Callbacks implementation
   void NetDevInit(wlan::drivers::components::NetworkDevice::Callbacks::InitTxn txn) override;
@@ -155,9 +150,9 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
 
  private:
   // Helpers
-  zx_status_t AddWlanPhyImplService();
-  void ServiceConnectHandler(fdf_dispatcher_t* dispatcher,
-                             fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end);
+  zx_status_t AddWlanPhyService();
+  void ServiceConnectHandler(async_dispatcher_t* dispatcher,
+                             fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end);
   void NetDevInitReply(zx_status_t status);
   std::unique_ptr<WlanInterface>* GetInterfaceForRole(fuchsia_wlan_common::wire::WlanMacRole role);
   std::unique_ptr<WlanInterface>* GetInterfaceForId(uint16_t interface_id);
@@ -184,14 +179,14 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   // Two fixed interfaces supported;  the default interface as a client, and a second one as an AP.
   std::unique_ptr<WlanInterface> client_interface_;
   std::unique_ptr<WlanInterface> ap_interface_;
-  fdf::ServerBindingGroup<fuchsia_wlan_phyimpl::WlanPhyImpl> bindings_;
+  fidl::ServerBindingGroup<fuchsia_wlan_phy::WlanPhy> bindings_;
   fidl::ServerBindingGroup<fuchsia_factory_wlan::Iovar> factory_bindings_;
   std::optional<wlan::drivers::components::NetworkDevice::Callbacks::InitTxn> netdev_init_txn_;
   driver_devfs::Connector<fuchsia_factory_wlan::Iovar> devfs_connector_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> factory_controller_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> factory_node_;
   bool device_powered_on_ = true;
-  fidl::SyncClient<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimpl_notify_client_;
+  fidl::Client<fuchsia_wlan_phy::WlanPhyNotify> phy_notify_client_;
 };
 
 }  // namespace brcmfmac

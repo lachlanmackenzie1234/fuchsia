@@ -18,7 +18,7 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.network.driver.Service" },
-        { service: "fuchsia.wlan.phyimpl.Service" },
+        { service: "fuchsia.wlan.phy.Service" },
         { service: "fuchsia.wlan.fullmac.Service" },
     ],
     use: [
@@ -39,7 +39,7 @@
             from: "self",
         },
         {
-            service: "fuchsia.wlan.phyimpl.Service",
+            service: "fuchsia.wlan.phy.Service",
             from: "self",
         },
         {

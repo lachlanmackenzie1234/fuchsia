@@ -28,6 +28,7 @@
 #include <lib/sync/cpp/completion.h>
 #include <zircon/types.h>
 
+#include <array>
 #include <memory>
 #include <shared_mutex>
 
@@ -55,7 +56,7 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
   // callback may be called inline from this call in case of an error (but not on success).
   // Make sure this does not attempt to recursively acquire any locks.
   static void Create(wlan::brcmfmac::Device* device, const char* name, wireless_dev* wdev,
-                     fuchsia_wlan_common_wire::WlanMacRole role, uint16_t iface_id,
+                     fuchsia_wlan_common::WlanMacRole role, uint16_t iface_id,
                      fit::callback<void(zx::result<std::unique_ptr<WlanInterface>>)>&& on_complete);
   void DestroyIface(fit::callback<void(zx_status_t)>&& on_complete);
 
@@ -71,13 +72,12 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
 
   static zx_status_t GetSupportedMacRoles(
       struct brcmf_pub* drvr,
-      fuchsia_wlan_common::wire::WlanMacRole
-          out_supported_mac_roles_list[fuchsia_wlan_common::wire::kMaxSupportedMacRoles],
+      fuchsia_wlan_common::WlanMacRole
+          out_supported_mac_roles_list[fuchsia_wlan_common::kMaxSupportedMacRoles],
       uint8_t* out_supported_mac_roles_count);
-  static zx_status_t SetCountry(brcmf_pub* drvr,
-                                const fuchsia_wlan_phyimpl_wire::WlanPhyCountry* country);
+  static zx_status_t SetCountry(brcmf_pub* drvr, const std::array<uint8_t, 2>& country);
   // Reads the currently configured `country` from the firmware.
-  static zx_status_t GetCountry(brcmf_pub* drvr, uint8_t* cc_code);
+  static zx_status_t GetCountry(brcmf_pub* drvr, std::array<uint8_t, 2>* out_country);
   static zx_status_t ClearCountry(brcmf_pub* drvr);
 
   // WlanFullmacImpl implementations, dispatching FIDL requests from higher layers.
@@ -158,7 +158,7 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
   wireless_dev* wdev_ = nullptr;  // lock_ is used as a RW lock on wdev_
   bool destroying_ __TA_GUARDED(lock_) = false;
   wlan::brcmfmac::Device* device_ = nullptr;
-  fuchsia_wlan_common_wire::WlanMacRole role_;
+  fuchsia_wlan_common::WlanMacRole role_;
   std::string name_;
   // This is the interface ID used by the Device object, not the port ID or firmware ID.
   uint16_t iface_id_;

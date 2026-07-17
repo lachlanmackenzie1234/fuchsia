@@ -20,7 +20,7 @@
 
 #include <wlan/common/ieee80211.h>
 
-#include "fidl/fuchsia.wlan.phyimpl/cpp/wire_types.h"
+#include "fidl/fuchsia.wlan.phy/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/common.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/debug.h"
@@ -48,27 +48,27 @@ struct InterfaceInfo {
   const bool supported = false;
 };
 
-InterfaceInfo GetInterfaceInfoForRole(fuchsia_wlan_common::wire::WlanMacRole role) {
+InterfaceInfo GetInterfaceInfoForRole(fuchsia_wlan_common::WlanMacRole role) {
   switch (role) {
-    case fuchsia_wlan_common::wire::WlanMacRole::kClient:
+    case fuchsia_wlan_common::WlanMacRole::kClient:
       return InterfaceInfo{"Client", kClientInterfaceName, kClientInterfaceId, true};
-    case fuchsia_wlan_common::wire::WlanMacRole::kAp:
+    case fuchsia_wlan_common::WlanMacRole::kAp:
       return InterfaceInfo{"AP", kApInterfaceName, kApInterfaceId, true};
-    case fuchsia_wlan_common::wire::WlanMacRole::kMesh:
+    case fuchsia_wlan_common::WlanMacRole::kMesh:
       return InterfaceInfo{"Mesh"};
     default:
       return InterfaceInfo{"<unknown>"};
   }
 }
 
-fuchsia_wlan_common::wire::WlanMacRole GetMacRoleForInterfaceId(uint16_t interface_id) {
+fuchsia_wlan_common::WlanMacRole GetMacRoleForInterfaceId(uint16_t interface_id) {
   switch (interface_id) {
     case kClientInterfaceId:
-      return fuchsia_wlan_common::wire::WlanMacRole::kClient;
+      return fuchsia_wlan_common::WlanMacRole::kClient;
     case kApInterfaceId:
-      return fuchsia_wlan_common::wire::WlanMacRole::kAp;
+      return fuchsia_wlan_common::WlanMacRole::kAp;
     default:
-      return fuchsia_wlan_common::wire::WlanMacRole();
+      return fuchsia_wlan_common::WlanMacRole();
   }
 }
 
@@ -117,20 +117,20 @@ void Device::Shutdown(fit::callback<void()> on_shutdown_complete) {
   });
 }
 
-zx_status_t Device::AddWlanPhyImplService() {
-  // Add the service contains WlanphyImpl protocol to outgoing directory.
-  auto wlanphyimpl = [this](fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end) {
-    // Call the handler inherited from WlanPhyImplDevice.
+zx_status_t Device::AddWlanPhyService() {
+  // Add the service contains Wlanphy protocol to outgoing directory.
+  auto wlanphy = [this](fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end) {
     // Note: The same dispatcher here is used for fullmac device, will it affect the data path
     // performance?
-    ServiceConnectHandler(GetDriverDispatcher(), std::move(server_end));
+    ServiceConnectHandler(fdf_dispatcher_get_async_dispatcher(GetDriverDispatcher()),
+                          std::move(server_end));
   };
 
-  fuchsia_wlan_phyimpl::Service::InstanceHandler wlanphy_service_handler(
-      {.wlan_phy_impl = wlanphyimpl});
+  fuchsia_wlan_phy::Service::InstanceHandler wlanphy_service_handler(
+      {.device = std::move(wlanphy)});
 
   auto status =
-      Outgoing()->AddService<fuchsia_wlan_phyimpl::Service>(std::move(wlanphy_service_handler));
+      Outgoing()->AddService<fuchsia_wlan_phy::Service>(std::move(wlanphy_service_handler));
   if (status.is_error()) {
     BRCMF_ERR("Failed to add service to outgoing directory: %s", status.status_string());
     return status.status_value();
@@ -139,13 +139,13 @@ zx_status_t Device::AddWlanPhyImplService() {
   return ZX_OK;
 }
 
-zx_status_t Device::InitWlanPhyImpl() {
+zx_status_t Device::InitWlanPhy() {
   fidl::Arena arena;
   fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers(arena, 1);
-  offers[0] = fdf::MakeOffer2<fuchsia_wlan_phyimpl::Service>(arena);
+  offers[0] = fdf::MakeOffer2<fuchsia_wlan_phy::Service>(arena);
 
   auto args =
-      fdf::wire::NodeAddArgs::Builder(arena).name("brcmfmac-wlanphyimpl").offers2(offers).Build();
+      fdf::wire::NodeAddArgs::Builder(arena).name("brcmfmac-wlanphy").offers2(offers).Build();
 
   auto endpoints = fidl::CreateEndpoints<fdf::NodeController>();
   if (endpoints.is_error()) {
@@ -199,16 +199,16 @@ zx_status_t Device::InitDevice(fdf::OutgoingDirectory& outgoing,
 }
 
 void Device::InitPhyDevice() {
-  // Setup the WlanPhyImpl Service
+  // Setup the WlanPhy Service
   zx_status_t status;
 
-  if ((status = AddWlanPhyImplService()) != ZX_OK) {
+  if ((status = AddWlanPhyService()) != ZX_OK) {
     BRCMF_ERR("ServeRuntimeProtocolForV1Devices failed: %s", zx_status_get_string(status));
     NetDevInitReply(status);
     return;
   }
-  if ((status = InitWlanPhyImpl()) != ZX_OK) {
-    BRCMF_ERR("Init WlanPhyImpl failed: %s", zx_status_get_string(status));
+  if ((status = InitWlanPhy()) != ZX_OK) {
+    BRCMF_ERR("Init WlanPhy failed: %s", zx_status_get_string(status));
     NetDevInitReply(status);
     return;
   }
@@ -272,77 +272,78 @@ brcmf_pub* Device::drvr() { return brcmf_pub_.get(); }
 
 const brcmf_pub* Device::drvr() const { return brcmf_pub_.get(); }
 
-void Device::Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) {
-  BRCMF_DBG(WLANPHY, "Received Init request");
-  if (!request->has_notify_client()) {
-    BRCMF_ERR("Init does not contain notify_client");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_HANDLE);
+void Device::Init(InitRequest& request, InitCompleter::Sync& completer) {
+  if (!request.notify_client().has_value()) {
+    BRCMF_ERR("Failed to initialize WlanPhy server. notify_client client end not provided.");
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
     return;
   }
-  phyimpl_notify_client_.Bind(std::move(request->notify_client()));
-  completer.buffer(arena).ReplySuccess();
+  phy_notify_client_.Bind(std::move(request.notify_client().value()),
+                          fdf_dispatcher_get_async_dispatcher(GetDriverDispatcher()));
+  completer.Reply(fit::ok());
 }
 
-void Device::GetSupportedMacRoles(fdf::Arena& arena,
-                                  GetSupportedMacRolesCompleter::Sync& completer) {
+void Device::GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) {
   BRCMF_DBG(WLANPHY, "Received request for supported MAC roles from SME dfv2");
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
-  fuchsia_wlan_common::wire::WlanMacRole
-      supported_mac_roles_list[fuchsia_wlan_common::wire::kMaxSupportedMacRoles] = {};
+
+  fuchsia_wlan_common::WlanMacRole
+      supported_mac_roles_list[fuchsia_wlan_common::kMaxSupportedMacRoles] = {};
   uint8_t supported_mac_roles_count = 0;
   zx_status_t status = WlanInterface::GetSupportedMacRoles(
       brcmf_pub_.get(), supported_mac_roles_list, &supported_mac_roles_count);
   if (status != ZX_OK) {
     BRCMF_ERR("Device::GetSupportedMacRoles() failed to get supported mac roles: %s\n",
               zx_status_get_string(status));
-    completer.buffer(arena).ReplyError(status);
+    completer.Reply(zx::error(status));
     return;
   }
 
-  if (supported_mac_roles_count > fuchsia_wlan_common::wire::kMaxSupportedMacRoles) {
+  if (supported_mac_roles_count > fuchsia_wlan_common::kMaxSupportedMacRoles) {
     BRCMF_ERR(
         "Device::GetSupportedMacRoles() Too many mac roles returned from brcmfmac driver. Number "
         "of supported max roles got "
         "from driver is %u, but the limitation is: %u\n",
-        supported_mac_roles_count, fuchsia_wlan_common::wire::kMaxSupportedMacRoles);
-    completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
+        supported_mac_roles_count, fuchsia_wlan_common::kMaxSupportedMacRoles);
+    completer.Reply(zx::error(ZX_ERR_OUT_OF_RANGE));
     return;
   }
 
-  auto reply_vector = fidl::VectorView<fuchsia_wlan_common::wire::WlanMacRole>::FromExternal(
-      supported_mac_roles_list, supported_mac_roles_count);
-  fidl::Arena fidl_arena;
-  auto builder =
-      fuchsia_wlan_phyimpl::wire::WlanPhyImplGetSupportedMacRolesResponse::Builder(fidl_arena);
-  builder.supported_mac_roles(reply_vector);
-  completer.buffer(arena).ReplySuccess(builder.Build());
+  std::vector<fuchsia_wlan_common::WlanMacRole> roles;
+  for (uint8_t i = 0; i < supported_mac_roles_count; i++) {
+    roles.push_back(supported_mac_roles_list[i]);
+  }
+
+  fuchsia_wlan_phy::WlanPhyGetSupportedMacRolesResponse response{
+      {.supported_mac_roles = std::move(roles)}};
+  completer.Reply(zx::ok(std::move(response)));
 }
 
-void Device::CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
-                         CreateIfaceCompleter::Sync& completer) {
+void Device::CreateIface(CreateIfaceRequest& request, CreateIfaceCompleter::Sync& completer) {
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
-  BRCMF_INFO("Device::CreateIface() creating interface started dfv2");
-
-  if (!request->has_role() || !request->has_mlme_channel()) {
-    BRCMF_ERR("Device::CreateIface() missing information in role(%u), channel(%u)",
-              request->has_role(), request->has_mlme_channel());
-    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+  if (!request.role().has_value() || !request.mlme_channel().has_value()) {
+    BRCMF_ERR("Device::CreateIface() missing information in role(%d), channel(%d)",
+              request.role().has_value(), request.mlme_channel().has_value());
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
 
-  if (request->role().IsUnknown()) {
-    BRCMF_ERR("Invalid MAC role %u", static_cast<uint32_t>(request->role()));
-    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+  if (request.role().value().IsUnknown()) {
+    BRCMF_ERR("Invalid MAC role %u", fidl::ToUnderlying(request.role().value()));
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
+
+  fuchsia_wlan_common::WlanMacRole role = request.role().value();
+  zx::channel mlme_channel = std::move(request.mlme_channel().value());
 
   // If we are operating with manufacturing firmware ensure SoftAP IF is also not present
   if (brcmf_feat_is_enabled(brcmf_pub_.get(), BRCMF_FEAT_MFG)) {
@@ -350,42 +351,50 @@ void Device::CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
       // Either the interface we're trying to create exists or the other one exists. Neither is
       // supported in manufacturing FW.
       BRCMF_ERR("Simultaneous mode not supported in mfg FW - IF already exists");
-      completer.buffer(arena).ReplyError(ZX_ERR_NO_RESOURCES);
+      completer.Reply(zx::error(ZX_ERR_NO_RESOURCES));
       return;
     }
   }
 
-  std::unique_ptr<WlanInterface>* interface = GetInterfaceForRole(request->role());
+  std::unique_ptr<WlanInterface>* interface = GetInterfaceForRole(role);
   if (!interface) {
-    BRCMF_ERR("MAC role %u not supported", fidl::ToUnderlying(request->role()));
-    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+    BRCMF_ERR("MAC role %u not supported", fidl::ToUnderlying(role));
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
-  InterfaceInfo info = GetInterfaceInfoForRole(request->role());
+  InterfaceInfo info = GetInterfaceInfoForRole(role);
   if (*interface) {
     BRCMF_ERR("Device::CreateIface() %s interface already exists", info.display_name);
-    completer.buffer(arena).ReplyError(ZX_ERR_NO_RESOURCES);
+    completer.Reply(zx::error(ZX_ERR_NO_RESOURCES));
     return;
   }
 
   wireless_dev* wdev = nullptr;
+  std::optional<wlan::common::MacAddr> mac_addr;
+  if (request.init_sta_addr().has_value()) {
+    wlan::common::MacAddr addr(request.init_sta_addr().value().data());
+    if (!addr.IsZero()) {
+      mac_addr = addr;
+    }
+  }
+
   const zx_status_t status =
-      brcmf_cfg80211_add_iface(brcmf_pub_.get(), info.interface_name, nullptr, request, &wdev);
+      brcmf_cfg80211_add_iface(brcmf_pub_.get(), info.interface_name, nullptr, role, mac_addr,
+                               std::move(mlme_channel), &wdev);
   if (status != ZX_OK) {
     BRCMF_ERR("Device::CreateIface() failed to create %s interface, %s", info.display_name,
               zx_status_get_string(status));
-    completer.buffer(arena).ReplyError(status);
+    completer.Reply(zx::error(status));
     return;
   }
 
   WlanInterface::Create(
-      this, info.interface_name, wdev, request->role(), info.interface_id,
+      this, info.interface_name, wdev, role, info.interface_id,
       [info, interface, wdev, this,
        completer = completer.ToAsync()](zx::result<std::unique_ptr<WlanInterface>> result) mutable {
-        fdf::Arena arena('WLIF');
         if (result.is_error()) {
           BRCMF_ERR("Failed to create WlanInterface: %s", result.status_string());
-          completer.buffer(arena).ReplyError(result.status_value());
+          completer.Reply(zx::error(result.status_value()));
           return;
         }
         {
@@ -402,29 +411,21 @@ void Device::CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
         BRCMF_DBG(WLANPHY, "  address: " FMT_MAC, FMT_MAC_ARGS(mac_addr));
 #endif /* !defined(NDEBUG) */
 
-        completer.buffer(arena).ReplySuccess(
-            fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceResponse::Builder(arena)
-                .iface_id(info.interface_id)
-                .Build());
+        fuchsia_wlan_phy::WlanPhyCreateIfaceResponse response{{.iface_id = info.interface_id}};
+        completer.Reply(zx::ok(response));
       });
 }
 
-void Device::DestroyIface(DestroyIfaceRequestView request, fdf::Arena& arena,
-                          DestroyIfaceCompleter::Sync& completer) {
-  if (!request->has_iface_id()) {
+void Device::DestroyIface(DestroyIfaceRequest& request, DestroyIfaceCompleter::Sync& completer) {
+  if (!request.iface_id().has_value()) {
     BRCMF_ERR("Device::DestroyIface() invoked without valid iface_id");
-    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
-
-  DestroyIface(request->iface_id(), [completer = completer.ToAsync()](zx_status_t status) mutable {
-    fdf::Arena arena('BRCM');
-    if (status != ZX_OK) {
-      completer.buffer(arena).ReplyError(status);
-    } else {
-      completer.buffer(arena).ReplySuccess();
-    }
-  });
+  DestroyIface(request.iface_id().value(),
+               [completer = completer.ToAsync()](zx_status_t status) mutable {
+                 completer.Reply(zx::make_result(status));
+               });
 }
 
 void Device::DestroyIface(uint16_t iface_id, fit::callback<void(zx_status_t)>&& on_complete) {
@@ -437,7 +438,7 @@ void Device::DestroyIface(uint16_t iface_id, fit::callback<void(zx_status_t)>&& 
     return;
   }
 
-  InterfaceInfo info = GetInterfaceInfoForRole(GetMacRoleForInterfaceId(iface_id));
+  const InterfaceInfo info = GetInterfaceInfoForRole(GetMacRoleForInterfaceId(iface_id));
 
   // First check if the interface is present
   WlanInterface* iface = iface_ptr->get();
@@ -457,9 +458,8 @@ void Device::DestroyIface(uint16_t iface_id, fit::callback<void(zx_status_t)>&& 
   }
 
   BRCMF_DBG(WLANPHY, "Destroying %s interface", info.display_name);
-  iface->DestroyIface([iface_ptr, iface_id, info, this,
+  iface->DestroyIface([this, iface_ptr, iface_id, info,
                        on_complete = std::move(on_complete)](zx_status_t status) mutable {
-    fdf::Arena arena('BRCM');
     if (status != ZX_OK) {
       // Don't reset iface_ptr here since we failed to delete it.
       BRCMF_ERR("Device::DestroyIface() Error destroying %s interface : %s", info.display_name,
@@ -477,133 +477,121 @@ void Device::DestroyIface(uint16_t iface_id, fit::callback<void(zx_status_t)>&& 
   });
 }
 
-void Device::SetCountry(SetCountryRequestView request, fdf::Arena& arena,
-                        SetCountryCompleter::Sync& completer) {
+void Device::SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) {
   BRCMF_DBG(WLANPHY, "Setting country code dfv2");
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
-  if (!request->is_alpha2()) {
-    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
-    BRCMF_ERR("Device::SetCountry() Invalid input format of country code.");
-    return;
-  }
-  const auto country = fuchsia_wlan_phyimpl_wire::WlanPhyCountry::WithAlpha2(request->alpha2());
-  zx_status_t status = WlanInterface::SetCountry(brcmf_pub_.get(), &country);
+
+  zx_status_t status = WlanInterface::SetCountry(brcmf_pub_.get(), request.country());
   if (status != ZX_OK) {
     BRCMF_ERR("Device::SetCountry() Failed Set country : %s", zx_status_get_string(status));
-    completer.buffer(arena).ReplyError(status);
+    completer.Reply(zx::error(status));
     return;
   }
-
-  completer.buffer(arena).ReplySuccess();
+  completer.Reply(zx::ok());
 }
 
-void Device::ClearCountry(fdf::Arena& arena, ClearCountryCompleter::Sync& completer) {
+void Device::ClearCountry(ClearCountryCompleter::Sync& completer) {
   BRCMF_DBG(WLANPHY, "Clearing country dfv2");
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
   zx_status_t status = WlanInterface::ClearCountry(brcmf_pub_.get());
   if (status != ZX_OK) {
     BRCMF_ERR("Device::ClearCountry() Failed Clear country : %s", zx_status_get_string(status));
-    completer.buffer(arena).ReplyError(status);
+    completer.Reply(zx::error(status));
     return;
   }
 
-  completer.buffer(arena).ReplySuccess();
+  completer.Reply(zx::ok());
 }
 
-void Device::GetCountry(fdf::Arena& arena, GetCountryCompleter::Sync& completer) {
+void Device::GetCountry(GetCountryCompleter::Sync& completer) {
   BRCMF_DBG(WLANPHY, "Received request for country from SME dfv2");
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
-  uint8_t cc_code[fuchsia_wlan_phyimpl_wire::kWlanphyAlpha2Len];
+  std::array<uint8_t, 2> country = {};
 
-  zx_status_t status = WlanInterface::GetCountry(brcmf_pub_.get(), cc_code);
+  zx_status_t status = WlanInterface::GetCountry(brcmf_pub_.get(), &country);
   if (status != ZX_OK) {
     BRCMF_ERR("Device::GetCountry() Failed Get country : %s", zx_status_get_string(status));
-    completer.buffer(arena).ReplyError(status);
+    completer.Reply(zx::error(status));
     return;
   }
-  auto country = fuchsia_wlan_phyimpl::wire::WlanPhyCountry::WithAlpha2({cc_code[0], cc_code[1]});
-  BRCMF_INFO("Get country code: %c%c", country.alpha2()[0], country.alpha2()[1]);
+  BRCMF_INFO("Get country code: %c%c", country[0], country[1]);
 
-  completer.buffer(arena).ReplySuccess(country);
+  fuchsia_wlan_phy::WlanPhyGetCountryResponse response{{.country = country}};
+  completer.Reply(zx::ok(response));
 }
 
-void Device::SetPowerSaveMode(SetPowerSaveModeRequestView request, fdf::Arena& arena,
+void Device::SetPowerSaveMode(SetPowerSaveModeRequest& request,
                               SetPowerSaveModeCompleter::Sync& completer) {
   BRCMF_DBG(WLANPHY, "Setting power save mode dfv2");
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
-  if (!request->has_ps_mode()) {
+  if (!request.ps_mode().has_value()) {
     BRCMF_ERR("Device::SetPowerSaveMode() invoked without ps_mode");
-    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
-
-  zx_status_t status = brcmf_set_power_save_mode(brcmf_pub_.get(), request->ps_mode());
+  zx_status_t status = brcmf_set_power_save_mode(brcmf_pub_.get(), request.ps_mode().value());
   if (status != ZX_OK) {
-    BRCMF_ERR("Device::SetPowerSaveMode() failed setting ps mode : %s",
-              zx_status_get_string(status));
-    completer.buffer(arena).ReplyError(status);
+    BRCMF_ERR("Device::SetPowerSaveMode() Set Power Save Mode failed");
+    completer.Reply(zx::error(status));
     return;
   }
-
-  completer.buffer(arena).ReplySuccess();
+  completer.Reply(zx::ok());
 }
 
-void Device::GetPowerSaveMode(fdf::Arena& arena, GetPowerSaveModeCompleter::Sync& completer) {
+void Device::GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) {
   BRCMF_DBG(WLANPHY, "Received request for PS mode from SME dfv2");
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
-  fuchsia_wlan_common_wire::PowerSaveType ps_mode;
+  fuchsia_wlan_common::PowerSaveType ps_mode;
   zx_status_t status = brcmf_get_power_save_mode(brcmf_pub_.get(), &ps_mode);
   if (status != ZX_OK) {
     BRCMF_ERR("Device::GetPowerSaveMode() Get Power Save Mode failed");
-    completer.buffer(arena).ReplyError(ZX_ERR_NOT_FOUND);
+    completer.Reply(zx::error(status));
     return;
   }
-  fidl::Arena fidl_arena;
-  auto builder =
-      fuchsia_wlan_phyimpl::wire::WlanPhyImplGetPowerSaveModeResponse::Builder(fidl_arena);
-  builder.ps_mode(ps_mode);
-  completer.buffer(arena).ReplySuccess(builder.Build());
+
+  fuchsia_wlan_phy::WlanPhyGetPowerSaveModeResponse response{{.ps_mode = ps_mode}};
+  completer.Reply(zx::ok(response));
 }
 
-void Device::PowerDown(fdf::Arena& arena, PowerDownCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+void Device::PowerDown(PowerDownCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void Device::PowerUp(fdf::Arena& arena, PowerUpCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+void Device::PowerUp(PowerUpCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void Device::Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) {
+void Device::Reset(ResetCompleter::Sync& completer) {
   if (!brcmf_pub_) {
     BRCMF_ERR("brmcf_pub_ is null");
-    completer.buffer(arena).ReplyError(ZX_ERR_INTERNAL);
+    completer.Reply(zx::error(ZX_ERR_INTERNAL));
     return;
   }
 
   bool expected = false;
   if (!brcmf_pub_->drvr_resetting.compare_exchange_strong(expected, true)) {
     BRCMF_WARN("Driver is already resetting. Crash recovery may be in progress.");
-    completer.buffer(arena).ReplyError(ZX_ERR_UNAVAILABLE);
+    completer.Reply(zx::error(ZX_ERR_UNAVAILABLE));
     return;
   }
 
@@ -611,60 +599,57 @@ void Device::Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) {
 
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off, possibly in the middle of Reset already?");
-    completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
   device_powered_on_ = false;
 
-  DestroyAllIfaces([this, finish_reset = std::move(finish_reset), arena = std::move(arena),
-                    completer = completer.ToAsync()]() mutable {
-    zx_status_t status = brcmf_suspend_chip(brcmf_pub_.get());
-    if (status != ZX_OK) {
-      BRCMF_ERR("Suspend chip failed: %s", zx_status_get_string(status));
-      // Ignore the error and attempt to power up since it has reached a point of no return.
-    }
-    status = brcmf_resume_chip(brcmf_pub_.get());
-    if (status != ZX_OK) {
-      BRCMF_ERR("Powerup failed: %s", zx_status_get_string(status));
-      completer.buffer(arena).ReplyError(status);
-      return;
-    }
-    device_powered_on_ = true;
-    completer.buffer(arena).ReplySuccess();
-  });
+  DestroyAllIfaces(
+      [this, finish_reset = std::move(finish_reset), completer = completer.ToAsync()]() mutable {
+        zx_status_t status = brcmf_suspend_chip(brcmf_pub_.get());
+        if (status != ZX_OK) {
+          BRCMF_ERR("Suspend chip failed: %s", zx_status_get_string(status));
+          // Ignore the error and attempt to power up since it has reached a point of no return.
+        }
+        status = brcmf_resume_chip(brcmf_pub_.get());
+        if (status != ZX_OK) {
+          BRCMF_ERR("Powerup failed: %s", zx_status_get_string(status));
+          completer.Reply(zx::error(status));
+          return;
+        }
+        device_powered_on_ = true;
+        completer.Reply(zx::ok());
+      });
 }
 
-void Device::GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& completer) {
-  fidl::Arena fidl_arena;
-  auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplGetPowerStateResponse::Builder(fidl_arena);
-  builder.power_on(device_powered_on_);
-  completer.buffer(arena).ReplySuccess(builder.Build());
+void Device::GetPowerState(GetPowerStateCompleter::Sync& completer) {
+  fuchsia_wlan_phy::WlanPhyGetPowerStateResponse response{{.power_on = device_powered_on_}};
+  completer.Reply(zx::ok(response));
 }
 
-void Device::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
+void Device::SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request,
                                   SetBtCoexistenceModeCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void Device::SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
+void Device::SetTxPowerScenario(SetTxPowerScenarioRequest& request,
                                 SetTxPowerScenarioCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void Device::ResetTxPowerScenario(fdf::Arena& arena,
-                                  ResetTxPowerScenarioCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+void Device::ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void Device::GetTxPowerScenario(fdf::Arena& arena, GetTxPowerScenarioCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+void Device::GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void Device::ServiceConnectHandler(fdf_dispatcher_t* dispatcher,
-                                   fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end) {
+void Device::ServiceConnectHandler(async_dispatcher_t* dispatcher,
+                                   fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end) {
   bindings_.AddBinding(dispatcher, std::move(server_end), this, [](fidl::UnbindInfo info) {
     if (!info.is_user_initiated()) {
-      BRCMF_ERR("WlanPhyImpl binding unexpectedly closed: %s", info.lossy_description());
+      BRCMF_ERR("WlanPhy binding unexpectedly closed: %s", info.lossy_description());
     }
   });
 }
@@ -779,12 +764,11 @@ void Device::DestroyAllIfaces(fit::callback<void()>&& on_complete) {
   });
 }
 
-std::unique_ptr<WlanInterface>* Device::GetInterfaceForRole(
-    fuchsia_wlan_common::wire::WlanMacRole role) {
+std::unique_ptr<WlanInterface>* Device::GetInterfaceForRole(fuchsia_wlan_common::WlanMacRole role) {
   switch (role) {
-    case fuchsia_wlan_common::wire::WlanMacRole::kClient:
+    case fuchsia_wlan_common::WlanMacRole::kClient:
       return &client_interface_;
-    case fuchsia_wlan_common::wire::WlanMacRole::kAp:
+    case fuchsia_wlan_common::WlanMacRole::kAp:
       return &ap_interface_;
     default:
       return nullptr;
@@ -809,7 +793,7 @@ void Device::Get(GetRequestView request, GetCompleter::Sync& completer) {
   if (status == ZX_OK) {
     completer.ReplySuccess(request->request);
   } else {
-    completer.ReplyError(status);
+    completer.Reply(zx::error(status));
   }
 }
 
@@ -820,7 +804,7 @@ void Device::Set(SetRequestView request, SetCompleter::Sync& completer) {
   if (status == ZX_OK) {
     completer.ReplySuccess();
   } else {
-    completer.ReplyError(status);
+    completer.Reply(zx::error(status));
   }
 }
 

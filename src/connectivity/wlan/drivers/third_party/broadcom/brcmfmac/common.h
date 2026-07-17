@@ -15,18 +15,16 @@
 #ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_COMMON_H_
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_COMMON_H_
 
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
-#include <fidl/fuchsia.wlan.phyimpl/cpp/fidl.h>
+#include <fidl/fuchsia.wlan.phy/cpp/fidl.h>
+#include <fidl/fuchsia.wlan.phy/cpp/wire.h>
 
+#include <array>
 #include <string>
 
 #include "bus.h"
 #include "core.h"
 #include "fwil_types.h"
 #include "linuxisms.h"
-
-namespace fuchsia_wlan_phyimpl_wire = fuchsia_wlan_phyimpl::wire;
-namespace fuchsia_wlan_common_wire = fuchsia_wlan_common::wire;
 
 #define BRCMF_FW_ALTPATH_LEN 256
 constexpr uint32_t kMaxAssocRetries = 0;
@@ -65,16 +63,15 @@ zx_status_t brcmf_c_process_clm_blob(struct brcmf_if* ifp, std::string_view clm_
 
 /* Sets dongle media info (drv_version, mac address). */
 zx_status_t brcmf_c_preinit_dcmds(struct brcmf_if* ifp);
-zx_status_t brcmf_set_country(brcmf_pub* drvr,
-                              const fuchsia_wlan_phyimpl_wire::WlanPhyCountry* country);
-zx_status_t brcmf_get_country(brcmf_pub* drvr, uint8_t* cc_code);
+zx_status_t brcmf_set_country(brcmf_pub* drvr, const std::array<uint8_t, 2>& country);
+zx_status_t brcmf_get_country(brcmf_pub* drvr, std::array<uint8_t, 2>* out_country);
 zx_status_t brcmf_clear_country(brcmf_pub* drvr);
 // Set PS mode in FW
 zx_status_t brcmf_set_power_save_mode(brcmf_pub* drvr,
-                                      const fuchsia_wlan_common_wire::PowerSaveType ps_type);
+                                      const fuchsia_wlan_common::PowerSaveType ps_type);
 // Get PS mode from FW
 zx_status_t brcmf_get_power_save_mode(brcmf_pub* drvr,
-                                      fuchsia_wlan_common_wire::PowerSaveType* out_ps_mode);
+                                      fuchsia_wlan_common::PowerSaveType* out_ps_mode);
 // Get WiFi metadata
 zx::result<fuchsia_wlan_broadcom::WifiConfig> brcmf_get_meta_data(brcmf_if* ifp);
 

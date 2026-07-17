@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.wlan.phy/cpp/wire.h>
 #include <zircon/errors.h>
+
+#include <array>
 
 #include <zxtest/zxtest.h>
 
@@ -26,9 +28,9 @@ class CountryCodeTest : public SimTest {
   void Init();
   void CreateInterface();
   void DeleteInterface();
-  zx_status_t SetCountryCode(const fuchsia_wlan_phyimpl::wire::WlanPhyCountry* country);
+  zx_status_t SetCountryCode(const std::array<uint8_t, 2>& country);
   void GetCountryCodeFromFirmware(brcmf_fil_country_le* ccode);
-  zx_status_t SetCountryCodeInFirmware(const fuchsia_wlan_phyimpl_wire::WlanPhyCountry* country);
+  zx_status_t SetCountryCodeInFirmware(const std::array<uint8_t, 2>& country);
   zx_status_t ClearCountryCode();
 
  private:
@@ -48,21 +50,20 @@ void CountryCodeTest::DeleteInterface() {
   EXPECT_EQ(SimTest::DeleteInterface(&client_ifc_), ZX_OK);
 }
 
-zx_status_t CountryCodeTest::SetCountryCode(
-    const fuchsia_wlan_phyimpl::wire::WlanPhyCountry* country) {
-  auto result = client_.buffer(test_arena_)->SetCountry(*country);
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    return result->error_value();
+zx_status_t CountryCodeTest::SetCountryCode(const std::array<uint8_t, 2>& country) {
+  auto result = client_->SetCountry({{.country = country}});
+  if (result.is_error()) {
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
   return ZX_OK;
 }
 
 zx_status_t CountryCodeTest::ClearCountryCode() {
-  auto result = client_.buffer(test_arena_)->ClearCountry();
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    return result->error_value();
+  auto result = client_->ClearCountry();
+  if (result.is_error()) {
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
   return ZX_OK;
 }
@@ -79,9 +80,7 @@ void CountryCodeTest::GetCountryCodeFromFirmware(brcmf_fil_country_le* ccode) {
   });
 }
 
-zx_status_t CountryCodeTest::SetCountryCodeInFirmware(
-    const fuchsia_wlan_phyimpl_wire::WlanPhyCountry* country) {
-  EXPECT_NE(country, nullptr);
+zx_status_t CountryCodeTest::SetCountryCodeInFirmware(const std::array<uint8_t, 2>& country) {
   zx_status_t status = ZX_ERR_INTERNAL;
   WithSimDevice([&](brcmfmac::SimDevice* device) {
     brcmf_simdev* sim = device->GetSim();
@@ -94,61 +93,58 @@ zx_status_t CountryCodeTest::SetCountryCodeInFirmware(
 TEST_F(CountryCodeTest, SetDefault) { DeleteInterface(); }
 
 TEST_F(CountryCodeTest, SetCCode) {
-  const auto valid_country = fuchsia_wlan_phyimpl::wire::WlanPhyCountry::WithAlpha2({'U', 'S'});
-  const auto invalid_country = fuchsia_wlan_phyimpl::wire::WlanPhyCountry::WithAlpha2({'X', 'X'});
+  const std::array<uint8_t, 2> valid_country = {'U', 'S'};
+  const std::array<uint8_t, 2> invalid_country = {'X', 'X'};
   struct brcmf_fil_country_le country_code;
   zx_status_t status;
   uint8_t code;
 
   // Get the country code and verify that it is set to WW.
   GetCountryCodeFromFirmware(&country_code);
-  code = memcmp(country_code.ccode, "WW", fuchsia_wlan_phyimpl_wire::kWlanphyAlpha2Len);
+  code = memcmp(country_code.ccode, "WW", fuchsia_wlan_internal::kCountryCodeLen);
   ASSERT_EQ(code, 0);
 
   // Set an invalid CC and verify it fails
-  status = SetCountryCode(&invalid_country);
+  status = SetCountryCode(invalid_country);
   ASSERT_NE(status, ZX_OK);
 
   // Verify that it stays with the default
   GetCountryCodeFromFirmware(&country_code);
-  code = memcmp(country_code.ccode, "WW", fuchsia_wlan_phyimpl_wire::kWlanphyAlpha2Len);
+  code = memcmp(country_code.ccode, "WW", fuchsia_wlan_internal::kCountryCodeLen);
   ASSERT_EQ(code, 0);
   // Set a valid CC and verify it succeeds
-  status = SetCountryCode(&valid_country);
+  status = SetCountryCode(valid_country);
   ASSERT_EQ(status, ZX_OK);
   GetCountryCodeFromFirmware(&country_code);
-  code = memcmp(&valid_country.alpha2(), country_code.ccode,
-                fuchsia_wlan_phyimpl_wire::kWlanphyAlpha2Len);
+  code = memcmp(valid_country.data(), country_code.ccode, fuchsia_wlan_internal::kCountryCodeLen);
   ASSERT_EQ(code, 0);
 }
 
 TEST_F(CountryCodeTest, GetCCode) {
   {
-    const auto country = fuchsia_wlan_phyimpl_wire::WlanPhyCountry::WithAlpha2({'W', 'W'});
-    ASSERT_EQ(ZX_OK, SetCountryCodeInFirmware(&country));
-    auto result = client_.buffer(test_arena_)->GetCountry();
-    EXPECT_TRUE(result.ok());
-    ASSERT_FALSE(result->is_error());
-    auto& get_country_result = result->value();
-    EXPECT_EQ(get_country_result->alpha2().data()[0], 'W');
-    EXPECT_EQ(get_country_result->alpha2().data()[1], 'W');
+    const std::array<uint8_t, 2> country = {'W', 'W'};
+    ASSERT_EQ(ZX_OK, SetCountryCodeInFirmware(country));
+    auto result = client_->GetCountry();
+    EXPECT_TRUE(result.is_ok());
+    auto& get_country_result = result->country();
+    EXPECT_EQ(get_country_result[0], 'W');
+    EXPECT_EQ(get_country_result[1], 'W');
   }
 
   // Try again, just in case the first one was a default value.
   {
-    const auto country = fuchsia_wlan_phyimpl_wire::WlanPhyCountry::WithAlpha2({'U', 'S'});
-    ASSERT_EQ(ZX_OK, SetCountryCodeInFirmware(&country));
-    auto result = client_.buffer(test_arena_)->GetCountry();
-    EXPECT_TRUE(result.ok());
-    ASSERT_FALSE(result->is_error());
-    auto& get_country_result = result->value();
-    EXPECT_EQ(get_country_result->alpha2().data()[0], 'U');
-    EXPECT_EQ(get_country_result->alpha2().data()[1], 'S');
+    const std::array<uint8_t, 2> country = {'U', 'S'};
+    ASSERT_EQ(ZX_OK, SetCountryCodeInFirmware(country));
+    auto result = client_->GetCountry();
+    EXPECT_TRUE(result.is_ok());
+    auto& get_country_result = result->country();
+    EXPECT_EQ(get_country_result[0], 'U');
+    EXPECT_EQ(get_country_result[1], 'S');
   }
 }
 
 TEST_F(CountryCodeTest, ClearCCode) {
-  const auto world_safe_country = fuchsia_wlan_phyimpl_wire::WlanPhyCountry::WithAlpha2({'W', 'W'});
+  const std::array<uint8_t, 2> world_safe_country = {'W', 'W'};
   struct brcmf_fil_country_le country_code;
   zx_status_t status;
   uint8_t code;
@@ -156,8 +152,8 @@ TEST_F(CountryCodeTest, ClearCCode) {
   status = ClearCountryCode();
   ASSERT_EQ(status, ZX_OK);
   GetCountryCodeFromFirmware(&country_code);
-  code = memcmp(world_safe_country.alpha2().data(), country_code.ccode,
-                fuchsia_wlan_phyimpl_wire::kWlanphyAlpha2Len);
+  code =
+      memcmp(world_safe_country.data(), country_code.ccode, fuchsia_wlan_internal::kCountryCodeLen);
   ASSERT_EQ(code, 0);
 }
 

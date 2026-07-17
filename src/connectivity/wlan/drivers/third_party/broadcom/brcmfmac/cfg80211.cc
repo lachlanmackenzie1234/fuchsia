@@ -104,7 +104,6 @@
   }
 
 namespace fuchsia_wlan_ieee80211_wire = fuchsia_wlan_ieee80211::wire;
-namespace fuchsia_wlan_common_wire = fuchsia_wlan_common::wire;
 
 static bool check_vif_up(struct brcmf_cfg80211_vif* vif) {
   if (!brcmf_test_bit(brcmf_vif_status_bit_t::READY, &vif->sme_state)) {
@@ -188,7 +187,7 @@ static const struct brcmf_tlv* brcmf_parse_tlvs(const void* buf, int buflen, uin
 
 static zx_status_t brcmf_vif_change_validate(struct brcmf_cfg80211_info* cfg,
                                              struct brcmf_cfg80211_vif* vif,
-                                             fuchsia_wlan_common_wire::WlanMacRole new_type) {
+                                             fuchsia_wlan_common::WlanMacRole new_type) {
   if (new_type.IsUnknown()) {
     BRCMF_ERR("Invalid mac role %u", static_cast<uint32_t>(new_type));
     return ZX_ERR_INVALID_ARGS;
@@ -219,7 +218,7 @@ static zx_status_t brcmf_vif_change_validate(struct brcmf_cfg80211_info* cfg,
 }
 
 static zx_status_t brcmf_vif_add_validate(struct brcmf_cfg80211_info* cfg,
-                                          fuchsia_wlan_common_wire::WlanMacRole new_type) {
+                                          fuchsia_wlan_common::WlanMacRole new_type) {
   if (new_type.IsUnknown()) {
     BRCMF_ERR("Invalid mac role %u", static_cast<uint32_t>(new_type));
     return ZX_ERR_INVALID_ARGS;
@@ -273,7 +272,7 @@ static void brcmf_cfg80211_update_proto_addr_mode(struct wireless_dev* wdev) {
   vif = containerof(wdev, struct brcmf_cfg80211_vif, wdev);
   ifp = vif->ifp;
 
-  if (wdev->iftype == fuchsia_wlan_common_wire::WlanMacRole::kAp) {
+  if (wdev->iftype == fuchsia_wlan_common::WlanMacRole::kAp) {
     brcmf_proto_configure_addr_mode(ifp->drvr, ifp->ifidx, ADDR_DIRECT);
   } else {
     brcmf_proto_configure_addr_mode(ifp->drvr, ifp->ifidx, ADDR_INDIRECT);
@@ -424,9 +423,9 @@ static zx_status_t brcmf_set_ap_macaddr(struct brcmf_if* ifp,
   return ZX_OK;
 }
 
-static zx_status_t brcmf_cfg80211_change_iface_mac_role(
-    struct brcmf_cfg80211_info* cfg, struct net_device* ndev,
-    fuchsia_wlan_common_wire::WlanMacRole mac_role) {
+static zx_status_t brcmf_cfg80211_change_iface_mac_role(struct brcmf_cfg80211_info* cfg,
+                                                        struct net_device* ndev,
+                                                        fuchsia_wlan_common::WlanMacRole mac_role) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   struct brcmf_cfg80211_vif* vif = ifp->vif;
   const char* mac_role_str = "OTHER";
@@ -441,7 +440,7 @@ static zx_status_t brcmf_cfg80211_change_iface_mac_role(
     return err;
   }
   switch (mac_role) {
-    case fuchsia_wlan_common_wire::WlanMacRole::kClient:
+    case fuchsia_wlan_common::WlanMacRole::kClient:
       err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_INFRA, 1, &fw_err);
       if (err != ZX_OK) {
         BRCMF_ERR("WLC_SET_INFRA error: %s, fw err %s", zx_status_get_string(err),
@@ -451,7 +450,7 @@ static zx_status_t brcmf_cfg80211_change_iface_mac_role(
       }
       mac_role_str = const_cast<char*>("CLIENT");
       break;
-    case fuchsia_wlan_common_wire::WlanMacRole::kAp:
+    case fuchsia_wlan_common::WlanMacRole::kAp:
       mac_role_str = const_cast<char*>("AP");
       break;
     default:
@@ -491,7 +490,7 @@ static zx_status_t brcmf_ap_add_vif(struct brcmf_cfg80211_info* cfg, const char*
 
     BRCMF_INFO("Adding vif \"%s\"", name);
 
-    err = brcmf_alloc_vif(cfg, fuchsia_wlan_common_wire::WlanMacRole::kAp, &vif);
+    err = brcmf_alloc_vif(cfg, fuchsia_wlan_common::WlanMacRole::kAp, &vif);
     if (err != ZX_OK) {
       if (dev_out) {
         *dev_out = nullptr;
@@ -518,8 +517,8 @@ static zx_status_t brcmf_ap_add_vif(struct brcmf_cfg80211_info* cfg, const char*
     // Else reuse the existing IF itself but change its type
     vif = ifp->vif;
     vif->ifp = ifp;
-    err = brcmf_cfg80211_change_iface_mac_role(cfg, ifp->ndev,
-                                               fuchsia_wlan_common_wire::WlanMacRole::kAp);
+    err =
+        brcmf_cfg80211_change_iface_mac_role(cfg, ifp->ndev, fuchsia_wlan_common::WlanMacRole::kAp);
     if (err != ZX_OK) {
       BRCMF_ERR("failed to change iface mac role to AP: %s", zx_status_get_string(err));
       err = ZX_ERR_IO;
@@ -563,7 +562,7 @@ fail:
 }
 
 static bool brcmf_is_apmode(struct brcmf_cfg80211_vif* vif) {
-  return vif->wdev.iftype == fuchsia_wlan_common_wire::WlanMacRole::kAp;
+  return vif->wdev.iftype == fuchsia_wlan_common::WlanMacRole::kAp;
 }
 
 static bool brcmf_is_existing_macaddr(brcmf_pub* drvr, const uint8_t mac_addr[ETH_ALEN],
@@ -577,7 +576,7 @@ static bool brcmf_is_existing_macaddr(brcmf_pub* drvr, const uint8_t mac_addr[ET
   } else {
     for (const auto& iface : drvr->iflist) {
       if (iface != nullptr &&
-          iface->vif->wdev.iftype != fuchsia_wlan_common_wire::WlanMacRole::kClient &&
+          iface->vif->wdev.iftype != fuchsia_wlan_common::WlanMacRole::kClient &&
           !memcmp(iface->mac_addr, mac_addr, ETH_ALEN)) {
         return true;
       }
@@ -587,21 +586,22 @@ static bool brcmf_is_existing_macaddr(brcmf_pub* drvr, const uint8_t mac_addr[ET
 }
 
 zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct vif_params* params,
-                                     fuchsia_wlan_phyimpl_wire::WlanPhyImplCreateIfaceRequest* req,
-                                     struct wireless_dev** wdev_out) {
+                                     fuchsia_wlan_common::WlanMacRole role,
+                                     std::optional<wlan::common::MacAddr> mac_addr,
+                                     zx::channel mlme_channel, struct wireless_dev** wdev_out) {
   zx_status_t err;
-  net_device* ndev;
+  net_device* ndev = nullptr;
   wireless_dev* wdev;
   int32_t bsscfgidx;
 
-  BRCMF_DBG(TRACE, "enter: %s type %d", name, fidl::ToUnderlying(req->role()));
+  BRCMF_DBG(TRACE, "enter: %s type %d", name, fidl::ToUnderlying(role));
 
   if (wdev_out == nullptr) {
     BRCMF_ERR("cannot write wdev to nullptr");
     return ZX_ERR_INVALID_ARGS;
   }
 
-  err = brcmf_vif_add_validate(drvr->config, req->role());
+  err = brcmf_vif_add_validate(drvr->config, role);
   if (err != ZX_OK) {
     BRCMF_ERR("iface validation failed: err=%d", err);
     return err;
@@ -610,13 +610,8 @@ zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct v
   struct brcmf_if* ifp;
   const char* iface_role_name;
 
-  std::optional<wlan::common::MacAddr> mac_addr;
-  if (req->has_init_sta_addr()) {
-    mac_addr.emplace(req->init_sta_addr().data());
-  }
-
-  switch (req->role()) {
-    case fuchsia_wlan_common_wire::WlanMacRole::kAp:
+  switch (role) {
+    case fuchsia_wlan_common::WlanMacRole::kAp:
       iface_role_name = "ap";
 
       if (mac_addr && brcmf_is_existing_macaddr(drvr, mac_addr->byte, true)) {
@@ -625,17 +620,22 @@ zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct v
 
       err = brcmf_ap_add_vif(drvr->config, name, mac_addr, &wdev);
       if (err != ZX_OK) {
-        BRCMF_ERR("add iface %s type %d failed: err=%d", name, (uint32_t)req->role(), err);
+        BRCMF_ERR("add iface %s type %d failed: err=%d", name, (uint32_t)role, err);
         return err;
       }
 
       brcmf_cfg80211_update_proto_addr_mode(wdev);
       ndev = wdev->netdev;
-      wdev->iftype = req->role();
-      ndev->sme_channel = std::move(req->mlme_channel());
+      wdev->iftype = role;
+      if (ndev) {
+        ndev->sme_channel = std::move(mlme_channel);
+      } else {
+        BRCMF_ERR("no ndev found to bind mlme_channel");
+        return ZX_ERR_BAD_STATE;
+      }
 
       break;
-    case fuchsia_wlan_common_wire::WlanMacRole::kClient: {
+    case fuchsia_wlan_common::WlanMacRole::kClient: {
       iface_role_name = "client";
 
       if (mac_addr && brcmf_is_existing_macaddr(drvr, mac_addr->byte, false)) {
@@ -658,15 +658,20 @@ zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct v
         // Since a single IF is shared when operating with manufacturing FW, change
         // IF type.
         err = brcmf_cfg80211_change_iface_mac_role(drvr->config, ifp->ndev,
-                                                   fuchsia_wlan_common_wire::WlanMacRole::kClient);
+                                                   fuchsia_wlan_common::WlanMacRole::kClient);
         if (err != ZX_OK) {
           BRCMF_ERR("failed to change iface mac role to CLIENT: %s", zx_status_get_string(err));
           return err;
         }
       }
       wdev = &drvr->iflist[bsscfgidx]->vif->wdev;
-      wdev->iftype = req->role();
-      ndev->sme_channel = std::move(req->mlme_channel());
+      wdev->iftype = role;
+      if (ndev) {
+        ndev->sme_channel = std::move(mlme_channel);
+      } else {
+        BRCMF_ERR("no ndev found to bind mlme_channel");
+        return ZX_ERR_BAD_STATE;
+      }
       ndev->needs_free_net_device = false;
 
       // Use input mac_addr if it's provided. Otherwise, fallback to the bootloader
@@ -1521,7 +1526,7 @@ static void brcmf_link_down(struct brcmf_cfg80211_vif* vif,
       BRCMF_ERR("BRCMF_C_DISASSOC failed: %s, fw err %s", zx_status_get_string(err),
                 brcmf_fil_get_errstr(fwerr));
     }
-    if (vif->wdev.iftype == fuchsia_wlan_common_wire::WlanMacRole::kClient) {
+    if (vif->wdev.iftype == fuchsia_wlan_common::WlanMacRole::kClient) {
       cfg80211_disconnected(vif, reason_code, event_code, event_addr);
     }
   }
@@ -5166,34 +5171,31 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
   }
 }
 
-void brcmf_if_query_security_support(net_device* ndev,
-                                     fuchsia_wlan_common_wire::SecuritySupport* resp,
-                                     fidl::AnyArena& arena) {
+void brcmf_if_query_security_support(net_device* ndev, fuchsia_wlan_common::SecuritySupport* resp) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   BRCMF_IFDBG(WLANIF, ndev, "Query security feature support request received from SME.");
 
-  *resp = fuchsia_wlan_common_wire::SecuritySupport::Builder(arena)
-              .sae(fuchsia_wlan_common_wire::SaeFeature::Builder(arena)
-                       .sme_handler_supported(brcmf_feat_is_enabled(ifp, BRCMF_FEAT_EXTSAE))
-                       .driver_handler_supported(false)
-                       .Build())
-              .mfp(fuchsia_wlan_common_wire::MfpFeature::Builder(arena)
-                       .supported(brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFP))
-                       .Build())
-              .Build();
+  *resp = fuchsia_wlan_common::SecuritySupport{{
+      .sae = fuchsia_wlan_common::SaeFeature{{
+          .driver_handler_supported = false,
+          .sme_handler_supported = brcmf_feat_is_enabled(ifp, BRCMF_FEAT_EXTSAE),
+      }},
+      .mfp = fuchsia_wlan_common::MfpFeature{{
+          .supported = brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFP),
+      }},
+  }};
 }
 
 void brcmf_if_query_spectrum_management_support(
-    net_device* ndev, fuchsia_wlan_common_wire::SpectrumManagementSupport* resp,
-    fidl::AnyArena& arena) {
+    net_device* ndev, fuchsia_wlan_common::SpectrumManagementSupport* resp) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   BRCMF_IFDBG(WLANIF, ndev, "Query spectrum management support request received from SME.");
 
-  *resp = fuchsia_wlan_common_wire::SpectrumManagementSupport::Builder(arena)
-              .dfs(fuchsia_wlan_common_wire::DfsFeature::Builder(arena)
-                       .supported(brcmf_feat_is_enabled(ifp, BRCMF_FEAT_DFS))
-                       .Build())
-              .Build();
+  *resp = fuchsia_wlan_common::SpectrumManagementSupport{{
+      .dfs = fuchsia_wlan_common::DfsFeature{{
+          .supported = brcmf_feat_is_enabled(ifp, BRCMF_FEAT_DFS),
+      }},
+  }};
 }
 
 void brcmf_if_query_telemetry_support(net_device* ndev,
@@ -6392,8 +6394,7 @@ void brcmf_if_wmm_status_req(net_device* ndev) {
   }
 }
 
-zx_status_t brcmf_alloc_vif(struct brcmf_cfg80211_info* cfg,
-                            fuchsia_wlan_common_wire::WlanMacRole type,
+zx_status_t brcmf_alloc_vif(struct brcmf_cfg80211_info* cfg, fuchsia_wlan_common::WlanMacRole type,
                             struct brcmf_cfg80211_vif** vif_out) {
   struct brcmf_cfg80211_vif* vif_walk;
   struct brcmf_cfg80211_vif* vif;
@@ -6413,10 +6414,10 @@ zx_status_t brcmf_alloc_vif(struct brcmf_cfg80211_info* cfg,
 
   brcmf_init_prof(&vif->profile);
 
-  if (type == fuchsia_wlan_common_wire::WlanMacRole::kAp) {
+  if (type == fuchsia_wlan_common::WlanMacRole::kAp) {
     mbss = false;
     list_for_every_entry (&cfg->vif_list, vif_walk, struct brcmf_cfg80211_vif, list) {
-      if (vif_walk->wdev.iftype == fuchsia_wlan_common_wire::WlanMacRole::kAp) {
+      if (vif_walk->wdev.iftype == fuchsia_wlan_common::WlanMacRole::kAp) {
         mbss = true;
         break;
       }
@@ -6509,7 +6510,7 @@ zx_status_t brcmf_notify_channel_switch(struct brcmf_if* ifp, const struct brcmf
   wdev = ndev_to_wdev(ndev);
 
   // For client IF, ensure it is connected.
-  if (wdev->iftype == fuchsia_wlan_common_wire::WlanMacRole::kClient) {
+  if (wdev->iftype == fuchsia_wlan_common::WlanMacRole::kClient) {
     // Status should be connected.
     if (!brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTED, &ifp->vif->sme_state)) {
       BRCMF_ERR("CSA on %s. Not associated.", ndev->name);
@@ -8167,14 +8168,14 @@ zx_status_t brcmf_cfg80211_down(struct net_device* ndev) {
   return err;
 }
 
-fuchsia_wlan_common_wire::WlanMacRole brcmf_cfg80211_get_iftype(struct brcmf_if* ifp) {
+fuchsia_wlan_common::WlanMacRole brcmf_cfg80211_get_iftype(struct brcmf_if* ifp) {
   struct wireless_dev* wdev = &ifp->vif->wdev;
 
   return wdev->iftype;
 }
 
 const char* brcmf_cfg80211_get_iface_str(struct net_device* ndev) {
-  if (ndev_to_vif(ndev)->wdev.iftype == fuchsia_wlan_common_wire::WlanMacRole::kClient)
+  if (ndev_to_vif(ndev)->wdev.iftype == fuchsia_wlan_common::WlanMacRole::kClient)
     return "Client";
   else
     return "SoftAP";
@@ -8280,12 +8281,12 @@ zx_status_t brcmf_cfg80211_del_iface(struct brcmf_cfg80211_info* cfg, struct wir
   }
 
   switch (wdev->iftype) {
-    case fuchsia_wlan_common_wire::WlanMacRole::kAp:
+    case fuchsia_wlan_common::WlanMacRole::kAp:
       // Stop the AP in an attempt to exit gracefully.
       brcmf_cfg80211_stop_ap(ndev);
       ndev->sme_channel.reset();
       return brcmf_cfg80211_del_ap_iface(cfg, wdev);
-    case fuchsia_wlan_common_wire::WlanMacRole::kClient:
+    case fuchsia_wlan_common::WlanMacRole::kClient:
       // Make sure the signal reporter does not access the interface after it has been destroyed.
       cfg->signal_report_work.Cancel();
       // Disconnect the client in an attempt to exit gracefully.
@@ -8327,7 +8328,7 @@ zx_status_t brcmf_cfg80211_attach(struct brcmf_pub* drvr) {
   cfg->pub = drvr;
   init_vif_event(&cfg->vif_event);
   list_initialize(&cfg->vif_list);
-  err = brcmf_alloc_vif(cfg, fuchsia_wlan_common_wire::WlanMacRole::kClient, &vif);
+  err = brcmf_alloc_vif(cfg, fuchsia_wlan_common::WlanMacRole::kClient, &vif);
   if (err != ZX_OK) {
     goto cfg80211_info_out;
   }

@@ -48,8 +48,10 @@ open protocol WlanPhy {
     /// supported. Some possible error codes are:
     /// ZX_ERR_NOT_SUPPORTED: The WlanPhy server does not support the WlanPhyNotify protocol.
     flexible Init(resource table {
-        /// The WlanPhyNotify client end.
-        /// Required.
+        /// Client end of a channel that notifies the WlanPhy client of events
+        /// that occur on the server, e.g., a critical error with the PHY itself.
+        ///
+        /// This field is required.
         1: notify_client client_end:WlanPhyNotify;
     }) -> () error zx.Status;
 
@@ -71,7 +73,11 @@ open protocol WlanPhy {
         /// channel should be used by SME to communicate with MLME via the MLME
         /// protocol. This field is required.
         2: mlme_channel zx.Handle:CHANNEL;
-        /// The initial station address set from configuration layer. This field is optional.
+        /// The initial station address set from configuration layer.
+        ///
+        /// Excluding this field or providing a MAC address with all zeroes
+        /// will result in the driver assigning a MAC address that may
+        /// or may not be randomized.
         3: init_sta_addr ieee80211.MacAddr;
     }) -> (table {
         /// This field is always present.

@@ -34,7 +34,6 @@
 
 #include <string>
 
-#include <bind/fuchsia/wlan/phyimpl/cpp/bind.h>
 #include <wlan/drivers/log_instance.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/bus.h"

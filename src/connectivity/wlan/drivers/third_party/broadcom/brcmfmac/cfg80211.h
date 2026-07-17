@@ -36,7 +36,6 @@
 #include "workqueue.h"
 
 namespace fuchsia_wlan_fullmac_wire = fuchsia_wlan_fullmac::wire;
-namespace fuchsia_wlan_phyimpl_wire = fuchsia_wlan_phyimpl::wire;
 
 // clang-format off
 
@@ -538,7 +537,7 @@ static inline struct net_device* cfg_to_ndev(struct brcmf_cfg80211_info* cfg) {
 static inline struct net_device* cfg_to_softap_ndev(struct brcmf_cfg80211_info* cfg) {
   struct brcmf_cfg80211_vif* vif;
   list_for_every_entry (&cfg->vif_list, vif, struct brcmf_cfg80211_vif, list) {
-    if (vif->wdev.iftype == fuchsia_wlan_common_wire::WlanMacRole::kAp) {
+    if (vif->wdev.iftype == fuchsia_wlan_common::WlanMacRole::kAp) {
       return vif->wdev.netdev;
     }
   }
@@ -574,17 +573,17 @@ zx_status_t brcmf_cfg80211_attach(struct brcmf_pub* drvr);
 void brcmf_cfg80211_detach(struct brcmf_cfg80211_info* cfg);
 zx_status_t brcmf_cfg80211_up(struct net_device* ndev);
 zx_status_t brcmf_cfg80211_down(struct net_device* ndev);
-fuchsia_wlan_common_wire::WlanMacRole brcmf_cfg80211_get_iftype(struct brcmf_if* ifp);
+fuchsia_wlan_common::WlanMacRole brcmf_cfg80211_get_iftype(struct brcmf_if* ifp);
 const char* brcmf_cfg80211_get_iface_str(struct net_device* ndev);
 
 zx_status_t brcmf_cfg80211_add_iface(struct brcmf_pub* drvr, const char* name,
                                      struct vif_params* params,
-                                     fuchsia_wlan_phyimpl_wire::WlanPhyImplCreateIfaceRequest* req,
-                                     struct wireless_dev** wdev_out);
+                                     fuchsia_wlan_common::WlanMacRole role,
+                                     std::optional<wlan::common::MacAddr> mac_addr,
+                                     zx::channel mlme_channel, struct wireless_dev** wdev_out);
 zx_status_t brcmf_cfg80211_del_iface(struct brcmf_cfg80211_info* cfg, struct wireless_dev* wdev);
 
-zx_status_t brcmf_alloc_vif(struct brcmf_cfg80211_info* cfg,
-                            fuchsia_wlan_common_wire::WlanMacRole type,
+zx_status_t brcmf_alloc_vif(struct brcmf_cfg80211_info* cfg, fuchsia_wlan_common::WlanMacRole type,
                             struct brcmf_cfg80211_vif** vif_out);
 void brcmf_free_vif(struct brcmf_cfg80211_vif* vif);
 
@@ -631,12 +630,9 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
 
 void brcmf_if_query_mac_sublayer_support(net_device* ndev,
                                          fuchsia_wlan_common::wire::MacSublayerSupport* resp);
-void brcmf_if_query_security_support(net_device* ndev,
-                                     fuchsia_wlan_common::wire::SecuritySupport* resp,
-                                     fidl::AnyArena& arena);
+void brcmf_if_query_security_support(net_device* ndev, fuchsia_wlan_common::SecuritySupport* resp);
 void brcmf_if_query_spectrum_management_support(
-    net_device* ndev, fuchsia_wlan_common::wire::SpectrumManagementSupport* resp,
-    fidl::AnyArena& arena);
+    net_device* ndev, fuchsia_wlan_common::SpectrumManagementSupport* resp);
 void brcmf_if_query_telemetry_support(net_device* ndev,
                                       fuchsia_wlan_stats::wire::TelemetrySupport* resp,
                                       fidl::AnyArena& arena);

@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.wlan.common/cpp/wire_types.h>
 #include <fidl/fuchsia.wlan.fullmac/cpp/markers.h>
-#include <fidl/fuchsia.wlan.phyimpl/cpp/markers.h>
+#include <fidl/fuchsia.wlan.phy/cpp/markers.h>
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/internal/test_environment.h>
@@ -532,13 +532,9 @@ SimTest::SimTest() : test_arena_(fdf::Arena('T')) {
 SimTest::~SimTest() {
   // Clean the ifaces created in test but not deleted.
   for (auto iface : ifaces_) {
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplDestroyIfaceRequest::Builder(test_arena_);
-    builder.iface_id(iface.first);
-    auto result = client_.buffer(test_arena_)->DestroyIface(builder.Build());
-    if (!result.ok()) {
-      BRCMF_ERR("Delete iface: %u failed", iface.first);
-    }
-    if (result->is_error()) {
+    fuchsia_wlan_phy::WlanPhyDestroyIfaceRequest req{{.iface_id = iface.first}};
+    auto result = client_->DestroyIface(req);
+    if (result.is_error()) {
       BRCMF_ERR("Delete iface: %u failed", iface.first);
     }
   }
@@ -593,18 +589,15 @@ zx_status_t SimTest::Init() {
   });
   initialized.Wait();
 
-  // Connect to WlanPhyimpl served on outgoing directory.
-  zx::result connect_result =
-      fdf::internal::DriverTransportConnect<fuchsia_wlan_phyimpl::Service::WlanPhyImpl>(
-          CreateDriverSvcClient(), component::kDefaultInstance);
+  // Connect to WlanPhy served on outgoing directory.
+  zx::result connect_result = component::ConnectAtMember<fuchsia_wlan_phy::Service::Device>(
+      CreateDriverSvcClient(), component::kDefaultInstance);
 
-  client_ =
-      fdf::WireSyncClient<fuchsia_wlan_phyimpl::WlanPhyImpl>(std::move(connect_result.value()));
+  client_ = fidl::SyncClient<fuchsia_wlan_phy::WlanPhy>(std::move(connect_result.value()));
 
-  // Make a synchronous phyimpl request to ensure that we are actually connected to the phyimpl
-  // protocol.
-  auto result = client_.buffer(test_arena_)->GetSupportedMacRoles();
-  EXPECT_TRUE(result.ok());
+  // Make a synchronous request to ensure that we are actually connected to the protocol.
+  auto result = client_->GetSupportedMacRoles();
+  EXPECT_TRUE(result.is_ok());
 
   return ZX_OK;
 }
@@ -624,25 +617,27 @@ zx_status_t SimTest::StartInterface(wlan_common::WlanMacRole role, SimInterface*
   if ((status = sim_ifc->Init(env_.get(), role)) != ZX_OK) {
     return status;
   }
-  auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
-                     .role(role)
-                     .mlme_channel(std::move(sim_ifc->ch_mlme_));
+  fuchsia_wlan_phy::WlanPhyCreateIfaceRequest req{{
+      .role = role,
+      .mlme_channel = std::move(sim_ifc->ch_mlme_),
+  }};
 
   if (mac_addr) {
-    fidl::Array<unsigned char, 6> init_sta_addr;
-    memcpy(&init_sta_addr, mac_addr.value().byte, ETH_ALEN);
-    builder.init_sta_addr(init_sta_addr);
+    std::array<uint8_t, 6> init_sta_addr;
+    memcpy(init_sta_addr.data(), mac_addr.value().byte, ETH_ALEN);
+    req.init_sta_addr(init_sta_addr);
   }
 
-  auto result = client_.buffer(test_arena_)->CreateIface(builder.Build());
+  auto result = client_->CreateIface(std::move(req));
 
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    BRCMF_ERR("%s error happened while creating interface",
-              zx_status_get_string(result->error_value()));
-    return result->error_value();
+  if (result.is_error()) {
+    zx_status_t status = result.error_value().is_domain_error()
+                             ? result.error_value().domain_error()
+                             : result.error_value().framework_error().status();
+    BRCMF_ERR("%s error happened while creating interface", zx_status_get_string(status));
+    return status;
   }
-  sim_ifc->iface_id_ = result->value()->iface_id();
+  sim_ifc->iface_id_ = result->iface_id().value();
 
   status = ZX_OK;
 
@@ -752,13 +747,12 @@ zx_status_t SimTest::DeleteInterface(SimInterface* ifc) {
     return ZX_ERR_NOT_FOUND;
   }
 
-  auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplDestroyIfaceRequest::Builder(test_arena_);
-  builder.iface_id(iter->first);
-  auto result = client_.buffer(test_arena_)->DestroyIface(builder.Build());
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
+  fuchsia_wlan_phy::WlanPhyDestroyIfaceRequest req{{.iface_id = iter->first}};
+  auto result = client_->DestroyIface(req);
+  if (result.is_error()) {
     BRCMF_ERR("Failed to destroy interface.\n");
-    return result->error_value();
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
 
   ifc->Reset();

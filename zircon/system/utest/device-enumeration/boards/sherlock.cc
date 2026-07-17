@@ -92,8 +92,7 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       "gpio-c.aml_gpio_c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0.nrf52840_radio.ot-radio",
 
       // WLAN
-      "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",
-      "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl.wlanphy",
+      "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphy",
 
       "mipi-csi2.aml-mipi.imx227_sensor.imx227.isp",
       "mipi-csi2.aml-mipi.imx227_sensor.imx227.isp.arm-isp.camera_controller",

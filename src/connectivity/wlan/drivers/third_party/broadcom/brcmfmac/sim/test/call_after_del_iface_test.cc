@@ -25,7 +25,7 @@ TEST_F(SimTest, ScanResultAfterIfaceStop) {
   EXPECT_EQ(DeleteInterface(&client_ifc), ZX_OK);
 }
 
-// Verify that calling WlanPhyImplDestroyIface() will return a failure if the firmware returns an
+// Verify that calling WlanPhyDestroyIface() will return a failure if the firmware returns an
 // error on iface removal.
 TEST_F(SimTest, DeleteIfaceOnFirmwareFailure) {
   ASSERT_EQ(Init(), ZX_OK);

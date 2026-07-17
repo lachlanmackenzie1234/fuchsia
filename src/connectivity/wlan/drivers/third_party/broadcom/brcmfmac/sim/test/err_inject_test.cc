@@ -44,12 +44,11 @@ void ErrInjTest::RunCountryTest(const std::vector<uint8_t>& input,
   });
 
   // Get the results and verify that the country code matches the first two characters of our input
-  auto result = client_.buffer(test_arena_)->GetCountry();
-  ASSERT_TRUE(result.ok());
-  ASSERT_FALSE(result->is_error());
-  auto& actual_country = result->value();
-  EXPECT_EQ(actual_country->alpha2().data()[0], expected_output[0]);
-  EXPECT_EQ(actual_country->alpha2().data()[1], expected_output[1]);
+  auto result = client_->GetCountry();
+  ASSERT_TRUE(result.is_ok());
+  auto& actual_country = result->country();
+  EXPECT_EQ(actual_country[0], expected_output[0]);
+  EXPECT_EQ(actual_country[1], expected_output[1]);
 
   WithSimDevice([&](brcmfmac::SimDevice* device) {
     brcmf_simdev* sim = device->GetSim();

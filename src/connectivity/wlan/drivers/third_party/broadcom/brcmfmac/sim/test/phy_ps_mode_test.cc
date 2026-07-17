@@ -42,14 +42,12 @@ void PhyPsModeTest::CreateInterface() {
 void PhyPsModeTest::DeleteInterface() { EXPECT_EQ(SimTest::DeleteInterface(&client_ifc_), ZX_OK); }
 
 zx_status_t PhyPsModeTest::SetPowerSaveMode(const wlan_common::PowerSaveType ps_mode) {
-  fidl::Arena fidl_arena;
-  auto builder =
-      fuchsia_wlan_phyimpl::wire::WlanPhyImplSetPowerSaveModeRequest::Builder(fidl_arena);
-  builder.ps_mode(ps_mode);
-  auto result = client_.buffer(test_arena_)->SetPowerSaveMode(builder.Build());
-  EXPECT_TRUE(result.ok());
-  if (result->is_error()) {
-    return result->error_value();
+  fuchsia_wlan_phy::WlanPhySetPowerSaveModeRequest req;
+  req.ps_mode(ps_mode);
+  auto result = client_->SetPowerSaveMode(req);
+  if (result.is_error()) {
+    return result.error_value().is_domain_error() ? result.error_value().domain_error()
+                                                  : result.error_value().framework_error().status();
   }
   return ZX_OK;
 }
@@ -89,14 +87,11 @@ TEST_F(PhyPsModeTest, SetPowerSaveModeIncorrect) {
 
   // Set PS mode but without passing any PS mode to set and verify
   // that it FAILS
-  fidl::Arena fidl_arena;
-  auto builder =
-      fuchsia_wlan_phyimpl::wire::WlanPhyImplSetPowerSaveModeRequest::Builder(fidl_arena);
-  auto result = client_.buffer(test_arena_)->SetPowerSaveMode(builder.Build());
-  EXPECT_TRUE(result.ok());
-  zx_status_t status = result->is_error() ? result->error_value() : ZX_OK;
-
-  ASSERT_EQ(status, ZX_ERR_INVALID_ARGS);
+  fuchsia_wlan_phy::WlanPhySetPowerSaveModeRequest req;
+  auto result = client_->SetPowerSaveMode(req);
+  ASSERT_TRUE(result.is_error());
+  ASSERT_TRUE(result.error_value().is_domain_error());
+  ASSERT_EQ(result.error_value().domain_error(), ZX_ERR_INVALID_ARGS);
 
   DeleteInterface();
 }
@@ -174,20 +169,18 @@ TEST_F(PhyPsModeTest, GetPowerSaveMode) {
   {
     const auto valid_ps_mode = wlan_common::PowerSaveType::kPsModeBalanced;
     ASSERT_EQ(ZX_OK, SetPowerSaveModeInFirmware(valid_ps_mode));
-    auto result = client_.buffer(test_arena_)->GetPowerSaveMode();
-    EXPECT_TRUE(result.ok());
-    ASSERT_FALSE(result->is_error());
-    EXPECT_EQ(result->value()->ps_mode(), valid_ps_mode);
+    auto result = client_->GetPowerSaveMode();
+    EXPECT_TRUE(result.is_ok());
+    EXPECT_EQ(result->ps_mode(), valid_ps_mode);
   }
 
   // Try again, just in case the first one was a default value.
   {
     const auto valid_ps_mode = wlan_common::PowerSaveType::kPsModePerformance;
     ASSERT_EQ(ZX_OK, SetPowerSaveModeInFirmware(valid_ps_mode));
-    auto result = client_.buffer(test_arena_)->GetPowerSaveMode();
-    EXPECT_TRUE(result.ok());
-    ASSERT_FALSE(result->is_error());
-    EXPECT_EQ(result->value()->ps_mode(), valid_ps_mode);
+    auto result = client_->GetPowerSaveMode();
+    EXPECT_TRUE(result.is_ok());
+    EXPECT_EQ(result->ps_mode(), valid_ps_mode);
   }
   DeleteInterface();
 }

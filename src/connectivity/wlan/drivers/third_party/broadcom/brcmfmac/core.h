@@ -23,8 +23,8 @@
 
 #include <fidl/fuchsia.wlan.fullmac/cpp/driver/wire.h>
 #include <fidl/fuchsia.wlan.fullmac/cpp/fidl.h>
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
-#include <fidl/fuchsia.wlan.phyimpl/cpp/fidl.h>
+#include <fidl/fuchsia.wlan.phy/cpp/fidl.h>
+#include <fidl/fuchsia.wlan.phy/cpp/wire.h>
 #include <lib/stdcompat/span.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/channel.h>
@@ -81,7 +81,7 @@
 
 #define MAX_SUPPORTED_WEP_KEY_LEN 13
 
-namespace fuchsia_wlan_phyimpl_wire = fuchsia_wlan_phyimpl::wire;
+namespace fuchsia_wlan_phy_wire = fuchsia_wlan_phy::wire;
 namespace fuchsia_wlan_common_wire = fuchsia_wlan_common::wire;
 
 static inline bool address_is_multicast(const uint8_t* address) { return 1 & *address; }
@@ -156,7 +156,7 @@ struct brcmf_pub {
   uint8_t clmver[BRCMF_DCMD_SMLEN];
 
   /* The last country code the driver set to firmware, used for recovery. */
-  uint8_t last_country_code[fuchsia_wlan_phyimpl_wire::kWlanphyAlpha2Len];
+  std::array<uint8_t, 2> last_country_code = {};
   /* Controller of recovery trigger point*/
   std::unique_ptr<wlan::brcmfmac::RecoveryTrigger> recovery_trigger;
   /* The start point of driver recovery process*/

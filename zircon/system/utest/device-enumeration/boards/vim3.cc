@@ -87,8 +87,7 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       "i2c-5000.aml-i2c.i2c.i2c-0-81.rtc-51.rtc",
 
       // WLAN
-      "mmc-ffe03000.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",
-      "mmc-ffe03000.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl.wlanphy",
+      "mmc-ffe03000.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphy",
 
       // GPU
       "gpu-ffe40000.aml-gpu",

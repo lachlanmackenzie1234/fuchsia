@@ -87,8 +87,7 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "gpio-c.aml_gpio_c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0.nrf52811_radio.ot-radio",
 
       // WLAN
-      "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",
-      "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl.wlanphy",
+      "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphy",
 
       // Bluetooth
       "bt-uart.bluetooth-composite-spec.aml-uart.serial.bt-transport-uart",

@@ -304,11 +304,9 @@ TEST_F(DynamicIfTest, EventHandlingOnSoftAPDel) {
     wlan_common::WlanMacRole ap_role = wlan_common::WlanMacRole::kAp;
     EXPECT_EQ(ZX_OK, softap_ifc_.Init(env_.get(), ap_role));
 
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_);
-    builder.role(fuchsia_wlan_common_wire::WlanMacRole::kAp);
-    builder.mlme_channel(softap_ifc_.TakeMlme());
-    auto req = builder.Build();
-    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeApName, nullptr, &req, &wdev));
+    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeApName, nullptr,
+                                              fuchsia_wlan_common::WlanMacRole::kAp, std::nullopt,
+                                              softap_ifc_.TakeMlme(), &wdev));
 
     // Override callback function to validate that it does not get invoked for del event.
     brcmf_fweh_unregister(sim->drvr, BRCMF_E_IF);
@@ -316,7 +314,7 @@ TEST_F(DynamicIfTest, EventHandlingOnSoftAPDel) {
 
     struct net_device* ndev = wdev->netdev;
     struct brcmf_if* ifp = ndev_to_if(ndev);
-    EXPECT_EQ(wdev->iftype, fuchsia_wlan_common_wire::WlanMacRole::kAp);
+    EXPECT_EQ(wdev->iftype, fuchsia_wlan_common::WlanMacRole::kAp);
     EXPECT_EQ(ZX_OK, brcmf_fil_bsscfg_data_set(ifp, "interface_remove", nullptr, 0));
   });
 }
@@ -486,11 +484,10 @@ TEST_F(DynamicIfTest, CreateClientWithRandomMac) {
 
     EXPECT_EQ(ZX_OK, client_ifc_.Init(env_.get(), wlan_common::WlanMacRole::kClient));
     wireless_dev* wdev = nullptr;
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_);
-    builder.role(fuchsia_wlan_common_wire::WlanMacRole::kClient);
-    builder.mlme_channel(client_ifc_.TakeMlme());
-    auto req = builder.Build();
-    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeClientName, nullptr, &req, &wdev));
+
+    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeClientName, nullptr,
+                                              fuchsia_wlan_common::WlanMacRole::kClient,
+                                              std::nullopt, client_ifc_.TakeMlme(), &wdev));
     EXPECT_EQ(ZX_OK, brcmf_cfg80211_del_iface(sim->drvr->config, wdev));
 
     // Set sim->drvr->bus_if->ops back to the original set of brcmf_bus_ops
@@ -508,12 +505,11 @@ TEST_F(DynamicIfTest, CreateIfaceMustProvideWdevOut) {
 
     wlan_common::WlanMacRole client_role = wlan_common::WlanMacRole::kClient;
     EXPECT_EQ(ZX_OK, client_ifc_.Init(env_.get(), client_role));
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_);
-    builder.role(fuchsia_wlan_common_wire::WlanMacRole::kAp);
-    builder.mlme_channel(client_ifc_.TakeMlme());
-    auto req = builder.Build();
+
     EXPECT_EQ(ZX_ERR_INVALID_ARGS,
-              brcmf_cfg80211_add_iface(sim->drvr, kFakeClientName, nullptr, &req, nullptr));
+              brcmf_cfg80211_add_iface(sim->drvr, kFakeClientName, nullptr,
+                                       fuchsia_wlan_common::WlanMacRole::kAp, std::nullopt,
+                                       client_ifc_.TakeMlme(), nullptr));
   });
 }
 
@@ -524,11 +520,9 @@ void DynamicIfTest::CheckAddIfaceWritesWdev(wlan_common::WlanMacRole role, const
     wireless_dev* wdev = nullptr;
 
     EXPECT_EQ(ZX_OK, ifc.Init(env_.get(), role));
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_);
-    builder.role(role);
-    builder.mlme_channel(ifc.TakeMlme());
-    auto req = builder.Build();
-    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, iface_name, nullptr, &req, &wdev));
+
+    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, iface_name, nullptr, role, std::nullopt,
+                                              ifc.TakeMlme(), &wdev));
     EXPECT_NE(nullptr, wdev);
     EXPECT_NE(nullptr, wdev->netdev);
     EXPECT_EQ(wdev->iftype, role);
@@ -562,13 +556,11 @@ TEST_F(DynamicIfTest, CreateClientWithCustomName) {
 
     wlan_common::WlanMacRole client_role = wlan_common::WlanMacRole::kClient;
     EXPECT_EQ(ZX_OK, client_ifc_.Init(env_.get(), client_role));
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_);
-    builder.role(fuchsia_wlan_common_wire::WlanMacRole::kClient);
-    builder.mlme_channel(client_ifc_.TakeMlme());
-    auto req = builder.Build();
 
     EXPECT_EQ(0, strcmp(brcmf_ifname(ifp), kPrimaryNetworkInterfaceName));
-    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeClientName, nullptr, &req, &wdev));
+    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeClientName, nullptr,
+                                              fuchsia_wlan_common::WlanMacRole::kClient,
+                                              std::nullopt, client_ifc_.TakeMlme(), &wdev));
     EXPECT_EQ(0, strcmp(wdev->netdev->name, kFakeClientName));
     EXPECT_EQ(0, strcmp(brcmf_ifname(ifp), kFakeClientName));
     EXPECT_EQ(ZX_OK, brcmf_cfg80211_del_iface(sim->drvr->config, wdev));
@@ -586,11 +578,9 @@ TEST_F(DynamicIfTest, CreateApWithCustomName) {
     wlan_common::WlanMacRole ap_role = wlan_common::WlanMacRole::kAp;
     EXPECT_EQ(ZX_OK, softap_ifc_.Init(env_.get(), ap_role));
 
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_);
-    builder.role(fuchsia_wlan_common_wire::WlanMacRole::kAp);
-    builder.mlme_channel(softap_ifc_.TakeMlme());
-    auto req = builder.Build();
-    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeApName, nullptr, &req, &wdev));
+    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, kFakeApName, nullptr,
+                                              fuchsia_wlan_common::WlanMacRole::kAp, std::nullopt,
+                                              softap_ifc_.TakeMlme(), &wdev));
     EXPECT_EQ(0, strcmp(wdev->netdev->name, kFakeApName));
     EXPECT_EQ(ZX_OK, brcmf_cfg80211_del_iface(sim->drvr->config, wdev));
   });
@@ -620,11 +610,9 @@ TEST_F(DynamicIfTest, CreateClientWithLongName) {
     ASSERT_LT(strlen(truncated_name),
               strlen(really_long_name));  // check that truncated_name is actually shorter
 
-    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_);
-    builder.role(fuchsia_wlan_common_wire::WlanMacRole::kClient);
-    builder.mlme_channel(client_ifc_.TakeMlme());
-    auto req = builder.Build();
-    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, really_long_name, nullptr, &req, &wdev));
+    EXPECT_EQ(ZX_OK, brcmf_cfg80211_add_iface(sim->drvr, really_long_name, nullptr,
+                                              fuchsia_wlan_common::WlanMacRole::kClient,
+                                              std::nullopt, client_ifc_.TakeMlme(), &wdev));
     EXPECT_EQ(0, strcmp(wdev->netdev->name, truncated_name));
     EXPECT_EQ(ZX_OK, brcmf_cfg80211_del_iface(sim->drvr->config, wdev));
   });

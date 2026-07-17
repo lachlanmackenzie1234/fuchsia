@@ -173,14 +173,12 @@ TEST_F(CrashRecoveryTest, DestroyIfaceAfterIfaceDestroyed) {
   // A second call to destroy the interface must return ZX_ERR_NOT_FOUND, any other error code will
   // prevent interface re-creation. We cannot use SimTest::DeleteInterface here because it will
   // return early because it has no knowledge of the interface after it was first destroyed.
-  auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplDestroyIfaceRequest::Builder(test_arena_);
-  builder.iface_id(client_ifc_.iface_id_);
-  auto result = client_.buffer(test_arena_)->DestroyIface(builder.Build());
+  auto result = client_->DestroyIface(
+      fuchsia_wlan_phy::WlanPhyDestroyIfaceRequest{{.iface_id = client_ifc_.iface_id_}});
   // The FIDL part of the call must succeed.
-  ASSERT_TRUE(result.ok());
-  // But the result of the operation must be an error with a ZX_ERR_NOT_FOUND error value.
-  ASSERT_TRUE(result->is_error());
-  EXPECT_EQ(result->error_value(), ZX_ERR_NOT_FOUND);
+  EXPECT_TRUE(result.is_error());
+  EXPECT_TRUE(result.error_value().is_domain_error());
+  EXPECT_EQ(result.error_value().domain_error(), ZX_ERR_NOT_FOUND);
 }
 
 // Verify that an association can be done correctly after a crash and a recovery happen after a scan
@@ -299,10 +297,10 @@ TEST_F(CrashRecoveryTest, ResetRejectedIfCrashRecoveryInProgress) {
   recovery_in_progress.Wait();
 
   // Check that reset is rejected here.
-  auto res = client_.buffer(test_arena_)->Reset();
-  EXPECT_TRUE(res.ok());
-  EXPECT_TRUE(res->is_error());
-  EXPECT_EQ(res->error_value(), ZX_ERR_UNAVAILABLE);
+  auto res = client_->Reset();
+  ASSERT_TRUE(res.is_error());
+  EXPECT_TRUE(res.error_value().is_domain_error());
+  EXPECT_EQ(res.error_value().domain_error(), ZX_ERR_UNAVAILABLE);
 
   finish_recovery.Signal();
   WaitForRecoveryComplete();
@@ -312,8 +310,8 @@ TEST_F(CrashRecoveryTest, CrashRecoveryAfterReset) {
   InitWithInterface();
 
   // Trigger reset first
-  auto res = client_.buffer(test_arena_)->Reset();
-  ASSERT_TRUE(res.ok() && !res->is_error());
+  auto res = client_->Reset();
+  ASSERT_TRUE(res.is_ok());
 
   // Now trigger crash and verify recovery
   ScheduleCrash(zx::msec(10));
@@ -333,8 +331,8 @@ TEST_F(CrashRecoveryTest, ResetAfterCrashRecovery) {
   env_->Run(kTestDuration);
 
   // Now perform reset and verify success
-  auto res = client_.buffer(test_arena_)->Reset();
-  ASSERT_TRUE(res.ok() && !res->is_error());
+  auto res = client_->Reset();
+  ASSERT_TRUE(res.is_ok());
 }
 
 }  // namespace wlan::brcmfmac
