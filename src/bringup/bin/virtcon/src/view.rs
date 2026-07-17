@@ -18,7 +18,7 @@ use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMarker, AdminSynchronousProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fidl_fuchsia_hardware_pty::WindowSize;
-use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_fuchsia_input::ConsumerControlButton;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_channel_to_protocol;
 use futures::future::{FutureExt as _, join_all};
