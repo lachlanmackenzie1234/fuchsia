@@ -313,4 +313,25 @@ TEST(CounterTest, WriteHappyCase) {
   ASSERT_EQ(1, value);
 }
 
+// Verify that zx_object_signal works on a counter.
+TEST(CounterTest, Signal) {
+  zx::counter counter;
+  ASSERT_OK(zx::counter::create(0, &counter));
+
+  // Signal ZX_USER_SIGNAL_0 and ZX_COUNTER_SIGNALED.
+  ASSERT_OK(counter.signal(0, ZX_USER_SIGNAL_0 | ZX_COUNTER_SIGNALED));
+
+  // Test invalid signals (e.g. ZX_SIGNAL_HANDLE_CLOSED).
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS, counter.signal(0, ZX_SIGNAL_HANDLE_CLOSED));
+
+  zx_signals_t observed;
+  ASSERT_EQ(ZX_ERR_TIMED_OUT, counter.wait_one(0u, zx::time::infinite_past(), &observed));
+  ASSERT_EQ(ZX_COUNTER_NON_POSITIVE | ZX_USER_SIGNAL_0 | ZX_COUNTER_SIGNALED, observed);
+
+  // Clear them.
+  ASSERT_OK(counter.signal(ZX_USER_SIGNAL_0 | ZX_COUNTER_SIGNALED, 0));
+  ASSERT_EQ(ZX_ERR_TIMED_OUT, counter.wait_one(0u, zx::time::infinite_past(), &observed));
+  ASSERT_EQ(ZX_COUNTER_NON_POSITIVE, observed);
+}
+
 }  // namespace
