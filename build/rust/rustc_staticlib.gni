@@ -55,6 +55,12 @@ import("//build/rust/rustc_test.gni")
 #     List of rust_library GN targets on which this crate's tests depend in addition to those in
 #     `deps`.
 #
+#   non_test_deps (optional)
+#     List of rust_library GN targets on which this crate depends but not its
+#     tests. This can be used to replace a dependency between the test and
+#     library targets. It's an error to provide this when with_unit_tests is
+#     false.
+#
 #   non_rust_deps (optional)
 #     List of non-rust_library GN targets on which this crate depends.
 #     Obsolete. Please use deps instead.
@@ -137,6 +143,7 @@ template("rustc_staticlib") {
                              "*",
                              [
                                "name",
+                               "non_test_deps",
                                "output_name",
                                "test_configs",
                                "test_deps",
@@ -207,6 +214,12 @@ template("rustc_staticlib") {
     deps = []
     if (defined(invoker.deps)) {
       deps += invoker.deps
+    }
+
+    if (defined(invoker.non_test_deps)) {
+      assert(defined(invoker.with_unit_tests) && invoker.with_unit_tests,
+             "use deps if not generating unit tests")
+      deps += invoker.non_test_deps
     }
 
     # TODO(https://fxbug.dev/42120123) remove "non_rust_deps"
