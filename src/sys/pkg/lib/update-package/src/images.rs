@@ -302,9 +302,23 @@ impl ImageMetadata {
     ) -> Result<Self, ImageMetadataError> {
         use sha2::Digest as _;
 
+        // TODO(https://fxbug.dev/535596550): Find a better API making a custom Write impl.
+        struct WriteHasher<'a, D>(&'a mut D);
+        impl<D: sha2::Digest> std::io::Write for WriteHasher<'_, D> {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.update(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
         let mut hasher = sha2::Sha256::new();
-        let mut file = std::fs::File::open(path).map_err(ImageMetadataError::Io)?;
-        let size = std::io::copy(&mut file, &mut hasher).map_err(ImageMetadataError::Io)?;
+        let file = std::fs::File::open(path).map_err(ImageMetadataError::Io)?;
+        let mut reader = std::io::BufReader::new(file);
+        let size = std::io::copy(&mut reader, &mut WriteHasher(&mut hasher))
+            .map_err(ImageMetadataError::Io)?;
         let sha256 = fuchsia_hash::Sha256::from(*AsRef::<[u8; 32]>::as_ref(&hasher.finalize()));
 
         let url = AbsoluteComponentUrl::from_package_url_and_resource(url.into(), resource)

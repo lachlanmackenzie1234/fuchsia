@@ -6,7 +6,7 @@
 
 use core::fmt::{self, Debug};
 
-use hmac::Mac as _;
+use hmac::{KeyInit as _, Mac as _};
 use net_types::ip::{Ipv6Addr, Subnet};
 use rand::Rng;
 

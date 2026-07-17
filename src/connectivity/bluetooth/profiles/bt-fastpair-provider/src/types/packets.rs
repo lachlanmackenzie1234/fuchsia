@@ -4,9 +4,9 @@
 
 use bitfield::bitfield;
 use fuchsia_bluetooth::types::Address;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use log::debug;
-use packet_encoding::{decodable_enum, Encodable as PacketEncodable};
+use packet_encoding::{Encodable as PacketEncodable, decodable_enum};
 use sha2::Sha256;
 
 use crate::types::keys::public_key_from_bytes;

@@ -5,7 +5,7 @@
 // Used in PRF as specified in IEEE Std 802.11-2016, 12.7.1.2.
 use crate::Error;
 use anyhow::ensure;
-use hmac::Mac as _;
+use hmac::{KeyInit as _, Mac as _};
 
 type HmacSha1 = hmac::Hmac<sha1::Sha1>;
 

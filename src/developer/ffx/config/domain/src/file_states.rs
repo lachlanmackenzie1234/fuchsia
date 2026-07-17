@@ -82,9 +82,21 @@ impl FileStates {
 
 fn hash_path(full_path: &Utf8Path) -> Result<Option<Vec<u8>>, std::io::Error> {
     match std::fs::File::open(full_path) {
-        Ok(mut file) => {
+        Ok(file) => {
+            // TODO(https://fxbug.dev/535596550): Find a better API making a custom Write impl.
+            struct WriteHasher<'a, D>(&'a mut D);
+            impl<D: Digest> std::io::Write for WriteHasher<'_, D> {
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                    self.0.update(buf);
+                    Ok(buf.len())
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
             let mut hasher = sha2::Sha256::new();
-            std::io::copy(&mut file, &mut hasher)?;
+            let mut reader = std::io::BufReader::new(file);
+            std::io::copy(&mut reader, &mut WriteHasher(&mut hasher))?;
             Ok(Some(hasher.finalize().to_vec()))
         }
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),

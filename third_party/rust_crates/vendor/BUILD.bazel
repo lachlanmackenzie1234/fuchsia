@@ -793,6 +793,18 @@ alias(
 )
 
 alias(
+    name = "digest-0.11.3",
+    actual = "//third_party/rust_crates/vendor/digest-0.11.3:digest",
+    tags = ["manual"],
+)
+
+alias(
+    name = "digest",
+    actual = "//third_party/rust_crates/vendor/digest-0.11.3:digest",
+    tags = ["manual"],
+)
+
+alias(
     name = "downcast-rs-2.0.2",
     actual = "//third_party/rust_crates/vendor/downcast-rs-2.0.2:downcast_rs",
     tags = ["manual"],
@@ -1177,8 +1189,26 @@ alias(
 )
 
 alias(
-    name = "hkdf",
+    name = "hkdf_0_12-0.12.4",
     actual = "//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hkdf_0_12",
+    actual = "//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hkdf-0.13.0",
+    actual = "//third_party/rust_crates/vendor/hkdf-0.13.0:hkdf",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hkdf",
+    actual = "//third_party/rust_crates/vendor/hkdf-0.13.0:hkdf",
     tags = ["manual"],
 )
 
@@ -1189,8 +1219,26 @@ alias(
 )
 
 alias(
-    name = "hmac",
+    name = "hmac_0_12-0.12.1",
     actual = "//third_party/rust_crates/vendor/hmac-0.12.1:hmac",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hmac_0_12",
+    actual = "//third_party/rust_crates/vendor/hmac-0.12.1:hmac",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hmac-0.13.0",
+    actual = "//third_party/rust_crates/vendor/hmac-0.13.0:hmac",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hmac",
+    actual = "//third_party/rust_crates/vendor/hmac-0.13.0:hmac",
     tags = ["manual"],
 )
 
@@ -1459,14 +1507,14 @@ alias(
 )
 
 alias(
-    name = "md-5-0.10.6",
-    actual = "//third_party/rust_crates/vendor/md-5-0.10.6:md5",
+    name = "md-5-0.11.0",
+    actual = "//third_party/rust_crates/vendor/md-5-0.11.0:md5",
     tags = ["manual"],
 )
 
 alias(
     name = "md-5",
-    actual = "//third_party/rust_crates/vendor/md-5-0.10.6:md5",
+    actual = "//third_party/rust_crates/vendor/md-5-0.11.0:md5",
     tags = ["manual"],
 )
 
@@ -2593,14 +2641,32 @@ alias(
 )
 
 alias(
-    name = "sha1-0.10.6",
-    actual = "//third_party/rust_crates/vendor/sha1-0.10.6:sha1",
+    name = "sha1-0.10.7",
+    actual = "//third_party/rust_crates/vendor/sha1-0.10.7:sha1",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sha1_0_10-0.10.7",
+    actual = "//third_party/rust_crates/vendor/sha1-0.10.7:sha1",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sha1_0_10",
+    actual = "//third_party/rust_crates/vendor/sha1-0.10.7:sha1",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sha1-0.11.0",
+    actual = "//third_party/rust_crates/vendor/sha1-0.11.0:sha1",
     tags = ["manual"],
 )
 
 alias(
     name = "sha1",
-    actual = "//third_party/rust_crates/vendor/sha1-0.10.6:sha1",
+    actual = "//third_party/rust_crates/vendor/sha1-0.11.0:sha1",
     tags = ["manual"],
 )
 
@@ -2611,8 +2677,26 @@ alias(
 )
 
 alias(
-    name = "sha2",
+    name = "sha2_0_10-0.10.9",
     actual = "//third_party/rust_crates/vendor/sha2-0.10.9:sha2",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sha2_0_10",
+    actual = "//third_party/rust_crates/vendor/sha2-0.10.9:sha2",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sha2-0.11.0",
+    actual = "//third_party/rust_crates/vendor/sha2-0.11.0:sha2",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sha2",
+    actual = "//third_party/rust_crates/vendor/sha2-0.11.0:sha2",
     tags = ["manual"],
 )
 

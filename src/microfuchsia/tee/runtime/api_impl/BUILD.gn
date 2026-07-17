@@ -60,13 +60,13 @@ rustc_library("api_impl") {
     "//third_party/rust_crates:cbc",
     "//third_party/rust_crates:cmac",
     "//third_party/rust_crates:ecb",
-    "//third_party/rust_crates:hmac",
+    "//third_party/rust_crates:hmac-0.12",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:num-traits",
     "//third_party/rust_crates:p256",
     "//third_party/rust_crates:rsa",
-    "//third_party/rust_crates:sha1",
-    "//third_party/rust_crates:sha2",
+    "//third_party/rust_crates:sha1-0.10",
+    "//third_party/rust_crates:sha2-0.10",
     "//third_party/rust_crates:thiserror",
   ]
   public_configs = [ ":export_scudo_dynamic_options" ]

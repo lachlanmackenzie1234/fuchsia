@@ -56,9 +56,11 @@ rust_library(
         ],
     ),
     crate_features = [
+        "alloc",
         "block-api",
         "default",
         "mac",
+        "oid",
     ],
     crate_root = "src/lib.rs",
     edition = "2024",
@@ -82,6 +84,7 @@ rust_library(
     version = "0.11.3",
     deps = [
         "//third_party/rust_crates/vendor/block-buffer-0.12.1:block_buffer",
+        "//third_party/rust_crates/vendor/const-oid-0.10.2:const_oid",
         "//third_party/rust_crates/vendor/crypto-common-0.2.2:crypto_common",
         "//third_party/rust_crates/vendor/ctutils-0.4.2:ctutils",
     ],

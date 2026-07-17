@@ -5,7 +5,7 @@
 use super::Algorithm;
 use crate::Error;
 
-use hmac::Mac as _;
+use hmac::{KeyInit as _, Mac as _};
 
 pub struct HmacSha1;
 

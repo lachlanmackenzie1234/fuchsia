@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_pkg as fpkg;
-use hmac::Mac as _;
+use hmac::{KeyInit as _, Mac as _};
 
 /// Creates and authenticates `fidl_fuchsia_pkg::ResolutionContext`s using an HMAC.
 /// The contexts contain the hash of the superpackage.
@@ -26,7 +26,7 @@ impl ContextAuthenticator {
     }
 
     fn from_secret(secret: [u8; SECRET_LEN]) -> Self {
-        Self { hmac: hmac::Hmac::<sha2::Sha256>::new(secret.as_slice().into()) }
+        Self { hmac: hmac::Hmac::<sha2::Sha256>::new((&secret).into()) }
     }
 
     /// Create a `fidl_fuchsia_pkg::ResolutionContext`, tagged by this `ContextAuthenticator`'s

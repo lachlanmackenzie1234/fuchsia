@@ -1,7 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use hmac::Mac;
+use hmac::{KeyInit, Mac};
 
 // Fscrypt tacks a prefix onto the 'info' field in HKDF used for different purposes.
 // This prefix is built from one of the following context.

@@ -62,7 +62,7 @@ pub fn digest_path<P: AsRef<Path>>(out_dir: P, result: Option<FuzzResult>, data:
     };
     let mut digest = Sha256::new();
     digest.update(&data);
-    path.push(format!("{}{:x}", prefix, digest.finalize()));
+    path.push(format!("{}{}", prefix, hex::encode(digest.finalize())));
     path
 }
 
