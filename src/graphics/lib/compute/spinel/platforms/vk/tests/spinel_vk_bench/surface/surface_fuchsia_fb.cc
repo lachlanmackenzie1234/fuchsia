@@ -6,6 +6,7 @@
 
 #include <fbl/unique_fd.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
+#include <fidl/fuchsia.input/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -29,18 +30,19 @@
 //
 //
 namespace FIR = fuchsia_input_report;
+namespace FI  = fuchsia_input;
 
 //
 // Ensure that the surface event structs are at least as large as Fuchsia's
 //
 static_assert(MEMBER_SIZE_MACRO(struct surface_event, pointer.buttons.dword) * 32 >=
-              FIR::wire::kMouseMaxNumButtons);
+              FI::wire::kMouseMaxNumButtons);
 
 static_assert(MEMBER_SIZE_MACRO(struct surface_event, touch.contacts) >=
-              FIR::wire::kTouchMaxContacts);
+              FI::wire::kTouchMaxContacts);
 
 static_assert(MEMBER_SIZE_MACRO(struct surface_event, touch.buttons.dword) * 32 >=
-              FIR::wire::kTouchMaxNumButtons);
+              FI::wire::kTouchMaxNumButtons);
 
 //
 //
