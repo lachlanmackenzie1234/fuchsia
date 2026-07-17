@@ -632,6 +632,76 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
   return zx::ok();
 }
 
+namespace {
+
+// Helper to find a value in dictionary.
+const std::optional<std::reference_wrapper<const fuchsia_driver_metadata::DictionaryValue>>
+FindMetadataValue(const fuchsia_driver_metadata::Dictionary& dict, std::string_view key) {
+  if (!dict.entries().has_value()) {
+    return std::nullopt;
+  }
+  for (const fuchsia_driver_metadata::DictionaryEntry& entry : *dict.entries()) {
+    if (entry.key() == key) {
+      return entry.value();
+    }
+  }
+  return std::nullopt;
+}
+
+// Helper to get an uint32 value.
+zx::result<uint32_t> GetUint32(const fuchsia_driver_metadata::Dictionary& dict,
+                               std::string_view key) {
+  std::optional maybe_val = FindMetadataValue(dict, key);
+  if (!maybe_val) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  const auto& val = maybe_val->get();
+  if (!val.int64().has_value()) {
+    fdf::error("Metadata key '{}' is not an integer", key);
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  if (val.int64().value() > std::numeric_limits<uint32_t>::max() || val.int64().value() < 0) {
+    fdf::error("Metadata key '{}' value {} out of range for uint32", key, val.int64().value());
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+  return zx::ok(static_cast<uint32_t>(val.int64().value()));
+}
+
+}  // namespace
+
+zx::result<> Dwc3::LoadMetadata(fdf::PDev& pdev) {
+  zx::result meta = pdev.GetFidlMetadata<fuchsia_driver_metadata::Dictionary>(
+      "fuchsia.driver.metadata.Dictionary");
+  if (meta.is_error()) {
+    if (meta.error_value() == ZX_ERR_NOT_FOUND) {
+      return zx::ok();
+    }
+    fdf::error("Failed to retrieve driver metadata: {}", meta.status_string());
+    return meta.take_error();
+  }
+
+  zx::result interrupt_moderation_us_res = GetUint32(*meta, "interrupt-moderation-us");
+  if (interrupt_moderation_us_res.is_error() &&
+      interrupt_moderation_us_res.error_value() != ZX_ERR_NOT_FOUND) {
+    return interrupt_moderation_us_res.take_error();
+  }
+  if (interrupt_moderation_us_res.is_ok()) {
+    uint32_t value = interrupt_moderation_us_res.value();
+    uint32_t imodi = value * 4;  // units of 250ns.
+    if (imodi < value || imodi > std::numeric_limits<uint16_t>::max()) {
+      fdf::error(
+          "Metadata key 'interrupt-moderation-us' value {} out of range for 16-bit IMODI register",
+          interrupt_moderation_us_res.value());
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    interrupt_moderation_ = imodi;
+  } else {
+    interrupt_moderation_ = 0;
+  }
+
+  return zx::ok();
+}
+
 zx_status_t Dwc3::AcquirePDevResources() {
   TRACE_DURATION("dwc3", "Dwc3::AcquirePDevResources");
   auto pdev_result = incoming()->OpenService<fpdev::Service>("pdev");
@@ -645,6 +715,10 @@ zx_status_t Dwc3::AcquirePDevResources() {
     return pdev_client_end.error_value();
   }
   pdev_ = fdf::PDev{std::move(pdev_client_end.value())};
+
+  if (zx::result result = LoadMetadata(pdev_); result.is_error()) {
+    return result.status_value();
+  }
 
   if (zx::result result =
           usb_phy_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev_);
@@ -893,6 +967,11 @@ void Dwc3::SetDeviceAddress(uint32_t address) {
 void Dwc3::StartPeripheralMode() {
   TRACE_DURATION("dwc3", "Dwc3::StartPeripheralMode");
   auto* mmio = get_mmio();
+
+  if (interrupt_moderation_ != 0) {
+    // Enable interrupt moderation.
+    DEVIMOD::Get(0).FromValue(0).set_IMODI(interrupt_moderation_).WriteTo(mmio);
+  }
 
   // configure and enable PHYs
   GUSB2PHYCFG::Get(0)

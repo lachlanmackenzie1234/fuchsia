@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_DWC3_DWC3_TEST_FIXTURE_H_
 #define SRC_DEVICES_USB_DRIVERS_DWC3_DWC3_TEST_FIXTURE_H_
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.clock/cpp/test_base.h>
 #include <fidl/fuchsia.hardware.interconnect/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
@@ -344,6 +345,17 @@ class Environment : public fdf_testing::Environment {
     config.use_fake_irq = true;
 
     pdev_.SetConfig(std::move(config));
+  }
+
+  void SetInterruptModerationUs(uint32_t us) {
+    fuchsia_driver_metadata::Dictionary dictionary;
+    std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
+    entries.push_back(fuchsia_driver_metadata::DictionaryEntry{{
+        .key = "interrupt-moderation-us",
+        .value = fuchsia_driver_metadata::DictionaryValue::WithInt64(us),
+    }});
+    dictionary.entries() = std::move(entries);
+    pdev_.AddFidlMetadata("fuchsia.driver.metadata.Dictionary", dictionary);
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& directory) override {

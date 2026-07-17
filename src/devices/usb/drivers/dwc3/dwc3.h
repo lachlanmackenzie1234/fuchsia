@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.interconnect/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
@@ -420,6 +421,7 @@ class Dwc3 : public fdf::DriverBase2,
   zx::eventpair AcquireWakeLease();
 
   zx_status_t AcquirePDevResources();
+  zx::result<> LoadMetadata(fdf::PDev& pdev);
   zx_status_t Init();
 
   // This method is safe to call with the core powered down.
@@ -546,6 +548,7 @@ class Dwc3 : public fdf::DriverBase2,
 
   std::shared_ptr<fdf::Namespace> incoming_;
   std::optional<dwc3_config::Config> config_;
+  uint32_t interrupt_moderation_ = 0;
 
   std::optional<inspect::ComponentInspector> inspector_;
 

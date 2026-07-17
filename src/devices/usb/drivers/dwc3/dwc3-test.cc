@@ -36,6 +36,7 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-test-fixture.h"
 #include "src/devices/usb/drivers/dwc3/dwc3_config.h"
+#include "src/lib/testing/predicates/status.h"
 
 namespace dwc3 {
 
@@ -557,4 +558,65 @@ INSTANTIATE_TEST_SUITE_P(
     });
 // clang-format on
 
+class InterruptModeration
+    : public TestFixture<false, testing::TestWithParam<std::optional<uint32_t>>> {};
+
+const auto kInterruptModerationCases =
+    testing::Values(std::nullopt, 1, 1000, std::numeric_limits<uint32_t>::max(), 20000);
+
+TEST_P(InterruptModeration, Values) {
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+  const std::optional<uint32_t> interrupt_moderation_us = GetParam();
+
+  std::optional<uint32_t> devimod_written;
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.usb_phy().set_expect_connection_status_observer_call(false);
+    if (interrupt_moderation_us.has_value()) {
+      env.SetInterruptModerationUs(interrupt_moderation_us.value());
+    }
+    ddk_fake::FakeMmioReg& devimod = env.reg_region()[DEVIMOD::Get(0).addr()];
+    devimod.SetWriteCallback([&](uint64_t value) {
+      devimod_written = DEVIMOD::Get(0).FromValue(static_cast<uint32_t>(value)).IMODI();
+    });
+  });
+  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  if (interrupt_moderation_us.has_value() &&
+      static_cast<uint16_t>(interrupt_moderation_us.value()) >=
+          std::numeric_limits<uint16_t>::max() / 4) {
+    ASSERT_STATUS(res, ZX_ERR_OUT_OF_RANGE);
+    return;
+  }
+  ASSERT_OK(res);
+  ASSERT_OK(WaitForPhy());
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_OK(dci_service.status_value());
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+  ASSERT_OK(dci->StartController().status());
+
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  if (interrupt_moderation_us.has_value() && interrupt_moderation_us.value() != 0) {
+    ASSERT_TRUE(devimod_written.has_value());
+    EXPECT_EQ(devimod_written.value(), interrupt_moderation_us.value() * 4);
+  } else {
+    EXPECT_FALSE(devimod_written.has_value()) << devimod_written.value();
+  }
+
+  EXPECT_OK(dut_.StopDriver().status_value());
+}
+
+INSTANTIATE_TEST_SUITE_P(InterruptModeration, InterruptModeration, kInterruptModerationCases,
+                         [](const testing::TestParamInfo<std::optional<uint32_t>>& info)
+                             -> std::string {
+                           if (!info.param.has_value()) {
+                             return "empty";
+                           }
+                           return std::format("{}", info.param.value());
+                         });
 }  // namespace dwc3

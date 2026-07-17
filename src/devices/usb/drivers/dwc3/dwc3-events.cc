@@ -225,7 +225,11 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
 
     event_fifo_.Advance(event_count);
     // acknowledge the events we have processed
-    GEVNTCOUNT::Get(0).FromValue(0).set_EVNTCOUNT(event_bytes).WriteTo(mmio);
+    GEVNTCOUNT::Get(0)
+        .FromValue(0)
+        .set_EVNT_HANDLER_BUSY(1)
+        .set_EVNTCOUNT(event_bytes)
+        .WriteTo(mmio);
   }
   metrics_.UpdateMaxEventBatch(total_processed);
 
@@ -253,7 +257,7 @@ void Dwc3::StartEvents() {
 
   GEVNTADR::Get(0).FromValue(0).set_EVNTADR(paddr).WriteTo(mmio);
   GEVNTSIZ::Get(0).FromValue(0).set_EVENTSIZ(kBufferSize).set_EVNTINTRPTMASK(0).WriteTo(mmio);
-  GEVNTCOUNT::Get(0).FromValue(0).set_EVNTCOUNT(0).WriteTo(mmio);
+  GEVNTCOUNT::Get(0).FromValue(0).set_EVNTCOUNT(0).set_EVNT_HANDLER_BUSY(1).WriteTo(mmio);
 
   // enable events
   DEVTEN::Get()

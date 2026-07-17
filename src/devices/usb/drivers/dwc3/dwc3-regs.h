@@ -420,6 +420,15 @@ class GSBUSCFG1 : public hwreg::RegisterBase<GSBUSCFG1, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<GSBUSCFG1>(0xc104); }
 };
 
+// Device Interrupt Moderation Register.
+class DEVIMOD : public hwreg::RegisterBase<DEVIMOD, uint32_t> {
+ public:
+  DEF_FIELD(31, 16, IMODC);
+  // Interrupt moderation interval, in units of 250ns or zero for disabled.
+  DEF_FIELD(15, 0, IMODI);
+  static auto Get(uint32_t index) { return hwreg::RegisterAddr<DEVIMOD>(0xca00 + (index * 0x4)); }
+};
+
 class GSNPSID : public hwreg::RegisterBase<GSNPSID, uint32_t> {
  public:
   DEF_FIELD(31, 16, core_id);
