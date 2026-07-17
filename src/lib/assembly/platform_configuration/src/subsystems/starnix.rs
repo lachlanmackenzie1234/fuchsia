@@ -5,6 +5,9 @@
 use crate::subsystems::prelude::*;
 use anyhow::ensure;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
+use assembly_config_schema::platform_settings::connectivity_config::{
+    PlatformConnectivityConfig, WlanPolicyLayer,
+};
 use assembly_config_schema::platform_settings::starnix_config::{
     NetworkManagerTreatment, PlatformStarnixConfig, SocketMarkTreatment,
 };
@@ -12,12 +15,15 @@ use assembly_constants::BoardFeature;
 use starnix_features::{Feature, FeatureAndArgs};
 
 pub(crate) struct StarnixSubsystem;
-impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
+impl DefineSubsystemConfiguration<(&PlatformStarnixConfig, &PlatformConnectivityConfig)>
+    for StarnixSubsystem
+{
     fn define_configuration(
         context: &ConfigurationContext<'_>,
-        starnix_config: &PlatformStarnixConfig,
+        configs: &(&PlatformStarnixConfig, &PlatformConnectivityConfig),
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
+        let (starnix_config, connectivity_config) = *configs;
         let PlatformStarnixConfig {
             enabled,
             enable_android_support,
@@ -51,7 +57,10 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                 false
             };
             if has_wifi {
-                builder.platform_bundle("wlan_wlanix")?;
+                ensure!(
+                    matches!(connectivity_config.wlan.policy_layer, WlanPolicyLayer::ViaWlanix),
+                    "Android Wi-fi requires the Wlanix policy layer to be enabled"
+                );
             }
             if *enable_android_support {
                 builder.set_config_capability(
@@ -125,5 +134,49 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::subsystems::ConfigurationBuilderImpl;
+    use assembly_config_schema::BoardConfig;
+
+    #[test]
+    fn test_define_configuration_with_wifi_support_requires_wlanix() {
+        let mut board_config: BoardConfig = Default::default();
+        board_config.provided_features.push("fuchsia::wlan_fullmac".into());
+
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &board_config,
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+
+        let starnix_config = PlatformStarnixConfig {
+            enabled: true,
+            enable_android_support: true,
+            ..Default::default()
+        };
+
+        let connectivity_config = PlatformConnectivityConfig { ..Default::default() };
+
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StarnixSubsystem::define_configuration(
+            &context,
+            &(&starnix_config, &connectivity_config),
+            &mut builder,
+        );
+
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("Android Wi-fi requires the Wlanix policy layer to be enabled")
+        );
     }
 }

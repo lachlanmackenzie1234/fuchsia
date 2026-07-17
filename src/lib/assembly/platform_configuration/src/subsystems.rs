@@ -298,7 +298,7 @@ fn configure_subsystems(
 
     starnix::StarnixSubsystem::define_configuration(
         &context_base.for_subsystem("starnix"),
-        &platform.starnix,
+        &(&platform.starnix, &platform.connectivity),
         builder,
     )
     .context("Configuring the starnix subsystem")?;
