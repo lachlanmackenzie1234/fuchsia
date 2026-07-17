@@ -85,7 +85,7 @@ ServiceInstancePublisherServiceImpl::ResponderPublisher::ResponderPublisher(
   // unbind from this end or remove the handler, except in the destructor. |Quit| causes this
   // publisher to be deleted, so the lifetime of the publisher is effectively scoped to the lifetime
   // of the channel.
-  responder_.set_error_handler([this](zx_status_t status) mutable { Quit(); });
+  responder_.set_error_handler([this](zx_status_t status) mutable { MaybeDelete(); });
 
   responder_.events().SetSubtypes = [this](std::vector<std::string> subtypes) {
     for (const auto& subtype : subtypes) {
@@ -112,11 +112,7 @@ ServiceInstancePublisherServiceImpl::ResponderPublisher::~ResponderPublisher() {
   }
 }
 
-void ServiceInstancePublisherServiceImpl::ResponderPublisher::Quit() {
-  // This method is called by the error handler for the responder channel, ensuring that this
-  // publisher will be destroyed shortly after the channel is closed from the other end.
-  delete this;
-}
+void ServiceInstancePublisherServiceImpl::ResponderPublisher::Quit() { MaybeDelete(); }
 
 void ServiceInstancePublisherServiceImpl::ResponderPublisher::ReportSuccess(bool success) {
   FX_DCHECK(callback_);
@@ -132,6 +128,14 @@ void ServiceInstancePublisherServiceImpl::ResponderPublisher::ReportSuccess(bool
 void ServiceInstancePublisherServiceImpl::ResponderPublisher::GetPublication(
     PublicationCause publication_cause, const std::string& subtype,
     const std::vector<inet::SocketAddress>& source_addresses, GetPublicationCallback callback) {
+  // We ignore queries where the subtype is not utf-8. The fidl definition represents subtypes
+  // as strings, so we are limited to utf-8 subtypes.
+  // TODO(532641376): Use byte vectors for strings in the FIDL definitions.
+  if (!utfutils_is_valid_utf8(subtype.data(), subtype.size())) {
+    callback(nullptr);
+    return;
+  }
+
   if (on_publication_calls_in_progress_ < kMaxOnPublicationCallsInProgress) {
     ++on_publication_calls_in_progress_;
     GetPublicationNow(publication_cause, subtype, source_addresses, std::move(callback));
@@ -146,12 +150,10 @@ void ServiceInstancePublisherServiceImpl::ResponderPublisher::OnGetPublicationCo
   if (!pending_publications_.empty() &&
       on_publication_calls_in_progress_ < kMaxOnPublicationCallsInProgress) {
     ++on_publication_calls_in_progress_;
-    auto& entry = pending_publications_.front();
-    GetPublicationNow(entry.publication_cause_, entry.subtype_, entry.source_addresses_,
-                      std::move(entry.callback_));
-    // Note that if |GetPublicationNow| calls this method back synchronously, the pop call below
-    // would happen too late. However, the calls happen asynchronously, so we're ok.
+    auto entry = std::move(pending_publications_.front());
     pending_publications_.pop();
+    GetPublicationNow(entry.publication_cause_, std::move(entry.subtype_),
+                      std::move(entry.source_addresses_), std::move(entry.callback_));
   }
 }
 
@@ -159,6 +161,11 @@ void ServiceInstancePublisherServiceImpl::ResponderPublisher::GetPublicationNow(
     PublicationCause publication_cause, std::string subtype,
     std::vector<inet::SocketAddress> source_addresses, GetPublicationCallback callback) {
   FX_DCHECK(subtype.empty() || MdnsNames::IsValidSubtypeName(subtype));
+
+  // The error handler for |responder_| may be called synchronously in the OnPublication proxy call
+  // below. To ensure |this| doesn't get deleted while this method is running, we defer deletion
+  // until the method terminates.
+  DeferDeletion();
 
   FX_DCHECK(responder_);
   responder_->OnPublication(
@@ -182,6 +189,24 @@ void ServiceInstancePublisherServiceImpl::ResponderPublisher::GetPublicationNow(
         callback(std::move(converted));
         OnGetPublicationComplete();
       });
+
+  MaybeDelete();
+}
+
+void ServiceInstancePublisherServiceImpl::ResponderPublisher::DeferDeletion() {
+  ++one_based_delete_counter_;
+}
+
+void ServiceInstancePublisherServiceImpl::ResponderPublisher::MaybeDelete() {
+  if (--one_based_delete_counter_ != 0) {
+    return;
+  }
+
+  responder_.set_error_handler(nullptr);
+  if (responder_.is_bound()) {
+    responder_.Unbind();
+  }
+  delete this;
 }
 
 }  // namespace mdns

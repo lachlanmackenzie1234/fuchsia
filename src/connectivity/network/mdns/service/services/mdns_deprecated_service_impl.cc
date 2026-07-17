@@ -10,6 +10,7 @@
 #include <lib/async/default.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/utf-utils/utf-utils.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 #include <unistd.h>
@@ -276,15 +277,12 @@ void MdnsDeprecatedServiceImpl::Subscriber::MaybeDelete() {
 MdnsDeprecatedServiceImpl::ResponderPublisher::ResponderPublisher(
     fuchsia::net::mdns::PublicationResponderPtr responder, PublishServiceInstanceCallback callback,
     fit::closure deleter)
-    : responder_(std::move(responder)), callback_(std::move(callback)) {
+    : responder_(std::move(responder)),
+      callback_(std::move(callback)),
+      deleter_(std::move(deleter)) {
   FX_DCHECK(responder_);
 
-  responder_.set_error_handler([this, deleter = std::move(deleter)](zx_status_t status) mutable {
-    // Clearing the error handler frees the capture list, so we need to save |deleter|.
-    auto save_deleter = std::move(deleter);
-    responder_.set_error_handler(nullptr);
-    save_deleter();
-  });
+  responder_.set_error_handler([this](zx_status_t status) mutable { MaybeDelete(); });
 
   responder_.events().SetSubtypes = [this](std::vector<std::string> subtypes) {
     for (const auto& subtype : subtypes) {
@@ -328,6 +326,14 @@ void MdnsDeprecatedServiceImpl::ResponderPublisher::ReportSuccess(bool success) 
 void MdnsDeprecatedServiceImpl::ResponderPublisher::GetPublication(
     PublicationCause publication_cause, const std::string& subtype,
     const std::vector<inet::SocketAddress>& source_addresses, GetPublicationCallback callback) {
+  // We ignore queries where the subtype is not utf-8. The fidl definition represents subtypes
+  // as strings, so we are limited to utf-8 subtypes.
+  // TODO(532641376): Use byte vectors for strings in the FIDL definitions.
+  if (!utfutils_is_valid_utf8(subtype.data(), subtype.size())) {
+    callback(nullptr);
+    return;
+  }
+
   if (on_publication_calls_in_progress_ < kMaxOnPublicationCallsInProgress) {
     ++on_publication_calls_in_progress_;
     GetPublicationNow(publication_cause, subtype, source_addresses, std::move(callback));
@@ -342,12 +348,10 @@ void MdnsDeprecatedServiceImpl::ResponderPublisher::OnGetPublicationComplete() {
   if (!pending_publications_.empty() &&
       on_publication_calls_in_progress_ < kMaxOnPublicationCallsInProgress) {
     ++on_publication_calls_in_progress_;
-    auto& entry = pending_publications_.front();
+    auto entry = std::move(pending_publications_.front());
+    pending_publications_.pop();
     GetPublicationNow(entry.publication_cause_, entry.subtype_, entry.source_addresses_,
                       std::move(entry.callback_));
-    // Note that if |GetPublicationNow| calls this method back synchronously, the pop call below
-    // would happen too late. However, the calls happen asynchronously, so we're ok.
-    pending_publications_.pop();
   }
 }
 
@@ -355,6 +359,11 @@ void MdnsDeprecatedServiceImpl::ResponderPublisher::GetPublicationNow(
     PublicationCause publication_cause, const std::string& subtype,
     const std::vector<inet::SocketAddress>& source_addresses, GetPublicationCallback callback) {
   FX_DCHECK(subtype.empty() || MdnsNames::IsValidSubtypeName(subtype));
+
+  // The error handler for |responder_| may be called synchronously in the OnPublication proxy call
+  // below. To ensure |this| doesn't get deleted while this method is running, we defer deletion
+  // until the method terminates.
+  DeferDeletion();
 
   FX_DCHECK(responder_);
   responder_->OnPublication(
@@ -385,6 +394,22 @@ void MdnsDeprecatedServiceImpl::ResponderPublisher::GetPublicationNow(
         callback(fidl::To<std::unique_ptr<Mdns::Publication>>(publication_ptr));
         OnGetPublicationComplete();
       });
+
+  MaybeDelete();
+}
+
+void MdnsDeprecatedServiceImpl::ResponderPublisher::DeferDeletion() { ++one_based_delete_counter_; }
+
+void MdnsDeprecatedServiceImpl::ResponderPublisher::MaybeDelete() {
+  if (--one_based_delete_counter_ != 0) {
+    return;
+  }
+
+  responder_.set_error_handler(nullptr);
+  if (responder_.is_bound()) {
+    responder_.Unbind();
+  }
+  deleter_();
 }
 
 }  // namespace mdns

@@ -162,10 +162,20 @@ class MdnsDeprecatedServiceImpl : public fuchsia::net::mdns::Resolver,
                            const std::vector<inet::SocketAddress>& source_addresses,
                            GetPublicationCallback callback);
 
+    // Prevents a call to |MaybeDelete| from calling the deleter by incrementing
+    // |one_based_delete_counter_|.
+    void DeferDeletion();
+
+    // Decrements |one_based_delete_counter_| and, if the resulting value is zero, calls the
+    // deleter.
+    void MaybeDelete();
+
     fuchsia::net::mdns::PublicationResponderPtr responder_;
     PublishServiceInstanceCallback callback_;
     std::queue<Entry> pending_publications_;
     uint32_t on_publication_calls_in_progress_ = 0;
+    size_t one_based_delete_counter_ = 1;
+    fit::closure deleter_;
   };
 
  private:
