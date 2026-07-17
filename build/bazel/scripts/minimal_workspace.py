@@ -148,6 +148,10 @@ def main(argv: Sequence[str]) -> int:
         _SCRIPT_DIR / "minimal_workspace.BUILD.bazel",
     )
     force_symlink(
+        workspace_dir / "LICENSE",
+        fuchsia_dir / "LICENSE",
+    )
+    force_symlink(
         workspace_dir / "MODULE.bazel",
         _SCRIPT_DIR / "minimal_workspace.MODULE.bazel",
     )

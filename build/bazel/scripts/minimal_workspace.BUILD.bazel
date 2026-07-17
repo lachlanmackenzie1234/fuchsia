@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@rules_license//rules:license.bzl", "license")
 
 # These actions can all be run remotely, and do not require any toolchain.
 
@@ -18,4 +19,10 @@ diff_test(
     name = "remote_pwd_test",
     file1 = "expect_pwd.txt",
     file2 = ":pwd",
+)
+
+license(
+    name = "license",
+    license_kinds = ["@rules_license//licenses/spdx:BSD-2-Clause"],
+    license_text = "LICENSE",
 )
