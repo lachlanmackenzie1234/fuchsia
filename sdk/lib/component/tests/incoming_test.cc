@@ -9,7 +9,10 @@
 #include <lib/component/incoming/cpp/constants.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/incoming/cpp/service.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+
+#include <set>
 
 #include <gtest/gtest.h>
 #include <src/lib/testing/loop_fixture/real_loop_fixture.h>
@@ -276,6 +279,53 @@ TEST_F(IncomingServiceTest, FilePathTooLong) {
       component::OpenServiceAt<EchoService>(TakeSvcDirectoryRoot(), illegal_path);
   ASSERT_TRUE(open_result.is_error());
   ASSERT_STATUS(open_result.status_value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(IncomingServiceTest, SyncServiceMemberWatcherReturnsInstanceNames) {
+  auto svc_root = TakeSvcDirectoryRoot();
+  component::SyncServiceMemberWatcher<EchoService::Foo> watcher(svc_root.borrow());
+
+  std::string first_instance;
+  auto first_client = PerformBlockingWork(
+      [&]() { return watcher.GetNextInstance(/*stop_at_idle=*/true, &first_instance); });
+  ASSERT_OK(first_client.status_value());
+
+  std::string second_instance;
+  auto second_client = PerformBlockingWork(
+      [&]() { return watcher.GetNextInstance(/*stop_at_idle=*/true, &second_instance); });
+  ASSERT_OK(second_client.status_value());
+
+  std::set<std::string> instances = {first_instance, second_instance};
+  EXPECT_EQ(std::set<std::string>({kDefaultInstanceName, kOtherInstanceName}), instances);
+
+  auto third_client =
+      PerformBlockingWork([&]() { return watcher.GetNextInstance(/*stop_at_idle=*/true); });
+  EXPECT_STATUS(third_client.status_value(), ZX_ERR_STOP);
+}
+
+TEST_F(IncomingServiceTest, ServiceMemberWatcherReturnsInstanceNames) {
+  auto svc_root = TakeSvcDirectoryRoot();
+  component::ServiceMemberWatcher<EchoService::Foo> watcher(svc_root.borrow());
+
+  std::vector<std::pair<fidl::ClientEnd<Echo>, std::string>> instances;
+  bool idle_called = false;
+
+  zx::result<> begin_result = PerformBlockingWork([&]() {
+    return watcher.Begin(
+        dispatcher(),
+        [&](fidl::ClientEnd<Echo> client, std::string instance) {
+          instances.emplace_back(std::move(client), std::move(instance));
+        },
+        [&]() { idle_called = true; });
+  });
+
+  ASSERT_OK(begin_result.status_value());
+
+  RunLoopUntil([&]() { return idle_called; });
+
+  ASSERT_EQ(instances.size(), 2u);
+  std::set<std::string> instance_names = {instances[0].second, instances[1].second};
+  EXPECT_EQ(std::set<std::string>({kDefaultInstanceName, kOtherInstanceName}), instance_names);
 }
 
 }  // namespace
