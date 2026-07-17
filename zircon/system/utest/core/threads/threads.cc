@@ -707,9 +707,18 @@ TEST(Threads, SuspendMultiple) {
   ASSERT_NO_FATAL_FAILURE(test_thread.Wait());
 }
 
-TEST(Threads, SuspendSelf) {
+TEST(Threads, SuspendInvalidTargets) {
   zx_handle_t suspend_token;
+  // Suspend self thread: NOT_SUPPORTED
   EXPECT_EQ(zx_task_suspend(zx_thread_self(), &suspend_token), ZX_ERR_NOT_SUPPORTED);
+
+  // Suspend self process: NOT_SUPPORTED
+  EXPECT_EQ(zx_task_suspend(zx_process_self(), &suspend_token), ZX_ERR_NOT_SUPPORTED);
+
+  // Suspend wrong type (VMO): WRONG_TYPE
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+  EXPECT_EQ(zx_task_suspend(vmo.get(), &suspend_token), ZX_ERR_WRONG_TYPE);
 }
 
 TEST(Threads, SuspendAfterDeath) {
