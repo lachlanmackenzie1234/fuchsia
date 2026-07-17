@@ -5,13 +5,7 @@
 #ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_PLATFORM_WLANPHYIMPL_DEVICE_H_
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_INTEL_IWLWIFI_PLATFORM_WLANPHYIMPL_DEVICE_H_
 
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
-#include <lib/fdf/cpp/arena.h>
-#include <lib/fdf/cpp/channel.h>
-#include <lib/fdf/cpp/channel_read.h>
-#include <lib/fdf/cpp/dispatcher.h>
-#include <lib/fidl/cpp/wire/connect_service.h>
-#include <lib/fidl/cpp/wire/vector_view.h>
+#include <fidl/fuchsia.wlan.phy/cpp/fidl.h>
 
 #include "third_party/iwlwifi/platform/banjo/common.h"
 
@@ -20,12 +14,12 @@ struct iwl_trans;
 
 namespace wlan::iwlwifi {
 
-class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl> {
+class WlanPhyDevice : public fidl::Server<fuchsia_wlan_phy::WlanPhy> {
  public:
-  WlanPhyImplDevice(const WlanPhyImplDevice& device) = delete;
-  WlanPhyImplDevice& operator=(const WlanPhyImplDevice& other) = delete;
-  virtual ~WlanPhyImplDevice();
-  explicit WlanPhyImplDevice();
+  WlanPhyDevice(const WlanPhyDevice& device) = delete;
+  WlanPhyDevice& operator=(const WlanPhyDevice& other) = delete;
+  virtual ~WlanPhyDevice();
+  explicit WlanPhyDevice();
 
   // Implemented by driver class(PcieIwlwifiDriver).
   virtual zx_status_t AddWlansoftmacDevice(uint16_t iface_id, struct iwl_mvm_vif* mvmvif) = 0;
@@ -35,37 +29,33 @@ class WlanPhyImplDevice : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyIm
   virtual iwl_trans* drvdata() = 0;
   virtual const iwl_trans* drvdata() const = 0;
 
-  void GetSupportedMacRoles(fdf::Arena& arena,
-                            GetSupportedMacRolesCompleter::Sync& completer) override;
-  void CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
-                   CreateIfaceCompleter::Sync& completer) override;
-  void DestroyIface(DestroyIfaceRequestView request, fdf::Arena& arena,
-                    DestroyIfaceCompleter::Sync& completer) override;
-  void SetCountry(SetCountryRequestView request, fdf::Arena& arena,
-                  SetCountryCompleter::Sync& completer) override;
-  void ClearCountry(fdf::Arena& arena, ClearCountryCompleter::Sync& completer) override;
-  void GetCountry(fdf::Arena& arena, GetCountryCompleter::Sync& completer) override;
-  void SetPowerSaveMode(SetPowerSaveModeRequestView request, fdf::Arena& arena,
-                        SetPowerSaveModeCompleter::Sync& completer) override;
-  void GetPowerSaveMode(fdf::Arena& arena, GetPowerSaveModeCompleter::Sync& completer) override;
-  void Init(InitRequestView request, fdf::Arena& arena, InitCompleter::Sync& completer) override;
-  void PowerDown(fdf::Arena& arena, PowerDownCompleter::Sync& completer) override;
-  void PowerUp(fdf::Arena& arena, PowerUpCompleter::Sync& completer) override;
-  void Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) override;
-  void GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& completer) override;
-  void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
-                            SetBtCoexistenceModeCompleter::Sync& completer) override;
-  void SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
-                          SetTxPowerScenarioCompleter::Sync& completer) override;
-  void ResetTxPowerScenario(fdf::Arena& arena,
-                            ResetTxPowerScenarioCompleter::Sync& completer) override;
-  void GetTxPowerScenario(fdf::Arena& arena, GetTxPowerScenarioCompleter::Sync& completer) override;
+  void Init(InitRequest& request, InitCompleter::Sync& completer) override;
+  void GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) override;
+  void CreateIface(CreateIfaceRequest& request, CreateIfaceCompleter::Sync& completer) override;
+  void DestroyIface(DestroyIfaceRequest& request, DestroyIfaceCompleter::Sync& completer) override;
+  void SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) override;
+  void ClearCountry(ClearCountryCompleter::Sync& completer) override;
+  void GetCountry(GetCountryCompleter::Sync& completer) override;
+  void SetPowerSaveMode(SetPowerSaveModeRequest& request, SetPowerSaveModeCompleter::Sync& completer) override;
+  void GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) override;
+  void PowerDown(PowerDownCompleter::Sync& completer) override;
+  void PowerUp(PowerUpCompleter::Sync& completer) override;
+  void Reset(ResetCompleter::Sync& completer) override;
+  void GetPowerState(GetPowerStateCompleter::Sync& completer) override;
+  void SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request, SetBtCoexistenceModeCompleter::Sync& completer) override;
+  void SetTxPowerScenario(SetTxPowerScenarioRequest& request, SetTxPowerScenarioCompleter::Sync& completer) override;
+  void ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) override;
+  void GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) override;
   void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
+      fidl::UnknownMethodMetadata<fuchsia_wlan_phy::WlanPhy> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  void ServiceConnectHandler(fdf_dispatcher_t* dispatcher,
-                             fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end);
+  void ServiceConnectHandler(async_dispatcher_t* dispatcher,
+                             fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end);
+
+ protected:
+  fidl::ServerBindingGroup<fuchsia_wlan_phy::WlanPhy> bindings_;
+  std::optional<fidl::ClientEnd<fuchsia_wlan_phy::WlanPhyNotify>> notify_client_;
 };
 
 }  // namespace wlan::iwlwifi

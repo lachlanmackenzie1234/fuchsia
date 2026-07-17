@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "third_party/iwlwifi/platform/pcie-iwlwifi-driver.h"
+#include "third_party/iwlwifi/platform/wlansoftmac-device.h"
 
 #include <fidl/fuchsia.component.decl/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
@@ -15,7 +16,6 @@
 
 #include <memory>
 
-#include <bind/fuchsia/wlan/phyimpl/cpp/bind.h>
 #include <bind/fuchsia/wlan/softmac/cpp/bind.h>
 #include <wlan/drivers/log_instance.h>
 
@@ -40,7 +40,7 @@ namespace wlan {
 namespace iwlwifi {
 
 PcieIwlwifiDriver::PcieIwlwifiDriver()
-    : WlanPhyImplDevice(), fdf::DriverBase2("iwlwifi") {
+    : WlanPhyDevice(), fdf::DriverBase2("iwlwifi") {
   pci_dev_ = {};
 }
 
@@ -99,16 +99,16 @@ void PcieIwlwifiDriver::on_fidl_error(fidl::UnbindInfo error) {
 }
 
 void PcieIwlwifiDriver::handle_unknown_event(
-    fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) {}
+    fidl::UnknownEventMetadata<fdf::NodeController> metadata) {}
 
 zx_status_t PcieIwlwifiDriver::AddWlanphyChild() {
   fidl::Arena arena;
   std::vector offers = {
-      fdf::MakeOffer2<fuchsia_wlan_phyimpl::Service>(arena, "default"),
+      fdf::MakeOffer2<fuchsia_wlan_phy::Service>(arena, "default"),
   };
 
   auto args = fdf::wire::NodeAddArgs::Builder(arena)
-                  .name("iwlwifi-wlanphyimpl")
+                  .name("iwlwifi-wlanphy")
                   .offers2(arena, std::move(offers))
                   .Build();
 
@@ -217,7 +217,7 @@ zx::result<> PcieIwlwifiDriver::Start(fdf::DriverContext context) {
   // Take over the logger lifecycle management from DriverBase.
   wlan::drivers::log::Instance::Init(0, &logger());
 
-  zx_status_t status = AddWlanPhyImplService();
+  zx_status_t status = AddWlanPhyService();
   if (status != ZX_OK) {
     IWL_ERR(nullptr, "ServeRuntimeProtocolForV1Devices failed: %s", zx_status_get_string(status));
     return zx::error(status);
@@ -341,20 +341,18 @@ zx_status_t PcieIwlwifiDriver::StartPci() {
   return ZX_OK;
 }
 
-zx_status_t PcieIwlwifiDriver::AddWlanPhyImplService() {
-  // Add the service contains WlanphyImpl protocol to outgoing directory.
-  auto wlanphy = [this](fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end) {
-    // Call the handler inherited from WlanPhyImplDevice.
-    // Note: The same dispatcher here is used for softmac device, will it affect the data path
-    // performance?
-    ServiceConnectHandler(driver_dispatcher()->get(), std::move(server_end));
+zx_status_t PcieIwlwifiDriver::AddWlanPhyService() {
+  // Add the service contains Wlanphy protocol to outgoing directory.
+  auto wlanphy = [this](fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end) {
+    // Note: The same dispatcher here is used for softmac device, will it affect the data path performance?
+    ServiceConnectHandler(dispatcher(), std::move(server_end));
   };
 
-  fuchsia_wlan_phyimpl::Service::InstanceHandler wlanphy_service_handler(
-      {.wlan_phy_impl = wlanphy});
+  fuchsia_wlan_phy::Service::InstanceHandler wlanphy_service_handler(
+      {.device = std::move(wlanphy)});
 
   auto status =
-      outgoing()->AddService<fuchsia_wlan_phyimpl::Service>(std::move(wlanphy_service_handler));
+      outgoing()->AddService<fuchsia_wlan_phy::Service>(std::move(wlanphy_service_handler));
   if (status.is_error()) {
     IWL_ERR(nullptr, "Failed to add service to outgoing directory: %s", status.status_string());
     return status.status_value();

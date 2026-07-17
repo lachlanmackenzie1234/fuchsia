@@ -39,9 +39,9 @@ namespace iwlwifi {
 class RcuManager;
 
 // SimTransIwlwifiDriver to mimic PcieIwlwifiDriver.
-class SimTransIwlwifiDriver : public ::wlan::iwlwifi::WlanPhyImplDevice {
+class SimTransIwlwifiDriver : public ::wlan::iwlwifi::WlanPhyDevice {
  public:
-  explicit SimTransIwlwifiDriver(iwl_trans* drvdata);
+  explicit SimTransIwlwifiDriver(iwl_trans* drvdata, async_dispatcher_t* dispatcher);
   ~SimTransIwlwifiDriver();
 
   iwl_trans* drvdata() override;

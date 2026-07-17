@@ -76,7 +76,7 @@ TEST_F(DeviceEnumerationTest, Nuc7i5DNBTest) {
       // "PCI0.bus.00_1f_3.00_1f_3.intel-hda-controller",
       "PCI0.bus.00_1f_6.00_1f_6.e1000",
 #ifdef include_packaged_drivers
-      "PCI0.bus.01_00_0.01_00_0.iwlwifi-wlanphyimpl",
+      "PCI0.bus.01_00_0.01_00_0.iwlwifi-wlanphy",
 #endif
   };
   VerifyNodes(kNodeMonikers);

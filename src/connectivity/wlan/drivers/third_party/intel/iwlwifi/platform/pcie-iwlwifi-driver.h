@@ -28,7 +28,7 @@ class RcuManager;
 
 // This class contains the Fuchsia-specific PCIE bus initialization logic, and uses DDKTL class
 // to manage the lifetime of a iwlwifi driver instance.
-class PcieIwlwifiDriver : public wlan::iwlwifi::WlanPhyImplDevice,
+class PcieIwlwifiDriver : public wlan::iwlwifi::WlanPhyDevice,
                           public fdf::DriverBase2,
                           public fidl::WireAsyncEventHandler<fdf::NodeController> {
  public:
@@ -47,7 +47,7 @@ class PcieIwlwifiDriver : public wlan::iwlwifi::WlanPhyImplDevice,
   iwl_trans* drvdata() override;
   const iwl_trans* drvdata() const override;
 
-  // Add a child node to represent WlanPhyImplDevice in DFv2.
+  // Add a child node to represent WlanPhyDevice in DFv2.
   zx_status_t AddWlanphyChild();
 
   // Create a WlanSoftmacDevice and also add a child node to represent it in DFv2.
@@ -69,15 +69,15 @@ class PcieIwlwifiDriver : public wlan::iwlwifi::WlanPhyImplDevice,
   void on_fidl_error(fidl::UnbindInfo error) override;
 
   void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override;
+      fidl::UnknownEventMetadata<fdf::NodeController> metadata) override;
 
  private:
   zx_status_t Initialize();
 
   zx_status_t StartPci();
 
-  // Adding WlanPhyImpl service to outgoing directory.
-  zx_status_t AddWlanPhyImplService();
+  // Adding WlanPhy service to outgoing directory.
+  zx_status_t AddWlanPhyService();
 
   std::unique_ptr<DriverInspector> driver_inspector_;
   std::unique_ptr<RcuManager> rcu_manager_;

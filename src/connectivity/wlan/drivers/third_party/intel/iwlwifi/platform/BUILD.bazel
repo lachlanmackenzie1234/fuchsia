@@ -148,8 +148,9 @@ cc_library(
         ":driver_inspector",
         ":platform",
         ":rcu_manager",
+        "//src/connectivity/wlan/lib/common/cpp:common",
         "@fuchsia_sdk//fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp_driver",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
+        "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_cpp",
         "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp_driver",
         "@fuchsia_sdk//fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_cpp_driver",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
@@ -167,7 +168,6 @@ cc_library(
         # Needed for pcie-iwlwifi-driver.cc/h
         "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
         "@fuchsia_sdk//fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_bindlib_cc",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_bindlib_cc",
         "@fuchsia_sdk//pkg/async-loop-cpp",
         "@fuchsia_sdk//pkg/async-loop-default",
         "@fuchsia_sdk//pkg/driver_outgoing_cpp",

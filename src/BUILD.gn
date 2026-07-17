@@ -224,7 +224,7 @@ bazel_test_package_group("bazel_tests") {
         "phy_ctxt_test",
         "platform_test",
         "sta_test",
-        "wlan_phy_impl_device_test",
+        "wlan_phy_device_test",
         "notif_wait_test",
         "nvm_test",
         "pcie_test",

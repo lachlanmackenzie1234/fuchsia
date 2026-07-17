@@ -10,7 +10,9 @@ load(
     "fuchsia_test_package",
 )
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_visibility = ["//visibility:public"],
+)
 
 # List to hold the list of tests.
 iwlwifi_tests = []
@@ -18,7 +20,7 @@ iwlwifi_tests = []
 filegroup(
     name = "common_libs",
     srcs = [
-        "@fuchsia_sdk//:arch/x64/sysroot/dist/lib/ld.so.1",
+        "@fuchsia_sdk//pkg/sysroot:dist",
     ],
     visibility = ["//visibility:public"],
 )
@@ -57,6 +59,7 @@ cc_library(
     ],
     include_prefix = "third_party/iwlwifi/test",
     deps = [
+        "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_cpp",
         "//src/connectivity/wlan/drivers/lib-iwlwifi/fake-bti",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/cfg",
@@ -67,7 +70,6 @@ cc_library(
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:rcu_manager",
         "@com_google_googletest//:gtest_main",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
         "@fuchsia_sdk//pkg/async-loop-cpp",
         "@fuchsia_sdk//pkg/async-loop-default",
         "@fuchsia_sdk//pkg/driver_runtime_shared_lib",
@@ -103,7 +105,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["task_test"]
+iwlwifi_tests.append("task_test")
 
 fuchsia_cc_test(
     name = "rcu_manager_test",
@@ -118,7 +120,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["rcu_manager_test"]
+iwlwifi_tests.append("rcu_manager_test")
 
 # Dummy code for developer to start a new test.
 fuchsia_cc_test(
@@ -131,7 +133,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["dummy_test"]
+iwlwifi_tests.append("dummy_test")
 
 fuchsia_cc_test(
     name = "fw_test",
@@ -145,7 +147,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["fw_test"]
+iwlwifi_tests.append("fw_test")
 
 fuchsia_cc_test(
     name = "fw_dbg_test",
@@ -160,7 +162,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["fw_dbg_test"]
+iwlwifi_tests.append("fw_dbg_test")
 
 fuchsia_cc_test(
     name = "driver_inspector_test",
@@ -175,7 +177,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["driver_inspector_test"]
+iwlwifi_tests.append("driver_inspector_test")
 
 fuchsia_cc_test(
     name = "driver_lifecycle_test",
@@ -192,7 +194,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["driver_lifecycle_test"]
+iwlwifi_tests.append("driver_lifecycle_test")
 
 fuchsia_cc_test(
     name = "utils_test",
@@ -204,7 +206,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["utils_test"]
+iwlwifi_tests.append("utils_test")
 
 fuchsia_cc_test(
     name = "iwl_phy_db_test",
@@ -218,7 +220,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["iwl_phy_db_test"]
+iwlwifi_tests.append("iwl_phy_db_test")
 
 fuchsia_cc_test(
     name = "mac80211_test",
@@ -232,7 +234,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["mac80211_test"]
+iwlwifi_tests.append("mac80211_test")
 
 fuchsia_cc_test(
     name = "mac_ctxt_test",
@@ -245,7 +247,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["mac_ctxt_test"]
+iwlwifi_tests.append("mac_ctxt_test")
 
 fuchsia_cc_test(
     name = "mvm_test",
@@ -259,7 +261,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["mvm_test"]
+iwlwifi_tests.append("mvm_test")
 
 fuchsia_cc_test(
     name = "phy_ctxt_test",
@@ -272,7 +274,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["phy_ctxt_test"]
+iwlwifi_tests.append("phy_ctxt_test")
 
 fuchsia_cc_test(
     name = "platform_test",
@@ -285,7 +287,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["platform_test"]
+iwlwifi_tests.append("platform_test")
 
 fuchsia_cc_test(
     name = "sta_test",
@@ -299,7 +301,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["sta_test"]
+iwlwifi_tests.append("sta_test")
 
 fuchsia_cc_test(
     name = "wlan_softmac_device_test",
@@ -308,31 +310,31 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":sim_library",
+        "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_cpp",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp_wire",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
     ],
 )
 
-iwlwifi_tests += ["wlan_softmac_device_test"]
+iwlwifi_tests.append("wlan_softmac_device_test")
 
 fuchsia_cc_test(
-    name = "wlan_phy_impl_device_test",
+    name = "wlan_phy_device_test",
     size = "small",
-    srcs = ["wlanphy-impl-device-test.cc"],
+    srcs = ["wlanphy-device-test.cc"],
     deps = [
         ":sim_library",
+        "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_cpp",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/mvm",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
         "@com_google_googletest//:gtest_main",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
     ],
 )
 
-iwlwifi_tests += ["wlan_phy_impl_device_test"]
+iwlwifi_tests.append("wlan_phy_device_test")
 
 fuchsia_cc_test(
     name = "notif_wait_test",
@@ -345,7 +347,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["notif_wait_test"]
+iwlwifi_tests.append("notif_wait_test")
 
 fuchsia_cc_test(
     name = "nvm_test",
@@ -359,7 +361,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["nvm_test"]
+iwlwifi_tests.append("nvm_test")
 
 fuchsia_cc_test(
     name = "pcie_test",
@@ -368,12 +370,12 @@ fuchsia_cc_test(
     deps = [
         ":mock_function",
         ":sim_library",
+        "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_cpp",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:core",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/fw:api",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/pcie",
         "//src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform:iwlwifi_device",
         "@com_google_googletest//:gtest_main",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp_driver",
         "@fuchsia_sdk//pkg/async-loop-cpp",
         "@fuchsia_sdk//pkg/async-loop-default",
         "@fuchsia_sdk//pkg/async-loop-testing",
@@ -381,7 +383,7 @@ fuchsia_cc_test(
     ],
 )
 
-iwlwifi_tests += ["pcie_test"]
+iwlwifi_tests.append("pcie_test")
 
 [
     fuchsia_component_manifest(
@@ -422,7 +424,7 @@ fuchsia_test_package(
         ":phy_ctxt_test_component",
         ":platform_test_component",
         ":sta_test_component",
-        ":wlan_phy_impl_device_test_component",
+        ":wlan_phy_device_test_component",
         ":notif_wait_test_component",
         ":nvm_test_component",
         ":pcie_test_component",

@@ -44,8 +44,8 @@ using wlan::testing::SimMvm;
 
 namespace wlan::iwlwifi {
 
-SimTransIwlwifiDriver::SimTransIwlwifiDriver(iwl_trans* drvdata)
-    : WlanPhyImplDevice(), drvdata_(drvdata) {
+SimTransIwlwifiDriver::SimTransIwlwifiDriver(iwl_trans* drvdata, async_dispatcher_t* dispatcher)
+    : WlanPhyDevice(), drvdata_(drvdata) {
   // Get namespace entries.
   std::vector<fuchsia_component_runner::ComponentNamespaceEntry> entries;
   zx::result open_result = component::OpenServiceRoot();
@@ -345,7 +345,7 @@ static zx_status_t sim_transport_bind(
   std::unique_ptr<wlan::iwlwifi::SimTransIwlwifiDriver> device;
   libsync::Completion create_device;
   async::PostTask(driver_dispatcher, [&]() {
-    device = std::make_unique<wlan::iwlwifi::SimTransIwlwifiDriver>(iwl_trans);
+    device = std::make_unique<wlan::iwlwifi::SimTransIwlwifiDriver>(iwl_trans, driver_dispatcher);
     create_device.Signal();
   });
   create_device.Wait();

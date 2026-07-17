@@ -7,12 +7,7 @@
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: 'bin/wlan_phy_impl_device_test',
+        binary: 'bin/wlan_phy_device_test',
     },
     use: [],
-
-    // Required to enable access to devfs
-    facets: {
-        "fuchsia.test": { type: "system" },
-    },
 }
