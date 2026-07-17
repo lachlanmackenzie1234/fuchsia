@@ -8,6 +8,13 @@
 #include <lib/trace/event.h>
 
 #include <algorithm>
+#include <cmath>
+
+#include "src/ui/scenic/lib/flatland/global_image_data.h"
+#include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace flatland {
 
@@ -44,7 +51,7 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
           .height = meta.height,
       };
     }
-    output.push_back(std::move(layer));
+    output.push_back(layer);
   }
 }
 
@@ -84,6 +91,320 @@ void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint
                        return curr_index < occluder_index || is_rect_empty(layer.rect);
                      }),
       layers_in_out->end());
+}
+
+// Decomposes the internal 8-way RotateFlip into a FIDL (Orientation, ImageFlip) pair.  This is the
+// inverse of `types::RotateFlip::From(orientation, flip)` in the sense that the orientation/flip
+// obtained from `DecomposeRotateFlip()` can be passed to `types::RotateFlip::From()` to obtain the
+// original `RotateFlip`.
+//
+// The display path (in display_compositor.cc) recomposes these components back
+// into a single RotateFlip via types::RotateFlip::From(orientation, flip). This
+// decomposition must invert it exactly (verified by DecomposeRotateFlipTest.InvertsRotateFlipFrom).
+// Step 150 removes this split entirely by carrying the unified RotateFlip all the way to the leaf.
+std::pair<fuchsia_ui_composition::Orientation, fuchsia_ui_composition::ImageFlip>
+DecomposeRotateFlip(types::RotateFlip rf) {
+  using fuchsia_ui_composition::ImageFlip;
+  using fuchsia_ui_composition::Orientation;
+  switch (rf.enum_value()) {
+    case types::RotateFlip::Enum::kIdentity:
+      return {Orientation::kCcw0Degrees, ImageFlip::kNone};
+    case types::RotateFlip::Enum::kReflectX:
+      return {Orientation::kCcw0Degrees, ImageFlip::kUpDown};
+    case types::RotateFlip::Enum::kReflectY:
+      return {Orientation::kCcw0Degrees, ImageFlip::kLeftRight};
+    case types::RotateFlip::Enum::kRotateCcw180:
+      return {Orientation::kCcw180Degrees, ImageFlip::kNone};
+    case types::RotateFlip::Enum::kRotateCcw90:
+      return {Orientation::kCcw90Degrees, ImageFlip::kNone};
+    // NOTE: it might look like a mismatch between "reflect across X-axis" and "flip left/right".
+    // However, the Flatland API applies image flip before rotation, whereas `RotateFlip` matches
+    // the display coordinator convention of rotating before flipping.  This non-commutativity means
+    // that the flip-axis must also be rotated, hence the apparent discrepancy.  The same applies to
+    // `kRotateCcw90ReflectY`.
+    case types::RotateFlip::Enum::kRotateCcw90ReflectX:
+      return {Orientation::kCcw90Degrees, ImageFlip::kLeftRight};
+    case types::RotateFlip::Enum::kRotateCcw90ReflectY:
+      return {Orientation::kCcw90Degrees, ImageFlip::kUpDown};
+    case types::RotateFlip::Enum::kRotateCcw270:
+      return {Orientation::kCcw270Degrees, ImageFlip::kNone};
+  }
+  FX_NOTREACHED();
+}
+
+// Identical to Flatland::MatrixData::GetOrientationAngle (flatland.cc).  This copy will be deleted
+// at step 160, which instead derives the rotation from a cached per-node decode. Angles are
+// negative because in view-space coordinates (+y downward), a positive mathematical
+// rotation is visually clockwise. Thus, CCW orientations require negative angles.
+static float GetOrientationAngle(fuchsia_ui_composition::Orientation orientation) {
+  using fuchsia_ui_composition::Orientation;
+  switch (orientation) {
+    case Orientation::kCcw0Degrees:
+      return 0.f;
+    case Orientation::kCcw90Degrees:
+      return -glm::half_pi<float>();
+    case Orientation::kCcw180Degrees:
+      return -glm::pi<float>();
+    case Orientation::kCcw270Degrees:
+      return -glm::three_over_two_pi<float>();
+  }
+  FX_NOTREACHED();
+}
+
+// Adapted from Flatland::MatrixData::RecomputeMatrix() (flatland.cc).  This copy will be deleted
+// at step 160, where the placement becomes closed-form.  Builds the layer's local placement matrix
+// from the provided `display_rect` and `orientation`.
+//   - translation: from `display_rect` origin
+//   - rotation: from `orientation`
+//   - scale: from `display_rect` width/height
+//
+// The result is equivalent to creating separate translation/rotation/scale matrices, and returning
+// T*R*S.
+//
+// This matrix is composed with the node's global matrix and handed to CreateImageRect, which
+// decodes it straight back into an (origin, extent, orientation) ImageRect.  This redundant
+// manufacture-then-decode round-trip is deliberate here, to temporarily reuse the shared legacy
+// decode (until the step 160 cleanup).
+glm::mat3 GetLayerLocalMatrix(const types::Rectangle& display_rect,
+                              fuchsia_ui_composition::Orientation orientation) {
+  // Manually compose the matrix rather than use glm transformations since the order of operations
+  // is always the same. glm matrices are column-major, so are indexed like:
+  //   0 3 6
+  //   1 4 7
+  //   2 5 8
+  glm::mat3 result(glm::uninitialize);
+  float* vals = static_cast<float*>(glm::value_ptr(result));
+
+  // Translation in the third column.
+  vals[6] = static_cast<float>(display_rect.x());
+  vals[7] = static_cast<float>(display_rect.y());
+
+  // Rotation and scale combined into the first two columns.
+  const float angle = GetOrientationAngle(orientation);
+  const float s = sin(angle);
+  const float c = cos(angle);
+
+  const float scale_x = static_cast<float>(display_rect.width());
+  const float scale_y = static_cast<float>(display_rect.height());
+
+  vals[0] = c * scale_x;
+  vals[1] = s * scale_x;
+  vals[3] = -1.f * s * scale_y;
+  vals[4] = c * scale_y;
+
+  // Bottom row is constant (0, 0, 1).
+  vals[2] = 0.f;
+  vals[5] = 0.f;
+  vals[8] = 1.f;
+
+  return result;
+}
+
+// Helper/adaptor which generates a layer's global matrix in order to pass it to the legacy
+// `CreateImageRect()` helper (which will be deleted in step 160).
+static std::optional<ImageRect> ComputeClippedLayerRect(
+    const glm::mat3& node_global_matrix, const TransformClipRegion& node_clip_region,
+    const types::Rectangle& display_rect, fuchsia_ui_composition::Orientation orientation,
+    fuchsia_ui_composition::ImageFlip flip, const std::array<glm::ivec2, 4>& unclipped_texel_uvs) {
+  glm::mat3 composed_matrix = node_global_matrix * GetLayerLocalMatrix(display_rect, orientation);
+  ImageRect clipped_rect =
+      CreateImageRect(composed_matrix, node_clip_region, unclipped_texel_uvs, flip);
+  if (clipped_rect.extent.x <= 0.f || clipped_rect.extent.y <= 0.f) {
+    return std::nullopt;
+  }
+  return clipped_rect;
+}
+
+// Encapsulates the difference between how Flatland1 and Flatland2 APIs treat REPLACE blend mode
+// when `opacity < 1`; `pin_replace` is the selector for this differing behavior.
+//
+// In Flatland1 *for images only*, RGB is scaled and blend stays REPLACE (fade toward "black").
+//
+// Flatland2, and Flatland1 for solid color fills, "demote" REPLACE to PREMULTIPLIED_ALPHA,
+// so there is no visual discontinuity at `opacity == 0` (where the layer is treated as invisible);
+// this allows e.g. a window manager to fade out a child app even if it uses REPLACE.
+//
+// NOTE: `effective_opacity` combines layer opacity with inherited transform opacity.  It does not
+// involve "content opacity", neither the alpha of a solid color fill, nor the alpha channel of
+// image pixels.
+// TODO(https://fxbug.dev/523371761): ratified DESIGN-blend_mode_and_opacity
+// decision must match the behavior implemented here.
+ResolvedBlend ResolveBlendAndOpacity(types::BlendMode stored_blend, float effective_opacity,
+                                     bool pin_replace) {
+  types::BlendMode blend_mode = stored_blend;
+  if (blend_mode == types::BlendMode::kReplace() && effective_opacity < 1.f && !pin_replace) {
+    blend_mode = types::BlendMode::kPremultipliedAlpha();
+  }
+  if (blend_mode == types::BlendMode::kStraightAlpha()) {
+    return ResolvedBlend{
+        .blend_mode = blend_mode,
+        .multiply_color = {1.f, 1.f, 1.f, effective_opacity},
+    };
+  }
+  return ResolvedBlend{
+      .blend_mode = blend_mode,
+      .multiply_color = {effective_opacity, effective_opacity, effective_opacity,
+                         effective_opacity},
+  };
+}
+
+void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
+                                 const GlobalTopologyData& topology,
+                                 const UberStruct::InstanceMap& snapshot,
+                                 const std::vector<glm::mat3>& global_matrices,
+                                 const std::vector<TransformClipRegion>& clip_regions) {
+  TRACE_DURATION("gfx", "ComputeGlobalResolvedLayers");
+
+  output.clear();
+  if (topology.topology_vector.empty()) {
+    return;
+  }
+
+  GlobalOpacityVector inherited_opacities =
+      ComputeGlobalOpacityValues(topology.topology_vector, topology.parent_indices, snapshot);
+
+  // Note: after step 160 it will no longer be necessary to iterate through the entire topology
+  // to find the layer stacks; they will be cached in the common case.
+  for (size_t i = 0; i < topology.topology_vector.size(); ++i) {
+    const TransformHandle& handle = topology.topology_vector[i];
+    const glm::mat3& node_global_matrix = global_matrices[i];
+    const TransformClipRegion& node_clip_region = clip_regions[i];
+    const float inherited_opacity = inherited_opacities[i];
+    if (inherited_opacity == 0.f) {
+      // Invisible.
+      continue;
+    }
+
+    auto uber_struct_kv = snapshot.find(handle.GetInstanceId());
+    if (uber_struct_kv == snapshot.end()) {
+      FX_DCHECK(false) << "no corresponding UberStruct for global topology entry: " << handle;
+      continue;
+    }
+    const auto& uber_struct = uber_struct_kv->second;
+
+    auto layer_stack_it = uber_struct->layer_stacks.find(handle);
+    if (layer_stack_it == uber_struct->layer_stacks.end()) {
+      // Topology entry doesn't correspond to a layer stack.
+      continue;
+    }
+
+    // Helper lambda to append to `output` a `ResolvedLayer` corresponding to an image layer,
+    // or to skip it e.g. if completely clipped.
+    auto process_image_layer = [inherited_opacity, &node_global_matrix, &node_clip_region, i,
+                                &output, flatland_version = uber_struct->flatland_version](
+                                   const UberStructLayer& layer) {
+      // Skip invalid image.
+      const auto& image = std::get<UberStructLayer::ImageContent>(layer.content);
+      if (image.image_id == allocation::kInvalidImageId) {
+        return;
+      }
+
+      auto [orientation, flip] = DecomposeRotateFlip(image.transform);
+      auto clipped_rect = ComputeClippedLayerRect(
+          node_global_matrix, node_clip_region, layer.display_rect, orientation, flip,
+          {glm::ivec2(image.sample_rect.x(), image.sample_rect.y()),
+           glm::ivec2(image.sample_rect.x() + image.sample_rect.width(), image.sample_rect.y()),
+           glm::ivec2(image.sample_rect.x() + image.sample_rect.width(),
+                      image.sample_rect.y() + image.sample_rect.height()),
+           glm::ivec2(image.sample_rect.x(), image.sample_rect.y() + image.sample_rect.height())});
+      if (!clipped_rect) {
+        return;
+      }
+
+      const auto [blend_mode, multiply_color] =
+          ResolveBlendAndOpacity(layer.blend_mode, layer.opacity * inherited_opacity,
+                                 /*pin_replace=*/flatland_version == 1);
+
+      output.push_back(ResolvedLayer{
+          .rect = *clipped_rect,
+          .multiply_color = multiply_color,
+          .blend_mode = blend_mode,
+          .flip = flip,
+          .content =
+              ResolvedLayer::ImageContent{
+                  .image_id = image.image_id,
+                  .width = image.image_width,
+                  .height = image.image_height,
+              },
+          .topology_index = static_cast<int32_t>(i),
+      });
+    };
+
+    // Helper lambda to append to `output` a `ResolvedLayer` corresponding to a solid color layer,
+    // or to skip it e.g. if completely clipped.
+    auto process_solid_color_layer = [inherited_opacity, &node_global_matrix, &node_clip_region, i,
+                                      &output](const UberStructLayer& layer) {
+      auto clipped_rect =
+          ComputeClippedLayerRect(node_global_matrix, node_clip_region, layer.display_rect,
+                                  fuchsia_ui_composition::Orientation::kCcw0Degrees,
+                                  fuchsia_ui_composition::ImageFlip::kNone,
+                                  {glm::ivec2(0), glm::ivec2(0), glm::ivec2(0), glm::ivec2(0)});
+      if (!clipped_rect) {
+        return;
+      }
+
+      const auto [blend_mode, multiply_color] = ResolveBlendAndOpacity(
+          layer.blend_mode, layer.opacity * inherited_opacity, /*pin_replace=*/false);
+
+      // Adapts Flatland session solid color representation to what is expected by renderer/display.
+      // TODO(https://fxbug.dev/523371761): ratified DESIGN-blend_mode_and_opacity and
+      // DESIGN-solid_fill_encoding decisions must match the behavior implemented here.
+      const auto& solid = std::get<UberStructLayer::SolidColorContent>(layer.content);
+      std::array<float, 4> content_color;
+      switch (layer.blend_mode.enum_value()) {
+        // Convert the straight alpha representation used in all Flatland sessions (regardless of
+        // Flatland API version) to premultiplied alpha, which is expected by downstream consumers.
+        case types::BlendMode::Enum::kReplace:
+        case types::BlendMode::Enum::kPremultipliedAlpha: {
+          const float a = solid.color[3];
+          content_color = {solid.color[0] * a, solid.color[1] * a, solid.color[2] * a, a};
+          break;
+        }
+        // Flatland1/2 APIs guarantee that solid color layers never arrive with STRAIGHT_ALPHA.
+        // Flatland1 doesn't provide an explicitly way to specify the blend mode, and Flatland2
+        // explicitly disallows the use of STRAIGHT_ALPHA with solid color layers.
+        case types::BlendMode::Enum::kStraightAlpha:
+          FX_CHECK(false) << "STRAIGHT_ALPHA is unreachable for solid color content";
+          break;
+      }
+
+      output.push_back(ResolvedLayer{
+          .rect = *clipped_rect,
+          .multiply_color = multiply_color,
+          .blend_mode = blend_mode,
+          .flip = fuchsia_ui_composition::ImageFlip::kNone,
+          .content =
+              ResolvedLayer::SolidColorContent{
+                  .color = content_color,
+              },
+          .topology_index = static_cast<int32_t>(i),
+      });
+    };
+
+    // For every layer in the stack, process it according to its content type, and (if the layer
+    // isn't invisible for some reason) emit a `ResolvedLayer` into `output`.
+    for (const auto& layer_handle : layer_stack_it->second) {
+      auto layer_it = uber_struct->layers.find(layer_handle);
+      if (layer_it == uber_struct->layers.end()) {
+        continue;
+      }
+      const auto& layer = layer_it->second;
+
+      if (layer.display_rect.width() <= 0 || layer.display_rect.height() <= 0 ||
+          layer.opacity == 0.f) {
+        // Invisible.
+        continue;
+      }
+
+      if (std::holds_alternative<UberStructLayer::ImageContent>(layer.content)) {
+        process_image_layer(layer);
+      } else if (std::holds_alternative<UberStructLayer::SolidColorContent>(layer.content)) {
+        process_solid_color_layer(layer);
+      }
+      static_assert(3 == std::variant_size_v<decltype(UberStructLayer::content)>,
+                    "Must handle all UberStructLayer content types");
+    }
+  }
 }
 
 }  // namespace flatland

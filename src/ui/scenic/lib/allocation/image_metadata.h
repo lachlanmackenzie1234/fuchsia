@@ -53,10 +53,10 @@ struct ImageMetadata {
 
 inline std::ostream& operator<<(std::ostream& str, const ImageMetadata& m) {
   str << "size=" << (m.collection_id == kInvalidId ? 1 : m.width) << "x"
-      << (m.collection_id == kInvalidId ? 1 : m.height) << "  multiply_color=("
-      << m.multiply_color[0] << "," << m.multiply_color[1] << "," << m.multiply_color[2] << ","
-      << m.multiply_color[3] << ")" << (m.collection_id == kInvalidId ? " (Solid Color)" : "")
-      << "  blend_mode=" << m.blend_mode << " flip=" << cpp23::to_underlying(m.flip);
+      << (m.collection_id == kInvalidId ? 1 : m.height) << "  flip=" << cpp23::to_underlying(m.flip)
+      << "  multiply_color=(" << m.multiply_color[0] << "," << m.multiply_color[1] << ","
+      << m.multiply_color[2] << "," << m.multiply_color[3] << ")"
+      << (m.collection_id == kInvalidId ? " (Solid Color)" : "") << "  blend_mode=" << m.blend_mode;
   return str;
 }
 

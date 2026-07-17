@@ -63,7 +63,11 @@ void Engine::InitializeInspectObjects() {
     }
 
     SceneState scene_state;
-    scene_state.Initialize(*this, *root_transform);
+    if (use_flatland2_uberstruct_schema_) {
+      scene_state.InitializeFlatland2(*this, *root_transform);
+    } else {
+      scene_state.InitializeFlatland1(*this, *root_transform);
+    }
     std::ostringstream output;
     DumpScene(scene_state.snapshot.map, scene_state.topology_data, scene_state.resolved_layers,
               output);
@@ -101,7 +105,11 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   FX_DCHECK(cleared_scene_state_);
   current_scene_state_ = std::move(cleared_scene_state_);
   SceneState& scene_state = *current_scene_state_;
-  scene_state.Initialize(*this, display.root_transform());
+  if (use_flatland2_uberstruct_schema_) {
+    scene_state.InitializeFlatland2(*this, display.root_transform());
+  } else {
+    scene_state.InitializeFlatland1(*this, display.root_transform());
+  }
 
   display::Display* const hw_display = display.display();
 
@@ -242,7 +250,11 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   TransformHandle root = display.root_transform();
 
   SceneState scene_state;
-  scene_state.Initialize(*this, root);
+  if (use_flatland2_uberstruct_schema_) {
+    scene_state.InitializeFlatland2(*this, root);
+  } else {
+    scene_state.InitializeFlatland1(*this, root);
+  }
   const auto hw_display = display.display();
 
   auto resolved_layers = std::move(scene_state.resolved_layers);
@@ -252,22 +264,21 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   return resolved_layers;
 }
 
-void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
-  TRACE_DURATION("gfx", "flatland::Engine::SceneState::Initialize");
+void Engine::SceneState::InitializeFlatland1(Engine& engine, TransformHandle root_transform) {
+  TRACE_DURATION("gfx", "flatland::Engine::SceneState::InitializeFlatland1");
   snapshot = engine.uber_struct_system_->Snapshot();
 
+#ifndef NDEBUG
   // FlatlandEngine and FlatlandManager work together to ensure that, globally, either everyone
   // (i.e. all Flatland sessions, the engine, etc.) is using the legacy image-based UberStruct
   // schema, or everyone is using the layer-based "Flatland2" UberStruct schema.
   // Also see `FlatlandManager::use_flatland2_uberstruct_schema_`.
+  FX_DCHECK(!engine.use_flatland2_uberstruct_schema_);
   for (const auto& [id, us] : snapshot.map) {
-    FX_DCHECK(us->flatland_version == 1 || us->flatland_version == 2);
-    if (engine.use_flatland2_uberstruct_schema_) {
-      FX_DCHECK(us->images.empty());
-    } else {
-      FX_DCHECK(us->layer_stacks.empty() && us->layers.empty());
-    }
+    FX_DCHECK(us->flatland_version == 1);
+    FX_DCHECK(us->layer_stacks.empty() && us->layers.empty());
   }
+#endif
 
   const auto links = engine.link_system_->GetResolvedTopologyLinks();
   const auto link_system_id = engine.link_system_->GetInstanceId();
@@ -291,6 +302,38 @@ void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transfo
                           clip_regions, image_indices, images);
 
   ComputeGlobalResolvedLayers(resolved_layers, image_rectangles, images, image_indices);
+}
+
+void Engine::SceneState::InitializeFlatland2(Engine& engine, TransformHandle root_transform) {
+  TRACE_DURATION("gfx", "flatland::Engine::SceneState::InitializeFlatland2");
+  snapshot = engine.uber_struct_system_->Snapshot();
+
+#ifndef NDEBUG
+  // FlatlandEngine and FlatlandManager work together to ensure that, globally, either everyone
+  // (i.e. all Flatland sessions, the engine, etc.) is using the legacy image-based UberStruct
+  // schema, or everyone is using the layer-based "Flatland2" UberStruct schema.
+  // Also see `FlatlandManager::use_flatland2_uberstruct_schema_`.
+  FX_DCHECK(engine.use_flatland2_uberstruct_schema_);
+  for (const auto& [id, us] : snapshot.map) {
+    FX_DCHECK(us->flatland_version == 1 || us->flatland_version == 2);
+    FX_DCHECK(us->images.empty());
+  }
+#endif
+
+  const auto links = engine.link_system_->GetResolvedTopologyLinks();
+  const auto link_system_id = engine.link_system_->GetInstanceId();
+
+  GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/topology_data, snapshot.map, links,
+                                                link_system_id, root_transform);
+
+  ComputeGlobalMatrices(/*output=*/global_matrices, topology_data.topology_vector,
+                        topology_data.parent_indices, snapshot.map);
+
+  ComputeGlobalTransformClipRegions(/*output=*/clip_regions, topology_data.topology_vector,
+                                    topology_data.parent_indices, global_matrices, snapshot.map);
+
+  ComputeGlobalResolvedLayers(/*output=*/resolved_layers, topology_data, snapshot.map,
+                              global_matrices, clip_regions);
 }
 
 void Engine::SceneState::Clear() {

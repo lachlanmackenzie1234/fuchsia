@@ -96,6 +96,14 @@ void ComputeGlobalRectangles(GlobalRectangleVector& output, const GlobalMatrixVe
                              const GlobalTransformClipRegionVector& clip_regions,
                              const GlobalIndexVector& image_indices,
                              const std::vector<allocation::ImageMetadata>& images);
+
+// Constructs an ImageRect by projecting the destination (display) rectangle into screen space
+// using the given matrix and clipping it to the provided clip region.  The source (texture) region
+// is clipped proportionally, using the flip and orientation properties to map the screen-space clip
+// boundaries back to the correct source axes and edges.
+ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& clip,
+                          const std::array<glm::ivec2, 4>& texel_uvs,
+                          const fuchsia_ui_composition::ImageFlip image_flip);
 }  // namespace flatland
 
 #endif  // SRC_UI_SCENIC_LIB_FLATLAND_GLOBAL_MATRIX_DATA_H_

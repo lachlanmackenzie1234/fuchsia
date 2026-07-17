@@ -7339,6 +7339,16 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
   }
 }
 
+// Flatland1FacadeTest.SetImageBlendModeOnFilledRectFails
+TEST_F(Flatland1FacadeTest, SetImageBlendModeOnFilledRectFails) {
+  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  auto flatland = CreateFlatland(config);
+  const ContentId kFilledRectId(1);
+  flatland->CreateFilledRect(kFilledRectId);
+  flatland->SetImageBlendMode(kFilledRectId, types::BlendMode::kReplace());
+  PRESENT(flatland, false);
+}
+
 }  // namespace flatland::test
 
 #undef EXPECT_MATRIX

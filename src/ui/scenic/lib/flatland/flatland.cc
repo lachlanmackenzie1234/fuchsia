@@ -2568,7 +2568,10 @@ void Flatland::MatrixData::SetScale(VecF scale) {
 
 void Flatland::MatrixData::RecomputeMatrix() {
   // Manually compose the matrix rather than use glm transformations since the order of operations
-  // is always the same. glm matrices are column-major.
+  // is always the same. glm matrices are column-major, so are indexed like:
+  //   0 3 6
+  //   1 4 7
+  //   2 5 8
   float* vals = static_cast<float*>(glm::value_ptr(matrix_));
 
   // Translation in the third column.

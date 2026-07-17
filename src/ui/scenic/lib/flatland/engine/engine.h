@@ -86,7 +86,8 @@ class Engine {
   // Holds the per-frame scene state that is generated from the latest UberStructs from each
   // Flatland session, linked together by the LinkSystem.
   struct SceneState {
-    void Initialize(Engine& engine, TransformHandle root_transform);
+    void InitializeFlatland1(Engine& engine, TransformHandle root_transform);
+    void InitializeFlatland2(Engine& engine, TransformHandle root_transform);
 
     // Clear all fields without deallocating memory.
     void Clear();

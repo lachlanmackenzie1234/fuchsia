@@ -9,9 +9,14 @@
 
 #include "src/ui/scenic/lib/allocation/image_metadata.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
+#include "src/ui/scenic/lib/flatland/global_topology_data.h"
+#include "src/ui/scenic/lib/flatland/uber_struct.h"
+
+#include <glm/mat3x3.hpp>
 
 namespace flatland {
 
+// [Deprecated: Migrating to Flatland2 schema overload below]
 // Zips the legacy pipeline's parallel outputs into ResolvedLayers.
 // |rectangles| and |images| must be the same length (the existing RenderData
 // invariant).  An entry whose metadata.identifier == kInvalidImageId becomes
@@ -26,11 +31,31 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  const std::vector<allocation::ImageMetadata>& images,
                                  const std::vector<size_t>& image_indices);
 
+// [Deprecated: Migrating to Flatland2 schema overload below]
 inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
     const std::vector<ImageRect>& rectangles, const std::vector<allocation::ImageMetadata>& images,
     const std::vector<size_t>& image_indices = {}) {
   std::vector<ResolvedLayer> output;
   ComputeGlobalResolvedLayers(output, rectangles, images, image_indices);
+  return output;
+}
+
+// Computes the global resolved layers list for the Flatland2 schema.
+// Walks |topology| in DFS order; for each node whose UberStruct has a
+// layer_stacks entry, emits one ResolvedLayer per visible stack layer.
+void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
+                                 const GlobalTopologyData& topology,
+                                 const UberStruct::InstanceMap& snapshot,
+                                 const std::vector<glm::mat3>& global_matrices,
+                                 const std::vector<TransformClipRegion>& clip_regions);
+
+// Helper which returns a new vector instead of taking the output vector as an argument.
+inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
+    const GlobalTopologyData& topology, const UberStruct::InstanceMap& snapshot,
+    const std::vector<glm::mat3>& global_matrices,
+    const std::vector<TransformClipRegion>& clip_regions) {
+  std::vector<ResolvedLayer> output;
+  ComputeGlobalResolvedLayers(output, topology, snapshot, global_matrices, clip_regions);
   return output;
 }
 
@@ -41,6 +66,37 @@ inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
 // no size (width is zero, or height is zero).
 void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint64_t display_width,
                        uint64_t display_height);
+
+// Exposed for testing. Inverts RotateFlip::From(Orientation, ImageFlip).
+std::pair<fuchsia_ui_composition::Orientation, fuchsia_ui_composition::ImageFlip>
+DecomposeRotateFlip(types::RotateFlip rf);
+
+// Exposed for testing.
+glm::mat3 GetLayerLocalMatrix(const types::Rectangle& display_rect,
+                              fuchsia_ui_composition::Orientation orientation);
+
+// Exposed for testing. Return type for `ResolveBlendAndOpacity()` helper.
+struct ResolvedBlend {
+  types::BlendMode blend_mode;
+  std::array<float, 4> multiply_color;
+};
+
+// Exposed for testing. Encapsulates the difference between how Flatland1 and Flatland2 APIs treat
+// REPLACE blend mode when `opacity < 1`; `pin_replace` is the selector for this differing behavior.
+//
+// In Flatland1 *for images only*, RGB is scaled and blend stays REPLACE (fade toward "black").
+//
+// Flatland2, and Flatland1 for solid color fills, "demote" REPLACE to PREMULTIPLIED_ALPHA,
+// so there is no visual discontinuity at `opacity == 0` (where the layer is treated as invisible);
+// this allows e.g. a window manager to fade out a child app even if it uses REPLACE.
+//
+// NOTE: `effective_opacity` combines layer opacity with inherited transform opacity.  It does not
+// involve "content opacity", neither the alpha of a solid color fill, nor the alpha channel of
+// image pixels.
+// TODO(https://fxbug.dev/523371761): ratified DESIGN-blend_mode_and_opacity
+// decision must match the behavior implemented here.
+ResolvedBlend ResolveBlendAndOpacity(types::BlendMode stored_blend, float effective_opacity,
+                                     bool pin_replace);
 
 }  // namespace flatland
 

@@ -154,8 +154,8 @@ void DumpAllSessions(const flatland::UberStruct::InstanceMap& snapshot, std::ost
 
 void DumpLayers(const flatland::GlobalTopologyData& topology_data,
                 const std::vector<flatland::ResolvedLayer>& layers, std::ostream& output) {
-  static_assert(std::variant_size_v<decltype(flatland::ResolvedLayer::content)> == 2,
-                "DumpImages must be updated to support new content types");
+  static_assert(2 == std::variant_size_v<decltype(flatland::ResolvedLayer::content)>,
+                "DumpLayers must be updated to support new content types");
 
   output << "\nFrame display-list contains " << layers.size()
          << " images and image-rectangles (in increasing Z-order):";
@@ -168,10 +168,11 @@ void DumpLayers(const flatland::GlobalTopologyData& topology_data,
     } else {
       const auto& image = std::get<flatland::ResolvedLayer::ImageContent>(layer.content);
       output << "\n        image: size=" << image.width << "x" << image.height
-             << "  multiply_color=(" << layer.multiply_color[0] << "," << layer.multiply_color[1]
-             << "," << layer.multiply_color[2] << "," << layer.multiply_color[3] << ")"
-             << "  blend_mode=" << layer.blend_mode << " flip=" << cpp23::to_underlying(layer.flip);
+             << "  flip=" << cpp23::to_underlying(layer.flip);
     }
+    output << "  multiply_color=(" << layer.multiply_color[0] << "," << layer.multiply_color[1]
+           << "," << layer.multiply_color[2] << "," << layer.multiply_color[3] << ")"
+           << "  blend_mode=" << layer.blend_mode;
     FX_CHECK(layer.topology_index >= 0);
     output << "\n        transform: " << topology_data.topology_vector[layer.topology_index]
            << "\n        rect: " << layer.rect;

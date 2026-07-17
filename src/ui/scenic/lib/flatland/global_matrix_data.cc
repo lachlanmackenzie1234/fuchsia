@@ -134,6 +134,8 @@ types::RectangleF MatrixMultiplyRectF(const glm::mat3& matrix, types::RectangleF
   return ConvertVertsToRectF(std::get<1>(MatrixMultiplyVerts(matrix, ConvertRectFToVerts(rect))));
 }
 
+}  // namespace
+
 ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& clip,
                           const std::array<glm::ivec2, 4>& texel_uvs,
                           const fuchsia_ui_composition::ImageFlip image_flip) {
@@ -185,6 +187,7 @@ ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& cl
   // Grab the origin, extent and orientation of the rectangle.
   auto origin = reordered_verts[0];
   auto extent = reordered_verts[2] - reordered_verts[0];
+  FX_CHECK(extent.x >= 0.f && extent.y >= 0.f);
 
   // Now clip the origin and extent based on the clip rectangle.
   auto [clipped_origin, clipped_extent] = ClipRectangle(clip, origin, extent);
@@ -277,11 +280,8 @@ ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& cl
     uvs[i] = clipped_uvs[flip_idx[i]];
   }
 
-  // This construction will CHECK if the extent is negative.
   return ImageRect(clipped_origin, clipped_extent, uvs, orientation);
 }
-
-}  // namespace
 
 GlobalMatrixVector ComputeGlobalMatrices(
     const GlobalTopologyData::TopologyVector& global_topology,
