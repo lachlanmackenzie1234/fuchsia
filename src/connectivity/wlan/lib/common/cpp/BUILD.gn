@@ -12,7 +12,6 @@ config("wlan_common_config") {
 source_set("common") {
   sources = [
     "channel.cc",
-    "energy.cc",
     "ieee80211_codes.cc",
     "include/wlan/common/action_frame.h",
     "include/wlan/common/bitfield.h",
@@ -23,7 +22,6 @@ source_set("common") {
     "include/wlan/common/dispatcher.h",
     "include/wlan/common/element.h",
     "include/wlan/common/element_id.h",
-    "include/wlan/common/energy.h",
     "include/wlan/common/from_bytes.h",
     "include/wlan/common/ieee80211.h",
     "include/wlan/common/ieee80211_codes.h",
@@ -54,9 +52,6 @@ source_set("common") {
 
   public_configs = [ ":wlan_common_config" ]
   configs += [ "//build/config/fuchsia:enable_zircon_asserts" ]
-
-  # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
 }
 
 cc_test_executable("mcs_rate_lookup_test") {
