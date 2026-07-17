@@ -17,7 +17,7 @@ use starnix_core::vfs::{
     InputBuffer, OutputBuffer, fileops_impl_noop_sync, fileops_impl_seekless, fs_args,
     fs_node_impl_dir_readonly, fs_node_impl_not_dir,
 };
-use starnix_logging::{log_warn, track_stub};
+use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FunctionFsResultLock, FunctionFsStateLock, InterruptibleEvent, LockDepMutex};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -204,7 +204,17 @@ async fn handle_adb(
                         error!(EINVAL)
                     }
                     Ok(Err(err)) => {
-                        log_warn!("Failed to receive data from adb driver: {err}");
+                        let status = zx::Status::from_raw(err);
+                        if matches!(
+                            status,
+                            zx::Status::BAD_STATE | zx::Status::CANCELED | zx::Status::PEER_CLOSED
+                        ) {
+                            log_info!("Receive failed due to connection shutdown: {status}");
+                        } else {
+                            log_warn!("Failed to receive data from adb driver: {status}");
+                        }
+                        // TODO(b/536021189): Fix POSIX error mapping. We should return ESHUTDOWN
+                        // on endpoint disable.
                         error!(EINVAL)
                     }
                     Ok(Ok(payload)) => Ok(payload),
