@@ -2,19 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::UpdateState;
 use crate::private::Sealed;
 use crate::stash_logger::StashInspectLogger;
 use crate::storage_factory::{DefaultLoader, NoneT};
-use crate::UpdateState;
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl_fuchsia_stash::{StoreAccessorProxy, Value};
 use fuchsia_async::{MonotonicDuration, MonotonicInstant, Task, Timer};
 use futures::channel::mpsc::UnboundedSender;
 use futures::future::OptionFuture;
 use futures::lock::{Mutex, MutexGuard};
 use futures::{FutureExt, StreamExt};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -296,13 +296,29 @@ impl DeviceStorage {
         inspect_handle.lock().await.record_flush_failure(setting_key);
     }
 
-    async fn inner_write(
+    async fn inner_write<T>(
         &self,
-        key: &'static str,
-        new_value: String,
-        data_as_any: Box<TypeErasedData>,
-        mapping_fn: MappingFn,
-    ) -> Result<UpdateState, Error> {
+        new_value: &T,
+        immediate_flush: bool,
+    ) -> Result<UpdateState, Error>
+    where
+        T: DeviceStorageConvertible,
+    {
+        let storable = new_value.get_storable();
+        let key = T::Storable::KEY;
+        let serialized_value = storable.serialize_to();
+        let data_as_any = Box::new(storable.into_owned()) as Box<TypeErasedData>;
+        let mapping_fn: MappingFn = Box::new(|any: &dyn Any| {
+            // Attempt to downcast the `dyn Any` to its original type. If `T` was not its
+            // original type, then we want to panic because there's a compile-time issue
+            // with overlapping keys.
+            let value = any.downcast_ref::<T::Storable>().expect(
+                "Type mismatch even though keys match. Two different\
+                                    types have the same key value",
+            );
+            value.serialize_to()
+        });
+
         let typed_storage = self
             .typed_storage_map
             .get(key)
@@ -332,12 +348,11 @@ impl DeviceStorage {
             maybe_init.as_ref()
         };
 
-        Ok(if cached_value != Some(&new_value) {
-            let serialized = Value::Stringval(new_value);
+        Ok(if cached_value != Some(&serialized_value) {
+            let serialized = Value::Stringval(serialized_value);
             let key = prefixed(key);
             cached_storage.stash_proxy.set_value(&key, serialized)?;
-            if !self.debounce_writes {
-                // Not debouncing writes for testing, just flush immediately.
+            if immediate_flush {
                 DeviceStorage::stash_flush(
                     &cached_storage.stash_proxy,
                     Rc::clone(&self.inspect_handle),
@@ -356,28 +371,22 @@ impl DeviceStorage {
         })
     }
 
-    /// Write `new_value` to storage. The write will be persisted to disk at a set interval.
+    /// Write `new_value` to storage. The write will be persisted to disk at the normal debounce
+    /// interval which is configured for this storage instance.
     pub async fn write<T>(&self, new_value: &T) -> Result<UpdateState, Error>
     where
         T: DeviceStorageConvertible,
     {
-        let storable = new_value.get_storable();
-        self.inner_write(
-            T::Storable::KEY,
-            storable.serialize_to(),
-            Box::new(storable.into_owned()) as Box<TypeErasedData>,
-            Box::new(|any: &dyn Any| {
-                // Attempt to downcast the `dyn Any` to its original type. If `T` was not its
-                // original type, then we want to panic because there's a compile-time issue
-                // with overlapping keys.
-                let value = any.downcast_ref::<T::Storable>().expect(
-                    "Type mismatch even though keys match. Two different\
-                                        types have the same key value",
-                );
-                value.serialize_to()
-            }),
-        )
-        .await
+        self.inner_write(new_value, !self.debounce_writes).await
+    }
+
+    /// Write `new_value` to storage. The write will be persisted to disk immediately, overriding
+    /// the configured debounce timer for this storage instance.
+    pub async fn immediate_write<T>(&self, new_value: &T) -> Result<UpdateState, Error>
+    where
+        T: DeviceStorageConvertible,
+    {
+        self.inner_write(new_value, true).await
     }
 
     /// Test-only method to write directly to stash without touching the cache. This is used for
@@ -1067,5 +1076,82 @@ mod tests {
 
         assert_eq!(current.value, test_device_compatible_migration::DEFAULT_CURRENT_VALUE);
         assert_eq!(current.value_2, test_device_compatible_migration::DEFAULT_CURRENT_VALUE_2);
+    }
+
+    #[fuchsia::test]
+    fn test_write_without_debounce() {
+        let mut executor = TestExecutor::new_with_fake_time();
+
+        let (stash_proxy, mut stash_stream) =
+            fidl::endpoints::create_proxy_and_stream::<StoreAccessorMarker>();
+
+        let storage = DeviceStorage::with_stash_proxy(
+            vec![(TestStruct::KEY, None)],
+            move || stash_proxy.clone(),
+            Rc::new(Mutex::new(StashInspectLogger::new(component::inspector().root()))),
+        );
+
+        let first_value = VALUE1;
+
+        // Write first value to initialize cache.
+        {
+            let value_to_write = TestStruct { value: first_value };
+            let write_future = storage.write(&value_to_write);
+            futures::pin_mut!(write_future);
+
+            assert_matches!(executor.run_until_stalled(&mut write_future), Poll::Pending);
+
+            {
+                let respond_future = validate_stash_get_and_respond(
+                    &mut stash_stream,
+                    serde_json::to_string(&TestStruct::default()).unwrap(),
+                );
+                futures::pin_mut!(respond_future);
+                advance_executor(&mut executor, &mut respond_future);
+            }
+
+            assert_matches!(
+                executor.run_until_stalled(&mut write_future),
+                Poll::Ready(Result::Ok(_))
+            );
+        }
+        {
+            let set_value_future = verify_stash_set(&mut stash_stream, first_value);
+            futures::pin_mut!(set_value_future);
+            advance_executor(&mut executor, &mut set_value_future);
+        }
+        {
+            let flush_future = verify_stash_flush(&mut stash_stream);
+            futures::pin_mut!(flush_future);
+            advance_executor(&mut executor, &mut flush_future);
+        }
+
+        // immediate_write should immediately trigger a SetValue and a Flush without timer delay.
+        let second_value = VALUE2;
+        {
+            let value_to_write = TestStruct { value: second_value };
+            let write_future = storage.immediate_write(&value_to_write);
+            futures::pin_mut!(write_future);
+
+            // Stash proxy set_value and flush happen immediately within write().
+            assert_matches!(executor.run_until_stalled(&mut write_future), Poll::Pending);
+
+            {
+                let set_value_future = verify_stash_set(&mut stash_stream, second_value);
+                futures::pin_mut!(set_value_future);
+                advance_executor(&mut executor, &mut set_value_future);
+            }
+
+            {
+                let flush_future = verify_stash_flush(&mut stash_stream);
+                futures::pin_mut!(flush_future);
+                advance_executor(&mut executor, &mut flush_future);
+            }
+
+            assert_matches!(
+                executor.run_until_stalled(&mut write_future),
+                Poll::Ready(Result::Ok(_))
+            );
+        }
     }
 }

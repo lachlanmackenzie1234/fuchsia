@@ -155,12 +155,17 @@ impl SetupController {
         let mut info = self.store.get::<SetupInfo>().await;
         info.configuration_interfaces = config_interfaces_flags;
 
-        let write_setting_result = self.store.write(&info).await;
+        // If we plan to reboot, we need to ensure the setting is stored immediately.
+        let write_setting_result = match should_reboot {
+            true => self.store.immediate_write(&info).await,
+            false => self.store.write(&info).await,
+        };
 
         // If the write succeeded, reboot if necessary.
         if write_setting_result.is_ok() && should_reboot {
             reboot(&self.service_context, self.external_publisher.clone()).await?;
         }
+
         write_setting_result
             .map(|state| (UpdateState::Updated == state).then_some(info))
             .map_err(SetupError::WriteFailure)
