@@ -17,7 +17,7 @@ macro_rules! assert_lt {
             stringify!($y),
             $x,
             $y
-        );
+        )
     };
 }
 
@@ -32,7 +32,7 @@ macro_rules! assert_leq {
             stringify!($y),
             $x,
             $y
-        );
+        )
     };
 }
 
@@ -47,7 +47,7 @@ macro_rules! assert_gt {
             stringify!($y),
             $x,
             $y
-        );
+        )
     };
 }
 
@@ -62,7 +62,7 @@ macro_rules! assert_geq {
             stringify!($y),
             $x,
             $y
-        );
+        )
     };
 }
 
@@ -85,7 +85,7 @@ macro_rules! assert_near {
             $x,
             $y,
             $delta
-        );
+        )
     };
 }
 

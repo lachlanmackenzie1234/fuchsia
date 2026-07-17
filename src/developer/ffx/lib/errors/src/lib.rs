@@ -111,7 +111,7 @@ macro_rules! ffx_bail {
         return Err($crate::ffx_error!($msg).into())
     };
     ($fmt:expr, $($arg:tt)*) => {
-        return Err($crate::ffx_error!($fmt, $($arg)*).into());
+        return Err($crate::ffx_error!($fmt, $($arg)*).into())
     };
 }
 
@@ -131,7 +131,7 @@ macro_rules! ffx_bail_with_code {
         return Err($crate::ffx_error_with_code!($code, $msg).into())
     };
     ($code:expr, $fmt:expr, $($arg:tt)*) => {
-        return Err($crate::ffx_error_with_code!($code, $fmt, $($arg)*).into());
+        return Err($crate::ffx_error_with_code!($code, $fmt, $($arg)*).into())
     };
 }
 

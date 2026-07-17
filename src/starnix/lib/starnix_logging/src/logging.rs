@@ -72,14 +72,14 @@ macro_rules! log_trace {
                     $($key $(:$capture)* $(= $value)*),+;
                     $($arg)*
                 );
-            });
+            })
         }
     };
     ($($arg:tt)*) => {
         if $crate::trace_debug_logs_enabled() {
             $crate::with_current_task_info(|_task_info| {
-                $crate::__log::trace!(tag:% = _task_info; $($arg)*);
-            });
+                $crate::__log::trace!(tag:% = _task_info; $($arg)*)
+            })
         }
     };
 }
@@ -91,9 +91,9 @@ macro_rules! log_syscall {
             $crate::log!(
                 $current_task.task.thread_group.syscall_log_level(),
                 $($arg)*
-            );
+            )
         }
-    }
+    };
 }
 
 #[macro_export]
@@ -106,14 +106,14 @@ macro_rules! log_debug {
                     $($key $(:$capture)* $(= $value)*),+;
                     $($arg)*
                 );
-            });
+            })
         }
     };
     ($($arg:tt)*) => {
         if $crate::trace_debug_logs_enabled() {
             $crate::with_current_task_info(|_task_info| {
-                $crate::__log::debug!(tag:% = _task_info; $($arg)*);
-            });
+                $crate::__log::debug!(tag:% = _task_info; $($arg)*)
+            })
         }
     };
 }
@@ -121,21 +121,21 @@ macro_rules! log_debug {
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        $crate::log!($crate::__log::Level::Info, $($arg)*);
+        $crate::log!($crate::__log::Level::Info, $($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        $crate::log!($crate::__log::Level::Warn, $($arg)*);
+        $crate::log!($crate::__log::Level::Warn, $($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_error {
     ($($arg:tt)*) => {
-        $crate::log!($crate::__log::Level::Error, $($arg)*);
+        $crate::log!($crate::__log::Level::Error, $($arg)*)
     };
 }
 
@@ -149,12 +149,12 @@ macro_rules! log {
                 $($key $(:$capture)* $(= $value)*),+;
                 $($arg)*
             );
-        });
+        })
     };
     ($lvl:expr, $($arg:tt)+) => {
         $crate::with_current_task_info(|_task_info| {
             $crate::__log::log!($lvl, tag:% = _task_info; $($arg)*);
-        });
+        })
     };
 }
 
