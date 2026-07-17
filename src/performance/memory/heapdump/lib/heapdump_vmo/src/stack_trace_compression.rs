@@ -15,7 +15,7 @@ pub const fn max_compressed_size(num_frames: usize) -> usize {
 ///
 /// This function returns the number of bytes actually written into the destination buffer (i.e. the
 /// compressed size).
-pub fn compress_into(src: &[u64], dest: &mut [u8]) -> usize {
+pub fn compress_into(src: &[usize], dest: &mut [u8]) -> usize {
     assert!(dest.len() >= max_compressed_size(src.len()), "dest buffer is not big enough");
 
     let mut offset = 0;
@@ -30,7 +30,7 @@ pub fn compress_into(src: &[u64], dest: &mut [u8]) -> usize {
 }
 
 /// Compresses a stack trace into a dynamically-allocated vector of bytes.
-pub fn compress(src: &[u64]) -> Vec<u8> {
+pub fn compress(src: &[usize]) -> Vec<u8> {
     let mut buf = vec![0; max_compressed_size(src.len())];
     let compressed_size = compress_into(src, &mut buf);
     buf.truncate(compressed_size);
@@ -38,7 +38,10 @@ pub fn compress(src: &[u64]) -> Vec<u8> {
 }
 
 /// Uncompresses a stack trace.
-pub fn uncompress(src: &[u8]) -> Result<Vec<u64>, crate::Error> {
+///
+/// This function assumes that the uncompressed pointers will fit in usize, which is always true if
+/// the stack trace was generated on the same architecture.
+pub fn uncompress(src: &[u8]) -> Result<Vec<usize>, crate::Error> {
     let mut result = Vec::new();
 
     let mut offset = 0;
@@ -57,10 +60,10 @@ pub fn uncompress(src: &[u8]) -> Result<Vec<u64>, crate::Error> {
 const VARINT_SHIFT: u32 = 7;
 const VARINT_VALUE_MASK: u8 = 0x7f;
 const VARINT_CONT_BIT: u8 = 0x80;
-const VARINT_MAX_ENCODED_LEN: usize = 10; // ceil(u64::BITS / VARINT_SHIFT)
+const VARINT_MAX_ENCODED_LEN: usize = usize::BITS.div_ceil(VARINT_SHIFT) as usize;
 
 /// Encodes a value into the given buffer, returning the number of bytes that were written.
-fn varint_encode(mut value: u64, dest: &mut [u8]) -> usize {
+fn varint_encode(mut value: usize, dest: &mut [u8]) -> usize {
     assert!(dest.len() >= VARINT_MAX_ENCODED_LEN, "dest buffer is not big enough");
 
     let mut offset = 0;
@@ -79,7 +82,7 @@ fn varint_encode(mut value: u64, dest: &mut [u8]) -> usize {
 
 /// Tries to decode a value from the given buffer, returning the value and the number of bytes that
 /// were consumed.
-fn varint_decode(src: &[u8]) -> Option<(u64, usize)> {
+fn varint_decode(src: &[u8]) -> Option<(usize, usize)> {
     let mut result = 0;
     let mut offset = 0;
     let mut shift = 0;
@@ -89,7 +92,7 @@ fn varint_decode(src: &[u8]) -> Option<(u64, usize)> {
 
         // Left-shift the value at its final position, then right-shift it back to validate that
         // we didn't lose any bit due to the left-shift overflowing.
-        let value = (input & VARINT_VALUE_MASK) as u64;
+        let value = (input & VARINT_VALUE_MASK) as usize;
         let value_shifted = value.checked_shl(shift)?;
         if (value_shifted >> shift) != value {
             return None; // overflow detected
@@ -105,10 +108,10 @@ fn varint_decode(src: &[u8]) -> Option<(u64, usize)> {
     }
 }
 
-const ZIGZAG_VALUE_MASK: u64 = !1;
-const ZIGZAG_SIGN_BIT: u64 = 1;
+const ZIGZAG_VALUE_MASK: usize = !1;
+const ZIGZAG_SIGN_BIT: usize = 1;
 
-fn zigzag_encode(mut value: u64) -> u64 {
+fn zigzag_encode(mut value: usize) -> usize {
     value = value.rotate_left(1);
     if (value & ZIGZAG_SIGN_BIT) != 0 {
         value ^= ZIGZAG_VALUE_MASK;
@@ -116,7 +119,7 @@ fn zigzag_encode(mut value: u64) -> u64 {
     value
 }
 
-fn zigzag_decode(mut value: u64) -> u64 {
+fn zigzag_decode(mut value: usize) -> usize {
     if (value & ZIGZAG_SIGN_BIT) != 0 {
         value ^= ZIGZAG_VALUE_MASK;
     }
@@ -129,12 +132,12 @@ mod tests {
     use test_case::test_case;
 
     // Arbitrary constants, used instead of real code addresses in the tests below:
-    const A: u64 = 0x0000_008a_b3fe_9821;
-    const B: u64 = 0x0000_812c_6a4a_682e;
-    const C: u64 = 0x0048_b5a0_2d45_9e5a;
-    const D: u64 = 0xcccc_f148_39a5_9c5a;
-    const F: u64 = 0xffff_ffff_ffff_ffff; // all 1's
-    const Z: u64 = 0x0000_0000_0000_0000; // all 0's
+    const A: usize = 0x0000_008a_b3fe_9821;
+    const B: usize = 0x0000_812c_6a4a_682e;
+    const C: usize = 0x0048_b5a0_2d45_9e5a;
+    const D: usize = 0xcccc_f148_39a5_9c5a;
+    const F: usize = 0xffff_ffff_ffff_ffff; // all 1's
+    const Z: usize = 0x0000_0000_0000_0000; // all 0's
 
     #[test_case(&[] ; "empty")]
     #[test_case(&[A] ; "A")]
@@ -151,7 +154,7 @@ mod tests {
     #[test_case(&[Z, Z, A, Z, Z] ; "ZZAFF")]
     #[test_case(&[F, Z, F] ; "FZF")]
     #[test_case(&[Z, F, Z] ; "ZFZ")]
-    fn test_compress_and_uncompress(stack_trace: &[u64]) {
+    fn test_compress_and_uncompress(stack_trace: &[usize]) {
         let compressed_data = compress(stack_trace);
         assert_eq!(stack_trace, &uncompress(&compressed_data).unwrap());
     }
@@ -171,11 +174,11 @@ mod tests {
     #[test_case(-1 ; "negative 1")]
     #[test_case(1000 ; "1000")]
     #[test_case(-1000 ; "negative 1000")]
-    #[test_case(i64::MIN ; "min")]
-    #[test_case(i64::MAX ; "max")]
-    fn test_zigzag(value: i64) {
-        let encoded_value = zigzag_encode(value as u64);
-        let decoded_value = zigzag_decode(encoded_value) as i64;
+    #[test_case(isize::MIN ; "min")]
+    #[test_case(isize::MAX ; "max")]
+    fn test_zigzag(value: isize) {
+        let encoded_value = zigzag_encode(value as usize);
+        let decoded_value = zigzag_decode(encoded_value) as isize;
         assert_eq!(decoded_value, value, "encoded value: {:x}", encoded_value);
     }
 }

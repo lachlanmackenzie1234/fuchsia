@@ -23,7 +23,7 @@ const STACK_TRACE_MAXIMUM_COMPRESSED_SIZE: usize =
 static QUICK_EARLY_RETURN: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "C" {
-    fn __sanitizer_fast_backtrace(buffer: *mut u64, buffer_size: usize) -> usize;
+    fn __sanitizer_fast_backtrace(buffer: *mut usize, buffer_size: usize) -> usize;
 }
 
 pub fn enable_quick_early_return() {

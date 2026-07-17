@@ -245,7 +245,9 @@ impl Snapshot for SnapshotV1 {
                     .push_element(fheapdump_client::SnapshotElement::StackTrace(
                         fheapdump_client::StackTrace {
                             stack_trace_key: Some(stack_trace_key.into_raw() as u64),
-                            program_addresses: Some(chunk.to_vec()),
+                            program_addresses: Some(
+                                chunk.iter().map(|addr| *addr as u64).collect(),
+                            ),
                             ..Default::default()
                         },
                     ))
@@ -464,7 +466,9 @@ mod tests {
         let foobar_thread_info_key =
             resources_writer.insert_thread_info(FAKE_THREAD_KOID, &FAKE_THREAD_NAME).unwrap();
         let (foobar_stack_trace_key, _) = resources_writer
-            .intern_compressed_stack_trace(&stack_trace_compression::compress(&foobar_stack_trace))
+            .intern_compressed_stack_trace(&stack_trace_compression::compress(
+                &foobar_stack_trace.iter().map(|addr| *addr as usize).collect_vec(),
+            ))
             .unwrap();
         allocations_writer
             .insert_allocation(
@@ -554,7 +558,7 @@ mod tests {
             resources_writer.insert_thread_info(FAKE_THREAD_KOID, &FAKE_THREAD_NAME).unwrap();
         let (stack_trace_key, _) = resources_writer
             .intern_compressed_stack_trace(&stack_trace_compression::compress(
-                &FAKE_ALLOCATION_STACK_TRACE,
+                &FAKE_ALLOCATION_STACK_TRACE.iter().map(|addr| *addr as usize).collect_vec(),
             ))
             .unwrap();
         allocations_writer
