@@ -26,7 +26,7 @@ if (toolchain_base_environment == "kernel") {
     abi = "lp64"
 
     # Exclude all the kinds of non-integer registers from the ISA the compiler
-    # may generated.  Such registers usually still hold the user-mode values
+    # may generate.  Such registers usually still hold the user-mode values
     # while running in kernel mode.
     exclude_letters = [
       "d",

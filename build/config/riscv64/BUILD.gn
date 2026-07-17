@@ -38,25 +38,3 @@ compiler_config("riscv64") {
 riscv64_abi_config("no-vector") {
   exclude_letters = [ "v" ]
 }
-
-compiler_config("lto-workarounds") {
-  visibility = [ "//build/config/lto:lto-workarounds" ]
-
-  # TODO(https://fxbug.dev/42086180): These workarounds can be safely removed
-  # once our toolchains handle passing riscv target features in LTO.
-  riscv64_extra_mattr = [
-    "+a",
-    "+c",
-    "+f",
-    "+d",
-    "+relax",
-  ]
-
-  # TODO(https://fxbug.dev/42086180): The linker flags below are required to
-  # avoid code generation bugs during LTO. They can be removed once LTO
-  # properly handles target features
-  linker_llvm_flags = []
-  foreach(attr, riscv64_extra_mattr) {
-    linker_llvm_flags += [ "-mattr=$attr" ]
-  }
-}

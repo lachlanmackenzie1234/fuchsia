@@ -78,13 +78,15 @@ config("no-fat-lto-objects") {
 }
 
 compiler_config("lto-workarounds") {
+  visibility = [ ":*" ]
+
   linker_llvm_flags = []
 
   if (toolchain_environment != "kernel.phys32" &&
       toolchain_environment != "kernel.efi") {
-    # TODO(https://fxbug.dev/42079915): LLD lets --no-pie trump the code generation
-    # switches, since we default to PIC, specify that to LTO links outside of
-    # x86_32 and EFI.
+    # TODO(https://fxbug.dev/42079915): LLD lets --no-pie trump the code
+    # generation switches, since we default to PIC, specify that to LTO links
+    # outside of x86_32 and EFI.
     linker_llvm_flags += [ "-relocation-model=pic" ]
 
     # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the
@@ -92,22 +94,13 @@ compiler_config("lto-workarounds") {
     linker_llvm_flags += [ "--enable-tlsdesc" ]
   }
 
-  # TODO(https://fxbug.dev/42061844): Temporarily disable branch funneling on lto. Branch
-  # funneling likely generates bad code involving return values not propagated
-  # correctly to other functions. Once this is resolved, come back and remove
-  # this.
+  # TODO(https://fxbug.dev/42061844): Temporarily disable branch funneling on
+  # lto. Branch funneling likely generates bad code involving return values not
+  # propagated correctly to other functions. Once this is resolved, come back
+  # and remove this.
   if (is_fuchsia) {
     linker_llvm_flags += [ "-wholeprogramdevirt-branch-funnel-threshold=0" ]
   }
-
-  # TODO(https://fxbug.dev/42086180): The workarounds below are required to
-  # avoid code generation bugs during LTO. They can be removed once LTO
-  # properly handles riscv target features
-  if (current_cpu == "riscv64") {
-    configs = [ "//build/config/riscv64:lto-workarounds" ]
-  }
-
-  visibility = [ ":*" ]
 }
 
 # This enables whole program devirtualization when LTO is enabled. Individual

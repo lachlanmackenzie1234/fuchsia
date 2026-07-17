@@ -249,9 +249,9 @@ template("riscv64_abi_config") {
       _letters += invoker.extra_letters
     }
 
+    _exclude_letters = []
     if (defined(invoker.exclude_letters)) {
-      _letters += invoker.exclude_letters
-      _letters -= invoker.exclude_letters
+      _exclude_letters = invoker.exclude_letters
     }
 
     # These letters are always present in this exact order when they are
@@ -275,6 +275,14 @@ template("riscv64_abi_config") {
         _letters = letter
       }
     }
+
+    # Remove any positive additions that should be excluded.
+    _letters += _exclude_letters
+    _letters -= _exclude_letters
+
+    # Elide those from the explicit negative additions.
+    _exclude_letters += _letters
+    _exclude_letters -= _letters
 
     _march = "rv64" + string_join("", _letters)
     foreach(feature, _features) {
@@ -305,6 +313,17 @@ template("riscv64_abi_config") {
       } else {
         rust_target_features += [ "+$feature" ]
       }
+    }
+    foreach(feature, _exclude_letters + [ "g" ] - [ "g" ]) {
+      rust_target_features += [ "-$feature" ]
+    }
+
+    # TODO(https://fxbug.dev/42086180): The linker flags below are required to
+    # avoid code generation bugs during LTO.  They can be removed once LTO
+    # properly handles target features.
+    linker_llvm_flags = []
+    foreach(attr, rust_target_features + [ "+relax" ]) {
+      linker_llvm_flags += [ "-mattr=$attr" ]
     }
 
     if (toolchain_environment == "kernel") {
