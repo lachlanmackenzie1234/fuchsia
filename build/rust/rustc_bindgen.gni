@@ -11,6 +11,10 @@ import("//build/rust/config.gni")
 import("//build/testing/config.gni")
 import("//build/testing/golden_files.gni")
 
+# TODO(https://fxbug.dev/512840182): This is bindgen's own current default
+# version to target. Let's use a more recent default.
+default_bindgen_rust_version = "1.82.0"
+
 # Defines a target that runs rust bindgen on C header files.
 #
 # Parameters
@@ -32,6 +36,16 @@ import("//build/testing/golden_files.gni")
 #     - Optional: Whether to compile the headers as C++.
 #     - Type: bool
 #     - Default: false
+#
+#   * rust_version
+#     - Optional: The Rust compiler version to target.
+#     - Type: string
+#     - Default: default_bindgen_rust_version
+#
+#   * rust_edition
+#     - Optional: The Rust edition to target.
+#     - Type: string ("2018" | "2021" | "2024")
+#     - Default: Maximum supported edition of the targeted Rust version.
 #
 #   * expect_lints
 #     - Optional: List of lints to expect in the generated code (generates `#![expect(lint)]`).
@@ -192,6 +206,16 @@ template("rustc_bindgen") {
       current_target_tuple,
     ]
 
+    rust_version = default_bindgen_rust_version
+    if (defined(invoker.rust_version)) {
+      rust_version = invoker.rust_version
+    }
+    args += [ "--rust-version=${rust_version}" ]
+
+    if (defined(invoker.rust_edition)) {
+      args += [ "--rust-edition=" + invoker.rust_edition ]
+    }
+
     if (defined(invoker.expect_lints)) {
       foreach(x, invoker.expect_lints) {
         args += [ "--expect-lint=${x}" ]
@@ -322,6 +346,7 @@ template("rustc_bindgen") {
         args += [ "--bindgen-flag=${x}" ]
       }
     }
+
     if (defined(invoker.fuchsia_api_level)) {
       _api_level = invoker.fuchsia_api_level
       if (_api_level == "NEXT") {

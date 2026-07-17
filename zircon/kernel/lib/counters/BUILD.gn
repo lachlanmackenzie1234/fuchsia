@@ -87,11 +87,6 @@ rustc_bindgen("counters-bindings.bindgen") {
 
   type_allowlist = [ "counters::.*" ]
 
-  additional_bindgen_flags = [
-    "--rust-edition",
-    "2021",
-  ]
-
   notice_year = 2026
 
   raw_lines = [ "#![no_std]" ]

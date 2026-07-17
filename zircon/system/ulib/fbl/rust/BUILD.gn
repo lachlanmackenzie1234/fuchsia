@@ -98,11 +98,6 @@ rustc_bindgen("fbl-bindings.bindgen") {
 
   type_allowlist = [ "fbl_bindgen::.*" ]
 
-  additional_bindgen_flags = [
-    "--rust-edition",
-    "2021",
-  ]
-
   notice_year = 2026
 
   raw_lines = [ "#![no_std]" ]

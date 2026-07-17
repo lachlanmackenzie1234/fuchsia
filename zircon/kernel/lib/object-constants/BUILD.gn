@@ -28,11 +28,6 @@ rustc_bindgen("object-constants-bindings.bindgen") {
   output_name = "object_constants_bindings.rs"
   deps = [ ":headers" ]
 
-  additional_bindgen_flags = [
-    "--rust-edition",
-    "2021",
-  ]
-
   notice_year = 2026
 
   var_allowlist = [ "kCounterDispatcherState.*" ]

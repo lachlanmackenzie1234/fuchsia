@@ -106,6 +106,11 @@ class Bindgen:
             output_file,
         ]
 
+        if self.args.rust_version:
+            args += ["--rust-target", self.args.rust_version]
+        if self.args.rust_edition:
+            args += ["--rust-edition", self.args.rust_edition]
+
         if not self.args.layout_tests:
             args.append("--no-layout-tests")
 
@@ -298,6 +303,14 @@ def main():
     parser.add_argument(
         "--clang-target",
         help="Clang: Compilation target (--target)",
+    )
+    parser.add_argument(
+        "--rust-version",
+        help="Rust version to target (maps to bindgen --rust-target)",
+    )
+    parser.add_argument(
+        "--rust-edition",
+        help="Rust edition to target (maps to bindgen --rust-edition)",
     )
     parser.add_argument(
         "--expect-lint",
