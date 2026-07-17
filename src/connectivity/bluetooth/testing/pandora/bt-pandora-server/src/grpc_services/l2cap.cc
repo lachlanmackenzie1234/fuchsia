@@ -10,8 +10,6 @@
 #include <cstdlib>
 #include <future>
 
-#include "src/connectivity/bluetooth/testing/bt-affordances/ffi_c/bindings.h"
-
 using grpc::Status;
 using grpc::StatusCode;
 
@@ -195,10 +193,36 @@ class ConnectionReceiverImpl : public fidl::Server<fuchsia_bluetooth_bredr::Conn
 ::grpc::Status L2capService::Send(::grpc::ServerContext* context,
                                   const ::pandora::l2cap::SendRequest* request,
                                   ::pandora::l2cap::SendResponse* response) {
-  if (write_l2cap(reinterpret_cast<const uint8_t*>(request->data().data()),
-                  request->data().size()) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  std::scoped_lock lock(m_l2cap_channel_);
+  if (l2cap_connection_.is_valid()) {
+    std::vector<fuchsia_bluetooth::Packet> packets;
+    fuchsia_bluetooth::Packet packet;
+    packet.packet() = std::vector<uint8_t>(
+        reinterpret_cast<const uint8_t*>(request->data().data()),
+        reinterpret_cast<const uint8_t*>(request->data().data()) + request->data().size());
+    packets.push_back(std::move(packet));
+
+    auto result = fidl::Call(l2cap_connection_)->Send({{.packets = std::move(packets)}});
+    if (result.is_error()) {
+      return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.Channel/Send error: " +
+                                              result.error_value().FormatDescription());
+    }
+  } else if (l2cap_socket_.is_valid()) {
+    size_t actual;
+    zx_status_t status =
+        l2cap_socket_.write(/*options=*/0, request->data().data(), request->data().size(), &actual);
+    if (status != ZX_OK) {
+      return Status(StatusCode::INTERNAL, std::format("Failed to write to L2CAP socket: {}",
+                                                      zx_status_get_string(status)));
+    }
+    if (actual != request->data().size()) {
+      return Status(StatusCode::INTERNAL, std::format("Short write to L2CAP socket: {} vs {}",
+                                                      actual, request->data().size()));
+    }
+  } else {
+    return Status(StatusCode::FAILED_PRECONDITION, "L2CAP channel not connected");
   }
+
   response->mutable_success();
   return Status::OK;
 }

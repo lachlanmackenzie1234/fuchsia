@@ -9,7 +9,6 @@ use fidl_fuchsia_bluetooth_gatt2::{Characteristic, ServiceHandle, ServiceInfo};
 use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
 use fidl_fuchsia_bluetooth_sys::{HostInfo, Peer};
 use fuchsia_async::LocalExecutor;
-use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
@@ -29,7 +28,6 @@ enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId([u8; 6], oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>),
-    WriteL2cap(Vec<u8>, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -90,8 +88,6 @@ impl WorkThread {
         let mut host_cache: Vec<HostInfo> = Vec::new();
         // TODO(https://fxbug.dev/396500079): Consider HashMap<PeerId, Peer> instead.
         let peer_cache: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::new()));
-        // TODO(https://fxbug.dev/452075770): Support multiple L2CAP channels.
-        let l2cap_channel: Option<Channel> = None;
         let mut _peripheral_connection: ClientEnd<ConnectionMarker>;
 
         while let Some(request) = receiver.next().await {
@@ -130,18 +126,6 @@ impl WorkThread {
                     .await
                     .map(|opt_peer| opt_peer.map(|peer| peer.id.unwrap()));
                     result_sender.send(result).unwrap();
-                }
-                Request::WriteL2cap(data, result_sender) => {
-                    if let Some(ref l2cap_channel) = l2cap_channel {
-                        match l2cap_channel.write(&data) {
-                            Ok(_) => result_sender.send(Ok(())).unwrap(),
-                            Err(err) => result_sender
-                                .send(Err(anyhow!("Failed to write to L2CAP channel: {}", err)))
-                                .unwrap(),
-                        }
-                    } else {
-                        result_sender.send(Err(anyhow!("L2CAP channel not connected"))).unwrap();
-                    }
                 }
                 Request::SetDiscovery(discovery, result_sender) => {
                     result_sender.send(sys::set_discovery(&mut proxies, discovery).await).unwrap();
@@ -271,13 +255,6 @@ impl WorkThread {
     pub async fn get_known_peers(&self) -> Result<Vec<Peer>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Vec<Peer>, anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::GetKnownPeers(sender))?;
-        receiver.await?
-    }
-
-    // Write data over the L2CAP channel if one exists.
-    pub async fn write_l2cap(&self, data: Vec<u8>) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::WriteL2cap(data, sender))?;
         receiver.await?
     }
 

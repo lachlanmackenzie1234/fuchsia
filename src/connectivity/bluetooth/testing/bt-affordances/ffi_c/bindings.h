@@ -47,15 +47,6 @@ UuidBytes uuid_from_string(const char *uuid_str);
 /// The caller must ensure that `out_str` points to a valid buffer of at least 37 bytes.
 int32_t uuid_to_string(UuidBytes uuid, char *out_str);
 
-/// Write data over the L2CAP channel if one exists.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure that `data` points to a valid buffer of `len` bytes.
-int32_t write_l2cap(const uint8_t *data, uintptr_t len);
-
 /// Publish a local GATT service with one characteristic. GATT requests to the service are logged.
 ///
 /// Returns ZX_STATUS_INVALID_ARGS if UUID or `characteristic_properties` are invalid (check logs).
