@@ -283,6 +283,17 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<MyFlexibleEnum> for u32 {
+        fn from(value: MyFlexibleEnum) -> Self {
+            match value {
+                MyFlexibleEnum::Foo => 1,
+                MyFlexibleEnum::Bar => 2,
+
+                MyFlexibleEnum::UnknownOrdinal_(value) => value,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::MyFlexibleEnum, ___E> for MyFlexibleEnum
     where
         ___E: ?Sized,
@@ -430,6 +441,15 @@ pub mod natural {
                 2 => Ok(Self::Bar),
 
                 _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
+            }
+        }
+    }
+
+    impl ::std::convert::From<MyStrictEnum> for u32 {
+        fn from(value: MyStrictEnum) -> Self {
+            match value {
+                MyStrictEnum::Foo => 1,
+                MyStrictEnum::Bar => 2,
             }
         }
     }

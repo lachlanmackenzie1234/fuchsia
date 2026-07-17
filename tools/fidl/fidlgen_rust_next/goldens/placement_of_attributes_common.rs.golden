@@ -88,6 +88,14 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<ExampleEnum> for u32 {
+        fn from(value: ExampleEnum) -> Self {
+            match value {
+                ExampleEnum::Member => 1,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::ExampleEnum, ___E> for ExampleEnum
     where
         ___E: ?Sized,

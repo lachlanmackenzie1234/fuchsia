@@ -30,6 +30,15 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<ObjType> for u32 {
+        fn from(value: ObjType) -> Self {
+            match value {
+                ObjType::None => 0,
+                ObjType::Channel => 4,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::ObjType, ___E> for ObjType
     where
         ___E: ?Sized,

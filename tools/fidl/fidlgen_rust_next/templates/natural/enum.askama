@@ -35,6 +35,19 @@ impl ::std::convert::From<{{ natural_int }}> for {{ name }} {
 }
 {%- endif %}
 
+impl ::std::convert::From<{{ name }}> for {{ natural_int }} {
+    fn from(value: {{ name }}) -> Self {
+        match value {
+            {% for member in enm.members -%}
+              {{name}}::{{ member.name.camel() }} => {{ member.value.value }},
+            {% endfor %}
+            {%- if !enm.is_strict %}
+            {{name}}::UnknownOrdinal_(value) => value,
+            {%- endif %}
+        }
+    }
+}
+
 unsafe impl<___E> ::fidl_next::Encode<crate::wire::{{ name }}, ___E> for {{ name }}
 where
     ___E: ?Sized,

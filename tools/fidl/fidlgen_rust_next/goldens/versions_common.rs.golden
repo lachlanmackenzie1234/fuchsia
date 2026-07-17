@@ -82,6 +82,16 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<Enum> for u32 {
+        fn from(value: Enum) -> Self {
+            match value {
+                Enum::A => 1,
+
+                Enum::UnknownOrdinal_(value) => value,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::Enum, ___E> for Enum
     where
         ___E: ?Sized,

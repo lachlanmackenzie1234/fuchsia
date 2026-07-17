@@ -85,6 +85,18 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<Op> for u32 {
+        fn from(value: Op) -> Self {
+            match value {
+                Op::Add => 1,
+                Op::Mul => 2,
+                Op::Div => 3,
+
+                Op::UnknownOrdinal_(value) => value,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::Op, ___E> for Op
     where
         ___E: ?Sized,
@@ -1699,6 +1711,17 @@ pub mod natural {
                 2 => Self::ErrorTwo,
 
                 _ => Self::UnknownOrdinal_(value),
+            }
+        }
+    }
+
+    impl ::std::convert::From<SomeProtocolSomeMethodError> for u32 {
+        fn from(value: SomeProtocolSomeMethodError) -> Self {
+            match value {
+                SomeProtocolSomeMethodError::ErrorOne => 1,
+                SomeProtocolSomeMethodError::ErrorTwo => 2,
+
+                SomeProtocolSomeMethodError::UnknownOrdinal_(value) => value,
             }
         }
     }

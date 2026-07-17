@@ -89,6 +89,15 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<EnumType> for i32 {
+        fn from(value: EnumType) -> Self {
+            match value {
+                EnumType::Value => 1,
+                EnumType::True => 2,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::EnumType, ___E> for EnumType
     where
         ___E: ?Sized,

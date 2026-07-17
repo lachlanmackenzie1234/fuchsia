@@ -4607,6 +4607,14 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<OnlyDart> for u32 {
+        fn from(value: OnlyDart) -> Self {
+            match value {
+                OnlyDart::A => 1,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::OnlyDart, ___E> for OnlyDart
     where
         ___E: ?Sized,

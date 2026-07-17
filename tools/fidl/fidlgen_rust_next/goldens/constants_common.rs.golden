@@ -152,6 +152,14 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<Enum> for u32 {
+        fn from(value: Enum) -> Self {
+            match value {
+                Enum::E => 170,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::Enum, ___E> for Enum
     where
         ___E: ?Sized,
@@ -227,6 +235,15 @@ pub mod natural {
                 4 => Ok(Self::SecondValue),
 
                 _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
+            }
+        }
+    }
+
+    impl ::std::convert::From<EnumType> for i32 {
+        fn from(value: EnumType) -> Self {
+            match value {
+                EnumType::Value => 3,
+                EnumType::SecondValue => 4,
             }
         }
     }

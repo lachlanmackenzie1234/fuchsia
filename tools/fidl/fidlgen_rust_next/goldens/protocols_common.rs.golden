@@ -750,6 +750,15 @@ pub mod natural {
         }
     }
 
+    impl ::std::convert::From<ErrorEnum> for u32 {
+        fn from(value: ErrorEnum) -> Self {
+            match value {
+                ErrorEnum::ErrFoo => 1,
+                ErrorEnum::ErrBar => 2,
+            }
+        }
+    }
+
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::ErrorEnum, ___E> for ErrorEnum
     where
         ___E: ?Sized,
