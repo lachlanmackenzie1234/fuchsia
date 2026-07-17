@@ -5,7 +5,6 @@
 use crate::drawing::DisplayRotation;
 use crate::geometry::{IntPoint, IntSize};
 use euclid::size2;
-use fidl_fuchsia_input_report as fidl_input_report;
 
 mod mouse_tests {
     use super::*;
@@ -95,9 +94,9 @@ mod input_report_tests {
         let test_size = size2(1024, 768);
         let touch_scale = TouchScale {
             target_size: test_size,
-            x: fidl_fuchsia_input_report::Range { min: 0, max: 4095 },
+            x: fidl_fuchsia_input::Range { min: 0, max: 4095 },
             x_span: 4095.0,
-            y: fidl_fuchsia_input_report::Range { min: 0, max: 4095 },
+            y: fidl_fuchsia_input::Range { min: 0, max: 4095 },
             y_span: 4095.0,
         };
         InputReportHandler::new_with_scale(
@@ -147,7 +146,7 @@ mod input_report_tests {
         let mut context = TestAutoRepeatContext;
 
         let mut input_handler = make_input_handler();
-        let events: Vec<(consumer_control::Phase, fidl_input_report::ConsumerControlButton)> =
+        let events: Vec<(consumer_control::Phase, fidl_fuchsia_input::ConsumerControlButton)> =
             reports
                 .iter()
                 .map(|input_report| {

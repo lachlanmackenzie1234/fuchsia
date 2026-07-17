@@ -19,13 +19,13 @@ use std::collections::HashSet;
 #[derive(Debug)]
 pub struct TouchScale {
     pub target_size: IntSize,
-    pub x: fidl_input_report::Range,
+    pub x: fidl_fuchsia_input::Range,
     pub x_span: f32,
-    pub y: fidl_input_report::Range,
+    pub y: fidl_fuchsia_input::Range,
     pub y_span: f32,
 }
 
-fn restrict_to_range(value: i64, range: &fidl_input_report::Range) -> i64 {
+fn restrict_to_range(value: i64, range: &fidl_fuchsia_input::Range) -> i64 {
     if value < range.min {
         range.min
     } else if value > range.max {
@@ -35,21 +35,21 @@ fn restrict_to_range(value: i64, range: &fidl_input_report::Range) -> i64 {
     }
 }
 
-fn scale_value(value: i64, span: f32, range: &fidl_input_report::Range, value_max: i32) -> i32 {
+fn scale_value(value: i64, span: f32, range: &fidl_fuchsia_input::Range, value_max: i32) -> i32 {
     let value = restrict_to_range(value, range) - range.min;
     let value_fraction = value as f32 / span;
     (value_fraction * value_max as f32) as i32
 }
 
 impl TouchScale {
-    fn calculate_span(range: &fidl_input_report::Range) -> f32 {
+    fn calculate_span(range: &fidl_fuchsia_input::Range) -> f32 {
         if range.max <= range.min { 1.0 } else { (range.max - range.min) as f32 }
     }
 
     pub fn new(
         target_size: &IntSize,
-        x: &fidl_input_report::Range,
-        y: &fidl_input_report::Range,
+        x: &fidl_fuchsia_input::Range,
+        y: &fidl_fuchsia_input::Range,
     ) -> Self {
         Self {
             target_size: *target_size,
@@ -97,7 +97,7 @@ pub(crate) struct InputReportHandler<'a> {
     pressed_mouse_buttons: HashSet<u8>,
     pressed_keys: HashSet<fidl_fuchsia_input::Key>,
     raw_contacts: HashSet<touch::RawContact>,
-    pressed_consumer_control_buttons: HashSet<fidl_input_report::ConsumerControlButton>,
+    pressed_consumer_control_buttons: HashSet<fidl_fuchsia_input::ConsumerControlButton>,
 }
 
 impl<'a> InputReportHandler<'a> {
@@ -415,7 +415,7 @@ impl<'a> InputReportHandler<'a> {
             event_time: u64,
             device_id: &DeviceId,
             phase: consumer_control::Phase,
-            button: fidl_input_report::ConsumerControlButton,
+            button: fidl_fuchsia_input::ConsumerControlButton,
         ) -> Event {
             let consumer_control_event = consumer_control::Event { phase, button };
             Event {
@@ -425,7 +425,7 @@ impl<'a> InputReportHandler<'a> {
             }
         }
 
-        let pressed_consumer_control_buttons: HashSet<fidl_input_report::ConsumerControlButton> =
+        let pressed_consumer_control_buttons: HashSet<fidl_fuchsia_input::ConsumerControlButton> =
             if let Some(ref pressed_buttons) = consumer_control.pressed_buttons {
                 let pressed_buttons_set = pressed_buttons.iter().cloned().collect();
                 pressed_buttons_set

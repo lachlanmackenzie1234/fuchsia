@@ -343,7 +343,6 @@ pub mod pointer {
 /// These events are separated because they are different devices at the driver
 /// level, but it's not clear this is the right abstraction for Carnelian.
 pub mod consumer_control {
-    use super::*;
 
     /// Phase of a consumer control event.
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -360,7 +359,7 @@ pub mod consumer_control {
         /// Phase of event.
         pub phase: Phase,
         /// USB HID for key being pressed or released.
-        pub button: fidl_input_report::ConsumerControlButton,
+        pub button: fidl_fuchsia_input::ConsumerControlButton,
     }
 }
 
