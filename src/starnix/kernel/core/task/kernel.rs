@@ -45,19 +45,22 @@ use futures::FutureExt;
 use netlink::interfaces::InterfacesHandler;
 use netlink::{NETLINK_LOG_TAG, Netlink};
 use once_cell::sync::OnceCell;
+use smallvec::SmallVec;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    ComponentControllerLock, KernelSwapFiles, LockDepMutex, LockDepRwLock, MountsLevel,
-    PidToKoidMapLock, RwLock, RwSeqLock, SyscallLogFiltersLock,
+    ComponentControllerLock, KernelSwapFiles, LockDepGuard, LockDepMutex, LockDepRwLock,
+    MountsLevel, PidToKoidMapLock, RwLock, RwSeqLock, RwSeqLockGuard, SyscallLogFiltersLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{VMADDR_CID_HOST, from_status_like_fdio};
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU64;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
@@ -151,15 +154,69 @@ pub struct ArgNameAndValue<'a> {
     pub value: Option<&'a str>,
 }
 
+type DeferredDropCallback = Box<dyn FnOnce() + Send + Sync>;
+
 /// A proof token representing the global lock over the namespace mount topology.
 ///
 /// Functions that take `&MountsWriteToken` require the caller to hold the
 /// `Kernel::mounts_lock` to ensure safe modification of the global mount tree.
-pub struct MountsWriteToken(());
+pub struct MountsWriteToken {
+    deferred_drops: RefCell<SmallVec<[DeferredDropCallback; 8]>>,
+}
 
 impl MountsWriteToken {
     fn new() -> Self {
-        Self(())
+        Self { deferred_drops: RefCell::new(SmallVec::new()) }
+    }
+
+    /// We cannot block while holding a [MountsWriteGuard] as it is a spinlock. If a Drop requires
+    /// a blocking operation, use [Self::defer_drop] defer the blocking operation until
+    /// after the [MountsWriteGuard] is released.
+    pub fn defer_drop<T: Send + Sync + 'static>(&self, value: T) {
+        self.deferred_drops.borrow_mut().push(Box::new(move || {
+            drop(value);
+        }));
+    }
+
+    /// Helper method to [Self::defer_drop] specifically for [Arc<T>]s.
+    pub fn retain<T: Send + Sync + 'static>(&self, value: &Arc<T>) -> Arc<T> {
+        self.defer_drop(value.clone());
+        value.clone()
+    }
+
+    fn take_deferred_drops(&mut self) -> SmallVec<[DeferredDropCallback; 8]> {
+        std::mem::take(self.deferred_drops.get_mut())
+    }
+}
+
+/// A guard special cased for mount operations to defer destroying mounts until after all
+/// modifications of the global mount tree are completed.
+pub struct MountsWriteGuard<'a> {
+    guard: Option<RwSeqLockGuard<'a, LockDepGuard<'a, MountsWriteToken>>>,
+}
+
+impl<'a> MountsWriteGuard<'a> {
+    fn new(guard: RwSeqLockGuard<'a, LockDepGuard<'a, MountsWriteToken>>) -> Self {
+        Self { guard: Some(guard) }
+    }
+}
+
+impl<'a> Deref for MountsWriteGuard<'a> {
+    type Target = MountsWriteToken;
+    fn deref(&self) -> &Self::Target {
+        self.guard.as_ref().unwrap()
+    }
+}
+
+impl<'a> Drop for MountsWriteGuard<'a> {
+    fn drop(&mut self) {
+        if let Some(mut guard) = self.guard.take() {
+            let drops = guard.take_deferred_drops();
+            drop(guard);
+            for callback in drops {
+                callback();
+            }
+        }
     }
 }
 
@@ -996,6 +1053,10 @@ impl Kernel {
     /// Returns the container-configured CacheConfig.
     pub fn fs_cache_config(&self) -> CacheConfig {
         CacheConfig { capacity: self.features.dirent_cache_size as usize }
+    }
+
+    pub fn mounts_lock(&self) -> MountsWriteGuard<'_> {
+        MountsWriteGuard::new(self.mounts_lock.lock())
     }
 }
 

@@ -63,7 +63,7 @@ impl Namespace {
 
     pub fn new_with_flags(fs: FileSystemHandle, flags: MountpointFlags) -> Arc<Namespace> {
         let kernel = fs.kernel.upgrade().expect("can't create namespace without a kernel");
-        let mounts_guard = kernel.mounts_lock.lock();
+        let mounts_guard = kernel.mounts_lock();
 
         let root_mount = Mount::new(&mounts_guard, WhatToMount::Fs(fs), flags);
         Arc::new(Self { root_mount, id: kernel.get_next_namespace_id() })
@@ -285,11 +285,12 @@ impl MountRelations {
 
     fn remove_submount(
         &self,
-        _guard: &MountsWriteToken,
+        guard: &MountsWriteToken,
         key: &ArcKey<DirEntry>,
     ) -> Result<(), Errno> {
         // SAFETY: The MountsWriteToken proves we have exclusive write access.
         let submount = unsafe { self.submounts.remove(key) };
+        let submount = scopeguard::guard(submount, |submount| guard.defer_drop(submount));
         if submount.is_some() { Ok(()) } else { error!(EINVAL) }
     }
 
@@ -414,6 +415,7 @@ impl Mount {
         // Necessary to make a copy to prevent excess replication, see the comment on the
         // following Mount::new call.
         let peers = self.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default();
+        let peers = scopeguard::guard(peers, |peers| mounts_guard.defer_drop(peers));
 
         // Create the mount after copying the peer list, because in the case of creating a bind
         // mount inside itself, the new mount would get added to our peer group during the
@@ -428,15 +430,15 @@ impl Mount {
             mount.make_shared(mounts_guard);
         }
 
-        for peer in peers {
-            if Arc::ptr_eq(self, &peer) {
+        for peer in &*peers {
+            if Arc::ptr_eq(self, peer) {
                 continue;
             }
             let clone = mount.clone_mount_recursive(mounts_guard);
             peer.add_submount_internal(mounts_guard, dir, clone);
         }
 
-        self.add_submount_internal(mounts_guard, dir, mount)
+        self.add_submount_internal(mounts_guard, dir, mount);
     }
 
     fn remove_submount(
@@ -446,9 +448,10 @@ impl Mount {
     ) -> Result<(), Errno> {
         // create_submount explains why we need to make a copy of peers.
         let peers = self.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default();
+        let peers = scopeguard::guard(peers, |peers| mounts_guard.defer_drop(peers));
 
-        for peer in peers {
-            if Arc::ptr_eq(self, &peer) {
+        for peer in &*peers {
+            if Arc::ptr_eq(self, peer) {
                 continue;
             }
             // mount_namespaces(7): If B is shared, then all most-recently-mounted mounts at b on
@@ -472,11 +475,13 @@ impl Mount {
         target_dir: &DirEntryHandle,
     ) -> Result<(), Errno> {
         let kernel = target_mount.kernel();
-        let mounts_guard = kernel.mounts_lock.lock();
+        let mounts_guard = kernel.mounts_lock();
 
         let source_mountpoint = source_mount.mountpoint().ok_or_else(|| errno!(EIO))?;
-        let source_parent =
-            source_mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
+        let source_parent = mounts_guard.retain(
+            source_mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount"),
+        );
+        mounts_guard.retain(&source_mountpoint.entry);
 
         // First, disconnect the mount from its parent.
         {
@@ -1747,20 +1752,26 @@ impl NamespaceNode {
         }
 
         let kernel = self.entry.node.fs().kernel.upgrade().expect("can't mount without a kernel");
-        let mounts_guard = kernel.mounts_lock.lock();
+        let mounts_guard = kernel.mounts_lock();
 
         let mountpoint = self.enter_mount_locked(&mounts_guard);
-        let mount = mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
-        mount.create_submount(&mounts_guard, &mountpoint.entry, WhatSubmount::New(what, flags));
+
+        let mount = mounts_guard
+            .retain(mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount"));
+        let entry = mounts_guard.retain(&mountpoint.entry);
+        mount.create_submount(&mounts_guard, &entry, WhatSubmount::New(what, flags));
         Ok(())
     }
 
     /// If this is the root of a filesystem, unmount. Otherwise return EINVAL.
     pub fn unmount(&self, flags: UnmountFlags) -> Result<(), Errno> {
         let kernel = self.entry.node.fs().kernel.upgrade().expect("can't mount without a kernel");
-        let mounts_guard = kernel.mounts_lock.lock();
+        let mounts_guard = kernel.mounts_lock();
 
-        let mount = self.enter_mount_locked(&mounts_guard).mount_if_root()?.clone();
+        let mountpoint = self.enter_mount_locked(&mounts_guard);
+        mounts_guard.retain(&mountpoint.entry);
+        mountpoint.mount.as_ref().map(|mount| mounts_guard.retain(mount));
+        let mount = mounts_guard.retain(mountpoint.mount_if_root()?);
         mount.unmount(&mounts_guard, flags)
     }
 
@@ -1986,8 +1997,9 @@ impl Mounts {
         let mounts = self.mounts.lock().remove(&PtrKey::from(dir_entry as *const _));
         if let Some(mounts) = mounts {
             if let Some(kernel) = mounts.get(0).map(|m| m.kernel()) {
-                let mounts_guard = kernel.mounts_lock.lock();
-                for mount in mounts {
+                let mounts_guard = kernel.mounts_lock();
+                let mounts = scopeguard::guard(mounts, |mounts| mounts_guard.defer_drop(mounts));
+                for mount in &*mounts {
                     // Ignore errors.
                     let _ = mount.unmount(&mounts_guard, UnmountFlags::DETACH);
                 }
@@ -2042,7 +2054,7 @@ impl Drop for Mount {
             fuchsia_rcu::rcu_drop(scopeguard::guard(
                 (kernel, peer_group, upstream),
                 |(kernel, peer_group, upstream)| {
-                    let guard = kernel.mounts_lock.lock();
+                    let guard = kernel.mounts_lock();
                     Mount::unregister_from_peer_group_and_upstream(&guard, peer_group, upstream);
                 },
             ));
@@ -2248,7 +2260,7 @@ mod test {
             let foo_dir =
                 ns.root().lookup_child(&current_task, &mut context, "foo".into()).unwrap();
 
-            let ns_clone = ns.clone_namespace(&kernel.mounts_lock.lock());
+            let ns_clone = ns.clone_namespace(&kernel.mounts_lock());
 
             let foofs2 = TmpFs::new_fs(&kernel);
             foo_dir.mount(WhatToMount::Fs(foofs2.clone()), MountpointFlags::empty()).unwrap();

@@ -49,9 +49,9 @@ impl FsContextState {
             .ok_or_else(|| errno!(EINVAL))?;
 
         // Only perform a mutation if the rebased nodes both exist in the target namespace.
-        self.root = new_root.into_active();
-        self.cwd = new_cwd.into_active();
-        self.namespace = new_ns;
+        mounts_guard.defer_drop(std::mem::replace(&mut self.root, new_root.into_active()));
+        mounts_guard.defer_drop(std::mem::replace(&mut self.cwd, new_cwd.into_active()));
+        mounts_guard.defer_drop(std::mem::replace(&mut self.namespace, new_ns));
         log_trace!("namespace update succeeded");
         Ok(())
     }
@@ -150,7 +150,7 @@ impl FsContext {
     pub fn set_namespace(&self, new_ns: Arc<Namespace>) -> Result<(), Errno> {
         let mut state = self.state.write();
         let kernel = state.namespace.kernel();
-        let mounts_guard = kernel.mounts_lock.lock();
+        let mounts_guard = kernel.mounts_lock();
         state.set_namespace(new_ns, &mounts_guard)?;
         Ok(())
     }
@@ -158,7 +158,7 @@ impl FsContext {
     pub fn unshare_namespace(&self) {
         let mut state = self.state.write();
         let kernel = state.namespace.kernel();
-        let mounts_guard = kernel.mounts_lock.lock();
+        let mounts_guard = kernel.mounts_lock();
 
         let cloned = state.namespace.clone_namespace(&mounts_guard);
         state
