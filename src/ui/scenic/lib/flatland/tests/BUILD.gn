@@ -17,9 +17,11 @@ cc_test_executable("unittests") {
   output_name = "flatland_unittests"
   testonly = true
   sources = [
+    "flatland_differential_unittest.cc",
     "flatland_manager_unittest.cc",
     "flatland_presenter_unittest.cc",
     "flatland_unittest.cc",
+    "flatland_unittest.h",
     "global_matrix_data_unittest.cc",
     "global_resolved_layers_unittest.cc",
     "global_topology_data_unittest.cc",

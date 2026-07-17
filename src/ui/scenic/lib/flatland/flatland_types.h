@@ -179,6 +179,8 @@ struct ResolvedLayer {
   bool operator==(const ResolvedLayer&) const = default;
 };
 
+std::ostream& operator<<(std::ostream& str, const flatland::ResolvedLayer& rl);
+
 }  // namespace flatland
 
 namespace std {

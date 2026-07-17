@@ -75,4 +75,24 @@ std::ostream& operator<<(std::ostream& out, const LayerHandle& h) {
   return out;
 }
 
+std::ostream& operator<<(std::ostream& str, const flatland::ResolvedLayer& rl) {
+  static_assert(2 == std::variant_size_v<decltype(flatland::ResolvedLayer::content)>,
+                "operator<< must be updated to support new content types");
+
+  str << "ResolvedLayer[rect:" << rl.rect << " multiply_color:(" << rl.multiply_color[0] << ","
+      << rl.multiply_color[1] << "," << rl.multiply_color[2] << "," << rl.multiply_color[3] << ")"
+      << " blend_mode:" << rl.blend_mode << " flip:" << static_cast<int>(rl.flip);
+  if (std::holds_alternative<flatland::ResolvedLayer::SolidColorContent>(rl.content)) {
+    const auto& solid = std::get<flatland::ResolvedLayer::SolidColorContent>(rl.content);
+    str << " content:SolidColor(" << solid.color[0] << "," << solid.color[1] << ","
+        << solid.color[2] << "," << solid.color[3] << ")";
+  } else {
+    const auto& image = std::get<flatland::ResolvedLayer::ImageContent>(rl.content);
+    str << " content:Image(id:" << image.image_id << " size:" << image.width << "x" << image.height
+        << ")";
+  }
+  str << " topology_index:" << rl.topology_index << "]";
+  return str;
+}
+
 }  // namespace flatland
