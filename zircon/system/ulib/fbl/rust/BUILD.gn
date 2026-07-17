@@ -87,28 +87,16 @@ group("tests") {
   ]
 }
 
-# TODO(b/512840182): Make these declarations less verbose.
 rustc_bindgen("fbl-bindings.bindgen") {
   testonly = true
   visibility = [ ":*" ]
   headers = [ "bindgen.h" ]
-  deps = [ "//zircon/system/ulib/fbl" ]
+  cpp = true
 
   output_name = "fbl_bindings.rs"
+  deps = [ "//zircon/system/ulib/fbl" ]
 
   type_allowlist = [ "fbl_bindgen::.*" ]
-
-  include_dirs = [
-    "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/${current_target_tuple}/c++/v1",
-    "//prebuilt/third_party/clang/${host_os}-${host_cpu}/include/c++/v1",
-  ]
-
-  additional_clang_flags = [
-    "-x",
-    "c++",
-    "-std=c++20",
-    "-stdlib=libc++",
-  ]
 
   additional_bindgen_flags = [
     "--rust-edition",

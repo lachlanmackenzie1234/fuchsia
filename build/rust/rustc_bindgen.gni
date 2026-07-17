@@ -5,6 +5,7 @@
 import("//build/config/clang/clang_prefix.gni")
 import("//build/config/clang/clang_target_toolchain_info.gni")
 import("//build/config/current_target_tuple.gni")
+import("//build/config/fuchsia_cxx_version.gni")
 import("//build/config/sysroot.gni")
 import("//build/rust/config.gni")
 import("//build/testing/config.gni")
@@ -26,6 +27,11 @@ import("//build/testing/golden_files.gni")
 #   * deps
 #     - Optional: List of targets that generate `headers` or other dependencies.
 #     - Type: list(label)
+#
+#   * cpp
+#     - Optional: Whether to compile the headers as C++.
+#     - Type: bool
+#     - Default: false
 #
 #   * expect_lints
 #     - Optional: List of lints to expect in the generated code (generates `#![expect(lint)]`).
@@ -345,8 +351,19 @@ template("rustc_bindgen") {
       "{{cflags}}",
     ]
 
-    # TODO(https://fxbug.dev/512840182): {{cflags_c}} vs. {{cflags_cc}} as
-    # well.
+    if (defined(invoker.cpp) && invoker.cpp) {
+      args += [
+        "-x",
+        "c++",
+        "-std=c++${fuchsia_cxx_version}",
+        "-stdlib=libc++",
+        "-I${rebased_clang_dir}/include/c++/v1",
+        "-I${rebased_clang_dir}/include/${current_target_tuple}/c++/v1",
+        "{{cflags_cc}}",
+      ]
+    } else {
+      args += [ "{{cflags_c}}" ]
+    }
 
     if (defined(sysroot) && sysroot != "") {
       args += [ "--sysroot=" + rebase_path(sysroot, root_build_dir) ]
