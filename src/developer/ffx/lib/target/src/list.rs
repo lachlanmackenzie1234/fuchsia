@@ -8,13 +8,13 @@ pub use crate::resolve::{
     maybe_locally_resolve_target_spec, resolve_target_address,
 };
 use crate::{KnockCriticalError, KnockError, KnockNonCriticalError, TargetInfoQuery};
-use addr::TargetAddr;
+
 use anyhow::Result;
 use ffx_config::EnvironmentContext;
 use fuchsia_async::TimeoutExt;
 use futures::StreamExt;
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
@@ -123,34 +123,95 @@ async fn handles_to_infos(
     Ok(targets)
 }
 
-// Merge targets that have the same boot_id. Having any boot_id at all means
-// the target was in Product mode, and we're going to assume that all the
-// information other than the addresses is the same. So we just need to combine
-// the addresses together.
+// Merge targets that have the same serial number or boot_id.
+//
+// We prefer merging by boot_id first, as it is more reliable (it only ever
+// matches the same device boot instance, whereas serial numbers can be duplicate
+// in misconfigured environments). If a target has a boot_id, we combine its
+// addresses with any other targets sharing the same boot_id.
+//
+// If a target has no boot_id but has a serial number, we fall back to merging
+// by serial number.
 fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
-    let mut merged_map: HashMap<u64, TargetInfo> = HashMap::with_capacity(targets.len());
-    let mut result = HashSet::<TargetInfo>::with_capacity(targets.len());
+    let mut boot_merged: HashMap<u64, TargetInfo> = HashMap::with_capacity(targets.len());
+    let mut serial_merged: HashMap<String, TargetInfo> = HashMap::with_capacity(targets.len());
+    let mut unmerged = HashSet::with_capacity(targets.len());
+
     for mut t in targets {
-        let aset: BTreeSet<TargetAddr> = t.addresses.into_iter().collect();
-        t.addresses = aset.into_iter().collect();
+        t.addresses.sort();
+        t.addresses.dedup();
+
         if let Some(boot_id) = t.boot_id {
-            match merged_map.entry(boot_id) {
-                Entry::Occupied(mut entry) => {
-                    let addresses = &mut entry.get_mut().addresses;
-                    let mut aset: BTreeSet<TargetAddr> = addresses.clone().into_iter().collect();
-                    aset.extend(t.addresses);
-                    *addresses = aset.into_iter().collect();
+            match boot_merged.entry(boot_id) {
+                Entry::Occupied(mut e) => merge_infos(e.get_mut(), t),
+                Entry::Vacant(e) => {
+                    e.insert(t);
                 }
-                Entry::Vacant(entry) => {
-                    entry.insert(t);
+            }
+        } else if let Some(serial) = t.serial_number.as_ref().filter(|s| !s.is_empty()) {
+            match serial_merged.entry(serial.clone()) {
+                Entry::Occupied(mut e) => merge_infos(e.get_mut(), t),
+                Entry::Vacant(e) => {
+                    e.insert(t);
                 }
             }
         } else {
-            result.insert(t);
+            unmerged.insert(t);
         }
     }
-    result.extend(merged_map.into_values());
-    result.into_iter().collect()
+
+    let mut result = Vec::with_capacity(boot_merged.len() + serial_merged.len() + unmerged.len());
+    result.extend(boot_merged.into_values());
+
+    for t in serial_merged.into_values() {
+        if let Some(serial) = &t.serial_number {
+            let mut matches = result
+                .iter_mut()
+                .filter(|x| x.serial_number.as_ref() == Some(serial))
+                .collect::<Vec<_>>();
+            if matches.len() == 1 {
+                merge_infos(matches[0], t);
+                continue;
+            } else if matches.len() > 1 {
+                let boot_ids = matches.iter().map(|x| x.boot_id).collect::<Vec<_>>();
+                log::warn!(
+                    "Multiple targets discovered with the same serial number {} but different boot IDs ({:?}). Ambiguous serial target will not be merged.",
+                    serial,
+                    boot_ids
+                );
+            }
+        }
+        result.push(t);
+    }
+
+    result.extend(unmerged);
+    result
+}
+
+fn merge_infos(a: &mut TargetInfo, b: TargetInfo) {
+    a.addresses.extend(b.addresses);
+    a.addresses.sort();
+    a.addresses.dedup();
+
+    a.serial_number = a.serial_number.take().or(b.serial_number);
+    a.boot_id = a.boot_id.take().or(b.boot_id);
+    a.product_config = a.product_config.take().or(b.product_config);
+    a.board_config = a.board_config.take().or(b.board_config);
+
+    if a.rcs_state == info::RemoteControlState::Unknown
+        || a.rcs_state == info::RemoteControlState::Down
+    {
+        a.rcs_state = b.rcs_state;
+    }
+    if a.target_state == info::TargetState::Unknown {
+        a.target_state = b.target_state;
+    }
+
+    a.is_default = match (a.is_default, b.is_default) {
+        (Some(true), _) | (_, Some(true)) => Some(true),
+        (Some(false), _) | (_, Some(false)) => Some(false),
+        (None, None) => None,
+    };
 }
 
 pub async fn list_targets(
@@ -225,7 +286,7 @@ mod test {
             target_state: TargetState::Product,
             product_config: Some("product".to_string()),
             board_config: Some("board".to_string()),
-            serial_number: Some("serial".to_string()),
+            serial_number: None,
             is_manual: false,
             boot_id,
             is_default: None,
@@ -314,6 +375,81 @@ mod test {
         let t3 = make_target_info(addr1, None);
         let targets = merge_target_addrs(vec![t1, t2, t3]);
         assert_eq!(targets.len(), 1);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_target_by_serial() {
+        let addr1: addr::TargetAddr = "[fe80::1]:1".parse().unwrap();
+        let mut t1 = make_target_info(addr1, Some(999));
+        t1.serial_number = Some("serial-123".to_string());
+
+        let addr2: addr::TargetAddr = "[fe80::1]:2".parse().unwrap();
+        let mut t2 = make_target_info(addr2, None);
+        t2.serial_number = Some("serial-123".to_string());
+
+        let targets = merge_target_addrs(vec![t1, t2]);
+        assert_eq!(targets.len(), 1);
+
+        let target0 = &targets[0];
+        assert_eq!(target0.serial_number.as_deref(), Some("serial-123"));
+        assert_eq!(target0.boot_id, Some(999));
+        assert_eq!(target0.addresses.len(), 2);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_target_is_default() {
+        let addr1: addr::TargetAddr = "[fe80::1]:1".parse().unwrap();
+        let mut t1 = make_target_info(addr1, Some(999));
+        t1.serial_number = Some("serial-123".to_string());
+        t1.is_default = Some(true);
+
+        let addr2: addr::TargetAddr = "[fe80::1]:2".parse().unwrap();
+        let mut t2 = make_target_info(addr2, None);
+        t2.serial_number = Some("serial-123".to_string());
+        t2.is_default = None;
+
+        let targets = merge_target_addrs(vec![t1.clone(), t2.clone()]);
+        assert_eq!(targets[0].is_default, Some(true));
+
+        t1.is_default = None;
+        t2.is_default = Some(true);
+        let targets = merge_target_addrs(vec![t1.clone(), t2.clone()]);
+        assert_eq!(targets[0].is_default, Some(true));
+
+        t1.is_default = Some(false);
+        t2.is_default = None;
+        let targets = merge_target_addrs(vec![t1.clone(), t2.clone()]);
+        assert_eq!(targets[0].is_default, Some(false));
+
+        t1.is_default = None;
+        t2.is_default = None;
+        let targets = merge_target_addrs(vec![t1, t2]);
+        assert_eq!(targets[0].is_default, None);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_target_multiple_boots_same_serial() {
+        let addr1: addr::TargetAddr = "[fe80::1]:1".parse().unwrap();
+        let mut t1 = make_target_info(addr1, Some(999));
+        t1.serial_number = Some("serial-123".to_string());
+        t1.nodename = Some("node-1".to_string());
+
+        let addr2: addr::TargetAddr = "[fe80::1]:2".parse().unwrap();
+        let mut t2 = make_target_info(addr2, Some(888));
+        t2.serial_number = Some("serial-123".to_string());
+        t2.nodename = Some("node-2".to_string());
+
+        let addr3: addr::TargetAddr = "[fe80::1]:3".parse().unwrap();
+        let mut t3 = make_target_info(addr3, None);
+        t3.serial_number = Some("serial-123".to_string());
+        t3.nodename = Some("node-3".to_string());
+
+        let targets = merge_target_addrs(vec![t1, t2, t3]);
+        assert_eq!(targets.len(), 3);
+
+        let mut addr_lens: Vec<usize> = targets.iter().map(|x| x.addresses.len()).collect();
+        addr_lens.sort();
+        assert_eq!(addr_lens, vec![1, 1, 1]);
     }
 
     #[fuchsia::test]
