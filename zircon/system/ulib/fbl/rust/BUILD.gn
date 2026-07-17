@@ -104,7 +104,6 @@ rustc_bindgen("fbl-bindings.bindgen") {
   ]
 
   notice_year = 2026
-  use_core = true
 
   raw_lines = [ "#![no_std]" ]
 

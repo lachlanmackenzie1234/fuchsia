@@ -116,6 +116,7 @@ import("//build/testing/golden_files.gni")
 #   * use_core
 #     - Optional: Whether to use `core` instead of `std`.
 #     - Type: bool
+#     - Default: true
 #
 #   * additional_bindgen_flags
 #     - Optional: List of additional flags to pass to bindgen.
@@ -309,13 +310,13 @@ template("rustc_bindgen") {
         args += [ "--no-debug=${x}" ]
       }
     }
-    if (defined(invoker.use_core)) {
-      if (invoker.use_core) {
-        args += [ "--use-core" ]
-      } else {
-        args += [ "--no-use-core" ]
-      }
+
+    if (!defined(invoker.use_core) || invoker.use_core) {
+      args += [ "--use-core" ]
+    } else {
+      args += [ "--no-use-core" ]
     }
+
     if (defined(invoker.additional_bindgen_flags)) {
       foreach(x, invoker.additional_bindgen_flags) {
         args += [ "--bindgen-flag=${x}" ]

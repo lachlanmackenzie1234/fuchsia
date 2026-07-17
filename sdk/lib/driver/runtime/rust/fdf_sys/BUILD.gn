@@ -51,7 +51,6 @@ rustc_bindgen_golden("fdf_sys_bindgen_golden") {
   layout_tests = true
   explicit_padding = false
 
-  use_core = true
   std_derives = [ "default" ]
   std_impls = [ "debug" ]
 

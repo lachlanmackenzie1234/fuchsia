@@ -34,7 +34,6 @@ rustc_bindgen("object-constants-bindings.bindgen") {
   ]
 
   notice_year = 2026
-  use_core = true
 
   var_allowlist = [ "kCounterDispatcherState.*" ]
 
