@@ -67,6 +67,12 @@ rustc_library("unittest-rs") {
     "//sdk/rust/zx-status",
   ]
 
+  if (is_kernel) {
+    features = [ "kernel" ]
+    sources += [ "src/user_memory.rs" ]
+    deps += [ "//src/lib/zr" ]
+  }
+
   with_unit_tests = true
   test_configs = [ ":unittest-rs.test" ]
 }
