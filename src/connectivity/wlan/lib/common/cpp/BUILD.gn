@@ -41,7 +41,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_hlcpp",
     "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_hlcpp",
-    "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp",
+    "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_cpp",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_hlcpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",

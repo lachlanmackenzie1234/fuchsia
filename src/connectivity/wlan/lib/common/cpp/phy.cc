@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.wlan.internal/cpp/wire.h>
 
 #include <cstdio>
 
@@ -12,10 +12,10 @@ namespace wlan {
 namespace common {
 
 std::string Alpha2ToStr(cpp20::span<const uint8_t> alpha2) {
-  if (alpha2.size() != fuchsia_wlan_phyimpl::wire::kWlanphyAlpha2Len) {
+  if (alpha2.size() != fuchsia_wlan_internal::wire::kCountryCodeLen) {
     return "Invalid alpha2 length";
   }
-  char buf[fuchsia_wlan_phyimpl::wire::kWlanphyAlpha2Len * 8 + 1];
+  char buf[fuchsia_wlan_internal::wire::kCountryCodeLen * 8 + 1];
   auto data = alpha2.data();
   bool is_printable = std::isprint(data[0]) && std::isprint(data[1]);
   if (is_printable) {
