@@ -24,17 +24,14 @@ type WlanPhyNotifyError = flexible enum {
 /// to its client.
 @discoverable
 open protocol WlanPhyNotify {
-    /// Indicate to the receiver (wlanphy client) that the wlan PHY has encountered a critical
-    /// error specifying a reason code. The client can decide to forward it to higher layers of
-    /// the wlan stack, handle it itself or ignore it. The sender can decide to handle the
-    /// error if the receiver responds with an error code.
+    /// Indicate to the receiver that the PHY has encountered a critical
+    /// error specifying a reason code.
     flexible OnCriticalError(table {
         1: reason_code fuchsia.wlan.internal.CriticalErrorReason;
     }) -> () error WlanPhyNotifyError;
 
-    /// Indicate to the receiver (wlanphy client) that the firmware running on wlan hardware
-    /// has detected a change in country code.  The client can decide to forward it to higher
-    /// layers of the wlan stack, handle it itself or ignore it.
+    /// Indicate to the receiver that the firmware running on wlan hardware
+    /// has detected a change in country code.
     flexible OnCountryCodeChange(table {
         1: phy_country array<uint8, fuchsia.wlan.internal.COUNTRY_CODE_LEN>;
     }) -> () error WlanPhyNotifyError;

@@ -435,7 +435,6 @@
                 "fuchsia.power.battery.InfoService",
                 "fuchsia.services.test.Device",
                 "fuchsia.tpm.Service",
-                "fuchsia.wlan.device.Service",
                 "fuchsia.wlan.phy.Service",
                 "google.powerstats.Service",
             ],
