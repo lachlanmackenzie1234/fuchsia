@@ -27,12 +27,12 @@ pub trait Buffer: Debug + Sized {
     /// Gets the target size of the buffer, in bytes.
     ///
     /// The target capacity of the buffer is distinct from the actual capacity
-    /// (returned by [`Buffer::capacity`]) in that the target capacity should
-    /// remain fixed unless requested otherwise, while the actual capacity can
-    /// vary with usage.
+    /// ([`BufferLimits.capacity`], returned by [`Buffer::limits()`]) in that
+    /// the target capacity should remain fixed unless requested otherwise,
+    /// while the actual capacity can vary with usage.
     ///
     /// For fixed-size buffers this should return the same result as calling
-    /// `self.capacity()`. For buffer types that support resizing, the
+    /// `self.limits().capacity`. For buffer types that support resizing, the
     /// returned value can be different but should not change unless a resize
     /// was requested.
     fn target_capacity(&self) -> usize;
