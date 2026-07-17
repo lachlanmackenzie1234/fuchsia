@@ -5,76 +5,49 @@
 #ifndef SRC_DEVELOPER_FORENSICS_TESTING_STUBS_DEVICE_ID_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_TESTING_STUBS_DEVICE_ID_PROVIDER_H_
 
-#include <fuchsia/feedback/cpp/fidl.h>
-#include <fuchsia/feedback/cpp/fidl_test_base.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/test_base.h>
 
-#include <memory>
+#include <optional>
+#include <string>
 
-#include "src/developer/forensics/testing/stubs/fidl_server_hlcpp.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
 
 namespace forensics {
 namespace stubs {
 
-class DeviceIdProviderBase
-    : public SINGLE_BINDING_STUB_FIDL_SERVER(fuchsia::feedback, DeviceIdProvider) {
+class DeviceIdProviderBase : public SingleBindingFidlServer<fuchsia_feedback::DeviceIdProvider> {
  public:
   void SetDeviceId(std::string device_id);
 
-  // |fuchsia::feedback::DeviceIdProvider|
-  void GetId(GetIdCallback callback) override;
+  // |fuchsia_feedback::DeviceIdProvider|
+  void GetId(GetIdCompleter::Sync& completer) override;
 
  protected:
-  DeviceIdProviderBase() : device_id_(std::nullopt), callback_(nullptr) {}
-  explicit DeviceIdProviderBase(const std::string& device_id)
-      : device_id_(device_id), callback_(nullptr) {}
+  DeviceIdProviderBase() : device_id_(std::nullopt) {}
+  explicit DeviceIdProviderBase(const std::string& device_id) : device_id_(device_id) {}
 
-  void GetIdInternal(GetIdCallback callback);
+  void GetIdInternal(GetIdCompleter::Sync& completer);
 
  private:
   std::optional<std::string> device_id_;
 
-  GetIdCallback callback_;
+  std::optional<GetIdCompleter::Async> completer_;
   bool dirty_{true};
 };
 
 class DeviceIdProvider : public DeviceIdProviderBase {
  public:
   explicit DeviceIdProvider(const std::string& device_id) : DeviceIdProviderBase(device_id) {}
-
-  // |fuchsia::feedback::DeviceIdProvider|
-  void GetId(GetIdCallback callback) override;
 };
 
 class DeviceIdProviderNeverReturns : public DeviceIdProviderBase {
  public:
-  // |fuchsia::feedback::DeviceIdProvider|
-  STUB_METHOD_DOES_NOT_RETURN(GetId, GetIdCallback)
-};
-
-class DeviceIdProviderExpectsOneCall : public DeviceIdProviderBase {
- public:
-  explicit DeviceIdProviderExpectsOneCall(const std::string& device_id)
-      : DeviceIdProviderBase(device_id) {}
-
-  ~DeviceIdProviderExpectsOneCall();
-
-  // |fuchsia::feedback::DeviceIdProvider|
-  void GetId(GetIdCallback callback) override;
+  // |fuchsia_feedback::DeviceIdProvider|
+  void GetId(GetIdCompleter::Sync& completer) override { completer_ = completer.ToAsync(); }
 
  private:
-  bool is_first_ = true;
-};
-
-class DeviceIdProviderClosesFirstConnection : public DeviceIdProviderBase {
- public:
-  DeviceIdProviderClosesFirstConnection(const std::string& device_id)
-      : DeviceIdProviderBase(device_id) {}
-
-  // |fuchsia::feedback::DeviceIdProvider|
-  void GetId(GetIdCallback callback) override;
-
- private:
-  bool is_first_ = true;
+  std::optional<GetIdCompleter::Async> completer_;
 };
 
 }  // namespace stubs

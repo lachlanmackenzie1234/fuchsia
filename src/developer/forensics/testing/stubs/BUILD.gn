@@ -113,14 +113,11 @@ source_set("device_id_provider") {
   ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
   ]
 
-  deps = [
-    "//sdk/lib/syslog/cpp",
-    "//zircon/system/ulib/zx",
-  ]
+  deps = [ "//sdk/lib/syslog/cpp" ]
 }
 
 source_set("diagnostics") {

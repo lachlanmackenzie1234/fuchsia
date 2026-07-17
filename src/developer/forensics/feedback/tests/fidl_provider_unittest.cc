@@ -337,7 +337,7 @@ TEST_F(HangingGetSingleFidlMethodAnnotationProviderTest, Get) {
                                Pair(kDeviceIdKey, ErrorOrString(kDeviceIdValues[1])),
                            }));
 
-  device_id_provider_server_->CloseConnection();
+  device_id_provider_server_->CloseConnection(ZX_ERR_PEER_CLOSED);
 
   // |annotations| should contain the old value because the disconnection hasn't propagated.
   EXPECT_THAT(annotations, UnorderedElementsAreArray({
@@ -357,7 +357,7 @@ TEST_F(HangingGetSingleFidlMethodAnnotationProviderTest, Reconnects) {
   device_id_provider.GetOnUpdate(
       [&annotations](Annotations result) { annotations = std::move(result); });
 
-  device_id_provider_server_->CloseConnection();
+  device_id_provider_server_->CloseConnection(ZX_ERR_PEER_CLOSED);
   ASSERT_FALSE(device_id_provider_server_->IsBound());
 
   RunLoopUntilIdle();
