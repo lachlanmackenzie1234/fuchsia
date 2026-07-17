@@ -500,7 +500,86 @@ the C++ codebase:
   `mod tests;` (usually under `#[cfg(test)]`) to ensure they are compiled and
   executed.
 
-### 13. Fuzz Testing Parity
+### 13. Testing Parity
+
+When porting a component, its unit tests must also be ported to maintain parity.
+Zircon C++ tests (using `lib/unittest`) map to Rust tests (using the `unittest`
+crate).
+
+#### 13.1. Structure Mapping
+
+- **C++ (`lib/unittest`)**: Tests are functions returning `bool` wrapped in
+  `UNITTEST_START_TESTCASE` and `UNITTEST_END_TESTCASE` macros.
+- **Rust (`unittest`)**: Tests are structured as a module annotated with
+  `#[test_suite]`, containing functions annotated with `#[test]`.
+
+##### C++ Example:
+
+```cpp
+#include <lib/unittest/unittest.h>
+
+static bool test_feature() {
+  BEGIN_TEST;
+  EXPECT_EQ(42, get_value());
+  END_TEST;
+}
+
+UNITTEST_START_TESTCASE(my_tests)
+UNITTEST("test_feature", test_feature)
+UNITTEST_END_TESTCASE(my_tests, "my_tests", "Description")
+```
+
+##### Rust Equivalent:
+
+```rust
+use unittest::{test_suite, expect_eq};
+
+/// Test suite description: this is mandatory!
+#[cfg(ktest)]
+#[test_suite(name = "my_tests")]  /// Defaults to the module name
+mod my_tests {
+  /// Test case description: this is mandatory!
+  #[test]
+  fn test_feature() {
+    expect_eq!(42, get_value());
+  }
+}
+```
+
+#### 13.2. Assertion Mapping
+
+Use the equivalent macros from the `unittest` crate:
+
+| C++ Macro                          | Rust Macro Equivalent                | Notes                           |
+| :--------------------------------- | :----------------------------------- | :------------------------------ |
+| `EXPECT_EQ(val1, val2, [msg])`     | `expect_eq!(val1, val2, [msg])`      | Non-terminating                 |
+| `ASSERT_EQ(val1, val2, [msg])`     | `assert_eq!(val1, val2, [msg])`      | Terminating                     |
+| `EXPECT_NE`, `ASSERT_NE`           | `expect_ne!`, `assert_ne!`           |                                 |
+| `EXPECT_TRUE`, `ASSERT_TRUE`       | `expect_true!`, `assert_true!`       |                                 |
+| `EXPECT_FALSE`, `ASSERT_FALSE`     | `expect_false!`, `assert_false!`     |                                 |
+| `EXPECT_NULL`, `ASSERT_NULL`       | `expect_null!`, `assert_null!`       | For raw pointers                |
+| `EXPECT_NONNULL`, `ASSERT_NONNULL` | `expect_nonnull!`, `assert_nonnull!` | For raw pointers                |
+| `EXPECT_OK`, `ASSERT_OK`           | `expect_ok!`, `assert_ok!`           | For `Status` / `zx_status_t`    |
+| N/A                                | `unwrap_ok!(result, [msg])`          | Fails test if `Result` is `Err` |
+
+_Note: The message argument is optional in Rust macros, matching C++._
+
+#### 13.3. Build Configuration and Enabling Tests
+
+In GN, add `//zircon/kernel/lib/unittest:unittest-rs` to the dependencies of
+the target defining the kernel Rust sources.
+
+Whether tests are enabled - versus compiled away - is a function of the kernel
+being compiled with `--cfg ktest`: this happens in the same kernel switchset as
+where C++ kernel unittests are enabled (i.e., `lk_debug_level_2`).
+
+#### 13.4. Disabling Tests (`#[ignore]`)
+
+To temporarily disable a test or prevent it from being runnable via `k ut`
+(while still compiling it to prevent bitrot), annotate the test function
+with `#[ignore]` in addition to `#[test]`.
+
+### 14. Fuzz Testing Parity
 
 If the C++ library or component being ported has fuzz tests, you must implement
 equivalent Rust fuzzers to maintain testing parity.
@@ -598,7 +677,7 @@ Create a basic component manifest that includes the default libFuzzer shard:
 - Add the fuzzer to your build using `fx add-test //path/to:my-fuzzers`.
 - Verify compilation by building the target: `fx build //path/to:my-fuzzers`.
 
-### 14. Safe Initialization in PinInit
+### 15. Safe Initialization in PinInit
 
 When initializing structures that use `PinInit` (such as those containing
 `KMutex` or intrusive collections), you may need to initialize nested fields
@@ -621,7 +700,7 @@ that require post-construction setup (e.g., calling `reset()` on a bitmap).
   ```
 - This keeps the initialization 100% safe.
 
-### 15. Leverage Default Trait
+### 16. Leverage Default Trait
 
 Prefer using `Default::default()` or `Type::default()` to construct types that
 have a natural empty/default state, rather than calling custom `new()`
@@ -629,13 +708,13 @@ constructors with empty arguments (e.g., prefer `RawBitmapGeneric::default()`
 over `RawBitmapGeneric::new(FixedStorage::new())`). This improves readability
 and allows the compiler to infer the correct types more easily.
 
-### 16. Use Standard Library & Third-Party Crates (num-traits, zerocopy)
+### 17. Use Standard Library & Third-Party Crates (num-traits, zerocopy)
 
 When porting C++ code, leverage standard, audited third-party crates available
 in the Fuchsia tree instead of writing custom traits or unsafe casting
 boilerplate.
 
-#### 16.1. Generic Numeric Types (`num-traits`)
+#### 17.1. Generic Numeric Types (`num-traits`)
 - **When to use**: If a C++ class template is parameterized over numeric types
   (e.g. `template <typename T>`), use bounds from the `num-traits` crate (like
   `Unsigned`, `Bounded`, `FromPrimitive`, `AsPrimitive<usize>`) to constrain the
@@ -649,7 +728,7 @@ boilerplate.
 - **Dependency**: Add `//third_party/rust_crates:num-traits` to `deps` in
   `BUILD.gn`.
 
-#### 16.2. Safe Byte Casting (`zerocopy`)
+#### 17.2. Safe Byte Casting (`zerocopy`)
 - **When to use**: When casting structs to byte slices (e.g. for FFI, IPC, or
   storage serialization) or parsing raw byte arrays into structs.
 - **Safety**: Do NOT write manual `unsafe` pointer casts (e.g.
@@ -660,7 +739,7 @@ boilerplate.
 - **Dependency**: Add `//third_party/rust_crates:zerocopy` to `deps` in
   `BUILD.gn`.
 
-### 17. FFI Dependencies
+### 18. FFI Dependencies
 
 When there is C++ code that is not to be ported, but needs to be called from
 Rust, code FFI shims should be used. These shims should not contain logic beyond
@@ -672,17 +751,17 @@ If ported Rust code needs to be called from unconverted C++ code FFI shims
 should also be used, in this case the names should also be `lower_snake_case`
 but take the form `rust_$modpath_$struct_$functionname`.
 
-### 18. Local Trace Logging (`LOCAL_TRACE` & `ltrace`)
+### 19. Local Trace Logging (`LOCAL_TRACE` & `ltrace`)
 
 When porting C++ kernel code that uses `zircon/kernel/include/trace.h` (`#define
 LOCAL_TRACE 0`, `LTRACE_ENTRY`, `LTRACEF`, `LTRACEF_LEVEL`, etc.), you must
 preserve all debug trace logging statements using the `ltrace` crate
 (`//zircon/kernel/lib/ltrace`).
 
-#### 18.1. Build Dependency
+#### 19.1. Build Dependency
 Add `"//zircon/kernel/lib/ltrace:ltrace"` to your `deps` in `BUILD.gn`.
 
-#### 18.2. Defining the Local Trace Level (`LOCAL_TRACE`)
+#### 19.2. Defining the Local Trace Level (`LOCAL_TRACE`)
 In each `.rs` module or file where local tracing is used, define a module-scoped
 `const LOCAL_TRACE` at the top of the file:
 
@@ -691,7 +770,7 @@ In each `.rs` module or file where local tracing is used, define a module-scoped
 const LOCAL_TRACE: u32 = 0;
 ```
 
-#### 18.3. Mechanism for Developers to Locally Update Trace Verbosity
+#### 19.3. Mechanism for Developers to Locally Update Trace Verbosity
 To locally enable higher verbosity logging in specific files during development
 or debugging:
 - Edit the module's `const LOCAL_TRACE` definition from `0` to `1` (or a higher
@@ -705,7 +784,7 @@ or debugging:
   in production/default builds while maintaining full compile-time format and
   argument type checking.
 
-#### 18.4. Macro Equivalents Table
+#### 19.4. Macro Equivalents Table
 
 | C++ (`trace.h`) | Rust (`ltrace` crate) | Notes |
 | :--- | :--- | :--- |
