@@ -318,18 +318,26 @@ IpAddress::IpAddress(const in6_addr& addr) : family_(AF_INET6), v6_(addr) {}
 
 IpAddress::IpAddress(const sockaddr& addr) {
   switch (addr.sa_family) {
-    case AF_INET:
+    case AF_INET: {
       family_ = AF_INET;
-      std::memcpy(&v4_, reinterpret_cast<const uint8_t*>(addr.sa_data), sizeof(v4_));
+      std::memcpy(&v4_, addr.sa_data, sizeof(v4_));
       break;
-    case AF_INET6:
+    }
+    case AF_INET6: {
       family_ = AF_INET6;
-      std::memcpy(&v6_, reinterpret_cast<const uint8_t*>(addr.sa_data), sizeof(v6_));
+      // FIXME(https://fxbug.dev/535234726): The type erasing we're doing below
+      // is to work around better compiler diagnostics that flag an overread by
+      // the call to memcpy. Fixing this requires changes to the surrounding code
+      // to only access objects with their correct types and storage.
+      const char* p = &addr.sa_data[0];
+      std::memcpy(&v6_, p, sizeof(v6_));
       break;
-    default:
+    }
+    default: {
       family_ = AF_UNSPEC;
       std::memset(&v6_, 0, sizeof(v6_));
       break;
+    }
   }
 }
 
