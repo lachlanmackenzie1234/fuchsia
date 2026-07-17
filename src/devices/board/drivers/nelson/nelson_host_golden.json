@@ -164,7 +164,7 @@
             "fuchsia-pkg://fuchsia.com/network-device#meta/network-device.cm",
             "fuchsia-pkg://fuchsia.com/usb-cdc-function#meta/usb-cdc-function.cm",
             "fuchsia-pkg://fuchsia.com/usb-peripheral#meta/usb-peripheral.cm",
-            "?fuchsia-pkg://fuchsia.com/usb-vsock#meta/overnet-usb.cm",
+            "?fuchsia-pkg://fuchsia.com/usb-vsock#meta/vsock-usb.cm",
             "?fuchsia-pkg://fuchsia.com/usb-vsock#meta/usb-vsock-service.cm"
         ]
     },

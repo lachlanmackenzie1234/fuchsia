@@ -13,7 +13,7 @@
         "name": "protocol",
         "expected": "match",
         "device": {
-            "fuchsia.hardware.overnet.UsbService": "fuchsia.hardware.overnet.UsbService.ZirconTransport"
+            "fuchsia.hardware.vsockbridge.UsbService": "fuchsia.hardware.vsockbridge.UsbService.ZirconTransport"
         }
     }
 ]

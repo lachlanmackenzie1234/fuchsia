@@ -2056,7 +2056,7 @@ assembly_input_bundle(
             "package_target": "//bundles/assembly/bazel_inputs/src/developer/remote-control/usb:usb-vsock-package",
             "driver_components": [
                 "meta/usb-vsock-service.cm",
-                "meta/overnet-usb.cm",
+                "meta/vsock-usb.cm",
             ],
         },
     ],

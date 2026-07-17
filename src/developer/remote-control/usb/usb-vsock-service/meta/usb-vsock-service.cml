@@ -17,7 +17,7 @@
         { service: "fuchsia.hardware.vsock.Service" },
     ],
     use: [
-        { service: "fuchsia.hardware.overnet.UsbService" },
+        { service: "fuchsia.hardware.vsockbridge.UsbService" },
     ],
     expose: [
         {

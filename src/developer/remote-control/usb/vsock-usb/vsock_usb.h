@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVELOPER_REMOTE_CONTROL_USB_OVERNET_USB_OVERNET_USB_H_
-#define SRC_DEVELOPER_REMOTE_CONTROL_USB_OVERNET_USB_OVERNET_USB_H_
+#ifndef SRC_DEVELOPER_REMOTE_CONTROL_USB_VSOCK_USB_VSOCK_USB_H_
+#define SRC_DEVELOPER_REMOTE_CONTROL_USB_VSOCK_USB_VSOCK_USB_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.overnet/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.vsockbridge/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
@@ -41,13 +41,13 @@ using namespace fuchsia_driver_framework;
 }
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
-class OvernetUsb;
+class VsockUsb;
 
-class OvernetUsb : public fdf::DriverBase2,
-                   public fidl::WireServer<fuchsia_hardware_overnet::Usb>,
-                   public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
+class VsockUsb : public fdf::DriverBase2,
+                 public fidl::WireServer<fuchsia_hardware_vsockbridge::Usb>,
+                 public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  OvernetUsb() : fdf::DriverBase2("overnet-usb") {}
+  VsockUsb() : fdf::DriverBase2("vsock-usb") {}
 
   inspect::ComponentInspector& inspector() { return *inspector_; }
   usb_inspect::ThroughputTracker& GetThroughputTrackerForTesting() { return *throughput_tracker_; }
@@ -55,7 +55,7 @@ class OvernetUsb : public fdf::DriverBase2,
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
 
-  void SetCallback(fuchsia_hardware_overnet::wire::UsbSetCallbackRequest* request,
+  void SetCallback(fuchsia_hardware_vsockbridge::wire::UsbSetCallbackRequest* request,
                    SetCallbackCompleter::Sync& completer) override;
 
   // UsbFunctionInterface methods.
@@ -96,7 +96,7 @@ class OvernetUsb : public fdf::DriverBase2,
                             const zx_packet_signal_t*);
 
   // Connect a FIDL interface.
-  void FidlConnect(fidl::ServerEnd<fuchsia_hardware_overnet::Usb> request);
+  void FidlConnect(fidl::ServerEnd<fuchsia_hardware_vsockbridge::Usb> request);
 
   // Internal state machine for this driver. There are four states:
   //
@@ -125,7 +125,7 @@ class OvernetUsb : public fdf::DriverBase2,
    public:
     // Called when we receive data from the host while  in this state. Warns and discards it.
     State ReceiveData(uint8_t* data, size_t len, std::optional<zx::socket>* peer_socket,
-                      OvernetUsb* owner) &&;
+                      VsockUsb* owner) &&;
     // Called when we are asked to send data from this state. Should never be called.
     State SendData(uint8_t*, size_t, size_t*, zx_status_t* status) && {
       *status = ZX_ERR_SHOULD_WAIT;
@@ -138,13 +138,13 @@ class OvernetUsb : public fdf::DriverBase2,
   // on the RCS socket.
   class Running {
    public:
-    Running(zx::socket socket, OvernetUsb* owner)
+    Running(zx::socket socket, VsockUsb* owner)
         : socket_(std::move(socket)),
           read_waiter_(
-              std::make_unique<async::WaitMethod<OvernetUsb, &OvernetUsb::HandleSocketReadable>>(
+              std::make_unique<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketReadable>>(
                   owner, socket_.get(), ZX_SOCKET_READABLE)),
           write_waiter_(
-              std::make_unique<async::WaitMethod<OvernetUsb, &OvernetUsb::HandleSocketWritable>>(
+              std::make_unique<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketWritable>>(
                   owner, socket_.get(), ZX_SOCKET_WRITABLE)),
           owner_(owner) {}
     Running(Running&&) = default;
@@ -160,7 +160,7 @@ class OvernetUsb : public fdf::DriverBase2,
     }
     // Called when we receive data from the host while in this state. Pushes the data into socket_.
     State ReceiveData(uint8_t* data, size_t len, std::optional<zx::socket>* peer_socket,
-                      OvernetUsb* owner) &&;
+                      VsockUsb* owner) &&;
     // Called when we ware asked to send data from this state. Populates the given buffer with data
     // read from socket_.
     State SendData(uint8_t* data, size_t len, size_t* actual, zx_status_t* status) &&;
@@ -173,10 +173,10 @@ class OvernetUsb : public fdf::DriverBase2,
     State Writable() &&;
 
     zx::socket* socket() { return &socket_; }
-    async::WaitMethod<OvernetUsb, &OvernetUsb::HandleSocketReadable>* read_waiter() {
+    async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketReadable>* read_waiter() {
       return read_waiter_.get();
     }
-    async::WaitMethod<OvernetUsb, &OvernetUsb::HandleSocketWritable>* write_waiter() {
+    async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketWritable>* write_waiter() {
       return write_waiter_.get();
     }
 
@@ -196,16 +196,16 @@ class OvernetUsb : public fdf::DriverBase2,
     zx::socket socket_;
     std::vector<uint8_t> socket_out_queue_;
     bool socket_is_new_ = true;
-    std::unique_ptr<async::WaitMethod<OvernetUsb, &OvernetUsb::HandleSocketReadable>> read_waiter_;
-    std::unique_ptr<async::WaitMethod<OvernetUsb, &OvernetUsb::HandleSocketWritable>> write_waiter_;
-    OvernetUsb* owner_;
+    std::unique_ptr<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketReadable>> read_waiter_;
+    std::unique_ptr<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketWritable>> write_waiter_;
+    VsockUsb* owner_;
   };
   class ShuttingDown : public BaseNoSocketState {
    public:
     explicit ShuttingDown(fit::function<void()> callback) : callback_(std::move(callback)) {}
     // Called when we receive data from the host while in this state. Warns and discards it.
     State ReceiveData(uint8_t* data, size_t len, std::optional<zx::socket>* peer_socket,
-                      OvernetUsb* owner) &&;
+                      VsockUsb* owner) &&;
     // Called when we receive data from the host while in this state. Ignores with SHOULD_WAIT.
     State SendData(uint8_t*, size_t, size_t*, zx_status_t* status) && {
       *status = ZX_ERR_SHOULD_WAIT;
@@ -224,12 +224,12 @@ class OvernetUsb : public fdf::DriverBase2,
   // create to RCS.
   class Callback {
    public:
-    explicit Callback(fidl::WireSharedClient<fuchsia_hardware_overnet::Callback> fidl)
+    explicit Callback(fidl::WireSharedClient<fuchsia_hardware_vsockbridge::Callback> fidl)
         : fidl_(std::move(fidl)) {}
     void operator()(zx::socket socket);
 
    private:
-    fidl::WireSharedClient<fuchsia_hardware_overnet::Callback> fidl_;
+    fidl::WireSharedClient<fuchsia_hardware_vsockbridge::Callback> fidl_;
   };
 
   // Whether we are in a state that is actively receiving data.
@@ -309,16 +309,16 @@ class OvernetUsb : public fdf::DriverBase2,
   std::optional<zx::socket> peer_socket_;
 
   fidl::SyncClient<fuchsia_driver_framework::NodeController> node_controller_;
-  fidl::ServerBindingGroup<fuchsia_hardware_overnet::Usb> device_binding_group_;
+  fidl::ServerBindingGroup<fuchsia_hardware_vsockbridge::Usb> device_binding_group_;
 
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
   State state_ = Unconfigured();
 
-  usb::EndpointClient<OvernetUsb> bulk_out_ep_{usb::EndpointType::BULK, this,
-                                               std::mem_fn(&OvernetUsb::ReadBatchComplete)};
-  usb::EndpointClient<OvernetUsb> bulk_in_ep_{usb::EndpointType::BULK, this,
-                                              std::mem_fn(&OvernetUsb::WriteBatchComplete)};
+  usb::EndpointClient<VsockUsb> bulk_out_ep_{usb::EndpointType::BULK, this,
+                                             std::mem_fn(&VsockUsb::ReadBatchComplete)};
+  usb::EndpointClient<VsockUsb> bulk_in_ep_{usb::EndpointType::BULK, this,
+                                            std::mem_fn(&VsockUsb::WriteBatchComplete)};
 
   std::optional<inspect::ComponentInspector> inspector_;
   inspect::Node inspect_node_;
@@ -366,4 +366,4 @@ class OvernetUsb : public fdf::DriverBase2,
   async_dispatcher_t* dispatcher_ = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 };
 
-#endif  // SRC_DEVELOPER_REMOTE_CONTROL_USB_OVERNET_USB_OVERNET_USB_H_
+#endif  // SRC_DEVELOPER_REMOTE_CONTROL_USB_VSOCK_USB_VSOCK_USB_H_

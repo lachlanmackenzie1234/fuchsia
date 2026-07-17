@@ -11,8 +11,7 @@ driver_bind_rules("usb_vsock_service_bind") {
   rules = "meta/usb-vsock-service.bind"
   bind_output = "usb-vsock-service.bindbc"
   tests = "meta/bind_tests.json"
-  deps =
-      [ "//sdk/fidl/fuchsia.hardware.overnet:fuchsia.hardware.overnet_bindlib" ]
+  deps = [ "//sdk/fidl/fuchsia.hardware.vsockbridge:fuchsia.hardware.vsockbridge_bindlib" ]
 }
 
 fuchsia_rust_driver("usb-vsock-service-driver") {
@@ -27,8 +26,8 @@ fuchsia_rust_driver("usb-vsock-service-driver") {
   deps = [
     ":usb_vsock_service_bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
-    "//sdk/fidl/fuchsia.hardware.overnet:fuchsia.hardware.overnet_rust",
     "//sdk/fidl/fuchsia.hardware.vsock:fuchsia.hardware.vsock_rust",
+    "//sdk/fidl/fuchsia.hardware.vsockbridge:fuchsia.hardware.vsockbridge_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/runtime/rust",

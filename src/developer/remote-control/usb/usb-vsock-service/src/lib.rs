@@ -4,8 +4,8 @@
 
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl::endpoints::create_endpoints;
-use fidl_fuchsia_hardware_overnet as overnet;
 use fidl_fuchsia_hardware_vsock as vsock;
+use fidl_fuchsia_hardware_vsockbridge as vsockbridge;
 use fuchsia_async::scope::ScopeStream;
 use fuchsia_async::{Scope, Socket, TimeoutExt};
 use fuchsia_component::server::ServiceFs;
@@ -213,7 +213,7 @@ impl UsbConnection {
         let packet = Packet { header: &header, payload: outgoing_magic };
         packet.write_to_unchecked(&mut data);
         if let Err(err) = self.usb_socket_writer.write(&data[..packet.size()]).await {
-            error!("Error writing overnet magic string to the usb socket: {err:?}");
+            error!("Error writing vsock bridge magic string to the usb socket: {err:?}");
             return None;
         }
         // Now wait for confirmation packet with cid in it
@@ -372,7 +372,7 @@ async fn usb_socket_reader<const MTU: usize>(
 /// Processes a stream of device connections from the parent driver, and for each one initiates a
 /// [`UsbConnection`] process to handle individual connections to the host process.
 struct UsbCallbackHandler {
-    usb_callback_server: overnet::CallbackRequestStream,
+    usb_callback_server: vsockbridge::CallbackRequestStream,
     connection_tx: mpsc::Sender<ConnectionRequest>,
 }
 
@@ -382,7 +382,7 @@ impl UsbCallbackHandler {
         vsock_service: Arc<VsockService<Vec<u8>>>,
         mut synchronized: Option<oneshot::Sender<()>>,
     ) -> Result<(), fidl::Error> {
-        use overnet::CallbackRequest::*;
+        use vsockbridge::CallbackRequest::*;
         while let Some(req) = self.usb_callback_server.try_next().await? {
             let NewLink { socket, responder } = req;
             responder.send()?;
@@ -430,7 +430,7 @@ impl Driver for UsbVsockServiceDriver {
 }
 
 async fn run_connection(
-    usb_callback_server: overnet::CallbackRequestStream,
+    usb_callback_server: vsockbridge::CallbackRequestStream,
     mut request_stream: vsock::DeviceRequestStream,
     synchronized: Option<oneshot::Sender<()>>,
 ) {
@@ -467,8 +467,8 @@ async fn run_connection(
     scopes_stream.next().await;
 }
 
-fn get_usb_device(context: &DriverContext) -> Result<overnet::UsbProxy, Status> {
-    let service_proxy = context.incoming.service_marker(overnet::UsbServiceMarker).connect()?;
+fn get_usb_device(context: &DriverContext) -> Result<vsockbridge::UsbProxy, Status> {
+    let service_proxy = context.incoming.service_marker(vsockbridge::UsbServiceMarker).connect()?;
 
     service_proxy.connect_to_device().map_err(|err| {
         error!("Error connecting to usb device proxy at driver startup: {err}");
@@ -497,7 +497,7 @@ mod tests {
         let scope = Scope::new();
         let (vsock_impl_client, vsock_impl_server) = create_endpoints::<vsock::DeviceMarker>();
         let (usb_callback_client, usb_callback_server) =
-            create_endpoints::<overnet::CallbackMarker>();
+            create_endpoints::<vsockbridge::CallbackMarker>();
         let (started_tx, started_rx) = oneshot::channel();
         scope.spawn(run_connection(
             usb_callback_server.into_stream(),

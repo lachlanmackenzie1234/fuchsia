@@ -33,8 +33,8 @@ if (is_host) {
   }
 }
 
-fidl("fuchsia.hardware.overnet") {
-  sources = [ "overnet.fidl" ]
+fidl("fuchsia.hardware.vsockbridge") {
+  sources = [ "vsockbridge.fidl" ]
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }

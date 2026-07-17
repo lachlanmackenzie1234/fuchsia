@@ -7,9 +7,9 @@ load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 package(default_applicable_licenses = ["//:license"])
 
 fidl_library(
-    name = "fuchsia.hardware.overnet",
+    name = "fuchsia.hardware.vsockbridge",
     srcs = [
-        "overnet.fidl",
+        "vsockbridge.fidl",
     ],
     visibility = ["//visibility:public"],
     deps = [

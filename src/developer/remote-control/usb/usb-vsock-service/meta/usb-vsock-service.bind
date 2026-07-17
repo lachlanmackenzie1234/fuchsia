@@ -3,4 +3,4 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.overnet.UsbService == fuchsia.hardware.overnet.UsbService.ZirconTransport;
+fuchsia.hardware.vsockbridge.UsbService == fuchsia.hardware.vsockbridge.UsbService.ZirconTransport;

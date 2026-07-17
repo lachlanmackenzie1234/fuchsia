@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "overnet_usb.h"
+#include "vsock_usb.h"
 
 #include <lib/ddk/metadata.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -23,8 +23,8 @@
 
 #include "fbl/auto_lock.h"
 #include "fbl/mutex.h"
-#include "fidl/fuchsia.hardware.overnet/cpp/markers.h"
 #include "fidl/fuchsia.hardware.usb.function/cpp/fidl.h"
+#include "fidl/fuchsia.hardware.vsockbridge/cpp/markers.h"
 #include "lib/driver/compat/cpp/device_server.h"
 #include "lib/fidl/cpp/wire/channel.h"
 #include "lib/fidl/cpp/wire/internal/transport_channel.h"
@@ -139,7 +139,7 @@ class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
   std::unordered_map<uint64_t, zx::vmo> vmos_ __TA_GUARDED(lock_);
 };
 
-class TestCallback : public fidl::WireServer<fuchsia_hardware_overnet::Callback> {
+class TestCallback : public fidl::WireServer<fuchsia_hardware_vsockbridge::Callback> {
  public:
   TestCallback(size_t expected_calls, std::function<void(zx::socket)> callback)
       : expected_calls_(expected_calls), callback_(std::move(callback)) {}
@@ -147,7 +147,7 @@ class TestCallback : public fidl::WireServer<fuchsia_hardware_overnet::Callback>
     FDF_LOG(DEBUG, "Destroying TestCallback %zu==%zu", expected_calls_, actual_calls_);
     EXPECT_EQ(expected_calls_, actual_calls_);
   }
-  void NewLink(::fuchsia_hardware_overnet::wire::CallbackNewLinkRequest* request,
+  void NewLink(::fuchsia_hardware_vsockbridge::wire::CallbackNewLinkRequest* request,
                NewLinkCompleter::Sync& completer) override {
     actual_calls_++;
     FDF_LOG(DEBUG, "calling callback %zu", actual_calls_);
@@ -249,7 +249,7 @@ class FakeUsb
   fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> interface_;
 };
 
-class OvernetUsbEnvironment : public fdf_testing::Environment {
+class VsockUsbEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     dispatcher_ = fdf::Dispatcher::GetCurrent()->async_dispatcher();
@@ -269,7 +269,7 @@ class OvernetUsbEnvironment : public fdf_testing::Environment {
       return result.take_error();
     }
 
-    auto endpoints = fidl::Endpoints<fuchsia_hardware_overnet::Usb>::Create();
+    auto endpoints = fidl::Endpoints<fuchsia_hardware_vsockbridge::Usb>::Create();
 
     return zx::ok();
   }
@@ -280,13 +280,13 @@ class OvernetUsbEnvironment : public fdf_testing::Environment {
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> usb_function_bindings_;
 };
 
-class OvernetUsbTestConfig final {
+class VsockUsbTestConfig final {
  public:
-  using DriverType = OvernetUsb;
-  using EnvironmentType = OvernetUsbEnvironment;
+  using DriverType = VsockUsb;
+  using EnvironmentType = VsockUsbEnvironment;
 };
 
-class OvernetUsbTest : public ::testing::Test {
+class VsockUsbTest : public ::testing::Test {
  public:
   fuchsia_hardware_usb_request::Request WaitForRequestOn(uint8_t endpoint) {
     auto& runtime = driver_test().runtime();
@@ -296,7 +296,7 @@ class OvernetUsbTest : public ::testing::Test {
     do {
       runtime.RunUntilIdle();
       driver_test().RunInEnvironmentTypeContext(
-          [&request, &request_count, endpoint](OvernetUsbEnvironment& env) mutable {
+          [&request, &request_count, endpoint](VsockUsbEnvironment& env) mutable {
             auto& ep = env.fake_usb_->fake_endpoint(endpoint);
             request_count = ep.pending_request_count();
             if (request_count > 0) {
@@ -315,7 +315,7 @@ class OvernetUsbTest : public ::testing::Test {
     auto request = WaitForRequestOn(kBulkOutEndpoint);
     FDF_LOG(DEBUG, "got request on out endpoint");
     driver_test().RunInEnvironmentTypeContext(
-        [request = std::move(request), tx, size](OvernetUsbEnvironment& env) mutable {
+        [request = std::move(request), tx, size](VsockUsbEnvironment& env) mutable {
           auto& out_ep = env.fake_usb_->fake_endpoint(kBulkOutEndpoint);
           auto& data = request.data();
           ASSERT_EQ(data->size(), 1u);
@@ -334,7 +334,7 @@ class OvernetUsbTest : public ::testing::Test {
     std::vector<uint8_t> ret;
     auto request = WaitForRequestOn(kBulkInEndpoint);
     driver_test().RunInEnvironmentTypeContext(
-        [&ret, request = std::move(request)](OvernetUsbEnvironment& env) mutable {
+        [&ret, request = std::move(request)](VsockUsbEnvironment& env) mutable {
           auto& in_ep = env.fake_usb_->fake_endpoint(kBulkInEndpoint);
           FDF_LOG(DEBUG, "Got request on in endpoint");
           auto& data = request.data();
@@ -429,13 +429,13 @@ class OvernetUsbTest : public ::testing::Test {
 
   void SetUp() override {
     ASSERT_TRUE(driver_test().StartDriver().is_ok());
-    driver_test().RunInEnvironmentTypeContext([this](OvernetUsbEnvironment& env) {
+    driver_test().RunInEnvironmentTypeContext([this](VsockUsbEnvironment& env) {
       function_client_.Bind(env.fake_usb_->TakeInterface());
     });
-    auto device = driver_test().Connect<fuchsia_hardware_overnet::UsbService::Device>();
+    auto device = driver_test().Connect<fuchsia_hardware_vsockbridge::UsbService::Device>();
     ASSERT_TRUE(device.is_ok());
     client_.Bind(std::move(device.value()));
-    driver_test().RunInDriverContext([](OvernetUsb& driver) {
+    driver_test().RunInDriverContext([](VsockUsb& driver) {
       EXPECT_EQ(driver.BulkInAddress(), kBulkInEndpoint);
       EXPECT_EQ(driver.BulkOutAddress(), kBulkOutEndpoint);
     });
@@ -478,14 +478,14 @@ class OvernetUsbTest : public ::testing::Test {
   }
 
   void ExpectConfigureEndpoints() {
-    driver_test().RunInEnvironmentTypeContext([](OvernetUsbEnvironment& env) {
+    driver_test().RunInEnvironmentTypeContext([](VsockUsbEnvironment& env) {
       env.fake_usb_->ExpectConfigureEndpoint(kBulkInEndpoint);
       env.fake_usb_->ExpectConfigureEndpoint(kBulkOutEndpoint);
     });
   }
 
   void ExpectDisableEndpoints() {
-    driver_test().RunInEnvironmentTypeContext([](OvernetUsbEnvironment& env) {
+    driver_test().RunInEnvironmentTypeContext([](VsockUsbEnvironment& env) {
       env.fake_usb_->ExpectDisableEndpoint(kBulkInEndpoint);
       env.fake_usb_->ExpectDisableEndpoint(kBulkOutEndpoint);
     });
@@ -503,7 +503,7 @@ class OvernetUsbTest : public ::testing::Test {
                                                 std::function<void(zx::socket)> callback) const {
     auto dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
     auto ret = std::make_unique<TestCallback>(expected_calls, callback);
-    auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_overnet::Callback>();
+    auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_vsockbridge::Callback>();
     if (!endpoints.is_ok()) {
       return nullptr;
     }
@@ -514,20 +514,20 @@ class OvernetUsbTest : public ::testing::Test {
     return ret;
   }
 
-  fdf_testing::BackgroundDriverTest<OvernetUsbTestConfig>& driver_test() { return driver_test_; }
-  fdf_testing::BackgroundDriverTest<OvernetUsbTestConfig> driver_test_;
+  fdf_testing::BackgroundDriverTest<VsockUsbTestConfig>& driver_test() { return driver_test_; }
+  fdf_testing::BackgroundDriverTest<VsockUsbTestConfig> driver_test_;
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_client_;
-  fidl::WireSyncClient<fuchsia_hardware_overnet::Usb> client_;
+  fidl::WireSyncClient<fuchsia_hardware_vsockbridge::Usb> client_;
 };
 
-TEST_F(OvernetUsbTest, Startup) { FDF_LOG(DEBUG, "startup"); }
+TEST_F(VsockUsbTest, Startup) { FDF_LOG(DEBUG, "startup"); }
 
-TEST_F(OvernetUsbTest, ConfigureAndUnconfigure) {
+TEST_F(VsockUsbTest, ConfigureAndUnconfigure) {
   ConfigureDevice();
   UnconfigureDevice();
 }
 
-TEST_F(OvernetUsbTest, SocketGet) {
+TEST_F(VsockUsbTest, SocketGet) {
   ConfigureDevice();
   std::atomic_bool callback_called = false;
   auto callback = SetupCallback(1, [&callback_called](zx::socket sock) {
@@ -541,7 +541,7 @@ TEST_F(OvernetUsbTest, SocketGet) {
   UnconfigureDevice();
 }
 
-TEST_F(OvernetUsbTest, DataFromTarget) {
+TEST_F(VsockUsbTest, DataFromTarget) {
   ConfigureDevice();
   std::vector<zx::socket> sockets;
   auto callback =
@@ -566,7 +566,7 @@ TEST_F(OvernetUsbTest, DataFromTarget) {
   UnconfigureDevice();
 }
 
-TEST_F(OvernetUsbTest, DataFromHost) {
+TEST_F(VsockUsbTest, DataFromHost) {
   ConfigureDevice();
   std::vector<zx::socket> sockets;
   auto callback =
@@ -588,7 +588,7 @@ TEST_F(OvernetUsbTest, DataFromHost) {
   UnconfigureDevice();
 }
 
-TEST_F(OvernetUsbTest, Reset) {
+TEST_F(VsockUsbTest, Reset) {
   ConfigureDevice();
   std::vector<zx::socket> sockets;
   auto callback =
@@ -631,7 +631,7 @@ TEST_F(OvernetUsbTest, Reset) {
   UnconfigureDevice();
 }
 
-TEST_F(OvernetUsbTest, ResetMoreData) {
+TEST_F(VsockUsbTest, ResetMoreData) {
   ConfigureDevice();
   std::vector<zx::socket> sockets;
   auto callback =
@@ -696,7 +696,7 @@ TEST_F(OvernetUsbTest, ResetMoreData) {
   }
   UnconfigureDevice();
 }
-TEST_F(OvernetUsbTest, Inspect) {
+TEST_F(VsockUsbTest, Inspect) {
   ConfigureDevice();
   std::vector<zx::socket> sockets;
   auto callback =
@@ -726,28 +726,28 @@ TEST_F(OvernetUsbTest, Inspect) {
   bool has_pending_tx = true;
   while (has_pending_tx) {
     driver_test().RunInDriverContext(
-        [&has_pending_tx](OvernetUsb& driver) { has_pending_tx = driver.HasPendingTxRequests(); });
+        [&has_pending_tx](VsockUsb& driver) { has_pending_tx = driver.HasPendingTxRequests(); });
     if (has_pending_tx) {
       zx::nanosleep(zx::deadline_after(zx::msec(1)));
     }
   }
 
   driver_test().RunInDriverContext([tx_size = device_to_host_data.size(),
-                                    rx_size = host_to_device_data.size()](OvernetUsb& driver) {
+                                    rx_size = host_to_device_data.size()](VsockUsb& driver) {
     driver.GetThroughputTrackerForTesting().MeasureForTesting(zx::sec(1));
 
     auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
 
-    auto* overnet_node = hierarchy.GetByPath({"overnet-usb"});
-    ASSERT_TRUE(overnet_node != nullptr);
+    auto* vsock_node = hierarchy.GetByPath({"vsock-usb"});
+    ASSERT_TRUE(vsock_node != nullptr);
 
-    auto* bulk_in = hierarchy.GetByPath({"overnet-usb", "bulk_in"});
+    auto* bulk_in = hierarchy.GetByPath({"vsock-usb", "bulk_in"});
     ASSERT_TRUE(bulk_in != nullptr);
     auto err_in = usb_inspect::VerifyEndpointInspect(bulk_in, tx_size, std::nullopt, 0,
                                                      std::nullopt, tx_size);
     EXPECT_TRUE(err_in.is_ok()) << err_in.error_value();
 
-    auto* bulk_out = hierarchy.GetByPath({"overnet-usb", "bulk_out"});
+    auto* bulk_out = hierarchy.GetByPath({"vsock-usb", "bulk_out"});
     ASSERT_TRUE(bulk_out != nullptr);
     auto err_out = usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, rx_size, std::nullopt,
                                                       8, rx_size);

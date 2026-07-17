@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "overnet_usb.h"
+#include "vsock_usb.h"
 
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
@@ -22,7 +22,7 @@
 #include <fbl/auto_lock.h>
 #include <usb/request-cpp.h>
 
-#include "fidl/fuchsia.hardware.overnet/cpp/wire_types.h"
+#include "fidl/fuchsia.hardware.vsockbridge/cpp/wire_types.h"
 #include "lib/async/cpp/wait.h"
 #include "lib/fidl/cpp/wire/channel.h"
 #include "lib/fidl/cpp/wire/internal/transport.h"
@@ -31,7 +31,7 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffunction = fuchsia_hardware_usb_function;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
-zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
+zx::result<> VsockUsb::Start(fdf::DriverContext context) {
   inspector_ = context.CreateInspector(this);
   auto client = context.incoming().Connect<ffunction::UsbFunctionService::Device>();
   if (client.is_error()) {
@@ -62,7 +62,7 @@ zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
   fidl::Request<ffunction::UsbFunction::AllocResources> alloc_req;
   alloc_req.interface_count(1);
   alloc_req.endpoints(std::move(resources));
-  alloc_req.strings({{"Overnet USB interface"}});
+  alloc_req.strings({{"Vsock USB interface"}});
 
   fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
   if (alloc_result.is_error()) {
@@ -127,18 +127,18 @@ zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
 
   fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
 
-  fuchsia_hardware_overnet::UsbService::InstanceHandler handler({
-      .device = fit::bind_member<&OvernetUsb::FidlConnect>(this),
+  fuchsia_hardware_vsockbridge::UsbService::InstanceHandler handler({
+      .device = fit::bind_member<&VsockUsb::FidlConnect>(this),
   });
 
   auto service_result =
-      outgoing()->AddService<fuchsia_hardware_overnet::UsbService>(std::move(handler));
+      outgoing()->AddService<fuchsia_hardware_vsockbridge::UsbService>(std::move(handler));
   if (service_result.is_error()) {
     FDF_LOG(ERROR, "Failed to add service: %s", service_result.status_string());
     return service_result.take_error();
   }
 
-  inspect_node_ = inspector().root().CreateChild("overnet-usb");
+  inspect_node_ = inspector().root().CreateChild("vsock-usb");
   bulk_in_inspect_.Init(inspect_node_, "bulk_in");
   bulk_out_inspect_.Init(inspect_node_, "bulk_out");
   throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {
@@ -151,8 +151,8 @@ zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {};
   zx::result child_result =
-      AddChild("overnet-usb", properties,
-               std::array{fdf::MakeOffer2<fuchsia_hardware_overnet::UsbService>()});
+      AddChild("vsock-usb", properties,
+               std::array{fdf::MakeOffer2<fuchsia_hardware_vsockbridge::UsbService>()});
   if (child_result.is_error()) {
     FDF_SLOG(ERROR, "Could not add child node");
     return child_result.take_error();
@@ -162,16 +162,16 @@ zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
   return zx::ok();
 }
 
-void OvernetUsb::FidlConnect(fidl::ServerEnd<fuchsia_hardware_overnet::Usb> request) {
+void VsockUsb::FidlConnect(fidl::ServerEnd<fuchsia_hardware_vsockbridge::Usb> request) {
   device_binding_group_.AddBinding(dispatcher_, std::move(request), this,
                                    fidl::kIgnoreBindingClosure);
 }
 
-void OvernetUsb::Stop(fdf::StopCompleter completer) {
+void VsockUsb::Stop(fdf::StopCompleter completer) {
   Shutdown([completer = std::move(completer)]() mutable { completer(zx::ok()); });
 }
 
-void OvernetUsb::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+void VsockUsb::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
   auto setup = request.setup();
   uint16_t w_value = setup.w_value();
   uint16_t w_index = setup.w_index();
@@ -193,7 +193,7 @@ void OvernetUsb::Control(ControlRequest& request, ControlCompleter::Sync& comple
   completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-zx_status_t OvernetUsb::ConfigureEndpoints() {
+zx_status_t VsockUsb::ConfigureEndpoints() {
   if (!std::holds_alternative<Unconfigured>(state_)) {
     FDF_LOG(DEBUG, "ConfigureEndpoints: endpoints already configured");
     return ZX_OK;
@@ -252,7 +252,7 @@ zx_status_t OvernetUsb::ConfigureEndpoints() {
   return ZX_OK;
 }
 
-zx_status_t OvernetUsb::UnconfigureEndpoints() {
+zx_status_t VsockUsb::UnconfigureEndpoints() {
   if (std::holds_alternative<Unconfigured>(state_)) {
     FDF_LOG(DEBUG, "UnconfigureEndpoints: Endpoint already unconfigured");
     return ZX_OK;
@@ -275,8 +275,8 @@ zx_status_t OvernetUsb::UnconfigureEndpoints() {
   return ZX_OK;
 }
 
-void OvernetUsb::SetConfigured(SetConfiguredRequest& request,
-                               SetConfiguredCompleter::Sync& completer) {
+void VsockUsb::SetConfigured(SetConfiguredRequest& request,
+                             SetConfiguredCompleter::Sync& completer) {
   bool configured = request.configured();
   if (std::holds_alternative<ShuttingDown>(state_)) {
     // We're already shutting down, so we can't configure the endpoints, no-op
@@ -292,8 +292,7 @@ void OvernetUsb::SetConfigured(SetConfiguredRequest& request,
   completer.Reply(zx::make_result(status));
 }
 
-void OvernetUsb::SetInterface(SetInterfaceRequest& request,
-                              SetInterfaceCompleter::Sync& completer) {
+void VsockUsb::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) {
   if (request.interface() != descriptors_.data_interface.b_interface_number ||
       request.alt_setting() != descriptors_.data_interface.b_alternate_setting) {
     FDF_LOG(WARNING, "SetInterface called on unexpected interface or alt setting (expected %x, %x)",
@@ -308,13 +307,13 @@ void OvernetUsb::SetInterface(SetInterfaceRequest& request,
   completer.Reply(zx::make_result(ConfigureEndpoints()));
 }
 
-void OvernetUsb::handle_unknown_method(
+void VsockUsb::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   FDF_LOG(ERROR, "Unknown method ordinal: %lu", metadata.method_ordinal);
 }
 
-std::optional<usb::FidlRequest> OvernetUsb::PrepareTx() {
+std::optional<usb::FidlRequest> VsockUsb::PrepareTx() {
   if (!Online()) {
     return std::nullopt;
   }
@@ -329,8 +328,8 @@ std::optional<usb::FidlRequest> OvernetUsb::PrepareTx() {
   return request;
 }
 
-void OvernetUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_status_t status,
-                                      const zx_packet_signal_t*) {
+void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_status_t status,
+                                    const zx_packet_signal_t*) {
   FDF_LOG(TRACE, "HandleSocketReadable(..., %d, ...)", status);
   if (status != ZX_OK) {
     if (status != ZX_ERR_CANCELED) {
@@ -397,8 +396,8 @@ void OvernetUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_
   bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
-OvernetUsb::State OvernetUsb::Running::SendData(uint8_t* data, size_t len, size_t* actual,
-                                                zx_status_t* status) && {
+VsockUsb::State VsockUsb::Running::SendData(uint8_t* data, size_t len, size_t* actual,
+                                            zx_status_t* status) && {
   *status = socket_.read(0, data, len, actual);
 
   if (*status != ZX_OK && *status != ZX_ERR_SHOULD_WAIT) {
@@ -412,8 +411,8 @@ OvernetUsb::State OvernetUsb::Running::SendData(uint8_t* data, size_t len, size_
   return std::move(*this);
 }
 
-void OvernetUsb::HandleSocketWritable(async_dispatcher_t*, async::WaitBase*, zx_status_t status,
-                                      const zx_packet_signal_t*) {
+void VsockUsb::HandleSocketWritable(async_dispatcher_t*, async::WaitBase*, zx_status_t status,
+                                    const zx_packet_signal_t*) {
   FDF_LOG(TRACE, "HandleSocketWritable(..., %d, ...)", status);
 
   if (status != ZX_OK) {
@@ -436,7 +435,7 @@ void OvernetUsb::HandleSocketWritable(async_dispatcher_t*, async::WaitBase*, zx_
       state_);
 }
 
-OvernetUsb::State OvernetUsb::Running::Writable() && {
+VsockUsb::State VsockUsb::Running::Writable() && {
   if (socket_out_queue_.empty()) {
     return std::move(*this);
   }
@@ -459,8 +458,8 @@ OvernetUsb::State OvernetUsb::Running::Writable() && {
   return std::move(*this);
 }
 
-void OvernetUsb::SetCallback(fuchsia_hardware_overnet::wire::UsbSetCallbackRequest* request,
-                             SetCallbackCompleter::Sync& completer) {
+void VsockUsb::SetCallback(fuchsia_hardware_vsockbridge::wire::UsbSetCallbackRequest* request,
+                           SetCallbackCompleter::Sync& completer) {
   FDF_LOG(TRACE, "SetCallback");
   callback_ = Callback(
       fidl::WireSharedClient(std::move(request->callback), dispatcher_,
@@ -470,7 +469,7 @@ void OvernetUsb::SetCallback(fuchsia_hardware_overnet::wire::UsbSetCallbackReque
   completer.Reply();
 }
 
-void OvernetUsb::HandleSocketAvailable() {
+void VsockUsb::HandleSocketAvailable() {
   if (!callback_) {
     FDF_LOG(TRACE, "No callback set, deferring socket callback");
     return;
@@ -486,13 +485,13 @@ void OvernetUsb::HandleSocketAvailable() {
   peer_socket_ = std::nullopt;
 }
 
-void OvernetUsb::Callback::operator()(zx::socket socket) {
+void VsockUsb::Callback::operator()(zx::socket socket) {
   if (!fidl_.is_valid()) {
     return;
   }
 
   fidl_->NewLink(std::move(socket))
-      .Then([](fidl::WireUnownedResult<fuchsia_hardware_overnet::Callback::NewLink>& result) {
+      .Then([](fidl::WireUnownedResult<fuchsia_hardware_vsockbridge::Callback::NewLink>& result) {
         if (!result.ok()) {
           auto res = result.FormatDescription();
           FDF_SLOG(ERROR, "Failed to share socket with component", KV("status", res));
@@ -500,23 +499,23 @@ void OvernetUsb::Callback::operator()(zx::socket socket) {
       });
 }
 
-OvernetUsb::State OvernetUsb::Unconfigured::ReceiveData(uint8_t*, size_t len,
-                                                        std::optional<zx::socket>*,
-                                                        OvernetUsb* owner) && {
+VsockUsb::State VsockUsb::Unconfigured::ReceiveData(uint8_t*, size_t len,
+                                                    std::optional<zx::socket>*,
+                                                    VsockUsb* owner) && {
   FDF_SLOG(WARNING, "Dropped incoming data (device not configured)", KV("bytes", len));
   return *this;
 }
 
-OvernetUsb::State OvernetUsb::ShuttingDown::ReceiveData(uint8_t*, size_t len,
-                                                        std::optional<zx::socket>*,
-                                                        OvernetUsb* owner) && {
+VsockUsb::State VsockUsb::ShuttingDown::ReceiveData(uint8_t*, size_t len,
+                                                    std::optional<zx::socket>*,
+                                                    VsockUsb* owner) && {
   FDF_SLOG(WARNING, "Dropped incoming data (device shutting down)", KV("bytes", len));
   return std::move(*this);
 }
 
-OvernetUsb::State OvernetUsb::Running::ReceiveData(uint8_t* data, size_t len,
-                                                   std::optional<zx::socket>* peer_socket,
-                                                   OvernetUsb* owner) && {
+VsockUsb::State VsockUsb::Running::ReceiveData(uint8_t* data, size_t len,
+                                               std::optional<zx::socket>* peer_socket,
+                                               VsockUsb* owner) && {
   FDF_LOG(TRACE, "Running::ReceiveData(%zu)", len);
   zx_status_t status;
 
@@ -553,13 +552,13 @@ OvernetUsb::State OvernetUsb::Running::ReceiveData(uint8_t* data, size_t len,
   return std::move(*this);
 }
 
-void OvernetUsb::ReadBatchComplete(std::vector<fendpoint::Completion> completions) {
+void VsockUsb::ReadBatchComplete(std::vector<fendpoint::Completion> completions) {
   for (auto& c : completions) {
     ReadComplete(std::move(c));
   }
 }
 
-void OvernetUsb::ReadComplete(fendpoint::Completion completion) {
+void VsockUsb::ReadComplete(fendpoint::Completion completion) {
   FDF_LOG(TRACE, "ReadComplete (status: %d, size: %zu)", *completion.status(),
           *completion.transfer_size());
 
@@ -634,13 +633,13 @@ void OvernetUsb::ReadComplete(fendpoint::Completion completion) {
   bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
 
-void OvernetUsb::WriteBatchComplete(std::vector<fendpoint::Completion> completions) {
+void VsockUsb::WriteBatchComplete(std::vector<fendpoint::Completion> completions) {
   for (auto& c : completions) {
     WriteComplete(std::move(c));
   }
 }
 
-void OvernetUsb::WriteComplete(fendpoint::Completion completion) {
+void VsockUsb::WriteComplete(fendpoint::Completion completion) {
   FDF_LOG(TRACE, "WriteComplete");
   zx_status_t status = *completion.status();
   auto request = usb::FidlRequest(std::move(completion.request().value()));
@@ -667,7 +666,7 @@ void OvernetUsb::WriteComplete(fendpoint::Completion completion) {
   bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
-void OvernetUsb::Shutdown(fit::function<void()> callback) {
+void VsockUsb::Shutdown(fit::function<void()> callback) {
   if (throughput_tracker_) {
     throughput_tracker_->Stop();
   }
@@ -695,7 +694,7 @@ void OvernetUsb::Shutdown(fit::function<void()> callback) {
   }
 }
 
-void OvernetUsb::ShutdownComplete() {
+void VsockUsb::ShutdownComplete() {
   if (auto state = std::get_if<ShuttingDown>(&state_)) {
     bulk_in_ep_.Close();
     bulk_out_ep_.Close();
@@ -705,4 +704,4 @@ void OvernetUsb::ShutdownComplete() {
   }
 }
 
-FUCHSIA_DRIVER_EXPORT2(OvernetUsb);
+FUCHSIA_DRIVER_EXPORT2(VsockUsb);
