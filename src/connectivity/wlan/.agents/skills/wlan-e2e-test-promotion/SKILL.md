@@ -9,7 +9,7 @@ description: >
 
 This skill defines the workflow to identify WLAN tests currently in the
 `tests_for_fyi` group that are stable enough to be promoted to
-`tests_for_wlan_cq`.
+`tests_for_postsubmit`.
 
 A test is considered stable enough if it has at least 300 runs in the last 90
 days (retention limit) on all of its board variants (e.g. astro, nelson,
@@ -43,10 +43,10 @@ The script will:
 If a test meets the promotion criteria (stable on ALL board variants), create a CL to promote it. Perform this for **only one test at a time** to keep CLs small, focused, and easy to review.
 
 #### 1. Modify the Code
-Move the test from `tests_for_fyi` to `tests_for_wlan_cq` in the appropriate GN/GNI file.
+Move the test from `tests_for_fyi` to `tests_for_postsubmit` in the appropriate GN/GNI file.
 *   **Example (wlanix/BUILD.gn)**:
     *   Remove `:sched_scan_test` from `tests_for_fyi` `public_deps`.
-    *   Add `:sched_scan_test` to `tests_for_wlan_cq` `public_deps`.
+    *   Add `:sched_scan_test` to `tests_for_postsubmit` `public_deps`.
 *   After modifying the files, run `fx format-code` to ensure correct formatting.
 
 #### 2. Commit Message Guidelines

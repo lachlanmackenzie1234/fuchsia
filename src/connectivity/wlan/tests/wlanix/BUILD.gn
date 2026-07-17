@@ -123,8 +123,10 @@ group("tests_host") {
   public_deps = [
     ":tests_for_fyi",
     ":tests_for_fyi_long",
+    ":tests_for_fyi_performance",
     ":tests_for_general_cq",
     ":tests_for_general_cq_no_shield_box",
+    ":tests_for_postsubmit",
     ":tests_for_wlan_cq",
   ]
 }
@@ -157,11 +159,16 @@ group("tests_for_general_cq_no_shield_box") {
 }
 
 # These tests run in blocking CI (~once per hour) as well as a blocking
-# tryjob on any CL with "wlan" in a file path. We should strive for a
-# representative sample of tests here for all our functionality, but
-# we should optimize for maximum bang for our buck (e.g. add a
-# reboot test here, but only for wpa2, not for every single security type).
+# tryjob on any CL with "wlan" in a file path. Tests which exercise WLAN
+# code that changes frequently or tests that provide broad WLAN code coverage
+# should go here, but most tests should likely go into `tests_for_postsubmit`.
 group("tests_for_wlan_cq") {
+  testonly = true
+  public_deps = []
+}
+
+# These tests run in blocking CI (~once per hour).
+group("tests_for_postsubmit") {
   testonly = true
   public_deps = [
     ":apf_test",
@@ -172,7 +179,7 @@ group("tests_for_wlan_cq") {
 # If you're writing a new test, add it to FYI first until it has a sufficient
 # number of passing runs (either here in FYI or via `fx test-remote`). Tests in
 # FYI don't cause any alerting if they break, so having the test here doesn't
-# provide much of a safety net. Consider moving it to one of the CQ groups
+# provide much of a safety net. Consider moving it to one of the blocking groups
 # above.
 group("tests_for_fyi") {
   testonly = true

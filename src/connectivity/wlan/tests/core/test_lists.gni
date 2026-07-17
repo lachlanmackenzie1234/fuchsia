@@ -28,23 +28,25 @@ core_tests_for_general_cq_no_shield_box = [
 ]
 
 # These tests run in blocking CI (~once per hour) as well as a blocking
-# tryjob on any CL with "wlan" in a file path. We should strive for a
-# representative sample of tests here for all our functionality, but
-# we should optimize for maximum bang for our buck (e.g. add a
-# reboot test here, but only for wpa2, not for every single security type).
+# tryjob on any CL with "wlan" in a file path. Tests which exercise WLAN
+# code that changes frequently or tests that provide broad WLAN code coverage
+# should go here, but most tests should likely go into `tests_for_postsubmit`.
 core_tests_for_wlan_cq = [
+  # Though this test is defined in honeydew, it exercises wlan core
+  "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_core/tests/functional_tests",
+]
+
+# These tests run in blocking CI (~once per hour).
+core_tests_for_postsubmit = [
   "//src/connectivity/wlan/tests/core:connect_to_ap_test",
   "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
   "//src/connectivity/wlan/tests/core:sar_setting_test",
-
-  # Though this test is defined in honeydew, it exercises wlan core
-  "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_core/tests/functional_tests",
 ]
 
 # If you're writing a new test, add it to FYI first until it has a sufficient
 # number of passing runs (either here in FYI or via `fx test-remote`). Tests in
 # FYI don't cause any alerting if they break, so having the test here doesn't
-# provide much of a safety net. Consider moving it to one of the CQ groups
+# provide much of a safety net. Consider moving it to one of the blocking groups
 # above.
 core_tests_for_fyi = [
   "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
