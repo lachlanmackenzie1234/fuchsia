@@ -707,7 +707,6 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl::endpoints::{ControlHandle, create_proxy, create_proxy_and_stream};
     use fidl_fuchsia_wlan_common as fidl_wlan_common;
-    use fidl_fuchsia_wlan_device as fidl_dev;
     use fuchsia_async as fasync;
     use fuchsia_inspect::Inspector;
     use futures::TryStreamExt;
@@ -781,454 +780,240 @@ mod tests {
         }
     }
 
-    fn fake_old_phy() -> (PhyDevice, fidl_dev::PhyRequestStream) {
-        let (proxy, server) = create_proxy::<fidl_dev::PhyMarker>();
-        let stream = server.into_stream();
-        (PhyDevice { proxy: crate::device::PhyProxy::Old(proxy) }, stream)
-    }
-
-    fn fake_phy() -> (PhyDevice, fidl_fuchsia_wlan_phy::WlanPhyRequestStream) {
+    fn fake_phy_device() -> (PhyDevice, fidl_fuchsia_wlan_phy::WlanPhyRequestStream) {
         let (proxy, server) = create_proxy::<fidl_fuchsia_wlan_phy::WlanPhyMarker>();
         let stream = server.into_stream();
-        (PhyDevice { proxy: crate::device::PhyProxy::New(proxy) }, stream)
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    enum TestPhyType {
-        Old,
-        New,
-    }
-
-    enum FakePhyStream {
-        Old(fidl_dev::PhyRequestStream),
-        New(fidl_fuchsia_wlan_phy::WlanPhyRequestStream),
-    }
-
-    fn fake_phy_device(phy_type: TestPhyType) -> (PhyDevice, FakePhyStream) {
-        match phy_type {
-            TestPhyType::Old => {
-                let (phy, stream) = fake_old_phy();
-                (phy, FakePhyStream::Old(stream))
-            }
-            TestPhyType::New => {
-                let (phy, stream) = fake_phy();
-                (phy, FakePhyStream::New(stream))
-            }
-        }
+        (PhyDevice { proxy }, stream)
     }
 
     fn expect_get_supported_mac_roles(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         roles: &[fidl_wlan_common::WlanMacRole],
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetSupportedMacRoles { responder }))) => responder
-                );
-                responder.send(Ok(roles)).expect("failed to send QueryResponse");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetSupportedMacRoles { responder }))) => responder
-                );
-                let converted_roles: Vec<_> = roles
-                    .iter()
-                    .map(|&role| match role {
-                        fidl_wlan_common::WlanMacRole::Client => {
-                            fidl_fuchsia_wlan_common::WlanMacRole::Client
-                        }
-                        fidl_wlan_common::WlanMacRole::Ap => {
-                            fidl_fuchsia_wlan_common::WlanMacRole::Ap
-                        }
-                        fidl_wlan_common::WlanMacRole::Mesh => {
-                            fidl_fuchsia_wlan_common::WlanMacRole::Mesh
-                        }
-                        _ => panic!("unknown mac role"),
-                    })
-                    .collect();
-                let response = fidl_fuchsia_wlan_phy::WlanPhyGetSupportedMacRolesResponse {
-                    supported_mac_roles: Some(converted_roles),
-                    ..Default::default()
-                };
-                responder.send(Ok(&response)).expect("failed to send QueryResponse");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetSupportedMacRoles { responder }))) => responder
+        );
+        let converted_roles: Vec<_> = roles
+            .iter()
+            .map(|&role| match role {
+                fidl_wlan_common::WlanMacRole::Client => {
+                    fidl_fuchsia_wlan_common::WlanMacRole::Client
+                }
+                fidl_wlan_common::WlanMacRole::Ap => fidl_fuchsia_wlan_common::WlanMacRole::Ap,
+                fidl_wlan_common::WlanMacRole::Mesh => fidl_fuchsia_wlan_common::WlanMacRole::Mesh,
+                _ => panic!("unknown mac role"),
+            })
+            .collect();
+        let response = fidl_fuchsia_wlan_phy::WlanPhyGetSupportedMacRolesResponse {
+            supported_mac_roles: Some(converted_roles),
+            ..Default::default()
+        };
+        responder.send(Ok(&response)).expect("failed to send QueryResponse");
     }
 
     fn expect_create_iface(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         expected_role: fidl_wlan_common::WlanMacRole,
         expected_sta_addr: [u8; 6],
         result: Result<u16, zx::Status>,
     ) -> Option<zx::Channel> {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let (req, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::CreateIface { req, responder }))) => (req, responder)
-                );
-                assert_eq!(req.role, expected_role);
-                assert_eq!(req.init_sta_addr, expected_sta_addr);
-                let mlme = req.mlme_channel;
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-                mlme
-            }
-            FakePhyStream::New(s) => {
-                let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::CreateIface { payload, responder }))) => (payload, responder)
-                );
-                assert_eq!(payload.role, Some(expected_role));
-                assert_eq!(payload.init_sta_addr, Some(expected_sta_addr));
-                let mlme = payload.mlme_channel;
-                let response = result.as_ref().map(|&iface_id| {
-                    fidl_fuchsia_wlan_phy::WlanPhyCreateIfaceResponse {
-                        iface_id: Some(iface_id),
-                        ..Default::default()
-                    }
-                });
-                responder
-                    .send(response.as_ref().map_err(|s| s.into_raw()))
-                    .expect("failed to send response");
-                mlme
-            }
-        }
+        let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::CreateIface { payload, responder }))) => (payload, responder)
+        );
+        assert_eq!(payload.role, Some(expected_role));
+        assert_eq!(payload.init_sta_addr, Some(expected_sta_addr));
+        let mlme = payload.mlme_channel;
+        let response =
+            result.as_ref().map(|&iface_id| fidl_fuchsia_wlan_phy::WlanPhyCreateIfaceResponse {
+                iface_id: Some(iface_id),
+                ..Default::default()
+            });
+        responder
+            .send(response.as_ref().map_err(|s| s.into_raw()))
+            .expect("failed to send response");
+        mlme
     }
 
     fn expect_get_country(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<[u8; 2], zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetCountry { responder }))) => responder
-                );
-                let response = result.map(|cc| fidl_dev::CountryCode { alpha2: cc });
-                responder
-                    .send(response.as_ref().map_err(|s| s.into_raw()))
-                    .expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetCountry { responder }))) => responder
-                );
-                responder
-                    .send(result.as_ref().map_err(|s| s.into_raw()))
-                    .expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetCountry { responder }))) => responder
+        );
+        responder.send(result.as_ref().map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_set_country(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         expected_alpha2: [u8; 2],
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let (req, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetCountry { req, responder }))) => (req, responder)
-                );
-                assert_eq!(req.alpha2, expected_alpha2);
-                let status = result.map(|_| 0).unwrap_or_else(|s| s.into_raw());
-                responder.send(status).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let (country, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetCountry { country, responder }))) => (country, responder)
-                );
-                assert_eq!(country, expected_alpha2);
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let (country, responder) = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetCountry { country, responder }))) => (country, responder)
+        );
+        assert_eq!(country, expected_alpha2);
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_clear_country(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ClearCountry { responder }))) => responder
-                );
-                let status = result.map(|_| 0).unwrap_or_else(|s| s.into_raw());
-                responder.send(status).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::ClearCountry { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::ClearCountry { responder }))) => responder
+        );
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_set_bt_coex_mode(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         expected_mode: fidl_internal::BtCoexistenceMode,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let (mode, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetBtCoexistenceMode { mode, responder }))) => (mode, responder)
-                );
-                assert_eq!(mode, expected_mode);
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetBtCoexistenceMode { payload, responder }))) => (payload, responder)
-                );
-                assert_eq!(payload.mode, Some(expected_mode));
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetBtCoexistenceMode { payload, responder }))) => (payload, responder)
+        );
+        assert_eq!(payload.mode, Some(expected_mode));
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_set_power_scenario(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         expected_scenario: TxPowerScenario,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let (scenario, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetTxPowerScenario { scenario, responder }))) => (scenario, responder)
-                );
-                assert_eq!(scenario, expected_scenario);
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetTxPowerScenario { payload, responder }))) => (payload, responder)
-                );
-                assert_eq!(payload.scenario, Some(expected_scenario));
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetTxPowerScenario { payload, responder }))) => (payload, responder)
+        );
+        assert_eq!(payload.scenario, Some(expected_scenario));
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_reset_power_scenario(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ResetTxPowerScenario { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::ResetTxPowerScenario { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::ResetTxPowerScenario { responder }))) => responder
+        );
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_get_power_scenario(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<TxPowerScenario, zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetTxPowerScenario { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetTxPowerScenario { responder }))) => responder
-                );
-                let result_to_send = result.map_err(|s| s.into_raw());
-                responder.send(result_to_send).expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetTxPowerScenario { responder }))) => responder
+        );
+        let result_to_send = result.map_err(|s| s.into_raw());
+        responder.send(result_to_send).expect("failed to send response");
     }
 
     fn expect_set_power_save_mode(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         expected_mode: fidl_wlan_common::PowerSaveType,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let (req, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetPowerSaveMode { req, responder }))) => (req, responder)
-                );
-                assert_eq!(req, expected_mode);
-                let status = result.map(|_| 0).unwrap_or_else(|s| s.into_raw());
-                responder.send(status).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetPowerSaveMode { payload, responder }))) => (payload, responder)
-                );
-                assert_eq!(payload.ps_mode, Some(expected_mode));
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::SetPowerSaveMode { payload, responder }))) => (payload, responder)
+        );
+        assert_eq!(payload.ps_mode, Some(expected_mode));
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_get_power_save_mode(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<fidl_wlan_common::PowerSaveType, zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetPowerSaveMode { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetPowerSaveMode { responder }))) => responder
+        );
+        let response = result.as_ref().map(|&ps_mode| {
+            fidl_fuchsia_wlan_phy::WlanPhyGetPowerSaveModeResponse {
+                ps_mode: Some(ps_mode),
+                ..Default::default()
             }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetPowerSaveMode { responder }))) => responder
-                );
-                let response = result.as_ref().map(|&ps_mode| {
-                    fidl_fuchsia_wlan_phy::WlanPhyGetPowerSaveModeResponse {
-                        ps_mode: Some(ps_mode),
-                        ..Default::default()
-                    }
-                });
-                responder
-                    .send(response.as_ref().map_err(|s| s.into_raw()))
-                    .expect("failed to send response");
-            }
-        }
+        });
+        responder
+            .send(response.as_ref().map_err(|s| s.into_raw()))
+            .expect("failed to send response");
     }
 
     fn expect_power_down(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::PowerDown { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::PowerDown { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::PowerDown { responder }))) => responder
+        );
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_power_up(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::PowerUp { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::PowerUp { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::PowerUp { responder }))) => responder
+        );
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_get_power_state(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<bool, zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetPowerState { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetPowerState { responder }))) => responder
-                );
-                let response = result.as_ref().map(|&power_on| {
-                    fidl_fuchsia_wlan_phy::WlanPhyGetPowerStateResponse {
-                        power_on: Some(power_on),
-                        ..Default::default()
-                    }
-                });
-                responder
-                    .send(response.as_ref().map_err(|s| s.into_raw()))
-                    .expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::GetPowerState { responder }))) => responder
+        );
+        let response =
+            result.as_ref().map(|&power_on| fidl_fuchsia_wlan_phy::WlanPhyGetPowerStateResponse {
+                power_on: Some(power_on),
+                ..Default::default()
+            });
+        responder
+            .send(response.as_ref().map_err(|s| s.into_raw()))
+            .expect("failed to send response");
     }
 
     fn expect_reset(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::Reset { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let responder = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::Reset { responder }))) => responder
-                );
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::Reset { responder }))) => responder
+        );
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_destroy_iface(
         exec: &mut fasync::TestExecutor,
-        stream: &mut FakePhyStream,
+        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
         expected_iface_id: u16,
         result: Result<(), zx::Status>,
     ) {
-        match stream {
-            FakePhyStream::Old(s) => {
-                let (req, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::DestroyIface { req, responder }))) => (req, responder)
-                );
-                assert_eq!(req.id, expected_iface_id);
-                let response = result.map_err(|s| s.into_raw());
-                responder.send(response).expect("failed to send response");
-            }
-            FakePhyStream::New(s) => {
-                let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::DestroyIface { payload, responder }))) => (payload, responder)
-                );
-                assert_eq!(payload.iface_id, Some(expected_iface_id));
-                responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-            }
-        }
+        let (payload, responder) = assert_matches!(exec.run_until_stalled(&mut stream.next()),
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::DestroyIface { payload, responder }))) => (payload, responder)
+        );
+        assert_eq!(payload.iface_id, Some(expected_iface_id));
+        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn fake_alpha2() -> [u8; 2] {
@@ -1304,7 +1089,7 @@ mod tests {
         });
 
         // Add a PHY to the PhyMap.
-        let (phy, _req_stream) = fake_old_phy();
+        let (phy, _req_stream) = fake_phy_device();
         test_values.phys.insert(0, phy);
 
         // Request the list of available PHYs.
@@ -1391,12 +1176,11 @@ mod tests {
             assert_eq!(vec![0u16], ifaces);
         });
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_mac_roles_success(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_mac_roles_success() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         test_values.phys.insert(10u16, phy);
 
         let cfg = fake_wlandevicemonitor_config();
@@ -1510,7 +1294,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut next_fut), Poll::Pending);
 
         // Add a PHY and make sure the update is received.
-        let (phy, _phy_stream) = fake_old_phy();
+        let (phy, _phy_stream) = fake_phy_device();
         test_values.phys.insert(0, phy);
         assert_matches!(exec.run_until_stalled(&mut watcher_fut), Poll::Pending);
         assert_matches!(
@@ -1551,7 +1335,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
 
         // Add a PHY before beginning to watch for devices.
-        let (phy, _phy_stream) = fake_old_phy();
+        let (phy, _phy_stream) = fake_phy_device();
         test_values.phys.insert(0, phy);
         assert_matches!(exec.run_until_stalled(&mut watcher_fut), Poll::Pending);
 
@@ -1713,12 +1497,11 @@ mod tests {
             Poll::Ready(Ok(Some(fidl_svc::DeviceWatcherEvent::OnIfaceRemoved { iface_id: 0 })))
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_country_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_country_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let alpha2 = fake_alpha2();
@@ -1732,12 +1515,11 @@ mod tests {
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_country_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_country_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let alpha2 = fake_alpha2();
@@ -1751,12 +1533,11 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_country_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_country_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let alpha2 = fake_alpha2();
@@ -1772,12 +1553,11 @@ mod tests {
             Poll::Ready(Ok(fidl_svc::GetCountryResponse { alpha2 }))
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_country_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_country_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1789,12 +1569,11 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(_)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_clear_country_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_clear_country_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1807,12 +1586,11 @@ mod tests {
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_clear_country_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_clear_country_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1825,12 +1603,11 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_power_save_mode_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_power_save_mode_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1851,12 +1628,11 @@ mod tests {
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_power_save_mode_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_power_save_mode_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1877,12 +1653,11 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_power_save_mode_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_power_save_mode_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1903,12 +1678,11 @@ mod tests {
             }))
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_power_save_mode_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_power_save_mode_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1920,12 +1694,11 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(_)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_down_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_down_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1937,12 +1710,11 @@ mod tests {
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_down_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_down_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1954,12 +1726,11 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_down_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_down_request_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -1972,24 +1743,22 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::INTERNAL), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_down_no_phy_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_down_no_phy_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let _phy = fake_phy_device(phy_type);
+        let _phy = fake_phy_device();
         let phy_id = 10u16;
 
         let req_fut = super::power_down(&test_values.phys, phy_id);
         let mut req_fut = pin!(req_fut);
         assert_eq!(Poll::Ready(zx::Status::NOT_FOUND), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_up_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_up_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2001,12 +1770,11 @@ mod tests {
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_up_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_up_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2018,12 +1786,11 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_up_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_up_request_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2036,24 +1803,22 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::INTERNAL), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_power_up_no_phy_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_power_up_no_phy_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let _phy = fake_phy_device(phy_type);
+        let _phy = fake_phy_device();
         let phy_id = 10u16;
 
         let req_fut = super::power_up(&test_values.phys, phy_id);
         let mut req_fut = pin!(req_fut);
         assert_eq!(Poll::Ready(zx::Status::NOT_FOUND), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2065,12 +1830,11 @@ mod tests {
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(zx::Status::OK));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2082,12 +1846,11 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::NOT_SUPPORTED), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_request_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2100,24 +1863,22 @@ mod tests {
 
         assert_eq!(Poll::Ready(zx::Status::INTERNAL), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_no_phy_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_no_phy_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let _phy = fake_phy_device(phy_type);
+        let _phy = fake_phy_device();
         let phy_id = 10u16;
 
         let req_fut = super::reset(&test_values.phys, phy_id);
         let mut req_fut = pin!(req_fut);
         assert_eq!(Poll::Ready(zx::Status::NOT_FOUND), exec.run_until_stalled(&mut req_fut));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_power_state_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_power_state_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2129,12 +1890,11 @@ mod tests {
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(true)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_power_state_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_power_state_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2146,12 +1906,11 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(_)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_power_state_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_power_state_request_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2164,12 +1923,11 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(_)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_power_state_no_phy_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_power_state_no_phy_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let _phy = fake_phy_device(phy_type);
+        let _phy = fake_phy_device();
         let phy_id = 10u16;
 
         let req_fut = super::get_power_state(&test_values.phys, phy_id);
@@ -2179,12 +1937,11 @@ mod tests {
             Poll::Ready(Err(zx::Status::NOT_FOUND))
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_bt_coexistence_mode(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_bt_coexistence_mode() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -2206,13 +1963,12 @@ mod tests {
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_tx_power_scenario_nonexistent_phy_id(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_nonexistent_phy_id() {
         // Setup environment
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, _phy_stream) = fake_phy_device(phy_type);
+        let (phy, _phy_stream) = fake_phy_device();
 
         test_values.phys.insert(0, phy);
 
@@ -2225,13 +1981,12 @@ mod tests {
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::NOT_FOUND)));
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_tx_power_scenario_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_request_fails() {
         // Setup environment
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2244,12 +1999,11 @@ mod tests {
         // Verify that an INTERNAL error is returned.
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::INTERNAL)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_tx_power_scenario_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
         let test_scenario = TxPowerScenario::HeadCellOff;
@@ -2270,12 +2024,11 @@ mod tests {
             exec.run_until_stalled(&mut req_fut)
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_set_tx_power_scenario_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
         let test_scenario = TxPowerScenario::HeadCellOff;
@@ -2289,13 +2042,12 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_set_nonexistent_phy(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_nonexistent_phy() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, _phy_stream) = fake_phy_device(phy_type);
+        let (phy, _phy_stream) = fake_phy_device();
         test_values.phys.insert(0, phy);
 
         let service_fut = serve_monitor_requests(
@@ -2329,13 +2081,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_set_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_request_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2373,13 +2124,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_set_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2424,13 +2174,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_set_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2467,13 +2216,12 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut set_fut), Poll::Ready(Ok(Ok(()))));
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_tx_power_scenario_nonexistent_phy_id(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_nonexistent_phy_id() {
         // Setup environment
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, _phy_stream) = fake_phy_device(phy_type);
+        let (phy, _phy_stream) = fake_phy_device();
 
         test_values.phys.insert(0, phy);
 
@@ -2485,13 +2233,12 @@ mod tests {
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::NOT_FOUND)));
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_tx_power_scenario_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_request_fails() {
         // Setup environment
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
 
         // Drop the request stream so that the request fails.
         drop(phy_stream);
@@ -2506,12 +2253,11 @@ mod tests {
         // The future should complete immediately with an internal error.
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::INTERNAL)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_tx_power_scenario_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2526,12 +2272,11 @@ mod tests {
             Poll::Ready(Err(zx::Status::NO_MEMORY))
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_get_tx_power_scenario_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2546,13 +2291,12 @@ mod tests {
             Poll::Ready(Ok(TxPowerScenario::HeadCellOff))
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_get_nonexistent_phy(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_nonexistent_phy() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, _phy_stream) = fake_phy_device(phy_type);
+        let (phy, _phy_stream) = fake_phy_device();
         test_values.phys.insert(0, phy);
 
         let service_fut = serve_monitor_requests(
@@ -2585,13 +2329,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_get_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_request_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2628,13 +2371,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_get_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2673,13 +2415,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_get_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2718,13 +2459,12 @@ mod tests {
         });
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_tx_power_scenario_nonexistent_phy_id(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_nonexistent_phy_id() {
         // Setup environment
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, _phy_stream) = fake_phy_device(phy_type);
+        let (phy, _phy_stream) = fake_phy_device();
 
         test_values.phys.insert(0, phy);
 
@@ -2736,13 +2476,12 @@ mod tests {
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::NOT_FOUND)));
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_tx_power_scenario_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_request_fails() {
         // Setup environment
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2756,12 +2495,11 @@ mod tests {
         // Verify that there is an internal error
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::INTERNAL)));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_tx_power_scenario_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2776,12 +2514,11 @@ mod tests {
             Poll::Ready(Err(zx::Status::NO_MEMORY))
         );
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_reset_tx_power_scenario_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2794,13 +2531,12 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_reset_nonexistent_phy(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_nonexistent_phy() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, _phy_stream) = fake_phy_device(phy_type);
+        let (phy, _phy_stream) = fake_phy_device();
         test_values.phys.insert(0, phy);
 
         let service_fut = serve_monitor_requests(
@@ -2833,13 +2569,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_reset_request_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_request_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, phy_stream) = fake_phy_device(phy_type);
+        let (phy, phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2876,13 +2611,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_reset_fails(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2921,13 +2655,12 @@ mod tests {
         );
     }
 
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn test_service_tx_power_scenario_reset_succeeds(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id: u16 = 0;
         test_values.phys.insert(phy_id, phy);
 
@@ -2971,11 +2704,9 @@ mod tests {
         assert_eq!(2, iface_counter.next_iface_id());
         assert_eq!(3, iface_counter.next_iface_id());
     }
-    #[test_case(TestPhyType::Old, [0, 1, 2, 3, 4, 5]; "Old PHY - MAC 00:01:02:03:04:05")]
-    #[test_case(TestPhyType::New, [0, 1, 2, 3, 4, 5]; "New PHY - MAC 00:01:02:03:04:05")]
-    #[test_case(TestPhyType::Old, NULL_ADDR.to_array(); "Old PHY - MAC 00:00:00:00:00:00")]
-    #[test_case(TestPhyType::New, NULL_ADDR.to_array(); "New PHY - MAC 00:00:00:00:00:00")]
-    fn create_iface_succeeds(phy_type: TestPhyType, sta_address: [u8; 6]) {
+    #[test_case([0, 1, 2, 3, 4, 5]; "New PHY - MAC 00:01:02:03:04:05")]
+    #[test_case(NULL_ADDR.to_array(); "New PHY - MAC 00:00:00:00:00:00")]
+    fn create_iface_succeeds(sta_address: [u8; 6]) {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
@@ -3003,7 +2734,7 @@ mod tests {
             assert!(ifaces.is_empty())
         });
 
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10;
         test_values.phys.insert(phy_id, phy);
 
@@ -3077,9 +2808,8 @@ mod tests {
             assert_eq!(vec![0], ifaces);
         });
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn create_iface_fails_on_error_from_phy(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn create_iface_fails_on_error_from_phy() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
@@ -3097,7 +2827,7 @@ mod tests {
         let mut service_fut = pin!(service_fut);
         assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
 
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10;
         test_values.phys.insert(phy_id, phy);
 
@@ -3159,7 +2889,7 @@ mod tests {
             assert!(ifaces.is_empty())
         });
 
-        let (phy, mut phy_stream) = fake_old_phy();
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10;
         test_values.phys.insert(phy_id, phy);
 
@@ -3229,7 +2959,7 @@ mod tests {
             assert!(ifaces.is_empty())
         });
 
-        let (phy, mut phy_stream) = fake_old_phy();
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10;
         test_values.phys.insert(phy_id, phy);
 
@@ -3250,11 +2980,14 @@ mod tests {
 
             // Validate the PHY request
             let bootstrap_channel = assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
-            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::CreateIface { req, responder }))) => {
-                assert_eq!(fidl_wlan_common::WlanMacRole::Client, req.role);
-                assert_eq!(req.init_sta_addr, sta_address);
-                responder.send(Ok(phy_assigned_iface_id)).expect("failed to send iface id");
-                req.mlme_channel.expect("no MLME channel")
+            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::CreateIface { payload, responder }))) => {
+                assert_eq!(Some(fidl_wlan_common::WlanMacRole::Client), payload.role);
+                assert_eq!(Some(sta_address), payload.init_sta_addr);
+                responder.send(Ok(&fidl_fuchsia_wlan_phy::WlanPhyCreateIfaceResponse {
+                    iface_id: Some(phy_assigned_iface_id),
+                    ..Default::default()
+                })).expect("failed to send iface id");
+                payload.mlme_channel.expect("no MLME channel")
             });
 
             // Complete the USME bootstrap.
@@ -3345,12 +3078,11 @@ mod tests {
         );
     }
     fn fake_destroy_iface_env(
-        phy_type: TestPhyType,
         phy_map: &PhyMap,
         iface_map: &IfaceMap,
         ifaces_tree: &crate::inspect::IfacesTree,
-    ) -> FakePhyStream {
-        let (phy, stream) = fake_phy_device(phy_type);
+    ) -> fidl_fuchsia_wlan_phy::WlanPhyRequestStream {
+        let (phy, stream) = fake_phy_device();
         phy_map.insert(10, phy);
         let (proxy, _) = create_proxy::<fidl_sme::GenericSmeMarker>();
         iface_map.insert(
@@ -3363,13 +3095,11 @@ mod tests {
         ifaces_tree.add_iface(TEST_IFACE_ID, zx::Vmo::create(0).unwrap());
         stream
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn destroy_iface_success(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn destroy_iface_success() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(
-            phy_type,
             &test_values.phys,
             &test_values.ifaces,
             &test_values.ifaces_tree,
@@ -3386,13 +3116,11 @@ mod tests {
         assert!(test_values.ifaces.get(&TEST_IFACE_ID).is_none());
         assert!(!test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn destroy_iface_failure(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn destroy_iface_failure() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(
-            phy_type,
             &test_values.phys,
             &test_values.ifaces,
             &test_values.ifaces_tree,
@@ -3412,13 +3140,11 @@ mod tests {
         assert!(test_values.ifaces.get(&TEST_IFACE_ID).is_some());
         assert!(test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn destroy_iface_recovery(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn destroy_iface_recovery() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(
-            phy_type,
             &test_values.phys,
             &test_values.ifaces,
             &test_values.ifaces_tree,
@@ -3445,13 +3171,11 @@ mod tests {
         );
         assert!(!test_values.ifaces_tree.has_iface(TEST_IFACE_ID));
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn destroy_iface_not_found(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn destroy_iface_not_found() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let _phy_stream = fake_destroy_iface_env(
-            phy_type,
             &test_values.phys,
             &test_values.ifaces,
             &test_values.ifaces_tree,
@@ -3485,13 +3209,11 @@ mod tests {
 
         assert!(test_values.ifaces.get(&1).is_none());
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn phy_removed_during_destroy_iface(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn phy_removed_during_destroy_iface() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let mut phy_stream = fake_destroy_iface_env(
-            phy_type,
             &test_values.phys,
             &test_values.ifaces,
             &test_values.ifaces_tree,
@@ -3502,36 +3224,23 @@ mod tests {
         let mut destroy_fut = pin!(destroy_fut);
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut destroy_fut));
 
-        match &mut phy_stream {
-            FakePhyStream::Old(s) => {
-                let (_req, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::DestroyIface { req, responder }))) => (req, responder)
-                );
-                drop(responder);
-            }
-            FakePhyStream::New(s) => {
-                let (_payload, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::DestroyIface { payload, responder }))) => (payload, responder)
-                );
-                drop(responder);
-            }
+        {
+            let (_payload, responder) = assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+                Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::DestroyIface { payload, responder }))) => (payload, responder)
+            );
+            drop(responder);
         }
         drop(phy_stream);
         assert_eq!(Poll::Ready(Ok(())), exec.run_until_stalled(&mut destroy_fut));
         assert!(test_values.ifaces.get(&TEST_IFACE_ID).is_none(), "iface expected to be deleted");
     }
-    #[test_case(TestPhyType::Old)]
-    #[test_case(TestPhyType::New)]
-    fn destroy_iface_called_twice(phy_type: TestPhyType) {
+    #[fuchsia::test]
+    fn destroy_iface_called_twice() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let (iface_map, mut iface_events) = IfaceMap::new();
-        let mut phy_stream = fake_destroy_iface_env(
-            phy_type,
-            &test_values.phys,
-            &iface_map,
-            &test_values.ifaces_tree,
-        );
+        let mut phy_stream =
+            fake_destroy_iface_env(&test_values.phys, &iface_map, &test_values.ifaces_tree);
 
         if let Ok(Some(crate::watchable_map::MapEvent::KeyInserted(iface_id))) =
             iface_events.try_next()
@@ -3552,44 +3261,17 @@ mod tests {
 
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut first_destroy_fut));
 
-        enum FakeDestroyIfaceResponder {
-            Old(fidl_dev::PhyDestroyIfaceResponder),
-            New(fidl_fuchsia_wlan_phy::WlanPhyDestroyIfaceResponder),
-        }
-
-        impl FakeDestroyIfaceResponder {
-            fn send(self, result: Result<(), zx::sys::zx_status_t>) {
-                match self {
-                    Self::Old(r) => r.send(result).expect("failed to send DestroyIfaceResponse"),
-                    Self::New(r) => r.send(result).expect("failed to send DestroyIfaceResponse"),
-                }
-            }
-        }
-
-        let responder = match &mut phy_stream {
-            FakePhyStream::Old(s) => {
-                let (_req, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_dev::PhyRequest::DestroyIface { req, responder }))) => (req, responder)
-                );
-                FakeDestroyIfaceResponder::Old(responder)
-            }
-            FakePhyStream::New(s) => {
-                let (_payload, responder) = assert_matches!(exec.run_until_stalled(&mut s.next()),
-                    Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::DestroyIface { payload, responder }))) => (payload, responder)
-                );
-                FakeDestroyIfaceResponder::New(responder)
-            }
+        let responder = {
+            let (_payload, responder) = assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+                Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::DestroyIface { payload, responder }))) => (payload, responder)
+            );
+            responder
         };
 
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut second_destroy_fut));
 
-        match &mut phy_stream {
-            FakePhyStream::Old(s) => {
-                assert_matches!(exec.run_until_stalled(&mut s.next()), Poll::Pending);
-            }
-            FakePhyStream::New(s) => {
-                assert_matches!(exec.run_until_stalled(&mut s.next()), Poll::Pending);
-            }
+        {
+            assert_matches!(exec.run_until_stalled(&mut phy_stream.next()), Poll::Pending);
         }
 
         if iface_events.try_next().is_ok() {
@@ -3598,7 +3280,7 @@ mod tests {
 
         // Respond to the initial destroy iface request and verify that the initial request runs to
         // completion and produces an OnIfaceRemoved event.
-        responder.send(Ok(()));
+        responder.send(Ok(())).expect("failed to send DestroyIfaceResponse");
         assert_eq!(exec.run_until_stalled(&mut first_destroy_fut), Poll::Ready(Ok(())));
         if let Ok(Some(crate::watchable_map::MapEvent::KeyRemoved(iface_id))) =
             iface_events.try_next()
@@ -3620,7 +3302,7 @@ mod tests {
     fn get_client_sme() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, _phy_stream) = fake_old_phy();
+        let (phy, _phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let (generic_sme_proxy, mut generic_sme_stream) =
@@ -3663,7 +3345,7 @@ mod tests {
     fn get_client_sme_fails() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, _phy_stream) = fake_old_phy();
+        let (phy, _phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let (generic_sme_proxy, generic_sme_server) = create_proxy::<fidl_sme::GenericSmeMarker>();
@@ -3696,7 +3378,7 @@ mod tests {
     fn get_client_sme_invalid_iface() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, _phy_stream) = fake_old_phy();
+        let (phy, _phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let (generic_sme_proxy, _generic_sme_server) = create_proxy::<fidl_sme::GenericSmeMarker>();
@@ -3720,7 +3402,7 @@ mod tests {
     fn query_iface() {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
-        let (phy, _phy_stream) = fake_old_phy();
+        let (phy, _phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let (generic_sme_proxy, mut generic_sme_stream) =
@@ -3770,7 +3452,7 @@ mod tests {
         let test_values = test_setup();
         let cfg = fake_wlandevicemonitor_config();
 
-        let (phy, _phy_stream) = fake_old_phy();
+        let (phy, _phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
         let (generic_sme_proxy, mut generic_sme_stream) =
@@ -3823,15 +3505,9 @@ mod tests {
         let resp = assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(Ok(resp))) => resp);
         assert_eq!(resp, apf_support);
     }
-    #[test_case(TestPhyType::Old, zx::Status::OK, false; "Old PHY - Generic SME with OK epitaph shuts down cleanly")]
-    #[test_case(TestPhyType::New, zx::Status::OK, false; "New PHY - Generic SME with OK epitaph shuts down cleanly")]
-    #[test_case(TestPhyType::Old, zx::Status::INTERNAL, true; "Old PHY - Generic SME with error epitaph initiates iface removal")]
-    #[test_case(TestPhyType::New, zx::Status::INTERNAL, true; "New PHY - Generic SME with error epitaph initiates iface removal")]
-    fn new_iface_stream_epitaph(
-        phy_type: TestPhyType,
-        epitaph: zx::Status,
-        should_destroy_iface: bool,
-    ) {
+    #[test_case(zx::Status::OK, false; "New PHY - Generic SME with OK epitaph shuts down cleanly")]
+    #[test_case(zx::Status::INTERNAL, true; "New PHY - Generic SME with error epitaph initiates iface removal")]
+    fn new_iface_stream_epitaph(epitaph: zx::Status, should_destroy_iface: bool) {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
         let iface_wrapper = IfaceWrapper::new(&test_values.ifaces, &test_values.ifaces_tree);
@@ -3842,7 +3518,7 @@ mod tests {
         );
         let mut new_iface_fut = pin!(new_iface_fut);
 
-        let (phy, mut phy_stream) = fake_phy_device(phy_type);
+        let (phy, mut phy_stream) = fake_phy_device();
         let phy_id = 10u16;
         test_values.phys.insert(phy_id, phy);
 
@@ -3872,13 +3548,8 @@ mod tests {
         if should_destroy_iface {
             expect_destroy_iface(&mut exec, &mut phy_stream, 0, Ok(()));
         } else {
-            match &mut phy_stream {
-                FakePhyStream::Old(s) => {
-                    assert_matches!(exec.run_until_stalled(&mut s.next()), Poll::Pending);
-                }
-                FakePhyStream::New(s) => {
-                    assert_matches!(exec.run_until_stalled(&mut s.next()), Poll::Pending);
-                }
+            {
+                assert_matches!(exec.run_until_stalled(&mut phy_stream.next()), Poll::Pending);
             }
         }
     }
