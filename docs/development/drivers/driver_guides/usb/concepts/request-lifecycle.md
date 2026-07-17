@@ -29,41 +29,19 @@ This document describes the lifecycle of USB transfer requests in Fuchsia using 
 
 ## Overview of Request Lifecycle
 
-```
-+-----------------------------------------------------------------------------------+
-| 1. Registration Phase                                                             |
-|    Driver initializes usb::EndpointClient and pre-registers VMO data buffers      |
-|    via AddRequests() / RegisterVmos(). VMOs are mapped locally once.               |
-+-----------------------------------------------------------------------------------+
-                                        |
-                                        v
-+-----------------------------------------------------------------------------------+
-| 2. Queueing & Submission Phase                                                    |
-|    Driver gets request from pool (GetRequest()), populates data (CopyTo()),       |
-|    flushes CPU cache (CacheFlush()), and submits via QueueRequests().             |
-+-----------------------------------------------------------------------------------+
-                                        |
-                                        v
-+-----------------------------------------------------------------------------------+
-| 3. Processing Phase                                                               |
-|    Endpoint Server (HCI or DCI driver) processes requests and transfers data      |
-|    over physical hardware.                                                        |
-+-----------------------------------------------------------------------------------+
-                                        |
-                                        v
-+-----------------------------------------------------------------------------------+
-| 4. Completion Phase                                                               |
-|    Endpoint Server sends vectorized OnCompletion FIDL event.                      |
-|    EndpointClient invalidates cache (CacheFlushInvalidate()) and returns requests  |
-|    back to pool via PutRequest().                                                 |
-+-----------------------------------------------------------------------------------+
-                                        |
-                                        v
-+-----------------------------------------------------------------------------------+
-| 5. Teardown / Cancellation Phase                                                  |
-|    Driver cancels pending requests via CancelAll() and releases endpoint resources |
-|    via ep_client.Close().                                                         |
-+-----------------------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    one["`**Registration**
+        Driver initializes usb::EndpointClient and pre-registers VMO data buffers via AddRequests() / RegisterVmos() VMOs are mapped locally once.`"]
+    two["`**Queueing & Submission**
+        Driver gets request from pool (GetRequest()), populates data (CopyTo()), flushes CPU cache (CacheFlush()), and submits via QueueRequests().`"]
+    three["`**Processing**
+          Endpoint Server (HCI or DCI driver) processes requests and transfers data over physical hardware.`"]
+    four["`**Completion**
+         Endpoint Server sends vectorized OnCompletion FIDL event. EndpointClient invalidates cache (CacheFlushInvalidate()) and returns requests back to pool via PutRequest().`"]
+    five["`**Teardown / Cancellation**
+         Driver cancels pending requests via CancelAll() and releases endpoint resources via ep_client.Close().`"]
+    one --> two --> three --> four --> five
 ```
 
 ---
