@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <string_view>
 
 #include "brcmu_utils.h"
 #include "brcmu_wifi.h"
@@ -245,9 +246,9 @@ zx_status_t brcmf_set_country(brcmf_pub* drvr, const std::array<uint8_t, 2>& cou
 
   // Search through the table for a valid entry.
   const auto& cc_table = config.value().cc_table();
-  auto entry = std::ranges::find_if(cc_table, [&](auto entry) {
-    return memcmp(entry.cc_abbr().c_str(), country.data(),
-                  fuchsia_wlan_internal::kCountryCodeLen) == 0;
+  auto entry = std::ranges::find_if(cc_table, [&](const auto& entry) {
+    return entry.cc_abbr() == std::string_view(reinterpret_cast<const char*>(country.data()),
+                                               fuchsia_wlan_internal::kCountryCodeLen);
   });
   if (entry == cc_table.end()) {
     BRCMF_ERR("Failed to find ccode %c%c in table", country[0], country[1]);
