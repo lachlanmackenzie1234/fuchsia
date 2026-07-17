@@ -188,15 +188,22 @@ closed protocol Pciroot {
     });
 
     /// Get a handle corresponding to an InterruptDispatcher for the provided |msi_id| in |allocation|.
+    ///
+    /// Errors:
+    /// |ZX_ERR_INVALID_ARGS|:  |options| is not 0, |msi_id| is out of bounds,
+    /// or |cfg_vmo| contains an invalid VMO handle.
+    /// |ZX_ERR_ALREADY_BOUND|: A handle for |msi_id| has already been returned and is still
+    /// outstanding.
     strict GetMsiHandle(resource struct {
         /// Handle to the MsiAllocation from |AllocateMsi|
         allocation zx.Handle:MSI;
-        /// Options for the MSI creation.
+        /// Passed to zx_msi_create, should be 0.
         options uint32;
         /// The id of the MSI vector in the block to retrieve.
         msi_id uint16;
-        /// A VMO containing the device's configuration space.
-        cfg_vmo zx.Handle:<VMO, optional>;
+        /// A VMO containing the device's configuration space. Not provided if
+        /// the implementation requires a different mechanism to configure MSIs.
+        cfg_vmo zx.Handle:<VMO, zx.Rights.MAP, optional>;
         /// The offset into |cfg_vmo| for the MSI capability.
         cfg_offset uint64;
     }) -> (resource struct {
