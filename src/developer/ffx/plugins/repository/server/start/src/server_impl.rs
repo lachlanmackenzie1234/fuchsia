@@ -242,11 +242,11 @@ pub enum ServeError {
 
     #[user]
     #[error("{0}")]
-    User(anyhow::Error),
+    User(#[source] anyhow::Error),
 
     #[unexpected]
     #[error("Unexpected error: {0}")]
-    Unexpected(anyhow::Error),
+    Unexpected(#[source] anyhow::Error),
 }
 
 impl From<ffx_command_error::Error> for ServeError {
