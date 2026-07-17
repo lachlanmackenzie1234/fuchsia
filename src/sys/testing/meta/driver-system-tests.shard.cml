@@ -87,6 +87,11 @@
             to: "#driver-system-tests",
         },
         {
+            protocol: [ "fuchsia.vulkan.loader.Loader" ],
+            from: "parent",
+            to: [ "#driver-system-tests" ],
+        },
+        {
             event_stream: [
                 "capability_requested",
                 "destroyed",

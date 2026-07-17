@@ -66,6 +66,11 @@
             to: [ "#tests" ],
         },
         {
+            protocol: [ "fuchsia.vulkan.loader.Loader" ],
+            from: "parent",
+            to: [ "#system-tests" ],
+        },
+        {
             service: [
                 "fuchsia.gpu.magma.PerformanceCounterService",
                 "fuchsia.gpu.magma.Service",
