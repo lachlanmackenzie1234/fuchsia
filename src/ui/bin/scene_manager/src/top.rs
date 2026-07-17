@@ -178,11 +178,11 @@ pub async fn start(
         ..
     } = Config::from_vmo(&config).expect("bad config vmo");
 
-    // TODO: get this working in dso configurations
     if prefetch {
-        let file_proxy = fuchsia_fs::file::open_in_namespace(
+        let file_proxy = fuchsia_component::directory::open_file_async(
+            &incoming,
             binary_path,
-            fidl_fuchsia_io::PERM_READABLE | fidl_fuchsia_io::PERM_EXECUTABLE,
+            fidl_fuchsia_io::Rights::READ_BYTES | fidl_fuchsia_io::Rights::EXECUTE,
         )
         .context(format!("open {}", binary_path))?;
 
