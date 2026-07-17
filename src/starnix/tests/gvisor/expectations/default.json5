@@ -1222,8 +1222,6 @@
                 "MemfdTest.SealWriteWithMmap",
 
                 // Failing new tests from gvisor.
-                "MountTest.BindMountDirectoryOntoFileFails",
-                "MountTest.BindMountFileOntoDirectoryFails",
                 "PrctlTest.TaggedAddrCtrl",
                 "ProcSelfSetgroupsTest.AllowAfterDenyFails",
                 "ProcSelfSetgroupsTest.BadValueReturnsEINVAL",

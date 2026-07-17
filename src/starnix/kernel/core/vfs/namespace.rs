@@ -1735,6 +1735,17 @@ impl NamespaceNode {
     }
 
     pub fn mount(&self, what: WhatToMount, flags: MountpointFlags) -> Result<(), Errno> {
+        let source_is_dir = match &what {
+            WhatToMount::Fs(fs) => fs.root().node.is_dir(),
+            WhatToMount::Bind(node) => node.entry.node.is_dir(),
+        };
+
+        // The source and target need to both be identical types. In other words, if attempting to
+        // mount a source file onto a target directory (or vice versa), we should err.
+        if source_is_dir != self.entry.node.is_dir() {
+            return error!(ENOTDIR);
+        }
+
         let kernel = self.entry.node.fs().kernel.upgrade().expect("can't mount without a kernel");
         let mounts_guard = kernel.mounts_lock.lock();
 
