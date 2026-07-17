@@ -13,6 +13,7 @@
 PandoraGrpcServer::PandoraGrpcServer(async_dispatcher_t* dispatcher)
     : a2dp_service_(dispatcher),
       host_service_(dispatcher),
+      l2cap_service_(dispatcher),
       security_service_(dispatcher),
       security_storage_service_(dispatcher)
 #ifdef PANDORA_WITH_GATT

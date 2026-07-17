@@ -8,13 +8,14 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstdlib>
+#include <future>
 
 #include "src/connectivity/bluetooth/testing/bt-affordances/ffi_c/bindings.h"
 
 using grpc::Status;
 using grpc::StatusCode;
 
-L2capService::L2capService() {
+L2capService::L2capService(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
   // Connect to fuchsia.bluetooth.bredr.Profile
   zx::result profile_client_end = component::Connect<fuchsia_bluetooth_bredr::Profile>();
   if (profile_client_end.is_ok()) {
@@ -42,42 +43,139 @@ grpc::Status L2capService::Connect(::grpc::ServerContext* context,
   }
 
   auto& channel = result->channel();
-  if (!channel.socket().has_value()) {
-    return Status(StatusCode::INTERNAL, "Connected channel has no socket");
+  if (!channel.socket().has_value() && !channel.connection().has_value()) {
+    return Status(StatusCode::INTERNAL, "Connected channel has no socket or connection");
   }
 
   {
-    std::scoped_lock lock(m_l2cap_socket_);
-    l2cap_socket_ = std::move(channel.socket().value());
+    std::scoped_lock lock(m_l2cap_channel_);
+    l2cap_socket_.reset();
+    l2cap_connection_.reset();
+
+    if (channel.connection().has_value()) {
+      l2cap_connection_ = std::move(channel.connection().value());
+    } else {
+      l2cap_socket_ = std::move(channel.socket().value());
+    }
   }
 
   return Status::OK;
 }
 
+namespace {
+
+constexpr uint16_t kTspxPsm = 29;
+
+// Non-reserved UUID (0x1401 in little-endian)
+const fuchsia_bluetooth::Uuid kNonReservedUuid{
+    std::array<uint8_t, 16>{0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80, 0x00, 0x10, 0x00, 0x00,
+                            0x01, 0x14, 0x00, 0x00}};
+
+using ConnectionResult = std::pair<fuchsia_bluetooth::PeerId, fuchsia_bluetooth_bredr::Channel>;
+
+class ConnectionReceiverImpl : public fidl::Server<fuchsia_bluetooth_bredr::ConnectionReceiver> {
+ public:
+  explicit ConnectionReceiverImpl(std::promise<ConnectionResult> promise)
+      : promise_(std::move(promise)) {}
+
+  void Connected(ConnectedRequest& request, ConnectedCompleter::Sync& completer) override {
+    if (!called_) {
+      called_ = true;
+      promise_.set_value(std::make_pair(request.peer_id(), std::move(request.channel())));
+    }
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_bluetooth_bredr::ConnectionReceiver> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    FX_LOGS(WARNING) << "Unknown method received: " << metadata.method_ordinal;
+  }
+
+ private:
+  std::promise<ConnectionResult> promise_;
+  bool called_ = false;
+};
+
+}  // namespace
+
 ::grpc::Status L2capService::WaitConnection(::grpc::ServerContext* context,
                                             const ::pandora::l2cap::WaitConnectionRequest* request,
                                             ::pandora::l2cap::WaitConnectionResponse* response) {
-  // PSM must match `TSPX_psm` IXIT value to pass PTS tests.
-  uint64_t maybe_peer_id = advertise_service(/*psm=*/29, /*timeout=*/5 /*seconds*/);
-  if (!maybe_peer_id) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  auto endpoints = fidl::CreateEndpoints<fuchsia_bluetooth_bredr::ConnectionReceiver>();
+  if (endpoints.is_error()) {
+    return Status(StatusCode::INTERNAL, "Failed to create ConnectionReceiver endpoints");
   }
-  if (maybe_peer_id == 1) {
-    FX_LOGS(WARNING)
-        << "It is likely that no connection was established on the advertised PSM before timeout.";
+  auto [client_end, server_end] = std::move(*endpoints);
+
+  std::promise<ConnectionResult> promise;
+  std::future<ConnectionResult> future = promise.get_future();
+
+  auto receiver_impl = std::make_unique<ConnectionReceiverImpl>(std::move(promise));
+  auto binding = fidl::BindServer(dispatcher_, std::move(server_end), std::move(receiver_impl));
+
+  fuchsia_bluetooth_bredr::ProtocolDescriptor protocol_desc;
+  protocol_desc.protocol() = fuchsia_bluetooth_bredr::ProtocolIdentifier::kL2Cap;
+  std::vector<fuchsia_bluetooth_bredr::DataElement> params;
+  params.push_back(fuchsia_bluetooth_bredr::DataElement::WithUint16(kTspxPsm));
+  protocol_desc.params() = std::move(params);
+  std::vector<fuchsia_bluetooth_bredr::ProtocolDescriptor> protocol_desc_list;
+  protocol_desc_list.push_back(std::move(protocol_desc));
+
+  fuchsia_bluetooth_bredr::ServiceDefinition service_def;
+  service_def.service_class_uuids() = {{kNonReservedUuid}};
+  service_def.protocol_descriptor_list() = std::move(protocol_desc_list);
+  std::vector<fuchsia_bluetooth_bredr::ServiceDefinition> services;
+  services.push_back(std::move(service_def));
+
+  fuchsia_bluetooth::ChannelParameters channel_params;
+  channel_params.channel_mode() = fuchsia_bluetooth::ChannelMode::kEnhancedRetransmission;
+
+  fuchsia_bluetooth_bredr::ProfileAdvertiseRequest advertise_request;
+  advertise_request.services() = std::move(services);
+  advertise_request.receiver() = std::move(client_end);
+  advertise_request.parameters() = std::move(channel_params);
+  auto result = profile_client_->Advertise(std::move(advertise_request));
+  if (result.is_error()) {
+    binding.Unbind();
+    return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.bredr.Profile/Advertise error: " +
+                                            result.error_value().FormatDescription());
   }
-  response->mutable_channel()->mutable_cookie()->set_value(std::to_string(maybe_peer_id));
-  return {/*OK*/};
+
+  if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+    binding.Unbind();
+    return Status(StatusCode::DEADLINE_EXCEEDED, "Advertisement timed out without connection");
+  }
+
+  auto [peer_id, channel] = future.get();
+  if (!channel.socket().has_value() && !channel.connection().has_value()) {
+    return Status(StatusCode::INTERNAL, "Connected channel has no socket or connection");
+  }
+
+  {
+    std::scoped_lock lock(m_l2cap_channel_);
+    l2cap_socket_.reset();
+    l2cap_connection_.reset();
+
+    if (channel.connection().has_value()) {
+      l2cap_connection_ = std::move(channel.connection().value());
+    } else {
+      l2cap_socket_ = std::move(channel.socket().value());
+    }
+  }
+  response->mutable_channel()->mutable_cookie()->set_value(std::to_string(peer_id.value()));
+  binding.Unbind();
+  return Status::OK;
 }
 
 ::grpc::Status L2capService::Disconnect(::grpc::ServerContext* context,
                                         const ::pandora::l2cap::DisconnectRequest* request,
                                         ::pandora::l2cap::DisconnectResponse* response) {
-  std::scoped_lock lock(m_l2cap_socket_);
-  if (!l2cap_socket_.is_valid()) {
+  std::scoped_lock lock(m_l2cap_channel_);
+  if (!l2cap_socket_.is_valid() && !l2cap_connection_.is_valid()) {
     return Status(StatusCode::FAILED_PRECONDITION, "L2CAP channel not connected");
   }
   l2cap_socket_.reset();
+  l2cap_connection_.reset();
   response->mutable_success();
   return Status::OK;
 }

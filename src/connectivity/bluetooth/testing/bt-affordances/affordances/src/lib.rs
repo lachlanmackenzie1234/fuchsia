@@ -66,11 +66,6 @@ enum Request {
         fidl_fuchsia_bluetooth_gatt2::Handle,
         oneshot::Sender<Result<(), anyhow::Error>>,
     ),
-    AdvertiseService(
-        u16,
-        std::time::Duration,
-        oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>,
-    ),
     Stop,
 }
 
@@ -262,25 +257,6 @@ impl WorkThread {
                         )
                         .unwrap();
                 }
-                Request::AdvertiseService(psm, timeout, result_sender) => {
-                    match bredr::advertise_service(&proxies, psm).await {
-                        Ok(connection_receiver_stream) => {
-                            result_sender
-                                .send(
-                                    bredr::serve_connection_receiver(
-                                        connection_receiver_stream,
-                                        &mut l2cap_channel,
-                                        timeout,
-                                    )
-                                    .await,
-                                )
-                                .unwrap();
-                        }
-                        Err(err) => {
-                            result_sender.send(Err(err)).unwrap();
-                        }
-                    }
-                }
                 Request::Stop => break,
             }
         }
@@ -459,18 +435,6 @@ impl WorkThread {
             characteristic_handle,
             sender,
         ))?;
-        receiver.await?
-    }
-
-    // Advertise a BR/EDR service on the given `psm` until the first connection. Return the PeerId
-    // of that connection. If no connection is established before `timeout` elapses, return None.
-    pub async fn advertise_service(
-        &self,
-        psm: u16,
-        timeout: std::time::Duration,
-    ) -> Result<Option<PeerId>, anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<Option<PeerId>, anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::AdvertiseService(psm, timeout, sender))?;
         receiver.await?
     }
 }

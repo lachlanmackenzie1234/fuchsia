@@ -4,15 +4,9 @@
 
 use crate::proxies::Proxies;
 use anyhow::anyhow;
-use fidl_fuchsia_bluetooth::{ChannelMode, ChannelParameters, PeerId};
-use fidl_fuchsia_bluetooth_bredr::{
-    ConnectParameters, ConnectionReceiverMarker, ConnectionReceiverRequest,
-    ConnectionReceiverRequestStream, DataElement, L2capParameters, ProtocolDescriptor,
-    ProtocolIdentifier, ServiceDefinition,
-};
-use fuchsia_async::TimeoutExt;
-use fuchsia_bluetooth::types::{Channel, Uuid as BtUuid};
-use futures::StreamExt;
+use fidl_fuchsia_bluetooth::PeerId;
+use fidl_fuchsia_bluetooth_bredr::{ConnectParameters, L2capParameters};
+use fuchsia_bluetooth::types::Channel;
 
 pub(crate) async fn connect_l2cap(
     proxies: &Proxies,
@@ -34,64 +28,5 @@ pub(crate) async fn connect_l2cap(
             Err(anyhow!("fuchsia.bluetooth.bredr.Profile/Connect error: {sapphire_err:?}"))
         }
         Err(fidl_err) => Err(anyhow!("fuchsia.bluetooth.bredr.Profile/Connect error: {fidl_err}")),
-    }
-}
-
-pub(crate) async fn advertise_service(
-    proxies: &Proxies,
-    psm: u16,
-) -> Result<ConnectionReceiverRequestStream, anyhow::Error> {
-    let (connect_client, connect_server) =
-        fidl::endpoints::create_request_stream::<ConnectionReceiverMarker>();
-
-    let service_def = ServiceDefinition {
-        service_class_uuids: Some(vec![BtUuid::new16(0x1401).into()]), // Non-reserved ID
-        protocol_descriptor_list: Some(vec![ProtocolDescriptor {
-            protocol: Some(ProtocolIdentifier::L2Cap),
-            params: Some(vec![DataElement::Uint16(psm)]),
-            ..Default::default()
-        }]),
-        ..Default::default()
-    };
-
-    let _ = proxies
-        .profile_proxy
-        .advertise(fidl_fuchsia_bluetooth_bredr::ProfileAdvertiseRequest {
-            services: Some(vec![service_def]),
-            receiver: Some(connect_client),
-            parameters: Some(ChannelParameters {
-                channel_mode: Some(ChannelMode::EnhancedRetransmission),
-                ..Default::default()
-            }),
-            ..Default::default()
-        })
-        .await?
-        .map_err(|e| anyhow!("fuchsia.bluetooth.bredr.Profile/Advertise error: {:?}", e))?;
-
-    Ok(connect_server)
-}
-
-pub(crate) async fn serve_connection_receiver(
-    mut connection_receiver_stream: ConnectionReceiverRequestStream,
-    l2cap_channel: &mut Option<Channel>,
-    timeout: std::time::Duration,
-) -> Result<Option<PeerId>, anyhow::Error> {
-    match connection_receiver_stream.next().on_timeout(timeout, || None).await {
-        Some(Ok(ConnectionReceiverRequest::Connected {
-            peer_id,
-            channel,
-            protocol: _,
-            control_handle: _,
-        })) => {
-            *l2cap_channel = Some(channel.try_into().unwrap());
-            Ok(Some(peer_id))
-        }
-        None => Ok(None),
-        Some(Err(err)) => {
-            Err(anyhow!("fuchsia.bluetooth.bredr.ConnectionReceiver reported error: {err}"))
-        }
-        Some(Ok(_)) => {
-            Err(anyhow!("fuchsia.bluetooth.bredr.ConnectionReceiver received unexpected request"))
-        }
     }
 }

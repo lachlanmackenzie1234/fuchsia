@@ -78,11 +78,6 @@ int32_t publish_service(uint64_t handle, const char *uuid, uint64_t characterist
 int32_t read_characteristic(uint64_t service_handle, uint64_t characteristic_handle,
                             ReadCharacteristicResult *result);
 
-/// Advertise a BR/EDR service on the given `psm` until the first connection. Return the PeerId of
-/// that connection. If no connection is established before `timeout` seconds elapse, return an
-/// arbitrary valid PeerId (1). In case of error, return 0.
-uint64_t advertise_service(uint16_t psm, uint64_t timeout);
-
 /// Enable notifications/indications on the GATT characteristic with the given handles.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
