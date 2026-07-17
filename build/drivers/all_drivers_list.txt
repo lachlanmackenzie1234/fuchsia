@@ -379,7 +379,8 @@
 //src/ui/input/drivers/focaltech:focaltech-driver
 //src/ui/input/drivers/focaltech:focaltech-sherlock-driver
 //src/ui/input/drivers/goodix:goodix-module-driver
-//src/ui/input/drivers/gt6853:gt6853-module-driver
+//src/ui/input/drivers/gt6853:driver-cpp
+//src/ui/input/drivers/gt6853:driver-rust
 //src/ui/input/drivers/hid-input-report:hid-input-report-driver
 //src/ui/input/drivers/hid:hid-driver
 //src/ui/input/drivers/hidctl:hidctl-driver

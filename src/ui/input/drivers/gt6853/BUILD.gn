@@ -12,18 +12,34 @@ config_9364_path = "gt6853/goodix_cfg_group_fiti9364.bin"
 config_9365_path = "gt6853/goodix_cfg_group_fiti9365.bin"
 firmware_path = "gt6853/goodix_firmware.bin"
 
-fuchsia_driver_package("gt6853") {
-  export_to_bazel = true
-  driver_components = [ ":gt6853-module" ]
+declare_args() {
+  # Toggles between the C++ and Rust driver implementations.
+  #
+  # TODO(https://fxbug.dev/527194998): Remove the toggle after the Rust port is completed.
+  # Valid values: "cpp", "rust"
+  gt6853_driver_flavor = "cpp"
+}
 
-  deps = []
-  if (internal_access) {
-    deps += [
-      ":config-9364",
-      ":config-9365",
-      ":firmware",
-    ]
-  }
+if (gt6853_driver_flavor == "rust") {
+  cpp_component_name = "gt6853-cpp"
+  cpp_package_name = "gt6853-cpp"
+  cpp_output_name = "gt6853-cpp"
+  cpp_manifest = "meta/gt6853-cpp.cml"
+
+  rust_component_name = "gt6853"
+  rust_package_name = "gt6853"
+  rust_output_name = "gt6853"
+  rust_manifest = "meta/gt6853-rust-active.cml"
+} else {
+  cpp_component_name = "gt6853"
+  cpp_package_name = "gt6853"
+  cpp_output_name = "gt6853"
+  cpp_manifest = "meta/gt6853.cml"
+
+  rust_component_name = "gt6853-rust"
+  rust_package_name = "gt6853-rust"
+  rust_output_name = "gt6853-rust"
+  rust_manifest = "meta/gt6853-rust.cml"
 }
 
 if (internal_access) {
@@ -80,12 +96,12 @@ driver_bind_rules("gt6853-bind") {
   ]
 }
 
-fuchsia_cc_driver("gt6853-module-driver") {
+fuchsia_cc_driver("driver-cpp") {
   legacy = true
-  output_name = "gt6853"
+  output_name = cpp_output_name
   sources = [
-    "gt6853-nelson.cc",
-    "gt6853.cc",
+    "cpp/gt6853-nelson.cc",
+    "cpp/gt6853.cc",
   ]
   configs += [
     "//build/config:all_source",
@@ -99,20 +115,88 @@ fuchsia_cc_driver("gt6853-module-driver") {
   ]
 }
 
-fuchsia_driver_component("gt6853-module") {
+fuchsia_rust_driver("driver-rust") {
+  edition = "2024"
+  source_root = "rust/src/lib.rs"
+  output_name = rust_output_name
+  with_unit_tests = true
+  sources = [
+    "rust/src/driver.rs",
+    "rust/src/lib.rs",
+  ]
+  deps = [
+    ":gt6853-bind",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/rust/zx",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_driver_component("component-cpp") {
   info = "meta/gt6853-module-info.json"
-  component_name = "gt6853"
-  deps = [ ":gt6853-module-driver" ]
-  manifest = "meta/gt6853.cml"
+  component_name = cpp_component_name
+  manifest = cpp_manifest
+  deps = [ ":driver-cpp" ]
+}
+
+fuchsia_driver_component("component-rust") {
+  info = "meta/gt6853-module-info.json"
+  component_name = rust_component_name
+  manifest = rust_manifest
+  deps = [ ":driver-rust" ]
+}
+
+# Active Package: always use "gt6853" to align with the board configuration's
+# dependencies.
+fuchsia_driver_package("gt6853") {
+  export_to_bazel = true
+  if (gt6853_driver_flavor == "rust") {
+    package_name = rust_package_name
+    driver_components = [ ":component-rust" ]
+  } else {
+    package_name = cpp_package_name
+    driver_components = [ ":component-cpp" ]
+  }
+
+  deps = []
+  if (internal_access) {
+    deps += [
+      ":config-9364",
+      ":config-9365",
+      ":firmware",
+    ]
+  }
+}
+
+# Backup Package: for testing or manual invocation, not packaged by default by
+# the board.
+fuchsia_driver_package("gt6853-backup") {
+  if (gt6853_driver_flavor == "rust") {
+    package_name = cpp_package_name
+    driver_components = [ ":component-cpp" ]
+  } else {
+    package_name = rust_package_name
+    driver_components = [ ":component-rust" ]
+  }
+
+  deps = []
+  if (internal_access) {
+    deps += [
+      ":config-9364",
+      ":config-9365",
+      ":firmware",
+    ]
+  }
 }
 
 test("gt6853-test") {
   output_name = "gt6853-test"
   configs += [ "//build/config:all_source" ]
   sources = [
-    "gt6853-nelson.cc",
-    "gt6853-test.cc",
-    "gt6853.cc",
+    "cpp/gt6853-nelson.cc",
+    "cpp/gt6853-test.cc",
+    "cpp/gt6853.cc",
   ]
   deps = [
     ":common",
@@ -143,10 +227,17 @@ fuchsia_unittest_package("gt6853-test-package") {
   }
 }
 
+# The Rust unit test package: compiled and run in CI/CQ regardless of flavor.
+fuchsia_unittest_package("gt6853-rust-test-package") {
+  package_name = "gt6853-rust-test"
+  deps = [ ":driver-rust_test" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
     ":gt6853-bind_test",
+    ":gt6853-rust-test-package",
     ":gt6853-test-package",
   ]
 }
