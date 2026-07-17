@@ -37,6 +37,8 @@ pub enum Error {
     PeerResponse { operation: OpCode, msg: String },
     #[error("{:?} is not implemented", .operation)]
     NotImplemented { operation: OpCode },
+    #[error("Packet size ({}) exceeds the negotiated maximum ({})", .size, .max)]
+    PacketTooLarge { size: usize, max: usize },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -56,6 +58,10 @@ impl Error {
 
     pub fn not_implemented(operation: OpCode) -> Self {
         Self::NotImplemented { operation }
+    }
+
+    pub fn packet_too_large(size: usize, max: usize) -> Self {
+        Self::PacketTooLarge { size, max }
     }
 
     pub fn other(msg: impl Into<String>) -> Self {

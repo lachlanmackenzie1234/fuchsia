@@ -221,6 +221,10 @@ impl ObexServer {
     /// Returns Error if the send operation could not be completed.
     async fn send(&mut self, data: impl Encodable<Error = PacketError>) -> Result<(), Error> {
         let mut buf = vec![0; data.encoded_len()];
+        if buf.len() > self.max_packet_size as usize {
+            return Err(Error::packet_too_large(buf.len(), self.max_packet_size as usize));
+        }
+
         data.encode(&mut buf[..])?;
         self.channel.send(buf).await?;
         Ok(())
@@ -367,6 +371,18 @@ impl ObexServer {
     /// Returns a list of `ResponsePacket`s to be sent to the peer on success, Error if the request
     /// was invalid or couldn't be handled.
     async fn receive_packet(&mut self, packet: Vec<u8>) -> Result<Vec<ResponsePacket>, Error> {
+        if packet.len() > self.max_packet_size as usize {
+            warn!(
+                "Received packet size ({}) exceeds negotiated max_packet_size ({})",
+                packet.len(),
+                self.max_packet_size
+            );
+            return Ok(vec![ResponsePacket::new_no_data(
+                ResponseCode::BadRequest,
+                HeaderSet::new(),
+            )]);
+        }
+
         let decoded = RequestPacket::decode(&packet[..])?;
         trace!(packet:? = decoded; "Received request from OBEX client");
         let response = match decoded.code() {
@@ -744,11 +760,9 @@ mod tests {
 
         // First request asks for information & SRM. Server should receive the request, ask the
         // application, and negotiate SRM.
-        let headers1 = HeaderSet::from_headers(vec![
-            Header::name("random object"),
-            SingleResponseMode::Enable.into(),
-        ])
-        .unwrap();
+        let headers1 =
+            HeaderSet::from_headers(vec![Header::name("a"), SingleResponseMode::Enable.into()])
+                .unwrap();
         let get_request1 = RequestPacket::new_get(headers1);
         send_packet(&mut exec, &mut remote, get_request1);
         test_app.set_response(Ok(HeaderSet::from_header(Header::Length(0x20))));
@@ -912,5 +926,48 @@ mod tests {
             assert!(response.headers().is_empty());
         };
         expect_response(&mut exec, &mut remote, expectation, OpCode::PutFinal);
+    }
+
+    #[fuchsia::test]
+    fn receive_packet_exceeds_max_packet_size_rejected() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut obex_server, _test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        obex_server.set_connection_status(ConnectionStatus::connected_no_id());
+        // The default max_packet_size before CONNECT is clamped to
+        // MIN_MAX_PACKET_SIZE (255) minimum. Set max_packet_size explicitly to
+        // 255.
+        obex_server.set_max_packet_size(255);
+        let server_fut = obex_server.run();
+        let mut server_fut = pin!(server_fut);
+        let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
+
+        let mut oversized_buf = vec![0u8; 300];
+        oversized_buf[0] = (&OpCode::Put).into();
+        oversized_buf[1..3].copy_from_slice(&(300u16).to_be_bytes());
+
+        let mut fut = remote.send(oversized_buf);
+        exec.run_until_stalled(&mut fut).expect("write to channel success").expect("write success");
+        let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
+
+        // The ObexServer should reject the oversized packet with BadRequest (0xC0).
+        let expectation = |response: ResponsePacket| {
+            assert_eq!(*response.code(), ResponseCode::BadRequest);
+        };
+        expect_response(&mut exec, &mut remote, expectation, OpCode::Put);
+    }
+
+    #[fuchsia::test]
+    async fn send_exceeds_max_packet_size_is_error() {
+        let (mut obex_server, _test_app, _remote) = new_obex_server(/*srm=*/ false);
+        obex_server.set_max_packet_size(255);
+
+        // Attempt to send a response packet whose encoded length exceeds 255
+        // bytes.
+        let large_header = Header::Description("A".repeat(300).into());
+        let response =
+            ResponsePacket::new_no_data(ResponseCode::Ok, HeaderSet::from_header(large_header));
+
+        let send_result = obex_server.send(response).await;
+        assert_matches!(send_result, Err(Error::PacketTooLarge { size: 608, max: 255 }));
     }
 }
