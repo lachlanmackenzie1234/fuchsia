@@ -4,7 +4,6 @@
 
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl_fuchsia_bluetooth::PeerId;
-use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileProxy};
 use fidl_fuchsia_bluetooth_gatt2::{RemoteServiceProxy, Server_Marker, Server_Proxy};
 use fidl_fuchsia_bluetooth_le::{
     CentralMarker, CentralProxy, ConnectionProxy, PrivilegedPeripheralMarker,
@@ -20,7 +19,6 @@ use fuchsia_sync::Mutex;
 
 pub(crate) struct Proxies {
     pub(crate) access_proxy: AccessProxy,
-    pub(crate) profile_proxy: ProfileProxy,
     pub(crate) central_proxy: CentralProxy,
     pub(crate) gatt_server_proxy: Server_Proxy,
     pub(crate) peripheral_proxy: PrivilegedPeripheralProxy,
@@ -42,7 +40,6 @@ impl Proxies {
         // TODO(https://fxbug.dev/485277855): Consider exposing some of these proxies to clients
         // in order to enable RAII, e.g. `gatt_client` and `remote_service_proxy`.
         let access_proxy = connect_to_protocol::<AccessMarker>()?;
-        let profile_proxy = connect_to_protocol::<ProfileMarker>()?;
         let central_proxy = connect_to_protocol::<CentralMarker>()?;
         let gatt_server_proxy = connect_to_protocol::<Server_Marker>()?;
         let peripheral_proxy = connect_to_protocol::<PrivilegedPeripheralMarker>()?;
@@ -56,7 +53,6 @@ impl Proxies {
 
         Ok(Proxies {
             access_proxy,
-            profile_proxy,
             central_proxy,
             gatt_server_proxy,
             peripheral_proxy,

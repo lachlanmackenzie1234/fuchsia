@@ -16,7 +16,6 @@ use futures::channel::{mpsc, oneshot};
 use std::sync::Arc;
 use std::thread;
 
-mod bredr;
 mod gatt;
 mod le;
 mod proxies;
@@ -30,7 +29,6 @@ enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId([u8; 6], oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>),
-    ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
     WriteL2cap(Vec<u8>, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -133,17 +131,6 @@ impl WorkThread {
                     .await
                     .map(|opt_peer| opt_peer.map(|peer| peer.id.unwrap()));
                     result_sender.send(result).unwrap();
-                }
-                Request::ConnectL2cap(peer_id, psm, result_sender) => {
-                    match bredr::connect_l2cap(&proxies, &peer_id, psm).await {
-                        Ok(channel) => {
-                            l2cap_channel = Some(channel);
-                            result_sender.send(Ok(())).unwrap();
-                        }
-                        Err(err) => {
-                            result_sender.send(Err(err)).unwrap();
-                        }
-                    }
                 }
                 Request::DisconnectL2cap(result_sender) => {
                     if let Some(_channel) = l2cap_channel.take() {
@@ -291,17 +278,6 @@ impl WorkThread {
     pub async fn get_known_peers(&self) -> Result<Vec<Peer>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Vec<Peer>, anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::GetKnownPeers(sender))?;
-        receiver.await?
-    }
-
-    // Connect a basic L2CAP channel.
-    pub async fn connect_l2cap_channel(
-        &self,
-        peer_id: PeerId,
-        psm: u16,
-    ) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::ConnectL2cap(peer_id, psm, sender))?;
         receiver.await?
     }
 
