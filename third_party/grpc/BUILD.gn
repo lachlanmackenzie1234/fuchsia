@@ -2134,6 +2134,7 @@ static_library("grpc++_cc") {
     "$source_root/src/core/resolver/sockaddr/sockaddr_resolver.cc",
     "$source_root/src/core/resolver/xds/xds_dependency_manager.cc",
     "$source_root/src/core/resolver/xds/xds_resolver.cc",
+    "$source_root/src/core/server/add_port.cc",
     "$source_root/src/core/server/server.cc",
     "$source_root/src/core/server/server_call_tracer_filter.cc",
     "$source_root/src/core/server/server_config_selector_filter.cc",
