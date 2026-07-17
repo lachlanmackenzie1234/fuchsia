@@ -33,7 +33,7 @@ kernel_rust_crate("ktrace-rs") {
     "//zircon/kernel/arch:arch-rs",
     "//zircon/kernel/kernel:kernel-rs",
     "//zircon/kernel/lib/spsc_buffer:spsc-buffer-rs",
-    "//zircon/kernel/lib/unittest/rust:unittest",
+    "//zircon/kernel/lib/unittest:unittest-rs",
     "//zircon/kernel/platform:platform-rs",
   ]
 

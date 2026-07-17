@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
 library_headers("headers") {
@@ -55,9 +56,39 @@ source_set("unittest") {
   }
 }
 
+rustc_library("unittest-rs") {
+  edition = "2024"
+  name = "unittest"
+
+  source_root = "src/lib.rs"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "unittest-macro",
+    "//sdk/rust/zx-status",
+  ]
+
+  with_unit_tests = true
+  test_configs = [ ":unittest-rs.test" ]
+}
+
+config("unittest-rs.test") {
+  visibility = [ ":*" ]
+
+  ld_script = rebase_path("unittest-test.ld", root_build_dir)
+  rustflags = [
+    # Ensures the special test metadata section is retained.
+    "-C",
+    "link-arg=-T${ld_script}",
+
+    # Enables the unit tests themselves.
+    "--cfg",
+    "ktest",
+  ]
+}
+
 group("tests") {
   testonly = true
-  deps = [ "rust:tests" ]
+  deps = [ ":unittest-rs_test($host_toolchain)" ]
 }
 
 group("kernel-tests") {
