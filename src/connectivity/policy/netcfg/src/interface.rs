@@ -74,7 +74,7 @@ fn get_mac_identifier_from_octets(
 // vid(vendor id):pid(product id):did(device id) and are defined in each board file
 //
 // SDIO
-// "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy"
+// "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy/wlanphy"
 // 05:00:6 following "platform" represents
 // vid(vendor id):pid(product id):did(device id) and are defined in each board file
 //
@@ -697,7 +697,7 @@ mod tests {
     )]
     // platform interfaces (ethernet jack and sdio devices)
     #[test_case(
-        "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy",
+        "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy/wlanphy",
         [0x05, 0x05, 0x05, 0x05, 0x05, 0x05],
         crate::InterfaceType::WlanClient,
         "wlans05006";
@@ -986,7 +986,7 @@ mod tests {
         "usb_no_match"
     )]
     #[test_case(
-        "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy",
+        "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy/wlanphy",
         vec![BusType::SDIO],
         BusType::SDIO,
         true,
@@ -1435,7 +1435,7 @@ mod tests {
         vec![NameCompositionRule::Default],
         DeviceInfoRef {
             device_class: DeviceClass::Ethernet,
-            topological_path: "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy",
+            topological_path: "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy/wlanphy",
             ..default_device_info()
         },
         "eths05006";

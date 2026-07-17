@@ -135,6 +135,7 @@ source_set("ddktl") {
     "//src/connectivity/telephony/drivers/qmi-fake-transport:*",
     "//src/connectivity/telephony/tests/fake-drivers/at-fake-transport:*",
     "//src/connectivity/telephony/tests/fake-drivers/fake-transport-base:*",
+    "//src/connectivity/wlan/drivers/wlanphy:*",
     "//src/connectivity/wlan/drivers/wlansoftmac:*",
     "//src/developer/remote-control/usb:*",
     "//src/devices/acpi/drivers/acpi-battery:*",

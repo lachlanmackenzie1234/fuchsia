@@ -71,6 +71,7 @@
 //src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:fuchsia_driver-driver
 //src/connectivity/wlan/drivers/wlan-virtio-hwsim:wlan-virtio-hwsim-driver
 //src/connectivity/wlan/drivers/wlanif:wlanif_driver-driver
+//src/connectivity/wlan/drivers/wlanphy:wlanphy_driver-driver
 //src/connectivity/wlan/drivers/wlansoftmac:wlansoftmac_driver-driver
 //src/connectivity/wlan/testing/wlantap-driver:wlantap_driver-driver
 //src/connectivity/wlan/tests/helpers/testcontroller-driver:testcontroller_driver-driver

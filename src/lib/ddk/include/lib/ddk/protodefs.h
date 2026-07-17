@@ -74,8 +74,7 @@ DDK_PROTOCOL_DEF(MIDI,                    53,   "midi", 0)
 DDK_PROTOCOL_DEF(SDHCI,                   54,   "sdhci", 0)
 DDK_PROTOCOL_DEF(SDMMC,                   55,   "sdmmc", 0)
 DDK_PROTOCOL_DEF(SDIO,                    56,   "sdio", 0)
-// 57 was wlanphy
-// 58 was wlanphy-impl
+DDK_PROTOCOL_DEF(WLANPHY,                 57,   "wlanphy", 0)
 DDK_PROTOCOL_DEF(WLANPHY_IMPL,            58,   "wlanphy-impl", 0)
 DDK_PROTOCOL_DEF(WLAN_FULLMAC,            59,   "wlan-fullmac", 0)
 DDK_PROTOCOL_DEF(WLAN_FULLMAC_IMPL,       60,   "wlan-fullmac-impl", 0)

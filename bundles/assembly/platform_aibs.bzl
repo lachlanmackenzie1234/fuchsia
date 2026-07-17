@@ -80,6 +80,7 @@ bringup_platform_aib_names = [
 
     # Platform drivers.
     "registers_driver",
+    "wlanphy_driver",
     "bt_transport_uart_driver",
     "bus_pci_driver",
     "realtek_8211f_driver",

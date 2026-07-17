@@ -1053,6 +1053,7 @@ config("Wno-conversion") {
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test:*",
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/test:*",
     "//src/connectivity/wlan/drivers/wlanif:*",
+    "//src/connectivity/wlan/drivers/wlanphy:*",
     "//src/connectivity/wlan/drivers/wlansoftmac:*",
     "//src/connectivity/wlan/lib/common/cpp:*",
     "//src/connectivity/wlan/testing/wlantap-driver:*",

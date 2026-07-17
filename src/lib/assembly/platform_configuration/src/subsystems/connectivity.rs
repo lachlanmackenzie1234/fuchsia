@@ -325,6 +325,8 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                     _ => {}
                 }
 
+                builder.platform_bundle("wlanphy_driver")?;
+
                 // Some products require legacy security types to be supported.
                 // Otherwise, they are disabled by default.
                 if connectivity_config.wlan.legacy_privacy_support {

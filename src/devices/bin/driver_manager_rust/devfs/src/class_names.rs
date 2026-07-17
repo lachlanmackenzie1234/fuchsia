@@ -264,6 +264,11 @@ pub static CLASS_NAME_TO_SERVICE: phf::Map<&'static str, ServiceEntry> = phf_map
         service_name: "fuchsia.hardware.usb.virtualbustest.Service",
         member_name: "device",
     },
+    "wlanphy" => ServiceEntry {
+        state: State::DevfsAndService,
+        service_name: "fuchsia.wlan.device.Service",
+        member_name: "device",
+    },
 };
 
 pub static CLASSES_THAT_ASSUME_ORDERING: phf::Set<&'static str> = phf_set! {

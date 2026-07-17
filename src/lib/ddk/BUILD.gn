@@ -118,6 +118,7 @@ static_library("ddk") {
     "//src/connectivity/wlan/drivers/lib/timer:*",
     "//src/connectivity/wlan/drivers/wlanif:*",
     "//src/connectivity/wlan/drivers/wlanif/test:*",
+    "//src/connectivity/wlan/drivers/wlanphy:*",
     "//src/connectivity/wlan/drivers/wlansoftmac:*",
     "//src/developer/adb/drivers/usb-adb-function:*",
     "//src/developer/remote-control/usb:*",

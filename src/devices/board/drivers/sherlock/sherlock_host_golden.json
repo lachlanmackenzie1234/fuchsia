@@ -109,6 +109,7 @@
             "fuchsia-pkg://fuchsia.com/brcmfmac-sherlock#meta/brcmfmac.cm",
             "fuchsia-pkg://fuchsia.com/network-device#meta/network-device.cm",
             "fuchsia-pkg://fuchsia.com/wlanif#meta/wlanif.cm",
+            "?fuchsia-pkg://fuchsia.com/wlanphy#meta/wlanphy.cm"
         ]
     },
     {

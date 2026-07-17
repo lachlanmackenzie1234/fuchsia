@@ -331,6 +331,12 @@ group("embeddable_eng") {
   ]
 }
 
+group("wlanphy_driver") {
+  deps = [
+    "//bundles/assembly/bazel_inputs/src/connectivity/wlan/drivers/wlanphy",
+  ]
+}
+
 group("bt_transport_uart_driver") {
   deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart" ]
 }
