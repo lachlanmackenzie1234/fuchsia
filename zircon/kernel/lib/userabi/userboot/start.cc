@@ -149,9 +149,9 @@ constexpr std::array<uint32_t, kChildHandleCount> HandleInfoTable() {
   info[kRootJob] = PA_HND(PA_JOB_DEFAULT, 0);
   info[kMmioResource] = PA_HND(PA_MMIO_RESOURCE, 0);
   info[kIrqResource] = PA_HND(PA_IRQ_RESOURCE, 0);
-#if __x86_64__
+#if defined(__x86_64__)
   info[kIoportResource] = PA_HND(PA_IOPORT_RESOURCE, 0);
-#elif __aarch64__
+#elif defined(__aarch64__)
   info[kSmcResource] = PA_HND(PA_SMC_RESOURCE, 0);
 #endif
   info[kSystemResource] = PA_HND(PA_SYSTEM_RESOURCE, 0);

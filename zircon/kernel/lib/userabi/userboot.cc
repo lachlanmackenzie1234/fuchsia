@@ -517,10 +517,10 @@ void userboot_init(HandoffEnd handoff_end) {
   RETURN_IF_NOT(handles[userboot::kMmioResource]);
   handles[userboot::kIrqResource] = get_resource_handle(ZX_RSRC_KIND_IRQ).release();
   RETURN_IF_NOT(handles[userboot::kIrqResource]);
-#if ARCH_X86
+#if defined(__x86_64__)
   handles[userboot::kIoportResource] = get_resource_handle(ZX_RSRC_KIND_IOPORT).release();
   RETURN_IF_NOT(handles[userboot::kIoportResource]);
-#elif ARCH_ARM64
+#elif defined(__aarch64__)
   handles[userboot::kSmcResource] = get_resource_handle(ZX_RSRC_KIND_SMC).release();
   RETURN_IF_NOT(handles[userboot::kSmcResource]);
 #endif
