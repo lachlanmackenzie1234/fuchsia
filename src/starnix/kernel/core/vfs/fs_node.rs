@@ -247,6 +247,11 @@ impl FsNodeInfo {
         }
     }
 
+    fn has_suid_or_sgid_bits(&self) -> bool {
+        // ISGID is only considered as setgid bit if IXGRP is present.
+        self.mode.contains(FileMode::ISUID) || self.mode.contains(FileMode::ISGID | FileMode::IXGRP)
+    }
+
     fn clear_suid_and_sgid_bits(&mut self) {
         self.mode &= !FileMode::ISUID;
         self.clear_sgid_bit();
@@ -2383,13 +2388,14 @@ impl FsNode {
 
     /// Clear the SUID and SGID bits unless the `current_task` has `CAP_FSETID`
     pub fn clear_suid_and_sgid_bits(&self, current_task: &CurrentTask) -> Result<(), Errno> {
-        if !security::is_task_capable_noaudit(current_task, CAP_FSETID) {
-            self.update_attributes(current_task, |info| {
+        self.update_attributes(current_task, |info| {
+            if info.has_suid_or_sgid_bits()
+                && !security::is_task_capable_noaudit(current_task, CAP_FSETID)
+            {
                 info.clear_suid_and_sgid_bits();
-                Ok(())
-            })?;
-        }
-        Ok(())
+            }
+            Ok(())
+        })
     }
 
     /// Update the ctime and mtime of a file to now.
