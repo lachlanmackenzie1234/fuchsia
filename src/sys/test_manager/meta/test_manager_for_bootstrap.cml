@@ -21,6 +21,10 @@
             name: "debug_data",
             url: "#meta/debug_data_processor.cm",
         },
+        {
+            name: "rust_test_runner",
+            url: "#meta/rust-test-runner.cm",
+        },
     ],
     collections: [
         {
@@ -123,6 +127,22 @@
             from: "parent",
             to: "#system-tests",
         },
+        {
+            protocol: "fuchsia.process.Launcher",
+            from: "parent",
+            to: "#rust_test_runner",
+        },
+        {
+            protocol: "fuchsia.test.runner.LibraryLoaderCacheBuilder",
+            from: "#lib_loader_cache",
+            to: "#rust_test_runner",
+        },
+        {
+            storage: "memfs_data",
+            from: "self",
+            as: "data",
+            to: "#rust_test_runner",
+        },
     ],
     expose: [
         {
@@ -154,6 +174,10 @@
                 {
                     runner: "gtest_runner",
                     from: "#gtest_runner",
+                },
+                {
+                    runner: "rust_test_runner",
+                    from: "#rust_test_runner",
                 },
                 {
                     runner: "realm_builder",
