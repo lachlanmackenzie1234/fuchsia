@@ -29,7 +29,6 @@ enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId([u8; 6], oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>),
-    DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
     WriteL2cap(Vec<u8>, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -92,7 +91,7 @@ impl WorkThread {
         // TODO(https://fxbug.dev/396500079): Consider HashMap<PeerId, Peer> instead.
         let peer_cache: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::new()));
         // TODO(https://fxbug.dev/452075770): Support multiple L2CAP channels.
-        let mut l2cap_channel: Option<Channel> = None;
+        let l2cap_channel: Option<Channel> = None;
         let mut _peripheral_connection: ClientEnd<ConnectionMarker>;
 
         while let Some(request) = receiver.next().await {
@@ -131,12 +130,6 @@ impl WorkThread {
                     .await
                     .map(|opt_peer| opt_peer.map(|peer| peer.id.unwrap()));
                     result_sender.send(result).unwrap();
-                }
-                Request::DisconnectL2cap(result_sender) => {
-                    if let Some(_channel) = l2cap_channel.take() {
-                        println!("L2CAP channel disconnected");
-                    }
-                    result_sender.send(Ok(())).unwrap();
                 }
                 Request::WriteL2cap(data, result_sender) => {
                     if let Some(ref l2cap_channel) = l2cap_channel {
@@ -278,13 +271,6 @@ impl WorkThread {
     pub async fn get_known_peers(&self) -> Result<Vec<Peer>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Vec<Peer>, anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::GetKnownPeers(sender))?;
-        receiver.await?
-    }
-
-    // Disconnect an L2CAP channel if one exists.
-    pub async fn disconnect_l2cap(&self) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::DisconnectL2cap(sender))?;
         receiver.await?
     }
 
