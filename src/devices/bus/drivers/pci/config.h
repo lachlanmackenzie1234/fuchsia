@@ -5,12 +5,14 @@
 #define SRC_DEVICES_BUS_DRIVERS_PCI_CONFIG_H_
 
 #include <endian.h>
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/pci/constants.h>
+#include <lib/pci/hw.h>
 #include <lib/zx/result.h>
 #include <stdio.h>
 #include <zircon/errors.h>
-#include <zircon/hw/pci.h>
 #include <zircon/types.h>
 
 #include <hwreg/bitfields.h>
@@ -156,34 +158,34 @@ class PciReg32 {
 class Config {
  public:
   // Standard PCI configuration space values. Offsets from PCI Firmware Spec ch 6.
-  static constexpr PciReg16 kVendorId = PciReg16(0x0);
-  static constexpr PciReg16 kDeviceId = PciReg16(0x2);
-  static constexpr PciReg16 kCommand = PciReg16(0x4);
-  static constexpr PciReg16 kStatus = PciReg16(0x6);
-  static constexpr PciReg8 kRevisionId = PciReg8(0x8);
-  static constexpr PciReg8 kProgramInterface = PciReg8(0x9);
-  static constexpr PciReg8 kSubClass = PciReg8(0xA);
-  static constexpr PciReg8 kBaseClass = PciReg8(0xB);
-  static constexpr PciReg8 kCacheLineSize = PciReg8(0xC);
-  static constexpr PciReg8 kLatencyTimer = PciReg8(0xD);
-  static constexpr PciReg8 kHeaderType = PciReg8(0xE);
-  static constexpr PciReg8 kBist = PciReg8(0xF);
+  static constexpr PciReg16 kVendorId = PciReg16(pci::kConfigVendorId);
+  static constexpr PciReg16 kDeviceId = PciReg16(pci::kConfigDeviceId);
+  static constexpr PciReg16 kCommand = PciReg16(pci::kConfigCommand);
+  static constexpr PciReg16 kStatus = PciReg16(pci::kConfigStatus);
+  static constexpr PciReg8 kRevisionId = PciReg8(pci::kConfigRevisionId);
+  static constexpr PciReg8 kProgramInterface = PciReg8(pci::kConfigClassCodeIntr);
+  static constexpr PciReg8 kSubClass = PciReg8(pci::kConfigClassCodeSub);
+  static constexpr PciReg8 kBaseClass = PciReg8(pci::kConfigClassCodeBase);
+  static constexpr PciReg8 kCacheLineSize = PciReg8(pci::kConfigCacheLineSize);
+  static constexpr PciReg8 kLatencyTimer = PciReg8(pci::kConfigLatencyTimer);
+  static constexpr PciReg8 kHeaderType = PciReg8(pci::kConfigHeaderType);
+  static constexpr PciReg8 kBist = PciReg8(pci::kConfigBist);
   // 0x10 is the address of the first BAR in config space
   // BAR rather than BaseAddress for space / sanity considerations
   static constexpr PciReg32 kBar(uint32_t bar) {
-    ZX_ASSERT(bar < PCI_MAX_BAR_REGS);
-    return PciReg32(static_cast<uint16_t>(0x10 + (bar * sizeof(uint32_t))));
+    ZX_ASSERT(bar < pci::kMaxBarCount);
+    return PciReg32(static_cast<uint16_t>(pci::kConfigBaseAddresses + (bar * sizeof(uint32_t))));
   }
-  static constexpr PciReg32 kCardbusCisPtr = PciReg32(0x28);
-  static constexpr PciReg16 kSubsystemVendorId = PciReg16(0x2C);
-  static constexpr PciReg16 kSubsystemId = PciReg16(0x2E);
-  static constexpr PciReg32 kExpansionRomAddress = PciReg32(0x30);
-  static constexpr PciReg8 kCapabilitiesPtr = PciReg8(0x34);
+  static constexpr PciReg32 kCardbusCisPtr = PciReg32(pci::kConfigCardbusCisPtr);
+  static constexpr PciReg16 kSubsystemVendorId = PciReg16(pci::kConfigSubsysVendorId);
+  static constexpr PciReg16 kSubsystemId = PciReg16(pci::kConfigSubsysId);
+  static constexpr PciReg32 kExpansionRomAddress = PciReg32(pci::kConfigExpRomAddress);
+  static constexpr PciReg8 kCapabilitiesPtr = PciReg8(pci::kConfigCapabilities);
   // 0x35 through 0x3B is reserved
-  static constexpr PciReg8 kInterruptLine = PciReg8(0x3C);
-  static constexpr PciReg8 kInterruptPin = PciReg8(0x3D);
-  static constexpr PciReg8 kMinGrant = PciReg8(0x3E);
-  static constexpr PciReg8 kMaxLatency = PciReg8(0x3F);
+  static constexpr PciReg8 kInterruptLine = PciReg8(pci::kConfigInterruptLine);
+  static constexpr PciReg8 kInterruptPin = PciReg8(pci::kConfigInterruptPin);
+  static constexpr PciReg8 kMinGrant = PciReg8(pci::kConfigMinGrant);
+  static constexpr PciReg8 kMaxLatency = PciReg8(pci::kConfigMaxLatency);
   static constexpr uint8_t kStdCfgEnd =
       static_cast<uint8_t>(kMaxLatency.offset() + sizeof(uint8_t));
 

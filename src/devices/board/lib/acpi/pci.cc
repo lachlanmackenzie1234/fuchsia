@@ -7,6 +7,7 @@
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <inttypes.h>
 #include <lib/ddk/debug.h>
+#include <lib/pci/constants.h>
 #include <lib/pci/pciroot.h>
 #include <lib/pci/pio.h>
 #include <lib/pci/root_host.h>
@@ -372,8 +373,8 @@ zx_status_t pci_init_segment_and_ecam(zx_device_t* parent, acpi::Acpi* acpi, ACP
 
     // The bus driver needs a VMO representing the entire ecam region so it can map it in.
     // The range from start_bus_num to end_bus_num is inclusive.
-    size_t ecam_size = (pinfo.end_bus_num - pinfo.start_bus_num + 1) * PCIE_ECAM_BYTES_PER_BUS;
-    zx_paddr_t vmo_base = mcfg_alloc.address + (pinfo.start_bus_num * PCIE_ECAM_BYTES_PER_BUS);
+    size_t ecam_size = (pinfo.end_bus_num - pinfo.start_bus_num + 1) * pci::kEcamBytesPerBus;
+    zx_paddr_t vmo_base = mcfg_alloc.address + (pinfo.start_bus_num * pci::kEcamBytesPerBus);
     const size_t vmo_size = fbl::round_up<size_t>(ecam_size, zx_system_get_page_size());
     status = zx_vmo_create_physical(get_mmio_resource(parent), vmo_base, vmo_size, &pinfo.cam.vmo);
     if (status != ZX_OK) {

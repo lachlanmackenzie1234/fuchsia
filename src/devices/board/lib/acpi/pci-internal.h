@@ -13,7 +13,6 @@
 #include <stdint.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
-#include <zircon/syscalls/pci.h>
 
 #include <unordered_map>
 
@@ -46,7 +45,6 @@ struct acpi_legacy_irq {
   uint32_t options;  // Configuration for zx_interrupt_create
 };
 
-zx_status_t get_pci_init_arg(acpi::Acpi* acpi, zx_pci_init_arg_t** arg, uint32_t* size);
 zx_status_t pci_report_current_resources(acpi::Acpi* acpi, zx_handle_t mmio_resource_handle);
 
 class AcpiPciroot;

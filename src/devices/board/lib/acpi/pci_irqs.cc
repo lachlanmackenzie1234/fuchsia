@@ -5,9 +5,9 @@
 #include <assert.h>
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/ddk/debug.h>
+#include <lib/pci/constants.h>
 #include <lib/pci/pciroot.h>
 #include <stdio.h>
-#include <zircon/hw/pci.h>
 
 #include <array>
 #include <cstring>
@@ -166,7 +166,7 @@ ACPI_STATUS ReadPciRoutingTable(ACPI_HANDLE object, AcpiPciroot::Context* contex
   }
 
   for (auto& entry : irt_buffer) {
-    if (entry.Pin >= PCI_MAX_LEGACY_IRQ_PINS) {
+    if (entry.Pin >= pci::kMaxLegacyIrqPins) {
       zxlogf(ERROR, "PRT entry contains an invalid pin: %#x", entry.Pin);
       return AE_ERROR;
     }
@@ -180,7 +180,7 @@ ACPI_STATUS ReadPciRoutingTable(ACPI_HANDLE object, AcpiPciroot::Context* contex
     // Per ACPI Spec 6.2.13, all _PRT entries must have a function address of
     // 0xFFFF representing all functions in the device. In effect, this means we
     // only care about the entry's dev id.
-    uint8_t dev_id = (entry.Address >> 16) & (PCI_MAX_DEVICES_PER_BUS - 1);
+    uint8_t dev_id = (entry.Address >> 16) & (pci::kMaxDevicesPerBus - 1);
     // Either we're handling the root complex (port_dev_id == UINT8_MAX), or
     // we're handling a root port, and if it's a root port, dev_id should
     // be 0. If not, the entry is strange and we'll warn / skip it.
@@ -221,8 +221,8 @@ ACPI_STATUS GetPciRootIrqRouting(acpi::Acpi* acpi, ACPI_HANDLE root_obj,
       // basis for the routing table we're inspecting.
       // Format: Acpi 6.1 section 6.1.1 "_ADR (Address)"
       PortInfo port{
-          .dev_id = static_cast<uint8_t>((res->Address >> 16) & (PCI_MAX_DEVICES_PER_BUS - 1)),
-          .func_id = static_cast<uint8_t>(res->Address & (PCI_MAX_FUNCTIONS_PER_DEVICE - 1)),
+          .dev_id = static_cast<uint8_t>((res->Address >> 16) & (pci::kMaxDevicesPerBus - 1)),
+          .func_id = static_cast<uint8_t>(res->Address & (pci::kMaxFunctionsPerDevice - 1)),
       };
       zxlogf(DEBUG, "Processing _PRT for %02x.%1x (%.*s)", port.dev_id, port.func_id, 4,
              reinterpret_cast<char*>(&res->Name));

@@ -1,6 +1,8 @@
 // Copyright 2018 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+#include <lib/pci/constants.h>
+#include <lib/pci/hw.h>
 #include <zircon/errors.h>
 
 #include <fbl/string_buffer.h>
@@ -10,7 +12,6 @@
 #include "src/devices/bus/drivers/pci/capabilities/msix.h"
 #include "src/devices/bus/drivers/pci/capabilities/pci_express.h"
 #include "src/devices/bus/drivers/pci/capabilities/power_management.h"
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/device.h"
 
 namespace pci {
@@ -217,7 +218,7 @@ zx_status_t Device::ParseCapabilities() {
     }
 
     cap_offset = hdr.ptr;
-    if (cap_offset && (cap_offset < PCI_CAP_PTR_MIN_VALID || cap_offset > PCI_CAP_PTR_MAX_VALID)) {
+    if (cap_offset && (cap_offset < kCapPtrMinValid || cap_offset > kCapPtrMaxValid)) {
       zxlogf(ERROR, "%s capability pointer out of range: %#02x, disabling device", cfg_->addr(),
              cap_offset);
       return ZX_ERR_OUT_OF_RANGE;
@@ -231,7 +232,7 @@ zx_status_t Device::ParseExtendedCapabilities() {
   // Extended capabilities always start at offset 256, the first byte in extended
   // configuration space.
   struct ExtCapabilityHdr hdr;
-  uint16_t cap_offset = PCIE_EXT_CAP_BASE_PTR;
+  uint16_t cap_offset = kPcieExtCapBasePtr;
 
   // Walk the pointer list for the standard capabilities table. Check for
   // cycles and invalid pointers.
@@ -297,7 +298,7 @@ zx_status_t Device::ParseExtendedCapabilities() {
 
     cap_offset = hdr.ptr;
     if (cap_offset &&
-        (cap_offset < PCIE_EXT_CAP_PTR_MIN_VALID || cap_offset > PCIE_EXT_CAP_PTR_MAX_VALID)) {
+        (cap_offset < kPcieExtCapPtrMinValid || cap_offset > kPcieExtCapPtrMaxValid)) {
       zxlogf(ERROR, "%s ext_capability pointer out of range: %#02x, disabling device", cfg_->addr(),
              cap_offset);
       return ZX_ERR_OUT_OF_RANGE;

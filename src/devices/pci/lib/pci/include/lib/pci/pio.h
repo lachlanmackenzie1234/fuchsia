@@ -7,7 +7,6 @@
 
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <stdint.h>
-#include <zircon/hw/pci.h>
 #include <zircon/types.h>
 
 #ifdef __x86_64__

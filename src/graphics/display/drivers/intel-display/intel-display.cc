@@ -15,6 +15,7 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fit/function.h>
 #include <lib/image-format/image_format.h>
+#include <lib/pci/constants.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zbitl/items/graphics.h>
@@ -1814,7 +1815,7 @@ zx_status_t Controller::IntelGpuCoreReadPciConfig16(uint16_t addr, uint16_t* val
 
 zx_status_t Controller::IntelGpuCoreMapPciMmio(uint32_t pci_bar, uint8_t** addr_out,
                                                uint64_t* size_out) {
-  if (pci_bar > fuchsia_hardware_pci::wire::kMaxBarCount) {
+  if (pci_bar > pci::kMaxBarCount) {
     return ZX_ERR_INVALID_ARGS;
   }
   fbl::AutoLock lock(&bar_lock_);
@@ -1834,7 +1835,7 @@ zx_status_t Controller::IntelGpuCoreMapPciMmio(uint32_t pci_bar, uint8_t** addr_
 }
 
 zx_status_t Controller::IntelGpuCoreUnmapPciMmio(uint32_t pci_bar) {
-  if (pci_bar > fuchsia_hardware_pci::wire::kMaxBarCount) {
+  if (pci_bar > pci::kMaxBarCount) {
     return ZX_ERR_INVALID_ARGS;
   }
   // No work needs to be done with MmioBuffers in use.

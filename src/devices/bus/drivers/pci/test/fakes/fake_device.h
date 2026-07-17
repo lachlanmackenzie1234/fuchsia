@@ -4,15 +4,14 @@
 #ifndef SRC_DEVICES_BUS_DRIVERS_PCI_TEST_FAKES_FAKE_DEVICE_H_
 #define SRC_DEVICES_BUS_DRIVERS_PCI_TEST_FAKES_FAKE_DEVICE_H_
 
+#include <lib/pci/constants.h>
 #include <lib/zx/vmo.h>
-#include <zircon/hw/pci.h>
 
 #include <cstdint>
 
 #include <fbl/algorithm.h>
 #include <fbl/ref_counted.h>
 
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/config.h"
 #include "src/devices/bus/drivers/pci/device.h"
 #include "src/devices/bus/drivers/pci/ref_counted.h"

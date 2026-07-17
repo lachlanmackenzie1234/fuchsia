@@ -15,6 +15,7 @@
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/inspector.h>
+#include <lib/pci/constants.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zx/channel.h>
@@ -309,7 +310,7 @@ class Controller final : public display::DisplayEngineInterface,
   Interrupts interrupts_;     // Internal locking
 
   ddk::Pci pci_;
-  std::array<std::optional<fdf::MmioBuffer>, fuchsia_hardware_pci::wire::kMaxBarCount> mapped_bars_
+  std::array<std::optional<fdf::MmioBuffer>, pci::kMaxBarCount> mapped_bars_
       __TA_GUARDED(bar_lock_);
   fbl::Mutex bar_lock_;
   // The mmio_space_ is read only. The internal registers are guarded by various locks where

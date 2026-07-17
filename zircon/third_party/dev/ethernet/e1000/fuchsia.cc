@@ -29,6 +29,7 @@
 #include "fuchsia.h"
 
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/fidl.h>
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
 #include <lib/device-protocol/pci.h>
@@ -40,10 +41,8 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fit/defer.h>
-#include <lib/pci/hw.h>
+#include <lib/pci/constants.h>
 #include <net/ethernet.h>
-#include <zircon/hw/pci.h>
-#include <zircon/syscalls/pci.h>
 
 #include <fbl/auto_lock.h>
 
@@ -584,7 +583,7 @@ zx::result<> Device<RxDescriptor>::AllocatePciResources() {
      * MMIO, so it must be one of the remaining five. */
     bool found_io_bar = false;
     fidl::Arena arena;
-    for (uint32_t i = 1; i < PCI_MAX_BAR_REGS; i++) {
+    for (uint32_t i = 1; i < pci::kMaxBarCount; i++) {
       pci_bar_t bar;
       if (zx_status_t status = e1000_pci_get_bar(adapter_->osdep.pci, i, &bar);
           status == ZX_OK && bar.type == PCI_BAR_TYPE_IO) {

@@ -11,8 +11,6 @@
 
 #include <fbl/algorithm.h>
 
-#include "src/devices/bus/drivers/pci/common.h"
-
 namespace pci {
 
 void UpstreamNode::ConfigureDownstreamDevices() {

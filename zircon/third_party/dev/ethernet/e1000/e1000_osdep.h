@@ -42,7 +42,6 @@
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
-#include <lib/pci/hw.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,7 +81,7 @@
 #define FALSE 0
 #define TRUE 1
 
-#define CMD_MEM_WRT_INVALIDATE PCI_COMMAND_MEM_WR_INV_EN /* BIT_4 */
+#define CMD_MEM_WRT_INVALIDATE 0x0010 /* BIT_4 */
 #define PCI_COMMAND_REGISTER PCIR_COMMAND
 
 typedef uint64_t u64;

@@ -5,15 +5,15 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fidl/cpp/wire/string_view.h>
 #include <lib/fidl/cpp/wire/traits.h>
+#include <lib/pci/constants.h>
+#include <lib/pci/hw.h>
 #include <zircon/errors.h>
-#include <zircon/hw/pci.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
 
 #include <memory>
 
 #include "src/devices/bus/drivers/pci/bus.h"
-#include "src/devices/bus/drivers/pci/common.h"
 
 namespace pci {
 
@@ -24,7 +24,7 @@ constexpr size_t kAllocatorSize =
      (fidl::TypeTraits<PciFidl::wire::PciDevice>::kMaxOutOfLine * 2)) *
     PciFidl::wire::kMaxDevices;
 
-static_assert(PciFidl::wire::kBaseConfigSize == PCI_BASE_CONFIG_SIZE);
+static_assert(PciFidl::wire::kBaseConfigSize == pci::kBaseConfigSize);
 
 void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
   fbl::AutoLock devices_lock(&devices_lock_);
@@ -45,8 +45,8 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
     devices[dev_idx].device_id = cfg->bdf().device_id;
     devices[dev_idx].function_id = cfg->bdf().function_id;
 
-    fidl::VectorView<uint8_t> config(allocator, PCI_BASE_CONFIG_SIZE);
-    for (uint16_t cfg_idx = 0; cfg_idx < PCI_BASE_CONFIG_SIZE; cfg_idx++) {
+    fidl::VectorView<uint8_t> config(allocator, pci::kBaseConfigSize);
+    for (uint16_t cfg_idx = 0; cfg_idx < pci::kBaseConfigSize; cfg_idx++) {
       config[cfg_idx] = cfg->Read(PciReg8(static_cast<uint8_t>(cfg_idx)));
     }
 
@@ -60,8 +60,8 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
         bars[i].is_64bit = bar->is_64bit;
         bars[i].size = bar->size;
         // Read the currently configured address in the bar.
-        bars[i].address = cfg->Read(Config::kBar(i)) &
-                          (bar->is_mmio ? PCI_BAR_MMIO_ADDR_MASK : PCI_BAR_PIO_ADDR_MASK);
+        bars[i].address =
+            cfg->Read(Config::kBar(i)) & (bar->is_mmio ? kBarMmioAddrMask : kBarPioAddrMask);
         if (bar->is_64bit) {
           bars[i].address |= static_cast<uint64_t>(cfg->Read(Config::kBar(i + 1))) << 32;
         }

@@ -9,6 +9,7 @@ import("//build/test.gni")
 library_headers("pci-protocol-fake-headers") {
   include_dir = "."
   headers = [ "pci_protocol_fake.h" ]
+  public_deps = [ "//src/devices/pci/lib/cpp:headers" ]
 }
 
 source_set("pci-protocol-fake") {
@@ -21,6 +22,7 @@ source_set("pci-protocol-fake") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//src/devices/pci/lib/cpp:headers",
     "//src/devices/pci/lib/device-protocol-pci",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-resource",

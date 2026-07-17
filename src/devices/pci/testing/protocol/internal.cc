@@ -9,6 +9,7 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fake-resource/resource.h>
+#include <lib/pci/constants.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/sync/completion.h>
 #include <zircon/syscalls/resource.h>
@@ -216,10 +217,10 @@ __EXPORT void FakePciProtocolInternal::AddCapabilityInternal(uint8_t capability_
           capability_id <= fidl::ToUnderlying(fpci::CapabilityId::kFlatteningPortalBridge),
       "FakePciProtocol Error: capability_id must be non-zero and <= %#x (capability_id = %#x).",
       fidl::ToUnderlying(fpci::CapabilityId::kFlatteningPortalBridge), capability_id);
-  ZX_ASSERT_MSG(position >= PCI_CONFIG_HEADER_SIZE && position + size < PCI_BASE_CONFIG_SIZE,
+  ZX_ASSERT_MSG(position >= PCI_CONFIG_HEADER_SIZE && position + size < pci::kBaseConfigSize,
                 "FakePciProtocolError: capability must fit the range [%#x, %#x] (capability = "
                 "[%#x, %#x]).",
-                PCI_CONFIG_HEADER_SIZE, PCI_BASE_CONFIG_SIZE - 1, position, position + size - 1);
+                PCI_CONFIG_HEADER_SIZE, pci::kBaseConfigSize - 1, position, position + size - 1);
 
   // We need to update the next pointer of the previous capability, or the
   // original header capabilities pointer if this is the first.
@@ -314,7 +315,7 @@ __EXPORT void FakePciProtocolInternal::reset() {
   reset_cnt_ = 0;
   info() = {};
 
-  zx_status_t status = zx::vmo::create(PCI_BASE_CONFIG_SIZE, /*options=*/0, &config());
+  zx_status_t status = zx::vmo::create(pci::kBaseConfigSize, /*options=*/0, &config());
   ZX_ASSERT(status == ZX_OK);
   status = fake_bti_create(bti_.reset_and_get_address());
   ZX_ASSERT(status == ZX_OK);

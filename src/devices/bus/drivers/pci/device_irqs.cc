@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/pci/constants.h>
+#include <lib/pci/hw.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
@@ -13,7 +15,6 @@
 #include <fbl/string_printf.h>
 
 #include "src/devices/bus/drivers/pci/capabilities/msi.h"
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/device.h"
 
 namespace pci {
@@ -26,7 +27,7 @@ zx::result<uint32_t> Device::QueryIrqMode(fpci::InterruptMode mode) {
     case fpci::InterruptMode::kLegacy:
     case fpci::InterruptMode::kLegacyNoack:
       if (cfg_->Read(Config::kInterruptLine) != 0) {
-        return zx::ok(PCI_LEGACY_INT_COUNT);
+        return zx::ok(kLegacyInterruptCount);
       }
       break;
     case fpci::InterruptMode::kMsi:
@@ -211,12 +212,12 @@ zx_status_t Device::AckLegacyIrq() {
 }
 
 void Device::EnableLegacyIrq() {
-  ModifyCmdLocked(/*clr_bits=*/PCI_CONFIG_COMMAND_INT_DISABLE, /*set_bits=*/0);
+  ModifyCmdLocked(/*clr_bits=*/pci::kCommandIntDisable, /*set_bits=*/0);
   irqs_.legacy_disabled = false;
 }
 
 void Device::DisableLegacyIrq() {
-  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/PCI_CONFIG_COMMAND_INT_DISABLE);
+  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/pci::kCommandIntDisable);
   irqs_.legacy_disabled = true;
 }
 
@@ -247,7 +248,7 @@ zx_status_t Device::EnableLegacy(bool needs_ack) {
     return status;
   }
 
-  ModifyCmdLocked(/*clr_bits=*/PCIE_CFG_COMMAND_INT_DISABLE, /*set_bits=*/0);
+  ModifyCmdLocked(/*clr_bits=*/pci::kCommandIntDisable, /*set_bits=*/0);
   irqs_.mode = (needs_ack) ? fpci::InterruptMode::kLegacy : fpci::InterruptMode::kLegacyNoack;
   irqs_.legacy_pin = cfg_->Read(Config::kInterruptPin);
   return ZX_OK;
@@ -327,7 +328,7 @@ zx_status_t Device::DisableLegacy() {
     return status;
   }
 
-  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/PCIE_CFG_COMMAND_INT_DISABLE);
+  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/pci::kCommandIntDisable);
   irqs_.legacy_vector = 0;
   return ZX_OK;
 }

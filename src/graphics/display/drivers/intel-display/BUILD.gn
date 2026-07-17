@@ -118,6 +118,7 @@ source_set("common_srcs") {
     "//src/devices/bind/fuchsia.intel.platform.gpucore:fuchsia.intel.platform.gpucore_cpp",
     "//src/devices/bind/fuchsia.sysmem.heap:fuchsia.sysmem.heap_cpp",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/devices/pci/lib/cpp:headers",
     "//src/devices/pci/lib/device-protocol-pci",
     "//src/devices/pci/lib/pci",
     "//src/graphics/display/lib/api-protocols/cpp",

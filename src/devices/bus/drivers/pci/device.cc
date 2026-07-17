@@ -11,6 +11,8 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/fit/defer.h>
 #include <lib/inspect/cpp/inspector.h>
+#include <lib/pci/constants.h>
+#include <lib/pci/hw.h>
 #include <lib/zx/interrupt.h>
 #include <string.h>
 #include <zircon/compiler.h>
@@ -33,7 +35,6 @@
 #include "src/devices/bus/drivers/pci/capabilities/msi.h"
 #include "src/devices/bus/drivers/pci/capabilities/msix.h"
 #include "src/devices/bus/drivers/pci/capabilities/power_management.h"
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/ref_counted.h"
 #include "src/devices/bus/drivers/pci/upstream_node.h"
 
@@ -91,7 +92,7 @@ Device::Device(zx_device_t* parent, std::unique_ptr<Config>&& config, UpstreamNo
     : cfg_(std::move(config)),
       upstream_(upstream),
       bdi_(bdi),
-      bar_count_(is_bridge ? PCI_BAR_REGS_PER_BRIDGE : PCI_BAR_REGS_PER_DEVICE),
+      bar_count_(is_bridge ? kBarRegsPerBridge : kMaxBarCount),
       is_bridge_(is_bridge),
       has_acpi_(has_acpi),
       has_devicetree_(has_devicetree),
@@ -109,7 +110,7 @@ Device::~Device() {
   // disabled and disable IRQs.
   DisableInterrupts();
   SetBusMastering(false);
-  ModifyCmd(/*clr_bits=*/PCI_CONFIG_COMMAND_IO_EN | PCI_CONFIG_COMMAND_MEM_EN, /*set_bits=*/0);
+  ModifyCmd(/*clr_bits=*/kCommandIoEn | kCommandMemEn, /*set_bits=*/0);
   // TODO(cja/https://fxbug.dev/42108123): Remove this after porting is finished.
   zxlogf(TRACE, "%s [%s] dtor finished", is_bridge() ? "bridge" : "device", cfg_->addr());
 }
@@ -151,7 +152,7 @@ zx_status_t Device::InitInterrupts() {
   // Disable all interrupt modes until a driver enables the preferred method.
   // The legacy interrupt is disabled by hand because our Enable/Disable methods
   // for doing so need to interact with the Shared IRQ lists in Bus.
-  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/PCIE_CFG_COMMAND_INT_DISABLE);
+  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/kCommandIntDisable);
   irqs_.legacy_vector = 0;
 
   if (caps_.msi) {
@@ -231,8 +232,8 @@ zx_status_t Device::ModifyCmd(uint16_t clr_bits, uint16_t set_bits) {
   // the legacy IRQ enable/disable bit.  Just ignore them if they try to
   // manipulate the bit via the modify cmd API.
   // TODO(cja) This only applies to PCI(e)
-  clr_bits = static_cast<uint16_t>(clr_bits & ~PCIE_CFG_COMMAND_INT_DISABLE);
-  set_bits = static_cast<uint16_t>(set_bits & ~PCIE_CFG_COMMAND_INT_DISABLE);
+  clr_bits = static_cast<uint16_t>(clr_bits & ~kCommandIntDisable);
+  set_bits = static_cast<uint16_t>(set_bits & ~kCommandIntDisable);
 
   if (plugged_in_) {
     ModifyCmdLocked(clr_bits, set_bits);
@@ -263,7 +264,7 @@ void Device::DisableLocked() {
   // off device initiated accesses to the bus, disable legacy interrupts.
   // Basically, prevent the device from doing anything from here on out.
   disabled_ = true;
-  AssignCmdLocked(PCIE_CFG_COMMAND_INT_DISABLE);
+  AssignCmdLocked(kCommandIntDisable);
 
   // Release all BAR allocations back into the pool they came from.
   for (auto& bar : bars_) {
@@ -277,8 +278,8 @@ zx_status_t Device::SetBusMastering(bool enabled) {
     return ZX_ERR_BAD_STATE;
   }
 
-  ModifyCmdLocked(enabled ? /*clr_bits=*/0 : /*set_bits=*/PCI_CONFIG_COMMAND_BUS_MASTER_EN,
-                  enabled ? /*clr_bits=*/PCI_CONFIG_COMMAND_BUS_MASTER_EN : /*set_bits=*/0);
+  ModifyCmdLocked(enabled ? /*clr_bits=*/0 : /*set_bits=*/kCommandBusMasterEn,
+                  enabled ? /*clr_bits=*/kCommandBusMasterEn : /*set_bits=*/0);
   return upstream_->SetBusMasteringUpstream(enabled);
 }
 
@@ -288,7 +289,7 @@ zx_status_t Device::WriteBarInformation(const Bar& bar) {
   // Now write the allocated address space to the BAR.
   uint16_t cmd_backup = cfg_->Read(Config::kCommand);
   // Figure out the IO type of the bar and disable that while we adjust the bar address.
-  uint16_t mem_io_en_flag = (bar.is_mmio) ? PCI_CONFIG_COMMAND_MEM_EN : PCI_CONFIG_COMMAND_IO_EN;
+  uint16_t mem_io_en_flag = (bar.is_mmio) ? kCommandMemEn : kCommandIoEn;
   ModifyCmdLocked(mem_io_en_flag, cmd_backup);
 
   cfg_->Write(Config::kBar(bar.bar_id), static_cast<uint32_t>(bar.address));
@@ -310,10 +311,10 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   uint32_t bar_val = cfg_->Read(Config::kBar(bar_id));
 
   bar.bar_id = bar_id;
-  bar.is_mmio = (bar_val & PCI_BAR_IO_TYPE_MASK) == PCI_BAR_IO_TYPE_MMIO;
-  bar.is_64bit = bar.is_mmio && ((bar_val & PCI_BAR_MMIO_TYPE_MASK) == PCI_BAR_MMIO_TYPE_64BIT);
-  bar.is_prefetchable = bar.is_mmio && (bar_val & PCI_BAR_MMIO_PREFETCH_MASK);
-  const uint32_t addr_mask = (bar.is_mmio) ? PCI_BAR_MMIO_ADDR_MASK : PCI_BAR_PIO_ADDR_MASK;
+  bar.is_mmio = (bar_val & kBarIoTypeMask) == kBarIoTypeMmio;
+  bar.is_64bit = bar.is_mmio && ((bar_val & kBarMmioTypeMask) == kBarMmioType64Bit);
+  bar.is_prefetchable = bar.is_mmio && (bar_val & kBarMmioPrefetchMask);
+  const uint32_t addr_mask = (bar.is_mmio) ? kBarMmioAddrMask : kBarPioAddrMask;
 
   // Check the read-only configuration of the BAR. If it's invalid then don't add it to our BAR
   // list.
@@ -338,9 +339,9 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   // systems are quiescent at this point in time, otherwise they might see
   // some minor glitching while access is disabled.
   uint16_t cmd_backup = ReadCmdLocked();
-  bool enabled = !!(cmd_backup & (PCI_CONFIG_COMMAND_MEM_EN | PCI_CONFIG_COMMAND_IO_EN));
+  bool enabled = !!(cmd_backup & (kCommandMemEn | kCommandIoEn));
   if (enabled) {
-    ModifyCmdLocked(/*clr_bits=*/PCI_CONFIG_COMMAND_MEM_EN | PCI_CONFIG_COMMAND_IO_EN,
+    ModifyCmdLocked(/*clr_bits=*/kCommandMemEn | kCommandIoEn,
                     /*set_bits=*/cmd_backup);
     // For enabled devices save the original address in the BAR. If the device
     // is enabled then we should assume the bios configured it and we should
@@ -494,7 +495,7 @@ zx::result<> Device::AllocateBars() {
   ZX_DEBUG_ASSERT(bar_count_ <= bars_.max_size());
 
   std::vector<uint32_t> bar_allocation_order;
-  bar_allocation_order.reserve(PCI_MAX_BAR_REGS);
+  bar_allocation_order.reserve(kMaxBarCount);
   for (uint32_t i = 0; i < bars_.size(); ++i) {
     if (bars_[i]) {
       ZX_DEBUG_ASSERT(bars_[i]->bar_id == i);

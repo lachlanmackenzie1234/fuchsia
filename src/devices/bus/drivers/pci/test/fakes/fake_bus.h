@@ -8,7 +8,6 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/msi.h>
 #include <lib/zx/resource.h>
-#include <zircon/hw/pci.h>
 
 #include <hwreg/bitfields.h>
 

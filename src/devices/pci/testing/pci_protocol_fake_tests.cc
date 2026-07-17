@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
@@ -9,12 +10,12 @@
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
+#include <lib/pci/constants.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/object.h>
 #include <lib/zx/vmo.h>
 #include <zircon/errors.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/system/public/zircon/syscalls.h>
 
 #include <zxtest/zxtest.h>
@@ -371,10 +372,10 @@ TEST_F(FakePciProtocolTests, ConfigRW) {
   ASSERT_EQ(ZX_OK, pci().ReadConfig8(PCI_CONFIG_HEADER_SIZE - 1, &val8));
   // The ensures we also verify that offset + read/write size is within bounds.
   uint32_t val32;
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, pci().WriteConfig32(PCI_BASE_CONFIG_SIZE - 2, 0xFF));
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, pci().ReadConfig32(PCI_BASE_CONFIG_SIZE - 2, &val32));
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, pci().WriteConfig32(pci::kBaseConfigSize - 2, 0xFF));
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, pci().ReadConfig32(pci::kBaseConfigSize - 2, &val32));
 
-  for (uint16_t off = PCI_CONFIG_HEADER_SIZE; off < PCI_BASE_CONFIG_SIZE; off++) {
+  for (uint16_t off = PCI_CONFIG_HEADER_SIZE; off < pci::kBaseConfigSize; off++) {
     uint8_t val8;
     pci().WriteConfig8(off, off);
     pci().ReadConfig8(off, &val8);
@@ -383,7 +384,7 @@ TEST_F(FakePciProtocolTests, ConfigRW) {
     ASSERT_EQ(off, val8);
   }
 
-  for (uint16_t off = PCI_CONFIG_HEADER_SIZE; off < PCI_BASE_CONFIG_SIZE - 1; off++) {
+  for (uint16_t off = PCI_CONFIG_HEADER_SIZE; off < pci::kBaseConfigSize - 1; off++) {
     uint16_t val16;
     pci().WriteConfig16(off, off);
     pci().ReadConfig16(off, &val16);
@@ -392,7 +393,7 @@ TEST_F(FakePciProtocolTests, ConfigRW) {
     ASSERT_EQ(off, val16);
   }
 
-  for (uint16_t off = PCI_CONFIG_HEADER_SIZE; off < PCI_BASE_CONFIG_SIZE - 3; off++) {
+  for (uint16_t off = PCI_CONFIG_HEADER_SIZE; off < pci::kBaseConfigSize - 3; off++) {
     uint32_t val32;
     pci().WriteConfig32(off, off);
     pci().ReadConfig32(off, &val32);
@@ -465,7 +466,7 @@ TEST_F(FakePciProtocolTests, Capabilities) {
 
     // Try invalid locations.
     ASSERT_DEATH([&]() { fake_pci().AddVendorCapability(PCI_CONFIG_HEADER_SIZE - 16, 32); });
-    ASSERT_DEATH([&]() { fake_pci().AddVendorCapability(PCI_BASE_CONFIG_SIZE - 16, 32); });
+    ASSERT_DEATH([&]() { fake_pci().AddVendorCapability(pci::kBaseConfigSize - 16, 32); });
 
     // Overlap tests.
     ASSERT_NO_DEATH([&]() { fake_pci().AddVendorCapability(0xB0, 16); });

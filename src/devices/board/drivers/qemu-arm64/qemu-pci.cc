@@ -8,6 +8,7 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/driver.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/pci/constants.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/iommu.h>
@@ -146,7 +147,7 @@ zx_status_t QemuArm64::PciInit() {
       .address = PCIE_ECAM_BASE_PHYS,
       .pci_segment = 0,
       .start_bus_number = 0,
-      .end_bus_number = (PCIE_ECAM_SIZE / ZX_PCI_ECAM_BYTE_PER_BUS) - 1,
+      .end_bus_number = (PCIE_ECAM_SIZE / pci::kEcamBytesPerBus) - 1,
   };
 
   pci_root_host_.mcfgs().push_back(pci0_mcfg);

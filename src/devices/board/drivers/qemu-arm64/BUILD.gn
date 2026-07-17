@@ -40,6 +40,7 @@ fuchsia_cc_driver("qemu-arm64-driver") {
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/devices/pci/lib/cpp:headers",
     "//src/devices/pci/lib/pci",
     "//src/lib/ddk",
     "//src/lib/ddktl",

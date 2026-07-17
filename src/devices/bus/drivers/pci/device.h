@@ -11,6 +11,7 @@
 #include <lib/device-protocol/pci.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/inspect/cpp/inspector.h>
+#include <lib/pci/constants.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 #include <sys/types.h>
@@ -138,7 +139,7 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
     inspect::UintProperty legacy_ack_cnt;
     // Individual BARs
     inspect::Node bar;  // The top level 'BARs' header
-    std::array<std::optional<inspect::Node>, fuchsia_hardware_pci::wire::kMaxBarCount> bars;
+    std::array<std::optional<inspect::Node>, pci::kMaxBarCount> bars;
   };
 
   // Templated helpers to assist with differently sized protocol reads and writes.
@@ -146,7 +147,7 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   // them.
   template <typename V, typename R>
   zx::result<V> ReadConfig(uint16_t offset) {
-    if (offset + sizeof(V) > PCI_EXT_CONFIG_SIZE) {
+    if (offset + sizeof(V) > pci::kExtendedConfigSize) {
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
 
@@ -156,11 +157,11 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   template <typename V, typename R>
   zx_status_t WriteConfig(uint16_t offset, V value) {
     // Don't permit writes inside the config header.
-    if (offset < PCI_CONFIG_HDR_SIZE) {
+    if (offset < pci::kConfigHeaderSize) {
       return ZX_ERR_ACCESS_DENIED;
     }
 
-    if (offset + sizeof(V) > PCI_EXT_CONFIG_SIZE) {
+    if (offset + sizeof(V) > pci::kExtendedConfigSize) {
       return ZX_ERR_OUT_OF_RANGE;
     }
 
@@ -285,7 +286,7 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   Irqs& irqs() __TA_REQUIRES(dev_lock_) { return irqs_; }
   // Info about the BARs computed and cached during the initial setup/probe,
   // indexed by starting BAR register index.
-  std::array<std::optional<Bar>, PCI_MAX_BAR_REGS>& bars() __TA_REQUIRES(dev_lock_) {
+  std::array<std::optional<Bar>, pci::kMaxBarCount>& bars() __TA_REQUIRES(dev_lock_) {
     return bars_;
   }
   BusDeviceInterface* bdi() __TA_REQUIRES(dev_lock_) { return bdi_; }
@@ -313,10 +314,8 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
     ModifyCmdLocked(UINT16_MAX, value);
   }
 
-  bool IoEnabled() __TA_REQUIRES(dev_lock_) { return ReadCmdLocked() & PCI_CONFIG_COMMAND_IO_EN; }
-  bool MmioEnabled() __TA_REQUIRES(dev_lock_) {
-    return ReadCmdLocked() & PCI_CONFIG_COMMAND_MEM_EN;
-  }
+  bool IoEnabled() __TA_REQUIRES(dev_lock_) { return ReadCmdLocked() & pci::kCommandIoEn; }
+  bool MmioEnabled() __TA_REQUIRES(dev_lock_) { return ReadCmdLocked() & pci::kCommandMemEn; }
 
   zx_status_t ProbeCapabilities() __TA_REQUIRES(dev_lock_);
   zx_status_t ParseCapabilities() __TA_REQUIRES(dev_lock_);
@@ -375,7 +374,7 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   const std::unique_ptr<Config> cfg_;  // Pointer to the device's config interface.
   UpstreamNode* upstream_;             // The upstream node in the device graph.
   BusDeviceInterface* bdi_ __TA_GUARDED(dev_lock_);
-  std::array<std::optional<Bar>, PCI_MAX_BAR_REGS> bars_ __TA_GUARDED(dev_lock_) = {};
+  std::array<std::optional<Bar>, pci::kMaxBarCount> bars_ __TA_GUARDED(dev_lock_) = {};
   const uint32_t bar_count_;
 
   const bool is_bridge_;  // True if this device is also a bridge

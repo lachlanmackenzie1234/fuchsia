@@ -20,7 +20,6 @@
 #include <zircon/rights.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/types.h>
 
 #include <cstddef>

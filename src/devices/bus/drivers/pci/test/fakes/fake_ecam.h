@@ -9,11 +9,11 @@
 #include <lib/driver/mmio/cpp/mmio-view.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
-#include <zircon/hw/pci.h>
+#include <lib/pci/constants.h>
+#include <lib/pci/hw.h>
 
 #include <hwreg/bitfields.h>
 
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/config.h"
 
 struct IoBaseAddress {
@@ -227,9 +227,10 @@ class FakeEcam {
       : bus_start_(bus_start),
         bus_cnt_(bus_cnt),
         is_extended_(is_extended),
-        config_size_((is_extended) ? PCI_EXT_CONFIG_SIZE : PCI_BASE_CONFIG_SIZE),
+        config_size_((is_extended) ? pci::kExtendedConfigSize : pci::kBaseConfigSize),
         mmio_(fdf_testing::CreateMmioBuffer(static_cast<size_t>(bus_cnt) *
-                                            PCI_MAX_FUNCTIONS_PER_BUS * config_size_)) {
+                                            (pci::kMaxDevicesPerBus * pci::kMaxFunctionsPerDevice) *
+                                            config_size_)) {
     reset();
   }
 

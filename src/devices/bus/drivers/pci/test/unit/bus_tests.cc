@@ -105,19 +105,19 @@ uint32_t PciBusTests::SetupTopology() {
   uint8_t idx = 1;
   auto& ecam = pciroot_->ecam();
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++).set_header_type(
-      PCI_HEADER_TYPE_MULTI_FN);
+      kHeaderTypeMultiFn);
   ecam.get_device({0, 0, 1})->set_vendor_id(0x8086).set_device_id(idx++);
   ecam.get_bridge({0, 1, 0})
       ->set_vendor_id(0x8086)
       .set_device_id(idx++)
-      .set_header_type(PCI_HEADER_TYPE_PCI_BRIDGE)
+      .set_header_type(kHeaderTypePciBridge)
       .set_io_base(0x10)
       .set_io_limit(0x0FFF)
       .set_memory_base(0x1000)
       .set_memory_limit(0xFFFFFFFF)
       .set_secondary_bus_number(1);
   ecam.get_device({1, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++).set_header_type(
-      PCI_HEADER_TYPE_MULTI_FN);
+      kHeaderTypeMultiFn);
   ecam.get_device({1, 0, 1})->set_vendor_id(0x8086).set_device_id(idx);
   return idx;
 }
@@ -126,11 +126,11 @@ uint32_t PciBusTests::SetupMultifunctionTopology() {
   uint8_t idx = 1;
   auto& ecam = pciroot_->ecam();
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++).set_header_type(
-      PCI_HEADER_TYPE_MULTI_FN);
+      kHeaderTypeMultiFn);
   ecam.get_bridge({0, 0, 1})
       ->set_vendor_id(0x8086)
       .set_device_id(idx++)
-      .set_header_type(PCI_HEADER_TYPE_PCI_BRIDGE | PCI_HEADER_TYPE_MULTI_FN)
+      .set_header_type(kHeaderTypePciBridge | kHeaderTypeMultiFn)
       .set_io_base(0x10)
       .set_io_limit(0x0FFF)
       .set_memory_base(0x1000)
@@ -368,7 +368,7 @@ TEST_F(PciBusTests, LegacyIrqSignalTest) {
   // Timestamps of the original vector must match.
   zx::time_boot receive_time;
   zx::time_boot trigger_time = zx::clock::get_boot();
-  pciroot().ecam().get_device({0, 0, 1})->set_status(PCI_STATUS_INTERRUPT);
+  pciroot().ecam().get_device({0, 0, 1})->set_status(kStatusInterrupt);
   ASSERT_OK(interrupt.trigger(0, trigger_time));
 
   // Only the device at 00:00.1 should trigger because 00:00.0 does not have the interrupt status
@@ -395,7 +395,7 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
       ->set_vendor_id(0x8086)
       .set_device_id(0x8086)
       .set_interrupt_pin(0x1)
-      .set_status(PCI_STATUS_INTERRUPT);
+      .set_status(kStatusInterrupt);
   // Route pin A to vector 16.
   constexpr uint8_t kVector = 0x10;
   zx::interrupt bus_interrupt = AddLegacyIrqToBus(kVector);
@@ -443,7 +443,7 @@ TEST_F(PciBusTests, ObeysHeaderTypeMultiFn) {
   auto& ecam = pciroot().ecam();
 
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(1).set_header_type(
-      PCI_HEADER_TYPE_MULTI_FN);
+      kHeaderTypeMultiFn);
   ecam.get_device({0, 0, 1})->set_vendor_id(0x8086).set_device_id(2);
   ecam.get_device({0, 1, 0})->set_vendor_id(0x8086).set_device_id(3).set_header_type(0);
   ecam.get_device({0, 1, 1})->set_vendor_id(0x8086).set_device_id(4);

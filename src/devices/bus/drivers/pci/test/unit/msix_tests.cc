@@ -7,8 +7,8 @@
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/inspect/testing/cpp/inspect.h>
+#include <lib/pci/constants.h>
 #include <lib/zx/vmo.h>
-#include <zircon/hw/pci.h>
 #include <zircon/limits.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
@@ -64,7 +64,7 @@ class PciCapabilityTests : public ::testing::Test {
  protected:
   void SetUp() final {
     zx::vmo vmo;
-    mmio_ = fdf_testing::CreateMmioBuffer(PCI_BASE_CONFIG_SIZE, ZX_CACHE_POLICY_UNCACHED);
+    mmio_ = fdf_testing::CreateMmioBuffer(pci::kBaseConfigSize, ZX_CACHE_POLICY_UNCACHED);
   }
 
   void TearDown() final { mmio_->reset(); }

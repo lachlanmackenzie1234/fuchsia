@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
@@ -11,6 +12,7 @@
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fake-bti/bti.h>
+#include <lib/pci/constants.h>
 #include <lib/sync/completion.h>
 #include <lib/virtio/backends/pci.h>
 #include <lib/virtio/driver_utils_dfv1.h>
@@ -19,7 +21,6 @@
 #include <lib/zx/vmo.h>
 #include <unistd.h>
 #include <zircon/errors.h>
-#include <zircon/hw/pci.h>
 #include <zircon/status.h>
 
 #include <ddktl/device.h>
@@ -189,7 +190,7 @@ class VirtioTests : public zxtest::Test {
   }
 
   async_patterns::TestDispatcherBound<AsyncState>& async_state() { return async_; }
-  std::array<std::optional<fdf::MmioBuffer>, PCI_MAX_BAR_REGS>& bars() { return bars_; }
+  std::array<std::optional<fdf::MmioBuffer>, pci::kMaxBarCount>& bars() { return bars_; }
 
   void SetUpProtocol() {
     fidl::ClientEnd client = async_.SyncCall(&AsyncState::SetUpProtocol);
@@ -306,7 +307,7 @@ class VirtioTests : public zxtest::Test {
  private:
   async::Loop loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
   async_patterns::TestDispatcherBound<AsyncState> async_;
-  std::array<std::optional<fdf::MmioBuffer>, PCI_MAX_BAR_REGS> bars_;
+  std::array<std::optional<fdf::MmioBuffer>, pci::kMaxBarCount> bars_;
 };
 
 class TestVirtioDevice;

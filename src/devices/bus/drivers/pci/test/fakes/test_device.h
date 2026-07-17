@@ -6,12 +6,13 @@
 
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/pci/constants.h>
+#include <lib/pci/hw.h>
 
 #include <array>
 #include <cstdint>
 
 #include "src/devices/bus/drivers/pci/capabilities/msi.h"
-#include "src/devices/bus/drivers/pci/common.h"
 
 // clang-format off
 
@@ -48,7 +49,7 @@
 //  Capabilities: [258] L1 PM Substates
 //  Capabilities: [128] Power Budgeting <?>
 //  Capabilities: [600] Vendor Specific Information: ID=0001 Rev=1 Len=024 <?>
-static std::array<uint8_t, PCI_EXT_CONFIG_SIZE> kFakeQuadroDeviceConfig = {
+static std::array<uint8_t, pci::kExtendedConfigSize> kFakeQuadroDeviceConfig = {
     0xde, 0x10, // Vendor Id
     0xba, 0x13, // Device Id
     0x07, 0x00, // Command
@@ -367,7 +368,7 @@ static constexpr struct test_bar_info_t {
 
 // This is the configuration space dump of a virtio-input device. It should
 // contain an MSIX capability along with 5 Vendor capabilities.
-static std::array<uint8_t, PCI_BASE_CONFIG_SIZE> kFakeVirtioInputDeviceConfig = {
+static std::array<uint8_t, pci::kBaseConfigSize> kFakeVirtioInputDeviceConfig = {
     0xf4, 0x1a, // Vendor Id
     0x52, 0x10, // Device Id
     0x07, 0x01, // Command

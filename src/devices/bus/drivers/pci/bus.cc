@@ -12,11 +12,11 @@
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/pci/constants.h>
 #include <lib/pci/hw.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
-#include <zircon/hw/pci.h>
 #include <zircon/status.h>
 #include <zircon/syscalls/port.h>
 
@@ -213,7 +213,7 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
   uint8_t _func_id = entry.bdf.function_id;
   uint8_t _max_functions = entry.max_functions;
   UpstreamNode* upstream = entry.upstream;
-  for (uint8_t dev_id = _dev_id; dev_id < PCI_MAX_DEVICES_PER_BUS; dev_id++) {
+  for (uint8_t dev_id = _dev_id; dev_id < kMaxDevicesPerBus; dev_id++) {
     uint8_t max_functions = _max_functions;
     for (uint8_t func_id = _func_id; func_id < max_functions; func_id++) {
       pci_bdf_t bdf = {static_cast<uint8_t>(bus_id), dev_id, func_id};
@@ -225,18 +225,18 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
       if (func_id == 0) {
         // Check if this device is multi-function. If it is, scan all 8 functions, otherwise, just
         // scan 1.
-        if (config->Read(Config::kHeaderType) & PCI_HEADER_TYPE_MULTI_FN) {
-          max_functions = PCI_MAX_FUNCTIONS_PER_DEVICE;
+        if (config->Read(Config::kHeaderType) & kHeaderTypeMultiFn) {
+          max_functions = kMaxFunctionsPerDevice;
         }
       }
 
       // Check that the device is valid by verifying the vendor and device ids.
-      if (config->Read(Config::kVendorId) == PCI_INVALID_VENDOR_ID) {
+      if (config->Read(Config::kVendorId) == kInvalidVendorId) {
         continue;
       }
 
-      bool is_bridge = ((config->Read(Config::kHeaderType) & PCI_HEADER_TYPE_MASK) ==
-                        PCI_HEADER_TYPE_PCI_BRIDGE);
+      bool is_bridge =
+          ((config->Read(Config::kHeaderType) & kHeaderTypeMask) == kHeaderTypePciBridge);
       zxlogf(TRACE, "\tfound %s at %02x:%02x.%1x VID %#04x DID %#04x",
              (is_bridge) ? "bridge" : "device", bus_id, dev_id, func_id,
              config->Read(Config::kVendorId), config->Read(Config::kDeviceId));
@@ -382,7 +382,7 @@ zx_status_t Bus::ConfigureLegacyIrqs() {
     UpstreamNode* upstream = device.upstream();
     std::optional<pci_bdf_t> port;
     while (upstream && upstream->type() == UpstreamNode::Type::BRIDGE) {
-      pin = (pin + device.dev_id()) % PCI_MAX_LEGACY_IRQ_PINS;
+      pin = (pin + device.dev_id()) % kMaxLegacyIrqPins;
       auto bridge = static_cast<pci::Bridge*>(upstream);
       port = bridge->config()->bdf();
       upstream = bridge->upstream();

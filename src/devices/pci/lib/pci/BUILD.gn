@@ -9,7 +9,6 @@ import("//build/zircon/zx_library.gni")
 zx_library("pci") {
   sdk = "source"
   sdk_headers = [
-    "lib/pci/hw.h",
     "lib/pci/pio.h",
     "lib/pci/pciroot.h",
     "lib/pci/root_host.h",
@@ -28,6 +27,7 @@ zx_library("pci") {
 
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+    "//src/devices/pci/lib/cpp:headers",
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/region-alloc",

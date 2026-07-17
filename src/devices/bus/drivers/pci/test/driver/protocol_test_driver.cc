@@ -4,16 +4,17 @@
 #include "protocol_test_driver.h"
 
 #include <fidl/fuchsia.device.test/cpp/wire.h>
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/pci/constants.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/object.h>
 #include <lib/zx/time.h>
 #include <stdio.h>
 #include <threads.h>
 #include <zircon/errors.h>
-#include <zircon/hw/pci.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/threads.h>
 
@@ -22,7 +23,6 @@
 #include <zxtest/zxtest.h>
 
 #include "src/devices/bus/drivers/pci/capabilities/msi.h"
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/config.h"
 #include "src/devices/bus/drivers/pci/test/fakes/test_device.h"
 
@@ -77,15 +77,15 @@ TEST_F(PciProtocolTests, ConfigBounds) {
   uint32_t rd_val32 = 0;
 
   // Reads/Writes outside of config space should be invalid.
-  ASSERT_EQ(pci().ReadConfig8(PCI_EXT_CONFIG_SIZE, &rd_val8), ZX_ERR_OUT_OF_RANGE);
-  ASSERT_EQ(pci().ReadConfig16(PCI_EXT_CONFIG_SIZE, &rd_val16), ZX_ERR_OUT_OF_RANGE);
-  ASSERT_EQ(pci().ReadConfig32(PCI_EXT_CONFIG_SIZE, &rd_val32), ZX_ERR_OUT_OF_RANGE);
-  ASSERT_EQ(pci().WriteConfig8(PCI_EXT_CONFIG_SIZE, UINT8_MAX), ZX_ERR_OUT_OF_RANGE);
-  ASSERT_EQ(pci().WriteConfig16(PCI_EXT_CONFIG_SIZE, UINT16_MAX), ZX_ERR_OUT_OF_RANGE);
-  ASSERT_EQ(pci().WriteConfig32(PCI_EXT_CONFIG_SIZE, UINT32_MAX), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_EQ(pci().ReadConfig8(pci::kExtendedConfigSize, &rd_val8), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_EQ(pci().ReadConfig16(pci::kExtendedConfigSize, &rd_val16), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_EQ(pci().ReadConfig32(pci::kExtendedConfigSize, &rd_val32), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_EQ(pci().WriteConfig8(pci::kExtendedConfigSize, UINT8_MAX), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_EQ(pci().WriteConfig16(pci::kExtendedConfigSize, UINT16_MAX), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_EQ(pci().WriteConfig32(pci::kExtendedConfigSize, UINT32_MAX), ZX_ERR_OUT_OF_RANGE);
 
   // Writes within the config header are not allowed.
-  for (uint16_t addr = 0; addr < PCI_CONFIG_HDR_SIZE; addr++) {
+  for (uint16_t addr = 0; addr < pci::kConfigHeaderSize; addr++) {
     ASSERT_EQ(pci().WriteConfig8(addr, UINT8_MAX), ZX_ERR_ACCESS_DENIED);
     ASSERT_EQ(pci().WriteConfig16(addr, UINT16_MAX), ZX_ERR_ACCESS_DENIED);
     ASSERT_EQ(pci().WriteConfig32(addr, UINT32_MAX), ZX_ERR_ACCESS_DENIED);
@@ -223,7 +223,7 @@ TEST_F(PciProtocolTests, GetBarArgumentCheck) {
   fidl::Arena arena;
   fuchsia_hardware_pci::wire::Bar info = {};
   // Test that only valid BAR ids are accepted.
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, pci().GetBar(arena, PCI_MAX_BAR_REGS, &info));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS, pci().GetBar(arena, pci::kMaxBarCount, &info));
 }
 
 // These individual BAR tests are coupled closely to the device configuration
@@ -484,7 +484,7 @@ TEST_F(PciProtocolTests, GetAndSetInterruptMode) {
 
   fpci::wire::InterruptModes modes{};
   pci().GetInterruptModes(&modes);
-  EXPECT_EQ(modes.has_legacy, PCI_LEGACY_INT_COUNT);
+  EXPECT_EQ(modes.has_legacy, pci::kLegacyInterruptCount);
   ASSERT_EQ(modes.msi_count, pci::MsiCapability::MmcToCount(msi_ctrl.mm_capable()));
   ASSERT_OK(pci().SetInterruptMode(fpci::InterruptMode::kLegacy, 1));
   ASSERT_OK(pci().SetInterruptMode(fpci::InterruptMode::kLegacyNoack, 1));
@@ -502,7 +502,7 @@ TEST_F(PciProtocolTests, GetInterruptModes) {
 
   fpci::wire::InterruptModes modes{};
   pci().GetInterruptModes(&modes);
-  EXPECT_EQ(modes.has_legacy, PCI_LEGACY_INT_COUNT);
+  EXPECT_EQ(modes.has_legacy, pci::kLegacyInterruptCount);
   EXPECT_EQ(modes.msi_count, pci::MsiCapability::MmcToCount(msi_ctrl.mm_capable()));
   EXPECT_EQ(modes.msix_count, kFakeQuadroMsiXIrqCnt);
 }

@@ -8,12 +8,11 @@
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <inttypes.h>
 #include <lib/ddk/debug.h>
+#include <lib/pci/constants.h>
 
 #include <optional>
 
 #include <pretty/hexdump.h>
-
-#include "src/devices/bus/drivers/pci/common.h"
 
 namespace pci {
 
@@ -21,13 +20,13 @@ namespace pci {
 zx::result<std::unique_ptr<Config>> MmioConfig::Create(pci_bdf_t bdf, const fdf::MmioBuffer& ecam,
                                                        uint8_t start_bus, uint8_t end_bus,
                                                        bool is_extended) {
-  if (bdf.bus_id < start_bus || bdf.bus_id > end_bus || bdf.device_id >= PCI_MAX_DEVICES_PER_BUS ||
-      bdf.function_id >= PCI_MAX_FUNCTIONS_PER_DEVICE) {
+  if (bdf.bus_id < start_bus || bdf.bus_id > end_bus || bdf.device_id >= pci::kMaxDevicesPerBus ||
+      bdf.function_id >= pci::kMaxFunctionsPerDevice) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   zx_vaddr_t config_offset = GetConfigOffsetInCam(bdf, start_bus, /*is_extended=*/is_extended);
-  zx_vaddr_t config_size = (is_extended) ? PCIE_EXTENDED_CONFIG_SIZE : PCI_BASE_CONFIG_SIZE;
+  zx_vaddr_t config_size = (is_extended) ? pci::kExtendedConfigSize : pci::kBaseConfigSize;
 
   return zx::ok(
       std::unique_ptr<MmioConfig>(new MmioConfig(bdf, ecam.View(config_offset, config_size))));
@@ -100,7 +99,7 @@ void Config::DumpConfig(uint16_t len) const {
 
     hexdump8_ex(buf, row_len, pos);
     pos += row_len;
-  } while (pos < PCI_BASE_CONFIG_SIZE);
+  } while (pos < pci::kBaseConfigSize);
 }
 
 }  // namespace pci

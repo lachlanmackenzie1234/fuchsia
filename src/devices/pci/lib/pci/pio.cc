@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <lib/ddk/hw/inout.h>
 #include <lib/pci/pio.h>
-#include <zircon/hw/pci.h>
 #include <zircon/types.h>
 
 #include <fbl/auto_lock.h>

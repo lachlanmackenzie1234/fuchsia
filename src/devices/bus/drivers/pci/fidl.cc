@@ -8,6 +8,7 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/driver.h>
 #include <lib/fit/defer.h>
+#include <lib/pci/constants.h>
 #include <zircon/errors.h>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -157,7 +158,7 @@ void FidlDevice::GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) {
 }
 
 void FidlDevice::GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer) {
-  if (request->bar_id >= fpci::wire::kMaxBarCount) {
+  if (request->bar_id >= pci::kMaxBarCount) {
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     RETURN_DEBUG(ZX_ERR_INVALID_ARGS, "%u", request->bar_id);
   }

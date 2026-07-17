@@ -18,7 +18,6 @@
 
 #include "src/devices/bus/drivers/pci/allocation.h"
 #include "src/devices/bus/drivers/pci/bus.h"
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/config.h"
 #include "src/devices/bus/drivers/pci/device.h"
 

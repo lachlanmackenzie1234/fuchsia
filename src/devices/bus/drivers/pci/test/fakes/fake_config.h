@@ -7,7 +7,6 @@
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/zx/vmo.h>
-#include <zircon/hw/pci.h>
 
 #include <cstdint>
 

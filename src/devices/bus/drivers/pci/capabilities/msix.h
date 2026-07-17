@@ -5,6 +5,7 @@
 #define SRC_DEVICES_BUS_DRIVERS_PCI_CAPABILITIES_MSIX_H_
 
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/pci/constants.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 
@@ -15,7 +16,6 @@
 
 #include "src/devices/bus/drivers/pci/bar_info.h"
 #include "src/devices/bus/drivers/pci/capabilities.h"
-#include "src/devices/bus/drivers/pci/common.h"
 #include "src/devices/bus/drivers/pci/config.h"
 
 namespace pci {

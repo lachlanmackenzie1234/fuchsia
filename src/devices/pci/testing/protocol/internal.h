@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/fake-bti/bti.h>
+#include <lib/pci/constants.h>
 #include <zircon/errors.h>
-#include <zircon/hw/pci.h>
 
 #include <ddktl/device.h>
 #include <fbl/algorithm.h>
@@ -115,11 +116,11 @@ class FakePciProtocolInternal {
  private:
   template <typename T>
   zx_status_t ReadConfig(uint16_t offset, T* out_value) {
-    if (!(offset + sizeof(T) <= PCI_BASE_CONFIG_SIZE)) {
+    if (!(offset + sizeof(T) <= pci::kBaseConfigSize)) {
       printf(
           "FakePciProtocol: PciReadConfig reads must fit in the range [%#x, %#x] (offset "
           "= %#x, io width = %#lx).\n",
-          0, PCI_BASE_CONFIG_SIZE - 1, offset, sizeof(T));
+          0, pci::kBaseConfigSize - 1, offset, sizeof(T));
       return ZX_ERR_OUT_OF_RANGE;
     }
     return config_.read(out_value, offset, sizeof(T));
@@ -127,11 +128,11 @@ class FakePciProtocolInternal {
 
   template <typename T>
   zx_status_t WriteConfig(uint16_t offset, T value) {
-    if (!(offset >= PCI_CONFIG_HEADER_SIZE && offset + sizeof(T) <= PCI_BASE_CONFIG_SIZE)) {
+    if (!(offset >= PCI_CONFIG_HEADER_SIZE && offset + sizeof(T) <= pci::kBaseConfigSize)) {
       printf(
           "FakePciProtocol: PciWriteConfig writes must fit in the range [%#x, %#x] (offset "
           "= %#x, io width = %#lx).\n",
-          PCI_CONFIG_HEADER_SIZE, PCI_BASE_CONFIG_SIZE - 1, offset, sizeof(T));
+          PCI_CONFIG_HEADER_SIZE, pci::kBaseConfigSize - 1, offset, sizeof(T));
       return ZX_ERR_OUT_OF_RANGE;
     }
     return config_.write(&value, offset, sizeof(T));
