@@ -76,9 +76,10 @@ const MAX_PARTITIONS: u64 = 1024;
 
 const DEFAULT_SLICE_SIZE: u64 = 32768;
 
+/// A raw unverified struct for the Header.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, KnownLayout, FromBytes, IntoBytes, Immutable)]
-struct Header {
+struct HeaderRaw {
     magic: u64,
     major_version: u64,
     pslice_count: u64,
@@ -91,34 +92,17 @@ struct Header {
     oldest_minor_version: u64,
 }
 
-impl Header {
-    fn used_allocation_table_size(&self) -> Result<usize, Error> {
-        (self.pslice_count + 1)
-            .checked_mul(std::mem::size_of::<SliceEntry>() as u64)
-            .and_then(|n| n.checked_next_multiple_of(BLOCK_SIZE))
-            .ok_or_else(|| anyhow!("Bad pslice_count"))
-            .map(|n| n as usize)
-    }
-
+impl HeaderRaw {
     /// Returns the offset of the second copy of the metadata.
-    fn offset_for_slot(&self, slot: u8) -> u64 {
+    fn offset_for_slot(&self, slot: u8) -> Result<u64, Error> {
         match slot {
-            0 => 0,
-            1 => BLOCK_SIZE + self.vpartition_table_size + self.allocation_table_size,
+            0 => Ok(0),
+            1 => BLOCK_SIZE
+                .checked_add(self.vpartition_table_size)
+                .and_then(|n| n.checked_add(self.allocation_table_size))
+                .ok_or_else(|| anyhow!("Overflow in offset_for_slot")),
             _ => unreachable!(),
         }
-    }
-
-    /// Returns the offset where the data starts.
-    fn data_start(&self) -> u64 {
-        (BLOCK_SIZE + self.vpartition_table_size + self.allocation_table_size) * 2
-    }
-
-    fn max_allocation_table_entries(&self) -> u64 {
-        // The 0 indexed slice in the allocation table is unused, but is included in the table size
-        // because it is still written to disk as an empty slice entry. When calculating the number
-        // of available table entries we don't count it, hence subtracting 1.
-        (self.allocation_table_size / std::mem::size_of::<SliceEntry>() as u64).saturating_sub(1)
     }
 }
 
@@ -214,7 +198,8 @@ impl Inner {
             .ok_or_else(|| anyhow!(zx::Status::BAD_STATE))?;
 
         let new_slot = 1 - self.slot;
-        new_metadata.write(device, new_metadata.header.offset_for_slot(new_slot)).await?;
+        let offset = new_metadata.offset_for_slot(new_slot);
+        new_metadata.write(device, offset).await?;
 
         self.slot = new_slot;
         self.metadata = new_metadata;
@@ -258,9 +243,10 @@ struct PartitionState {
 
 #[derive(Clone)]
 struct Metadata {
-    // The `hash` field of the header is not necessarily up to date and must be recomputed before
-    // writing.
-    header: Header,
+    /// The header is only placed inside this struct once the values inside have been verified to
+    /// be sensible. The `hash` field of the header is not necessarily up to date and must be
+    /// recomputed before writing.
+    header: HeaderRaw,
 
     partitions: BTreeMap<u16, PartitionEntry>,
     allocations: Vec<SliceEntry>,
@@ -272,8 +258,8 @@ impl Metadata {
         device: &RemoteBlockClient,
         offset: u64,
     ) -> Result<Self, Error> {
-        let (header, _) =
-            Header::ref_from_prefix(header_block).map_err(|_| anyhow!("Block size too small"))?;
+        let (header, _) = HeaderRaw::ref_from_prefix(header_block)
+            .map_err(|_| anyhow!("Block size too small"))?;
         ensure!(header.magic == MAGIC, "Magic mismatch");
         ensure!(
             header.slice_size > 0 && header.slice_size % BLOCK_SIZE == 0,
@@ -281,10 +267,47 @@ impl Metadata {
         );
 
         // Read the vpartition and allocation table.
-        // TODO(https://fxbug.dev/357467643): Check sizes
-        let allocation_size = header.used_allocation_table_size()?;
-        let part_table_size = header.vpartition_table_size as usize;
+        let expected_partition_table_size =
+            MAX_PARTITIONS * std::mem::size_of::<PartitionEntry>() as u64;
+        ensure!(
+            header.vpartition_table_size == expected_partition_table_size,
+            "Bad vpartition table size"
+        );
 
+        let max_allocation_table_size = MAX_SLICE_COUNT * std::mem::size_of::<SliceEntry>() as u64;
+        ensure!(
+            header.allocation_table_size > 0
+                && header.allocation_table_size <= max_allocation_table_size
+                && header.allocation_table_size % BLOCK_SIZE == 0,
+            "Bad allocation table size"
+        );
+
+        ensure!(header.pslice_count <= MAX_SLICE_COUNT, "pslice_count exceeds maximum");
+
+        let allocation_size = (header.pslice_count + 1)
+            .checked_mul(std::mem::size_of::<SliceEntry>() as u64)
+            .and_then(|n| n.checked_next_multiple_of(BLOCK_SIZE))
+            .ok_or_else(|| anyhow!("Bad pslice_count"))
+            .map(|n| n as usize)?;
+        ensure!(
+            header.allocation_table_size >= allocation_size as u64,
+            "Allocation table size too small"
+        );
+
+        // Verify that all the calculations required will stay in-bounds.
+        let data_size_needed = header
+            .pslice_count
+            .checked_mul(header.slice_size)
+            .ok_or_else(|| anyhow!("Calculated data area size too large"))?;
+        header
+            .vpartition_table_size
+            .checked_add(header.allocation_table_size)
+            .and_then(|n| n.checked_add(BLOCK_SIZE))
+            .and_then(|n| n.checked_mul(2))
+            .and_then(|n| n.checked_add(data_size_needed))
+            .ok_or_else(|| anyhow!("Required device size overflowed"))?;
+
+        let part_table_size = header.vpartition_table_size as usize;
         let mut buffer = vec![0; part_table_size + allocation_size];
         device.read_at(MutableBufferSlice::Memory(&mut buffer), offset + BLOCK_SIZE).await?;
 
@@ -293,7 +316,7 @@ impl Metadata {
         let mut header_copy = *header;
         header_copy.hash = [0; 32];
         hasher.update(header_copy.as_bytes());
-        hasher.update(&header_block[std::mem::size_of::<Header>()..]);
+        hasher.update(&header_block[std::mem::size_of::<HeaderRaw>()..]);
         hasher.update(&buffer);
 
         if hasher.finalize().as_slice() != header.hash {
@@ -319,17 +342,42 @@ impl Metadata {
         Ok(Self { header: header_copy, partitions, allocations })
     }
 
+    fn used_allocation_table_size(&self) -> usize {
+        // These values are validated at construction time.
+        ((self.header.pslice_count + 1) * std::mem::size_of::<SliceEntry>() as u64)
+            .next_multiple_of(BLOCK_SIZE) as usize
+    }
+
+    /// Returns the offset where the data starts.
+    fn data_start(&self) -> u64 {
+        // These value validated at construction time.
+        (BLOCK_SIZE + self.header.vpartition_table_size + self.header.allocation_table_size) * 2
+    }
+
+    fn max_allocation_table_entries(&self) -> u64 {
+        // The 0 indexed slice in the allocation table is unused, but is included in the table size
+        // because it is still written to disk as an empty slice entry. When calculating the number
+        // of available table entries we don't count it, hence subtracting 1.
+        (self.header.allocation_table_size / std::mem::size_of::<SliceEntry>() as u64)
+            .saturating_sub(1)
+    }
+
+    fn offset_for_slot(&self, slot: u8) -> u64 {
+        // Unwrap because the values used should already be validated.
+        self.header.offset_for_slot(slot).unwrap()
+    }
+
     async fn write(&self, device: &RemoteBlockClient, offset: u64) -> Result<(), Error> {
         // We align the memory to that required by `Header`, but the memory needs to be aligned for
         // `PartitionEntry` and `SliceEntry` too.
-        const_assert!(std::mem::align_of::<Header>() >= std::mem::align_of::<PartitionEntry>());
-        const_assert!(std::mem::align_of::<Header>() >= std::mem::align_of::<SliceEntry>());
+        const_assert!(std::mem::align_of::<HeaderRaw>() >= std::mem::align_of::<PartitionEntry>());
+        const_assert!(std::mem::align_of::<HeaderRaw>() >= std::mem::align_of::<SliceEntry>());
 
-        let mut buffer = AlignedMem::<Header>::new(
+        let mut buffer = AlignedMem::<HeaderRaw>::new(
             (BLOCK_SIZE + self.header.vpartition_table_size) as usize
-                + self.header.used_allocation_table_size()?,
+                + self.used_allocation_table_size(),
         );
-        let (header, _) = Header::mut_from_prefix(&mut buffer).unwrap();
+        let (header, _) = HeaderRaw::mut_from_prefix(&mut buffer).unwrap();
         *header = self.header;
         header.hash.fill(0);
 
@@ -353,7 +401,7 @@ impl Metadata {
         // Compute the hash.
         let mut hasher = Sha256::new();
         hasher.update(&*buffer);
-        let (header, _) = Header::mut_from_prefix(&mut buffer).unwrap();
+        let (header, _) = HeaderRaw::mut_from_prefix(&mut buffer).unwrap();
         header.hash.copy_from_slice(hasher.finalize().as_slice());
 
         device.write_at(BufferSlice::Memory(&buffer), offset).await?;
@@ -409,11 +457,18 @@ impl Metadata {
         Err(zx::Status::NO_SPACE)
     }
 
-    fn set_pslice_count(&mut self, pslice_count: u64) {
+    fn set_pslice_count(&mut self, pslice_count: u64) -> Result<(), Error> {
+        ensure!(pslice_count <= MAX_SLICE_COUNT, "pslice_count exceeds maximum");
         self.header.pslice_count = pslice_count;
-        self.header.fvm_partition_size =
-            self.header.data_start() + pslice_count * self.header.slice_size;
+        let data_start = self.data_start();
+        let slice_data_size = pslice_count
+            .checked_mul(self.header.slice_size)
+            .ok_or_else(|| anyhow!("Overflow in slice data size"))?;
+        self.header.fvm_partition_size = data_start
+            .checked_add(slice_data_size)
+            .ok_or_else(|| anyhow!("Overflow in fvm_partition_size"))?;
         self.allocations.resize(pslice_count as usize, SliceEntry(0));
+        Ok(())
     }
 }
 
@@ -423,15 +478,14 @@ impl Fvm {
         ensure!(BLOCK_SIZE as u32 % client.block_size() == 0, zx::Status::NOT_SUPPORTED);
 
         let mut inner = {
-            let mut header_block = AlignedMem::<Header>::new(BLOCK_SIZE as usize);
+            let mut header_block = AlignedMem::<HeaderRaw>::new(BLOCK_SIZE as usize);
             client.read_at(MutableBufferSlice::Memory(&mut header_block), 0).await?;
 
             let metadata_a = Metadata::read(&header_block, &client, 0).await;
 
-            let (header, _) = Header::ref_from_prefix(&header_block)
+            let (header, _) = HeaderRaw::ref_from_prefix(&header_block)
                 .map_err(|_| anyhow!("Block size too small"))?;
-            // TODO(https://fxbug.dev/357467643): Check offset is sensible.
-            let secondary_offset = header.offset_for_slot(1);
+            let secondary_offset = header.offset_for_slot(1)?;
             client.read_at(MutableBufferSlice::Memory(&mut header_block), secondary_offset).await?;
 
             let metadata_b = Metadata::read(&header_block, &client, secondary_offset).await;
@@ -457,19 +511,19 @@ impl Fvm {
         {
             let header = &inner.metadata.header;
             let device_size = client.block_count() * client.block_size() as u64;
-            let start_offset = header.data_start();
+            let start_offset = inner.metadata.data_start();
             max_data_slices = std::cmp::min(
                 device_size
                     .checked_sub(start_offset)
                     .ok_or_else(|| anyhow!("Disk is too small for an FVM volume"))?
                     / header.slice_size,
-                header.max_allocation_table_entries(),
+                inner.metadata.max_allocation_table_entries(),
             );
             if max_data_slices > header.pslice_count {
                 // We need to update the pslice count in the header and then use that going forward.
                 info!("Growing allocation table {} -> {max_data_slices}", header.pslice_count);
                 let mut new_metadata = inner.metadata.clone();
-                new_metadata.set_pslice_count(max_data_slices);
+                new_metadata.set_pslice_count(max_data_slices)?;
                 inner.write_new_metadata_to(&client, new_metadata).await?;
             }
         }
@@ -554,7 +608,7 @@ impl Fvm {
             warn!("Number of slices exceeds disk bounds (continuing since none are allocated)");
             // There aren't any allocated slices (we check that earlier), but we need to prevent the
             // slices from being allocated, so pslice_count is updated here.
-            metadata.set_pslice_count(max_data_slices);
+            metadata.set_pslice_count(max_data_slices)?;
         }
 
         info!(
@@ -587,7 +641,7 @@ impl Fvm {
             mount_time.record_uint("allocation_table_entries", metadata.header.pslice_count);
             mount_time.record_uint(
                 "allocation_table_reserved_entries",
-                metadata.header.max_allocation_table_entries(),
+                metadata.max_allocation_table_entries(),
             );
             mount_time.record_uint("num_partitions", metadata.partitions.len() as u64);
             mount_time.record_uint("num_reserved_slices", 0);
@@ -661,7 +715,7 @@ impl Fvm {
 
         let metadata = &inner.metadata;
         let slice_size = metadata.header.slice_size;
-        let data_start = metadata.header.data_start();
+        let data_start = metadata.data_start();
 
         while total_len > 0 {
             let slice = offset / slice_size;
@@ -824,7 +878,7 @@ impl Fvm {
             slice_size: inner.metadata.header.slice_size,
             slice_count: inner.metadata.header.pslice_count,
             assigned_slice_count: inner.assigned_slice_count,
-            maximum_slice_count: inner.metadata.header.max_allocation_table_entries(),
+            maximum_slice_count: inner.metadata.max_allocation_table_entries(),
             max_virtual_slice: MAX_SLICE_COUNT,
         }
     }
@@ -1189,7 +1243,7 @@ impl Component {
             * (std::mem::size_of::<SliceEntry>() as u64))
             .next_multiple_of(BLOCK_SIZE);
 
-        let mut header = Header {
+        let header = HeaderRaw {
             magic: MAGIC,
             major_version: MAJOR_VERSION,
             pslice_count: 0,
@@ -1202,26 +1256,26 @@ impl Component {
             oldest_minor_version: MINOR_VERSION,
         };
 
-        // Compute the number of physical slices that can fit in the remaining space after
-        // accounting for the metadata.
-        header.pslice_count =
-            (disk_size.checked_sub(header.data_start()).ok_or(zx::Status::INVALID_ARGS)?)
-                / slice_size;
-        ensure!(header.pslice_count > 0, zx::Status::INVALID_ARGS);
-
-        info!("Formatting FVM: {header:?}");
-
-        let metadata = Metadata {
+        let mut metadata = Metadata {
             header,
             partitions: std::collections::BTreeMap::new(),
             allocations: vec![SliceEntry(0); header.pslice_count as usize],
         };
 
+        // Compute the number of physical slices that can fit in the remaining space after
+        // accounting for the metadata.
+        metadata.header.pslice_count =
+            (disk_size.checked_sub(metadata.data_start()).ok_or(zx::Status::INVALID_ARGS)?)
+                / slice_size;
+        ensure!(metadata.header.pslice_count > 0, zx::Status::INVALID_ARGS);
+
+        info!("Formatting FVM: {:?}", metadata.header);
+
         let block_client = block_client::RemoteBlockClient::new(block_proxy).await?;
 
         // Write both primary and secondary copies of the metadata.
-        metadata.write(&block_client, metadata.header.offset_for_slot(0)).await?;
-        metadata.write(&block_client, metadata.header.offset_for_slot(1)).await?;
+        metadata.write(&block_client, metadata.offset_for_slot(0)).await?;
+        metadata.write(&block_client, metadata.offset_for_slot(1)).await?;
 
         Ok(())
     }
@@ -2251,7 +2305,10 @@ impl<T> DerefMut for AlignedMem<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Component, Fvm, MAX_SLICE_COUNT, SliceEntry};
+    use super::{
+        Component, Fvm, HeaderRaw, MAGIC, MAJOR_VERSION, MAX_PARTITIONS, MAX_SLICE_COUNT,
+        MINOR_VERSION, Metadata, PartitionEntry, SliceEntry,
+    };
     use assert_matches::assert_matches;
     use block_client::{
         BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, WriteFlags, WriteOptions,
@@ -4192,7 +4249,7 @@ mod tests {
         // Also, slice_count <= maximum_slice_count <= max_virtual_slice == MAX_SLICE_COUNT
         assert!(info_small_disk.slice_count <= info_small_disk.maximum_slice_count);
         assert!(info_small_disk.maximum_slice_count <= info_small_disk.max_virtual_slice);
-        assert_eq!(info_small_disk.max_virtual_slice, super::MAX_SLICE_COUNT);
+        assert_eq!(info_small_disk.max_virtual_slice, MAX_SLICE_COUNT);
     }
     struct MockCrypt;
 
@@ -4299,5 +4356,50 @@ mod tests {
             .await
             .expect("write failed");
         client.detach_vmo(vmo_id).await.unwrap();
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_invalid_allocation_table_size() {
+        use zerocopy::IntoBytes as _;
+        let header = HeaderRaw {
+            magic: MAGIC,
+            major_version: MAJOR_VERSION,
+            pslice_count: 10,
+            slice_size: SLICE_SIZE,
+            fvm_partition_size: 10 * BLOCK_SIZE as u64,
+            vpartition_table_size: MAX_PARTITIONS * std::mem::size_of::<PartitionEntry>() as u64,
+            allocation_table_size: u64::MAX,
+            generation: 0,
+            hash: [0; 32],
+            oldest_minor_version: MINOR_VERSION,
+        };
+        let header_bytes = header.as_bytes();
+
+        let block_size = 512;
+        let vmo_size = 128 * 1024;
+        let vmo = zx::Vmo::create(vmo_size).unwrap();
+        vmo.write(header_bytes, 0).unwrap();
+
+        let (client_end, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
+        let fake_server = Arc::new(
+            VmoBackedServer::from_vmo(block_size, vmo).expect("Failed to create VmoBackedServer"),
+        );
+        let _task = fasync::Task::spawn(async move {
+            let _ = fake_server.serve(server_end.into_stream()).await;
+        });
+        let block_proxy = client_end.into_proxy();
+        let block_client = RemoteBlockClient::new(block_proxy).await.unwrap();
+
+        let mut header_block = vec![0; BLOCK_SIZE as usize];
+        block_client.read_at(MutableBufferSlice::Memory(&mut header_block), 0).await.unwrap();
+
+        let result = Metadata::read(&header_block, &block_client, 0).await;
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.err().unwrap());
+        assert!(
+            err_msg.contains("Bad allocation table size"),
+            "Expected 'Bad allocation table size', got '{}'",
+            err_msg
+        );
     }
 }
