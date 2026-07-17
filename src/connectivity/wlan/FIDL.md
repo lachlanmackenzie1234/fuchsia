@@ -22,7 +22,6 @@ These FIDL definitions are located in `//sdk/fidl` (except where noted).
 ### Policy (wlancfg) <-> Core (unstable and not versioned)
 - `fuchsia.wlan.sme`: APIs for controlling interfaces and other resources owned by Core.
 - `fuchsia.wlan.internal`: Internal types used between Policy and Core.
-- `fuchsia.wlan.device`: PHY and interface lifecycle management.
 - `fuchsia.wlan.device.service`: Internal service for device monitoring and SME access. Implements `DeviceMonitor`.
 
 ### Core Internal (unstable and not versioned)

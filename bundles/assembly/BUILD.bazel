@@ -661,20 +661,6 @@ assembly_input_bundle(
     ],
 )
 
-# This is a temporary AIB hold wlanphy driver. This driver will eventually
-# be moved to bootstrap AIB and this AIB will be removed.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "wlanphy_driver",
-    drivers = [
-        {
-            "set": "base",
-            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/wlan/drivers/wlanphy:wlanphy",
-            "driver_components": ["meta/wlanphy.cm"],
-        },
-    ],
-)
-
 # AIB for the bt-transport-uart driver.
 # buildifier: leave-alone
 assembly_input_bundle(

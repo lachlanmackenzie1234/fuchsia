@@ -73,8 +73,7 @@
             "fuchsia-boot:///sdmmc#meta/sdmmc.cm",
             "fuchsia-pkg://fuchsia.com/brcmfmac-astro#meta/brcmfmac.cm",
             "fuchsia-pkg://fuchsia.com/network-device#meta/network-device.cm",
-            "fuchsia-pkg://fuchsia.com/wlanif#meta/wlanif.cm",
-            "?fuchsia-pkg://fuchsia.com/wlanphy#meta/wlanphy.cm"
+            "fuchsia-pkg://fuchsia.com/wlanif#meta/wlanif.cm"
         ]
     },
     {
