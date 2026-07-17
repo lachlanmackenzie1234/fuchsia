@@ -395,11 +395,12 @@ impl EpollFileObject {
         {
             let mut state = self.state.lock();
             let recheck_list = std::mem::take(&mut state.recheck_list);
+            for key in &recheck_list {
+                let wait_object = state.wait_objects.get_mut(key).unwrap();
+                wait_object.deactivate_wakeup_source(current_task);
+            }
             for key in recheck_list {
                 let wait_object = state.wait_objects.get_mut(&key).unwrap();
-                wait_object.deactivate_wakeup_source(current_task);
-                // TODO(https://fxbug.dev/530545712): If `do_recheck` fails, we exit the loop and do
-                // not deactivate the remaining wakeup sources.
                 self.do_recheck(current_task, wait_object, key)?;
             }
         }
@@ -538,13 +539,14 @@ mod tests {
     use crate::fs::fuchsia::create_fuchsia_pipe;
     use crate::task::Waiter;
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-    use crate::testing::spawn_kernel_and_run;
+    use crate::testing::{anon_test_file, spawn_kernel_and_run};
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::eventfd::{EventFdType, new_eventfd};
     use crate::vfs::fs_registry::FsRegistry;
     use crate::vfs::pipe::{new_pipe, register_pipe_fs};
     use crate::vfs::socket::{SocketDomain, SocketType, UnixSocket};
     use starnix_lifecycle::AtomicCounter;
+    use starnix_sync::Mutex;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use syncio::Zxio;
 
@@ -860,6 +862,96 @@ mod tests {
             std::mem::drop(event);
 
             assert!(epoll_file.waiters.is_empty());
+        })
+        .await;
+    }
+
+    /// A test file whose event query results can be dynamically controlled.
+    ///
+    /// This allows tests to simulate scenarios where `query_events` succeeds initially
+    /// (e.g., during epoll registration and the first `wait`), but returns an error on a
+    /// subsequent call (e.g., when `do_recheck` re-evaluates `recheck_list`).
+    #[derive(Clone)]
+    struct ControlledEventsFile {
+        wait_queue: Arc<WaitQueue>,
+        events: Arc<Mutex<Result<FdEvents, Errno>>>,
+    }
+
+    impl ControlledEventsFile {
+        fn new(events: FdEvents) -> Self {
+            Self {
+                wait_queue: Arc::new(WaitQueue::default()),
+                events: Arc::new(Mutex::new(Ok(events))),
+            }
+        }
+
+        fn set_events(&self, events: Result<FdEvents, Errno>) {
+            *self.events.lock() = events;
+        }
+    }
+
+    impl FileOps for ControlledEventsFile {
+        fileops_impl_nonseekable!();
+        fileops_impl_noop_sync!();
+        fileops_impl_dataless!();
+
+        fn wait_async(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            waiter: &Waiter,
+            events: FdEvents,
+            handler: EventHandler,
+        ) -> Option<WaitCanceler> {
+            Some(self.wait_queue.wait_async_fd_events(waiter, events, handler))
+        }
+
+        fn query_events(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+        ) -> Result<FdEvents, Errno> {
+            self.events.lock().clone()
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_epoll_recheck_failure_deactivates_wakeup_sources() {
+        spawn_kernel_and_run(async |current_task| {
+            let epoll_file_handle = EpollFileObject::new_file(&current_task);
+            let epoll_file = epoll_file_handle.downcast_file::<EpollFileObject>().unwrap();
+
+            let ops1 = ControlledEventsFile::new(FdEvents::POLLIN);
+            let file1 = anon_test_file(&current_task, Box::new(ops1.clone()), OpenFlags::RDWR);
+            let ops2 = ControlledEventsFile::new(FdEvents::POLLIN);
+            let file2 = anon_test_file(&current_task, Box::new(ops2.clone()), OpenFlags::RDWR);
+
+            epoll_file
+                .add(
+                    &current_task,
+                    &file1,
+                    &epoll_file_handle,
+                    EpollEvent::new(FdEvents::POLLIN | FdEvents::EPOLLWAKEUP, 1),
+                )
+                .unwrap();
+            epoll_file
+                .add(
+                    &current_task,
+                    &file2,
+                    &epoll_file_handle,
+                    EpollEvent::new(FdEvents::POLLIN | FdEvents::EPOLLWAKEUP, 2),
+                )
+                .unwrap();
+
+            let events = epoll_file.wait(&current_task, 10, zx::MonotonicInstant::ZERO).unwrap();
+            assert_eq!(events.len(), 2);
+            assert!(!current_task.kernel().suspend_resume_manager.lock().can_suspend());
+
+            ops1.set_events(error!(EPERM));
+            ops2.set_events(error!(EPERM));
+
+            assert!(epoll_file.wait(&current_task, 10, zx::MonotonicInstant::ZERO).is_err());
+            assert!(current_task.kernel().suspend_resume_manager.lock().can_suspend());
         })
         .await;
     }
