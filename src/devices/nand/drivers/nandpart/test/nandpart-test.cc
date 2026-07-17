@@ -5,10 +5,39 @@
 #include "src/devices/nand/drivers/nandpart/nandpart.h"
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
+#include <fidl/fuchsia.driver.compat/cpp/markers.h>
+#include <fidl/fuchsia.driver.compat/cpp/wire_messaging.h>
+#include <fidl/fuchsia.hardware.nand/cpp/common_types.h>
+#include <fidl/fuchsia.hardware.nand/cpp/natural_types.h>
+#include <fuchsia/hardware/badblock/cpp/banjo.h>
+#include <fuchsia/hardware/nand/c/banjo.h>
+#include <fuchsia/hardware/nand/cpp/banjo.h>
+#include <fuchsia/hardware/nandinfo/c/banjo.h>
+#include <lib/async/dispatcher.h>
+#include <lib/ddk/driver.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/fdf/cpp/dispatcher.h>
+#include <lib/fidl/cpp/natural_types.h>
+#include <lib/fidl/cpp/wire/client.h>
+#include <lib/fit/internal/result.h>
+#include <lib/sync/completion.h>
+#include <lib/zx/result.h>
+#include <zircon/errors.h>
+#include <zircon/time.h>
+#include <zircon/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -29,14 +58,16 @@ class FakeNand : public ddk::NandProtocol<FakeNand> {
     *info_out = nand_info_t{
         .page_size = 1,
         .pages_per_block = 1,
-        .num_blocks = 1,
+        .num_blocks = 100,
         .ecc_bits = 0,
         .oob_size = 0,
     };
-    *nand_op_size_out = 0;
+    *nand_op_size_out = sizeof(nand_operation_t);
   }
 
-  void NandQueue(nand_operation_t* op, nand_queue_callback completion_cb, void* cookie) { FAIL(); }
+  void NandQueue(nand_operation_t* op, nand_queue_callback completion_cb, void* cookie) {
+    completion_cb(cookie, ZX_OK, op);
+  }
 
   zx_status_t NandGetFactoryBadBlockList(uint32_t* bad_blocks, size_t bad_block_len,
                                          size_t* num_bad_blocks) {
@@ -151,6 +182,83 @@ TEST_F(NandpartTest, OnePartition) {
   // block banjo protocols.
   ConnectToBanjo<ddk::NandProtocolClient>("partition 1");
   ConnectToBanjo<ddk::BadBlockProtocolClient>("partition 1");
+}
+
+TEST_F(NandpartTest, BoundsCheck) {
+  static const fuchsia_hardware_nand::Config kNandConfig(
+      {.bad_block_config = fuchsia_hardware_nand::BadBlockConfig({
+           .type = fuchsia_hardware_nand::BadBlockConfigType::kAmlogicUboot,
+           .table_start_block = 0,
+           .table_end_block = 0,
+       })});
+
+  // These settings are strange, but are built so that size_bytes==num_pages==num_blocks.
+  static const fuchsia_boot_metadata::PartitionMap kPartitionMap(
+      {.block_count = 10,
+       .block_size = 1,
+       .partitions = std::vector{{fuchsia_boot_metadata::Partition({
+           .first_block = 0,
+           .last_block = 9,
+           .name = "partition 1",
+       })}}});
+
+  StartDriver(kNandConfig, kPartitionMap);
+
+  auto client = ConnectToBanjo<ddk::NandProtocolClient>("partition 1");
+
+  nand_info_t info;
+  size_t op_size;
+  client.Query(&info, &op_size);
+
+  auto TestOpRange = [&](uint32_t command, uint32_t offset, uint32_t length,
+                         zx_status_t expected_status) {
+    std::vector<uint8_t> mem(op_size);
+    nand_operation_t* op = reinterpret_cast<nand_operation_t*>(mem.data());
+    op->command = command;
+    if (command == NAND_OP_ERASE) {
+      op->erase.first_block = offset;
+      op->erase.num_blocks = length;
+    } else if (command == NAND_OP_READ_BYTES || command == NAND_OP_WRITE_BYTES) {
+      op->rw_bytes.offset_nand = offset;
+      op->rw_bytes.length = length;
+    } else {
+      op->rw.offset_nand = offset;
+      op->rw.length = length;
+    }
+
+    struct CompletionInfo {
+      sync_completion_t completion;
+      zx_status_t status;
+    } comp_info;
+    sync_completion_reset(&comp_info.completion);
+
+    auto callback = [](void* cookie, zx_status_t status, nand_operation_t* op) {
+      auto* info = static_cast<CompletionInfo*>(cookie);
+      info->status = status;
+      sync_completion_signal(&info->completion);
+    };
+
+    client.Queue(op, callback, &comp_info);
+    ASSERT_OK(sync_completion_wait(&comp_info.completion, ZX_SEC(5)));
+    EXPECT_STATUS(comp_info.status, expected_status);
+  };
+
+  for (uint32_t op_type :
+       {NAND_OP_READ, NAND_OP_WRITE, NAND_OP_ERASE, NAND_OP_READ_BYTES, NAND_OP_WRITE_BYTES}) {
+    // In bounds:
+    TestOpRange(op_type, 0, 1, ZX_OK);
+    TestOpRange(op_type, 9, 1, ZX_OK);
+    TestOpRange(op_type, 0, 10, ZX_OK);
+
+    // Out of bounds:
+    TestOpRange(op_type, 10, 1, ZX_ERR_OUT_OF_RANGE);
+    TestOpRange(op_type, 9, 2, ZX_ERR_OUT_OF_RANGE);
+    TestOpRange(op_type, 0, 11, ZX_ERR_OUT_OF_RANGE);
+
+    // Overflow:
+    TestOpRange(op_type, 0xFFFFFFFF, 1, ZX_ERR_OUT_OF_RANGE);
+    TestOpRange(op_type, 1, 0xFFFFFFFF, ZX_ERR_OUT_OF_RANGE);
+  }
 }
 
 }  // namespace nand::testing

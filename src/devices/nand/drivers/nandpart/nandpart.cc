@@ -4,27 +4,51 @@
 #include "src/devices/nand/drivers/nandpart/nandpart.h"
 
 #include <assert.h>
-#include <fuchsia/hardware/badblock/c/banjo.h>
+#include <fidl/fuchsia.boot.metadata/cpp/natural_types.h>
+#include <fidl/fuchsia.driver.framework/cpp/markers.h>
+#include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
+#include <fidl/fuchsia.hardware.nand/cpp/natural_types.h>
+#include <fuchsia/hardware/nand/c/banjo.h>
+#include <fuchsia/hardware/nand/cpp/banjo.h>
+#include <fuchsia/hardware/nandinfo/c/banjo.h>
+#include <lib/ddk/driver.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/component/cpp/node_properties.h>
+#include <lib/driver/incoming/cpp/namespace.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
+#include <lib/driver/node/cpp/add_child.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
+#include <lib/fidl/cpp/wire/internal/transport_channel.h>
 #include <lib/operation/nand.h>
 #include <lib/stdcompat/span.h>
-#include <lib/sync/completion.h>
-#include <lib/zbi-format/partition.h>
+#include <lib/zircon-assert/zircon/assert.h>
+#include <lib/zx/result.h>
 #include <stdio.h>
 #include <string.h>
 #include <zircon/hw/gpt.h>
+#include <zircon/status.h>
+#include <zircon/system/public/zircon/errors.h>
 #include <zircon/types.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/nand/cpp/bind.h>
 #include <fbl/algorithm.h>
 
+#include "src/devices/nand/drivers/nandpart/bad-block.h"
 #include "src/devices/nand/drivers/nandpart/nandpart-utils.h"
 
 namespace nand {
@@ -59,6 +83,10 @@ void CompletionCallback(void* cookie, zx_status_t status, nand_operation_t* nand
       ZX_ASSERT(false);
   }
   op.Complete(status);
+}
+
+bool InBounds(uint64_t offset, uint64_t length, uint64_t limit) {
+  return offset + length >= offset && offset + length <= limit;
 }
 
 }  // namespace
@@ -217,20 +245,39 @@ void NandPartDevice::NandQueue(nand_operation_t* nand_op, nand_queue_callback co
   // Make offset relative to full underlying device
   switch (command) {
     case NAND_OP_READ_BYTES:
-    case NAND_OP_WRITE_BYTES:
+    case NAND_OP_WRITE_BYTES: {
+      if (!InBounds(op.operation()->rw_bytes.offset_nand, op.operation()->rw_bytes.length,
+                    static_cast<uint64_t>(nand_info_.num_blocks) * nand_info_.pages_per_block *
+                        nand_info_.page_size)) {
+        op.Complete(ZX_ERR_OUT_OF_RANGE);
+        return;
+      }
       op.private_storage()->offset =
           erase_block_start_ * nand_info_.pages_per_block * nand_info_.page_size;
       op.operation()->rw_bytes.offset_nand += op.private_storage()->offset;
       break;
+    }
     case NAND_OP_READ:
-    case NAND_OP_WRITE:
+    case NAND_OP_WRITE: {
+      if (!InBounds(op.operation()->rw.offset_nand, op.operation()->rw.length,
+                    static_cast<uint64_t>(nand_info_.num_blocks) * nand_info_.pages_per_block)) {
+        op.Complete(ZX_ERR_OUT_OF_RANGE);
+        return;
+      }
       op.private_storage()->offset = erase_block_start_ * nand_info_.pages_per_block;
       op.operation()->rw.offset_nand += op.private_storage()->offset;
       break;
-    case NAND_OP_ERASE:
+    }
+    case NAND_OP_ERASE: {
+      if (!InBounds(op.operation()->erase.first_block, op.operation()->erase.num_blocks,
+                    nand_info_.num_blocks)) {
+        op.Complete(ZX_ERR_OUT_OF_RANGE);
+        return;
+      }
       op.private_storage()->offset = erase_block_start_;
       op.operation()->erase.first_block += erase_block_start_;
       break;
+    }
     default:
       op.Complete(ZX_ERR_NOT_SUPPORTED);
       return;
