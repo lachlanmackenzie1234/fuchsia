@@ -817,11 +817,19 @@ group("hkdf") {
   public_deps = [ ":hkdf-v0_12_4" ]
 }
 
+group("hkdf-0.12") {
+  public_deps = [ ":hkdf-v0_12_4" ]
+}
+
 group("hkdf-0.12.4") {
   public_deps = [ ":hkdf-v0_12_4" ]
 }
 
 group("hmac") {
+  public_deps = [ ":hmac-v0_12_1" ]
+}
+
+group("hmac-0.12") {
   public_deps = [ ":hmac-v0_12_1" ]
 }
 
