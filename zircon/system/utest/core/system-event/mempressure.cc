@@ -236,6 +236,17 @@ TEST(SystemEvent, MemoryStallThresholds) {
 
   zx::event stall_event;
 
+  // Verify we can request a FULL stall event.
+  ASSERT_OK(zx_system_watch_memory_stall(stall_resource->get(), ZX_SYSTEM_MEMORY_STALL_FULL,
+                                         ZX_MSEC(100), ZX_MSEC(100),
+                                         stall_event.reset_and_get_address()));
+
+  // Verify we cannot request an invalid stall kind.
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx_system_watch_memory_stall(
+                stall_resource->get(), static_cast<zx_system_memory_stall_type_t>(999),
+                ZX_MSEC(100), ZX_MSEC(100), stall_event.reset_and_get_address()));
+
   // Verify we can request a threshold that is equal to the window, but not greater than that.
   ASSERT_OK(zx_system_watch_memory_stall(stall_resource->get(), ZX_SYSTEM_MEMORY_STALL_SOME,
                                          ZX_MSEC(100), ZX_MSEC(100),
