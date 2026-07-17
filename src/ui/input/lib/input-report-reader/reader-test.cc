@@ -44,6 +44,8 @@ class MouseDevice : public fidl::WireServer<fuchsia_input_report::InputDevice> {
   // The FIDL methods for InputDevice.
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
                              GetInputReportsReaderCompleter::Sync& completer) override;
+  void GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                               GetInputReportsReaderV2Completer::Sync& completer) override;
   void GetDescriptor(GetDescriptorCompleter::Sync& completer) override;
   void SendOutputReport(SendOutputReportRequestView request,
                         SendOutputReportCompleter::Sync& completer) override;
@@ -94,6 +96,13 @@ void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetInputReportsReader(
     sync_completion_signal(&wait);
   });
   sync_completion_wait(&wait, ZX_TIME_INFINITE);
+}
+
+template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>
+void MouseDevice<kMaxBatchSize, kMaxBatchDelayNs>::GetInputReportsReaderV2(
+    GetInputReportsReaderV2RequestView request, GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
 }
 
 template <size_t kMaxBatchSize, zx_duration_t kMaxBatchDelayNs>

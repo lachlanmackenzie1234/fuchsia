@@ -355,6 +355,12 @@ void FtDevice::GetInputReportsReader(GetInputReportsReaderRequestView request,
   }
 }
 
+void FtDevice::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                       GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 void FtDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   fidl::Arena<kFeatureAndDescriptorBufferSize> allocator;
 

@@ -43,6 +43,8 @@ class InputDevice
     hid_device_->GetInputReportsReader(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                        std::move(request->reader));
   }
+  void GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                               GetInputReportsReaderV2Completer::Sync& completer) override;
   void GetDescriptor(GetDescriptorCompleter::Sync& completer) override {
     fidl::Arena<kFeatureAndDescriptorBufferSize> allocator;
     completer.Reply(hid_device_->GetDescriptor(allocator));

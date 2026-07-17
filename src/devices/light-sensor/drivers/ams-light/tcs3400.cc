@@ -373,6 +373,12 @@ void Tcs3400::GetInputReportsReader(GetInputReportsReaderRequestView request,
   OnNextReader();
 }
 
+void Tcs3400::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                      GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 void Tcs3400::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   using SensorAxisVector = fidl::VectorView<fuchsia_input_report::wire::SensorAxis>;
 

@@ -188,6 +188,12 @@ void InputReport::GetInputReportsReader(GetInputReportsReaderRequestView request
   sync_completion_signal(&next_reader_wait_);
 }
 
+void InputReport::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                          GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 void InputReport::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   fidl::Arena<kFidlDescriptorBufferSize> descriptor_allocator;
   fuchsia_input_report::wire::DeviceDescriptor descriptor(descriptor_allocator);

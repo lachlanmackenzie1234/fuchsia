@@ -38,6 +38,8 @@ class InputReport : public fidl::WireServer<fuchsia_input_report::InputDevice>,
   // FIDL functions.
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
                              GetInputReportsReaderCompleter::Sync& completer) override;
+  void GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                               GetInputReportsReaderV2Completer::Sync& completer) override;
   void GetDescriptor(GetDescriptorCompleter::Sync& completer) override;
   void SendOutputReport(SendOutputReportRequestView request,
                         SendOutputReportCompleter::Sync& completer) override;

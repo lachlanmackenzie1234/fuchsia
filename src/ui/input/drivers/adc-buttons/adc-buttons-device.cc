@@ -90,6 +90,12 @@ void AdcButtonsDevice::GetInputReportsReader(GetInputReportsReaderRequestView re
   }
 }
 
+void AdcButtonsDevice::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                               GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 void AdcButtonsDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   fidl::Arena<kFeatureAndDescriptorBufferSize> allocator;
 

@@ -225,6 +225,12 @@ void ButtonsDevice::GetInputReportsReader(GetInputReportsReaderRequestView reque
   }
 }
 
+void ButtonsDevice::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                            GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 void ButtonsDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   fidl::Arena<kFeatureAndDescriptorBufferSize> arena;
 

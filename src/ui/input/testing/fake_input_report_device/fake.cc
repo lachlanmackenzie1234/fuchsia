@@ -34,6 +34,13 @@ void FakeInputDevice::GetInputReportsReader(
   reader_.emplace(std::move(reader), binding_.dispatcher(), this);
 }
 
+void FakeInputDevice::GetInputReportsReaderV2(
+    ::fidl::InterfaceRequest<::fuchsia::input::report::InputReportsReaderV2> reader,
+    uint16_t max_unacknowledged_reports_limit, GetInputReportsReaderV2Callback callback) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  callback(/*max_unacknowledged_reports=*/0);
+}
+
 void FakeInputDevice::SendOutputReport(fuchsia::input::report::OutputReport report,
                                        SendOutputReportCallback callback) {
   callback(

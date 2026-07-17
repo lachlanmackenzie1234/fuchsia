@@ -146,6 +146,12 @@ void Gt6853Device::GetInputReportsReader(GetInputReportsReaderRequestView reques
   }
 }
 
+void Gt6853Device::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                           GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 void Gt6853Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   constexpr size_t kDescriptorBufferSize = 512;
 

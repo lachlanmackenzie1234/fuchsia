@@ -235,6 +235,12 @@ void I8042Device::GetInputReportsReader(GetInputReportsReaderRequestView request
   }
 }
 
+void I8042Device::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                          GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 void I8042Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   fidl::Arena allocator;
   auto descriptor = fuchsia_input_report::wire::DeviceDescriptor::Builder(allocator);

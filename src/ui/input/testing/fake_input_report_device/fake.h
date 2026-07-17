@@ -38,6 +38,9 @@ class FakeInputDevice final : public fuchsia::input::report::InputDevice {
   // The overriden FIDL function calls.
   void GetInputReportsReader(
       fidl::InterfaceRequest<fuchsia::input::report::InputReportsReader> reader) override;
+  void GetInputReportsReaderV2(
+      ::fidl::InterfaceRequest<::fuchsia::input::report::InputReportsReaderV2> reader,
+      uint16_t max_unacknowledged_reports_limit, GetInputReportsReaderV2Callback callback) override;
   void GetDescriptor(GetDescriptorCallback callback) override;
   void SendOutputReport(fuchsia::input::report::OutputReport report,
                         SendOutputReportCallback callback) override;

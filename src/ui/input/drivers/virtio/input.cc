@@ -259,4 +259,10 @@ void InputDevice::SelectConfig(uint8_t select, uint8_t subsel) {
   CopyDeviceConfig(&config_, sizeof(config_));
 }
 
+void InputDevice::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView request,
+                                          GetInputReportsReaderV2Completer::Sync& completer) {
+  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
+  completer.Reply(/*max_unacknowledged_reports=*/0);
+}
+
 }  // namespace virtio
