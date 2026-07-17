@@ -220,6 +220,8 @@ impl From<String> for HostAddr {
 pub enum PipeError {
     #[error("compatibility check not supported")]
     NoCompatibilityCheck,
+    #[error("log-id option not supported")]
+    NoLogIdSupport,
     #[error("could not establish connection: {0}")]
     ConnectionFailed(String),
     #[error("io error: {0}")]
@@ -301,6 +303,9 @@ pub fn ssh_stderr_to_pipe_error(line: &String) -> Option<PipeError> {
         // It is an older image, so use the legacy command.
         log::info!("Target does not support abi compatibility check");
         Some(PipeError::NoCompatibilityCheck)
+    } else if line.contains("Unrecognized argument: --log-id") {
+        log::info!("Target does not support log-id");
+        Some(PipeError::NoLogIdSupport)
     } else {
         Some(PipeError::ConnectionFailed(format!("{:?}", line)))
     }

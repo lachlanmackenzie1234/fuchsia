@@ -136,9 +136,13 @@ async fn read_stderr(
 }
 
 impl SshConnector {
-    async fn connect_overnet(&mut self) -> Result<OvernetConnection, TargetConnectionError> {
-        self.overnet_cmd =
-            Some(start_overnet_ssh_command(self.target.clone(), &self.env_context).await?);
+    async fn attempt_connect_overnet(
+        &mut self,
+        use_log_id: bool,
+    ) -> Result<Result<OvernetConnection, ffx_ssh::parse::PipeError>, TargetConnectionError> {
+        self.overnet_cmd = Some(
+            start_overnet_ssh_command(self.target.clone(), &self.env_context, use_log_id).await?,
+        );
         let cmd = self.overnet_cmd.as_mut().unwrap();
         let mut stdout = BufReader::with_capacity(
             BUFFER_SIZE,
@@ -148,35 +152,52 @@ impl SshConnector {
             BUFFER_SIZE,
             cmd.stderr.take().expect("process should have stderr"),
         );
-        let (addr, device_connection_info) =
-            // This function returns a PipeError on error, which necessitates terminating the SSH
-            // command. This error must be converted into an `SshError` in order to be presentable
-            // to the user.
-            match ffx_ssh::parse::parse_ssh_output(&mut stdout, &mut stderr, &self.env_context).await {
-                Ok(res) => res,
+        match ffx_ssh::parse::parse_ssh_output(&mut stdout, &mut stderr, &self.env_context).await {
+            Ok((addr, device_connection_info)) => {
+                let stdin = cmd.stdin.take().expect("process should have stdin");
+                let stderr = stderr.lines();
+                let (error_sender, errors_receiver) = async_channel::unbounded();
+                let stderr_ctx = self.env_context.clone();
+                let stderr_reader =
+                    async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
+                let main_task = Some(Task::local(stderr_reader));
+                Ok(Ok(OvernetConnection {
+                    output: Box::new(stdout),
+                    input: Box::new(stdin),
+                    errors: errors_receiver,
+                    compat: device_connection_info.map(|dci| dci.into()),
+                    main_task,
+                    ssh_host_address: Some(addr),
+                }))
+            }
+            Err(e) => Ok(Err(e)),
+        }
+    }
+
+    async fn connect_overnet(&mut self) -> Result<OvernetConnection, TargetConnectionError> {
+        let mut use_log_id = true;
+        loop {
+            match self.attempt_connect_overnet(use_log_id).await? {
+                Ok(conn) => return Ok(conn),
+                Err(ffx_ssh::parse::PipeError::NoLogIdSupport) if use_log_id => {
+                    log::info!("Target does not support log-id, retrying without it");
+                    try_ssh_cmd_cleanup(
+                        self.overnet_cmd.take().expect("ssh command must have started"),
+                    )
+                    .await?;
+                    use_log_id = false;
+                    // continue loop
+                }
                 Err(e) => {
                     log::warn!("SSH pipe error encountered {e:?}");
                     try_ssh_cmd_cleanup(
-                        self.overnet_cmd.take().expect("ssh command must have started")
+                        self.overnet_cmd.take().expect("ssh command must have started"),
                     )
                     .await?;
                     return Err(ffx_ssh::ssh::SshError::from(e.to_string()).into());
                 }
-            };
-        let stdin = cmd.stdin.take().expect("process should have stdin");
-        let stderr = stderr.lines();
-        let (error_sender, errors_receiver) = async_channel::unbounded();
-        let stderr_ctx = self.env_context.clone();
-        let stderr_reader = async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
-        let main_task = Some(Task::local(stderr_reader));
-        Ok(OvernetConnection {
-            output: Box::new(stdout),
-            input: Box::new(stdin),
-            errors: errors_receiver,
-            compat: device_connection_info.map(|dci| dci.into()),
-            main_task,
-            ssh_host_address: Some(addr),
-        })
+            }
+        }
     }
 
     pub async fn connect_via_fdomain(
@@ -315,6 +336,7 @@ async fn start_fdomain_ssh_command(
 async fn start_overnet_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
+    use_log_id: bool,
 ) -> Result<Child> {
     let rev: u64 =
         version_history_data::HISTORY.get_misleading_version_for_ffx().abi_revision.as_u64();
@@ -325,15 +347,17 @@ async fn start_overnet_ssh_command(
         SystemTime::now().duration_since(UNIX_EPOCH).expect("system time").as_millis() as u64;
     let circuit_id_str = format!("{}", circuit_id);
     let log_id = format!("{:0>20}", *ffx_config::logging::LOGGING_ID);
-    let args = vec![
+    let mut args = vec![
         "remote_control_runner",
         "--circuit",
         &circuit_id_str,
         "--abi-revision",
         &abi_revision,
-        "--log-id",
-        &log_id,
     ];
+    if use_log_id {
+        args.push("--log-id");
+        args.push(&log_id);
+    }
     let ssh = make_ssh_command(target, env_context, args).await?;
     spawn_ssh_command(ssh, "overnet").await
 }
@@ -599,5 +623,66 @@ esac
                 err
             );
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_overnet_fallback_log_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock_ssh_script = r#"#!/bin/bash
+# Check args
+HAS_LOG_ID=false
+IS_FDOMAIN=false
+IS_OVERNET=false
+
+for arg in "$@"; do
+  if [[ "$arg" == "fdomain_runner" ]]; then
+    IS_FDOMAIN=true
+  fi
+  if [[ "$arg" == "remote_control_runner" ]]; then
+    IS_OVERNET=true
+  fi
+  if [[ "$arg" == "--log-id" ]]; then
+    HAS_LOG_ID=true
+  fi
+done
+
+if $IS_FDOMAIN; then
+  echo "fdomain_runner: not found" >&2
+  exit 127
+fi
+
+if $IS_OVERNET; then
+  if $HAS_LOG_ID; then
+    echo "Unrecognized argument: --log-id" >&2
+    exit 1
+  else
+    printf "++ 127.0.0.1 1234 127.0.0.1 22 ++\n"
+    sleep 3600
+  fi
+fi
+"#;
+        let ssh_path = write_mock_ssh(&tmp, mock_ssh_script);
+        let priv_key_path = tmp.path().join("fake_key");
+        File::create(&priv_key_path).unwrap();
+
+        let test_env = TestEnvBuilder::default()
+            .user_config("ssh.path", ssh_path.to_str().unwrap())
+            .user_config("ssh.priv", priv_key_path.to_str().unwrap())
+            .user_config("ssh.controlmaster.mode", "none")
+            .build()
+            .unwrap();
+
+        let target_addr: SocketAddr = "127.0.0.1:2201".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+        let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+
+        let res = connector.connect().await;
+        assert!(res.is_ok(), "Expected Ok for fallback success, got {:?}", res);
+        let conn = res.unwrap();
+        assert!(
+            matches!(conn, TargetConnection::Overnet(_)),
+            "Expected Overnet connection, got {:?}",
+            conn
+        );
     }
 }

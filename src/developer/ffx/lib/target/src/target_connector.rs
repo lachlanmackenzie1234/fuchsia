@@ -40,6 +40,7 @@ pub enum ConnectionStreamError {
 }
 
 /// Collection of connections established by a connector.
+#[derive(Debug)]
 pub enum TargetConnection {
     Overnet(OvernetConnection),
     FDomain(FDomainConnection),
