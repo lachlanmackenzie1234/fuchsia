@@ -1,0 +1,14 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include <object/resource.h>
+
+extern "C" {
+
+zx_status_t cpp_resource_validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
+                                                     zx_rsrc_system_base_t base) {
+  return validate_resource_kind_base(handle, kind, base);
+}
+
+}  // extern "C"

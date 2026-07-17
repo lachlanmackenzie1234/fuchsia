@@ -55,6 +55,11 @@ zx_status_t validate_resource(zx_handle_t handle, zx_rsrc_kind_t kind);
 zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
                                         zx_rsrc_system_base_t base);
 
+extern "C" {
+zx_status_t cpp_resource_validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
+                                                     zx_rsrc_system_base_t base);
+}
+
 // Validates a resource based on type and low/high range.
 class ResourceDispatcher;
 zx_status_t validate_ranged_resource(

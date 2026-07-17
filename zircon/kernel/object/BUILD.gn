@@ -55,6 +55,7 @@ source_set("object") {
     "profile_dispatcher.cc",
     "resource.cc",
     "resource_dispatcher.cc",
+    "resource_ffi.cc",
     "root_job_observer.cc",
     "sampler_dispatcher.cc",
     "singleton.cc",
@@ -187,6 +188,7 @@ kernel_rust_crate("object-rs") {
     "object.rs",
     "process_dispatcher.rs",
     "process_dispatcher_ffi.rs",
+    "resource_ffi.rs",
   ]
 
   deps = [
