@@ -48,7 +48,7 @@ rustc_library("fdr_lib") {
   edition = "2024"
   with_unit_tests = true
   deps = [
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
     "//src/lib/fidl/rust/fidl",
@@ -144,7 +144,7 @@ rustc_binary("bin_fdr") {
   deps = [
     ":fdr_lib",
     ":recovery_ui_config",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//sdk/fidl/fuchsia.recovery.policy:fuchsia.recovery.policy_rust",
     "//sdk/rust/zx",
     "//src/graphics/lib/compute/rive-rs",

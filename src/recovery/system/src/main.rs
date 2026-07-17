@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use carnelian::app::{Config, ViewMode};
 use carnelian::color::Color;
-use carnelian::drawing::{path_for_circle, DisplayRotation, FontFace};
+use carnelian::drawing::{DisplayRotation, FontFace, path_for_circle};
 use carnelian::render::rive::load_rive;
 use carnelian::render::{BlendMode, Context as RenderContext, Fill, FillRule, Raster, Style};
 use carnelian::scene::facets::{
@@ -16,13 +16,13 @@ use carnelian::scene::layout::{
 };
 use carnelian::scene::scene::{Scene, SceneBuilder};
 use carnelian::{
-    input, make_message, App, AppAssistant, AppAssistantPtr, AppSender, AssistantCreatorFunc,
-    Coord, LocalBoxFuture, MessageTarget, Point, Size, ViewAssistant, ViewAssistantContext,
-    ViewAssistantPtr, ViewKey,
+    App, AppAssistant, AppAssistantPtr, AppSender, AssistantCreatorFunc, Coord, LocalBoxFuture,
+    MessageTarget, Point, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey,
+    input, make_message,
 };
 use euclid::size2;
 use fdr_lib::{self as fdr, FactoryResetState, ResetEvent};
-use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_fuchsia_input::ConsumerControlButton;
 use fidl_fuchsia_recovery_policy::FactoryResetMarker as FactoryResetPolicyMarker;
 use fuchsia_async::{self as fasync, Task};
 use fuchsia_component::client::connect_to_protocol;
@@ -45,15 +45,15 @@ use {
         ProgressRendererMarker, ProgressRendererRequest, ProgressRendererRequestStream, Status,
     },
     fuchsia_async::DurationExt,
-    fuchsia_runtime::{take_startup_handle, HandleType},
-    ota_lib::{ota, setup, OtaComponent, OtaManager, OtaStatus},
+    fuchsia_runtime::{HandleType, take_startup_handle},
+    ota_lib::{OtaComponent, OtaManager, OtaStatus, ota, setup},
     recovery_ui::{
         button::{Button, ButtonMessages, ButtonOptions, ButtonShape, SceneBuilderButtonExt},
         keyboard::{KeyboardMessages, KeyboardViewAssistant},
         proxy_view_assistant::ProxyMessages,
     },
     recovery_util::{
-        cobalt::{self, metrics, Cobalt, CobaltImpl},
+        cobalt::{self, Cobalt, CobaltImpl, metrics},
         reboot::{RebootHandler, RebootImpl},
         regulatory,
     },
@@ -120,8 +120,7 @@ enum RecoveryMessages {
 
 const RECOVERY_MODE_HEADLINE: &'static str = "Recovery mode";
 const COUNTDOWN_MODE_HEADLINE: &'static str = "Factory reset device";
-const COUNTDOWN_MODE_BODY: &'static str =
-    "\nContinue holding the keys to the end of the countdown. \
+const COUNTDOWN_MODE_BODY: &'static str = "\nContinue holding the keys to the end of the countdown. \
 This will wipe all of your data from this device and reset it to factory settings.";
 
 const PATH_TO_FDR_RESTRICTION_CONFIG: &'static str =
@@ -1231,7 +1230,7 @@ impl ViewAssistant for RecoveryViewAssistant {
 async fn connect_to_wifi(ssid: String, password: String) -> Result<(), Error> {
     println!("Connecting to WiFi ");
     use fidl_fuchsia_wlan_policy::SecurityType;
-    use recovery_util::wlan::{create_network_info, WifiConnect, WifiConnectImpl};
+    use recovery_util::wlan::{WifiConnect, WifiConnectImpl, create_network_info};
     let wifi = WifiConnectImpl::new();
     let network = create_network_info(&ssid, Some(&password), Some(SecurityType::Wpa2));
     wifi.connect(network).await
@@ -1327,7 +1326,7 @@ fn main() -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{make_app_assistant, FdrRestriction, RecoveryAppAssistant};
+    use super::{FdrRestriction, RecoveryAppAssistant, make_app_assistant};
     use carnelian::drawing::DisplayRotation;
     use carnelian::{App, AppAssistant, AppSender};
     use std::sync::Arc;

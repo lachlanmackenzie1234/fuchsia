@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error, bail};
 use carnelian::input::consumer_control::Phase;
-use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_fuchsia_input::ConsumerControlButton;
 use fidl_fuchsia_paver::{BootManagerMarker, BootManagerProxy, Configuration, PaverMarker};
 use fidl_fuchsia_recovery::FactoryResetMarker;
 use fuchsia_component::client::connect_to_protocol;
@@ -197,7 +197,9 @@ async fn reset_active_slot_with_proxy(boot_manager: BootManagerProxy) -> Result<
     };
 
     if last_active_config == Configuration::Recovery {
-        eprintln!("Last active config is recovery: no information to decide which other config to set active. Leaving as is.");
+        eprintln!(
+            "Last active config is recovery: no information to decide which other config to set active. Leaving as is."
+        );
         return Ok(());
     }
 

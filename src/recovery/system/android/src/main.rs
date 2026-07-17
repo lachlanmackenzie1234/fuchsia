@@ -22,7 +22,7 @@ use carnelian::{
 use euclid::size2;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::ShutdownAction;
-use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_fuchsia_input::ConsumerControlButton;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_recovery_android::{UpdaterMarker, UpdaterRequest, UpdaterRequestStream};
 use fuchsia_async as fasync;
