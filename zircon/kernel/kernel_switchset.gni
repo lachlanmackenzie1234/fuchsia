@@ -180,8 +180,6 @@ template("kernel_switchset") {
 
         "//zircon/kernel/lib/backtrace:headers.config",
 
-        "//zircon/kernel/lib/version:headers.config",
-
         "//zircon/kernel/lib/wake-vector:headers.config",
 
         "//zircon/kernel/lib/sched:headers.config",

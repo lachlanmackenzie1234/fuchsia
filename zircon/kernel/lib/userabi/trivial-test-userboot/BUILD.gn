@@ -58,9 +58,9 @@ kernel_package("select-userboot-test") {
   testonly = true
   deps = [
     ":trivial-test-userboot.basic",
+    "//zircon/kernel:version-string.txt",
     "//zircon/kernel/bin:vmzircon.with-tests($default_test_kernel_switchset)",
     "//zircon/kernel/lib/userabi/vdso",
-    "//zircon/kernel/lib/version:version-string.txt",
   ]
 }
 

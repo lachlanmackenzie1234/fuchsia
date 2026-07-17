@@ -17,6 +17,7 @@ source_set("top") {
   ]
   deps = [
     ":rust_panic",
+    ":version",
     "//src/lib/elfldltl",
     "//src/lib/zbitl",
     "//zircon/kernel/arch/$zircon_cpu",
@@ -42,7 +43,6 @@ source_set("top") {
     "//zircon/kernel/lib/thread-stack",
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/userabi",
-    "//zircon/kernel/lib/version",
     "//zircon/kernel/phys:boot-constants",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys:zircon-abi-spec",
@@ -52,4 +52,14 @@ source_set("top") {
 
 kernel_rust_mod("rust_panic") {
   sources = []
+}
+
+source_set("version") {
+  visibility = [ ":*" ]
+  sources = [ "version.cc" ]
+  deps = [
+    "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/init",
+    "//zircon/kernel/phys:boot-constants",
+  ]
 }

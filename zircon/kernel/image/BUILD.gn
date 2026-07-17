@@ -26,8 +26,8 @@ group("common-package-items.no-userboot") {
     "//src/bringup/lib/userboot/*",
   ]
   public_deps = [
+    "//zircon/kernel:version-string.txt",
     "//zircon/kernel/lib/userabi/vdso",
-    "//zircon/kernel/lib/version:version-string.txt",
   ]
 }
 

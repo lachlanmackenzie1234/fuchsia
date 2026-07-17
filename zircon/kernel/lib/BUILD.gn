@@ -83,7 +83,6 @@ all_libs = [
   "unittest",
   "user_copy",
   "userabi",
-  "version",
   "virtual_alloc",
   "wake-vector",
 ]
