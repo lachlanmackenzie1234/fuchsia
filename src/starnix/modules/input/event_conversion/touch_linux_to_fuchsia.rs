@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_input_report as fir;
+use fidl_fuchsia_ui_test_input as futinput;
 use sorted_vec_map::{SortedVecMap, SortedVecSet};
 use starnix_logging::log_warn;
-use starnix_types::time::time_from_timeval;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, uapi};
 
@@ -21,7 +20,7 @@ enum MtPosition {
     Y(i64),
 }
 
-/// A state machine accepts uapi::input_event, produces fir::InputReport
+/// A state machine accepts uapi::input_event, produces futinput::TouchInputReport
 /// when (Touch Event.. + Sync Event) received.
 ///
 /// This parser currently only supports "Type B" protocol in:
@@ -49,7 +48,7 @@ pub struct LinuxTouchEventParser {
     /// mapping when contact lifted.
     slot_id_to_tracking_id: SortedVecMap<SlotId, TrackingId>,
     /// Store slot id -> Contact.
-    slot_id_to_contact: SortedVecMap<SlotId, fir::ContactInputReport>,
+    slot_id_to_contact: SortedVecMap<SlotId, futinput::ContactInputReport>,
 
     /// Store received events while conversion still ongoing.
     cached_events: Vec<uapi::input_event>,
@@ -125,9 +124,9 @@ impl LinuxTouchEventParser {
         if !self.slot_id_to_contact.contains_key(&new_slot_id) {
             self.slot_id_to_contact.insert(
                 new_slot_id,
-                fir::ContactInputReport {
+                futinput::ContactInputReport {
                     contact_id: Some(new_slot_id as u32),
-                    ..fir::ContactInputReport::default()
+                    ..Default::default()
                 },
             );
         }
@@ -239,10 +238,7 @@ impl LinuxTouchEventParser {
         }
     }
 
-    fn produce_input_report(
-        &mut self,
-        event_time: zx::MonotonicInstant,
-    ) -> Result<Option<fir::InputReport>, Errno> {
+    fn produce_input_report(&mut self) -> Result<Option<futinput::TouchInputReport>, Errno> {
         self.reset_sequence_state();
 
         let cached_events = std::mem::take(&mut self.cached_events);
@@ -269,7 +265,7 @@ impl LinuxTouchEventParser {
             }
         }
 
-        let mut contacts: Vec<fir::ContactInputReport> = vec![];
+        let mut contacts: Vec<futinput::ContactInputReport> = vec![];
         for contact in self.slot_id_to_contact.values() {
             if validate_contact_input_report(contact) {
                 contacts.push(contact.clone());
@@ -286,11 +282,8 @@ impl LinuxTouchEventParser {
         // This `unwrap` is safe because `validate_contact_input_report()` ensured `contact_id` exists.
         contacts.sort_by(|a, b| a.contact_id.unwrap().cmp(&b.contact_id.unwrap()));
 
-        let res = Ok(Some(fir::InputReport {
-            event_time: Some(event_time.into_nanos()),
-            touch: Some(fir::TouchInputReport { contacts: Some(contacts), ..Default::default() }),
-            ..Default::default()
-        }));
+        let res =
+            Ok(Some(futinput::TouchInputReport { contacts: Some(contacts), ..Default::default() }));
 
         self.reset_sequence_state();
 
@@ -298,11 +291,14 @@ impl LinuxTouchEventParser {
     }
 
     /// Handle received input_event, only produce event when SYN_REPORT is received.
-    pub fn handle(&mut self, e: uapi::input_event) -> Result<Option<fir::InputReport>, Errno> {
+    pub fn handle(
+        &mut self,
+        e: uapi::input_event,
+    ) -> Result<Option<futinput::TouchInputReport>, Errno> {
         let event_code = e.code as u32;
         match e.type_ as u32 {
             uapi::EV_SYN => match event_code {
-                uapi::SYN_REPORT => self.produce_input_report(time_from_timeval(e.time)?),
+                uapi::SYN_REPORT => self.produce_input_report(),
                 uapi::SYN_MT_REPORT => {
                     log_warn!("Touchscreen got 'Type A' event SYN_MT_REPORT");
                     self.reset_state();
@@ -363,9 +359,9 @@ impl LinuxTouchEventParser {
 }
 
 /// ContactInputReport should contains X, Y, Contact ID
-fn validate_contact_input_report(c: &fir::ContactInputReport) -> bool {
+fn validate_contact_input_report(c: &futinput::ContactInputReport) -> bool {
     match c {
-        &fir::ContactInputReport {
+        &futinput::ContactInputReport {
             contact_id: Some(_),
             position_x: Some(_),
             position_y: Some(_),
@@ -448,18 +444,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 3)), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(0),
-                        position_x: Some(2),
-                        position_y: Some(3),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(0),
+                    position_x: Some(2),
+                    position_y: Some(3),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -469,11 +461,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     0,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(3),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -491,18 +483,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 3)), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(0),
-                        position_x: Some(2),
-                        position_y: Some(3),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(0),
+                    position_x: Some(2),
+                    position_y: Some(3),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -512,11 +500,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     0,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(3),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -527,18 +515,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 4)), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(0),
-                        position_x: Some(2),
-                        position_y: Some(4),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(0),
+                    position_x: Some(2),
+                    position_y: Some(4),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -548,11 +532,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     0,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(4),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -563,18 +547,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_PRESSURE, 10)), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(0),
-                        position_x: Some(2),
-                        position_y: Some(4),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(0),
+                    position_x: Some(2),
+                    position_y: Some(4),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -584,11 +564,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     0,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(4),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -608,18 +588,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 3)), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(0),
-                        position_x: Some(2),
-                        position_y: Some(3),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(0),
+                    position_x: Some(2),
+                    position_y: Some(3),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -629,11 +605,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     0,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(3),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -645,18 +621,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_PRESSURE, 10)), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(0),
-                        position_x: Some(2),
-                        position_y: Some(3),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(0),
+                    position_x: Some(2),
+                    position_y: Some(3),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -666,11 +638,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     0,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(3),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -761,18 +733,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(y_0), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(0),
-                        position_x: Some(2),
-                        position_y: Some(3),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(0),
+                    position_x: Some(2),
+                    position_y: Some(3),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -782,11 +750,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     0,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(3),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -811,26 +779,22 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(y_1), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![
-                        fir::ContactInputReport {
-                            contact_id: Some(0),
-                            position_x: Some(4),
-                            position_y: Some(5),
-                            ..fir::ContactInputReport::default()
-                        },
-                        fir::ContactInputReport {
-                            contact_id: Some(1),
-                            position_x: Some(10),
-                            position_y: Some(11),
-                            ..fir::ContactInputReport::default()
-                        },
-                    ]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![
+                    futinput::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(4),
+                        position_y: Some(5),
+                        ..Default::default()
+                    },
+                    futinput::ContactInputReport {
+                        contact_id: Some(1),
+                        position_x: Some(10),
+                        position_y: Some(11),
+                        ..Default::default()
+                    },
+                ]),
+                ..Default::default()
             }))
         );
         assert_eq!(
@@ -841,20 +805,20 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_contact: SortedVecMap::from([
                     (
                         0,
-                        fir::ContactInputReport {
+                        futinput::ContactInputReport {
                             contact_id: Some(0),
                             position_x: Some(4),
                             position_y: Some(5),
-                            ..fir::ContactInputReport::default()
+                            ..Default::default()
                         }
                     ),
                     (
                         1,
-                        fir::ContactInputReport {
+                        futinput::ContactInputReport {
                             contact_id: Some(1),
                             position_x: Some(10),
                             position_y: Some(11),
-                            ..fir::ContactInputReport::default()
+                            ..Default::default()
                         }
                     )
                 ]),
@@ -872,18 +836,14 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(y_1), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(1),
-                        position_x: Some(10),
-                        position_y: Some(11),
-                        ..fir::ContactInputReport::default()
-                    },]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
+            Ok(Some(futinput::TouchInputReport {
+                contacts: Some(vec![futinput::ContactInputReport {
+                    contact_id: Some(1),
+                    position_x: Some(10),
+                    position_y: Some(11),
+                    ..Default::default()
+                }]),
+                ..Default::default()
             }))
         );
         // should remove the mapping.
@@ -894,11 +854,11 @@ mod touchscreen_linux_fuchsia_tests {
                 slot_id_to_tracking_id: SortedVecMap::from([(1, 2)]),
                 slot_id_to_contact: SortedVecMap::from([(
                     1,
-                    fir::ContactInputReport {
+                    futinput::ContactInputReport {
                         contact_id: Some(1),
                         position_x: Some(10),
                         position_y: Some(11),
-                        ..fir::ContactInputReport::default()
+                        ..Default::default()
                     }
                 )]),
                 ..LinuxTouchEventParser::default()
@@ -910,14 +870,7 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(tracking_id_lifted), Ok(None));
         assert_eq!(
             parser.handle(syn),
-            Ok(Some(fir::InputReport {
-                event_time: Some(0),
-                touch: Some(fir::TouchInputReport {
-                    contacts: Some(vec![]),
-                    ..fir::TouchInputReport::default()
-                }),
-                ..fir::InputReport::default()
-            }))
+            Ok(Some(futinput::TouchInputReport { contacts: Some(vec![]), ..Default::default() }))
         );
         // should remove the mapping.
         assert_eq!(parser, LinuxTouchEventParser::default());

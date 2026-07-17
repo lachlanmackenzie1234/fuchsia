@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, anyhow};
+use fidl;
+use fidl_fuchsia_ui_test_input as futinput;
 use fuchsia_component::client::connect_to_protocol;
 use starnix_logging::{log_error, log_info};
-use {fidl, fidl_fuchsia_ui_test_input as futinput};
 
 pub(crate) async fn create_media_buttons_proxy() -> Result<futinput::MediaButtonsDeviceProxy> {
     // Create a proxy to the MediaButtonsDevice to send button press events.
@@ -44,7 +45,7 @@ pub(crate) async fn schedule_wakeup_power_button(
     if let Err(e) = media_button_proxy
         .schedule_simulate_button_press(
             &futinput::MediaButtonsDeviceScheduleSimulateButtonPressRequest {
-                button: Some(fidl_fuchsia_input_report::ConsumerControlButton::Power),
+                button: Some(fidl_fuchsia_input::ConsumerControlButton::Power),
                 delay: Some(delay.into_nanos()),
                 ..Default::default()
             },

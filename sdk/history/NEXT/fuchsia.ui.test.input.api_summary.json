@@ -1,5 +1,27 @@
 [
     {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.input/ContactInputReport.contact_id",
+        "ordinal": "1",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.input/ContactInputReport.position_x",
+        "ordinal": "2",
+        "type": "int64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.input/ContactInputReport.position_y",
+        "ordinal": "3",
+        "type": "int64"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.ui.test.input/ContactInputReport"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.ui.test.input/CoordinateUnit.DEFAULT",
         "value": "0"
@@ -123,9 +145,9 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.ui.test.input/KeyboardSimulateKeyEventRequest.report",
+        "name": "fuchsia.ui.test.input/KeyboardSimulateKeyEventRequest.pressed_keys",
         "ordinal": "1",
-        "type": "fuchsia.input.report/KeyboardInputReport"
+        "type": "vector<fuchsia.input/Key>:256"
     },
     {
         "kind": "table",
@@ -761,6 +783,22 @@
         "name": "fuchsia.ui.test.input/TouchInputListenerReportTouchInputRequest"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.input/TouchInputReport.contacts",
+        "ordinal": "1",
+        "type": "vector<fuchsia.ui.test.input/ContactInputReport>:10"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.test.input/TouchInputReport.pressed_buttons",
+        "ordinal": "2",
+        "type": "vector<uint8>:10"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.ui.test.input/TouchInputReport"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.ui.test.input/TouchScreen.SimulateMultiFingerGesture",
         "strictness": "strict",
@@ -886,7 +924,7 @@
         "kind": "struct/member",
         "name": "fuchsia.ui.test.input/TouchScreenSimulateTouchEventRequest.report",
         "ordinal": "1",
-        "type": "fuchsia.input.report/TouchInputReport"
+        "type": "fuchsia.ui.test.input/TouchInputReport"
     },
     {
         "kind": "struct",

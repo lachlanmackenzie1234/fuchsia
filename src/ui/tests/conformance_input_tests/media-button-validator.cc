@@ -126,6 +126,19 @@ class MediaButtonConformanceTest : public ui_conformance_test_base::ConformanceT
     }
   }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  void SimulatePress(fuchsia_input::ConsumerControlButton button) {
+    futi::MediaButtonsDeviceSimulateButtonPressRequest request;
+    request.button(button);
+    ZX_ASSERT_OK(media_buttons_->SimulateButtonPress(request));
+  }
+
+  void SimulatePress(std::vector<fuchsia_input::ConsumerControlButton> buttons) {
+    futi::MediaButtonsDeviceSendButtonsStateRequest request;
+    request.buttons(std::move(buttons));
+    ZX_ASSERT_OK(media_buttons_->SendButtonsState(request));
+  }
+#else
   void SimulatePress(fir::ConsumerControlButton button) {
     futi::MediaButtonsDeviceSimulateButtonPressRequest request;
     request.button(button);
@@ -137,6 +150,7 @@ class MediaButtonConformanceTest : public ui_conformance_test_base::ConformanceT
     request.buttons(std::move(buttons));
     ZX_ASSERT_OK(media_buttons_->SendButtonsState(request));
   }
+#endif
 
   fui::MediaButtonsEvent MakeMediaButtonsEvent(int8_t volume, bool mic_mute, bool pause,
                                                bool camera_disable, bool power, bool function) {

@@ -371,6 +371,16 @@ void PortableUITest::InjectSwipe(int start_x, int start_y, int end_x, int end_y,
   FX_LOGS(INFO) << "*** Swipe injected";
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+void PortableUITest::InjectTouchEvent(fuchsia_ui_test_input::TouchInputReport report) {
+  fuchsia_ui_test_input::TouchScreenSimulateTouchEventRequest request;
+  request.report() = std::move(report);
+
+  fake_touchscreen_->SimulateTouchEvent(request);
+  touch_injection_request_count_++;
+  FX_LOGS(INFO) << "*** Touch event injected";
+}
+#else
 void PortableUITest::InjectTouchEvent(fuchsia_input_report::TouchInputReport report) {
   fuchsia_ui_test_input::TouchScreenSimulateTouchEventRequest request;
   request.report() = std::move(report);
@@ -379,6 +389,7 @@ void PortableUITest::InjectTouchEvent(fuchsia_input_report::TouchInputReport rep
   touch_injection_request_count_++;
   FX_LOGS(INFO) << "*** Touch event injected";
 }
+#endif
 
 void PortableUITest::RegisterMouse() {
   FX_LOGS(INFO) << "Registering fake mouse";

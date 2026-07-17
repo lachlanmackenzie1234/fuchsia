@@ -6,7 +6,6 @@
 import asyncio
 import json
 
-import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
 import fuchsia_controller_py as fcp
@@ -103,9 +102,9 @@ class TouchDeviceUsingFc(user_input.TouchDevice, AsyncLazyReady):
 
             for _ in range(tap_event_count):
                 await self._touch_screen_proxy.simulate_touch_event(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[
-                            f_input_report.ContactInputReport(
+                            f_test_input.ContactInputReport(
                                 contact_id=1,
                                 position_x=location.x,
                                 position_y=location.y,
@@ -117,7 +116,7 @@ class TouchDeviceUsingFc(user_input.TouchDevice, AsyncLazyReady):
                 await asyncio.sleep(duration_of_one_tap_ms / 1000)
 
                 await self._touch_screen_proxy.simulate_touch_event(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[],
                     ),
                 )

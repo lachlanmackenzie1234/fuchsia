@@ -521,7 +521,7 @@ impl FileOps for UinputDeviceFile {
                         if let Some(keyboard_report) = report.keyboard {
                             let res = proxy.simulate_key_event(
                                 &KeyboardSimulateKeyEventRequest {
-                                    report: Some(keyboard_report),
+                                    pressed_keys: keyboard_report.pressed_keys3,
                                     ..Default::default()
                                 },
                                 zx::MonotonicInstant::INFINITE,
@@ -536,17 +536,14 @@ impl FileOps for UinputDeviceFile {
                 }
             }
             CreatedDevice::Touchscreen(proxy, parser) => {
-                let input_report = parser.handle(event);
+                let input_report: Result<Option<futinput::TouchInputReport>, Errno> =
+                    parser.handle(event);
                 match input_report {
                     Ok(Some(report)) => {
-                        if let Some(touch_report) = report.touch {
-                            let res = proxy.simulate_touch_event(
-                                &touch_report,
-                                zx::MonotonicInstant::INFINITE,
-                            );
-                            if res.is_err() {
-                                return error!(EIO);
-                            }
+                        let res =
+                            proxy.simulate_touch_event(&report, zx::MonotonicInstant::INFINITE);
+                        if res.is_err() {
+                            return error!(EIO);
                         }
                     }
                     Ok(None) => (),

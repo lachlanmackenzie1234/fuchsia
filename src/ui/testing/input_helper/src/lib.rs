@@ -667,9 +667,23 @@ async fn handle_touchscreen_request_stream(
                 fuchsia_trace::duration!("input", "simulate_touch_event");
                 let trace_id = fuchsia_trace::Id::new();
                 fuchsia_trace::flow_begin!("input", "input_report", trace_id);
+                let touch_report = fidl_fuchsia_input_report::TouchInputReport {
+                    contacts: report.contacts.map(|contacts| {
+                        contacts
+                            .into_iter()
+                            .map(|c| fidl_fuchsia_input_report::ContactInputReport {
+                                contact_id: c.contact_id,
+                                position_x: c.position_x,
+                                position_y: c.position_y,
+                                ..Default::default()
+                            })
+                            .collect()
+                    }),
+                    ..Default::default()
+                };
                 let input_report = InputReport {
                     event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
-                    touch: Some(report),
+                    touch: Some(touch_report),
                     trace_id: Some(trace_id.into()),
                     ..Default::default()
                 };
@@ -705,6 +719,7 @@ async fn handle_media_buttons_device_request_stream(
                 match request {
                     Some(Ok(MediaButtonsDeviceRequest::SimulateButtonPress { payload, responder })) => {
                         if let Some(button) = payload.button {
+                            let button = fidl_fuchsia_input_report::ConsumerControlButton::from_primitive(button.into_primitive()).unwrap();
                             let wake_lease = if let Some(ref ag) = activity_governor {
                                 acquire_and_deposit_lease(ag, "input-helper-button").await
                             } else {
@@ -719,7 +734,7 @@ async fn handle_media_buttons_device_request_stream(
                     }
                     Some(Ok(MediaButtonsDeviceRequest::SendButtonsState { payload, responder })) => {
                         let buttons = match payload.buttons {
-                            Some(buttons) => buttons,
+                            Some(buttons) => buttons.into_iter().map(|b| fidl_fuchsia_input_report::ConsumerControlButton::from_primitive(b.into_primitive()).unwrap()).collect(),
                             None => vec![],
                         };
                         let wake_lease = if let Some(ref ag) = activity_governor {
@@ -745,7 +760,7 @@ async fn handle_media_buttons_device_request_stream(
                     }
 
                     Some(Ok(MediaButtonsDeviceRequest::ScheduleSimulateButtonPress { payload, responder })) => {
-                        let button = payload.button.expect("missing button");
+                        let button = fidl_fuchsia_input_report::ConsumerControlButton::from_primitive(payload.button.expect("missing button").into_primitive()).unwrap();
                         let delay = zx::Duration::from_nanos(payload.delay.expect("missing delay"));
                         let sender = alarm_sender.clone();
                         let proxy = wake_alarm_proxy.clone();
@@ -923,7 +938,10 @@ async fn handle_keyboard_request_stream(
                 }
             }
             Ok(KeyboardRequest::SimulateKeyEvent { payload, responder }) => {
-                let keyboard_report = payload.report.expect("no report");
+                let keyboard_report = fidl_fuchsia_input_report::KeyboardInputReport {
+                    pressed_keys3: payload.pressed_keys,
+                    ..Default::default()
+                };
                 let input_report = InputReport {
                     event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
                     keyboard: Some(keyboard_report),
@@ -1225,6 +1243,9 @@ mod tests {
         let test_fut = async {
             let schedule_fut = proxy.schedule_simulate_button_press(
                 &fidl_fuchsia_ui_test_input::MediaButtonsDeviceScheduleSimulateButtonPressRequest {
+                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    button: Some(fidl_fuchsia_input::ConsumerControlButton::Power),
+                    #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
                     button: Some(ConsumerControlButton::Power),
                     delay: Some(zx::Duration::<zx::BootTimeline>::from_millis(750).into_nanos()), // 0.75s
                     ..Default::default()

@@ -7,7 +7,6 @@ import types
 import unittest
 from unittest import mock
 
-import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
 import fuchsia_controller_py
@@ -122,9 +121,9 @@ class UserInputFCTests(unittest.IsolatedAsyncioTestCase):
         simulate_touch_event.assert_has_calls(
             [
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[
-                            f_input_report.ContactInputReport(
+                            f_test_input.ContactInputReport(
                                 contact_id=1,
                                 position_x=1,
                                 position_y=2,
@@ -133,7 +132,7 @@ class UserInputFCTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ),
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[],
                     ),
                 ),
@@ -166,9 +165,9 @@ class UserInputFCTests(unittest.IsolatedAsyncioTestCase):
         simulate_touch_event.assert_has_calls(
             [
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[
-                            f_input_report.ContactInputReport(
+                            f_test_input.ContactInputReport(
                                 contact_id=1,
                                 position_x=1,
                                 position_y=2,
@@ -177,14 +176,14 @@ class UserInputFCTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ),
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[],
                     ),
                 ),
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[
-                            f_input_report.ContactInputReport(
+                            f_test_input.ContactInputReport(
                                 contact_id=1,
                                 position_x=1,
                                 position_y=2,
@@ -193,14 +192,14 @@ class UserInputFCTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ),
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[],
                     ),
                 ),
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[
-                            f_input_report.ContactInputReport(
+                            f_test_input.ContactInputReport(
                                 contact_id=1,
                                 position_x=1,
                                 position_y=2,
@@ -209,7 +208,7 @@ class UserInputFCTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ),
                 mock.call(
-                    report=f_input_report.TouchInputReport(
+                    report=f_test_input.TouchInputReport(
                         contacts=[],
                     ),
                 ),

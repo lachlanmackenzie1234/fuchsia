@@ -342,8 +342,8 @@ TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
   FX_LOGS(INFO) << "device file closed";
 
   // Now the file is closed. Send 1 tap to top left. input_dump should not receive this down event.
-  fuchsia_input_report::TouchInputReport down;
-  down.contacts({{fuchsia_input_report::ContactInputReport{
+  fuchsia_ui_test_input::TouchInputReport down;
+  down.contacts({{fuchsia_ui_test_input::ContactInputReport{
       {
           .contact_id = 1,
           .position_x = display_width() / 4,
@@ -370,8 +370,8 @@ TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
   // Wait for `input_dump` to ready for event injection.
   WaitForMessageFromInputDump(out_socket, relay_api::kReadyMessage);
 
-  fuchsia_input_report::TouchInputReport move;
-  move.contacts({{fuchsia_input_report::ContactInputReport{
+  fuchsia_ui_test_input::TouchInputReport move;
+  move.contacts({{fuchsia_ui_test_input::ContactInputReport{
       {
           .contact_id = 1,
           .position_x = display_width() / 4 * 3,
@@ -380,7 +380,7 @@ TEST_F(StarnixTouchTest, OpenFileDuringEventSequenceReceivesPartialSequence) {
   }}});
   InjectTouchEvent(move);
 
-  fuchsia_input_report::TouchInputReport up;
+  fuchsia_ui_test_input::TouchInputReport up;
   up.contacts({{}});
   InjectTouchEvent(up);
 

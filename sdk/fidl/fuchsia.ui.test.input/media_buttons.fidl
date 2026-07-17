@@ -4,6 +4,7 @@
 
 library fuchsia.ui.test.input;
 
+using fuchsia.input;
 using fuchsia.input.report;
 using zx;
 
@@ -15,7 +16,10 @@ closed protocol MediaButtonsDevice {
     /// device.
     strict SimulateButtonPress(table {
         /// The button receiving the button press.
+        @available(replaced=NEXT)
         1: button fuchsia.input.report.ConsumerControlButton;
+        @available(added=NEXT)
+        1: button fuchsia.input.ConsumerControlButton;
     }) -> ();
 
     /// Send a vector of pressing button on the requested button on the
@@ -23,8 +27,12 @@ closed protocol MediaButtonsDevice {
     @available(added=19)
     strict SendButtonsState(table {
         /// The button receiving the button press.
+        @available(replaced=NEXT)
         1: buttons
                 vector<fuchsia.input.report.ConsumerControlButton>:fuchsia.input.report.CONSUMER_CONTROL_MAX_NUM_BUTTONS;
+        @available(added=NEXT)
+        1: buttons
+                vector<fuchsia.input.ConsumerControlButton>:fuchsia.input.CONSUMER_CONTROL_MAX_NUM_BUTTONS;
     }) -> ();
 
     /// Schedules a button press and release of the requested button at a
@@ -33,7 +41,10 @@ closed protocol MediaButtonsDevice {
     @available(added=31)
     strict ScheduleSimulateButtonPress(table {
         /// The button receiving the button press.
+        @available(replaced=NEXT)
         1: button fuchsia.input.report.ConsumerControlButton;
+        @available(added=NEXT)
+        1: button fuchsia.input.ConsumerControlButton;
         /// The length of the delay before sending the button (in nanos).
         2: delay zx.Duration;
     }) -> ();

@@ -15,7 +15,7 @@ rustc_library("wakeup_test") {
     "src/tracing.rs",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",

@@ -377,6 +377,15 @@ TEST_P(SingleViewTouchConformanceTest, TouchEventFields) {
   const uint32_t kID = 1u;
   const int kX = 3 * display_width_as_int() / 4;
   const int kY = display_height_as_int() / 4;
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  fuchsia_ui_test_input::ContactInputReport contact;
+  contact.contact_id(kID);
+  contact.position_x(kX);
+  contact.position_y(kY);
+
+  fuchsia_ui_test_input::TouchInputReport report;
+  report.contacts() = {std::move(contact)};
+#else
   const int64_t kHeight = 10;
   const int64_t kWidth = 15;
   const int64_t kPressure = 20;
@@ -394,6 +403,7 @@ TEST_P(SingleViewTouchConformanceTest, TouchEventFields) {
 
   fir::TouchInputReport report;
   report.contacts() = {std::move(contact)};
+#endif
 
   fake_touch_screen_->SimulateTouchEvent(std::move(report));
 
@@ -431,7 +441,11 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   const int kFinger2X = kFinger1X + 5;
 
   auto build_contact = [](uint32_t id, int64_t x, int64_t y) {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    fuchsia_ui_test_input::ContactInputReport contact;
+#else
     fir::ContactInputReport contact;
+#endif
     contact.contact_id(id);
     contact.position_x(x);
     contact.position_y(y);
@@ -439,7 +453,11 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   };
 
   {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    fuchsia_ui_test_input::TouchInputReport finger1_down;
+#else
     fir::TouchInputReport finger1_down;
+#endif
     finger1_down.contacts() = {build_contact(1u, kFinger1X, kY)};
 
     fake_touch_screen_->SimulateTouchEvent(std::move(finger1_down));
@@ -456,7 +474,11 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    fuchsia_ui_test_input::TouchInputReport finger_1_2_down;
+#else
     fir::TouchInputReport finger_1_2_down;
+#endif
     finger_1_2_down.contacts() = {
         build_contact(1u, kFinger1X, kY),
         build_contact(2u, kFinger2X, kY),
@@ -478,7 +500,11 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    fuchsia_ui_test_input::TouchInputReport keep_finger_1_2_down;
+#else
     fir::TouchInputReport keep_finger_1_2_down;
+#endif
     keep_finger_1_2_down.contacts() = {
         build_contact(1u, kFinger1X, kY),
         build_contact(2u, kFinger2X, kY),
@@ -502,7 +528,11 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    fuchsia_ui_test_input::TouchInputReport finger_2_lift;
+#else
     fir::TouchInputReport finger_2_lift;
+#endif
     finger_2_lift.contacts() = {build_contact(1u, kFinger1X, kY)};
 
     fake_touch_screen_->SimulateTouchEvent(std::move(finger_2_lift));
@@ -521,7 +551,11 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+    fuchsia_ui_test_input::TouchInputReport finger_1_lift;
+#else
     fir::TouchInputReport finger_1_lift;
+#endif
 
     fake_touch_screen_->SimulateTouchEvent(std::move(finger_1_lift));
 
