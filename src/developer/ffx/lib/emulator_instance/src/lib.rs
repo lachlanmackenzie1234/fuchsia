@@ -7,6 +7,8 @@ pub use sdk_metadata::{AudioDevice, DataAmount, DataUnits, PointingDevice, Scree
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Deref;
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
@@ -576,7 +578,7 @@ impl EmulatorInstanceInfo for EmulatorInstanceData {
     }
 
     fn is_running(&self) -> bool {
-        is_pid_running(self.pid)
+        is_proc_running(self.pid, Some(&self.emulator_binary))
     }
     fn get_engine_state(&self) -> EngineState {
         // If the static state is running, compare it with the process state
@@ -613,18 +615,143 @@ impl EmulatorInstanceInfo for EmulatorInstanceData {
     }
 }
 
-/// Returns true if the process identified by the pid is running.
-fn is_pid_running(pid: u32) -> bool {
-    if pid != 0 {
-        // First do a no-hang wait to collect the process if it's defunct.
-        let _ = nix::sys::wait::waitpid(
-            nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
-            Some(nix::sys::wait::WaitPidFlag::WNOHANG),
-        );
-        // Check to see if it is running by sending signal 0. If there is no error,
-        // the process is running.
-        return nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.try_into().unwrap()), None)
-            .is_ok();
+// In strict sandboxed environments (such as public CQ LUCI builders), the `kill`
+// syscall is blocked by seccomp filters even for the process's own PID. This causes
+// `kill(pid, 0)` to fail with EPERM or ENOSYS. Checking `/proc/<pid>` existence is a
+// sandbox-safe alternative on Linux.
+/// Returns true if the process identified by the pid is running and is an emulator process.
+fn is_proc_running(pid: u32, expected_binary: Option<&Path>) -> bool {
+    if pid == 0 {
+        return false;
     }
-    return false;
+    #[cfg(target_os = "linux")]
+    {
+        let proc_dir = format!("/proc/{}", pid);
+        if Path::new(&proc_dir).exists() {
+            // If expected_binary is provided and is not empty, perform inode/name matching.
+            if let Some(expected) = expected_binary.filter(|p| !p.as_os_str().is_empty()) {
+                let mut matched = false;
+
+                // 1. Try Inode Matching
+                if let Ok(expected_metadata) = std::fs::metadata(expected) {
+                    let proc_exe = PathBuf::from(format!("/proc/{}/exe", pid));
+                    if let Ok(exe_metadata) = std::fs::metadata(&proc_exe) {
+                        if exe_metadata.dev() == expected_metadata.dev()
+                            && exe_metadata.ino() == expected_metadata.ino()
+                        {
+                            matched = true;
+                        }
+                    }
+
+                    // If direct matching failed, check if it's run via a shell wrapper script
+                    if !matched {
+                        let proc_cmdline_path = format!("/proc/{}/cmdline", pid);
+                        if let Ok(cmdline) = std::fs::read_to_string(&proc_cmdline_path) {
+                            // cmdline is null-separated
+                            for arg in cmdline.split('\0') {
+                                if arg.is_empty() {
+                                    continue;
+                                }
+                                let arg_path = Path::new(arg);
+                                if arg_path.exists() {
+                                    if let Ok(arg_metadata) = std::fs::metadata(arg_path) {
+                                        if arg_metadata.dev() == expected_metadata.dev()
+                                            && arg_metadata.ino() == expected_metadata.ino()
+                                        {
+                                            matched = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Fallback to Name Check if Inode match failed or was not possible
+                if !matched {
+                    let proc_exe = PathBuf::from(format!("/proc/{}/exe", pid));
+                    if let Ok(actual_exe) = std::fs::read_link(&proc_exe) {
+                        let exe_str = actual_exe.to_string_lossy();
+                        if exe_str.contains("qemu-system-")
+                            || exe_str.contains("emulator")
+                            || exe_str.contains("crosvm")
+                        {
+                            matched = true;
+                        }
+                    } else {
+                        let proc_cmdline = format!("/proc/{}/cmdline", pid);
+                        if let Ok(cmdline) = std::fs::read_to_string(&proc_cmdline) {
+                            if cmdline.contains("qemu-system-")
+                                || cmdline.contains("emulator")
+                                || cmdline.contains("crosvm")
+                            {
+                                matched = true;
+                            }
+                        }
+                        if !matched {
+                            let proc_comm = format!("/proc/{}/comm", pid);
+                            if let Ok(comm) = std::fs::read_to_string(&proc_comm) {
+                                if comm.contains("qemu-system-")
+                                    || comm.contains("emulator")
+                                    || comm.contains("crosvm")
+                                {
+                                    matched = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !matched {
+                    log::debug!(
+                        "PID {} is running but does not match expected binary {:?}",
+                        pid,
+                        expected
+                    );
+                    return false;
+                }
+            }
+            return true;
+        }
+        if Path::new("/proc/self").exists() {
+            return false;
+        }
+    }
+    // First do a no-hang wait to collect the process if it's defunct.
+    let _ = nix::sys::wait::waitpid(
+        nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
+        Some(nix::sys::wait::WaitPidFlag::WNOHANG),
+    );
+    // Check to see if it is running by sending signal 0. If there is no error,
+    // the process is running.
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.try_into().unwrap()), None).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_proc_running_mismatch() {
+        #[cfg(target_os = "linux")]
+        {
+            use std::process::Command;
+
+            let mut child = Command::new("/bin/sleep").arg("10").spawn().unwrap();
+
+            let pid = child.id();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            if std::path::Path::new("/proc/self").exists() {
+                assert!(!is_proc_running(pid, Some(Path::new("/bin/emulator_nonexistent"))));
+            }
+
+            child.kill().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_is_proc_running_invalid_pid() {
+        assert!(!is_proc_running(0, None));
+    }
 }
