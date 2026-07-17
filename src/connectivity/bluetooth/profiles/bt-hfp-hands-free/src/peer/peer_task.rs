@@ -204,6 +204,16 @@ impl PeerTask {
                 action: fidl_hfp::CallAction::DialFromNumber(number),
                 responder,
             } => {
+                if let Err(e) = bt_hfp::call::Number::from_non_at_string(&number) {
+                    warn!(
+                        "Rejecting RequestOutgoingCall(DialFromNumber) for peer {}: {}",
+                        self.peer_id, e
+                    );
+                    self.log_responder_error(
+                        responder.send(Err(zx::Status::INVALID_ARGS.into_raw())),
+                    );
+                    return;
+                }
                 self.log_responder_error(responder.send(Ok(())));
                 self.enqueue_command_from_hf(CommandFromHf::CallActionDialFromNumber { number });
             }
@@ -211,6 +221,16 @@ impl PeerTask {
                 action: fidl_hfp::CallAction::DialFromLocation(memory),
                 responder,
             } => {
+                if let Err(e) = bt_hfp::call::Number::from_non_at_string(&memory) {
+                    warn!(
+                        "Rejecting RequestOutgoingCall(DialFromLocation) for peer {}: {}",
+                        self.peer_id, e
+                    );
+                    self.log_responder_error(
+                        responder.send(Err(zx::Status::INVALID_ARGS.into_raw())),
+                    );
+                    return;
+                }
                 self.log_responder_error(responder.send(Ok(())));
                 self.enqueue_command_from_hf(CommandFromHf::CallActionDialFromMemory { memory });
             }
@@ -611,5 +631,55 @@ mod tests {
             AtResponse::Recognized(at::Response::Success(at::Success::Bsir { enable: true }));
         let result = peer_task.handle_at_response(at_response);
         assert!(result.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn request_outgoing_call_dial_from_number_injection_rejected() {
+        use futures::stream::StreamExt;
+        let mut peer_task = create_test_peer_task().await;
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_hfp::PeerHandlerMarker>();
+
+        let client_task = fuchsia_async::Task::local(async move {
+            proxy
+                .request_outgoing_call(&fidl_hfp::CallAction::DialFromNumber(String::from(
+                    "123;\rAT+CMGD=1",
+                )))
+                .await
+        });
+
+        if let Some(Ok(request)) = stream.next().await {
+            peer_task.handle_peer_handler_request(request);
+        } else {
+            panic!("Expected RequestOutgoingCall request");
+        }
+
+        let result = client_task.await.expect("FIDL request returns cleanly");
+        assert_eq!(result, Err(zx::Status::INVALID_ARGS.into_raw()));
+    }
+
+    #[fuchsia::test]
+    async fn request_outgoing_call_dial_from_location_injection_rejected() {
+        use futures::stream::StreamExt;
+        let mut peer_task = create_test_peer_task().await;
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_hfp::PeerHandlerMarker>();
+
+        let client_task = fuchsia_async::Task::local(async move {
+            proxy
+                .request_outgoing_call(&fidl_hfp::CallAction::DialFromLocation(String::from(
+                    "1\rAT+CHUP",
+                )))
+                .await
+        });
+
+        if let Some(Ok(request)) = stream.next().await {
+            peer_task.handle_peer_handler_request(request);
+        } else {
+            panic!("Expected RequestOutgoingCall request");
+        }
+
+        let result = client_task.await.expect("FIDL request returns cleanly");
+        assert_eq!(result, Err(zx::Status::INVALID_ARGS.into_raw()));
     }
 }
