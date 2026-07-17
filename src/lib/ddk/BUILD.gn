@@ -212,6 +212,7 @@ static_library("ddk") {
     "//src/devices/temperature/drivers/tmp112:*",
     "//src/devices/testing/devmgr-integration-test-shim:*",
     "//src/devices/testing/driver-integration-test-shim:*",
+    "//src/devices/testing/driver-unit-test:*",
     "//src/devices/testing/fake-dma-buffer/test:*",
     "//src/devices/testing/fake-mmio-reg/test:*",
     "//src/devices/testing/goldfish/fake_pipe:*",
@@ -331,7 +332,6 @@ static_library("ddk") {
     "//third_party/pigweed/backends/pw_log:*",
     "//vendor/*",
     "//zircon/system/ulib/acpica:*",
-    "//zircon/system/ulib/driver-unit-test:*",
     "//zircon/system/ulib/hwreg/test:*",
     "//zircon/vdso/zx:*",
   ]

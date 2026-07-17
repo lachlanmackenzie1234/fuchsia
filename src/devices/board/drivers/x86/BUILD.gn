@@ -84,11 +84,11 @@ fuchsia_cc_driver("platform-bus-x86-driver") {
     # TODO(https://fxbug.dev/42113849): Migrate to the new bind rules and delete the below
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/fit",
+    "//src/devices/testing/driver-unit-test",
     "//src/lib/ddk:ddk-deprecated-binding-headers",
     "//src/lib/ddktl",
     "//src/ui/input/lib/hid",
     "//third_party/acpica",
-    "//zircon/system/ulib/driver-unit-test",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/lazy_init",

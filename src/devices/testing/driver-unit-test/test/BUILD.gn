@@ -19,7 +19,7 @@ test("logger-unit") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fdio",
     "//sdk/lib/fidl",
-    "//zircon/system/ulib/driver-unit-test",
+    "//src/devices/testing/driver-unit-test",
     "//zircon/system/ulib/zxtest",
   ]
 }

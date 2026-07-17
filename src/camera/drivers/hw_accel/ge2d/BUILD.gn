@@ -65,7 +65,7 @@ fuchsia_cc_driver("ge2d-driver-driver") {
     ":ge2d_bind",
     ":ge2d_on_device_test",
     ":lib",
-    "//zircon/system/ulib/driver-unit-test",
+    "//src/devices/testing/driver-unit-test",
   ]
   configs += [ "//build/config/fuchsia:enable_zircon_asserts" ]
 }
@@ -88,8 +88,8 @@ source_set("ge2d_on_device_test") {
     "//sdk/lib/fit",
     "//src/camera/drivers/hw_accel/ge2d:lib",
     "//src/camera/drivers/test_utils",
+    "//src/devices/testing/driver-unit-test",
     "//src/lib/ddk",
-    "//zircon/system/ulib/driver-unit-test",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/image-format",
     "//zircon/system/ulib/sync",

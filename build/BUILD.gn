@@ -498,7 +498,6 @@ group("deprecated_zx_wrapper_allowlist") {
     "//zircon/system/ulib/closure-queue:*",
     "//zircon/system/ulib/ddk-platform-defs:*",
     "//zircon/system/ulib/debugdata:*",
-    "//zircon/system/ulib/driver-unit-test:*",
     "//zircon/system/ulib/elf-search:*",
     "//zircon/system/ulib/explicit-memory:*",
     "//zircon/system/ulib/fbl:*",

@@ -21,7 +21,6 @@ group("tests") {
     "closure-queue:tests",
     "concurrent:tests",
     "debugdata:tests",
-    "driver-unit-test:tests",
     "fbl:tests",
     "ffl:tests",
     "fzl:tests",
