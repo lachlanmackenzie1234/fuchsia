@@ -12,14 +12,14 @@
         bind: "meta/bind/wlan_virtio_hwsim.bindbc",
     },
     capabilities: [
-        { service: "fuchsia.wlan.phyimpl.Service" },
+        { service: "fuchsia.wlan.phy.Service" },
     ],
     use: [
         { service: "fuchsia.hardware.pci.Service" },
     ],
     expose: [
         {
-            service: "fuchsia.wlan.phyimpl.Service",
+            service: "fuchsia.wlan.phy.Service",
             from: "self",
         },
     ],

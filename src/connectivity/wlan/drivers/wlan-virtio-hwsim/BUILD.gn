@@ -28,7 +28,7 @@ fuchsia_rust_driver("wlan-virtio-hwsim-driver") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_rust_next",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust_next",
-    "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_rust_next",
+    "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
     "//src/connectivity/wlan/lib/trace:wlan-trace",
