@@ -29,12 +29,16 @@ pub use zx_status::Status as __Status;
 /// * It must contain at least one test function; it may contain any other items.
 ///
 /// A test function must meet the following criteria:
+/// * It must be annotated with #[test].
 /// * It too must have a one-line docstring. This line becomes the description
 ///   of the test on the kernel command-line.
 /// * It must have a () -> () signature.
 ///
 /// A test function should make assertions only using the declarative
 /// assert_*/expect_* macros defined in the unittest module.
+///
+/// Disabling a test can be done with a further annotation of #[ignore]. Such a
+/// test will still be compiled; it just will not contribute test metadata.
 ///
 /// # Example
 /// ```rust
@@ -50,6 +54,11 @@ pub use zx_status::Status as __Status;
 ///         assert_false!(false);
 ///         expect_true!(1 == 1, "expectation with a message");
 ///     }
+///
+///     /// This test case is currently disabled.
+///     #[test]
+///     #[ignore]
+///     fn my_disabled_case() {...}
 /// }
 /// ```
 ///
@@ -581,6 +590,21 @@ mod tests {
         }
     }
 
+    /// Suite with ignored test.
+    #[test_suite(name = "with_ignored")]
+    mod suite_with_ignored {
+        /// Ignored test.
+        #[ignore]
+        #[test]
+        fn ignored_test() {
+            assert_true!(false);
+        }
+
+        /// Normal test.
+        #[test]
+        fn normal_test() {}
+    }
+
     /// Assertion tests description.
     #[test_suite]
     mod assertions {
@@ -810,7 +834,7 @@ mod tests {
     #[test]
     fn check_suite_count() {
         let suites = get_test_suites();
-        std::assert_eq!(suites.len(), 4);
+        std::assert_eq!(suites.len(), 5);
     }
 
     #[test]
@@ -895,5 +919,17 @@ mod tests {
         let case = unsafe { &*suite.tests };
         std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"check_other_items");
         assert!((case.fn_)());
+    }
+
+    #[test]
+    fn check_suite_with_ignored() {
+        let suites = get_test_suites();
+        std::assert!(suites.len() > 4);
+        let suite = &suites[4];
+
+        std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"with_ignored");
+        std::assert_eq!(suite.test_cnt, 1);
+        let case = unsafe { &*suite.tests };
+        std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"normal_test");
     }
 }

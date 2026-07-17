@@ -54,6 +54,8 @@ struct TestCase {
     docstring: String,
     // The test function's body.
     block: Block,
+    // Whether the test is ignored.
+    ignored: bool,
 }
 
 impl TestCase {
@@ -89,7 +91,9 @@ impl TestCase {
         let docstring =
             get_single_line_docstring(&item_fn.sig.ident, &item_fn.attrs, "test function")?;
 
-        Ok(Self { ident: item_fn.sig.ident, docstring, block: *item_fn.block })
+        let ignored = item_fn.attrs.iter().any(|attr| attr.path().is_ident("ignore"));
+
+        Ok(Self { ident: item_fn.sig.ident, docstring, block: *item_fn.block, ignored })
     }
 }
 
@@ -98,19 +102,32 @@ impl ToTokens for TestCase {
         let ident = &self.ident;
         let block = &self.block;
         let doc_comment = format!(" {}", self.docstring);
+        let maybe_allow_dead_code = if self.ignored {
+            quote! { #[allow(dead_code)] }
+        } else {
+            quote! {}
+        };
 
         // Declarative macros can't reference variables not defined in their
         // scope, but they can reference other macros, so we introduce
         // record_failure!() for use in the assert/expect macros.
         tokens.extend(quote! {
             #[doc = #doc_comment]
-            #[allow(unused_assignments)]
+            #maybe_allow_dead_code
             pub extern "C" fn #ident() -> bool {
+                #[allow(unused_mut)]
                 let mut all_ok = true;
+
                 #[allow(unused_macros)]
                 macro_rules! record_failure {
-                    () => { all_ok = false; };
+                    () => {
+                        #[allow(unused_assignments)]
+                        {
+                            all_ok = false;
+                        }
+                    };
                 }
+
                 #block
                 all_ok
             }
@@ -174,7 +191,8 @@ impl ToTokens for TestSuite {
 
         let non_test_items = &self.non_test_items;
         let cases = &self.cases;
-        let reg_entries = cases.iter().map(|case| {
+        let enabled_cases: Vec<&TestCase> = cases.iter().filter(|c| !c.ignored).collect();
+        let reg_entries = enabled_cases.iter().map(|case| {
             let ident = &case.ident;
             let case_name_c_str = format!("{ident}\0");
             quote! {
@@ -185,7 +203,7 @@ impl ToTokens for TestSuite {
             }
         });
 
-        let test_count = cases.len();
+        let enabled_test_count = enabled_cases.len();
         tokens.extend(quote! {
             #[doc = #doc_comment]
             pub mod #mod_ident {
@@ -199,7 +217,7 @@ impl ToTokens for TestSuite {
                 #( #cases )*
 
                 const _: () = {
-                    static TESTS: [::unittest::TestCaseRegistration; #test_count] = [
+                    static TESTS: [::unittest::TestCaseRegistration; #enabled_test_count] = [
                         #( #reg_entries ),*
                     ];
 
@@ -209,7 +227,7 @@ impl ToTokens for TestSuite {
                         name: #suite_name_c_str.as_ptr() as *const core::ffi::c_char,
                         desc: #suite_desc_c_str.as_ptr() as *const core::ffi::c_char,
                         tests: TESTS.as_ptr(),
-                        test_cnt: #test_count,
+                        test_cnt: #enabled_test_count,
                     };
                 };
             }
