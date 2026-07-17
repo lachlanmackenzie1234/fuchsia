@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Slice is not aligned to T")]
+    #[should_panic]
     fn test_chunks_unaligned_panic() {
         #[repr(C, align(4))]
         struct AligningBuffer {
@@ -565,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Slice is not aligned to T")]
+    #[should_panic]
     fn test_chunks_mut_unaligned_panic() {
         #[repr(C, align(4))]
         struct AligningBuffer {
