@@ -2,5 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+composite mali_csf;
 
-fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-valhall";
+primary parent "pdev" {
+  fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-valhall";
+}
