@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
+use fidl_test_wlan_realm as fidl_realm;
+use fidl_test_wlan_testcontroller as fidl_testcontroller;
 use fuchsia_component::client::connect_to_protocol;
 use realm_client::{InstalledNamespace, extend_namespace};
 use std::sync::Arc;
 use test_realm_helpers::constants::TESTCONTROLLER_DRIVER_TOPOLOGICAL_PATH;
 use test_realm_helpers::tracing::Tracing;
-use {fidl_test_wlan_realm as fidl_realm, fidl_test_wlan_testcontroller as fidl_testcontroller};
 
 pub mod sme_helpers;
 
@@ -52,7 +53,7 @@ impl DriversOnlyTestRealm {
         };
 
         realm_factory
-            .create_realm3(options, dict_1)
+            .create_realm(options, dict_1)
             .await
             .expect("FIDL error on create_realm")
             .expect("create_realm returned an error");

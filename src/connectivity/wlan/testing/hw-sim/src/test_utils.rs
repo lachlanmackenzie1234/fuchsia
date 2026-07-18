@@ -89,7 +89,11 @@ impl TestRealmContext {
         // `test_ns.prefix()`.
         let trace_manager_hermeticity = config.trace_manager_hermeticity.clone();
         let options = fidl_realm::RealmOptions { wlan_config: Some(config), ..Default::default() };
-        let _ = realm_factory.create_realm3(options, dict_1).await.expect("Could not create realm");
+        let _ = realm_factory
+            .create_realm(options, dict_1)
+            .await
+            .expect("FIDL error on create_realm")
+            .expect("Could not create realm");
         let test_ns =
             Arc::new(extend_namespace(realm_factory, dict_2).await.expect("failed to extend ns"));
 

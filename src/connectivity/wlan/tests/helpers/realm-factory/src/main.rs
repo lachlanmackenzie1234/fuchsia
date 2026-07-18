@@ -4,14 +4,10 @@
 
 use anyhow::{Error, Result, bail, format_err};
 use fidl::endpoints::ControlHandle;
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_component_test as ftest;
-use fidl_fuchsia_testing_harness::OperationError;
 use fidl_fuchsia_wlan_phy as fidl_wlan_phy;
 use fidl_fuchsia_wlan_tap as fidl_wlan_tap;
 use fidl_test_wlan_realm::*;
-use fuchsia_async as fasync;
-use fuchsia_component::client;
 use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
@@ -32,10 +28,7 @@ async fn main() -> Result<(), Error> {
 }
 
 async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
-    let scope = fasync::Scope::new();
     let mut realms = vec![];
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
     let result: Result<(), Error> = async move {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
@@ -43,39 +36,7 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                     control_handle.shutdown_with_epitaph(zx_status::Status::NOT_SUPPORTED);
                     unimplemented!();
                 }
-                RealmFactoryRequest::CreateRealm { options, realm_server, responder } => {
-                    match create_realm(options).await {
-                        Ok(realm) => {
-                            let request_stream = realm_server.into_stream();
-                            scope.spawn(async move {
-                                realm_proxy::service::serve(realm, request_stream).await.unwrap();
-                            });
-                            responder.send(Ok(()))?;
-                        }
-                        Err(e) => {
-                            error!("Failed to create realm: {:?}", e);
-                            responder.send(Err(OperationError::Failed))?;
-                        }
-                    }
-                }
-                RealmFactoryRequest::CreateRealm2 { options, dictionary, responder } => {
-                    let realm = create_realm(options).await?;
-                    let dict_ref = realm.root.controller().get_exposed_dictionary().await?.unwrap();
-                    let dict_id = id_gen.next();
-                    store
-                        .import(dict_id, fsandbox::Capability::Dictionary(dict_ref))
-                        .await
-                        .unwrap()
-                        .unwrap();
-                    store
-                        .dictionary_legacy_export(dict_id, dictionary.into())
-                        .await
-                        .unwrap()
-                        .unwrap();
-                    realms.push(realm);
-                    responder.send(Ok(()))?;
-                }
-                RealmFactoryRequest::CreateRealm3 { options, dictionary, responder } => {
+                RealmFactoryRequest::CreateRealm { options, dictionary, responder } => {
                     let realm = create_realm(options).await?;
                     let output_dictionary_handle =
                         realm.root.controller().get_output_dictionary().await?.unwrap();
@@ -87,7 +48,6 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
             }
         }
 
-        scope.join().await;
         Ok(())
     }
     .await;

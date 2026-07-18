@@ -444,40 +444,6 @@ template("generate_pkgdir-tests") {
   }
 }
 
-template("generate_simulate-scan-wlan-hw-sim-tests") {
-  forward_variables_from(invoker,
-                         [
-                           "test_info",
-                           "fidl_coverage",
-                         ])
-  disabled_api_levels = [ "16" ]
-  if (defined(invoker.api_level) &&
-      disabled_api_levels + [ invoker.api_level ] - [ invoker.api_level ] !=
-      disabled_api_levels) {
-    not_needed([
-                 "test_info",
-                 "fidl_coverage",
-               ])
-    group(target_name) {
-    }
-  } else {
-    fuchsia_package_with_test(target_name) {
-      test_specs = {
-        log_settings = {
-          max_severity = "ERROR"
-        }
-      }
-      subpackages = [
-        test_info.target_label,
-        "//src/connectivity/wlan/tests/helpers/realm-factory",
-        "//src/lib/fuchsia-component-test/realm_builder_server:pkg",
-      ]
-      test_component = "//src/connectivity/wlan/testing/hw-sim/test/simulate_scan:simulate-scan-test-root-component"
-      test_component_name = "test-root.cm"
-    }
-  }
-}
-
 template("generate_basic-driver-test") {
   forward_variables_from(invoker,
                          [

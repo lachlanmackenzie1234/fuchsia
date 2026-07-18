@@ -29,8 +29,3 @@ group("wlan-hw-sim-component-tests") {
     "./verify_wlan_inspect",
   ]
 }
-
-group("ctf-tests") {
-  testonly = true
-  deps = [ "./simulate_scan:simulate-scan-wlan-hw-sim-tests_archive" ]
-}

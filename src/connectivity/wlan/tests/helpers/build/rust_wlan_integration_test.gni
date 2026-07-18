@@ -27,9 +27,6 @@ import("./wlan_integration_test_package.gni")
 #    package_name (optional)
 #      Name of the output integration test package.
 #
-#    ctf (optional)
-#      Set to true if this defines a CTF test. False by default.
-#
 #    test_specs (optional)
 #
 # All other parameters will be forwarded to the internal call to rustc_test.
@@ -56,7 +53,6 @@ template("rust_wlan_integration_test") {
                              "package_name",
                              "package_deps",
                              "test_suite_package_name",
-                             "ctf",
                              "deps",
                              "test_type",
                            ])
@@ -85,7 +81,6 @@ template("rust_wlan_integration_test") {
                              "test_driver",
                              "package_name",
                              "test_suite_package_name",
-                             "ctf",
                              "test_type",
                            ])
     test_suite_component_name = component_name

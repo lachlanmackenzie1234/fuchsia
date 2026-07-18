@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import("//build/components.gni")
-import("//sdk/ctf/build/ctf.gni")
 
 # This generates a fuchsia_test_package that conforms to the architecture
 # required for Test Realm Factory tests.
@@ -42,19 +41,11 @@ template("wlan_integration_test_package") {
   }
 
   # Test suite package. Will be subpackaged by the integration test package.
-  if (defined(invoker.ctf) && invoker.ctf) {
-    ctf_fuchsia_package(test_suite_package_name) {
-      testonly = true
-      package_name = "${test_suite_package_name}"
-      deps = invoker.test_suite_package_deps
-    }
-  } else {
-    fuchsia_package(test_suite_package_name) {
-      testonly = true
-      package_name = "${test_suite_package_name}"
-      deps = invoker.test_suite_package_deps
-      visibility = [ ":*" ]
-    }
+  fuchsia_package(test_suite_package_name) {
+    testonly = true
+    package_name = "${test_suite_package_name}"
+    deps = invoker.test_suite_package_deps
+    visibility = [ ":*" ]
   }
 
   # Generates component manifest for the test root component.

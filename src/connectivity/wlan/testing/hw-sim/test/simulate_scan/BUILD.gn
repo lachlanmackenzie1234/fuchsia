@@ -26,9 +26,4 @@ rust_wlan_integration_test("simulate-scan") {
       max_severity = "ERROR"
     }
   }
-
-  # NOTE: This needs to preserve the name of the test suite package for CTF.
-  test_suite_package_name = "simulate-scan-wlan-hw-sim-tests"
-  package_name = "simulate-scan-wlan-hw-sim-tests-latest"
-  ctf = true
 }
