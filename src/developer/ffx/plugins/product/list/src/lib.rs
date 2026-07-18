@@ -51,7 +51,8 @@ static BRANCH_TO_PREFIX_MAPPING: LazyLock<HashMap<&'static str, &'static str>> =
             "f28" => "28.20250730",
             "f29" => "29.20251028",
             "f30" => "30.20260128",
-            "LATEST" => "31",
+            "f31" => "31.20260504",
+            "LATEST" => "32",
         }
     });
 
