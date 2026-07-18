@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
+use anyhow::{Context, Error};
 use fidl::endpoints::ServiceMarker;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_wlan_tap as wlantap;
@@ -19,11 +19,13 @@ impl Wlantap {
         let test_ns_dir = fuchsia_fs::directory::open_in_namespace(prefix, fio::Flags::empty())?;
 
         let mut watcher = Watcher::new(&test_ns_dir).await?;
-        while let Some(message) = watcher.next().await {
-            let message = message?;
+        loop {
+            let message = watcher
+                .next()
+                .await
+                .context("Directory watcher finished without finding wlantap service")??;
             if message.event == WatchEvent::ADD_FILE || message.event == WatchEvent::EXISTING {
-                let filename = message.filename.to_str().unwrap();
-                if filename == wlantap::ServiceMarker::SERVICE_NAME {
+                if message.filename.to_str() == Some(wlantap::ServiceMarker::SERVICE_NAME) {
                     break;
                 }
             }
