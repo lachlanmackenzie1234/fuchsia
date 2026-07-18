@@ -175,7 +175,7 @@ void WlanPhyDevice::CreateIface(CreateIfaceRequest& request,
   fdf::info("{}: received a 'CreateIface' for role: {}", name_, role_str);
   if (phy_config_.mac_role() != request.role().value()) {
     fdf::error("{}: CreateIface({}): role not supported", name_, role_str);
-    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+    completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
 
