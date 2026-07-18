@@ -5,6 +5,7 @@
 use crate::event::action::{self, AuthenticationControl, AuthenticationTap};
 use crate::event::{Handler, branch};
 use fidl::endpoints::{create_endpoints, create_proxy};
+use fidl_fuchsia_sys2 as _;
 use fidl_fuchsia_wlan_common::WlanMacRole;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;

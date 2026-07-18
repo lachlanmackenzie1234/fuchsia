@@ -295,6 +295,15 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
     builder
         .add_route(
             Route::new()
+                .capability(Capability::protocol::<fidl_fuchsia_sys2::LifecycleControllerMarker>())
+                .from(Ref::framework())
+                .to(Ref::parent()),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
                 .capability(Capability::service::<fidl_wlan_tap::ServiceMarker>())
                 .from(Ref::child(fuchsia_driver_test::COMPONENT_NAME))
                 .to(Ref::parent()),
