@@ -26,6 +26,7 @@ class WlantapDriver : public fdf::DriverBase2 {
   zx::result<> Start(fdf::DriverContext context) override {
     WLAN_TRACE_DURATION();
     node_.Bind(take_node());
+    driver_context_ = std::make_shared<WlantapDriverContext>(&logger(), outgoing(), &node_);
     fidl::Arena arena;
 
     fuchsia_wlan_tap::Service::InstanceHandler handler;
@@ -60,14 +61,16 @@ class WlantapDriver : public fdf::DriverBase2 {
  private:
   void Serve(fidl::ServerEnd<fuchsia_wlan_tap::WlantapCtl> server) {
     WLAN_TRACE_DURATION();
-    auto server_impl =
-        std::make_unique<WlantapCtlServer>(WlantapDriverContext(&logger(), outgoing(), &node_));
+    // Give the dispatcher ownership of server_impl
+    auto server_impl = std::make_unique<WlantapCtlServer>(*driver_context_);
     fidl::BindServer(dispatcher(), std::move(server), std::move(server_impl));
   }
 
   // The node client. This lets WlantapDriver and related classes add child nodes, which is the DFv2
   // equivalent of calling device_add().
   fidl::SyncClient<fuchsia_driver_framework::Node> node_;
+
+  std::shared_ptr<WlantapDriverContext> driver_context_;
 };
 
 }  // namespace wlan
