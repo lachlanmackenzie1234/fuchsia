@@ -113,7 +113,7 @@ def fuchsia_test_component(
     )
 
 def fuchsia_driver_component(
-        # TODO(http://b/525461025): Add `*,` here like the peer macros.
+        *,
         name,
         manifest,
         driver_lib,
