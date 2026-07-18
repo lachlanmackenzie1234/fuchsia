@@ -26,7 +26,6 @@ cc_library(
         "include/wlan/common/channel.h",
         "include/wlan/common/element.h",
         "include/wlan/common/element_id.h",
-        "include/wlan/common/from_bytes.h",
         "include/wlan/common/ieee80211.h",
         "include/wlan/common/ieee80211_codes.h",
         "include/wlan/common/logging.h",
