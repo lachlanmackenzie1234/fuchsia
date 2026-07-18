@@ -5,7 +5,8 @@
 use crate::event::{self, Handler};
 use crate::netdevice_helper;
 use crate::wlancfg_helper::{NetworkConfigBuilder, start_ap_and_wait_for_confirmation};
-use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
+use anyhow::Context;
+use fidl::endpoints::{Proxy, ServiceMarker, create_endpoints, create_proxy};
 use fidl_fuchsia_component_test as fcomponent_test;
 use fidl_fuchsia_driver_test as fidl_driver_test;
 use fidl_fuchsia_wlan_policy as fidl_policy;
@@ -13,8 +14,9 @@ use fidl_fuchsia_wlan_tap as wlantap;
 use fidl_test_wlan_realm as fidl_realm;
 use fuchsia_async::{DurationExt, MonotonicInstant, TimeoutExt, Timer};
 use fuchsia_component::client::{
-    connect_channel_to_protocol_at, connect_to_protocol, connect_to_protocol_at,
+    Service, connect_channel_to_protocol_at, connect_to_protocol, connect_to_protocol_at,
 };
+use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 use ieee80211::{MacAddr, MacAddrBytes};
@@ -28,7 +30,6 @@ use std::task::Poll;
 use test_realm_helpers::tracing::Tracing;
 use wlan_common::test_utils::ExpectWithin;
 use wlan_fidl_ext::try_unpack::{TryUnpack, WithName};
-use wlantap_client::Wlantap;
 
 /// Percent of a timeout duration past which we log a warning.
 const TIMEOUT_WARN_THRESHOLD: f64 = 0.8;
@@ -708,4 +709,46 @@ pub async fn timeout_after<R, F: Future<Output = R> + Unpin>(
     main_future: &mut F,
 ) -> Result<R, ()> {
     async { Ok(main_future.await) }.on_timeout(timeout.after_now(), || Err(())).await
+}
+
+pub struct Wlantap {
+    proxy: wlantap::WlantapCtlProxy,
+}
+
+impl Wlantap {
+    pub async fn open_from_namespace(prefix: &str) -> Result<Self, anyhow::Error> {
+        let test_ns_dir =
+            fuchsia_fs::directory::open_in_namespace(prefix, fidl_fuchsia_io::Flags::empty())?;
+
+        let mut watcher = Watcher::new(&test_ns_dir).await?;
+        loop {
+            let message = watcher
+                .next()
+                .await
+                .context("Directory watcher finished without finding wlantap service")??;
+            if message.event == WatchEvent::ADD_FILE || message.event == WatchEvent::EXISTING {
+                if message.filename.to_str() == Some(wlantap::ServiceMarker::SERVICE_NAME) {
+                    break;
+                }
+            }
+        }
+
+        let service = Service::open_from_dir(&test_ns_dir, wlantap::ServiceMarker)?;
+        let service_proxy = service.watch_for_any().await?;
+        let proxy = service_proxy.connect_to_wlantap_ctl()?;
+        Ok(Self { proxy })
+    }
+
+    pub async fn create_phy(
+        &self,
+        config: wlantap::WlantapPhyConfig,
+    ) -> Result<wlantap::WlantapPhyProxy, anyhow::Error> {
+        let Self { proxy } = self;
+        let (ours, theirs) = fidl::endpoints::create_proxy();
+
+        let status = proxy.create_phy(&config, theirs).await?;
+        let () = zx::ok(status)?;
+
+        Ok(ours)
+    }
 }
