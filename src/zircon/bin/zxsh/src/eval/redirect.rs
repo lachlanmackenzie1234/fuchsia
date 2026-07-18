@@ -74,6 +74,11 @@ pub fn eval_redirect(
     eval_command(builder, sub_cmd_ptr, state, &mut new_context)
 }
 
+/// The maximum size of a write to a pipe that is guaranteed to be atomic and not block.
+/// Heredocs smaller than or equal to this capacity can be written inline into the pipe
+/// without spawning a background worker thread.
+pub const HEREDOC_INLINE_THRESHOLD: usize = libc::PIPE_BUF;
+
 pub fn apply_redirects(
     redirects: &[Redirect],
     state: &mut ShellState,
@@ -116,17 +121,22 @@ pub fn apply_redirects(
                 } else {
                     BString::from(body_bytes)
                 };
-                let (read_fd, write_fd) = make_pipe()?;
+                let (read_fd, mut write_fd) = make_pipe()?;
 
-                // Spawning a worker thread to populate the heredoc pipe avoids deadlocks if the
-                // heredoc content exceeds the OS kernel pipe buffer capacity before the reader consumes it.
-                // The thread terminates and drops write_fd as soon as the write completes.
-                let body_to_write = final_body.clone();
-                std::thread::spawn(move || {
-                    use std::io::Write;
-                    let mut writer = write_fd;
-                    let _ = writer.write_all(body_to_write.as_bytes());
-                });
+                use std::io::Write;
+                if final_body.len() <= HEREDOC_INLINE_THRESHOLD {
+                    write_fd.write_all(final_body.as_bytes()).map_err(|e| {
+                        format!("Failed to write heredoc to pipe: {}", io_err_str(e))
+                    })?;
+                } else {
+                    // Spawning a worker thread to populate the heredoc pipe avoids deadlocks if the
+                    // heredoc content exceeds the OS kernel pipe buffer capacity before the reader
+                    // consumes it.  The thread terminates and drops write_fd as soon as the write
+                    // completes.
+                    std::thread::spawn(move || {
+                        let _ = write_fd.write_all(final_body.as_bytes());
+                    });
+                }
 
                 ctx.set_fd(redirect.src_fd, read_fd);
             }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::eval::testing::apply_redirects;
+use crate::eval::testing::{HEREDOC_INLINE_THRESHOLD, apply_redirects};
 use crate::eval::{EvalOutcome, ExecutionContext, ShellState, eval_redirect};
 use crate::fd::Fd;
 use crate::parser::ast::{ASTBuilder, Redirect, RedirectTag, RedirectTemplate, ResolvedWordPart};
@@ -124,6 +124,92 @@ fn test_redirect_heredoc_unexpanded_and_expanded() {
 
     apply_redirects(&[heredoc_exp, heredoc_unexp], &mut state, &mut ctx, &builder).unwrap();
     assert!(ctx.stdin().is_some());
+}
+
+#[test]
+fn test_redirect_heredoc_short_inline() {
+    use std::io::Read;
+
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    let mut builder = ASTBuilder::new();
+    let body_bstr = builder.add_bstr(b"Short heredoc content inline");
+
+    let heredoc = Redirect {
+        tag: RedirectTag::HERE_DOC,
+        src_fd: Fd(0),
+        dest_fd: Fd(0),
+        filename: relative::Slice::empty(),
+        append: 0,
+        clobber: 0,
+        expand: 0,
+        body: body_bstr,
+    };
+
+    apply_redirects(&[heredoc], &mut state, &mut ctx, &builder).unwrap();
+    let mut stdin_file = ctx.stdin().unwrap();
+    let mut content = Vec::new();
+    stdin_file.read_to_end(&mut content).unwrap();
+    assert_eq!(content, b"Short heredoc content inline");
+}
+
+#[test]
+fn test_redirect_heredoc_max_inline() {
+    use std::io::Read;
+
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    let mut builder = ASTBuilder::new();
+    let max_inline_body = vec![b'a'; HEREDOC_INLINE_THRESHOLD];
+    let body_bstr = builder.add_bstr(&max_inline_body);
+
+    let heredoc = Redirect {
+        tag: RedirectTag::HERE_DOC,
+        src_fd: Fd(0),
+        dest_fd: Fd(0),
+        filename: relative::Slice::empty(),
+        append: 0,
+        clobber: 0,
+        expand: 0,
+        body: body_bstr,
+    };
+
+    apply_redirects(&[heredoc], &mut state, &mut ctx, &builder).unwrap();
+    let mut stdin_file = ctx.stdin().unwrap();
+    let mut content = Vec::new();
+    stdin_file.read_to_end(&mut content).unwrap();
+    assert_eq!(content, max_inline_body);
+}
+
+#[test]
+fn test_redirect_heredoc_large_threaded() {
+    use std::io::Read;
+
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    let mut builder = ASTBuilder::new();
+    let large_body = vec![b'x'; HEREDOC_INLINE_THRESHOLD + 1024];
+    let body_bstr = builder.add_bstr(&large_body);
+
+    let heredoc = Redirect {
+        tag: RedirectTag::HERE_DOC,
+        src_fd: Fd(0),
+        dest_fd: Fd(0),
+        filename: relative::Slice::empty(),
+        append: 0,
+        clobber: 0,
+        expand: 0,
+        body: body_bstr,
+    };
+
+    apply_redirects(&[heredoc], &mut state, &mut ctx, &builder).unwrap();
+    let mut stdin_file = ctx.stdin().unwrap();
+    let mut content = Vec::new();
+    stdin_file.read_to_end(&mut content).unwrap();
+    assert_eq!(content, large_body);
 }
 
 #[test]

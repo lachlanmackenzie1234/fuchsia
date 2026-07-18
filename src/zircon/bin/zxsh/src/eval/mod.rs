@@ -49,7 +49,7 @@ pub mod testing {
         needs_subshell_process,
     };
     pub use super::glob::{WordChar, expand_glob, match_glob, match_segment_glob};
-    pub use super::redirect::apply_redirects;
+    pub use super::redirect::{HEREDOC_INLINE_THRESHOLD, apply_redirects};
     pub use super::simple::{
         ResolvedAlias, apply_assignments, is_assignment_flat, parse_simple_command_args,
         resolve_alias_loop, split_assignment_flat,
