@@ -6,19 +6,19 @@ use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_tap::WlantapPhyProxy;
 use fidl_test_wlan_realm::WlanConfig;
 use futures::channel::oneshot;
-use futures::{join, TryFutureExt};
+use futures::{TryFutureExt, join};
 use ieee80211::MacAddr;
 use log::{info, warn};
 use std::pin::pin;
 use wlan_common::bss::Protection::Wpa2Personal;
 use wlan_common::buffer_reader::BufferReader;
 use wlan_common::mac;
-use wlan_hw_sim::event::{self, action, Handler};
+use wlan_hw_sim::event::{self, Handler, action};
 use wlan_hw_sim::{
-    default_wlantap_config_ap, default_wlantap_config_client, has_id_and_state,
-    loop_until_iface_is_found, netdevice_helper, rx_info_with_default_ap, test_utils,
-    wait_until_client_state, Beacon, NetworkConfigBuilder, AP_MAC_ADDR, AP_SSID, CLIENT_MAC_ADDR,
-    ETH_DST_MAC, WLANCFG_DEFAULT_AP_CHANNEL,
+    AP_MAC_ADDR, AP_SSID, Beacon, CLIENT_MAC_ADDR, ETH_DST_MAC, NetworkConfigBuilder,
+    WLANCFG_DEFAULT_AP_CHANNEL, default_wlantap_config_ap, default_wlantap_config_client,
+    has_id_and_state, loop_until_iface_is_found, netdevice_helper, rx_info_with_default_ap,
+    test_utils, wait_until_client_state,
 };
 
 const PASS_PHRASE: &str = "wpa2duel";
@@ -184,7 +184,10 @@ async fn send_then_receive(
                         assert_eq!(header.sa, peer.addr);
 
                         if &payload[..] == peer.payload {
-                            info!("{} received packet from {}. Acknowledging receipt through channel...", me.name, peer.name);
+                            info!(
+                                "{} received packet from {}. Acknowledging receipt through channel...",
+                                me.name, peer.name
+                            );
                             sender_to_peer
                                 .send(())
                                 .unwrap_or_else(|e| panic!("confirming as {}: {:?}", me.name, e));
@@ -319,7 +322,12 @@ async fn sim_client_vs_sim_ap() {
 
     let mut client_helper = test_utils::TestHelper::begin_test(
         default_wlantap_config_client(),
-        WlanConfig { use_legacy_privacy: Some(false), ..Default::default() },
+        WlanConfig {
+            use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
+            ..Default::default()
+        },
     )
     .await;
     let client_proxy = client_helper.proxy();
@@ -328,7 +336,12 @@ async fn sim_client_vs_sim_ap() {
     let mut ap_helper = test_utils::TestHelper::begin_ap_test(
         default_wlantap_config_ap(),
         network_config,
-        WlanConfig { use_legacy_privacy: Some(false), ..Default::default() },
+        WlanConfig {
+            use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
+            ..Default::default()
+        },
     )
     .await;
     let ap_proxy = ap_helper.proxy();

@@ -15,12 +15,10 @@ using zx;
 /// Defines the configuration of the WLAN components under test.
 @deprecated
 type WlanConfig = resource table {
-    /// If true, WEP and WPA1 are supported.
-    /// If not present, defaults to false.
+    /// Must be present. If true, WEP and WPA1 are supported.
     1: use_legacy_privacy bool;
 
-    /// If true, the regulatory region component is used.
-    /// If not present, defaults to true.
+    /// Must be present. If true, the regulatory region component is used.
     2: with_regulatory_region bool;
 
     /// The name of the created realm.
@@ -34,6 +32,10 @@ type WlanConfig = resource table {
     ///
     /// Default to HERMETIC when this field is not present.
     4: trace_manager_hermeticity TraceManagerHermeticity;
+
+    /// Must be present. If true, the policy components (wlancfg, stash, and
+    /// regulatory_region) are included in the test realm.
+    5: with_policy bool;
 };
 
 /// Options for configuring the Driver Test Realm in the constructed test realm.

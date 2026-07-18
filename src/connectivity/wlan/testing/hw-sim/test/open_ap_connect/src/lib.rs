@@ -7,7 +7,7 @@ use fidl_test_wlan_realm::WlanConfig;
 use futures::channel::oneshot;
 use std::panic;
 use wlan_hw_sim::event::buffered::{ActionFrame, AssocRespFrame, AuthFrame, Buffered, MgmtFrame};
-use wlan_hw_sim::event::{branch, Handler};
+use wlan_hw_sim::event::{Handler, branch};
 use wlan_hw_sim::*;
 
 /// Test WLAN AP implementation by simulating a client that sends out authentication and
@@ -32,7 +32,12 @@ async fn open_ap_connect() {
     let mut helper = test_utils::TestHelper::begin_ap_test(
         default_wlantap_config_ap(),
         network_config,
-        WlanConfig { use_legacy_privacy: Some(false), ..Default::default() },
+        WlanConfig {
+            use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
+            ..Default::default()
+        },
     )
     .await;
 

@@ -15,6 +15,8 @@ use wlan_hw_sim::*;
 async fn autoconnect_idle_iface() {
     let ctx = test_utils::TestRealmContext::new(WlanConfig {
         use_legacy_privacy: Some(false),
+        with_regulatory_region: Some(true),
+        with_policy: Some(true),
         ..Default::default()
     })
     .await;

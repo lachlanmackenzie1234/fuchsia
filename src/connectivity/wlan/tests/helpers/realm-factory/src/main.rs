@@ -11,12 +11,19 @@ use fidl_test_wlan_realm::*;
 use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
-    Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
+    Capability, ChildOptions, ChildRef, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
 };
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
+use wlan_fidl_ext::try_unpack::{TryUnpack, WithName};
 use zx_status;
+
+struct CreatedRealm {
+    realm: RealmInstance,
+    wlancfg: Option<ChildRef>,
+    wlandevicemonitor: Option<ChildRef>,
+}
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
@@ -38,7 +45,8 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                 }
                 RealmFactoryRequest::CreateRealm { options, dictionary, responder } => {
                     let has_wlan_config = options.wlan_config.is_some();
-                    let realm = create_realm(options).await?;
+                    let CreatedRealm { realm, wlancfg, wlandevicemonitor } =
+                        create_realm(options).await?;
                     let output_dictionary_handle =
                         realm.root.controller().get_output_dictionary().await?.unwrap();
                     let output_dictionary = Dictionary::from(output_dictionary_handle);
@@ -47,9 +55,17 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
 
                     let mut response = CreateRealmResponse::default();
                     if has_wlan_config {
-                        response.wlan_policy_moniker = Some("./wlancfg".to_string());
-                        response.wlandevicemonitor_moniker =
-                            Some("./wlandevicemonitor".to_string());
+                        if let Some(ref wlancfg) = wlancfg {
+                            response.wlan_policy_moniker = Some(format!(
+                                "./{}",
+                                format!("{}", wlancfg).strip_prefix('#').unwrap()
+                            ));
+                        }
+                        let wlandevicemonitor = wlandevicemonitor.unwrap();
+                        response.wlandevicemonitor_moniker = Some(format!(
+                            "./{}",
+                            format!("{}", wlandevicemonitor).strip_prefix('#').unwrap()
+                        ));
                     }
                     responder.send(Ok(&response))?;
                 }
@@ -66,7 +82,7 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
     }
 }
 
-async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error> {
+async fn create_realm(mut options: RealmOptions) -> Result<CreatedRealm, Error> {
     if let Some(topology) = options.topology {
         info!("Building the realm using topology {:#?}", topology);
         let builder = RealmBuilder::new().await?;
@@ -89,7 +105,7 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
                     format_err!("DriversOnly topology requires driver_config, but none found")
                 })?;
                 start_and_connect_to_driver_test_realm(&realm, driver_config).await?;
-                Ok(realm)
+                Ok(CreatedRealm { realm, wlancfg: None, wlandevicemonitor: None })
             }
             TopologyUnknown!() => bail!("Unknown topology"),
         }
@@ -121,7 +137,8 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
         ];
         builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
 
-        create_wlan_components(&builder, wlan_config).await?;
+        let WlanComponents { wlancfg, wlandevicemonitor } =
+            create_wlan_components(&builder, wlan_config).await?;
         let realm = builder.build().await?;
 
         // NOTE: We only need devfs to support netdevice-migration.
@@ -134,7 +151,7 @@ async fn create_realm(mut options: RealmOptions) -> Result<RealmInstance, Error>
             )?;
         }
 
-        Ok(realm)
+        Ok(CreatedRealm { realm, wlancfg, wlandevicemonitor: Some(wlandevicemonitor) })
     } else {
         error!("RealmOptions must include either topology or wlan_config: {:#?}", options);
         bail!("RealmOptions missing topology and wlan_config");
@@ -228,148 +245,32 @@ async fn setup_trace_manager(
     Ok(())
 }
 
-async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> Result<(), Error> {
-    // Create child components.
-    let wlandevicemonitor = builder
-        .add_child("wlandevicemonitor", "#meta/wlandevicemonitor.cm", ChildOptions::new())
-        .await?;
+struct WlanComponents {
+    wlancfg: Option<ChildRef>,
+    wlandevicemonitor: ChildRef,
+}
 
-    // Start wlancfg as eager so that it automatically starts up without requiring the user to
-    // connect to it.
-    let wlancfg =
-        builder.add_child("wlancfg", "#meta/wlancfg.cm", ChildOptions::new().eager()).await?;
-
-    let stash = builder.add_child("stash", "#meta/stash_secure.cm", ChildOptions::new()).await?;
-
-    let trace_manager_hermeticity =
-        config.trace_manager_hermeticity.unwrap_or(TraceManagerHermeticity::Hermetic);
-    setup_trace_manager(
-        &builder,
-        vec![
-            Ref::child(fuchsia_driver_test::COMPONENT_NAME),
-            (&wlancfg).into(),
-            (&wlandevicemonitor).into(),
-            (&stash).into(),
-        ],
-        trace_manager_hermeticity,
+async fn create_wlan_components(
+    builder: &RealmBuilder,
+    config: WlanConfig,
+) -> Result<WlanComponents, Error> {
+    let (use_legacy_privacy, with_regulatory_region, with_policy) = (
+        config.use_legacy_privacy.with_name("use_legacy_privacy"),
+        config.with_regulatory_region.with_name("with_regulatory_region"),
+        config.with_policy.with_name("with_policy"),
     )
-    .await?;
+        .try_unpack()?;
 
-    // Configure components
-    let use_legacy_privacy = config.use_legacy_privacy.unwrap_or(false);
-    builder.init_mutable_config_to_empty(&wlandevicemonitor).await?;
-    builder
-        .set_config_value(&wlandevicemonitor, "wep_supported", use_legacy_privacy.into())
-        .await?;
-    builder
-        .set_config_value(&wlandevicemonitor, "wpa1_supported", use_legacy_privacy.into())
-        .await?;
+    if with_regulatory_region && !with_policy {
+        return Err(format_err!(
+            "Invalid hw-sim test configuration. The regulatory_region is only intended to be included in tests that include wlancfg too."
+        ));
+    }
 
-    builder.init_mutable_config_to_empty(&wlancfg).await?;
-    builder
-        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-            name: "fuchsia.wlan.RecoveryProfile".parse()?,
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String("".into())),
-        }))
-        .await?;
-    builder
-        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-            name: "fuchsia.wlan.RecoveryEnabled".parse()?,
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
-        }))
-        .await?;
-    builder
-        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-            name: "fuchsia.wlan.RoamingPolicy".parse()?,
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String("".into())),
-        }))
-        .await?;
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::configuration("fuchsia.wlan.RecoveryProfile"))
-                .capability(Capability::configuration("fuchsia.wlan.RecoveryEnabled"))
-                .capability(Capability::configuration("fuchsia.wlan.RoamingPolicy"))
-                .from(Ref::self_())
-                .to(&wlancfg),
-        )
-        .await?;
-
-    // Route capabilities to components.
-    // NOTE: fuchsia.logger.LogSink and fuchsia.inspect.InspectSink will be automatically routed
-    // to all components in RealmBuilder, once older CTF tests are removed,
-    // at which point the explicit routes can be removed.
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fidl_fuchsia_sys2::LifecycleControllerMarker>())
-                .from(Ref::framework())
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::service::<fidl_wlan_tap::ServiceMarker>())
-                .from(Ref::child(fuchsia_driver_test::COMPONENT_NAME))
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fidl_fuchsia_wlan_policy::ClientProviderMarker>())
-                .capability(Capability::protocol::<fidl_fuchsia_wlan_policy::AccessPointProviderMarker>())
-                .from(&wlancfg)
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fidl_fuchsia_logger::LogSinkMarker>())
-                .capability(Capability::protocol::<fidl_fuchsia_inspect::InspectSinkMarker>())
-                .from(Ref::parent())
-                .to(&wlancfg),
-        )
-        .await?;
-
-    // fuchsia.wlan.device.service.DeviceMonitor is used by set_country
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<
-                    fidl_fuchsia_wlan_device_service::DeviceMonitorMarker,
-                >())
-                .from(&wlandevicemonitor)
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::storage("data"))
-                .from(Ref::parent())
-                .to(&stash)
-                .to(&wlancfg),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(
-                    Capability::protocol::<fidl_fuchsia_wlan_device_service::DeviceMonitorMarker>()
-                        .weak(),
-                )
-                .from(&wlandevicemonitor)
-                .to(&wlancfg),
-        )
+    // Add and configure wlandevicemonitor
+    let wlandevicemonitor_options = ChildOptions::new();
+    let wlandevicemonitor = builder
+        .add_child("wlandevicemonitor", "#meta/wlandevicemonitor.cm", wlandevicemonitor_options)
         .await?;
 
     builder
@@ -381,31 +282,86 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
         )
         .await?;
 
+    builder.init_mutable_config_to_empty(&wlandevicemonitor).await?;
     builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fidl_fuchsia_stash::SecureStoreMarker>())
-                .from(&stash)
-                .to(&wlancfg),
-        )
+        .set_config_value(&wlandevicemonitor, "wep_supported", use_legacy_privacy.into())
+        .await?;
+    builder
+        .set_config_value(&wlandevicemonitor, "wpa1_supported", use_legacy_privacy.into())
         .await?;
 
-    // Handle optional components based on config
-    if config.with_regulatory_region.unwrap_or(true) {
-        let regulatory_region = builder
-            .add_child("regulatory_region", "#meta/regulatory_region.cm", ChildOptions::new())
-            .await?;
+    // Initialize list of tracing consumers that may be appended to if with_policy is true.
+    let mut tracing_consumers =
+        vec![Ref::child(fuchsia_driver_test::COMPONENT_NAME), (&wlandevicemonitor).into()];
 
+    let wlancfg = if with_policy {
+        // Start wlancfg eagerly so that TestHelper can wait for wlancfg to create an interface before
+        // allowing each test to proceed. Otherwise, no interface will be created.
+        let wlancfg =
+            builder.add_child("wlancfg", "#meta/wlancfg.cm", ChildOptions::new().eager()).await?;
+        tracing_consumers.push((&wlancfg).into());
+
+        let stash =
+            builder.add_child("stash", "#meta/stash_secure.cm", ChildOptions::new()).await?;
+        tracing_consumers.push((&stash).into());
+
+        builder.init_mutable_config_to_empty(&wlancfg).await?;
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.wlan.RecoveryProfile".parse()?,
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String("".into())),
+            }))
+            .await?;
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.wlan.RecoveryEnabled".parse()?,
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
+            }))
+            .await?;
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.wlan.RoamingPolicy".parse()?,
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String("".into())),
+            }))
+            .await?;
         builder
             .add_route(
                 Route::new()
-                    .capability(
-                        Capability::protocol::<
-                            fidl_fuchsia_location_namedplace::RegulatoryRegionWatcherMarker,
-                        >()
-                        .weak(),
-                    )
-                    .from(&regulatory_region)
+                    .capability(Capability::configuration("fuchsia.wlan.RecoveryProfile"))
+                    .capability(Capability::configuration("fuchsia.wlan.RecoveryEnabled"))
+                    .capability(Capability::configuration("fuchsia.wlan.RoamingPolicy"))
+                    .from(Ref::self_())
+                    .to(&wlancfg),
+            )
+            .await?;
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<
+                        fidl_fuchsia_wlan_policy::ClientProviderMarker,
+                    >())
+                    .capability(Capability::protocol::<
+                        fidl_fuchsia_wlan_policy::AccessPointProviderMarker,
+                    >())
+                    .from(&wlancfg)
+                    .to(Ref::parent()),
+            )
+            .await?;
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fidl_fuchsia_logger::LogSinkMarker>())
+                    .capability(Capability::protocol::<fidl_fuchsia_inspect::InspectSinkMarker>())
+                    .from(Ref::parent())
+                    .to(&wlancfg),
+            )
+            .await?;
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::storage("data"))
+                    .from(Ref::parent())
+                    .to(&stash)
                     .to(&wlancfg),
             )
             .await?;
@@ -413,15 +369,93 @@ async fn create_wlan_components(builder: &RealmBuilder, config: WlanConfig) -> R
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::protocol::<fidl_fuchsia_logger::LogSinkMarker>())
-                    .capability(Capability::storage("cache"))
-                    .from(Ref::parent())
-                    .to(&regulatory_region),
+                    .capability(
+                        Capability::protocol::<fidl_fuchsia_wlan_device_service::DeviceMonitorMarker>()
+                            .weak(),
+                    )
+                    .from(&wlandevicemonitor)
+                    .to(&wlancfg),
             )
             .await?;
-    }
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fidl_fuchsia_stash::SecureStoreMarker>())
+                    .from(&stash)
+                    .to(&wlancfg),
+            )
+            .await?;
 
-    Ok(())
+        if with_regulatory_region {
+            let regulatory_region = builder
+                .add_child("regulatory_region", "#meta/regulatory_region.cm", ChildOptions::new())
+                .await?;
+
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(
+                            Capability::protocol::<
+                                fidl_fuchsia_location_namedplace::RegulatoryRegionWatcherMarker,
+                            >()
+                            .weak(),
+                        )
+                        .from(&regulatory_region)
+                        .to(&wlancfg),
+                )
+                .await?;
+
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::protocol::<fidl_fuchsia_logger::LogSinkMarker>())
+                        .capability(Capability::storage("cache"))
+                        .from(Ref::parent())
+                        .to(&regulatory_region),
+                )
+                .await?;
+        }
+
+        Some(wlancfg)
+    } else {
+        None
+    };
+
+    // Route capabilities required by the TestHelper in hw-sim tests.
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<
+                    fidl_fuchsia_wlan_device_service::DeviceMonitorMarker,
+                >())
+                .from(&wlandevicemonitor)
+                .to(Ref::parent()),
+        )
+        .await?;
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fidl_fuchsia_sys2::LifecycleControllerMarker>())
+                .from(Ref::framework())
+                .to(Ref::parent()),
+        )
+        .await?;
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::service::<fidl_wlan_tap::ServiceMarker>())
+                .from(Ref::child(fuchsia_driver_test::COMPONENT_NAME))
+                .to(Ref::parent()),
+        )
+        .await?;
+
+    // Now that all components have been added to tracing_consumers, add and configure
+    // a trace_manager component, routing capabilities to collect traces from each components.
+    let trace_manager_hermeticity =
+        config.trace_manager_hermeticity.unwrap_or(TraceManagerHermeticity::Hermetic);
+    setup_trace_manager(&builder, tracing_consumers, trace_manager_hermeticity).await?;
+
+    Ok(WlanComponents { wlancfg, wlandevicemonitor })
 }
 
 #[cfg(test)]

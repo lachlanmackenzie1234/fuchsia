@@ -6,8 +6,8 @@ use fidl_test_wlan_realm::WlanConfig;
 
 use ieee80211::MacAddrBytes;
 use wlan_hw_sim::{
-    default_wlantap_config_client, loop_until_iface_is_found, netdevice_helper, test_utils,
-    CLIENT_MAC_ADDR,
+    CLIENT_MAC_ADDR, default_wlantap_config_client, loop_until_iface_is_found, netdevice_helper,
+    test_utils,
 };
 
 /// Test ethernet device is created successfully by verifying a ethernet client with specified
@@ -16,6 +16,8 @@ use wlan_hw_sim::{
 async fn verify_ethernet() {
     let ctx = test_utils::TestRealmContext::new(WlanConfig {
         use_legacy_privacy: Some(false),
+        with_regulatory_region: Some(true),
+        with_policy: Some(true),
         ..Default::default()
     })
     .await;

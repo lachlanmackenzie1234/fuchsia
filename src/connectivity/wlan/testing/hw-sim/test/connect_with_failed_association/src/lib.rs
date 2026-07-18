@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_tap as fidl_tap;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::{Bssid, Ssid};
 use std::pin::pin;
 use wlan_common::bss::Protection;
 use wlan_common::channel::{Cbw, Channel};
-use wlan_hw_sim::event::{action, branch, Handler};
+use wlan_hw_sim::event::{Handler, action, branch};
 use wlan_hw_sim::*;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_policy as fidl_policy,
-    fidl_fuchsia_wlan_tap as fidl_tap,
-};
 
 fn scan_and_associate<'h>(
     phy: &'h fidl_tap::WlantapPhyProxy,
@@ -78,7 +77,12 @@ async fn connect_with_failed_association() {
 
     let mut helper = test_utils::TestHelper::begin_test(
         default_wlantap_config_client(),
-        WlanConfig { use_legacy_privacy: Some(false), ..Default::default() },
+        WlanConfig {
+            use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
+            ..Default::default()
+        },
     )
     .await;
     let () = loop_until_iface_is_found(&mut helper).await;

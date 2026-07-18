@@ -24,9 +24,10 @@ use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::Poll;
 use test_realm_helpers::tracing::Tracing;
 use wlan_common::test_utils::ExpectWithin;
+use wlan_fidl_ext::try_unpack::{TryUnpack, WithName};
 use wlantap_client::Wlantap;
 
 /// Percent of a timeout duration past which we log a warning.
@@ -69,7 +70,7 @@ pub struct TestRealmContext {
     // A directory proxy connected to "/dev" in the test realm.
     devfs: fidl_fuchsia_io::DirectoryProxy,
 
-    wlan_policy_moniker: String,
+    wlan_policy_moniker: Option<String>,
     wlandevicemonitor_moniker: String,
 
     // This field must be the last field in the struct so that it is dropped last.
@@ -83,6 +84,12 @@ impl TestRealmContext {
     //
     // Panics if any errors occur when the realm factory is being created.
     pub async fn new(config: fidl_realm::WlanConfig) -> Arc<Self> {
+        let with_policy = config
+            .with_policy
+            .with_name("with_policy")
+            .try_unpack()
+            .expect("with_policy must be specified");
+
         let realm_factory = connect_to_protocol::<fidl_realm::RealmFactoryMarker>()
             .expect("Could not connect to realm factory protocol");
 
@@ -161,11 +168,21 @@ impl TestRealmContext {
             }
         };
 
-        let wlan_policy_moniker = response
-            .wlan_policy_moniker
-            .as_ref()
-            .expect("wlan_policy moniker must be present")
-            .clone();
+        let wlan_policy_moniker = if with_policy {
+            Some(
+                response
+                    .wlan_policy_moniker
+                    .as_ref()
+                    .expect("wlan_policy moniker must be present")
+                    .clone(),
+            )
+        } else {
+            assert!(
+                response.wlan_policy_moniker.is_none(),
+                "wlan_policy moniker should not be present"
+            );
+            None
+        };
         let wlandevicemonitor_moniker = response
             .wlandevicemonitor_moniker
             .as_ref()
@@ -214,7 +231,7 @@ where
 {
     type Output = (F::Output, EventStream);
     /// Polls the |event_stream| and invokes the |handler| for each event until |future| is ready.
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         let helper = &mut *self;
         let stream = helper.event_stream.as_mut().unwrap();
         loop {
@@ -281,7 +298,10 @@ impl TestHelper {
         config: wlantap::WlantapPhyConfig,
     ) -> Self {
         let mut helper = TestHelper::create_phy_and_helper(config, ctx).await;
-        helper.wait_for_wlan_softmac_start().await;
+        helper.wait_for_phy().await;
+        if helper.ctx.wlan_policy_moniker.is_some() {
+            helper.wait_for_wlan_softmac_start().await;
+        }
         helper
     }
 
@@ -324,6 +344,7 @@ impl TestHelper {
         network_config: NetworkConfigBuilder,
     ) -> Self {
         let mut helper = TestHelper::create_phy_and_helper(config, ctx).await;
+        helper.wait_for_phy().await;
         start_ap_and_wait_for_confirmation(helper.ctx.test_ns_prefix(), network_config).await;
         helper.wait_for_wlan_softmac_start().await;
         helper
@@ -345,6 +366,26 @@ impl TestHelper {
             _wlantap: wlantap,
             proxy: Arc::new(proxy),
             event_stream,
+        }
+    }
+
+    async fn wait_for_phy(&self) {
+        let dm = fuchsia_component::client::connect_to_protocol_at::<
+            fidl_fuchsia_wlan_device_service::DeviceMonitorMarker,
+        >(self.ctx.test_ns_prefix())
+        .expect("failed to connect to DeviceMonitor");
+        let (watcher_proxy, watcher_server_end) = fidl::endpoints::create_proxy::<
+            fidl_fuchsia_wlan_device_service::DeviceWatcherMarker,
+        >();
+        dm.watch_devices(watcher_server_end).expect("failed to watch devices");
+        let mut stream = watcher_proxy.take_event_stream();
+        while let Some(event) = stream.next().await {
+            match event.expect("Watcher event error") {
+                fidl_fuchsia_wlan_device_service::DeviceWatcherEvent::OnPhyAdded { .. } => {
+                    break;
+                }
+                _ => {}
+            }
         }
     }
 
@@ -472,9 +513,11 @@ impl Drop for TestHelper {
         .expect("Failed to connect to LifecycleController");
         let lc = fidl_fuchsia_sys2::LifecycleControllerSynchronousProxy::new(lc_client_end);
 
-        lc.stop_instance(&self.ctx.wlan_policy_moniker, zx::MonotonicInstant::INFINITE)
-            .expect("Failed to call stop_instance")
-            .expect("stop_instance returned an error");
+        if let Some(wlan_policy_moniker) = &self.ctx.wlan_policy_moniker {
+            lc.stop_instance(wlan_policy_moniker, zx::MonotonicInstant::INFINITE)
+                .expect("Failed to call stop_instance")
+                .expect("stop_instance returned an error");
+        }
 
         let (dm_client_end, dm_server_end) = zx::Channel::create();
         connect_channel_to_protocol_at::<fidl_fuchsia_wlan_device_service::DeviceMonitorMarker>(

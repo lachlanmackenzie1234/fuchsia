@@ -36,7 +36,12 @@ static SSID_BAZ: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("baz").unwrap(
 async fn simulate_scan() {
     let mut helper = test_utils::TestHelper::begin_test(
         default_wlantap_config_client(),
-        WlanConfig { use_legacy_privacy: Some(false), ..Default::default() },
+        WlanConfig {
+            use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
+            ..Default::default()
+        },
     )
     .await;
     let () = loop_until_iface_is_found(&mut helper).await;

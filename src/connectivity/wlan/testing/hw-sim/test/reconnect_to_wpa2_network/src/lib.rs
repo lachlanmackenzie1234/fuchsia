@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::format_err;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_tap as fidl_tap;
 use fidl_test_wlan_realm::WlanConfig;
 use fuchsia_async::Task;
 use futures::channel::oneshot;
@@ -12,13 +15,9 @@ use wlan_common::bss::Protection;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::ie::rsn::cipher::CIPHER_CCMP_128;
 use wlan_hw_sim::event::action::{self, AuthenticationControl, AuthenticationTap};
-use wlan_hw_sim::event::{branch, Handler};
+use wlan_hw_sim::event::{Handler, branch};
 use wlan_hw_sim::*;
 use wlan_rsn::rsna::UpdateSink;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_policy as fidl_policy,
-    fidl_fuchsia_wlan_tap as fidl_tap,
-};
 
 async fn run_policy_and_assert_transparent_reconnect(
     test_ns_prefix: &str,
@@ -129,7 +128,12 @@ async fn reconnect_to_wpa2_network() {
 
     let mut helper = test_utils::TestHelper::begin_test(
         default_wlantap_config_client(),
-        WlanConfig { use_legacy_privacy: Some(false), ..Default::default() },
+        WlanConfig {
+            use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
+            ..Default::default()
+        },
     )
     .await;
     let () = loop_until_iface_is_found(&mut helper).await;

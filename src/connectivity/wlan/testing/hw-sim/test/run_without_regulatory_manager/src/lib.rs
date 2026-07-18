@@ -19,6 +19,7 @@ async fn run_without_regulatory_manager() {
         WlanConfig {
             use_legacy_privacy: Some(false),
             with_regulatory_region: Some(false),
+            with_policy: Some(true),
             ..Default::default()
         },
     )

@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_tap as fidl_tap;
 use fidl_test_wlan_realm::WlanConfig;
+use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt, TryFutureExt, future, join};
 use ieee80211::MacAddr;
@@ -13,10 +16,6 @@ use std::sync::{Arc, LazyLock};
 use wlan_common::bss::Protection::Open;
 use wlan_hw_sim::event::{Handler, action, branch};
 use wlan_hw_sim::*;
-use {
-    fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_tap as fidl_tap,
-    fuchsia_async as fasync,
-};
 
 static CLIENT1_MAC_ADDR: LazyLock<MacAddr> =
     LazyLock::new(|| [0x68, 0x62, 0x6f, 0x6e, 0x69, 0x6c].into());
@@ -101,6 +100,8 @@ async fn multiple_clients_ap() {
         network_config,
         WlanConfig {
             use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
             name: Some("ap-realm".to_string()),
             ..Default::default()
         },
@@ -113,6 +114,8 @@ async fn multiple_clients_ap() {
         wlantap_config_client(format!("wlantap-client-1"), *CLIENT1_MAC_ADDR),
         WlanConfig {
             use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
             name: Some("client1-realm".to_string()),
             ..Default::default()
         },
@@ -126,6 +129,8 @@ async fn multiple_clients_ap() {
         wlantap_config_client(format!("wlantap-client-2"), *CLIENT2_MAC_ADDR),
         WlanConfig {
             use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
             name: Some("client2-realm".to_string()),
             ..Default::default()
         },

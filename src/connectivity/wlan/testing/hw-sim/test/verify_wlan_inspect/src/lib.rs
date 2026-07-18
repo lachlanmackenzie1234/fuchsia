@@ -59,6 +59,8 @@ async fn verify_wlan_inspect() {
         default_wlantap_config_client(),
         WlanConfig {
             use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
             name: Some(REALM_NAME.to_owned()),
             ..Default::default()
         },

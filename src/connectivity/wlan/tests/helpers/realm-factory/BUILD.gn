@@ -28,6 +28,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.wlan.tap:fuchsia.wlan.tap_rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//sdk/rust/zx-status",
+    "//src/connectivity/wlan/lib/fidl-ext:wlan-fidl-ext",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",

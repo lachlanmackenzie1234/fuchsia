@@ -17,6 +17,8 @@ async fn stress_begin_test() {
         info!("Creating new test realm for test #{test_number}...");
         let ctx = test_utils::TestRealmContext::new(WlanConfig {
             use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(true),
+            with_policy: Some(true),
             trace_manager_hermeticity: Some(TraceManagerHermeticity::NonHermetic),
             ..Default::default()
         })

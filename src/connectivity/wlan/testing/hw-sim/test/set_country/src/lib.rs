@@ -30,24 +30,27 @@ async fn set_country_and_await_match<'a>(
 ///  - If the SetCountry() returned successfully (ZX_OK).
 #[fuchsia::test]
 async fn set_country() {
-    const ALPHA2: &[u8; 2] = b"RS";
-
     let mut helper = test_utils::TestHelper::begin_test(
         default_wlantap_config_client(),
-        WlanConfig { use_legacy_privacy: Some(false), ..Default::default() },
+        WlanConfig {
+            use_legacy_privacy: Some(false),
+            with_regulatory_region: Some(false),
+            with_policy: Some(false),
+            ..Default::default()
+        },
     )
     .await;
+
     let svc = connect_to_protocol_at::<DeviceMonitorMarker>(helper.test_ns_prefix())
         .expect("Failed to connect to wlandevicemonitor");
+    let phy_list = svc.list_phys().await.unwrap();
+    assert!(phy_list.len() > 0, "No PHYs present!");
+    let phy_id = phy_list[0];
 
-    let resp = svc.list_phys().await.unwrap();
-
-    assert!(resp.len() > 0, "WLAN PHY device is created but ListPhys returned empty.");
-    let phy_id = resp[0];
-    let mut req = SetCountryRequest { phy_id, alpha2: *ALPHA2 };
-
-    let (sender, receiver) = oneshot::channel();
     // Set the country and await a signal from the event handler via `sender`.
+    const ALPHA2: &[u8; 2] = b"RS";
+    let mut req = SetCountryRequest { phy_id, alpha2: *ALPHA2 };
+    let (sender, receiver) = oneshot::channel();
     let set_country_and_await_match = pin!(set_country_and_await_match(receiver, &svc, &mut req));
 
     helper
