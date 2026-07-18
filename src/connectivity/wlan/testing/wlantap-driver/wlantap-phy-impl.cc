@@ -11,15 +11,29 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <fidl/fuchsia.wlan.internal/cpp/fidl.h>
+
+#include <array>
+#include <cstddef>
+#include <string>
 #include <type_traits>
 #include <utility>
 
-#include <wlan/common/phy.h>
 #include <wlan/drivers/log.h>
 
 #include "utils.h"
 
 namespace wlan {
+
+
+
+std::string CountryCodeToStr(const std::array<uint8_t, fuchsia_wlan_internal::kCountryCodeLen>& country_code) {
+  auto data = country_code.data();
+  if (std::isprint(data[0]) && std::isprint(data[1])) {
+    return std::string(reinterpret_cast<const char*>(data), fuchsia_wlan_internal::kCountryCodeLen);
+  }
+  return "(" + std::to_string(data[0]) + ")(" + std::to_string(data[1]) + ")";
+}
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -232,8 +246,7 @@ void WlanPhyDevice::DestroyIface(DestroyIfaceRequest& request,
 
 void WlanPhyDevice::SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  fdf::info("{}: SetCountry() to [{}] received", name_,
-            wlan::common::Alpha2ToStr(request.country()));
+  fdf::info("{}: SetCountry() to [{}] received", name_, CountryCodeToStr(request.country()));
 
   fuchsia_wlan_tap::SetCountryArgs args{{.alpha2 = request.country()}};
   zx_status_t status = wlantap_phy_->SetCountry(args);

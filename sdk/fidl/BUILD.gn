@@ -240,7 +240,6 @@ _partner_idk_stable_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common",
   "//sdk/fidl/fuchsia.wlan.driver:fuchsia.wlan.driver",
   "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211",
-  "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl",
   "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy",
   "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:fuchsia.wlan.product.deprecatedclient",
   "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration",

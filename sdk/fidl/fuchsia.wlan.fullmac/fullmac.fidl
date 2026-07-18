@@ -366,7 +366,7 @@ open protocol WlanFullmacImpl {
     /// On initialization, MLME provides the client end to the WlanFullmacImplIfc protocol. The
     /// driver must return the SME server end channel, which is used internally by the platform.
     /// Typically, the SME server end channel is given to the FullMAC driver by
-    /// fuchsia.wlan.phyimpl/WlanPhyImpl.CreateIface.
+    /// fuchsia.wlan.phy/WlanPhy.CreateIface.
     ///
     /// If `Init` completes successfully, the platform will begin making other WlanFullmacImpl
     /// requests to the FullMAC driver, and the FullMAC driver is free to make WlanFullmacImplIfc

@@ -32,7 +32,7 @@ These FIDL definitions are located in `//sdk/fidl` (except where noted).
 - `fuchsia.wlan.driver`: Types which are shared by SoftMAC and FullMAC drivers.
 - `fuchsia.wlan.fullmac`: Vendor driver interface for FullMAC devices.
 - `fuchsia.wlan.softmac`: Vendor driver interface for SoftMAC devices.
-- `fuchsia.wlan.phyimpl`: Vendor driver interface for PHY control.
+- `fuchsia.wlan.phy`: Vendor driver interface for PHY control.
 
 ### Test Only (unstable and not versioned)
 - `fuchsia.wlan.tap`: Interface for mocking driver events in hw-sim tests, e.g. sending and receiving packets.

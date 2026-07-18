@@ -396,7 +396,6 @@ fidl_library://fidl/fuchsia.wlan.common
 fidl_library://fidl/fuchsia.wlan.driver
 fidl_library://fidl/fuchsia.wlan.fullmac (unstable)
 fidl_library://fidl/fuchsia.wlan.ieee80211
-fidl_library://fidl/fuchsia.wlan.phyimpl
 fidl_library://fidl/fuchsia.wlan.policy
 fidl_library://fidl/fuchsia.wlan.product.deprecatedclient
 fidl_library://fidl/fuchsia.wlan.product.deprecatedconfiguration
