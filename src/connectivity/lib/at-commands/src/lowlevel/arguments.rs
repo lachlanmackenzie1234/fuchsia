@@ -123,17 +123,125 @@ impl WriteTo for Argument {
         match self {
             Argument::PrimitiveArgument(argument) => write_string(sink, argument)?,
             Argument::KeyValueArgument { key, value } => {
-                sink.write_all(key.as_bytes())?;
+                write_string(sink, key)?;
                 sink.write_all(b"=")?;
-                sink.write_all(value.as_bytes())?;
+                write_string(sink, value)?;
             }
         }
         Ok(())
     }
 }
 
-/// Wraites a string, converting it bytes first. Quoting and escaping strings
-/// is the responsibility of clients.
+/// Writes a string, converting it to bytes first. Rejects any string containing
+/// control characters (except tab).
 fn write_string<W: io::Write>(sink: &mut W, string: &String) -> io::Result<()> {
+    if string.chars().any(|c| c.is_control() && c != '\t') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "AT command string argument contains control characters",
+        ));
+    }
     sink.write_all(string.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowlevel::write_to::WriteTo;
+
+    #[test]
+    fn write_string_rejects_various_control_characters() {
+        let mut sink = Vec::new();
+        let malicious_payloads = vec![
+            "123;\rAT+CMGD=1",
+            "123\nAT+CHUP",
+            "123\0abc",
+            "123\x1B[2Jabc", // ESC
+            "abc\x7Fdef",    // DEL
+            "abc\x08def",    // Backspace
+            "abc\x0Cdef",    // Form feed
+        ];
+
+        for payload in malicious_payloads {
+            let arg = Argument::PrimitiveArgument(String::from(payload));
+            assert!(
+                arg.write_to(&mut sink).is_err(),
+                "Must reject argument with control characters: {:?}",
+                payload
+            );
+        }
+    }
+
+    #[test]
+    fn write_key_value_argument_rejects_control_characters_in_key_and_value() {
+        let mut sink = Vec::new();
+
+        // Malicious key
+        let kv_bad_key = Argument::KeyValueArgument {
+            key: String::from("KEY\rINJECT"),
+            value: String::from("VAL"),
+        };
+        assert!(kv_bad_key.write_to(&mut sink).is_err());
+
+        // Malicious value
+        let kv_bad_val = Argument::KeyValueArgument {
+            key: String::from("KEY"),
+            value: String::from("VAL\rINJECT"),
+        };
+        assert!(kv_bad_val.write_to(&mut sink).is_err());
+
+        // Both malicious
+        let kv_bad_both =
+            Argument::KeyValueArgument { key: String::from("KEY\n"), value: String::from("VAL\0") };
+        assert!(kv_bad_both.write_to(&mut sink).is_err());
+    }
+
+    #[test]
+    fn write_arguments_list_rejects_control_characters_in_any_element() {
+        let mut sink = Vec::new();
+
+        let args_list = Arguments::ArgumentList(vec![
+            Argument::PrimitiveArgument(String::from("\"valid1\"")),
+            Argument::PrimitiveArgument(String::from("123;\rAT+CMGD=1")),
+            Argument::PrimitiveArgument(String::from("\"valid2\"")),
+        ]);
+
+        assert!(args_list.write_to(&mut sink).is_err());
+    }
+
+    #[test]
+    fn write_parenthesis_delimited_argument_lists_rejects_control_characters() {
+        let mut sink = Vec::new();
+
+        let paren_list = Arguments::ParenthesisDelimitedArgumentLists(vec![
+            vec![Argument::PrimitiveArgument(String::from("1"))],
+            vec![Argument::PrimitiveArgument(String::from("2\rAT+CHUP"))],
+        ]);
+
+        assert!(paren_list.write_to(&mut sink).is_err());
+    }
+
+    #[test]
+    fn write_string_accepts_valid_edge_case_strings() {
+        let mut sink = Vec::new();
+
+        let arg_empty = Argument::PrimitiveArgument(String::from(""));
+        assert!(arg_empty.write_to(&mut sink).is_ok());
+        assert_eq!(sink, b"");
+
+        sink.clear();
+        let arg_quotes = Argument::PrimitiveArgument(String::from("\"\""));
+        assert!(arg_quotes.write_to(&mut sink).is_ok());
+        assert_eq!(sink, b"\"\"");
+
+        sink.clear();
+        let arg_symbols = Argument::PrimitiveArgument(String::from("\"+1-800-555-0199;#*>\""));
+        assert!(arg_symbols.write_to(&mut sink).is_ok());
+        assert_eq!(sink, b"\"+1-800-555-0199;#*>\"");
+
+        sink.clear();
+        let arg_tab = Argument::PrimitiveArgument(String::from("foo\tbar"));
+        assert!(arg_tab.write_to(&mut sink).is_ok());
+        assert_eq!(sink, b"foo\tbar");
+    }
 }
