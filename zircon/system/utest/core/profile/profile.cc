@@ -512,5 +512,67 @@ TEST(MemoryPriorityProfile, Rights) {
   EXPECT_EQ(ZX_ERR_ACCESS_DENIED, vmar_invalid.set_profile(profile, 0));
 }
 
+TEST(SchedulerProfileTest, CreateProfileWithDeadlineCapacityOutOfRangeIsOutOfRange) {
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+
+  constexpr int64_t kOutOfRangeDuration = static_cast<int64_t>(INT32_MAX) + 1;
+
+  zx_profile_info_t profile_info = {};
+  profile_info.flags = ZX_PROFILE_INFO_FLAG_DEADLINE;
+  profile_info.deadline_params.capacity = kOutOfRangeDuration;
+  profile_info.deadline_params.relative_deadline = kOutOfRangeDuration + 1;
+  profile_info.deadline_params.period = kOutOfRangeDuration + 2;
+  zx::profile profile;
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
+}
+
+TEST(SchedulerProfileTest, CreateProfileWithDeadlineRelativeDeadlineOutOfRangeIsOutOfRange) {
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+
+  constexpr int64_t kOutOfRangeDuration = static_cast<int64_t>(INT32_MAX) + 1;
+
+  zx_profile_info_t profile_info = {};
+  profile_info.flags = ZX_PROFILE_INFO_FLAG_DEADLINE;
+  profile_info.deadline_params.capacity = 10;
+  profile_info.deadline_params.relative_deadline = kOutOfRangeDuration;
+  profile_info.deadline_params.period = kOutOfRangeDuration + 1;
+  zx::profile profile;
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
+}
+
+TEST(SchedulerProfileTest, CreateProfileWithDeadlinePeriodOutOfRangeIsOutOfRange) {
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+
+  constexpr int64_t kOutOfRangeDuration = static_cast<int64_t>(INT32_MAX) + 1;
+
+  zx_profile_info_t profile_info = {};
+  profile_info.flags = ZX_PROFILE_INFO_FLAG_DEADLINE;
+  profile_info.deadline_params.capacity = 10;
+  profile_info.deadline_params.relative_deadline = 20;
+  profile_info.deadline_params.period = kOutOfRangeDuration;
+  zx::profile profile;
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
+}
+
+TEST(ProfileTest, ApplySchedulingProfileToVmarIsOk) {
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+
+  zx_profile_info_t profile_info = {};
+  profile_info.flags = ZX_PROFILE_INFO_FLAG_PRIORITY;
+  profile_info.priority = 10;
+  zx::profile profile;
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
+
+  // Applying scheduling profile to VMAR should succeed (doing nothing)
+  EXPECT_OK(zx::vmar::root_self()->set_profile(profile, 0));
+}
+
 }  // namespace
 }  // namespace profile
