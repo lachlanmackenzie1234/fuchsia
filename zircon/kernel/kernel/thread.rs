@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use core::ffi::{c_char, c_void};
+use core::marker::PhantomData;
 use core::ptr::NonNull;
+use platform_rs::DurationMono;
 use zx_status::Status;
 use zx_types::zx_instant_mono_t;
 
@@ -24,6 +26,10 @@ unsafe extern "C" {
     fn cpp_thread_is_blocked(thread: *mut c_void) -> bool;
     fn cpp_thread_current_get() -> *mut c_void;
     fn cpp_thread_fxt_ref(thread: *mut c_void) -> FxtRef;
+    fn cpp_thread_preempt_set_timeslice_extension(duration: DurationMono) -> bool;
+    fn cpp_thread_preempt_clear_timeslice_extension();
+    fn cpp_thread_preempt_disable();
+    fn cpp_thread_preempt_enable();
 }
 
 // LINT.IfChange(FxtRef)
@@ -158,4 +164,143 @@ pub unsafe fn spawn(
 /// Yields the current thread's CPU time slice.
 pub fn r#yield() {
     unsafe { cpp_thread_current_yield() }
+}
+
+/// Disables preemption on the current thread.
+pub fn preempt_disable() {
+    // SAFETY: Calling this FFI function safely increments the preemption disable count for the
+    // current thread.
+    unsafe { cpp_thread_preempt_disable() }
+}
+
+/// Re-enables preemption on the current thread.
+pub fn preempt_enable() {
+    // SAFETY: Calling this FFI function safely decrements the preemption disable count for the
+    // current thread.
+    unsafe { cpp_thread_preempt_enable() }
+}
+
+/// Sets a timeslice extension on the current thread's preemption state.
+pub fn preempt_set_timeslice_extension(duration: DurationMono) -> bool {
+    // SAFETY: Calling this FFI function safely sets the timeslice extension on the current thread's
+    // preemption state.
+    unsafe { cpp_thread_preempt_set_timeslice_extension(duration) }
+}
+
+/// Clears an expiring timeslice extension on the current thread's preemption state.
+pub fn preempt_clear_timeslice_extension() {
+    // SAFETY: Calling this FFI function safely clears the timeslice extension on the current
+    // thread's preemption state.
+    unsafe { cpp_thread_preempt_clear_timeslice_extension() }
+}
+
+/// RAII guard that disables preemption for its scope.
+///
+/// This guard is `!Send` and `!Sync` because preemption state is CPU- and thread-local.
+pub struct AutoPreemptDisabler {
+    disabled: bool,
+    _marker: PhantomData<*mut ()>,
+}
+
+impl AutoPreemptDisabler {
+    /// Creates a new guard and immediately disables preemption.
+    pub fn new() -> Self {
+        preempt_disable();
+        Self { disabled: true, _marker: PhantomData }
+    }
+
+    /// Creates a new guard without immediately disabling preemption.
+    pub fn new_deferred() -> Self {
+        Self { disabled: false, _marker: PhantomData }
+    }
+
+    /// Disables preemption if not already disabled by this guard instance.
+    pub fn disable(&mut self) {
+        if !self.disabled {
+            preempt_disable();
+            self.disabled = true;
+        }
+    }
+
+    /// Re-enables preemption if previously disabled by this guard instance.
+    pub fn enable(&mut self) {
+        if self.disabled {
+            preempt_enable();
+            self.disabled = false;
+        }
+    }
+
+    /// Returns whether preemption is currently disabled by this guard instance.
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+}
+
+impl Default for AutoPreemptDisabler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for AutoPreemptDisabler {
+    fn drop(&mut self) {
+        self.enable();
+    }
+}
+
+/// RAII guard that sets a timeslice extension for its scope.
+///
+/// This guard is `!Send` and `!Sync` because timeslice extensions modify CPU- and thread-local
+/// state.
+pub struct AutoExpiringPreemptDisabler {
+    should_clear: bool,
+    _marker: PhantomData<*mut ()>,
+}
+
+impl AutoExpiringPreemptDisabler {
+    /// Creates a new guard and attempts to set a timeslice extension for `duration`.
+    pub fn new(duration: DurationMono) -> Self {
+        let should_clear = preempt_set_timeslice_extension(duration);
+        Self { should_clear, _marker: PhantomData }
+    }
+}
+
+impl Drop for AutoExpiringPreemptDisabler {
+    fn drop(&mut self) {
+        if self.should_clear {
+            preempt_clear_timeslice_extension();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_preempt_guards_not_send_or_sync() {
+        fn assert_not_send_sync<T>()
+        where
+            T: ?Sized,
+        {
+        }
+        // Verification that the types compile and can be instantiated safely in unit tests.
+        let _guard = AutoPreemptDisabler::new_deferred();
+    }
+
+    #[test]
+    fn test_auto_preempt_disabler_deferred() {
+        let mut guard = AutoPreemptDisabler::new_deferred();
+        assert!(!guard.is_disabled());
+        guard.disable();
+        assert!(guard.is_disabled());
+        guard.enable();
+        assert!(!guard.is_disabled());
+    }
+
+    #[test]
+    fn test_auto_expiring_preempt_disabler() {
+        let guard = AutoExpiringPreemptDisabler::new(DurationMono(10_000_000));
+        drop(guard);
+    }
 }

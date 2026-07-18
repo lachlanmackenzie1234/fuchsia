@@ -26,6 +26,10 @@ void cpp_thread_kill(void* thread);
 bool cpp_thread_is_blocked(void* thread);
 void* cpp_thread_current_get();
 FxtRef cpp_thread_fxt_ref(void* thread);
+bool cpp_thread_preempt_set_timeslice_extension(zx_duration_mono_t duration);
+void cpp_thread_preempt_clear_timeslice_extension();
+void cpp_thread_preempt_disable();
+void cpp_thread_preempt_enable();
 
 void* cpp_thread_create_default(const char* name, thread_start_routine entry, void* arg) {
   return Thread::Create(name, entry, arg, DEFAULT_PRIORITY);
@@ -63,5 +67,17 @@ FxtRef cpp_thread_fxt_ref(void* thread) {
   fxt::ThreadRef ref = t->fxt_ref();
   return {.pid = ref.process().koid, .tid = ref.thread().koid};
 }
+
+bool cpp_thread_preempt_set_timeslice_extension(zx_duration_mono_t duration) {
+  return Thread::Current::preemption_state().SetTimesliceExtension(duration);
+}
+
+void cpp_thread_preempt_clear_timeslice_extension() {
+  Thread::Current::preemption_state().ClearTimesliceExtension();
+}
+
+void cpp_thread_preempt_disable() { Thread::Current::preemption_state().PreemptDisable(); }
+
+void cpp_thread_preempt_enable() { Thread::Current::preemption_state().PreemptReenable(); }
 
 }  // extern "C"

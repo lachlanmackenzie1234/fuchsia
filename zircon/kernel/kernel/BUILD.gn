@@ -128,6 +128,7 @@ rustc_library("kernel-rs") {
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//third_party/rust_crates:paste",
+    "//zircon/kernel/platform:platform-rs",
   ]
   non_rust_deps = [ ":ffi" ]
 }
