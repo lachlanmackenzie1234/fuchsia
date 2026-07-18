@@ -17,8 +17,6 @@ source_set("common") {
     "ieee80211_codes.cc",
     "include/wlan/common/action_frame.h",
     "include/wlan/common/bitfield.h",
-    "include/wlan/common/buffer_reader.h",
-    "include/wlan/common/buffer_writer.h",
     "include/wlan/common/channel.h",
     "include/wlan/common/cipher.h",
     "include/wlan/common/dispatcher.h",
