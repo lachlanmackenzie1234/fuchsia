@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::counter_dispatcher::{
-    CounterDispatcher, CounterDispatcherState, DISPATCHER_COUNTER_DESTROY_COUNT,
-};
+use super::counter_dispatcher::{CounterDispatcher, CounterDispatcherState};
 use crate::dispatcher::Dispatcher;
 use crate::handle::KernelHandle;
 
@@ -47,11 +45,12 @@ pub unsafe extern "C" fn rust_counter_dispatcher_state_init(
 
 /// # Safety
 ///
-/// The caller must ensure `ptr` points to an initialized `CounterDispatcherState`.
+/// The caller must ensure `state` is a valid reference to an initialized `CounterDispatcherState`,
+/// and must not use the state (or the enclosing dispatcher) after this function returns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_counter_dispatcher_state_destroy(ptr: *mut CounterDispatcherState) {
+pub unsafe extern "C" fn rust_counter_dispatcher_state_destroy(state: &mut CounterDispatcherState) {
+    // SAFETY: The caller is destroying the dispatcher and will not use it again.
     unsafe {
-        DISPATCHER_COUNTER_DESTROY_COUNT.add(1);
-        core::ptr::drop_in_place(ptr);
+        core::ptr::drop_in_place(state);
     }
 }

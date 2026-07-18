@@ -48,6 +48,22 @@ struct DispatchTag;
 template <typename T>
 struct CanaryTag;
 
+// We suppress -Winvalid-offsetof because Dispatcher has virtual functions,
+// making its subclasses a non-standard-layout class. While offsetof on
+// non-standard-layout types is conditionally supported in C++, in our compiler
+// and ABI the layout is deterministic, and we must validate the exact byte
+// offset of opaque_storage_ for direct pointer arithmetic in Rust FFI.
+#define DISPATCHER_VERIFY_OFFSET(Class, offset_const)                         \
+  _Pragma("GCC diagnostic push")                                              \
+      _Pragma("GCC diagnostic ignored \"-Winvalid-offsetof\"") static_assert( \
+          offsetof(Class, opaque_storage_) == offset_const,                   \
+          #Class " opaque_storage_ offset mismatch");                         \
+  _Pragma("GCC diagnostic pop")
+
+#define IMPLEMENT_DISPATCHER_RUST_STATE(Class, get_lock_fn, destroy_fn) \
+  Class::~Class() { destroy_fn(&opaque_storage_); }                     \
+  Lock<CriticalMutex>* Class::get_lock() const { return get_lock_fn(&opaque_storage_); }
+
 #define DECLARE_DISPTAG(T, E, M)                     \
   class T;                                           \
   template <>                                        \
@@ -217,6 +233,9 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
   //
   // May only be called when |is_waitable| reports true.
   bool CancelByKey(const void* handle, const void* port, uint64_t key);
+
+  static zx_status_t UserSignalSelfSolo(Dispatcher* dispatcher, uint32_t clear_mask,
+                                        uint32_t set_mask, zx_signals_t extra_signals);
 
   // Interface for derived classes.
 
@@ -395,16 +414,7 @@ class SoloDispatcher : public Dispatcher {
   bool is_waitable() const final { return default_rights() & ZX_RIGHT_WAIT; }
 
   zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
-    if (!is_waitable())
-      return ZX_ERR_NOT_SUPPORTED;
-    // Generic objects can set all USER_SIGNALs. Particular object
-    // types (events and eventpairs) may be able to set more.
-    auto allowed_signals = ZX_USER_SIGNAL_ALL | extra_signals;
-    if ((set_mask & ~allowed_signals) || (clear_mask & ~allowed_signals))
-      return ZX_ERR_INVALID_ARGS;
-
-    UpdateState(clear_mask, set_mask);
-    return ZX_OK;
+    return UserSignalSelfSolo(this, clear_mask, set_mask, extra_signals);
   }
 
   zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {

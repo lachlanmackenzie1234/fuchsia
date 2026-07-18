@@ -197,6 +197,7 @@ kernel_rust_crate("object-rs") {
     "//src/lib/kalloc",
     "//src/lib/ksync",
     "//src/lib/zr",
+    "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",

@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 
 use core::mem::MaybeUninit;
-use core::ops::Deref;
 use counters_rs::define_kcounter;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
-use pin_init::{PinInit, pin_init};
-use zr::ToMutPtr;
+use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
     ZX_COUNTER_NON_POSITIVE, ZX_COUNTER_POSITIVE, ZX_OBJ_TYPE_COUNTER, ZX_RIGHT_DUPLICATE,
@@ -43,6 +41,7 @@ define_kcounter!(DISPATCHER_COUNTER_CREATE_COUNT, "dispatcher.counter.create", S
 define_kcounter!(DISPATCHER_COUNTER_DESTROY_COUNT, "dispatcher.counter.destroy", Sum);
 
 #[guarded]
+#[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct CounterDispatcherState {
     canary: Canary<{ fbl::magic(b"SOLO") }>,
@@ -65,49 +64,26 @@ impl CounterDispatcherState {
     }
 }
 
+#[pinned_drop]
+impl PinnedDrop for CounterDispatcherState {
+    fn drop(self: core::pin::Pin<&mut Self>) {
+        DISPATCHER_COUNTER_DESTROY_COUNT.add(1);
+    }
+}
+
 #[repr(C)]
 pub struct CounterDispatcher {
     _facade: fbl::OpaqueRefCountedFacade<Dispatcher>,
 }
 
-impl Deref for CounterDispatcher {
-    type Target = Dispatcher;
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.dispatcher() }
-    }
-}
-
-unsafe impl fbl::IsOpaqueRefCounted for CounterDispatcher {
-    type TargetBase = Dispatcher;
-}
-
-impl crate::DispatcherOps for CounterDispatcher {
-    type LockClass = CounterDispatcherStateLockClass;
-    const TYPE: zx_types::zx_obj_type_t = ZX_OBJ_TYPE_COUNTER;
-
-    fn dispatcher(&self) -> *const Dispatcher {
-        self.as_raw_ptr() as *const Dispatcher
-    }
-}
+crate::impl_dispatcher_facade!(
+    CounterDispatcher,
+    CounterDispatcherState,
+    ZX_OBJ_TYPE_COUNTER,
+    object_constants::kCounterDispatcherStateOffset
+);
 
 impl CounterDispatcher {
-    /// Returns a reference to the underlying Rust state object.
-    pub fn state(&self) -> &CounterDispatcherState {
-        unsafe {
-            let ptr = self
-                .as_raw_ptr()
-                .cast::<u8>()
-                .add(object_constants::kCounterDispatcherStateOffset as usize)
-                .cast::<CounterDispatcherState>();
-            &*ptr
-        }
-    }
-
-    /// Returns a raw pointer to `self` for passing to state callbacks.
-    pub fn as_raw_ptr(&self) -> *const CounterDispatcher {
-        self as *const Self
-    }
-
     /// Returns the counter's value.
     pub fn value(&self) -> i64 {
         ksync::lock!(let guard = self.state().lock_lock());
@@ -158,18 +134,5 @@ impl CounterDispatcher {
         Status::ok(status)?;
         // SAFETY: cpp_counter_dispatcher_create initialized the handle.
         unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
-    }
-}
-
-/// # Safety
-///
-/// The caller must ensure `ptr` points to an initialized `CounterDispatcherState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_counter_dispatcher_state_get_lock(
-    ptr: *const CounterDispatcherState,
-) -> *mut KMutex<CounterDispatcherStateLockClass, RawCriticalMutex> {
-    unsafe {
-        let lock_ref = &(*ptr).lock;
-        lock_ref.to_mut_ptr()
     }
 }

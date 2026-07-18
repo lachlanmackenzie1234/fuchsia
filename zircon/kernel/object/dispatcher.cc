@@ -227,6 +227,21 @@ void Dispatcher::UpdateState(zx_signals_t clear_mask, zx_signals_t set_mask,
   UpdateStateLocked(clear_mask, set_mask, strobe_mask);
 }
 
+zx_status_t Dispatcher::UserSignalSelfSolo(Dispatcher* dispatcher, uint32_t clear_mask,
+                                           uint32_t set_mask, zx_signals_t extra_signals) {
+  if (!dispatcher->is_waitable()) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  // Generic objects can set all USER_SIGNALs. Particular object
+  // types (events and eventpairs) may be able to set more.
+  const zx_signals_t allowed_signals = ZX_USER_SIGNAL_ALL | extra_signals;
+  if ((set_mask & ~allowed_signals) || (clear_mask & ~allowed_signals)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  dispatcher->UpdateState(clear_mask, set_mask);
+  return ZX_OK;
+}
+
 void Dispatcher::NotifyObserversLocked(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
   for (auto it = observers_.begin(); it != observers_.end(); /* nothing */) {
     // Ignore observers that don't need to be notified.
