@@ -619,7 +619,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     if (!driver_component) {
       return false;
     }
-    return driver_component->driver && driver_component->state == DriverState::kBinding;
+    return driver_component->state == DriverState::kBinding;
   }
 
   void BindHelper(bool force_rebind, std::optional<std::string> driver_url_suffix,

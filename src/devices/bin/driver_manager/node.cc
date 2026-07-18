@@ -711,8 +711,21 @@ void Node::CompleteBind(zx::result<> result) {
       ZX_ASSERT_MSG(driver_component->state == DriverState::kBinding,
                     "Node %s CompleteBind() invoked at invalid state %d", name().c_str(),
                     driver_component->state);
-      driver_component->state = DriverState::kRunning;
-      OnBind();
+      ZX_ASSERT(result.is_ok());
+      if (!driver_component->driver) {
+        fdf_log::error("Node {}: Driver started successfully but channel closed during binding.",
+                       name());
+        driver_component->state = DriverState::kStopped;
+        // Even if the driver started successfully, the driver host channel is no longer there,
+        // so we can't say the bind succeeded.
+        result = zx::error(ZX_ERR_PEER_CLOSED);
+        if (!host_restart_on_crash_) {
+          Remove(RemovalSet::kAll, nullptr);
+        }
+      } else {
+        driver_component->state = DriverState::kRunning;
+        OnBind();
+      }
     }
   }
 
@@ -1531,8 +1544,7 @@ void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
   }
 
   // If the driver fails to bind to the node, don't remove the node.
-  if (auto* driver_component = std::get_if<DriverComponent>(&state_);
-      driver_component && driver_component->state == DriverState::kBinding) {
+  if (IsPendingBind()) {
     fdf_log::warn("The driver for node {} failed to bind.", name());
     return;
   }

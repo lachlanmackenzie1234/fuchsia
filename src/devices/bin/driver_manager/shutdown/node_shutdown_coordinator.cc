@@ -149,7 +149,7 @@ void NodeShutdownCoordinator::CheckWaitingOnDriverBind() {
       node_state_ == NodeState::kWaitingOnDriverBind,
       "NodeShutdownCoordinator::CheckWaitingOnDriverBind called in invalid node state: %s",
       NodeStateAsString());
-  // Remain on this state if the node still has children.
+  // Remain on this state if the node's driver is still in the binding state.
   if (bridge_->IsPendingBind()) {
     return;
   }
