@@ -7,9 +7,11 @@ These FIDL definitions are located in `//sdk/fidl` (except where noted).
 
 ### Shared by Policy <-> Core <-> Drivers (stable and versioned)
 - `fuchsia.wlan.ieee80211`: Shared types that match IEEE 802.11 types.
-- `fuchsia.wlan.stats`: Metrics and statistics definitions used across the stack.
 - `fuchsia.wlan.common`: Shared types for the entire stack.
     - *Caution*: Only types which truly must span the entire stack should be here. We strongly prefer having separate types for our public vs internal interfaces, so we can modify our internal interfaces without breaking clients.
+
+### Shared by Policy <-> Core <-> Drivers (unstable and not versioned)
+- `fuchsia.wlan.stats`: Metrics and statistics definitions used across the stack.
 
 ### Android <-> Policy (wlanix) (unstable and not versioned)
 - `fuchsia.wlan.wlanix`: Android-compatible WiFi API used by Starnix (located in `wlanix` directory).
@@ -30,9 +32,11 @@ These FIDL definitions are located in `//sdk/fidl` (except where noted).
 
 ### Core <-> Drivers (stable and versioned)
 - `fuchsia.wlan.driver`: Types which are shared by SoftMAC and FullMAC drivers.
+
+### Core <-> Drivers (unstable and not versioned)
 - `fuchsia.wlan.fullmac`: Vendor driver interface for FullMAC devices.
-- `fuchsia.wlan.softmac`: Vendor driver interface for SoftMAC devices.
 - `fuchsia.wlan.phy`: Vendor driver interface for PHY control.
+- `fuchsia.wlan.softmac`: Vendor driver interface for SoftMAC devices.
 
 ### Test Only (unstable and not versioned)
 - `fuchsia.wlan.tap`: Interface for mocking driver events in hw-sim tests, e.g. sending and receiving packets.
