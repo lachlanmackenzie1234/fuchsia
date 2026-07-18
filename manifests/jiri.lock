@@ -46,8 +46,8 @@
     },
     {
         "package": "fuchsia/cts/linux-amd64",
-        "version": "git_revision:6cb8e814145eaf5111fe310a302b08db6c99624d",
-        "instance_id": "1_JVcUGlmkx6-FD3fpfkdsRhMIwCPYbe8Ty_pRe5e6gC"
+        "version": "git_revision:9f4c3778d8b7752934ae2b7732e45df29a75c150",
+        "instance_id": "XwrabivOQvUlU8qMp8pFDhwuAkzgO-gh1Qow0b-pFLwC"
     },
     {
         "package": "fuchsia/dart-sdk/linux-amd64",
