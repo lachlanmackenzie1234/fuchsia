@@ -4,11 +4,17 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/current_target_tuple.gni")
+import("//build/config/sysroot.gni")
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_bindgen.gni")
 import("//build/rust/rustc_library.gni")
 
 library_headers("headers") {
-  headers = [ "lib/debuglog.h" ]
+  headers = [
+    "lib/debuglog.h",
+    "lib/debuglog_types.h",
+  ]
   public_deps = [ "//zircon/kernel/phys:boot-constants" ]
 }
 
@@ -26,6 +32,7 @@ source_set("debuglog") {
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/io",
     "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/object-constants:headers",
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/phys:boot-constants",
     "//zircon/kernel/vm:headers",
@@ -57,13 +64,59 @@ group("boot_tests") {
   testonly = true
 }
 
+rustc_bindgen("debuglog-bindings.bindgen") {
+  visibility = [ ":*" ]
+  headers = [ "include/lib/debuglog_types.h" ]
+  deps = [ ":headers" ]
+  if (is_fuchsia && !is_kernel) {
+    deps += [ "//build/config/fuchsia:source_deps" ]
+  }
+
+  output_name = "debuglog_bindings.rs"
+
+  cpp = true
+
+  additional_bindgen_flags = [
+    "--with-derive-default",
+    "--with-derive-custom-struct=dlog_.*=zerocopy::FromBytes,zerocopy::IntoBytes,zerocopy::KnownLayout,zerocopy::Immutable",
+  ]
+
+  notice_year = 2026
+
+  type_allowlist = [ "dlog_.*" ]
+  var_allowlist = [
+    "DLOG_.*",
+    "ZX_LOG_FLAGS_MASK",
+  ]
+
+  expect_lints = [ "non_camel_case_types" ]
+
+  raw_lines = [ "#![no_std]" ]
+}
+
+rustc_library("debuglog-types") {
+  edition = "2024"
+  name = "debuglog_types"
+  source_root = "$target_gen_dir/debuglog_bindings.rs"
+  sources = [ "$target_gen_dir/debuglog_bindings.rs" ]
+  deps = [
+    ":debuglog-bindings.bindgen",
+    "//third_party/rust_crates:zerocopy",
+  ]
+}
+
 rustc_library("debuglog-rs") {
   edition = "2024"
   name = "debuglog_rs"
   source_root = "debuglog.rs"
   sources = [ "debuglog.rs" ]
   deps = [
+    ":debuglog-types",
     "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/platform:platform-rs",
   ]
   non_rust_deps = [ ":debuglog" ]

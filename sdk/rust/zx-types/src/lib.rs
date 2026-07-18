@@ -2530,7 +2530,7 @@ pub const DEBUGLOG_FATAL: u8 = 0x60;
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable)]
     pub struct <zx_log_record_t> {
         pub sequence: u64,
         padding1: [PadByte; 4],

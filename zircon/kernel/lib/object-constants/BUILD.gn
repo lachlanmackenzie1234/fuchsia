@@ -30,7 +30,7 @@ rustc_bindgen("object-constants-bindings.bindgen") {
 
   notice_year = 2026
 
-  var_allowlist = [ "kCounterDispatcherState.*" ]
+  var_allowlist = [ "k.*" ]
 
   expect_lints = [ "non_upper_case_globals" ]
 

@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_LIB_DEBUGLOG_INCLUDE_LIB_DEBUGLOG_H_
 #define ZIRCON_KERNEL_LIB_DEBUGLOG_INCLUDE_LIB_DEBUGLOG_H_
 
+#include <lib/debuglog_types.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <zircon/compiler.h>
@@ -21,8 +22,6 @@
 #include <phys/boot-constants.h>
 
 class DLog;
-typedef struct dlog_header dlog_header_t;
-typedef struct dlog_record dlog_record_t;
 
 // DlogReaders drain debuglogs. Owners of DlogReaders are called back as
 // messages are pushed through the debuglog, via the Notify callback.
@@ -64,34 +63,6 @@ class DlogReader : public fbl::DoublyLinkedListable<DlogReader*> {
   void* cookie_ = nullptr;
 };
 
-#define DLOG_MAX_RECORD (size_t{256})
-#define DLOG_MAX_DATA (DLOG_MAX_RECORD - sizeof(dlog_header))
-
-// This structure is designed to be copied into a zx_log_record_t from
-// zircon/syscalls/log.h.
-//
-// The size, type, and offset of these fields must match those of
-// zx_log_record_t.
-struct dlog_header {
-  // When inside a debuglog, the |preamble| contains both the record's true size
-  // (|DLOG_HDR_READLEN|) and the record's size when padded out to live in the
-  // FIFO (|DLOG_HDR_FIFOLEN|).
-  //
-  // After being read out of a debuglog, the |preamble| field is 0.
-  uint32_t preamble;
-  uint16_t datalen;
-  uint8_t severity;
-  uint8_t flags;
-  zx_instant_boot_t timestamp;
-  uint64_t pid;
-  uint64_t tid;
-  // Each log record is assigned a sequence number at the time it enters the
-  // debuglog. A record's sequence number will be exactly one greater than the
-  // record that preceeded it. The purpose of |sequence| is to enable debuglog
-  // readers to detect dropped message.
-  uint64_t sequence;
-};
-
 // Severity Levels
 #define DEBUGLOG_TRACE (0x10)
 #define DEBUGLOG_DEBUG (0x20)
@@ -99,11 +70,6 @@ struct dlog_header {
 #define DEBUGLOG_WARNING (0x40)
 #define DEBUGLOG_ERROR (0x50)
 #define DEBUGLOG_FATAL (0x60)
-
-struct dlog_record {
-  dlog_header_t hdr;
-  char data[DLOG_MAX_DATA];
-};
 
 static_assert(sizeof(dlog_record_t) == DLOG_MAX_RECORD, "");
 
@@ -158,5 +124,14 @@ inline bool dlog_bypass() { return kBootConstants.bypass_debuglog; }
 // region specified by |target|.  Returns the number of bytes of target which
 // were filled.
 size_t dlog_render_to_crashlog(ktl::span<char> target);
+
+extern "C" {
+zx_status_t cpp_dlog_shutdown(zx_instant_mono_t deadline);
+zx_status_t cpp_dlog_write(uint32_t severity, uint32_t flags, const char* ptr, size_t len);
+void cpp_dlog_reader_init(DlogReader* reader, DlogReader::NotifyCallback* notify, void* cookie);
+void cpp_dlog_reader_disconnect(DlogReader* reader);
+zx_status_t cpp_dlog_reader_read(DlogReader* reader, uint32_t flags, dlog_record_t* record,
+                                 size_t* actual);
+}
 
 #endif  // ZIRCON_KERNEL_LIB_DEBUGLOG_INCLUDE_LIB_DEBUGLOG_H_
