@@ -81,11 +81,16 @@ type RealmOptions = resource table {
     3: topology Topology;
 };
 
+type CreateRealmResponse = table {
+    1: wlan_policy_moniker string:MAX;
+    2: wlandevicemonitor_moniker string:MAX;
+};
+
 @discoverable
 open protocol RealmFactory {
     /// Creates the realm using the given options.
     flexible CreateRealm(resource struct {
         options RealmOptions;
         dictionary zx.Handle:EVENTPAIR;
-    }) -> () error fuchsia.testing.harness.OperationError;
+    }) -> (CreateRealmResponse) error fuchsia.testing.harness.OperationError;
 };

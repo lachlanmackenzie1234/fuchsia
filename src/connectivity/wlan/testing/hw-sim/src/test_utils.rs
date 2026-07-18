@@ -12,7 +12,9 @@ use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_tap as wlantap;
 use fidl_test_wlan_realm as fidl_realm;
 use fuchsia_async::{DurationExt, MonotonicInstant, TimeoutExt, Timer};
-use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
+use fuchsia_component::client::{
+    connect_channel_to_protocol_at, connect_to_protocol, connect_to_protocol_at,
+};
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 use ieee80211::{MacAddr, MacAddrBytes};
@@ -67,6 +69,9 @@ pub struct TestRealmContext {
     // A directory proxy connected to "/dev" in the test realm.
     devfs: fidl_fuchsia_io::DirectoryProxy,
 
+    wlan_policy_moniker: String,
+    wlandevicemonitor_moniker: String,
+
     // This field must be the last field in the struct so that it is dropped last.
     // This ensures that traces are collected during realm destruction.
     _tracing: Tracing,
@@ -89,7 +94,7 @@ impl TestRealmContext {
         // `test_ns.prefix()`.
         let trace_manager_hermeticity = config.trace_manager_hermeticity.clone();
         let options = fidl_realm::RealmOptions { wlan_config: Some(config), ..Default::default() };
-        let _ = realm_factory
+        let response = realm_factory
             .create_realm(options, dict_1)
             .await
             .expect("FIDL error on create_realm")
@@ -156,7 +161,18 @@ impl TestRealmContext {
             }
         };
 
-        Arc::new(Self { test_ns, devfs, _tracing })
+        let wlan_policy_moniker = response
+            .wlan_policy_moniker
+            .as_ref()
+            .expect("wlan_policy moniker must be present")
+            .clone();
+        let wlandevicemonitor_moniker = response
+            .wlandevicemonitor_moniker
+            .as_ref()
+            .expect("wlandevicemonitor moniker must be present")
+            .clone();
+
+        Arc::new(Self { test_ns, devfs, wlan_policy_moniker, wlandevicemonitor_moniker, _tracing })
     }
 
     pub fn test_ns_prefix(&self) -> &str {
@@ -448,9 +464,41 @@ impl Drop for TestHelper {
                 .into_zx_channel(),
         );
 
-        // TODO(b/307808624): At this point in the shutdown, we should
-        // stop wlancfg first and destroy all ifaces through
-        // fuchsia.wlan.device.service/DeviceMonitor.DestroyIface().
+        let (lc_client_end, lc_server_end) = zx::Channel::create();
+        connect_channel_to_protocol_at::<fidl_fuchsia_sys2::LifecycleControllerMarker>(
+            lc_server_end,
+            self.ctx.test_ns_prefix(),
+        )
+        .expect("Failed to connect to LifecycleController");
+        let lc = fidl_fuchsia_sys2::LifecycleControllerSynchronousProxy::new(lc_client_end);
+
+        lc.stop_instance(&self.ctx.wlan_policy_moniker, zx::MonotonicInstant::INFINITE)
+            .expect("Failed to call stop_instance")
+            .expect("stop_instance returned an error");
+
+        let (dm_client_end, dm_server_end) = zx::Channel::create();
+        connect_channel_to_protocol_at::<fidl_fuchsia_wlan_device_service::DeviceMonitorMarker>(
+            dm_server_end,
+            self.ctx.test_ns_prefix(),
+        )
+        .expect("Failed to connect to DeviceMonitor");
+        let dm =
+            fidl_fuchsia_wlan_device_service::DeviceMonitorSynchronousProxy::new(dm_client_end);
+
+        let ifaces =
+            dm.list_ifaces(zx::MonotonicInstant::INFINITE).expect("Failed to call list_ifaces");
+        for iface in ifaces {
+            let req = &fidl_fuchsia_wlan_device_service::DestroyIfaceRequest { iface_id: iface };
+            let status = dm
+                .destroy_iface(req, zx::MonotonicInstant::INFINITE)
+                .expect("Failed to call destroy_iface");
+            assert_eq!(status, 0, "destroy_iface returned an error: {}", status);
+        }
+
+        lc.stop_instance(&self.ctx.wlandevicemonitor_moniker, zx::MonotonicInstant::INFINITE)
+            .expect("Failed to call stop_instance")
+            .expect("stop_instance returned an error");
+
         // This test framework does not currently support stopping
         // individual components. If instead we drop the
         // TestRealmProxy, and thus stop both wlancfg and

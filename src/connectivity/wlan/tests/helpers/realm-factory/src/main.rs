@@ -37,13 +37,21 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                     unimplemented!();
                 }
                 RealmFactoryRequest::CreateRealm { options, dictionary, responder } => {
+                    let has_wlan_config = options.wlan_config.is_some();
                     let realm = create_realm(options).await?;
                     let output_dictionary_handle =
                         realm.root.controller().get_output_dictionary().await?.unwrap();
                     let output_dictionary = Dictionary::from(output_dictionary_handle);
                     output_dictionary.associate_with_handle(dictionary).await;
                     realms.push(realm);
-                    responder.send(Ok(()))?;
+
+                    let mut response = CreateRealmResponse::default();
+                    if has_wlan_config {
+                        response.wlan_policy_moniker = Some("./wlancfg".to_string());
+                        response.wlandevicemonitor_moniker =
+                            Some("./wlandevicemonitor".to_string());
+                    }
+                    responder.send(Ok(&response))?;
                 }
             }
         }
