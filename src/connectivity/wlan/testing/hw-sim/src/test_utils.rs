@@ -66,6 +66,9 @@ pub struct TestRealmContext {
 
     // A directory proxy connected to "/dev" in the test realm.
     devfs: fidl_fuchsia_io::DirectoryProxy,
+
+    // This field must be the last field in the struct so that it is dropped last.
+    // This ensures that traces are collected during realm destruction.
     _tracing: Tracing,
 }
 
