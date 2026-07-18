@@ -54,7 +54,7 @@ for all supported CPUs, not just $target_cpu.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/BUILD.gn:16
+From //zircon/kernel/BUILD.gn:23
 
 ### all_cpu_phys_boot_tests
 
@@ -960,12 +960,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -4667,6 +4667,17 @@ From //src/graphics/lib/compute/gn/glsl_shader_rules.gni:40
 
 From //third_party/grpc/BUILD.gn:24
 
+### gt6853_driver_flavor
+
+Toggles between the C++ and Rust driver implementations.
+
+TODO(https://fxbug.dev/527194998): Remove the toggle after the Rust port is completed.
+Valid values: "cpp", "rust"
+
+**Current value (from the default):** `"cpp"`
+
+From //src/ui/input/drivers/gt6853/BUILD.gn:20
+
 ### hangcheck_timeout_ms
 
 Set this to accommodate long running tests
@@ -5273,7 +5284,7 @@ status of the fuchsia git repository.
 
 **Current value (from the default):** `""`
 
-From //zircon/kernel/lib/version/BUILD.gn:24
+From //zircon/kernel/BUILD.gn:19
 
 ### known_variants
 
