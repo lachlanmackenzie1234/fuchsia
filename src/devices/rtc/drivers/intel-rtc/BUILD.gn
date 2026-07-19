@@ -110,6 +110,9 @@ fuchsia_test_with_expectations_package("rtc-periodic-interrupt-test") {
   test_components = [ ":rtc-periodic-interrupt-test-component" ]
   expectations = "expects/rtc_periodic_interrupt_test_expectations.json5"
   test_specs = {
+    # Tests use actual RTC driver, test its interrupts and enable and disable
+    # interrupts. They might accidentally step on each other if run in parallel.
+    parallel = 1
     environments = [
       nuc7_env,
       nuc11_env,
