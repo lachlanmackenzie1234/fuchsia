@@ -17,7 +17,7 @@
 
 class LoaderApp;
 
-// Represents a hardware GPU which is found by enumerating /dev/class/gpu.
+// Represents a hardware GPU.
 class MagmaDevice : public GpuDevice,
                     public fidl::WireAsyncEventHandler<fuchsia_gpu_magma::IcdLoaderDevice> {
  public:

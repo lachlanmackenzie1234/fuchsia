@@ -112,8 +112,8 @@ zx_status_t LoaderApp::InitCommonDeviceFs(fbl::RefPtr<fs::PseudoDir>& root_node)
   auto class_node = fbl::MakeRefCounted<fs::PseudoDir>();
   ZX_ASSERT(root_node->AddEntry("class", class_node) == ZX_OK);
 
-  const char* kDevClassList[] = {"gpu", "goldfish-pipe", "goldfish-control",
-                                 "goldfish-address-space", "goldfish-sync"};
+  const char* kDevClassList[] = {"goldfish-pipe", "goldfish-control", "goldfish-address-space",
+                                 "goldfish-sync"};
 
   for (const char* dev_class : kDevClassList) {
     auto endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();

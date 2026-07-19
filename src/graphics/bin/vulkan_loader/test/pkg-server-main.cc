@@ -123,17 +123,17 @@ int main(int argc, const char* const* argv) {
   auto dev_gpu_dir = fbl::MakeRefCounted<fs::PseudoDir>();
   root->AddEntry("dev-gpu", dev_gpu_dir);
 
-  // TODO(b/419087951) - remove
-  FakeMagmaDevice devfs_magma_device(loop.dispatcher());
-  {
-    zx_status_t status = dev_gpu_dir->AddEntry(
-        "000", fbl::MakeRefCounted<fs::Service>(devfs_magma_device.ProtocolConnector()));
-    ZX_ASSERT_MSG(status == ZX_OK, "Failed to add device: %s", zx_status_get_string(status));
-  }
-
-  auto dev_goldfish_dir = fbl::MakeRefCounted<fs::PseudoDir>();
-  zx_status_t status = root->AddEntry("dev-goldfish-pipe", dev_goldfish_dir);
+  auto dev_goldfish_pipe_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+  zx_status_t status = root->AddEntry("dev-goldfish-pipe", dev_goldfish_pipe_dir);
   ZX_ASSERT_MSG(status == ZX_OK, "Failed to add goldfish pipe: %s", zx_status_get_string(status));
+
+  auto dev_goldfish_sync_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+  status = dev_goldfish_sync_dir->AddEntry(
+      "000", fbl::MakeRefCounted<fs::Service>([](zx::channel channel) { return ZX_OK; }));
+  ZX_ASSERT_MSG(status == ZX_OK, "Failed to add goldfish sync entry: %s",
+                zx_status_get_string(status));
+  status = root->AddEntry("dev-goldfish-sync", dev_goldfish_sync_dir);
+  ZX_ASSERT_MSG(status == ZX_OK, "Failed to add goldfish sync: %s", zx_status_get_string(status));
 
   auto dev_dir = fbl::MakeRefCounted<fs::PseudoDir>();
   status = root->AddEntry("dev", dev_gpu_dir);

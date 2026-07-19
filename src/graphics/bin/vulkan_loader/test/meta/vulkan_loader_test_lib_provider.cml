@@ -39,6 +39,11 @@
             path: "/dev-goldfish-pipe",
         },
         {
+            directory: "dev-goldfish-sync",
+            rights: [ "r*" ],
+            path: "/dev-goldfish-sync",
+        },
+        {
             // This service replaces the directory capability above.
             service: "fuchsia.hardware.goldfish.ControllerService",
         },
@@ -73,6 +78,11 @@
             from: "self",
         },
         {
+            directory: "dev-goldfish-sync",
+            from: "self",
+            rights: [ "r*" ],
+        },
+        {
             directory: "empty",
             from: "self",
             as: "dev-goldfish-control",
@@ -82,12 +92,6 @@
             directory: "empty",
             from: "self",
             as: "dev-goldfish-address-space",
-            rights: [ "r*" ],
-        },
-        {
-            directory: "empty",
-            from: "self",
-            as: "dev-goldfish-sync",
             rights: [ "r*" ],
         },
     ],
