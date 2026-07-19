@@ -3,10 +3,16 @@
 # found in the LICENSE file.
 
 group("tools") {
-  deps = [ "fidlgen_banjo" ]
+  deps = [
+    "dmlc",
+    "fidlgen_banjo",
+  ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ "fidlgen_banjo:tests" ]
+  deps = [
+    "dmlc:tests",
+    "fidlgen_banjo:tests",
+  ]
 }

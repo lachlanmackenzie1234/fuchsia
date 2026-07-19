@@ -30,4 +30,7 @@ type DictionaryEntry = struct {
 type DictionaryValue = flexible union {
     1: int64 int64;
     2: int64_vec vector<int64>:MAX_NUM_VALUE_ITEMS;
+    3: str string:MAX_VALUE_LENGTH;
+    4: str_vec vector<string:MAX_VALUE_LENGTH>:MAX_NUM_VALUE_ITEMS;
+    5: boolean bool;
 };
