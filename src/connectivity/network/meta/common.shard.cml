@@ -217,6 +217,10 @@
         {
             protocol: [
                 "fuchsia.net.debug.Interfaces",
+
+                // TODO(https://fxbug.dev/534733256): Expose fuchsia.net.debug/PacketCaptureProvider
+                // inside a dictionary instead.
+                "fuchsia.net.debug.PacketCaptureProvider",
                 "fuchsia.net.interfaces.admin.Installer",
                 "fuchsia.net.interfaces.State",
                 "fuchsia.net.multicast.admin.Ipv6RoutingTableController",

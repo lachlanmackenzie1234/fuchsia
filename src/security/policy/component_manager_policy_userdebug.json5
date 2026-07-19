@@ -337,6 +337,18 @@
                     "/toolbox",
                 ],
             },
+
+            // TODO(https://fxbug.dev/534733256): Remove when capability is routed
+            // via a dictionary.
+            {
+                source_moniker: "/core/network/netstack",
+                source: "component",
+                source_name: "fuchsia.net.debug.PacketCaptureProvider",
+                capability: "protocol",
+                target_monikers: [
+                    "/toolbox",
+                ],
+            },
         ],
     },
 }

@@ -251,7 +251,10 @@
             ],
         },
         {
+            // TODO(https://fxbug.dev/534733256): Merge a dictionary containing
+            // these protocols into toolbox instead.
             protocol: [
+                "fuchsia.net.debug.PacketCaptureProvider",
                 "fuchsia.net.interfaces.admin.Installer",
                 "fuchsia.net.interfaces.State",
                 "fuchsia.net.name.Lookup",
