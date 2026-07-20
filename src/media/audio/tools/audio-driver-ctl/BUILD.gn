@@ -35,7 +35,11 @@ source_set("src") {
 executable("bin") {
   output_name = "audio-driver-ctl"
   sources = [ "audio.cc" ]
-  deps = [ ":src" ]
+  deps = [
+    ":src",
+    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
+    "//sdk/lib/component/incoming/cpp",
+  ]
 }
 
 test("audio-driver-ctl-test") {

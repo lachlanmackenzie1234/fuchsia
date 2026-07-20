@@ -10,9 +10,6 @@ executable("bin") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/device-watcher/cpp",
-    "//sdk/lib/fdio",
-    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
 }

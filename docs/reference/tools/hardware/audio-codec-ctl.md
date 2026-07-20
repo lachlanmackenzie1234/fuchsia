@@ -37,17 +37,27 @@ to play, record, and configure audio streams.
   audio-codec-ctl [-d|--device <device>] set <id> [start|stop] [bypass] [gain <gain>]
     [vendor <hex> <hex> ...]
 
+  audio-codec-ctl list
+
   audio-codec-ctl [-h|--help]
 ```
 
 ## Commands {#commands}
 
-Audio hardware codec driver control on `<device>` (full path specified e.g. `/dev/class/codec/123` or
-only the devfs node name specified e.g. `123`) or unspecified (picks the first device in
-/dev/class/codec). Only one command can be specified per invocation.
+Audio hardware codec driver control on `<device>` (full path specified, for example, `/svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector` or
+only the service instance name specified, for example, `default`) or unspecified (picks the first device in
+`/svc/fuchsia.hardware.audio.CodecConnectorService`). You can specify only one command per invocation.
 
 
-### `formats` {#formats}
+### `list` command {#list}
+
+```none
+  audio-codec-ctl list
+```
+
+Lists all available codec devices.
+
+### `formats` command {#formats}
 
 ```none
   audio-codec-ctl [-d|--device <device>] f[ormats]
@@ -55,7 +65,7 @@ only the devfs node name specified e.g. `123`) or unspecified (picks the first d
 
 Retrieves the DAI formats supported by the codec.
 
-### `info` {#info}
+### `info` command {#info}
 
 ```none
   audio-codec-ctl [-d|--device <device>] i[nfo]
@@ -63,7 +73,7 @@ Retrieves the DAI formats supported by the codec.
 
 Retrieves textual information about the codec.
 
-### `capabilities_plug_detect` {#plugdetect}
+### `capabilities_plug_detect` command {#plugdetect}
 
 ```none
   audio-codec-ctl [-d|--device <device>] c[apabilities_plug_detect]
@@ -71,7 +81,7 @@ Retrieves textual information about the codec.
 
 Retrieves Plug Detect Capabilities.
 
-### `reset` {#reset}
+### `reset` command {#reset}
 
 ```none
   audio-codec-ctl [-d|--device <device>] r[eset]
@@ -79,7 +89,7 @@ Retrieves Plug Detect Capabilities.
 
 Resets the codec.
 
-### `dai` {#dai}
+### `dai` command {#dai}
 
 ```none
   audio-codec-ctl [-d|--device <device>] d[ai] <number_of_channels>
@@ -87,7 +97,7 @@ Resets the codec.
     <frame_rate> <bits_per_slot> <bits_per_sample>
 ```
 
-Sets the DAI format to be used in the codec interface.
+Sets the DAI format to use in the codec interface.
 
 `<number_of_channels>`: Number of channels.
 
@@ -129,7 +139,7 @@ Sets the DAI format to be used in the codec interface.
 `<bits_per_sample>`: The bits per sample for all samples.  Must be smaller than bits per channel
   for samples to fit.
 
-### `start` {#start}
+### `start` command {#start}
 
 ```none
   audio-codec-ctl [-d|--device <device>] start
@@ -137,7 +147,7 @@ Sets the DAI format to be used in the codec interface.
 
 Start/Re-start the codec operation.
 
-### `stop` {#stop}
+### `stop` command {#stop}
 
 ```none
   audio-codec-ctl [-d|--device <device>] stop
@@ -145,7 +155,7 @@ Start/Re-start the codec operation.
 
 Stops the codec operation.
 
-### `plug_state` {#plug}
+### `plug_state` command {#plug}
 
 ```none
   audio-codec-ctl [-d|--device <device>] p[lug_state]
@@ -153,7 +163,7 @@ Stops the codec operation.
 
 Get the plug detect state.
 
-### `elements` {#elements}
+### `elements` command {#elements}
 
 ```none
   audio-codec-ctl [-d|--device <device>] e[lements]
@@ -161,7 +171,7 @@ Get the plug detect state.
 
 Returns a vector of supported processing elements.
 
-### `topologies` {#topologies}
+### `topologies` command {#topologies}
 
 ```none
   audio-codec-ctl [-d|--device <device>] t[opologies]
@@ -169,7 +179,7 @@ Returns a vector of supported processing elements.
 
 Returns a vector of supported topologies.
 
-### `watch` {#watch}
+### `watch` command {#watch}
 
 ```none
   audio-codec-ctl [-d|--device <device>] w[atch] <id>
@@ -177,7 +187,7 @@ Returns a vector of supported topologies.
 
 Get a processing element state.
 
-### `set` {#set}
+### `set` command {#set}
 
 ```none
   audio-codec-ctl [-d|--device <device>] set <id> [start|stop] [bypass] [gain <gain>]
@@ -200,131 +210,198 @@ Controls a processing element.
 
 ## Examples {#examples}
 
-### Retrieves the DAI formats supported
+### List all available codec devices
 
-```none
-$ audio-codec-ctl f
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl list
+```
+
+```none {:.devsite-disable-click-to-copy}
+default
+```
+
+### Retrieve the DAI formats supported
+
+```posix-terminal
+audio-codec-ctl f
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 [ fuchsia_hardware_audio::DaiSupportedFormats{ number_of_channels = [ 2, 4, ], sample_formats = [ fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned, ], frame_formats = [ fuchsia_hardware_audio::DaiFrameFormat::frame_format_standard(fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S), fuchsia_hardware_audio::DaiFrameFormat::frame_format_standard(fuchsia_hardware_audio::DaiFrameFormatStandard::kTdm1), ], frame_rates = [ 48000, 96000, ], bits_per_slot = [ 16, 32, ], bits_per_sample = [ 16, 32, ], }, ]
 ```
 
-### Retrieves textual information
+### Retrieve textual information
 
-```none
-$ audio-codec-ctl i
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl i
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 fuchsia_hardware_audio::CodecInfo{ unique_id = "", manufacturer = "Texas Instruments", product_name = "TAS5825m", }
 ```
 
-### Retrieves Plug Detect Capabilities
+### Retrieve plug detect capabilities
 
-```none
-$ audio-codec-ctl c
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl c
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 fuchsia_hardware_audio::PlugDetectCapabilities::kHardwired
 ```
 
-### Returns whether the codec is bridgeable
+### Check if the codec is bridgeable
 
-```none
-$ audio-codec-ctl b
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl b
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 Is bridgeable: false
 ```
 
-### Resets the codec
+### Reset the codec
 
-```none
-$ audio-codec-ctl r
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl r
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 Reset done
 ```
 
-### Sets a codec's bridged mode
+### Set a codec's bridged mode
 
-```none
-$ audio-codec-ctl -m true
-Setting bridged mode to: true
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl -m true
 ```
 
-### Sets the DAI format to be used in the codec interface
+```none {:.devsite-disable-click-to-copy}
+Setting bridged mode to: true
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
+```
 
-```none
-$ audio-codec-ctl d 2 1 s i 48000 16 32
+### Set the DAI format to use in the codec interface
+
+```posix-terminal
+audio-codec-ctl d 2 1 s i 48000 16 32
+```
+
+```none {:.devsite-disable-click-to-copy}
 Setting DAI format:
 fuchsia_hardware_audio::DaiFormat{ number_of_channels = 2, channels_to_use_bitmask = 1, sample_format = fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned, frame_format = fuchsia_hardware_audio::DaiFrameFormat::frame_format_standard(fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S), frame_rate = 48000, bits_per_slot = 16, bits_per_sample = 32, }
-Executing on device: /dev/class/codec/706
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 ```
 
-### Start/Re-start the codec operation
+### Start or restart the codec operation
 
-```none
-$ audio-codec-ctl start
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl start
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 Start done
 ```
 
-### Stops the codec operation
+### Stop the codec operation
 
-```none
-$ audio-codec-ctl stop
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl stop
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 Stop done
 ```
 
 ### Get the plug detect state
 
-```none
-$ audio-codec-ctl p
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl p
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 fuchsia_hardware_audio::PlugState{ plugged = true, plug_state_time = 1167863520, }
 ```
 
 ### Get the supported processing elements
 
-```none
-$ audio-codec-ctl e
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl e
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 [ fuchsia_hardware_audio_signalprocessing::Element{ id = 1, type = fuchsia_hardware_audio_signalprocessing::ElementType::kGain, type_specific = fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::gain(fuchsia_hardware_audio_signalprocessing::Gain{ type = fuchsia_hardware_audio_signalprocessing::GainType::kDecibels, min_gain = -63.5, max_gain = 0, min_gain_step = 0.5, }), }, fuchsia_hardware_audio_signalprocessing::Element{ id = 2, type = fuchsia_hardware_audio_signalprocessing::ElementType::kMute, }, ]
 ```
 
 ### Get the supported topologies
 
-```none
-$ audio-codec-ctl t
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl t
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 [ fuchsia_hardware_audio_signalprocessing::Topology{ id = 1, processing_elements_edge_pairs = [ fuchsia_hardware_audio_signalprocessing::EdgePair{ processing_element_id_from = 1, processing_element_id_to = 2, }, fuchsia_hardware_audio_signalprocessing::EdgePair{ processing_element_id_from = 2, processing_element_id_to = 3, }, ], }, ]
 ```
 
 ### Get a processing element state
 
-```none
-$ audio-codec-ctl w 1
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl w 1
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 fuchsia_hardware_audio_signalprocessing::ElementState{ type_specific = fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::gain(fuchsia_hardware_audio_signalprocessing::GainElementState{ gain = 0, }), started = true, }
 ```
 
-### Controls a processing element
+### Control a processing element
 
-```none
-$ audio-codec-ctl set 1 start gain 1.23 vendor 0x12 0x98
+```posix-terminal
+audio-codec-ctl set 1 start gain 1.23 vendor 0x12 0x98
+```
+
+```none {:.devsite-disable-click-to-copy}
 Setting element state:
 fuchsia_hardware_audio_signalprocessing::SignalProcessingSetElementStateRequest{ processing_element_id = 1, state = fuchsia_hardware_audio_signalprocessing::ElementState{ type_specific = fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::gain(fuchsia_hardware_audio_signalprocessing::GainElementState{ gain = 1.23, }), started = true, vendor_specific_data = [ 18, 152, ], }, }
-Executing on device: /dev/class/codec/706
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 ```
 
 ### Specify device
 
-```none
-$ audio-codec-ctl -d 706 p
-Executing on device: /dev/class/codec/706
+```posix-terminal
+audio-codec-ctl -d default p
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 fuchsia_hardware_audio::PlugState{ plugged = true, plug_state_time = 1167863520, }
-$ audio-codec-ctl -d 123 p
-Executing on device /dev/class/codec/123
-watch plug state failed: FIDL operation failed due to peer closed, status: ZX_ERR_PEER_CLOSED (-24)
-$ audio-codec-ctl -d /dev/class/codec/706 p
-Executing on device: /dev/class/codec/706
+```
+
+```posix-terminal
+audio-codec-ctl -d non-existent p
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/non-existent/codec_connector
+could not connect to:/svc/fuchsia.hardware.audio.CodecConnectorService/non-existent/codec_connector status:ZX_ERR_NOT_FOUND
+```
+
+```posix-terminal
+audio-codec-ctl -d /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector p
+```
+
+```none {:.devsite-disable-click-to-copy}
+Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 fuchsia_hardware_audio::PlugState{ plugged = true, plug_state_time = 1167863520, }
 ```
 

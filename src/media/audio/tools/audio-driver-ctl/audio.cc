@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include <ctype.h>
-#include <dirent.h>
+#include <fidl/fuchsia.hardware.audio/cpp/wire.h>
 #include <inttypes.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
 #include <poll.h>
 #include <stdio.h>
@@ -14,8 +15,11 @@
 #include <zircon/types.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <limits>
 #include <optional>
+#include <string>
+#include <system_error>
 #include <thread>
 
 #include <audio-proto-utils/format-utils.h>
@@ -49,6 +53,10 @@ static constexpr audio_sample_format_t AUDIO_SAMPLE_FORMAT_UNSIGNED_8BIT =
     static_cast<audio_sample_format_t>(AUDIO_SAMPLE_FORMAT_8BIT |
                                        AUDIO_SAMPLE_FORMAT_FLAG_UNSIGNED);
 
+constexpr char kInputServiceDir[] = "/svc/fuchsia.hardware.audio.StreamConfigConnectorInputService";
+constexpr char kOutputServiceDir[] =
+    "/svc/fuchsia.hardware.audio.StreamConfigConnectorOutputService";
+
 enum class Command {
   INVALID,
   HELP,
@@ -64,6 +72,7 @@ enum class Command {
   LOOP,
   RECORD,
   DUPLEX,
+  LIST,
 };
 
 enum class Type : uint8_t { INPUT, OUTPUT, DUPLEX };
@@ -77,30 +86,48 @@ static std::optional<uint64_t> GetUint64(const char* arg) {
   return {result};
 }
 
-static std::optional<uint64_t> GetOnlyDevId(bool input) {
-  const char* dev_path = input ? "/dev/class/audio-input" : "/dev/class/audio-output";
-  DIR* dir = opendir(dev_path);
-  if (!dir) {
-    return {};
-  }
-  struct dirent* de;
-  std::optional<uint64_t> first_id;
-  int count = 0;
-  while ((de = readdir(dir)) != nullptr) {
-    if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) {
-      continue;
-    }
-    char* end = nullptr;
-    uint64_t id = strtoull(de->d_name, &end, 16);
-    if (*end == '\0') {
-      if (count == 0) {
-        first_id = id;
+std::string ResolveServicePath(bool input, const std::string& dev_path_or_instance) {
+  const char* service_dir = input ? kInputServiceDir : kOutputServiceDir;
+
+  if (dev_path_or_instance.empty()) {
+    // Find first instance
+    std::error_code ec;
+    if (std::filesystem::exists(service_dir, ec)) {
+      for (std::filesystem::directory_iterator it(service_dir, ec), end; it != end && !ec;
+           it.increment(ec)) {
+        return it->path().string() + "/stream_config_connector";
       }
-      count++;
     }
+    return "";
   }
-  closedir(dir);
-  return (count == 1) ? first_id : std::optional<uint64_t>{};
+
+  if (dev_path_or_instance.find('/') == std::string::npos) {
+    // Treat as instance name
+    return std::string(service_dir) + "/" + dev_path_or_instance + "/stream_config_connector";
+  }
+
+  // Treat as full path
+  return dev_path_or_instance;
+}
+
+zx::result<fidl::ClientEnd<fuchsia_hardware_audio::StreamConfig>> ConnectToStreamConfig(
+    const std::string& path) {
+  auto client_end = component::Connect<fuchsia_hardware_audio::StreamConfigConnector>(path);
+  if (client_end.is_error()) {
+    printf("component::Connect failed for %s with error %s\n", path.c_str(),
+           client_end.status_string());
+    return client_end.take_error();
+  }
+  fidl::WireSyncClient client{std::move(client_end.value())};
+
+  auto [stream_channel_local, stream_channel_remote] =
+      fidl::Endpoints<fuchsia_hardware_audio::StreamConfig>::Create();
+  auto result = client->Connect(std::move(stream_channel_remote));
+  if (result.status() != ZX_OK) {
+    printf("client connect failed with error %s\n", result.status_string());
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(stream_channel_local));
 }
 
 // LINT.IfChange
@@ -108,24 +135,25 @@ void usage(const char* prog_name, bool full_usage) {
   // clang-format off
   printf(
       "Usage:\n"
-      "  audio-driver-ctl [-d <id>] [-t (input|output)] agc (on|off)\n\n"
-      "  audio-driver-ctl [-a <mask>] [-b (8|16|20|24|32)] [-c <channels>] \\\n"
-      "      [-d <id>] [-r <hertz>] duplex <playpath> <recordpath>\n\n"
-      "  audio-driver-ctl [-d <id>] [-t (input|output)] gain <decibels>\n\n"
-      "  audio-driver-ctl [-d <id>] [-t (input|output)] info\n\n"
-      "  audio-driver-ctl [-a <mask>] [-b (8|16|20|24|32)] [-c <channels>] \\\n"
-      "      [-d <id>] loop <playpath>\n\n"
-      "  audio-driver-ctl [-d <id>] [-t (input|output)] mute\n\n"
-      "  audio-driver-ctl [-a <mask>] [-b (8|16|20|24|32)] [-c <channels>] \\\n"
-      "      [-d <id>] [-r <hertz>] noise [<seconds>] [<amplitude>]\n\n"
-      "  audio-driver-ctl [-a <mask>] [-b (8|16|20|24|32)] [-c <channels>] \\\n"
-      "      [-d <id>] play <playpath>\n\n"
-      "  audio-driver-ctl [-d <id>] [-t (input|output)] pmon [<seconds>]\n\n"
-      "  audio-driver-ctl [-a <mask>] [-b (8|16|20|24|32)] [-c <channels>] \\\n"
-      "      [-d <id>] [-r <hertz>] record <recordpath> [<seconds>]\n\n"
-      "  audio-driver-ctl [-a <mask>] [-b (8|16|20|24|32)] [-c <channels>] \\\n"
-      "      [-d <id>] [-r <hertz>] tone [<frequency>] [<seconds>] [<amplitude>]\n\n"
-      "  audio-driver-ctl [-d <id>] [-t (input|output)] unmute\n\n"
+      "  audio-driver-ctl [-d <device>] [-t {input|output}] agc {on|off}\n\n"
+      "  audio-driver-ctl [-a <mask>] [-b {8|16|20|24|32}] [-c <channels>] \\\n"
+      "      [-d <device>] [-r <hertz>] duplex <playpath> <recordpath>\n\n"
+      "  audio-driver-ctl [-d <device>] [-t {input|output}] gain <decibels>\n\n"
+      "  audio-driver-ctl [-d <device>] [-t {input|output}] info\n\n"
+      "  audio-driver-ctl list\n\n"
+      "  audio-driver-ctl [-a <mask>] [-b {8|16|20|24|32}] [-c <channels>] \\\n"
+      "      [-d <device>] loop <playpath>\n\n"
+      "  audio-driver-ctl [-d <device>] [-t {input|output}] mute\n\n"
+      "  audio-driver-ctl [-a <mask>] [-b {8|16|20|24|32}] [-c <channels>] \\\n"
+      "      [-d <device>] [-r <hertz>] noise [<seconds>] [<amplitude>]\n\n"
+      "  audio-driver-ctl [-a <mask>] [-b {8|16|20|24|32}] [-c <channels>] \\\n"
+      "      [-d <device>] play <playpath>\n\n"
+      "  audio-driver-ctl [-d <device>] [-t {input|output}] pmon [<seconds>]\n\n"
+      "  audio-driver-ctl [-a <mask>] [-b {8|16|20|24|32}] [-c <channels>] \\\n"
+      "      [-d <device>] [-r <hertz>] record <recordpath> [<seconds>]\n\n"
+      "  audio-driver-ctl [-a <mask>] [-b {8|16|20|24|32}] [-c <channels>] \\\n"
+      "      [-d <device>] [-r <hertz>] tone [<frequency>] [<seconds>] [<amplitude>]\n\n"
+      "  audio-driver-ctl [-d <device>] [-t {input|output}] unmute\n\n"
       "Play, record, and configure audio streams.\n\n");
   if (!full_usage) {
     printf("For full usage help use: audio-driver-ctl help\n");
@@ -134,7 +162,7 @@ void usage(const char* prog_name, bool full_usage) {
       "Options:\n"
       "  -a <mask>              Active channel mask. For example `0xf` or `15` for\n"
       "                         channels 0, 1, 2, and 3. Defaults to all channels.\n"
-      "  -b (8|16|20|24|32)     Bits per sample. Defaults to `16`.\n"
+      "  -b {8|16|20|24|32}     Bits per sample. Defaults to `16`.\n"
       "  -c <channels>          Number of channels to use when recording or generating\n"
       "                         tones/noises. Does not affect playback of WAV files\n"
       "                         because WAV files specify how many channels to use in\n"
@@ -143,11 +171,11 @@ void usage(const char* prog_name, bool full_usage) {
       "                         channels your target Fuchsia device has. The number of\n"
       "                         channels must match what the audio driver expects\n"
       "                         because `audio-driver-ctl` does not do any mixing.\n"
-      "  -d <id>                The device node ID of the stream. Defaults to `0`.\n"
-      "                         To figure out <id>, run `audio-driver-ctl info`. You'll\n"
-      "                         see path values like `/dev/class/audio-input/000`. <id> in\n"
-      "                         this example is `000`.\n"
-      "  -t (input|output)      The device type. Defaults to `output`. This option is\n"
+      "  -d <device>            The device path or service instance name. If unspecified, it\n"
+      "                         picks the first device found. If it does not contain `/`,\n"
+      "                         the tool treats it as a service instance name (for example\n"
+      "                         `default` -> `/svc/.../default/stream_config_connector`).\n"
+      "  -t {input|output}      The device type. Defaults to `output`. This option is\n"
       "                         ignored for commands like `play` that only make sense\n"
       "                         for one of the types.\n"
       "  -r <hertz>             The frame rate in hertz. Defaults to `%u`.\n\n", DEFAULT_FRAME_RATE);
@@ -156,12 +184,14 @@ void usage(const char* prog_name, bool full_usage) {
       "  agc                    Enables or disables automatic gain control for the stream.\n"
       "  duplex                 Simultaneously plays the WAV file located at <playpath>\n"
       "                         and records another WAV file into <recordpath>\n"
-      "                         in order to analyze the delays in the system. The `-c`\n"
-      "                         option if provided applies to the recording side since\n"
-      "                         the number of channels for playback is taken from the\n"
-      "                         WAV file header.\n"
+      "                         to analyze delays in the system. If provided, the `-c`\n"
+      "                         option applies to the recording side, as the WAV file header\n"
+      "                         determines the number of channels for playback. For duplex\n"
+      "                         mode, the `-d` parameter must be an instance name and cannot\n"
+      "                         be a full path.\n"
       "  gain                   Sets the gain of the stream in decibels.\n"
       "  info                   Gets capability and status info for a stream.\n"
+      "  list                   Lists all available input and output devices.\n"
       "  loop                   Repeatedly plays the WAV file at <playpath> on the selected\n"
       "                         output until a key is pressed.\n"
       "  mute                   Mutes a stream.\n"
@@ -190,9 +220,9 @@ void usage(const char* prog_name, bool full_usage) {
       "  Enable automatic gain control on the default output stream:\n"
       "  $ audio-driver-ctl agc on\n\n"
       "  Get info for the default output stream:\n"
-      "  # Equivalent to `audio-driver-ctl -t output -d 000 info`\n"
+      "  # Equivalent to `audio-driver-ctl -t output -d default info`\n"
       "  $ audio-driver-ctl info\n"
-      "  Info for audio output at \"/dev/class/audio-output/000\"\n"
+      "  Info for audio output at \"/svc/fuchsia.hardware.audio.StreamConfigConnectorOutputService/default/stream_config_connector\"\n"
       "    Unique ID    : 0100000000000000-0000000000000000\n"
       "    Manufacturer : Spacely Sprockets\n"
       "    Product      : acme\n"
@@ -208,7 +238,7 @@ void usage(const char* prog_name, bool full_usage) {
       "  ...\n\n"
       "  Use the `-t` and `-d` options to interact with a stream other than the\n"
       "  default output stream:\n"
-      "  $ audio-driver-ctl -t input -d 001 info\n"
+      "  $ audio-driver-ctl -t input -d default info\n"
       "  ...\n\n"
       "  Set the gain of the default output stream to -40 decibels:\n"
       "  $ audio-driver-ctl gain -40\n\n"
@@ -522,7 +552,7 @@ zx_status_t dump_stream_info(const audio::utils::AudioDeviceStream& stream) {
 
 int main(int argc, const char** argv) {
   Type type = Type::OUTPUT;
-  std::optional<uint64_t> dev_id;
+  std::optional<std::string> dev_path;
   std::optional<uint64_t> frame_rate = DEFAULT_FRAME_RATE;
   std::optional<uint64_t> bits_per_sample = DEFAULT_BITS_PER_SAMPLE;
   std::optional<uint64_t> channels;
@@ -546,7 +576,6 @@ int main(int argc, const char** argv) {
     std::optional<uint64_t>* val;
   } OPTIONS[] = {
       // clang-format off
-    { .name = "-d", .tag = "device ID",   .val = &dev_id },
     { .name = "-r", .tag = "frame rate",  .val = &frame_rate },
     { .name = "-b", .tag = "bits/sample", .val = &bits_per_sample },
     { .name = "-c", .tag = "channels",    .val = &channels },
@@ -574,6 +603,7 @@ int main(int argc, const char** argv) {
     { "loop",   Command::LOOP,          true,  false },
     { "record", Command::RECORD,        false, true  },
     { "duplex", Command::DUPLEX,        false, false },
+    { "list",   Command::LIST,          false, false },
       // clang-format on
   };
 
@@ -584,8 +614,10 @@ int main(int argc, const char** argv) {
       if (!strcmp(o.name, argv[arg])) {
         // Looks like this is an integer argument we care about.
         // Attempt to parse it.
-        if (++arg >= argc)
+        if (++arg >= argc) {
+          printf("Missing expected argument to '%s' option\n", o.name);
           return -1;
+        }
         std::optional<uint64_t> value = GetUint64(argv[arg]);
         if (!value.has_value()) {
           printf("Failed to parse %s option, \"%s\"\n", o.tag, argv[arg]);
@@ -603,10 +635,23 @@ int main(int argc, const char** argv) {
     if (parsed_option)
       continue;
 
+    // Was this the device path flag?
+    if (!strcmp("-d", argv[arg])) {
+      if (++arg >= argc) {
+        printf("Missing expected argument to '-d' option\n");
+        return -1;
+      }
+      dev_path = argv[arg];
+      ++arg;
+      continue;
+    }
+
     // Was this the device type flag?
     if (!strcmp("-t", argv[arg])) {
-      if (++arg >= argc)
+      if (++arg >= argc) {
+        printf("Missing expected argument to '-t' option\n");
         return -1;
+      }
       if (!strcmp("input", argv[arg])) {
         type = Type::INPUT;
       } else if (!strcmp("output", argv[arg])) {
@@ -819,10 +864,67 @@ int main(int argc, const char** argv) {
   // Argument parsing is done, we can cancel the usage dump.
   print_usage.cancel();
 
-  if (!dev_id.has_value()) {
-    dev_id = GetOnlyDevId(type == Type::INPUT);
-    if (!dev_id.has_value()) {
-      dev_id = 0;
+  if (cmd == Command::LIST) {
+    const char* input_dir = kInputServiceDir;
+    const char* output_dir = kOutputServiceDir;
+
+    std::error_code ec;
+    bool has_error = false;
+    printf("Input Devices:\n");
+    if (std::filesystem::exists(input_dir, ec)) {
+      for (std::filesystem::directory_iterator it(input_dir, ec), end; it != end && !ec;
+           it.increment(ec)) {
+        printf("  %s\n", it->path().filename().string().c_str());
+      }
+      if (ec) {
+        printf("  Error listing input devices: %s\n", ec.message().c_str());
+        has_error = true;
+        ec.clear();
+      }
+    } else if (ec) {
+      printf("  Error checking input directory: %s\n", ec.message().c_str());
+      has_error = true;
+      ec.clear();
+    }
+
+    printf("Output Devices:\n");
+    if (std::filesystem::exists(output_dir, ec)) {
+      for (std::filesystem::directory_iterator it(output_dir, ec), end; it != end && !ec;
+           it.increment(ec)) {
+        printf("  %s\n", it->path().filename().string().c_str());
+      }
+      if (ec) {
+        printf("  Error listing output devices: %s\n", ec.message().c_str());
+        has_error = true;
+      }
+    } else if (ec) {
+      printf("  Error checking output directory: %s\n", ec.message().c_str());
+      has_error = true;
+    }
+    return has_error ? -1 : 0;
+  }
+
+  std::string path = dev_path.value_or("");
+  if (type == Type::DUPLEX && !path.empty() && path.find('/') != std::string::npos) {
+    printf("For duplex mode, device (-d) must be an instance name, not a full path.\n");
+    return -1;
+  }
+
+  std::string resolved_path;
+  std::string resolved_path_duplex_record;
+
+  if (type == Type::DUPLEX) {
+    resolved_path = ResolveServicePath(false, path);
+    resolved_path_duplex_record = ResolveServicePath(true, path);
+    if (resolved_path.empty() || resolved_path_duplex_record.empty()) {
+      printf("No device found for duplex\n");
+      return -1;
+    }
+  } else {
+    resolved_path = ResolveServicePath(type == Type::INPUT, path);
+    if (resolved_path.empty()) {
+      printf("No device found\n");
+      return -1;
     }
   }
 
@@ -831,23 +933,23 @@ int main(int argc, const char** argv) {
   std::unique_ptr<audio::utils::AudioDeviceStream> stream_duplex_record;
   switch (type) {
     case Type::INPUT:
-      stream = audio::utils::AudioInput::Create(dev_id.value());
+      stream = audio::utils::AudioInput::Create(resolved_path.c_str());
       break;
     case Type::OUTPUT:
-      stream = audio::utils::AudioOutput::Create(dev_id.value());
+      stream = audio::utils::AudioOutput::Create(resolved_path.c_str());
       break;
     case Type::DUPLEX: {
-      stream_duplex_record = audio::utils::AudioInput::Create(dev_id.value());
+      stream_duplex_record = audio::utils::AudioInput::Create(resolved_path_duplex_record.c_str());
       if (stream_duplex_record == nullptr) {
         printf("Out of memory!\n");
         return ZX_ERR_NO_MEMORY;
       }
-      // No need to log in the case of failure.  Open has already done so.
-      zx_status_t res = stream_duplex_record->Open();
-      if (res != ZX_OK) {
-        return res;
+      auto channel = ConnectToStreamConfig(resolved_path_duplex_record);
+      if (channel.is_error()) {
+        return channel.error_value();
       }
-      stream = audio::utils::AudioOutput::Create(dev_id.value());
+      stream_duplex_record->SetStreamChannel(std::move(channel.value()));
+      stream = audio::utils::AudioOutput::Create(resolved_path.c_str());
     } break;
   }
   if (stream == nullptr) {
@@ -855,10 +957,12 @@ int main(int argc, const char** argv) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  // No need to log in the case of failure.  Open has already done so.
-  zx_status_t res = stream->Open();
-  if (res != ZX_OK)
-    return res;
+  auto channel = ConnectToStreamConfig(resolved_path);
+  if (channel.is_error()) {
+    return channel.error_value();
+  }
+  stream->SetStreamChannel(std::move(channel.value()));
+  zx_status_t res = ZX_OK;
 
   auto formats = fidl::WireCall(stream->BorrowStreamChannel())->GetSupportedFormats();
   if (!formats.ok()) {

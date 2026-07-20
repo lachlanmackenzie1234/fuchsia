@@ -5,24 +5,18 @@
 #include <fidl/fuchsia.hardware.audio/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.audio/cpp/natural_ostream.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/fdio/directory.h>
-#include <lib/fdio/fdio.h>
-#include <lib/fdio/unsafe.h>
-#include <lib/fit/defer.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <zircon/status.h>
+#include <zircon/assert.h>
 
 #include <deque>
 #include <filesystem>
 #include <sstream>
+#include <string>
+#include <system_error>
 #include <utility>
 
-#include <fbl/unique_fd.h>
-
-constexpr char kCodecClassDir[] = "/dev/class/codec";
+constexpr char kCodecServiceDir[] = "/svc/fuchsia.hardware.audio.CodecConnectorService";
 
 // LINT.IfChange
 constexpr char kUsageSummary[] = R"""(
@@ -44,16 +38,19 @@ Usage:
   audio-codec-ctl [-d|--device <device>] w[atch] <id>
   audio-codec-ctl [-d|--device <device>] set <id> [start|stop] [bypass] [gain <gain>]
     [vendor <hex> <hex> ...]
+  audio-codec-ctl list
   audio-codec-ctl [-h|--help]
 )""";
 
 constexpr char kUsageDetails[] = R"""(
-Audio hardware codec driver control on <device> (full path specified e.g. /dev/class/codec/123 or
-only the devfs node name specified e.g. 123) or unspecified (picks the first device in
-/dev/class/codec).
+Audio hardware codec driver control on <device> (full path specified, for example
+/svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector or only the service
+instance name specified, for example "default") or unspecified (picks the first device in
+/svc/fuchsia.hardware.audio.CodecConnectorService).
 
 Commands:
 
+  list                              : Lists all available codec devices.
   f[ormats]                         : Retrieves the DAI formats supported by the codec.
   i[nfo]                            : Retrieves textual information about the codec.
   c[apabilities_plug_detect]        : Retrieves Plug Detect Capabilities.
@@ -102,75 +99,75 @@ Examples:
 
   Retrieves the DAI formats supported:
   $ audio-codec-ctl f
-  Executing on device /dev/class/codec/209
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   [ fuchsia_hardware_audio::DaiSupportedFormats{ number_of_channels = [ 2, 4, ], sample_formats = [ fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned, ], frame_formats = [ fuchsia_hardware_audio::DaiFrameFormat::frame_format_standard(fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S), fuchsia_hardware_audio::DaiFrameFormat::frame_format_standard(fuchsia_hardware_audio::DaiFrameFormatStandard::k1tdm), ], frame_rates = [ 48000, 96000, ], bits_per_slot = [ 16, 32, ], bits_per_sample = [ 16, 32, ], }, ]
 
   Retrieves textual information:
   $ audio-codec-ctl i
-  Executing on device /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   fuchsia_hardware_audio::CodecInfo{ unique_id = "", manufacturer = "Texas Instruments", product_name = "TAS5825m", }
 
   Retrieves Plug Detect Capabilities:
   $ audio-codec-ctl c
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   fuchsia_hardware_audio::PlugDetectCapabilities::kHardwired
 
   Resets the codec:
   $ audio-codec-ctl r
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   Reset done
 
   Sets the DAI format to be used in the codec interface:
   $ audio-codec-ctl d 2 1 s i 48000 16 32
   Setting DAI format:
   fuchsia_hardware_audio::DaiFormat{ number_of_channels = 2, channels_to_use_bitmask = 1, sample_format = fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned, frame_format = fuchsia_hardware_audio::DaiFrameFormat::frame_format_standard(fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S), frame_rate = 48000, bits_per_slot = 16, bits_per_sample = 32, }
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 
   Start/Re-start the codec operation:
   $ audio-codec-ctl start
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   Start done
 
   Stops the codec operation:
   $ audio-codec-ctl stop
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   Stop done
 
   Get the plug detect state:
   $ audio-codec-ctl p
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   fuchsia_hardware_audio::PlugState{ plugged = true, plug_state_time = 1167863520, }
 
   Returns a vector of supported processing elements:
   $ audio-codec-ctl e
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   [ fuchsia_hardware_audio_signalprocessing::Element{ id = 1, type = fuchsia_hardware_audio_signalprocessing::ElementType::kGain, type_specific = fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::gain(fuchsia_hardware_audio_signalprocessing::Gain{ type = fuchsia_hardware_audio_signalprocessing::GainType::kDecibels, min_gain = -63.5, max_gain = 0, min_gain_step = 0.5, }), }, fuchsia_hardware_audio_signalprocessing::Element{ id = 2, type = fuchsia_hardware_audio_signalprocessing::ElementType::kMute, }, ]
 
   Returns a vector of supported topologies.
   $ audio-codec-ctl t
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   [ fuchsia_hardware_audio_signalprocessing::Topology{ id = 1, processing_elements_edge_pairs = [ fuchsia_hardware_audio_signalprocessing::EdgePair{ processing_element_id_from = 1, processing_element_id_to = 2, }, fuchsia_hardware_audio_signalprocessing::EdgePair{ processing_element_id_from = 2, processing_element_id_to = 3, }, ], }, ]
 
   Get a processing element state.
   $ audio-codec-ctl w 1
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   fuchsia_hardware_audio_signalprocessing::ElementState{ type_specific = fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::gain(fuchsia_hardware_audio_signalprocessing::GainElementState{ gain = 0, }), started = true, }
 
   Controls a processing element.
   $ audio-codec-ctl set 1 start gain 1.23 vendor 0x12 0x98
   Setting element state:
   fuchsia_hardware_audio_signalprocessing::SignalProcessingSetElementStateRequest{ processing_element_id = 1, state = fuchsia_hardware_audio_signalprocessing::ElementState{ type_specific = fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::gain(fuchsia_hardware_audio_signalprocessing::GainElementState{ gain = 1.23, }), started = true, vendor_specific_data = [ 18, 152, ], }, }
-  Executing on device: /dev/class/codec/706
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
 
   Specify device:
-  $ audio-codec-ctl -d 706 p
-  Executing on device: /dev/class/codec/706
+  $ audio-codec-ctl -d default p
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   fuchsia_hardware_audio::PlugState{ plugged = true, plug_state_time = 1167863520, }
-  $ audio-codec-ctl -d 123 p
-  Executing on device /dev/class/codec/123
-  watch plug state failed: FIDL operation failed due to peer closed, status: ZX_ERR_PEER_CLOSED (-24)
-  $ audio-codec-ctl -d /dev/class/codec/706 p
-  Executing on device: /dev/class/codec/706
+  $ audio-codec-ctl -d non-existent p
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/non-existent/codec_connector
+  could not connect to:/svc/fuchsia.hardware.audio.CodecConnectorService/non-existent/codec_connector status:ZX_ERR_NOT_FOUND
+  $ audio-codec-ctl -d /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector p
+  Executing on device: /svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector
   fuchsia_hardware_audio::PlugState{ plugged = true, plug_state_time = 1167863520, }
 )""";
 // LINT.ThenChange(//docs/reference/tools/hardware/audio-codec-ctl.md)
@@ -196,24 +193,35 @@ void ShowUsage(bool show_details) {
 }
 
 fidl::SyncClient<fuchsia_hardware_audio::Codec> GetCodecClient(std::string path) {
-  if (!path.size()) {
-    for (const auto& entry : std::filesystem::directory_iterator(kCodecClassDir)) {
-      path = entry.path().string();
-      break;
+  if (path.empty()) {
+    std::error_code ec;
+    if (std::filesystem::exists(kCodecServiceDir, ec)) {
+      for (std::filesystem::directory_iterator it(kCodecServiceDir, ec), end; it != end && !ec;
+           it.increment(ec)) {
+        path = it->path().string() + "/codec_connector";
+        break;
+      }
     }
+  } else if (path.find('/') == std::string::npos) {
+    path = std::string(kCodecServiceDir) + "/" + path + "/codec_connector";
   }
 
-  std::cout << "Executing on device " << path << std::endl;
+  if (path.empty()) {
+    std::cerr << "No device specified and none found in " << kCodecServiceDir << std::endl;
+    exit(-1);
+  }
+
+  std::cout << "Executing on device: " << path << std::endl;
   zx::result connector = component::Connect<fuchsia_hardware_audio::CodecConnector>(path);
   if (connector.is_error()) {
-    std::cerr << "could not connect to:" << path << " status:" << connector.status_string();
-    return {};
+    std::cerr << "could not connect to:" << path << " status:" << connector.status_string()
+              << std::endl;
+    exit(-1);
   }
 
   fidl::SyncClient connector_client(std::move(connector.value()));
   auto [local, remote] = fidl::Endpoints<fuchsia_hardware_audio::Codec>::Create();
-  auto connect_ret = connector_client->Connect(std::move(remote));
-  ZX_ASSERT(connect_ret.is_ok());
+  ZX_ASSERT(connector_client->Connect(std::move(remote)).is_ok());
   return fidl::SyncClient<fuchsia_hardware_audio::Codec>(std::move(local));
 }
 
@@ -221,8 +229,7 @@ fidl::SyncClient<fuchsia_hardware_audio_signalprocessing::SignalProcessing> GetS
     std::string path) {
   auto [local, remote] =
       fidl::Endpoints<fuchsia_hardware_audio_signalprocessing::SignalProcessing>::Create();
-  auto connect_ret = GetCodecClient(std::move(path))->SignalProcessingConnect(std::move(remote));
-  ZX_ASSERT(connect_ret.is_ok());
+  ZX_ASSERT(GetCodecClient(std::move(path))->SignalProcessingConnect(std::move(remote)).is_ok());
   return fidl::SyncClient<fuchsia_hardware_audio_signalprocessing::SignalProcessing>(
       std::move(local));
 }
@@ -246,14 +253,10 @@ int main(int argc, char** argv) {
       ShowUsage(false);
       return 0;
     }
-    // Allows using only the devfs node number, for instance "123" instead of
-    // "/dev/class/codec/123".
+    // Allows using only the service instance name, for instance "default" instead of
+    // "/svc/fuchsia.hardware.audio.CodecConnectorService/default/codec_connector".
     path = args.front();
     args.pop_front();
-    int id = -1;
-    if (sscanf(path.c_str(), "%u", &id) == 1) {
-      path = std::string(kCodecClassDir) + "/" + path;
-    }
   } else if (!args.front().compare(0, 2, "-h") || !args.front().compare(0, 3, "--h")) {
     ShowUsage(true);
     return 0;
@@ -264,9 +267,27 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  std::string_view cmd(args.front());
+  std::string cmd = std::move(args.front());
   args.pop_front();
   switch (cmd[0]) {
+    case 'l': {
+      std::error_code ec;
+      if (std::filesystem::exists(kCodecServiceDir, ec)) {
+        for (std::filesystem::directory_iterator it(kCodecServiceDir, ec), end; it != end && !ec;
+             it.increment(ec)) {
+          std::cout << it->path().filename().string() << std::endl;
+        }
+        if (ec) {
+          std::cerr << "Error listing devices: " << ec.message() << std::endl;
+          return -1;
+        }
+      } else if (ec) {
+        std::cerr << "Error checking device directory: " << ec.message() << std::endl;
+        return -1;
+      }
+      return 0;
+    }
+
     case 'f': {
       auto result = GetCodecClient(path)->GetDaiFormats();
       if (result.is_error()) {
