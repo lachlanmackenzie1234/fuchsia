@@ -8,7 +8,6 @@ mod mmio;
 pub mod x86;
 
 use core::marker::PhantomData;
-use core::ops::{Deref, DerefMut};
 
 pub use mmio::{Mmio, MmioBank, MmioPtr, Offset};
 
@@ -159,11 +158,6 @@ pub trait WriteHandle: IoHandle {
 /// `Register` represents a structured register layout, and its access
 /// interface and permissions. This is the core abstraction of the crate.
 ///
-/// One may convert a register instance into a [`Value`], which holds a
-/// prospective value for the register along with methods to actually write it
-/// back. This can be done via [`Register::read`] or [`Value::new`]. Values may
-/// also be directly written to the register via [`Register::write`].
-///
 /// If `Access` expresses unsafe-writability, then all write methods are marked
 /// as unsafe.
 #[derive(Clone, Copy, Debug)]
@@ -211,25 +205,9 @@ where
         self.io
     }
 
-    /// Constructs a particular value instance tied to this register.
-    pub fn into_value(self, value: Layout) -> Value<Layout, Access, Io> {
-        Value::new(self, value)
-    }
-
     /// Reads from the register, if the backend and register permit it.
     #[inline]
-    pub fn read(self) -> Value<Layout, Access, Io>
-    where
-        Access: Readable,
-        Io: ReadHandle,
-    {
-        let value: Layout = self.read_impl();
-        self.into_value(value)
-    }
-
-    // Read subroutine consolidating the safety justification of the access.
-    #[inline(always)]
-    fn read_impl(&self) -> Layout
+    pub fn read(&self) -> Layout
     where
         Access: Readable,
         Io: ReadHandle,
@@ -258,76 +236,6 @@ where
         // the case of unsafe-writability. Moreover, the caller attested to the
         // safeness/unsafeness of the write access in general.
         unsafe { self.io.write_raw(value.into()) }
-    }
-}
-
-/// Represents a prospective value for a given register, a "shadow" of sorts. It
-/// admits convenient write-back methods, and crucially the value is not
-/// actually committed until the caller calls `write()`.
-///
-/// Value implements [`core::ops::Deref`] and [`core::ops::DerefMut`] for access
-/// to the underlying value.
-#[derive(Clone, Copy, Debug)]
-pub struct Value<Layout, Access, Io>
-where
-    Io: IoHandle,
-    Layout: LayoutOver<<Io as IoHandle>::Base>,
-    Access: Accessible,
-{
-    value: Layout,
-    register: Register<Layout, Access, Io>,
-}
-
-impl<Layout, Access, Io> Value<Layout, Access, Io>
-where
-    Io: IoHandle,
-    Layout: LayoutOver<<Io as IoHandle>::Base>,
-    Access: Accessible,
-{
-    /// Returns a prospective value for the provided register.
-    pub const fn new(register: Register<Layout, Access, Io>, value: Layout) -> Self {
-        Self { value, register }
-    }
-
-    pub fn into_register(self) -> Register<Layout, Access, Io> {
-        self.register
-    }
-
-    pub const fn io(&self) -> &Io {
-        self.register.io()
-    }
-
-    pub fn into_io(self) -> Io {
-        self.register.into_io()
-    }
-
-    /// Returns the underlying value.
-    pub const fn get(&self) -> Layout {
-        self.value
-    }
-}
-
-impl<Layout, Access, Io> Deref for Value<Layout, Access, Io>
-where
-    Io: IoHandle,
-    Layout: LayoutOver<<Io as IoHandle>::Base>,
-    Access: Accessible,
-{
-    type Target = Layout;
-
-    fn deref(&self) -> &Layout {
-        &self.value
-    }
-}
-
-impl<Layout, Access, Io> DerefMut for Value<Layout, Access, Io>
-where
-    Io: IoHandle,
-    Layout: LayoutOver<<Io as IoHandle>::Base>,
-    Access: Accessible,
-{
-    fn deref_mut(&mut self) -> &mut Layout {
-        &mut self.value
     }
 }
 
@@ -381,8 +289,7 @@ macro_rules! impl_writable {
                 Io: ReadHandle,
                 ModifyFn: FnOnce(&mut Layout) -> Ret,
             {
-                let mut value = self.read_impl();
-
+                let mut value = self.read();
                 let ret = cb(&mut value);
 
                 // Safety: In the case of unsafe-writability, this method is
@@ -391,24 +298,6 @@ macro_rules! impl_writable {
                 #[allow(unused_unsafe)]
                 unsafe { self.write_impl(value) }
                 ret
-            }
-        }
-
-        impl<Layout, R, Io> Value<Layout, (R, $write_kind), Io>
-        where
-            Io: WriteHandle,
-            Layout: LayoutOver<<Io as IoHandle>::Base>,
-            (R, $write_kind): Writable,
-        {
-            /// Writes the underlying value back to the register.
-            $($(#[$safety_doc])*)?
-            #[inline]
-            pub $($unsafe)? fn write(&self) {
-                // Safety: In the case of unsafe-writability, this method is
-                // unsafe and the caller themselves must provide the
-                // justification.
-                #[allow(unused_unsafe)]
-                unsafe { self.register.write(self.value) }
             }
         }
     };

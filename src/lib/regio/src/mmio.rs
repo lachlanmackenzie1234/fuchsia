@@ -268,11 +268,11 @@ mod tests {
 
         const OFFSET0: Offset<u32, Ro> = Offset::new(0);
         let reg0 = unsafe { bank.at(OFFSET0) }; // Safety: within bounds
-        assert_eq!(*reg0.read(), 10);
+        assert_eq!(reg0.read(), 10);
 
         const OFFSET4: Offset<u32, Ro> = Offset::new(4);
         let reg4 = unsafe { bank.at(OFFSET4) }; // Safety: within bounds
-        assert_eq!(*reg4.read(), 20);
+        assert_eq!(reg4.read(), 20);
     }
 
     #[test]
@@ -327,23 +327,23 @@ mod tests {
 
         const OFFSET0: Offset<u32, RwSafe> = Offset::new(0);
         let reg0 = unsafe { bank.at(OFFSET0) }; // Within bounds
-        assert_eq!(*reg0.read(), 10);
+        assert_eq!(reg0.read(), 10);
         reg0.write(100u32);
-        assert_eq!(*reg0.read(), 100);
+        assert_eq!(reg0.read(), 100);
         assert_eq!(data[0], 100);
 
         const OFFSET4: Offset<u32, RwSafe> = Offset::new(4);
         let reg4 = unsafe { bank.at(OFFSET4) }; // Within bounds
-        assert_eq!(*reg4.read(), 20);
+        assert_eq!(reg4.read(), 20);
         reg4.write(200u32);
-        assert_eq!(*reg4.read(), 200);
+        assert_eq!(reg4.read(), 200);
         assert_eq!(data[1], 200);
 
         reg4.modify(|val| {
             assert_eq!(*val, 200);
             *val = 300;
         });
-        assert_eq!(*reg4.read(), 300);
+        assert_eq!(reg4.read(), 300);
         assert_eq!(data[1], 300);
     }
 
@@ -357,16 +357,16 @@ mod tests {
 
         const OFFSET0: Offset<u32, RwUnsafe> = Offset::new(0);
         let reg0 = unsafe { bank.at(OFFSET0) }; // Within bounds
-        assert_eq!(*reg0.read(), 10);
+        assert_eq!(reg0.read(), 10);
         unsafe { reg0.write(100u32) }; // Unsafe required: WAI!
-        assert_eq!(*reg0.read(), 100);
+        assert_eq!(reg0.read(), 100);
         assert_eq!(data[0], 100);
 
         const OFFSET4: Offset<u32, RwUnsafe> = Offset::new(4);
         let reg4 = unsafe { bank.at(OFFSET4) }; // Within bounds
-        assert_eq!(*reg4.read(), 20);
+        assert_eq!(reg4.read(), 20);
         unsafe { reg4.write(200u32) }; // Unsafe required: WAI!
-        assert_eq!(*reg4.read(), 200);
+        assert_eq!(reg4.read(), 200);
         assert_eq!(data[1], 200);
 
         // Unsafe required: WAI!
@@ -376,7 +376,7 @@ mod tests {
                 *val = 300;
             });
         }
-        assert_eq!(*reg4.read(), 300);
+        assert_eq!(reg4.read(), 300);
         assert_eq!(data[1], 300);
     }
 

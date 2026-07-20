@@ -21,14 +21,6 @@ Conventions:
   are usually documented in screaming snake case already, so this makes for a
   nice, readable coincidence.
 
-## `Value`
-
-- `Value` represents a prospective value for a register. It is a thin wrapper of
-  a layout value that retains its knowledge of the I/O backend, admitting
-  mirrored writeback methods when the access permissions and backend permit
-  them. Instances are returned by `Register::read()` and may also be minted via
-  `Register::into_value()`.
-
 ## MMIO
 
 The core MMIO types are `Offset`, `Mmio`, `MmioPtr`, and `MmioBank`. `Mmio` is
@@ -92,9 +84,8 @@ let uart = MmioBank::new(uart_base, BANK_SIZE);
 // Can access the MmioBank to get an Mmio.
 unsafe { uart.at(IE) }.write(0u32.into());  // Disable all interrupts.
 
-// Can construct a Value directly for write-back.
 let data = TransmitDataRegister::from(0).set_data(0xab);
-unsafe { uart.at(TXDATA) }.into_value(data).write();
+unsafe { uart.at(TXDATA) }.write(data);
 
 // Simple reads can fluidly chain from MmioPtr -> Mmio -> Layout.
 let _: u8 = unsafe { uart.at(RXDATA) }.read().data();
@@ -110,5 +101,5 @@ use regio::x86::Msr;
 
 const IA32_TIME_STAMP_COUNTER: Msr<0x10, u64, RwSafe> = Msr::new();
 
-println!("Current timestamp: {:#x}", IA32_TIME_STAMP_COUNTER.read().get());
+println!("Current timestamp: {:#x}", IA32_TIME_STAMP_COUNTER.read());
 ```
