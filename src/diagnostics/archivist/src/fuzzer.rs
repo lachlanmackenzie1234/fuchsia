@@ -24,16 +24,17 @@ fn convert_debuglog_to_log_message_fuzzer(record: RandomLogRecord) -> Option<Log
 impl<'a> Arbitrary<'a> for RandomLogRecord {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         let mut raw = zx::sys::zx_log_record_t::default();
-        raw.sequence = u64::arbitrary(u)?;
-        raw.datalen = std::cmp::min(u16::arbitrary(u)?, zx::sys::ZX_LOG_RECORD_DATA_MAX as u16);
-        raw.severity = u8::arbitrary(u)?;
-        raw.flags = u8::arbitrary(u)?;
-        raw.timestamp = i64::arbitrary(u)? as zx::sys::zx_instant_boot_t;
-        raw.pid = u64::arbitrary(u)?;
-        raw.tid = u64::arbitrary(u)?;
+        raw.header.sequence = u64::arbitrary(u)?;
+        raw.header.datalen =
+            std::cmp::min(u16::arbitrary(u)?, zx::sys::ZX_LOG_RECORD_DATA_MAX as u16);
+        raw.header.severity = u8::arbitrary(u)?;
+        raw.header.flags = u8::arbitrary(u)?;
+        raw.header.timestamp = i64::arbitrary(u)? as zx::sys::zx_instant_boot_t;
+        raw.header.pid = u64::arbitrary(u)?;
+        raw.header.tid = u64::arbitrary(u)?;
 
         // Fill the first datalen bytes of data.
-        let mut partial = &mut raw.data[0..raw.datalen as usize];
+        let mut partial = &mut raw.data[0..raw.header.datalen as usize];
         u.fill_buffer(&mut partial)?;
 
         Ok(RandomLogRecord(zx::DebugLogRecord::from_raw(&raw).unwrap()))

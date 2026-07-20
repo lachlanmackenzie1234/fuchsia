@@ -96,16 +96,16 @@ pub struct DebugLogRecord {
 impl DebugLogRecord {
     /// Convert a raw debuglog record into this typed wrapper.
     pub fn from_raw(raw: &sys::zx_log_record_t) -> Result<Self, Status> {
-        if raw.datalen <= sys::ZX_LOG_RECORD_DATA_MAX as u16 {
+        if raw.header.datalen <= sys::ZX_LOG_RECORD_DATA_MAX as u16 {
             Ok(Self {
-                timestamp: BootInstant::from_nanos(raw.timestamp),
-                sequence: raw.sequence,
-                severity: DebugLogSeverity::from_raw(raw.severity),
-                pid: Koid::from_raw(raw.pid),
-                tid: Koid::from_raw(raw.tid),
-                flags: raw.flags,
+                timestamp: BootInstant::from_nanos(raw.header.timestamp),
+                sequence: raw.header.sequence,
+                severity: DebugLogSeverity::from_raw(raw.header.severity),
+                pid: Koid::from_raw(raw.header.pid),
+                tid: Koid::from_raw(raw.header.tid),
+                flags: raw.header.flags,
                 data: raw.data,
-                datalen: raw.datalen,
+                datalen: raw.header.datalen,
             })
         } else {
             Err(Status::INTERNAL)

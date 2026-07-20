@@ -2527,39 +2527,43 @@ pub const DEBUGLOG_WARNING: u8 = 0x40;
 pub const DEBUGLOG_ERROR: u8 = 0x50;
 pub const DEBUGLOG_FATAL: u8 = 0x60;
 
-struct_decl_macro! {
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable)]
-    pub struct <zx_log_record_t> {
-        pub sequence: u64,
-        padding1: [PadByte; 4],
-        pub datalen: u16,
-        pub severity: u8,
-        pub flags: u8,
-        pub timestamp: zx_instant_boot_t,
-        pub pid: u64,
-        pub tid: u64,
-        pub data: [u8; ZX_LOG_RECORD_DATA_MAX],
-    }
+#[repr(C)]
+#[derive(
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+)]
+pub struct zx_log_record_header_t {
+    pub sequence: u64,
+    padding1: [PadByte; 4],
+    pub datalen: u16,
+    pub severity: u8,
+    pub flags: u8,
+    pub timestamp: zx_instant_boot_t,
+    pub pid: u64,
+    pub tid: u64,
 }
+
+#[repr(C)]
+#[derive(
+    Debug, Copy, Clone, Eq, PartialEq, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable,
+)]
+pub struct zx_log_record_t {
+    pub header: zx_log_record_header_t,
+    pub data: [u8; ZX_LOG_RECORD_DATA_MAX],
+}
+
 const_assert_eq!(core::mem::size_of::<zx_log_record_t>(), ZX_LOG_RECORD_MAX);
 
-zx_log_record_t!(zx_log_record_t);
-
 impl Default for zx_log_record_t {
-    fn default() -> zx_log_record_t {
-        zx_log_record_t {
-            sequence: 0,
-            padding1: Default::default(),
-            datalen: 0,
-            severity: 0,
-            flags: 0,
-            timestamp: 0,
-            pid: 0,
-            tid: 0,
-            data: [0; ZX_LOG_RECORD_DATA_MAX],
-        }
+    fn default() -> Self {
+        Self { header: zx_log_record_header_t::default(), data: [0; ZX_LOG_RECORD_DATA_MAX] }
     }
 }
 

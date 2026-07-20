@@ -494,14 +494,14 @@ impl TestDebugEntry {
         static NEXT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let mut rec = zx::sys::zx_log_record_t::default();
         let len = rec.data.len().min(log_data.len());
-        rec.sequence = NEXT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        rec.datalen = len as u16;
-        rec.flags = TEST_KLOG_FLAGS;
-        rec.timestamp = TEST_KLOG_TIMESTAMP;
-        rec.pid = TEST_KLOG_PID;
-        rec.tid = TEST_KLOG_TID;
+        rec.header.sequence = NEXT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        rec.header.datalen = len as u16;
+        rec.header.flags = TEST_KLOG_FLAGS;
+        rec.header.timestamp = TEST_KLOG_TIMESTAMP;
+        rec.header.pid = TEST_KLOG_PID;
+        rec.header.tid = TEST_KLOG_TID;
         rec.data[..len].copy_from_slice(&log_data[..len]);
-        rec.severity = 0x30 /* info */;
+        rec.header.severity = 0x30 /* info */;
         TestDebugEntry { record: zx::DebugLogRecord::from_raw(&rec).unwrap() }
     }
 
