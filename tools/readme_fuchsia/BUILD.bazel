@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/host_tests:host_go_test.bzl", "host_go_test")
-load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -19,6 +19,7 @@ go_library(
         "validate.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/readme_fuchsia",
+    target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
 )
 
@@ -26,15 +27,17 @@ go_library(
     name = "main",
     srcs = ["cmd/main.go"],
     importpath = "go.fuchsia.dev/fuchsia/tools/readme_fuchsia/cmd",
+    target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         ":readme_fuchsia_lib",
     ],
 )
 
-go_binary(
-    name = "readme_fuchsia",
+# @bazel2gn:skip
+go_binary_host_tool(
+    name = "readme_fuchsia_bin",
     embed = [":main"],
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_CONSTRAINTS,
 )
 
 host_go_test(
@@ -46,6 +49,7 @@ host_go_test(
         "validate_test.go",
     ],
     embed = [":readme_fuchsia_lib"],
+    target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
 )
 
@@ -53,17 +57,15 @@ host_go_test(
     name = "main_test",
     srcs = ["cmd/main_test.go"],
     embed = [":main"],
+    target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
 )
 
-stamp_group(
+test_suite(
     name = "tests",
-    testonly = True,
-    stamp = "build.stamp",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
-    deps = [
+    tests = [
         ":main_test",
         ":readme_fuchsia_test",
     ],
+    visibility = ["//visibility:public"],
 )
