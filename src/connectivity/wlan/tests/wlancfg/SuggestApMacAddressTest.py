@@ -10,10 +10,7 @@ import fidl_fuchsia_wlan_device_service as fidl_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fidl_fuchsia_wlan_product_deprecatedconfiguration as fidl_deprecatedconfiguration
 import fuchsia_wlan_base_test
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    MacAddress,
-    OperatingBand,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals, test_runner
 from mobly.asserts import fail
@@ -68,7 +65,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.NONE,
             None,
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-            OperatingBand.ANY,
+            f_wlan_policy.OperatingBand.ANY,
         )
         initial_mac_addr = await self._get_ap_mac_address()
 
@@ -95,7 +92,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.NONE,
             None,
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-            OperatingBand.ANY,
+            f_wlan_policy.OperatingBand.ANY,
         )
 
         set_mac_addr = await self._get_ap_mac_address()
@@ -119,7 +116,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.NONE,
             None,
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-            OperatingBand.ANY,
+            f_wlan_policy.OperatingBand.ANY,
         )
 
         set_mac_addr = await self._get_ap_mac_address()

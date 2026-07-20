@@ -7,10 +7,7 @@ import abc
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from honeydew.affordances import affordance
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    AccessPointState,
-    OperatingBand,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import AccessPointState
 
 
 class AsyncWlanPolicyAp(abc.ABC):
@@ -23,7 +20,7 @@ class AsyncWlanPolicyAp(abc.ABC):
         security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: f_wlan_policy.ConnectivityMode,
-        band: OperatingBand,
+        band: f_wlan_policy.OperatingBand,
     ) -> None:
         """Start an access point.
 
@@ -118,7 +115,7 @@ class WlanPolicyAp(affordance.Affordance):
         security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: f_wlan_policy.ConnectivityMode,
-        band: OperatingBand,
+        band: f_wlan_policy.OperatingBand,
     ) -> None:
         """Start an access point.
 

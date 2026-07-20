@@ -16,8 +16,6 @@ from honeydew.affordances.connectivity.netstack.types import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
     NetworkIdentifier,
-    OperatingBand,
-    OperatingState,
 )
 from mobly import asserts, test_runner
 
@@ -80,15 +78,15 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.NONE,
             None,
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-            OperatingBand.ONLY_2_4GHZ,
+            f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
         )
         asserts.assert_equal(
             await self.dut.wlan_policy_ap.get_update(),
             [
                 AccessPointState(
-                    state=OperatingState.STARTING,
+                    state=f_wlan_policy.OperatingState.STARTING,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-                    band=OperatingBand.ONLY_2_4GHZ,
+                    band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
                     frequency=None,
                     clients=None,
                     id_=NetworkIdentifier(
@@ -102,9 +100,9 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             await self.dut.wlan_policy_ap.get_update(),
             [
                 AccessPointState(
-                    state=OperatingState.ACTIVE,
+                    state=f_wlan_policy.OperatingState.ACTIVE,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-                    band=OperatingBand.ONLY_2_4GHZ,
+                    band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
                     frequency=None,
                     clients=None,
                     id_=NetworkIdentifier(
@@ -121,9 +119,9 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             got_states,
             [
                 AccessPointState(
-                    state=OperatingState.ACTIVE,
+                    state=f_wlan_policy.OperatingState.ACTIVE,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-                    band=OperatingBand.ONLY_2_4GHZ,
+                    band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
                     frequency=got_states[0].frequency,
                     clients=f_wlan_policy.ConnectedClientInformation(count=0),
                     id_=NetworkIdentifier(
@@ -141,9 +139,9 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             got_states,
             [
                 AccessPointState(
-                    state=OperatingState.ACTIVE,
+                    state=f_wlan_policy.OperatingState.ACTIVE,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-                    band=OperatingBand.ONLY_2_4GHZ,
+                    band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
                     frequency=got_states[0].frequency,
                     clients=f_wlan_policy.ConnectedClientInformation(count=0),
                     id_=NetworkIdentifier(

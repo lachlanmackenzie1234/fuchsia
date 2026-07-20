@@ -10,10 +10,7 @@ import fidl_fuchsia_location_namedplace as f_location_namedplace
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    CountryCode,
-    OperatingBand,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, signals, test_runner
 
@@ -57,7 +54,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 f_wlan_policy.SecurityType.NONE,
                 None,
                 f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-                OperatingBand.ANY,
+                f_wlan_policy.OperatingBand.ANY,
             )
             await self.dut.wlan_policy_ap.stop_all()
         except wlan_errors.HoneydewWlanError:
@@ -124,7 +121,7 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 f_wlan_policy.SecurityType.NONE,
                 None,
                 f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-                OperatingBand.ANY,
+                f_wlan_policy.OperatingBand.ANY,
             )
 
         # Change the country code while interfaces are up.

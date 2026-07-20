@@ -489,56 +489,6 @@ class CountryCode(enum.StrEnum):
         return cls(code_str)
 
 
-class OperatingBand(enum.IntEnum):
-    """Operating band for wlan control request and status updates."""
-
-    ANY = 1
-    """Allows for band switching depending on device operating mode and
-    environment."""
-
-    ONLY_2_4GHZ = 2
-    """Restricted to 2.4 GHz bands only."""
-
-    ONLY_5GHZ = 3
-    """Restricted to 5 GHz bands only."""
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_policy.OperatingBand,
-    ) -> "OperatingBand":
-        """Parse from a fuchsia.wlan.policy/OperatingBand."""
-        return OperatingBand(fidl)
-
-    def to_fidl(self) -> f_wlan_policy.OperatingBand:
-        """Convert to equivalent FIDL."""
-        return f_wlan_policy.OperatingBand(self.value)
-
-
-class OperatingState(enum.IntEnum):
-    """Current detailed operating state for an access point."""
-
-    FAILED = 1
-    """Access point operation failed.
-
-    Access points that enter the failed state will have one update informing
-    registered listeners of the failure and then an additional update with the
-    access point removed from the list.
-    """
-
-    STARTING = 2
-    """Access point operation is starting up."""
-
-    ACTIVE = 3
-    """Access point operation is active."""
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_policy.OperatingState,
-    ) -> "OperatingState":
-        """Parse from a fuchsia.wlan.policy/OperatingState."""
-        return OperatingState(fidl)
-
-
 @dataclass(frozen=True)
 class AccessPointState:
     """Information about the individual operating access points.
@@ -546,13 +496,13 @@ class AccessPointState:
     This includes limited information about any connected clients.
     """
 
-    state: OperatingState
+    state: f_wlan_policy.OperatingState
     """Current access point operating state."""
 
     mode: f_wlan_policy.ConnectivityMode
     """Requested operating connectivity mode."""
 
-    band: OperatingBand
+    band: f_wlan_policy.OperatingBand
     """Access point operating band."""
 
     frequency: int | None
@@ -575,13 +525,9 @@ class AccessPointState:
         assert fidl.id_ is not None, f"{fidl!r} missing id"
 
         return AccessPointState(
-            state=OperatingState.from_fidl(
-                f_wlan_policy.OperatingState(fidl.state)
-            ),
+            state=f_wlan_policy.OperatingState(fidl.state),
             mode=f_wlan_policy.ConnectivityMode(fidl.mode),
-            band=OperatingBand.from_fidl(
-                f_wlan_policy.OperatingBand(fidl.band)
-            ),
+            band=f_wlan_policy.OperatingBand(fidl.band),
             frequency=fidl.frequency,
             clients=fidl.clients,
             id_=NetworkIdentifier.from_fidl(fidl.id_),

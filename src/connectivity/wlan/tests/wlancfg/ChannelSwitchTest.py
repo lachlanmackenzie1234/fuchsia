@@ -24,7 +24,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
     CountryCode,
-    OperatingBand,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -447,7 +446,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.NONE,
             None,
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-            OperatingBand.ANY,
+            f_wlan_policy.OperatingBand.ANY,
         )
         self.log.info(f"SoftAp network ({ssid}) is up.")
 

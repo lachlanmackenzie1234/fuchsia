@@ -29,7 +29,6 @@ from antlion.test_utils.abstract_devices.wlan_device import (
     create_wlan_device,
 )
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
-from honeydew.affordances.connectivity.wlan.utils.types import OperatingBand
 from libs.ssh import settings
 from libs.ssh.connection import SshConnection
 from mobly import asserts, signals, test_runner
@@ -78,7 +77,7 @@ class TestParams:
     test_type: TestType
     security_type: SecurityMode
     connectivity_mode: f_wlan_policy.ConnectivityMode
-    operating_band: OperatingBand
+    operating_band: f_wlan_policy.OperatingBand
     ssid: str
     password: str
     iterations: int
@@ -154,14 +153,14 @@ class SoftAPParams:
     security_type: SecurityMode
     password: str | None
     connectivity_mode: f_wlan_policy.ConnectivityMode
-    operating_band: OperatingBand
+    operating_band: f_wlan_policy.OperatingBand
 
     def __str__(self) -> str:
-        if self.operating_band == OperatingBand.ANY:
+        if self.operating_band == f_wlan_policy.OperatingBand.ANY:
             band = "any"
-        elif self.operating_band == OperatingBand.ONLY_2_4GHZ:
+        elif self.operating_band == f_wlan_policy.OperatingBand.ONLY_2_4_GHZ:
             band = "2g"
-        elif self.operating_band == OperatingBand.ONLY_5GHZ:
+        elif self.operating_band == f_wlan_policy.OperatingBand.ONLY_5_GHZ:
             band = "5g"
         else:
             raise TypeError(f'Unknown OperatingBand "{self.operating_band}"')
@@ -193,7 +192,10 @@ class SoftAPParams:
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY.name,
         )
         operating_band = get_typed(
-            d, "operating_band", str, str(OperatingBand.ONLY_2_4GHZ)
+            d,
+            "operating_band",
+            str,
+            f_wlan_policy.OperatingBand.ONLY_2_4_GHZ.name,
         )
 
         return SoftAPParams(
@@ -206,7 +208,7 @@ class SoftAPParams:
             security_type=security_mode,
             password=password,
             connectivity_mode=f_wlan_policy.ConnectivityMode[connectivity_mode],
-            operating_band=OperatingBand[operating_band],
+            operating_band=f_wlan_policy.OperatingBand[operating_band],
         )
 
 
@@ -323,7 +325,9 @@ class SoftApTest(base_test.WifiBaseTest):
     def generate_soft_ap_tests(self) -> None:
         tests: list[SoftAPParams] = []
 
-        for operating_band in OperatingBand:
+        for operating_band in f_wlan_policy.OperatingBand:
+            if operating_band == f_wlan_policy.OperatingBand.EMPTY__:
+                continue
             for security_mode in [
                 SecurityMode.OPEN,
                 SecurityMode.WEP,

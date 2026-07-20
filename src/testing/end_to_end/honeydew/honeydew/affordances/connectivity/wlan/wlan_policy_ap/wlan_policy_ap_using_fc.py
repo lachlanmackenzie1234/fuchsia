@@ -20,7 +20,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
     Credential,
     NetworkConfig,
-    OperatingBand,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import wlan_policy_ap
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -216,7 +215,7 @@ class AsyncWlanPolicyApUsingFc(
         security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: f_wlan_policy.ConnectivityMode,
-        band: OperatingBand,
+        band: f_wlan_policy.OperatingBand,
     ) -> None:
         """Start an access point.
 
@@ -241,7 +240,7 @@ class AsyncWlanPolicyApUsingFc(
                     ssid, security, cred.type(), cred.value()
                 ).to_fidl(),
                 mode=mode,
-                band=band.to_fidl(),
+                band=band,
             )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
@@ -432,7 +431,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp):
         security: f_wlan_policy.SecurityType,
         password: str | None,
         mode: f_wlan_policy.ConnectivityMode,
-        band: OperatingBand,
+        band: f_wlan_policy.OperatingBand,
     ) -> None:
         """Start an access point.
 

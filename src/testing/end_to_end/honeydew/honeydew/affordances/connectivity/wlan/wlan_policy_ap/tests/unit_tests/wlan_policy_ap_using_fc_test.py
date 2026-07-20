@@ -21,8 +21,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
     NetworkIdentifier,
-    OperatingBand,
-    OperatingState,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
     wlan_policy_ap_using_fc,
@@ -37,9 +35,9 @@ _TEST_SSID = "ThepromisedLAN"
 _TEST_SSID_BYTES = list(str.encode(_TEST_SSID))
 
 _ACCESS_POINT_STATE = AccessPointState(
-    state=OperatingState.STARTING,
+    state=f_wlan_policy.OperatingState.STARTING,
     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-    band=OperatingBand.ONLY_2_4GHZ,
+    band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
     frequency=None,
     clients=None,
     id_=NetworkIdentifier(
@@ -236,7 +234,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
             f_wlan_policy.SecurityType.NONE,
             None,
             f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-            OperatingBand.ANY,
+            f_wlan_policy.OperatingBand.ANY,
         )
 
     async def test_start_fails(self) -> None:
@@ -251,7 +249,7 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
                 f_wlan_policy.SecurityType.NONE,
                 None,
                 f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-                OperatingBand.ANY,
+                f_wlan_policy.OperatingBand.ANY,
             )
 
     async def test_stop(self) -> None:
