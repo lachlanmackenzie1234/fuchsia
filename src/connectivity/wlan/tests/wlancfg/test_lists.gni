@@ -12,8 +12,8 @@
 # in the tree. Therefore, we need to be extremely conservative with
 # the tests we choose to run here, ensuring they give us sufficient
 # signal for the amount of testbed load they'll require.
-# Consider instead putting your test in `tests_for_wlan_cq`
-wlancfg_tests_for_general_cq = [
+# Consider instead putting your test in `tests_for_wlan_presubmit`
+wlancfg_tests_for_presubmit = [
   "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
   "//src/connectivity/wlan/tests/wlancfg:suggest_ap_mac_address_test",
 ]
@@ -22,13 +22,13 @@ wlancfg_tests_for_general_cq = [
 # without a shield box. These tests can run against any DUT in
 # the infra pool of devices, which are much less capacity-limited
 # than the WLAN-specific shielded testbeds.
-wlancfg_tests_for_general_cq_no_shield_box = []
+wlancfg_tests_for_presubmit_no_shield_box = []
 
 # These tests run in blocking CI (~once per hour) as well as a blocking
 # tryjob on any CL with "wlan" in a file path. Tests which exercise WLAN
 # code that changes frequently or tests that provide broad WLAN code coverage
 # should go here, but most tests should likely go into `tests_for_postsubmit`.
-wlancfg_tests_for_wlan_cq = [
+wlancfg_tests_for_wlan_presubmit = [
   # Though this test is defined in honeydew, it exercises wlancfg
   "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/functional_tests",
 ]

@@ -154,28 +154,28 @@ group("tests_host") {
   public_deps = [
     ":tests_for_fyi",
     ":tests_for_fyi_long",
-    ":tests_for_general_cq",
-    ":tests_for_general_cq_no_shield_box",
     ":tests_for_postsubmit",
+    ":tests_for_presubmit",
+    ":tests_for_presubmit_no_shield_box",
     ":tests_for_release_testing",
-    ":tests_for_wlan_cq",
+    ":tests_for_wlan_presubmit",
   ]
 }
 
-group("tests_for_general_cq") {
+group("tests_for_presubmit") {
   testonly = true
-  public_deps = wlancfg_tests_for_general_cq  # Edit in test_lists.gni
+  public_deps = wlancfg_tests_for_presubmit  # Edit in test_lists.gni
 }
 
-group("tests_for_general_cq_no_shield_box") {
+group("tests_for_presubmit_no_shield_box") {
   testonly = true
   public_deps =
-      wlancfg_tests_for_general_cq_no_shield_box  # Edit in test_lists.gni
+      wlancfg_tests_for_presubmit_no_shield_box  # Edit in test_lists.gni
 }
 
-group("tests_for_wlan_cq") {
+group("tests_for_wlan_presubmit") {
   testonly = true
-  public_deps = wlancfg_tests_for_wlan_cq  # Edit in test_lists.gni
+  public_deps = wlancfg_tests_for_wlan_presubmit  # Edit in test_lists.gni
 }
 
 group("tests_for_postsubmit") {
