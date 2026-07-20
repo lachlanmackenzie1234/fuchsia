@@ -72,8 +72,6 @@
 //! * `LTRACEF(x...)` -> [`ltracef!`]
 //! * `LTRACEF_LEVEL(lvl, x...)` -> [`ltracef_level!`]
 
-#![cfg_attr(not(test), no_std)]
-
 #[doc(hidden)]
 pub struct KernelConsoleWriter;
 
@@ -168,10 +166,10 @@ pub fn print_trace_obj_named<T: ?Sized>(name: &str, obj: &T, action: &str) {
 #[macro_export]
 macro_rules! trace_entry {
     () => {
-        $crate::print_trace_action(core::module_path!(), core::line!(), "entry")
+        $crate::ltrace::print_trace_action(core::module_path!(), core::line!(), "entry")
     };
     ($name:expr) => {
-        $crate::print_trace_action_named($name, "entry")
+        $crate::ltrace::print_trace_action_named($name, "entry")
     };
 }
 
@@ -181,10 +179,10 @@ macro_rules! trace_entry {
 #[macro_export]
 macro_rules! trace_exit {
     () => {
-        $crate::print_trace_action(core::module_path!(), core::line!(), "exit")
+        $crate::ltrace::print_trace_action(core::module_path!(), core::line!(), "exit")
     };
     ($name:expr) => {
-        $crate::print_trace_action_named($name, "exit")
+        $crate::ltrace::print_trace_action_named($name, "exit")
     };
 }
 
@@ -200,10 +198,10 @@ macro_rules! trace_exit {
 #[macro_export]
 macro_rules! trace_entry_obj {
     ($obj:expr) => {
-        $crate::print_trace_obj(core::module_path!(), core::line!(), $obj, "entry obj")
+        $crate::ltrace::print_trace_obj(core::module_path!(), core::line!(), $obj, "entry obj")
     };
     ($name:expr, $obj:expr) => {
-        $crate::print_trace_obj_named($name, $obj, "entry obj")
+        $crate::ltrace::print_trace_obj_named($name, $obj, "entry obj")
     };
 }
 
@@ -213,10 +211,10 @@ macro_rules! trace_entry_obj {
 #[macro_export]
 macro_rules! trace_exit_obj {
     ($obj:expr) => {
-        $crate::print_trace_obj(core::module_path!(), core::line!(), $obj, "exit obj")
+        $crate::ltrace::print_trace_obj(core::module_path!(), core::line!(), $obj, "exit obj")
     };
     ($name:expr, $obj:expr) => {
-        $crate::print_trace_obj_named($name, $obj, "exit obj")
+        $crate::ltrace::print_trace_obj_named($name, $obj, "exit obj")
     };
 }
 
@@ -226,7 +224,7 @@ macro_rules! trace_exit_obj {
 #[macro_export]
 macro_rules! trace {
     () => {
-        $crate::print_trace_location(core::module_path!(), core::line!())
+        $crate::ltrace::print_trace_location(core::module_path!(), core::line!())
     };
 }
 
@@ -241,7 +239,7 @@ macro_rules! trace {
 #[macro_export]
 macro_rules! tracef {
     ($($arg:tt)*) => {
-        $crate::print_trace_args(core::module_path!(), core::line!(), core::format_args!($($arg)*))
+        $crate::ltrace::print_trace_args(core::module_path!(), core::line!(), core::format_args!($($arg)*))
     };
 }
 

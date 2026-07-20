@@ -7,7 +7,7 @@
 // code is not actually used by the kernel.
 
 use counters_rs as _;
+use debug as _;
 use ksync as _;
-use ltrace as _;
 use platform_rs as _;
 use vm as _;
