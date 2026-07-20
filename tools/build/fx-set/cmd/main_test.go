@@ -225,7 +225,7 @@ func TestParseArgsAndEnv(t *testing.T) {
 			expected: setArgs{
 				product:       "core",
 				board:         "x64",
-				includeClippy: true,
+				includeClippy: false,
 				buildDir:      "out/core.x64-profile-kasan-ubsan-balanced",
 				variants:      []string{"profile", "kasan", "ubsan"},
 			},
@@ -236,10 +236,21 @@ func TestParseArgsAndEnv(t *testing.T) {
 			expected: setArgs{
 				product:         "core",
 				board:           "x64",
-				includeClippy:   true,
+				includeClippy:   false,
 				compilationMode: "release",
 				buildDir:        "out/core.x64-foo-release",
 				variants:        []string{"foo"},
+			},
+		},
+		{
+			name: "variants with explicit include-clippy",
+			args: []string{"core.x64", "--variant", "kasan", "--include-clippy=true"},
+			expected: setArgs{
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				buildDir:      "out/core.x64-kasan-balanced",
+				variants:      []string{"kasan"},
 			},
 		},
 		{

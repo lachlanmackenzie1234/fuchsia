@@ -461,6 +461,14 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 	}
 	message := "The build directory for this build is " + cmd.buildDir + "\n"
 
+	// TODO(https://fxbug.dev/396658029): Clippy actually does not play nicely
+	// with variants at the moment; defaulting to true in that case results in
+	// `gen` error.
+	if !flagSet.Changed("include-clippy") && len(cmd.variants) > 0 {
+		message += "Warning: auto-disabling Clippy due to variant selection (see https://fxbug.dev/396658029)\n"
+		cmd.includeClippy = false
+	}
+
 	hostname, _ := os.Hostname()
 	isVirtual := strings.HasSuffix(hostname, "c.googlers.com")
 	isCorp := strings.HasSuffix(hostname, ".corp.google.com")
