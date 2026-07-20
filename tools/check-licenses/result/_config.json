@@ -236,7 +236,6 @@
           "prebuilt/starnix/fuse-overlayfs-amd64/LICENSE": true,
           "prebuilt/third_party/dart/linux-x64/bin/resources/devtools/assets/NOTICES": true,
           "prebuilt/third_party/llvm/linux-x64/include/llvm/Support/LICENSE.TXT": true,
-          "third_party/github.com/google/emboss/src/license_header": true,
           "prebuilt/third_party/cmake/linux-x64/doc/cmake-3.25/cmlibarchive/COPYING": true,
           "prebuilt/third_party/cmake/linux-x64/doc/cmake-3.25/cmlibrhash/COPYING": true,
           "third_party/openssh-portable/CREDITS": true,
