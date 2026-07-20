@@ -15,7 +15,6 @@ from honeydew.affordances.connectivity.netstack.types import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
-    ConnectedClientInformation,
     NetworkIdentifier,
     OperatingBand,
     OperatingState,
@@ -126,7 +125,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                     band=OperatingBand.ONLY_2_4GHZ,
                     frequency=got_states[0].frequency,
-                    clients=ConnectedClientInformation(count=0),
+                    clients=f_wlan_policy.ConnectedClientInformation(count=0),
                     id_=NetworkIdentifier(
                         ssid=test_ssid,
                         security_type=f_wlan_policy.SecurityType.NONE,
@@ -146,7 +145,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                     band=OperatingBand.ONLY_2_4GHZ,
                     frequency=got_states[0].frequency,
-                    clients=ConnectedClientInformation(count=0),
+                    clients=f_wlan_policy.ConnectedClientInformation(count=0),
                     id_=NetworkIdentifier(
                         ssid=test_ssid,
                         security_type=f_wlan_policy.SecurityType.NONE,

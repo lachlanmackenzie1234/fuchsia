@@ -558,7 +558,7 @@ class AccessPointState:
     frequency: int | None
     """Access point operating frequency (in MHz)."""
 
-    clients: ConnectedClientInformation | None
+    clients: f_wlan_policy.ConnectedClientInformation | None
     """Information about connected clients."""
 
     id_: NetworkIdentifier
@@ -583,29 +583,6 @@ class AccessPointState:
                 f_wlan_policy.OperatingBand(fidl.band)
             ),
             frequency=fidl.frequency,
-            clients=(
-                ConnectedClientInformation.from_fidl(fidl.clients)
-                if fidl.clients
-                else None
-            ),
+            clients=fidl.clients,
             id_=NetworkIdentifier.from_fidl(fidl.id_),
         )
-
-
-@dataclass(frozen=True)
-class ConnectedClientInformation:
-    """Connected client information.
-
-    This is initially limited to the number of connected clients.
-    """
-
-    count: int
-    """Number of connected clients."""
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_policy.ConnectedClientInformation,
-    ) -> "ConnectedClientInformation":
-        """Parse from a fuchsia.wlan.policy/ConnectedClientInformation."""
-        assert fidl.count is not None, f"{fidl!r} missing count"
-        return ConnectedClientInformation(count=fidl.count)
