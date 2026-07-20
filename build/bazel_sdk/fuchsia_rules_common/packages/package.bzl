@@ -374,12 +374,17 @@ def common_build_fuchsia_package_impl(
     ] + build_inputs
 
     # Sanity check that we are not trying to put 2 different resources at the same mountpoint
-    collected_blobs = {}
+    resource_dest_to_srcs = {}
     for resource in package_resources:
-        if resource.dest in collected_blobs and resource.src.path != collected_blobs[resource.dest]:
-            fail("Trying to add multiple resources with the same filename and different content", resource)
-        else:
-            collected_blobs[resource.dest] = resource.src.path
+        resource_dest_to_srcs.setdefault(resource.dest, []).append(resource)
+    for dest, srcs in resource_dest_to_srcs.items():
+        if len(srcs) > 1:
+            fail(
+                "Multiple files are being installed into the package at {}:\n - {}".format(
+                    dest,
+                    "\n - ".join(srcs),
+                ),
+            )
 
     return [
         DefaultInfo(files = depset(output_files), executable = stub_executable(ctx)),
