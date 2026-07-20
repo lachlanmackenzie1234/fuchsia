@@ -733,3 +733,8 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/simdutf/simdutf
 	name = third_party/github.com/simdutf/simdutf
 	ignore = all
+[submodule "third_party/github.com/google/experimental-emboss-rust/src"]
+	path = third_party/github.com/google/experimental-emboss-rust/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/google/emboss
+	name = third_party/github.com/google/experimental-emboss-rust
+	ignore = all
