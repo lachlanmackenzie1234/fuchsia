@@ -177,7 +177,8 @@ impl MagmaSystemConnection {
                 let duplicate_vmo = vmo
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .map_err(|_| MagmaStatus::InternalError)?;
-                let msd_buffer = self.owner.driver().import_buffer(duplicate_vmo, client_id)?;
+                let msd_buffer =
+                    self.msd_connection.import_buffer(duplicate_vmo, client_id, flags)?;
 
                 let buffer = MagmaSystemBuffer::new(vmo, msd_buffer);
 
@@ -1054,6 +1055,14 @@ mod tests {
                 Ok(())
             }
             fn release_buffer(&self, _buffer: &dyn traits::Buffer, _shutting_down: bool) {}
+            fn import_buffer(
+                &self,
+                _vmo: zx::Vmo,
+                _client_id: u64,
+                _flags: u64,
+            ) -> Result<Box<dyn traits::Buffer>, MagmaStatus> {
+                Err(MagmaStatus::InternalError)
+            }
         }
 
         impl Drop for TestConnection {

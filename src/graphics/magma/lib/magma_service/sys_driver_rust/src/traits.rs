@@ -11,7 +11,6 @@ use zx;
 // with. The implementation of this struct is driver-specific.
 pub trait Driver: Send + Sync {
     fn configure(&self, flags: u32);
-    fn import_buffer(&self, vmo: zx::Vmo, client_id: u64) -> Result<Box<dyn Buffer>, MagmaStatus>;
     fn import_semaphore(
         &self,
         handle: zx::NullableHandle,
@@ -98,6 +97,12 @@ pub trait Connection {
     ) -> Result<(), MagmaStatus>;
     fn dump_performance_counters(&self, pool_id: u64, trigger_id: u32) -> Result<(), MagmaStatus>;
     fn clear_performance_counters(&self, counters: Vec<u64>) -> Result<(), MagmaStatus>;
+    fn import_buffer(
+        &self,
+        vmo: zx::Vmo,
+        client_id: u64,
+        flags: u64,
+    ) -> Result<Box<dyn Buffer>, MagmaStatus>;
 }
 
 // This represents a single hardware context that may execute commands.

@@ -25,3 +25,4 @@ will be passed to the device thread.
 Here are known differences between the two libraries:
 - In rust the connection is created on the connection thread, where in C++ it is created
   on the device thread.
+- In rust import_buffer is on the Connection to support connection specific buffers.

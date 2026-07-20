@@ -11,14 +11,6 @@ pub struct MockDriver;
 impl traits::Driver for MockDriver {
     fn configure(&self, _flags: u32) {}
 
-    fn import_buffer(
-        &self,
-        vmo: zx::Vmo,
-        _client_id: u64,
-    ) -> Result<Box<dyn traits::Buffer>, MagmaStatus> {
-        Ok(Box::new(MockBuffer { vmo }))
-    }
-
     fn import_semaphore(
         &self,
         _handle: zx::NullableHandle,
@@ -113,6 +105,14 @@ impl traits::Connection for MockConnection {
         Ok(())
     }
     fn release_buffer(&self, _buffer: &dyn traits::Buffer, _shutting_down: bool) {}
+    fn import_buffer(
+        &self,
+        vmo: zx::Vmo,
+        _client_id: u64,
+        _flags: u64,
+    ) -> Result<Box<dyn traits::Buffer>, MagmaStatus> {
+        Ok(Box::new(MockBuffer { vmo }))
+    }
 }
 
 pub struct MockContext;
