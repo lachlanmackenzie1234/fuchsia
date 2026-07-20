@@ -203,7 +203,8 @@ impl DmDevice {
                 dm_device_name.clone(),
                 DeviceId::new(DEVICE_MAPPER_MAJOR, minor),
                 DeviceMode::Block,
-            ),
+            )
+            .with_devtype("disk"),
             virtual_block_class,
             |device, dir| build_block_device_directory(device, device_weak, dir),
         )?;

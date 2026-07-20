@@ -173,7 +173,10 @@ impl LoopDevice {
                 loop_device_name.clone(),
                 DeviceId::new(LOOP_MAJOR, minor),
                 DeviceMode::Block,
-            ),
+            )
+            // It is not generally true that all loop devices are disks, but it is true for
+            // the ones we currently support. Future work should allow us to set this dynamically.
+            .with_devtype("disk"),
             virtual_block_class,
             |device, dir| {
                 let device_weak_clone = device_weak.clone();

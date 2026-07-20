@@ -59,7 +59,10 @@ impl RemoteBlockDevice {
                 device_name.clone(),
                 DeviceId::new(BLOCK_EXTENDED_MAJOR, minor),
                 DeviceMode::Block,
-            ),
+            )
+            // It is not generally true that all remote block devices are disks, but it is true for
+            // the ones we currently support. Future work should allow us to set this dynamically.
+            .with_devtype("disk"),
             virtual_block_class,
             |device, dir| build_block_device_directory(device, device_weak, dir),
         )?;
