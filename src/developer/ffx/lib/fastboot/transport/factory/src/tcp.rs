@@ -29,9 +29,8 @@ pub struct TcpFactory {
     target_name: String,
     fastboot_devices_file_path: Option<PathBuf>,
     addr: SocketAddr,
-    open_retries: u64,
+    open_retries: Option<u64>,
     retry_wait_seconds: u64,
-    retry_forever: bool,
     context: EnvironmentContext,
 }
 
@@ -41,9 +40,8 @@ impl TcpFactory {
         target_name: String,
         fastboot_devices_file_path: Option<PathBuf>,
         addr: SocketAddr,
-        open_retries: u64,
+        open_retries: Option<u64>,
         retry_wait_seconds: u64,
-        retry_forever: bool,
     ) -> Self {
         Self {
             target_name,
@@ -51,7 +49,6 @@ impl TcpFactory {
             addr,
             open_retries,
             retry_wait_seconds,
-            retry_forever,
             context: context.clone(),
         }
     }
@@ -78,14 +75,17 @@ impl InterfaceFactoryBase<TcpNetworkInterface<netext::MultithreadedTokioAsyncWra
         let wait_duration = Duration::from_secs(self.retry_wait_seconds);
         let mut try_count = 1;
         loop {
-            if !self.retry_forever && try_count > self.open_retries {
-                let err = InterfaceFactoryError::ConnectionError(
-                    "TCP".to_string(),
-                    self.addr,
-                    self.open_retries,
-                );
-                mark_point_of_failure(PointOfFailure::FactoryOpenError("tcp".into(), &err)).await;
-                break Err(err);
+            if let Some(max_retries) = self.open_retries {
+                if try_count > max_retries {
+                    let err = InterfaceFactoryError::ConnectionError(
+                        "TCP".to_string(),
+                        self.addr,
+                        max_retries,
+                    );
+                    mark_point_of_failure(PointOfFailure::FactoryOpenError("tcp".into(), &err))
+                        .await;
+                    break Err(err);
+                }
             }
             try_count += 1;
             match open_once(&self.addr, Duration::from_secs(1)).await.with_context(|| {
@@ -94,7 +94,7 @@ impl InterfaceFactoryBase<TcpNetworkInterface<netext::MultithreadedTokioAsyncWra
                 Err(e) => {
                     log::debug!(
                         "Attempt {}. Got error connecting to fastboot address: {}",
-                        try_count,
+                        try_count - 1,
                         e,
                     );
 

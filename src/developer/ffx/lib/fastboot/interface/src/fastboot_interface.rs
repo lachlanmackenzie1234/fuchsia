@@ -49,6 +49,74 @@ pub trait Fastboot: Send {
     async fn oem(&mut self, command: &str) -> Result<(), FastbootError>;
 }
 
+// We sometimes get called with the Box<FastbootInterface> that
+// ffx_fastboot_connection_factory::get_fastboot_interface() returns
+#[async_trait]
+impl<F: Fastboot + ?Sized> Fastboot for Box<F> {
+    async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
+        (**self).get_var(name).await
+    }
+
+    async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError> {
+        (**self).get_all_vars(listener).await
+    }
+
+    async fn flash(
+        &mut self,
+        partition_name: &str,
+        path: &str,
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        (**self).flash(partition_name, path, listener, timeout).await
+    }
+
+    async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {
+        (**self).erase(partition_name).await
+    }
+
+    async fn boot(&mut self) -> Result<(), FastbootError> {
+        (**self).boot().await
+    }
+
+    async fn reboot(&mut self) -> Result<(), FastbootError> {
+        (**self).reboot().await
+    }
+
+    async fn reboot_bootloader(
+        &mut self,
+        listener: Sender<RebootEvent>,
+    ) -> Result<(), FastbootError> {
+        (**self).reboot_bootloader(listener).await
+    }
+
+    async fn continue_boot(&mut self) -> Result<(), FastbootError> {
+        (**self).continue_boot().await
+    }
+
+    async fn get_staged(&mut self, path: &str) -> Result<(), FastbootError> {
+        (**self).get_staged(path).await
+    }
+
+    async fn stage(
+        &mut self,
+        path: &str,
+        listener: Sender<UploadProgress>,
+    ) -> Result<(), FastbootError> {
+        (**self).stage(path, listener).await
+    }
+
+    async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
+        (**self).set_active(slot).await
+    }
+
+    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
+        (**self).oem(command).await
+    }
+}
+
+impl<F: FastbootInterface + ?Sized> FastbootInterface for Box<F> {}
+
 #[derive(Debug, PartialEq)]
 pub enum RebootEvent {
     OnReboot,

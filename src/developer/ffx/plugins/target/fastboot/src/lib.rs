@@ -2,18 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use addr::TargetIpAddr;
 use anyhow::{Result, anyhow};
 use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
-use discovery::{FastbootConnectionState, TargetState};
+use discovery::TargetState;
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot::common::vars::MAX_DOWNLOAD_SIZE_VAR;
 use ffx_fastboot::common::{flash_partition_impl, upload_file};
-use ffx_fastboot_connection_factory::{
-    FastbootNetworkConnectionConfig, tcp_proxy, udp_proxy, usb_proxy,
-};
+use ffx_fastboot_connection_factory::{RetryLimit, get_fastboot_interface};
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
 use ffx_fastboot_tool_args::{FastbootCommand, FastbootSubcommand};
 use ffx_flash_manifest::SSH_OEM_COMMAND;
@@ -27,8 +24,7 @@ use sparse::reader::SparseReader;
 use sparse::{build_sparse_files, resparse_sparse_img};
 use std::fs::File;
 use std::io::Write;
-use std::net::SocketAddr;
-use std::path::PathBuf;
+
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 
@@ -285,68 +281,18 @@ async fn cmd_impl(
     }
 
     let res = match handle.state {
-        TargetState::Fastboot(fastboot_state) => match fastboot_state.connection_state {
-            FastbootConnectionState::Usb => {
-                let serial_num = fastboot_state.serial_number;
-                let mut proxy = usb_proxy(serial_num).await.map_err(|e| anyhow::Error::from(e))?;
-                fastboot_impl(ctx, writer, command, &mut proxy).await
-            }
-            FastbootConnectionState::Udp(addrs) => {
-                let config = FastbootNetworkConnectionConfig::new_udp(ctx);
-                let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
-                    gather_connection_info(ctx, &handle.node_name, addrs)?;
-                let mut proxy =
-                    udp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config)
-                        .await
-                        .map_err(|e| anyhow::Error::from(e))?;
-                fastboot_impl(ctx, writer, command, &mut proxy).await
-            }
-            FastbootConnectionState::Tcp(addrs) => {
-                let config = FastbootNetworkConnectionConfig::new_tcp(ctx);
-                let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
-                    gather_connection_info(ctx, &handle.node_name, addrs)?;
-                let mut proxy =
-                    tcp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config)
-                        .await
-                        .map_err(|e| anyhow::Error::from(e))?;
-                fastboot_impl(ctx, writer, command, &mut proxy).await
-            }
-        },
+        TargetState::Fastboot(fastboot_state) => {
+            let mut proxy =
+                get_fastboot_interface(&fastboot_state, handle.node_name, ctx, RetryLimit::Default)
+                    .await
+                    .map_err(|e| anyhow::Error::from(e))?;
+            fastboot_impl(ctx, writer, command, &mut proxy).await
+        }
         _ => {
             ffx_bail!("Could not connect. Target not in fastboot: {handle}");
         }
     };
     res
-}
-
-#[derive(Debug, PartialEq)]
-struct NetworkConnectionInfo {
-    target_name: String,
-    addr: SocketAddr,
-    fastboot_device_file_path: Option<PathBuf>,
-}
-
-fn gather_connection_info(
-    ctx: &EnvironmentContext,
-    nodename: &Option<String>,
-    addrs: Vec<TargetIpAddr>,
-) -> Result<NetworkConnectionInfo> {
-    if let Some(addr) = addrs.into_iter().take(1).next() {
-        let target_addr: TargetIpAddr = addr.into();
-        let socket_addr: SocketAddr = target_addr.into();
-
-        let target_name =
-            if let Some(nodename) = nodename { nodename } else { &socket_addr.to_string() };
-        let fastboot_device_file_path: Option<PathBuf> =
-            ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
-        Ok(NetworkConnectionInfo {
-            target_name: target_name.to_owned(),
-            addr: socket_addr,
-            fastboot_device_file_path,
-        })
-    } else {
-        ffx_bail!("Could not get a valid address for target");
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -360,66 +306,9 @@ mod test {
     use ffx_fastboot_tool_args::AuthorizeSubcommand;
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;
-    use std::str::FromStr;
     use std::sync::{Arc, Mutex};
     use tempfile::NamedTempFile;
     use tokio::sync::mpsc::Sender;
-
-    #[fuchsia::test]
-    async fn test_gather_connection_info_fails() -> Result<()> {
-        let env = ffx_config::test_env().build()?;
-        let name = Some("Foo".to_string());
-        gather_connection_info(&env.context, &name, vec![]).expect_err("Should fail on no addrs");
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_gather_connection_info_success() -> Result<()> {
-        let env = ffx_config::test_env()
-            .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
-            .build()?;
-        let name = Some("Foo".to_string());
-
-        let info = gather_connection_info(
-            &env.context,
-            &name,
-            vec![TargetIpAddr::from_str("127.0.0.1:8081")?],
-        )?;
-
-        assert_eq!(
-            info,
-            NetworkConnectionInfo {
-                target_name: "Foo".to_string(),
-                addr: SocketAddr::from_str("127.0.0.1:8081")?,
-                fastboot_device_file_path: Some("/foo".into()),
-            }
-        );
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_gather_connection_info_node_name() -> Result<()> {
-        let env = ffx_config::test_env()
-            .runtime_config(ffx_config::keys::FASTBOOT_FILE_PATH, "/foo")
-            .build()?;
-        let name = None;
-
-        let info = gather_connection_info(
-            &env.context,
-            &name,
-            vec![TargetIpAddr::from_str("127.0.0.1:8081")?],
-        )?;
-
-        assert_eq!(
-            info,
-            NetworkConnectionInfo {
-                target_name: "127.0.0.1:8081".to_string(),
-                addr: SocketAddr::from_str("127.0.0.1:8081")?,
-                fastboot_device_file_path: Some("/foo".into()),
-            }
-        );
-        Ok(())
-    }
 
     #[derive(Default, Debug, Clone)]
     struct MockInterface {

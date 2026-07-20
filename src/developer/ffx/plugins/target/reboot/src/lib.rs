@@ -146,6 +146,7 @@ async fn reboot_direct_from_fastboot(
         &fastboot_state,
         node_name,
         context,
+        ffx_fastboot_connection_factory::RetryLimit::Default,
     )
     .await
     .map_err(|e| ffx_error!("Cannot get fastboot interface: {:?}", e))?;

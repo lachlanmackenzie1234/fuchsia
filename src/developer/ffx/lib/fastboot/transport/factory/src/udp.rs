@@ -27,7 +27,7 @@ pub struct UdpFactory {
     target_name: String,
     fastboot_devices_file_path: Option<PathBuf>,
     addr: SocketAddr,
-    open_retries: u64,
+    open_retries: Option<u64>,
     retry_wait_seconds: u64,
     context: EnvironmentContext,
 }
@@ -38,7 +38,7 @@ impl UdpFactory {
         target_name: String,
         fastboot_devices_file_path: Option<PathBuf>,
         addr: SocketAddr,
-        open_retries: u64,
+        open_retries: Option<u64>,
         retry_wait_seconds: u64,
     ) -> Self {
         Self {
@@ -64,24 +64,36 @@ impl Drop for UdpFactory {
 impl InterfaceFactoryBase<UdpNetworkInterface> for UdpFactory {
     async fn open(&mut self) -> Result<UdpNetworkInterface, InterfaceFactoryError> {
         let wait_duration = Duration::from_secs(self.retry_wait_seconds);
-        for i in 1..self.open_retries {
+        let mut try_count = 1;
+        loop {
+            if let Some(max_retries) = self.open_retries {
+                if try_count > max_retries {
+                    let err = InterfaceFactoryError::ConnectionError(
+                        "UDP".to_string(),
+                        self.addr,
+                        max_retries,
+                    );
+                    mark_point_of_failure(PointOfFailure::FactoryOpenError("udp".into(), &err))
+                        .await;
+                    break Err(err);
+                }
+            }
+            try_count += 1;
             match open(self.addr)
                 .await
                 .with_context(|| format!("connecting via UDP to Fastboot address: {}", self.addr))
             {
                 Ok(interface) => return Ok(interface),
-
                 Err(e) => {
-                    log::debug!("Attempt {}. Got error connecting to fastboot address:{}", i, e,);
-
+                    log::debug!(
+                        "Attempt {}. Got error connecting to fastboot address: {}",
+                        try_count - 1,
+                        e,
+                    );
                     Timer::new(wait_duration).await;
                 }
             }
         }
-        let err =
-            InterfaceFactoryError::ConnectionError("UDP".to_string(), self.addr, self.open_retries);
-        mark_point_of_failure(PointOfFailure::FactoryOpenError("udp".into(), &err)).await;
-        Err(err)
     }
 
     async fn close(&self) {

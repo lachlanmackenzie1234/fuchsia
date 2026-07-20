@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use addr::TargetIpAddr;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use discovery::TargetState;
 use discovery::query::TargetInfoQuery;
-use discovery::{FastbootConnectionState, TargetState};
 use errors::ffx_bail;
 use fdomain_fuchsia_hardware_power_statecontrol::{
     AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
@@ -16,7 +15,6 @@ use fdomain_fuchsia_hwinfo::DeviceProxy;
 use ffx_bootloader_args::SubCommand::{Boot, Info, Lock, Unlock};
 use ffx_bootloader_args::{BootCommand, BootloaderCommand, UnlockCommand};
 use ffx_config::EnvironmentContext;
-use ffx_config::keys::FASTBOOT_FILE_PATH;
 use ffx_fastboot::boot::boot;
 use ffx_fastboot::common::from_manifest;
 use ffx_fastboot::file_resolver::resolvers::EmptyResolver;
@@ -24,9 +22,7 @@ use ffx_fastboot::info::info;
 use ffx_fastboot::lock::lock;
 use ffx_fastboot::unlock::unlock;
 use ffx_fastboot::util::{Event, UnlockEvent};
-use ffx_fastboot_connection_factory::{
-    FastbootNetworkConnectionConfig, tcp_proxy, udp_proxy, usb_proxy,
-};
+use ffx_fastboot_connection_factory::{RetryLimit, get_fastboot_interface};
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgress, Variable};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
@@ -35,8 +31,7 @@ use futures::{TryFutureExt, try_join};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::io::{Write, stdin};
-use std::net::SocketAddr;
-use std::path::PathBuf;
+
 use target_holders::moniker;
 use termion::{color, style};
 use tokio::sync::mpsc;
@@ -155,85 +150,15 @@ Reboot the Target to the bootloader and re-run this command."
 
         match handle.state {
             TargetState::Fastboot(fastboot_state) => {
-                match fastboot_state.connection_state {
-                    FastbootConnectionState::Usb => {
-                        let proxy = usb_proxy(fastboot_state.serial_number)
-                            .await
-                            .map_err(|e| anyhow::Error::from(e))?;
-                        bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
-                    }
-                    FastbootConnectionState::Tcp(addrs) => {
-                        // We take the first address as when a target is in Fastboot mode and over
-                        // TCP it only exposes one address
-                        if let Some(addr) = addrs.into_iter().take(1).next() {
-                            let target_addr: TargetIpAddr = addr.into();
-                            let socket_addr: SocketAddr = target_addr.into();
-                            let target_name = if let Some(nodename) = handle.node_name {
-                                nodename
-                            } else {
-                                log::debug!(
-                                    r"
-            Warning: the target does not have a node name and is in TCP fastboot mode.
-            Rediscovering the target after bootloader reboot will be impossible.
-            Using address {} as node name
-            ",
-                                    socket_addr
-                                );
-                                socket_addr.to_string()
-                            };
-                            let config = FastbootNetworkConnectionConfig::new_tcp(&self.ctx);
-                            let fastboot_device_file_path: Option<PathBuf> =
-                                self.ctx.get(FASTBOOT_FILE_PATH).ok();
-                            let proxy = tcp_proxy(
-                                &self.ctx,
-                                target_name.to_string(),
-                                fastboot_device_file_path,
-                                &socket_addr,
-                                config,
-                            )
-                            .await
-                            .map_err(|e| anyhow::Error::from(e))?;
-                            bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
-                        } else {
-                            ffx_bail!("Could not get a valid address for target");
-                        }
-                    }
-                    FastbootConnectionState::Udp(addrs) => {
-                        // We take the first address as when a target is in Fastboot mode and over
-                        // UDP it only exposes one address
-                        if let Some(addr) = addrs.into_iter().take(1).next() {
-                            let target_addr: TargetIpAddr = addr.into();
-                            let socket_addr: SocketAddr = target_addr.into();
-                            let target_name = if let Some(nodename) = handle.node_name {
-                                nodename
-                            } else {
-                                log::debug!(
-                                    r"
-        Warning: the target does not have a node name and is in UDP fastboot mode.
-        Rediscovering the target after bootloader reboot will be impossible.
-        Using address {} as node name",
-                                    socket_addr
-                                );
-                                socket_addr.to_string()
-                            };
-                            let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx);
-                            let fastboot_device_file_path: Option<PathBuf> =
-                                self.ctx.get(FASTBOOT_FILE_PATH).ok();
-                            let proxy = udp_proxy(
-                                &self.ctx,
-                                target_name,
-                                fastboot_device_file_path,
-                                &socket_addr,
-                                config,
-                            )
-                            .await
-                            .map_err(|e| anyhow::Error::from(e))?;
-                            bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
-                        } else {
-                            ffx_bail!("Could not get a valid address for target");
-                        }
-                    }
-                }
+                let proxy = get_fastboot_interface(
+                    &fastboot_state,
+                    handle.node_name,
+                    &self.ctx,
+                    RetryLimit::Default,
+                )
+                .await
+                .map_err(|e| anyhow::Error::from(e))?;
+                bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
             }
             _ => {
                 ffx_bail!("This is unsupported")
