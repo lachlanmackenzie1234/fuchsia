@@ -34,12 +34,12 @@
 #include <zircon/syscalls.h>
 #include <zircon/threads.h>
 
+#include <sstream>
+
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
 #include <fbl/auto_lock.h>
 #include <hwreg/bitfields.h>
-
-#include <sstream>
 
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 
@@ -1463,12 +1463,15 @@ void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
 void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
                                    QueueRequestsCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::EpServer::QueueRequests");
-  if (!uep_->ep.enabled) {
-    fdf::warn(
-        "Dwc3: ep({}) fuchsia.hardware.usb.endpoint.Endpoint/QueueRequests received while endpoint is disabled (expected during SetInterface teardown)",
-        uep_->ep.ep_num);
-  }
   if (!uep_->ep.enabled || !dwc3_->power_on()) {
+    // If the device is powered on, the rejection must be due to the endpoint being disabled.
+    if (dwc3_->power_on()) {
+      fdf::info(
+          "Dwc3: ep({}) QueueRequests rejected: endpoint disabled (expected during teardown or stack reset)",
+          uep_->ep.ep_num);
+    } else {
+      fdf::info("Dwc3: ep({}) QueueRequests rejected: power off", uep_->ep.ep_num);
+    }
     for (auto& req : request.req()) {
       RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, usb::FidlRequest{std::move(req)});
     }
