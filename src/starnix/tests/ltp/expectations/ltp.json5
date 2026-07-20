@@ -250,7 +250,6 @@
             type: "skip",
             matchers: [
                 // Flaky tests.
-                "cve-2017-17052",
                 "io_pgetevents01",
                 "ptrace06",
                 "recvmsg01",
