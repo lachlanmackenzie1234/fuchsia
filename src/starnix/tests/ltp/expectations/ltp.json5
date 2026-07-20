@@ -266,9 +266,6 @@
                 // TODO(https://fxbug.dev/322874889) requires a working sched_setaffinity
                 "getcpu01",
 
-                // Makes all following tests to fail.
-                "kill10",
-
                 // Times out.
                 "cve-2017-10661",
 
