@@ -5,6 +5,8 @@
 package readme_fuchsia
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,6 +96,19 @@ func TestValidate_ErrorLinks(t *testing.T) {
 			},
 			expectedLink: "http://go/readme_fuchsia#unknown-fields",
 		},
+		{
+			name: "invalid first party",
+			readme: Readme{
+				Name:             "test",
+				URL:              "https://example.com",
+				Revision:         "1234",
+				SecurityCritical: "no",
+				FirstParty:       "maybe",
+				Licenses:         []string{"MIT"},
+				LicenseFiles:     []string{"LICENSE"},
+			},
+			expectedLink: "http://go/readme_fuchsia#first-party",
+		},
 	}
 
 	for _, tc := range tests {
@@ -113,5 +128,26 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				t.Errorf("expected error containing %q, got: %v", tc.expectedLink, errs)
 			}
 		})
+	}
+}
+
+func TestValidate_FirstParty_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "LICENSE"), []byte("MIT License"), 0644); err != nil {
+		t.Fatalf("failed to write license file: %v", err)
+	}
+
+	readme := Readme{
+		Name:             "test",
+		URL:              "https://example.com",
+		Revision:         "1234",
+		SecurityCritical: "no",
+		FirstParty:       "yes",
+		Licenses:         []string{"MIT"},
+		LicenseFiles:     []string{"LICENSE"},
+	}
+	errs := Validate(tmpDir, []*Readme{&readme})
+	if len(errs) != 0 {
+		t.Fatalf("expected validation success for valid FirstParty, got: %v", errs)
 	}
 }

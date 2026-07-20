@@ -117,3 +117,59 @@ func TestGetField_Aliases(t *testing.T) {
 		t.Errorf("GetField(Modifications) = %q, %v; want 'none', true", val, ok)
 	}
 }
+
+func TestAddField(t *testing.T) {
+	r := &Readme{}
+
+	// 1. Add to empty scalar field
+	if err := r.AddField("Name", "test_project"); err != nil {
+		t.Fatalf("AddField(Name) failed: %v", err)
+	}
+	if r.Name != "test_project" {
+		t.Errorf("expected Name 'test_project', got %q", r.Name)
+	}
+
+	// 2. Add same value to scalar field (should succeed without duplicating or erroring)
+	if err := r.AddField("Name", "test_project"); err != nil {
+		t.Fatalf("AddField(Name) duplicate value failed: %v", err)
+	}
+	if r.Name != "test_project" {
+		t.Errorf("expected Name 'test_project', got %q", r.Name)
+	}
+
+	// 3. Add different value to scalar field (should error)
+	if err := r.AddField("Name", "other_project"); err == nil {
+		t.Errorf("expected error when adding different value to scalar field, got nil")
+	}
+
+	// 4. Add to slice field (should split and append without overwriting)
+	if err := r.AddField("License File", "LICENSE"); err != nil {
+		t.Fatalf("AddField(License File) failed: %v", err)
+	}
+	if err := r.AddField("License File", "NOTICE, LICENSE_MIT"); err != nil {
+		t.Fatalf("AddField(License File) second call failed: %v", err)
+	}
+	expectedLFs := []string{"LICENSE", "LICENSE_MIT", "NOTICE"}
+	if !reflect.DeepEqual(r.LicenseFiles, expectedLFs) {
+		t.Errorf("expected LicenseFiles %v, got %v", expectedLFs, r.LicenseFiles)
+	}
+
+	// 5. Add to multiline field (should concatenate with newline)
+	if err := r.AddField("Description", "Line 1"); err != nil {
+		t.Fatalf("AddField(Description) failed: %v", err)
+	}
+	if err := r.AddField("Description", "Line 2"); err != nil {
+		t.Fatalf("AddField(Description) second call failed: %v", err)
+	}
+	if r.Description != "Line 1\nLine 2" {
+		t.Errorf("expected Description 'Line 1\\nLine 2', got %q", r.Description)
+	}
+
+	// 6. Add to unknown fields
+	if err := r.AddField("Custom Key", "Value 1"); err != nil {
+		t.Fatalf("AddField(Custom Key) failed: %v", err)
+	}
+	if err := r.AddField("Custom Key", "Value 2"); err == nil {
+		t.Errorf("expected error when adding different value to existing unknown field, got nil")
+	}
+}

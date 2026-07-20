@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
@@ -17,7 +18,7 @@ import (
 
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s <command> [args...]\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "Commands: validate, format, get, set, help\n")
+	fmt.Fprintf(os.Stderr, "Commands: validate, format, get, set, add, help\n")
 }
 
 func main() {
@@ -53,11 +54,70 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "add":
+		if err := runAdd(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		printUsage()
 		os.Exit(1)
 	}
+}
+
+func resolveReadmePath(path string) string {
+	if strings.HasPrefix(path, "//") {
+		fuchsiaDir := os.Getenv("FUCHSIA_DIR")
+		rel := strings.TrimPrefix(path, "//")
+		if fuchsiaDir != "" {
+			return filepath.Join(fuchsiaDir, rel)
+		}
+		return rel
+	}
+	return path
+}
+
+func selectBlock(readmes *[]*readme_fuchsia.Readme, blockSpec string, allowCreate bool) (*readme_fuchsia.Readme, error) {
+	if len(*readmes) == 0 {
+		if allowCreate && (blockSpec == "" || blockSpec == "0") {
+			newReadme := &readme_fuchsia.Readme{}
+			*readmes = append(*readmes, newReadme)
+			return newReadme, nil
+		} else if !allowCreate {
+			return nil, errors.New("no projects found in README.fuchsia")
+		}
+	}
+
+	if blockSpec == "" {
+		return (*readmes)[0], nil
+	}
+
+	if idx, err := strconv.Atoi(blockSpec); err == nil {
+		if idx < 0 || idx > len(*readmes) || (idx == len(*readmes) && !allowCreate) {
+			return nil, fmt.Errorf("block index %d out of range (found %d blocks)", idx, len(*readmes))
+		}
+		if idx == len(*readmes) {
+			newReadme := &readme_fuchsia.Readme{}
+			*readmes = append(*readmes, newReadme)
+			return newReadme, nil
+		}
+		return (*readmes)[idx], nil
+	}
+
+	for _, r := range *readmes {
+		if strings.EqualFold(r.Name, blockSpec) {
+			return r, nil
+		}
+	}
+
+	if allowCreate {
+		newReadme := &readme_fuchsia.Readme{Name: blockSpec}
+		*readmes = append(*readmes, newReadme)
+		return newReadme, nil
+	}
+
+	return nil, fmt.Errorf("no block found matching %q", blockSpec)
 }
 
 func runValidate(args []string) error {
@@ -71,7 +131,7 @@ func runValidate(args []string) error {
 		return fmt.Errorf("usage: validate [--project-root <dir>] [--allow-missing-license] <path/to/README.fuchsia>")
 	}
 
-	readmePath := fs.Arg(0)
+	readmePath := resolveReadmePath(fs.Arg(0))
 
 	readmes, err := readme_fuchsia.ParseFile(readmePath)
 	if err != nil {
@@ -80,7 +140,14 @@ func runValidate(args []string) error {
 
 	root := *projectRoot
 	if root == "" {
-		root = filepath.Dir(readmePath)
+		dir := filepath.Dir(readmePath)
+		if idx := strings.Index(dir, "tools/check-licenses/assets/readmes/"); idx != -1 {
+			root = dir[idx+len("tools/check-licenses/assets/readmes/"):]
+		} else if idx := strings.Index(dir, "vendor/google/tools/check-licenses/assets/readmes/"); idx != -1 {
+			root = dir[idx+len("vendor/google/tools/check-licenses/assets/readmes/"):]
+		} else {
+			root = dir
+		}
 	}
 
 	errs := readme_fuchsia.Validate(root, readmes)
@@ -120,6 +187,7 @@ func runFormat(args []string) error {
 	if fs.NArg() == 1 {
 		readmePath = fs.Arg(0)
 	}
+	readmePath = resolveReadmePath(readmePath)
 
 	readmes, err := readme_fuchsia.ParseFile(readmePath)
 	if err != nil {
@@ -144,10 +212,11 @@ func runFormat(args []string) error {
 
 func runGet(args []string) error {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
+	block := fs.String("block", "", "Target block by index (0-based) or project Name (default is first block)")
 	fs.Parse(args)
 
 	if fs.NArg() < 1 || fs.NArg() > 2 {
-		return fmt.Errorf("usage: get <field> [path/to/README.fuchsia]")
+		return fmt.Errorf("usage: get [--block <index|name>] <field> [path/to/README.fuchsia]")
 	}
 
 	field := fs.Arg(0)
@@ -155,18 +224,17 @@ func runGet(args []string) error {
 	if fs.NArg() == 2 {
 		readmePath = fs.Arg(1)
 	}
+	readmePath = resolveReadmePath(readmePath)
 
 	readmes, err := readme_fuchsia.ParseFile(readmePath)
 	if err != nil {
 		return fmt.Errorf("failed to parse %s: %w", readmePath, err)
 	}
 
-	if len(readmes) == 0 {
-		return fmt.Errorf("no projects found in %s", readmePath)
+	readme, err := selectBlock(&readmes, *block, false)
+	if err != nil {
+		return fmt.Errorf("failed to select block in %s: %w", readmePath, err)
 	}
-
-	// Default to the first project
-	readme := readmes[0]
 	val, ok := readme.GetField(field)
 	if !ok {
 		return fmt.Errorf("field %q not found in %s", field, readmePath)
@@ -178,10 +246,11 @@ func runGet(args []string) error {
 
 func runSet(args []string) error {
 	fs := flag.NewFlagSet("set", flag.ExitOnError)
+	block := fs.String("block", "", "Target block by index (0-based) or project Name (default is first block)")
 	fs.Parse(args)
 
 	if fs.NArg() < 2 || fs.NArg() > 3 {
-		return fmt.Errorf("usage: set <field> <value> [path/to/README.fuchsia]")
+		return fmt.Errorf("usage: set [--block <index|name>] <field> <value> [path/to/README.fuchsia]")
 	}
 
 	field := fs.Arg(0)
@@ -190,28 +259,77 @@ func runSet(args []string) error {
 	if fs.NArg() == 3 {
 		readmePath = fs.Arg(2)
 	}
+	readmePath = resolveReadmePath(readmePath)
 
 	readmes, err := readme_fuchsia.ParseFile(readmePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			readmes = []*readme_fuchsia.Readme{}
 		} else {
 			return fmt.Errorf("failed to parse %s: %w", readmePath, err)
 		}
 	}
 
-	if len(readmes) == 0 {
-		readmes = append(readmes, &readme_fuchsia.Readme{})
+	readme, err := selectBlock(&readmes, *block, true)
+	if err != nil {
+		return fmt.Errorf("failed to select block in %s: %w", readmePath, err)
 	}
-
-	// Default to the first project
-	readme := readmes[0]
 	err = readme.SetField(field, value)
 	if err != nil {
 		return fmt.Errorf("failed to set field %q: %w", field, err)
 	}
 
 	formatted := readme_fuchsia.Format(readmes)
+	if err := os.MkdirAll(filepath.Dir(readmePath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", readmePath, err)
+	}
+	err = os.WriteFile(readmePath, []byte(formatted), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write to %s: %w", readmePath, err)
+	}
+
+	return nil
+}
+
+func runAdd(args []string) error {
+	fs := flag.NewFlagSet("add", flag.ExitOnError)
+	block := fs.String("block", "", "Target block by index (0-based) or project Name (default is first block)")
+	fs.Parse(args)
+
+	if fs.NArg() < 2 || fs.NArg() > 3 {
+		return fmt.Errorf("usage: add [--block <index|name>] <field> <value> [path/to/README.fuchsia]")
+	}
+
+	field := fs.Arg(0)
+	value := fs.Arg(1)
+	readmePath := "README.fuchsia"
+	if fs.NArg() == 3 {
+		readmePath = fs.Arg(2)
+	}
+	readmePath = resolveReadmePath(readmePath)
+
+	readmes, err := readme_fuchsia.ParseFile(readmePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			readmes = []*readme_fuchsia.Readme{}
+		} else {
+			return fmt.Errorf("failed to parse %s: %w", readmePath, err)
+		}
+	}
+
+	readme, err := selectBlock(&readmes, *block, true)
+	if err != nil {
+		return fmt.Errorf("failed to select block in %s: %w", readmePath, err)
+	}
+	err = readme.AddField(field, value)
+	if err != nil {
+		return fmt.Errorf("failed to add field %q: %w", field, err)
+	}
+
+	formatted := readme_fuchsia.Format(readmes)
+	if err := os.MkdirAll(filepath.Dir(readmePath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", readmePath, err)
+	}
 	err = os.WriteFile(readmePath, []byte(formatted), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write to %s: %w", readmePath, err)

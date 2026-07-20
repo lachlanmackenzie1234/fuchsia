@@ -15,6 +15,7 @@ type Readme struct {
 	Revision                 string `readme:"Revision"`
 	UpstreamRevision         string `readme:"Upstream Revision,Upstream revision"`
 	SecurityCritical         string `readme:"Security Critical"`
+	FirstParty               string `readme:"First Party"`
 	LicenseAndroidCompatible string `readme:"License Android Compatible"`
 	Location                 string `readme:"Location"`
 

@@ -52,6 +52,9 @@ func Validate(projectRoot string, readmes []*Readme) []error {
 		} else if r.SecurityCritical != "yes" && r.SecurityCritical != "no" {
 			errs = append(errs, fmt.Errorf("[%d]: Field 'Security Critical' has an unknown value. Required 'yes' or 'no', got %q (http://go/readme_fuchsia#security-critical)", i+1, r.SecurityCritical))
 		}
+		if r.FirstParty != "" && r.FirstParty != "yes" && r.FirstParty != "no" {
+			errs = append(errs, fmt.Errorf("[%d]: Field 'First Party' has an unknown value. Required 'yes' or 'no', got %q (http://go/readme_fuchsia#first-party)", i+1, r.FirstParty))
+		}
 		if i > 0 && r.Location == "" {
 			errs = append(errs, fmt.Errorf("[%d]: Missing required field 'Location' for sub-project defined after a DEPENDENCY DIVIDER (http://go/readme_fuchsia#location)", i+1))
 		}

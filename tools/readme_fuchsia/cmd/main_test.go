@@ -88,3 +88,109 @@ License File: LICENSE
 		t.Fatalf("expected validation success, got: %v", err)
 	}
 }
+
+func TestRunAddAndSet_CreateFromScratch(t *testing.T) {
+	tmpDir := t.TempDir()
+	readmePath := filepath.Join(tmpDir, "new_dir", "README.fuchsia")
+
+	if err := runSet([]string{"Name", "main_pkg", readmePath}); err != nil {
+		t.Fatalf("runSet failed to create file from scratch: %v", err)
+	}
+
+	if err := runAdd([]string{"License File", "LICENSE", readmePath}); err != nil {
+		t.Fatalf("runAdd failed: %v", err)
+	}
+	if err := runAdd([]string{"License File", "NOTICE", readmePath}); err != nil {
+		t.Fatalf("runAdd second call failed: %v", err)
+	}
+
+	content, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("failed to read created readme: %v", err)
+	}
+
+	strContent := string(content)
+	if !strings.Contains(strContent, "Name: main_pkg") {
+		t.Errorf("expected content to contain Name: main_pkg, got %q", strContent)
+	}
+	if !strings.Contains(strContent, "License File: LICENSE") || !strings.Contains(strContent, "License File: NOTICE") {
+		t.Errorf("expected content to contain both LICENSE and NOTICE, got %q", strContent)
+	}
+}
+
+func TestRunSetAndAdd_BlockOption(t *testing.T) {
+	tmpDir := t.TempDir()
+	readmePath := filepath.Join(tmpDir, "README.fuchsia")
+
+	// Create first block
+	if err := runSet([]string{"--block=0", "Name", "first_project", readmePath}); err != nil {
+		t.Fatalf("runSet block=0 failed: %v", err)
+	}
+	if err := runAdd([]string{"--block=0", "License", "MIT", readmePath}); err != nil {
+		t.Fatalf("runAdd block=0 failed: %v", err)
+	}
+
+	// Create second block by index
+	if err := runSet([]string{"--block=1", "Name", "second_project", readmePath}); err != nil {
+		t.Fatalf("runSet block=1 failed: %v", err)
+	}
+	if err := runSet([]string{"--block=1", "Location", "vendor/second", readmePath}); err != nil {
+		t.Fatalf("runSet block=1 Location failed: %v", err)
+	}
+
+	// Target second block by Name
+	if err := runAdd([]string{"--block=second_project", "License File", "SECOND_LICENSE", readmePath}); err != nil {
+		t.Fatalf("runAdd block=second_project failed: %v", err)
+	}
+
+	content, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("failed to read multi-block readme: %v", err)
+	}
+
+	strContent := string(content)
+	if !strings.Contains(strContent, "Name: first_project") || !strings.Contains(strContent, "Name: second_project") {
+		t.Errorf("expected both project names in content, got: %q", strContent)
+	}
+	if !strings.Contains(strContent, "-------------------- DEPENDENCY DIVIDER --------------------") {
+		t.Errorf("expected dependency divider in content, got: %q", strContent)
+	}
+	if !strings.Contains(strContent, "Location: vendor/second") {
+		t.Errorf("expected Location in second project, got: %q", strContent)
+	}
+
+	// Test runGet on specific block
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	if err := runGet([]string{"--block=1", "Location", readmePath}); err != nil {
+		t.Fatalf("runGet block=1 failed: %v", err)
+	}
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	if strings.TrimSpace(buf.String()) != "vendor/second" {
+		t.Errorf("expected runGet to return vendor/second, got: %q", buf.String())
+	}
+}
+
+func TestResolveReadmePath(t *testing.T) {
+	oldFuchsiaDir := os.Getenv("FUCHSIA_DIR")
+	defer os.Setenv("FUCHSIA_DIR", oldFuchsiaDir)
+
+	os.Setenv("FUCHSIA_DIR", "/fake/fuchsia/root")
+
+	got := resolveReadmePath("//tools/readme_fuchsia/README.fuchsia")
+	want := filepath.Join("/fake/fuchsia/root", "tools/readme_fuchsia/README.fuchsia")
+	if got != want {
+		t.Errorf("resolveReadmePath(//...) = %q, want %q", got, want)
+	}
+
+	relPath := "some/local/README.fuchsia"
+	if got := resolveReadmePath(relPath); got != relPath {
+		t.Errorf("resolveReadmePath(%q) = %q, want %q", relPath, got, relPath)
+	}
+}
