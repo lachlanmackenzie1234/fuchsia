@@ -45,23 +45,16 @@ class RtcFcTests(unittest.IsolatedAsyncioTestCase):
         self.transport.reset_mock()
         self.reboot_af.reset_mock()
 
-        self.transport.connect_device_proxy.side_effect = [
-            RuntimeError("Device not found"),
-            ZX_OK,
-        ]
+        self.transport.connect_device_proxy.return_value = ZX_OK
 
         _ = rtc_using_fc.RtcUsingFc(self.transport, self.reboot_af)
-        self.assertEqual(self.transport.connect_device_proxy.call_count, 2)
+        self.assertEqual(self.transport.connect_device_proxy.call_count, 1)
         self.reboot_af.register_for_on_device_boot.assert_called_once()
 
-        (ep1,), _ = self.transport.connect_device_proxy.call_args_list[0]
-        (ep2,), _ = self.transport.connect_device_proxy.call_args_list[1]
+        (ep,), _ = self.transport.connect_device_proxy.call_args_list[0]
 
-        self.assertEqual(rtc_using_fc.RtcUsingFc.MONIKER_OLD, ep1.moniker)
-        self.assertEqual(rtc_using_fc.CAPABILITY, ep1.protocol)
-
-        self.assertEqual(rtc_using_fc.RtcUsingFc.MONIKER_NEW, ep2.moniker)
-        self.assertEqual(rtc_using_fc.CAPABILITY, ep2.protocol)
+        self.assertEqual(rtc_using_fc.RtcUsingFc.MONIKER, ep.moniker)
+        self.assertEqual(rtc_using_fc.CAPABILITY, ep.protocol)
 
     async def test_rtc_get(self) -> None:
         chip_time = frtc.Time(23, 50, 15, 5, 2, 2022)

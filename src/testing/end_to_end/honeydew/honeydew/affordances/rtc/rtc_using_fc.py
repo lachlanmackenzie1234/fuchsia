@@ -28,11 +28,7 @@ class RtcUsingFc(rtc.Rtc):
     # routable from the toolbox realm, this affordance can be made
     # board-agnostic.
 
-    # TODO(b/340607972): To allow for smooth transition from vim3 to vim3-devicetree, both monikers
-    # will be tried. Whichever path exists will be used. Once the migration is complete, the old
-    # moniker can be discarded.
-    MONIKER_OLD = "/bootstrap/base-drivers:i2c-0.aml-i2c.i2c.i2c-0-81"
-    MONIKER_NEW = "/bootstrap/base-drivers:i2c-5000.aml-i2c.i2c.i2c-0-81"
+    MONIKER = "/bootstrap/base-drivers:i2c-5000.aml-i2c.i2c.i2c-0-81.rtc-51"
 
     def __init__(
         self,
@@ -57,22 +53,15 @@ class RtcUsingFc(rtc.Rtc):
 
     def _connect_proxy(self) -> None:
         """Connect the RTC Device protocol proxy."""
-        ep_old = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_OLD, CAPABILITY)
-        ep_new = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_NEW, CAPABILITY)
+        ep = custom_types.FidlEndpoint(RtcUsingFc.MONIKER, CAPABILITY)
         try:
             self._proxy: frtc.DeviceClient = frtc.DeviceClient(
-                self._controller.connect_device_proxy(ep_old)
+                self._controller.connect_device_proxy(ep)
             )
         except RuntimeError:
-            # Try connecting through the other moniker.
-            try:
-                self._proxy = frtc.DeviceClient(
-                    self._controller.connect_device_proxy(ep_new)
-                )
-            except RuntimeError:
-                raise HoneydewRtcError(
-                    "Failed to connect to either moniker."
-                ) from None
+            raise HoneydewRtcError(
+                f"Failed to connect to moniker {RtcUsingFc.MONIKER}"
+            ) from None
 
     # Protocol methods.
     async def get(self) -> datetime.datetime:
