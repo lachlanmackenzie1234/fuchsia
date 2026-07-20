@@ -660,7 +660,6 @@ _BAZEL_BUILD_PATHS_TO_IGNORE = [
     "sdk/fidl/fuchsia.hardware.qcom.hvdcpopti/BUILD.bazel",
     "sdk/fidl/fuchsia.hardware.sockettunnel/BUILD.bazel",
     "sdk/fidl/fuchsia.power.battery/BUILD.bazel",
-    "sdk/fidl/system.state/BUILD.bazel",
 
     # TODO(https://fxbug.dev/454449781): Enable this check when bazel2gn supports zither libraries.
     "sdk/fidl/zbi/BUILD.bazel",
