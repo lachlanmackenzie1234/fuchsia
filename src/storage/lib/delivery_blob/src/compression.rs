@@ -17,6 +17,8 @@ mod compression_algorithm;
 pub use compression_algorithm::{
     CompressionAlgorithm, Compressor, Decompressor, ThreadLocalCompressor, ThreadLocalDecompressor,
 };
+mod compression_info;
+pub use compression_info::CompressionInfo;
 
 /// Validated chunk information from an archive. Compressed ranges are relative to the start of
 /// compressed data (i.e. they start after the header and seek table).

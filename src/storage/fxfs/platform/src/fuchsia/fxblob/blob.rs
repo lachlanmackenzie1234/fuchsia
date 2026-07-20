@@ -15,7 +15,7 @@ use crate::fuchsia::pager::{
 use crate::fuchsia::volume::{FxVolume, READ_AHEAD_SIZE};
 use crate::fxblob::atomic_vec::AtomicBitVec;
 use anyhow::{Context, Error, anyhow, bail, ensure};
-use delivery_blob::compression::{CompressionAlgorithm, ThreadLocalDecompressor};
+use delivery_blob::compression::{CompressionAlgorithm, CompressionInfo};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer as MemBuffer;
 use fuchsia_component_client::connect_to_protocol;
@@ -30,7 +30,6 @@ use fxfs::object_store::transaction::LockKey;
 use fxfs::object_store::{AttributeId, DataObjectHandle, ObjectDescriptor, StoreObjectHandle};
 use fxfs::round::{round_down, round_up};
 use fxfs_macros::ToWeakNode;
-use std::num::NonZero;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -321,7 +320,7 @@ impl PagerBacked for FxBlob {
 
     fn page_in(self: Arc<Self>, range: PageInRange<Self>) {
         let read_ahead_size = if let Some(compression_info) = &self.compression_info {
-            read_ahead_size_for_chunk_size(compression_info.chunk_size, READ_AHEAD_SIZE)
+            read_ahead_size_for_chunk_size(compression_info.chunk_size(), READ_AHEAD_SIZE)
         } else {
             READ_AHEAD_SIZE
         };
@@ -430,155 +429,6 @@ impl PagerBacked for FxBlob {
     }
 }
 
-pub struct CompressionInfo {
-    chunk_size: u64,
-    // The chunked compression format stores 0 as the first offset but it's not stored here. Not
-    // storing the 0 avoids the allocation for blobs smaller than the chunk size.
-    small_offsets: Box<[u32]>,
-    large_offsets: Box<[u64]>,
-    decompressor: ThreadLocalDecompressor,
-}
-
-impl CompressionInfo {
-    pub fn new(
-        chunk_size: u64,
-        offsets: &[u64],
-        compression_algorithm: CompressionAlgorithm,
-    ) -> Result<Self, Error> {
-        let decompressor = compression_algorithm.thread_local_decompressor();
-        if chunk_size == 0 {
-            return Err(FxfsError::IntegrityError.into());
-        } else if offsets.is_empty() || *offsets.first().unwrap() != 0 {
-            // There should always be at least 1 offset and the first offset must always be 0.
-            Err(FxfsError::IntegrityError.into())
-        } else if !offsets.array_windows().all(|[a, b]| a < b) {
-            // The offsets must be in ascending order.
-            Err(FxfsError::IntegrityError.into())
-        } else if offsets.len() == 1 {
-            // Simple case where the blob is smaller than the chunk size so only the 0 offset is
-            // present. The 0 isn't stored so no allocation is necessary.
-            Ok(Self {
-                chunk_size,
-                small_offsets: Box::default(),
-                large_offsets: Box::default(),
-                decompressor,
-            })
-        } else if *offsets.last().unwrap() <= u32::MAX as u64 {
-            // Check the last index first since most compressed blobs are going to be smaller
-            // than 4GiB making all offsets small.
-            Ok(Self {
-                chunk_size,
-                small_offsets: offsets[1..].iter().map(|x| *x as u32).collect(),
-                large_offsets: Box::default(),
-                decompressor,
-            })
-        } else {
-            // The partition point is the index of the first compressed offset that's > u32::MAX.
-            let partition_point = offsets.partition_point(|&x| x <= u32::MAX as u64);
-            Ok(Self {
-                chunk_size,
-                small_offsets: offsets[1..partition_point].iter().map(|x| *x as u32).collect(),
-                large_offsets: offsets[partition_point..].into(),
-                decompressor,
-            })
-        }
-    }
-
-    fn compressed_range_for_uncompressed_range(
-        &self,
-        range: &Range<u64>,
-    ) -> Result<(u64, Option<NonZero<u64>>), Error> {
-        ensure!(range.start.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
-        ensure!(range.start < range.end, FxfsError::Inconsistent);
-
-        let start_chunk_index = (range.start / self.chunk_size) as usize;
-        let start_offset = self
-            .compressed_offset_for_chunk_index(start_chunk_index)
-            .ok_or(FxfsError::OutOfRange)?;
-
-        // The end of the range may not be aligned to the chunk size for the last chunk.
-        let end_chunk_index = range.end.div_ceil(self.chunk_size) as usize;
-        let end_offset = match self.compressed_offset_for_chunk_index(end_chunk_index) {
-            None => None,
-            Some(offset) => {
-                // This isn't the last chunk so the end must be aligned.
-                ensure!(range.end.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
-                // `CompressionInfo::new` validates that all of the offsets are ascending. The end
-                // of the range is greater than the start so this can never be 0.
-                Some(NonZero::new(offset).unwrap())
-            }
-        };
-        Ok((start_offset, end_offset))
-    }
-
-    fn compressed_offset_for_chunk_index(&self, chunk_index: usize) -> Option<u64> {
-        // The "0" compressed offset isn't stored so all of the indices are shifted left by 1.
-        if chunk_index == 0 {
-            Some(0)
-        } else if chunk_index - 1 < self.small_offsets.len() {
-            Some(self.small_offsets[chunk_index - 1] as u64)
-        } else if chunk_index - 1 - self.small_offsets.len() < self.large_offsets.len() {
-            Some(self.large_offsets[chunk_index - 1 - self.small_offsets.len()])
-        } else {
-            None
-        }
-    }
-
-    /// Decompress the bytes of `src` into `dst`.
-    ///   - `src` is allowed to span multiple chunks.
-    ///   - `dst` must have the exact size of the uncompressed bytes.
-    ///   - `dst_start_offset` is the location of the uncompressed bytes within the blob and must be
-    ///     chunk aligned. This is necessary for determining the chunk boundaries in `src`.
-    fn decompress(
-        &self,
-        mut src: &[u8],
-        mut dst: &mut [u8],
-        dst_start_offset: u64,
-    ) -> Result<(), Error> {
-        ensure!(dst_start_offset.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
-
-        let start_chunk_index = (dst_start_offset / self.chunk_size) as usize;
-        let chunk_count = dst.len().div_ceil(self.chunk_size as usize);
-        let mut start_offset = self
-            .compressed_offset_for_chunk_index(start_chunk_index)
-            .ok_or(FxfsError::Inconsistent)?;
-
-        // Decompress each chunk individually.
-        for chunk_index in start_chunk_index..(start_chunk_index + chunk_count) {
-            match self.compressed_offset_for_chunk_index(chunk_index + 1) {
-                Some(end_offset) => {
-                    let (to_decompress, src_remaining) = src
-                        .split_at_checked((end_offset - start_offset) as usize)
-                        .ok_or(FxfsError::Inconsistent)?;
-                    let (to_decompress_into, dst_remaining) = dst
-                        .split_at_mut_checked(self.chunk_size as usize)
-                        .ok_or(FxfsError::Inconsistent)?;
-
-                    let decompressed_bytes = self.decompressor.decompress_into(
-                        to_decompress,
-                        to_decompress_into,
-                        chunk_index,
-                    )?;
-                    ensure!(
-                        decompressed_bytes == to_decompress_into.len(),
-                        FxfsError::Inconsistent
-                    );
-                    src = src_remaining;
-                    dst = dst_remaining;
-                    start_offset = end_offset;
-                }
-                None => {
-                    let decompressed_bytes =
-                        self.decompressor.decompress_into(src, dst, chunk_index)?;
-                    ensure!(decompressed_bytes == dst.len(), FxfsError::Inconsistent);
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
 fn set_vmo_name(vmo: &zx::Vmo, merkle_root: &Hash) {
     let trimmed_merkle = &merkle_root.to_string()[0..BLOB_NAME_HASH_LENGTH];
     let name = format!("{BLOB_NAME_PREFIX}{trimmed_merkle}");
@@ -588,7 +438,7 @@ fn set_vmo_name(vmo: &zx::Vmo, merkle_root: &Hash) {
 
 fn min_chunk_size(compression_info: &Option<CompressionInfo>) -> u64 {
     if let Some(compression_info) = compression_info {
-        read_ahead_size_for_chunk_size(compression_info.chunk_size, READ_AHEAD_SIZE)
+        read_ahead_size_for_chunk_size(compression_info.chunk_size(), READ_AHEAD_SIZE)
     } else {
         READ_AHEAD_SIZE
     }
@@ -663,6 +513,7 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_async::epoch::Epoch;
     use fxfs_make_blob_image::FxBlobBuilder;
+    use std::num::NonZero;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
@@ -815,90 +666,6 @@ mod tests {
         assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 2], ZSTD).is_ok());
         assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 2, 1], ZSTD).is_err());
         assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 1], ZSTD).is_err());
-    }
-
-    #[fuchsia::test]
-    fn test_compression_info_splitting_offsets() {
-        // Single chunk blob doesn't store any offsets.
-        let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0], ZSTD).unwrap();
-        assert!(compression_info.small_offsets.is_empty());
-        assert!(compression_info.large_offsets.is_empty());
-
-        // Single small offset.
-        let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10], ZSTD).unwrap();
-        assert_eq!(&*compression_info.small_offsets, &[10]);
-        assert!(compression_info.large_offsets.is_empty());
-
-        // Multiple small offsets.
-        let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10, 20, 30], ZSTD).unwrap();
-        assert_eq!(&*compression_info.small_offsets, &[10, 20, 30]);
-        assert!(compression_info.large_offsets.is_empty());
-
-        // One less than the largest small offset.
-        let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET - 1], ZSTD)
-                .unwrap();
-        assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1]);
-        assert!(compression_info.large_offsets.is_empty());
-
-        // The largest small offset.
-        let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET], ZSTD).unwrap();
-        assert_eq!(&*compression_info.small_offsets, &[u32::MAX]);
-        assert!(compression_info.large_offsets.is_empty());
-
-        // The smallest large offset.
-        let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 1], ZSTD)
-                .unwrap();
-        assert!(compression_info.small_offsets.is_empty());
-        assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 1]);
-
-        // Multiple offsets around boundary between small and large offsets.
-        let compression_info = CompressionInfo::new(
-            COMPRESSED_BLOB_CHUNK_SIZE,
-            &[0, MAX_SMALL_OFFSET - 1, MAX_SMALL_OFFSET, MAX_SMALL_OFFSET + 1],
-            ZSTD,
-        )
-        .unwrap();
-        assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1, u32::MAX]);
-        assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 1]);
-
-        // Single large offset.
-        let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 10], ZSTD)
-                .unwrap();
-        assert!(compression_info.small_offsets.is_empty());
-        assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 10]);
-
-        // Multiple large offsets.
-        let compression_info = CompressionInfo::new(
-            COMPRESSED_BLOB_CHUNK_SIZE,
-            &[0, MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20],
-            ZSTD,
-        )
-        .unwrap();
-        assert!(compression_info.small_offsets.is_empty());
-        assert_eq!(
-            &*compression_info.large_offsets,
-            &[MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20]
-        );
-
-        // Small and large offsets.
-        let compression_info = CompressionInfo::new(
-            COMPRESSED_BLOB_CHUNK_SIZE,
-            &[0, 10, 20, MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20],
-            ZSTD,
-        )
-        .unwrap();
-        assert_eq!(&*compression_info.small_offsets, &[10, 20]);
-        assert_eq!(
-            &*compression_info.large_offsets,
-            &[MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20]
-        );
     }
 
     #[fuchsia::test]

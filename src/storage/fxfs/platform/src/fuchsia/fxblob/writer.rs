@@ -7,13 +7,13 @@
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::fxblob::BlobDirectory;
-use crate::fuchsia::fxblob::blob::{CompressionInfo, FxBlob};
+use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::node::{FxNode, GetResult};
 use crate::fuchsia::volume::FxVolume;
 use anyhow::{Context as _, Error};
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use delivery_blob::compression::{
-    ChunkInfo, ChunkedDecompressor, CompressionAlgorithm, decode_archive,
+    ChunkInfo, ChunkedDecompressor, CompressionAlgorithm, CompressionInfo, decode_archive,
 };
 use delivery_blob::{DeliveryBlob, MINIMUM_HEADER_SIZE};
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
