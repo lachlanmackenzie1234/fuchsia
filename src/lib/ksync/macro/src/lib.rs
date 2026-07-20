@@ -18,6 +18,7 @@ struct GuardedField {
     mutex_ident: Ident,
     ty: Type,
     vis: syn::Visibility,
+    project_as_pin: bool,
 }
 
 #[proc_macro_attribute]
@@ -34,6 +35,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             let mut is_mutex = false;
             let mut is_brwlock = false;
             let mut guarded_by = None;
+            let mut is_pinned = false;
+            let mut is_unpinned = false;
             let mut attrs_to_remove = Vec::new();
             let mut mutex_type = quote! { ::ksync::RawMutex };
 
@@ -58,12 +61,32 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                         }
                     }
                     attrs_to_remove.push(idx);
+                } else if attr.path().is_ident("pin") {
+                    is_pinned = true;
+                } else if attr.path().is_ident("ksync") {
+                    if let syn::Meta::List(meta_list) = &attr.meta {
+                        if let Ok(ident) = meta_list.parse_args::<Ident>() {
+                            if ident == "unpinned" {
+                                // TODO(https://fxbug.dev/536051491): Remove this workaround once
+                                // WavlTree/region-alloc support safe pin projection.
+                                is_unpinned = true;
+                                attrs_to_remove.push(idx);
+                            }
+                        }
+                    }
                 }
             }
 
             // Remove our helper attributes in reverse order.
             for idx in attrs_to_remove.into_iter().rev() {
                 field.attrs.remove(idx);
+            }
+
+            if is_unpinned && !is_wavltree_type(&field.ty) {
+                errors.push(syn::Error::new(
+                    field.ty.span(),
+                    "The #[ksync(unpinned)] attribute is only allowed on WavlTree fields",
+                ));
             }
 
             if is_mutex {
@@ -100,6 +123,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     mutex_ident,
                     ty: field.ty.clone(),
                     vis: field.vis.clone(),
+                    project_as_pin: is_pinned && !is_unpinned,
                 });
             }
         }
@@ -347,42 +371,78 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             let f_mut_ident = format_ident!("{}_mut", f_ident);
 
-            guard_accessors.extend(quote! {
-                #[inline]
-                #f_vis fn #f_ident(&self) -> &#f_ty {
-                    // SAFETY: The lock token proves that the lock protecting this cell is held.
-                    unsafe { self.parent.#f_ident.get(self.inner.token()) }
-                }
+            if f.project_as_pin {
+                guard_accessors.extend(quote! {
+                    #[inline]
+                    #f_vis fn #f_ident(&self) -> &#f_ty {
+                        // SAFETY: The lock token proves that the lock protecting this cell is held.
+                        unsafe { self.parent.#f_ident.get(self.inner.token()) }
+                    }
 
-                #[inline]
-                #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> &mut #f_ty {
-                    // SAFETY: Safe projection to obtain unpinned reference to self without moving fields.
-                    let me = unsafe { self.get_unchecked_mut() };
-                    // SAFETY: `inner` is structurally pinned inside the pinned guard `self`.
-                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
-                    // SAFETY: We hold an exclusive mutable reference to the guard token.
-                    unsafe { me.parent.#f_ident.get_mut(inner_pin.token_mut()) }
-                }
-            });
+                    #[inline]
+                    #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> ::core::pin::Pin<&mut #f_ty> {
+                        // SAFETY: Safe projection to obtain pinned reference to self
+                        // without moving fields.
+                        let me = unsafe { self.get_unchecked_mut() };
+                        // SAFETY: `inner` is structurally pinned inside the pinned guard `self`.
+                        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                        // SAFETY: We hold an exclusive mutable reference to the guard token,
+                        // and the parent is pinned.
+                        unsafe { ::core::pin::Pin::new_unchecked(me.parent.#f_ident.get_mut(inner_pin.token_mut())) }
+                    }
+                });
+
+                fields_mut_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: ::core::pin::Pin<&'b mut #f_ty>,
+                });
+
+                fields_mut_init.extend(quote! {
+                    // SAFETY: We hold exclusive access to the guard token, each field cell
+                    // is disjoint, and the parent struct is pinned so structurally pinned
+                    // fields remain pinned.
+                    #f_ident: unsafe { ::core::pin::Pin::new_unchecked(&mut *me.parent.#f_ident.as_mut_ptr(token)) },
+                });
+            } else {
+                guard_accessors.extend(quote! {
+                    #[inline]
+                    #f_vis fn #f_ident(&self) -> &#f_ty {
+                        // SAFETY: The lock token proves that the lock protecting this cell is held.
+                        unsafe { self.parent.#f_ident.get(self.inner.token()) }
+                    }
+
+                    #[inline]
+                    #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> &mut #f_ty {
+                        // SAFETY: Safe projection to obtain unpinned reference to self
+                        // without moving fields.
+                        let me = unsafe { self.get_unchecked_mut() };
+                        // SAFETY: `inner` is structurally pinned inside the pinned guard `self`.
+                        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                        // SAFETY: We hold an exclusive mutable reference to the guard token.
+                        unsafe { me.parent.#f_ident.get_mut(inner_pin.token_mut()) }
+                    }
+                });
+
+                fields_mut_decl.extend(quote! {
+                    #[allow(dead_code)]
+                    #f_vis #f_ident: &'b mut #f_ty,
+                });
+
+                fields_mut_init.extend(quote! {
+                    // SAFETY: We hold exclusive access to the guard token and each field cell
+                    // is disjoint.
+                    #f_ident: unsafe { &mut *me.parent.#f_ident.as_mut_ptr(token) },
+                });
+            }
 
             fields_decl.extend(quote! {
                 #[allow(dead_code)]
                 #f_vis #f_ident: &'b #f_ty,
             });
 
-            fields_mut_decl.extend(quote! {
-                #[allow(dead_code)]
-                #f_vis #f_ident: &'b mut #f_ty,
-            });
-
             fields_init.extend(quote! {
                 // SAFETY: The guard token proves shared access to the cell.
                 #f_ident: unsafe { me.parent.#f_ident.get(token) },
-            });
-
-            fields_mut_init.extend(quote! {
-                // SAFETY: We hold exclusive access to the guard token and each field cell is disjoint.
-                #f_ident: unsafe { &mut *me.parent.#f_ident.as_mut_ptr(token) },
             });
         }
 
@@ -704,6 +764,14 @@ fn to_camel_case(s: &str) -> String {
         }
     }
     camel
+}
+
+fn is_wavltree_type(ty: &Type) -> bool {
+    if let Type::Path(TypePath { path, .. }) = ty {
+        path.segments.iter().any(|seg| seg.ident == "WavlTree")
+    } else {
+        false
+    }
 }
 
 fn is_kmutex_type(ty: &Type) -> bool {

@@ -78,6 +78,14 @@ impl<T, Class> KCell<T, Class> {
         self.value.get_mut()
     }
 
+    /// Projects a pinned reference to the cell to a pinned reference to the inner value.
+    #[inline]
+    pub fn get_pinned_mut(self: core::pin::Pin<&mut Self>) -> core::pin::Pin<&mut T> {
+        // SAFETY: `KCell` is `repr(transparent)` and contains `T` at the same address.
+        // Pinning is preserved because `KCell` does not move `T`.
+        unsafe { self.map_unchecked_mut(|s| s.get_inner_mut()) }
+    }
+
     /// Unwraps the cell, returning the inner value.
     #[inline]
     pub fn into_inner(self) -> T {

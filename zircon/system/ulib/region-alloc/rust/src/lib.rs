@@ -295,14 +295,20 @@ pub struct RegionAllocator {
     mu: KMutex,
 
     #[pin]
+    // TODO(https://fxbug.dev/536051491): Remove this once WavlTree is pin-aware.
+    #[ksync(unpinned)]
     #[guarded_by(mu)]
     allocated_regions_by_base: WavlTree<u64, NonNull<Region>, SortByBase, TrackingSize>,
 
     #[pin]
+    // TODO(https://fxbug.dev/536051491): Remove this once WavlTree is pin-aware.
+    #[ksync(unpinned)]
     #[guarded_by(mu)]
     avail_regions_by_base: WavlTree<u64, NonNull<Region>, SortByBase, TrackingSize>,
 
     #[pin]
+    // TODO(https://fxbug.dev/536051491): Remove this once WavlTree is pin-aware.
+    #[ksync(unpinned)]
     #[guarded_by(mu)]
     avail_regions_by_size: WavlTree<RegionKey, NonNull<Region>, SortBySize, TrackingSize>,
 
