@@ -108,4 +108,11 @@ TEST(LogicalToPhysicalMap, MultipleCopiesSomeBadTest) {
   CheckMultiple(std::move(ltop_map), std::move(expected));
 }
 
+TEST(LogicalToPhysicalMap, OverflowTest) {
+  LogicalToPhysicalMap ltop_map(2, 0x80000000, fbl::Array<uint32_t>());
+  uint32_t physical;
+  EXPECT_EQ(ltop_map.GetPhysical(0, 0x40000000, &physical), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(ltop_map.GetPhysical(1, 0xC0000000, &physical), ZX_ERR_OUT_OF_RANGE);
+}
+
 }  // namespace nand

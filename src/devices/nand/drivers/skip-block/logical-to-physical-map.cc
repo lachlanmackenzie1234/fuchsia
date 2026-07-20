@@ -35,6 +35,9 @@ zx_status_t LogicalToPhysicalMap::GetPhysical(uint32_t copy, uint32_t block,
   ZX_ASSERT(copy < copies_);
 
   const uint32_t blocks_per_copy = block_count_ / copies_;
+  if (block >= blocks_per_copy) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
   const uint32_t first = copy * blocks_per_copy;
   const uint32_t last = first + blocks_per_copy - 1;
   block += first;
