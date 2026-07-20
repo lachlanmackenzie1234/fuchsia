@@ -188,6 +188,8 @@ tables_generator_tests_*.txt
 !/third_party/github.com/google/
 !/third_party/github.com/google/cppdap
 /third_party/github.com/google/cppdap/src
+!/third_party/github.com/google/experimental-emboss-rust
+/third_party/github.com/google/experimental-emboss-rust/src
 !/third_party/github.com/jd/
 !/third_party/github.com/jd/tenacity
 /third_party/github.com/jd/tenacity/src

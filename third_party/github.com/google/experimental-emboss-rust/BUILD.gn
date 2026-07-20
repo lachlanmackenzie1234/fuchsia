@@ -1,0 +1,50 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/rust/rustc_library.gni")
+import(
+    "//third_party/github.com/google/experimental-emboss-rust/src/gen/sources.gni")
+
+visibility = [ ":*" ]
+
+config("cpp_utils_config") {
+  include_dirs = [ "src" ]
+}
+
+source_set("cpp_utils") {
+  sources = []
+  foreach(s, emboss_runtime_cpp_sources) {
+    sources += [ "src/$s" ]
+  }
+  public_configs = [ ":cpp_utils_config" ]
+
+  # This backend is still experimental and as such should only be used
+  # by the `sunstone` project.
+  visibility += [ "//src/connectivity/bluetooth/sunstone:*" ]
+}
+
+rustc_library("emboss_runtime") {
+  crate_name = "emboss_runtime"
+  version = "0.1.0"
+  edition = "2024"
+  source_root = "src/runtime/experimental/rust/src/lib.rs"
+  sources = [
+    "src/runtime/experimental/rust/src/lib.rs",
+    "src/runtime/experimental/rust/src/prelude.rs",
+  ]
+
+  # This backend is still experimental and as such should only be used
+  # by the `sunstone` project.
+  visibility += [ "//src/connectivity/bluetooth/sunstone:*" ]
+}

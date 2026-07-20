@@ -121,6 +121,11 @@
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/emboss"
              revision="41c1b64588792e23e60a2cef85b1ea4ed519ca7a"
              gerrithost="https://fuchsia-review.googlesource.com"/>
+    <project name="third_party/github.com/google/experimental-emboss-rust"
+             path="third_party/github.com/google/experimental-emboss-rust/src"
+             remote="https://fuchsia.googlesource.com/third_party/github.com/google/emboss"
+             revision="ea59cc1e6811b9471e5f863710f2814c17c535ee"
+             gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/github.com/google/bt-test-interfaces"
              path="third_party/github.com/google/bt-test-interfaces/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/bt-test-interfaces"
