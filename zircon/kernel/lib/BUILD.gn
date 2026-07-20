@@ -38,6 +38,7 @@ all_libs = [
   "crashlog",
   "crypto",
   "cxxabi-dynamic-init",
+  "debug",
   "debuglog",
   "devicetree",
   "dump",
