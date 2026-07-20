@@ -93,6 +93,7 @@ async fn get_attributes_per_package_source(source: PackageSource) {
         root_dir,
         "dir",
         Args {
+            open_flags: fio::Flags::PERM_GET_ATTRIBUTES,
             expected_protocols: fio::NodeProtocolKinds::DIRECTORY,
             expected_abilities: fio::Abilities::GET_ATTRIBUTES
                 | fio::Abilities::ENUMERATE
@@ -120,7 +121,7 @@ async fn get_attributes_per_package_source(source: PackageSource) {
         root_dir,
         "meta",
         Args {
-            open_flags: fio::Flags::PROTOCOL_FILE,
+            open_flags: fio::Flags::PROTOCOL_FILE | fio::Flags::PERM_GET_ATTRIBUTES,
             expected_protocols: fio::NodeProtocolKinds::FILE,
             expected_abilities: fio::Abilities::GET_ATTRIBUTES | fio::Abilities::READ_BYTES,
             expected_content_size: Some(64),
@@ -133,7 +134,7 @@ async fn get_attributes_per_package_source(source: PackageSource) {
         root_dir,
         "meta",
         Args {
-            open_flags: fio::Flags::PROTOCOL_DIRECTORY,
+            open_flags: fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::PERM_GET_ATTRIBUTES,
             expected_protocols: fio::NodeProtocolKinds::DIRECTORY,
             expected_abilities: fio::Abilities::GET_ATTRIBUTES
                 | fio::Abilities::ENUMERATE
@@ -148,6 +149,7 @@ async fn get_attributes_per_package_source(source: PackageSource) {
         root_dir,
         "meta/dir",
         Args {
+            open_flags: fio::Flags::PERM_GET_ATTRIBUTES,
             expected_protocols: fio::NodeProtocolKinds::DIRECTORY,
             expected_abilities: fio::Abilities::GET_ATTRIBUTES
                 | fio::Abilities::ENUMERATE
@@ -162,6 +164,7 @@ async fn get_attributes_per_package_source(source: PackageSource) {
         root_dir,
         "meta/file",
         Args {
+            open_flags: fio::Flags::PERM_GET_ATTRIBUTES,
             expected_protocols: fio::NodeProtocolKinds::FILE,
             expected_abilities: fio::Abilities::GET_ATTRIBUTES | fio::Abilities::READ_BYTES,
             expected_content_size: Some(9),
