@@ -158,8 +158,11 @@ async fn list_minidumps(rcs: &RemoteControlProxy, capability: &str) -> Result<Ve
                     && entry.name.ends_with("/minidump.dmp")
             })
             .map(|entry| async move {
-                let proxy =
-                    open_file_async(reports_dir_ref, &entry.name, fio::Flags::PERM_READ_BYTES)?;
+                let proxy = open_file_async(
+                    reports_dir_ref,
+                    &entry.name,
+                    fio::Flags::PERM_READ_BYTES | fio::Flags::PERM_GET_ATTRIBUTES,
+                )?;
                 let result = proxy
                     .get_attributes(fio::NodeAttributesQuery::MODIFICATION_TIME)
                     .await

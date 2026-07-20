@@ -1087,7 +1087,7 @@ impl Interpreter {
                             let is_dir = if let Ok(node) = fuchsia_fs_fdomain::directory::open_node(
                                 &dir,
                                 &entry.name,
-                                fio::Flags::empty(),
+                                fio::Flags::PERM_GET_ATTRIBUTES,
                             )
                             .await
                             {
