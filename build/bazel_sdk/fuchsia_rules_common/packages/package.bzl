@@ -78,13 +78,6 @@ COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES = {
         """,
         providers = [FuchsiaPackageInfo],
     ),
-    "fuchsia_api_level": attr.string(
-        doc = """The Fuchsia API level to use when building this package.
-
-        This value will be sent to the fidl compiler and cc_* rules when
-        compiling dependencies.
-        """,
-    ),
     "platform": attr.string(
         doc = """The Fuchsia platform to build for.
 

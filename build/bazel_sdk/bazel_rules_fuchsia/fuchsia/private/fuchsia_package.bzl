@@ -310,6 +310,16 @@ _build_fuchsia_package = rule(
     cfg = fuchsia_transition,
     toolchains = [FUCHSIA_TOOLCHAIN_DEFINITION, "@bazel_tools//tools/cpp:toolchain_type"],
     attrs = COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES | {
+        "fuchsia_api_level": attr.string(
+            doc = """The Fuchsia API level to use when building this package.
+
+            Defaults to the repository default. Ignored if `FUCHSIA_API_LEVEL_TARGET` is present in
+            `settings`. See `fuchsia_transition` for details.
+
+            The value selected by `fuchsia_transition` is passed to the FIDL and C/C++ compilers
+            and written in the package metadata.
+            """,
+        ),
         "processed_binaries": attr.label(
             doc = "Label to a find_and_process_unstripped_binaries() target for this package.",
             providers = [FuchsiaPackageResourcesInfo, FuchsiaDebugSymbolInfo],
