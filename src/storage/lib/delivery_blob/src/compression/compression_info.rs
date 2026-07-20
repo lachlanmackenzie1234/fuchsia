@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use crate::compression::{ChunkedArchiveError, CompressionAlgorithm, ThreadLocalDecompressor};
-use std::num::NonZeroU64;
 use std::ops::Range;
 
 #[derive(Clone)]
 pub struct CompressionInfo {
     chunk_size: u64,
+    compressed_size: u64,
     // The chunked compression format stores 0 as the first offset but it's not stored here. Not
     // storing the 0 avoids the allocation for blobs smaller than the chunk size.
     small_offsets: Box<[u32]>,
@@ -19,6 +19,7 @@ pub struct CompressionInfo {
 impl CompressionInfo {
     pub fn new(
         chunk_size: u64,
+        compressed_size: u64,
         offsets: &[u64],
         compression_algorithm: CompressionAlgorithm,
     ) -> Result<Self, ChunkedArchiveError> {
@@ -36,6 +37,7 @@ impl CompressionInfo {
             // present. The 0 isn't stored so no allocation is necessary.
             Ok(Self {
                 chunk_size,
+                compressed_size,
                 small_offsets: Box::default(),
                 large_offsets: Box::default(),
                 decompressor,
@@ -45,6 +47,7 @@ impl CompressionInfo {
             // than 4GiB making all offsets small.
             Ok(Self {
                 chunk_size,
+                compressed_size,
                 small_offsets: offsets[1..].iter().map(|x| *x as u32).collect(),
                 large_offsets: Box::default(),
                 decompressor,
@@ -54,6 +57,7 @@ impl CompressionInfo {
             let partition_point = offsets.partition_point(|&x| x <= u32::MAX as u64);
             Ok(Self {
                 chunk_size,
+                compressed_size,
                 small_offsets: offsets[1..partition_point].iter().map(|x| *x as u32).collect(),
                 large_offsets: offsets[partition_point..].into(),
                 decompressor,
@@ -66,10 +70,16 @@ impl CompressionInfo {
         self.chunk_size
     }
 
+    /// Returns the total compressed size of this blob.
+    pub fn compressed_size(&self) -> u64 {
+        self.compressed_size
+    }
+
+    /// Returns the compressed range for the specified uncompressed range.
     pub fn compressed_range_for_uncompressed_range(
         &self,
         range: &Range<u64>,
-    ) -> Result<(u64, Option<NonZeroU64>), ChunkedArchiveError> {
+    ) -> Result<Range<u64>, ChunkedArchiveError> {
         if range.start % self.chunk_size != 0 || range.start >= range.end {
             return Err(ChunkedArchiveError::IntegrityError);
         }
@@ -82,22 +92,21 @@ impl CompressionInfo {
         // The end of the range may not be aligned to the chunk size for the last chunk.
         let end_chunk_index = range.end.div_ceil(self.chunk_size) as usize;
         let end_offset = match self.compressed_offset_for_chunk_index(end_chunk_index) {
-            None => None,
+            None => self.compressed_size,
             Some(offset) => {
                 // This isn't the last chunk so the end must be aligned.
-                if range.end % self.chunk_size != 0 {
+                if !range.end.is_multiple_of(self.chunk_size) {
                     return Err(ChunkedArchiveError::IntegrityError);
                 }
-                // `CompressionInfo::new` validates that all of the offsets are ascending. The end
-                // of the range is greater than the start so this can never be 0.
-                Some(NonZeroU64::new(offset).unwrap())
+                // `CompressionInfo::new` validates that all of the offsets are ascending.
+                offset
             }
         };
-        Ok((start_offset, end_offset))
+
+        Ok(start_offset..end_offset)
     }
 
-    pub fn compressed_offset_for_chunk_index(&self, chunk_index: usize) -> Option<u64> {
-        // The "0" compressed offset isn't stored so all of the indices are shifted left by 1.
+    fn compressed_offset_for_chunk_index(&self, chunk_index: usize) -> Option<u64> {
         if chunk_index == 0 {
             Some(0)
         } else if chunk_index - 1 < self.small_offsets.len() {
@@ -173,20 +182,27 @@ mod tests {
 
     #[test]
     fn test_compression_info_new_small_and_large_offsets() {
-        let info = CompressionInfo::new(4096, &[0], CompressionAlgorithm::Zstd).unwrap();
+        let info = CompressionInfo::new(4096, 50, &[0], CompressionAlgorithm::Zstd).unwrap();
         assert_eq!(info.chunk_size(), 4096);
+        assert_eq!(info.compressed_size(), 50);
         assert_eq!(info.compressed_offset_for_chunk_index(0), Some(0));
         assert_eq!(info.compressed_offset_for_chunk_index(1), None);
 
-        let info = CompressionInfo::new(4096, &[0, 100, 250], CompressionAlgorithm::Zstd).unwrap();
+        let info =
+            CompressionInfo::new(4096, 350, &[0, 100, 250], CompressionAlgorithm::Zstd).unwrap();
         assert_eq!(info.compressed_offset_for_chunk_index(0), Some(0));
         assert_eq!(info.compressed_offset_for_chunk_index(1), Some(100));
         assert_eq!(info.compressed_offset_for_chunk_index(2), Some(250));
         assert_eq!(info.compressed_offset_for_chunk_index(3), None);
 
         let large_val = u32::MAX as u64 + 1000;
-        let info =
-            CompressionInfo::new(4096, &[0, 500, large_val], CompressionAlgorithm::Zstd).unwrap();
+        let info = CompressionInfo::new(
+            4096,
+            large_val + 500,
+            &[0, 500, large_val],
+            CompressionAlgorithm::Zstd,
+        )
+        .unwrap();
         assert_eq!(info.compressed_offset_for_chunk_index(0), Some(0));
         assert_eq!(info.compressed_offset_for_chunk_index(1), Some(500));
         assert_eq!(info.compressed_offset_for_chunk_index(2), Some(large_val));
@@ -195,72 +211,83 @@ mod tests {
 
     #[test]
     fn test_compressed_range_for_uncompressed_range() {
-        let info =
-            CompressionInfo::new(4096, &[0, 100, 250, 400], CompressionAlgorithm::Zstd).unwrap();
-        let (start, end) = info.compressed_range_for_uncompressed_range(&(0..4096)).unwrap();
-        assert_eq!(start, 0);
-        assert_eq!(end, Some(NonZeroU64::new(100).unwrap()));
+        let info = CompressionInfo::new(4096, 500, &[0, 100, 250, 400], CompressionAlgorithm::Zstd)
+            .unwrap();
+        let range = info.compressed_range_for_uncompressed_range(&(0..4096)).unwrap();
+        assert_eq!(range, 0..100);
 
-        let (start, end) = info.compressed_range_for_uncompressed_range(&(4096..12288)).unwrap();
-        assert_eq!(start, 100);
-        assert_eq!(end, Some(NonZeroU64::new(400).unwrap()));
+        let range = info.compressed_range_for_uncompressed_range(&(4096..12288)).unwrap();
+        assert_eq!(range, 100..400);
 
-        let (start, end) = info.compressed_range_for_uncompressed_range(&(4096..16384)).unwrap();
-        assert_eq!(start, 100);
-        assert_eq!(end, None);
+        let range = info.compressed_range_for_uncompressed_range(&(4096..16384)).unwrap();
+        assert_eq!(range, 100..500);
     }
 
     #[test]
     fn test_compression_info_offsets_must_start_with_zero() {
-        assert!(CompressionInfo::new(4096, &[], CompressionAlgorithm::Zstd).is_err());
-        assert!(CompressionInfo::new(4096, &[1], CompressionAlgorithm::Zstd).is_err());
-        assert!(CompressionInfo::new(4096, &[0], CompressionAlgorithm::Zstd).is_ok());
+        assert!(CompressionInfo::new(4096, 100, &[], CompressionAlgorithm::Zstd).is_err());
+        assert!(CompressionInfo::new(4096, 100, &[1], CompressionAlgorithm::Zstd).is_err());
+        assert!(CompressionInfo::new(4096, 100, &[0], CompressionAlgorithm::Zstd).is_ok());
     }
 
     #[test]
     fn test_compression_info_offsets_must_be_sorted() {
-        assert!(CompressionInfo::new(4096, &[0, 1, 2], CompressionAlgorithm::Zstd).is_ok());
-        assert!(CompressionInfo::new(4096, &[0, 2, 1], CompressionAlgorithm::Zstd).is_err());
-        assert!(CompressionInfo::new(4096, &[0, 1, 1], CompressionAlgorithm::Zstd).is_err());
+        assert!(CompressionInfo::new(4096, 100, &[0, 1, 2], CompressionAlgorithm::Zstd).is_ok());
+        assert!(CompressionInfo::new(4096, 100, &[0, 2, 1], CompressionAlgorithm::Zstd).is_err());
+        assert!(CompressionInfo::new(4096, 100, &[0, 1, 1], CompressionAlgorithm::Zstd).is_err());
     }
 
     #[test]
     fn test_compression_info_splitting_offsets() {
         const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
         let compression_info =
-            CompressionInfo::new(4096, &[0], CompressionAlgorithm::Zstd).unwrap();
+            CompressionInfo::new(4096, 100, &[0], CompressionAlgorithm::Zstd).unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert!(compression_info.large_offsets.is_empty());
 
         let compression_info =
-            CompressionInfo::new(4096, &[0, 10], CompressionAlgorithm::Zstd).unwrap();
+            CompressionInfo::new(4096, 20, &[0, 10], CompressionAlgorithm::Zstd).unwrap();
         assert_eq!(&*compression_info.small_offsets, &[10]);
         assert!(compression_info.large_offsets.is_empty());
 
         let compression_info =
-            CompressionInfo::new(4096, &[0, 10, 20, 30], CompressionAlgorithm::Zstd).unwrap();
+            CompressionInfo::new(4096, 40, &[0, 10, 20, 30], CompressionAlgorithm::Zstd).unwrap();
         assert_eq!(&*compression_info.small_offsets, &[10, 20, 30]);
         assert!(compression_info.large_offsets.is_empty());
 
-        let compression_info =
-            CompressionInfo::new(4096, &[0, MAX_SMALL_OFFSET - 1], CompressionAlgorithm::Zstd)
-                .unwrap();
+        let compression_info = CompressionInfo::new(
+            4096,
+            MAX_SMALL_OFFSET,
+            &[0, MAX_SMALL_OFFSET - 1],
+            CompressionAlgorithm::Zstd,
+        )
+        .unwrap();
         assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1]);
         assert!(compression_info.large_offsets.is_empty());
 
-        let compression_info =
-            CompressionInfo::new(4096, &[0, MAX_SMALL_OFFSET], CompressionAlgorithm::Zstd).unwrap();
+        let compression_info = CompressionInfo::new(
+            4096,
+            MAX_SMALL_OFFSET + 1,
+            &[0, MAX_SMALL_OFFSET],
+            CompressionAlgorithm::Zstd,
+        )
+        .unwrap();
         assert_eq!(&*compression_info.small_offsets, &[u32::MAX]);
         assert!(compression_info.large_offsets.is_empty());
 
-        let compression_info =
-            CompressionInfo::new(4096, &[0, MAX_SMALL_OFFSET + 1], CompressionAlgorithm::Zstd)
-                .unwrap();
+        let compression_info = CompressionInfo::new(
+            4096,
+            MAX_SMALL_OFFSET + 2,
+            &[0, MAX_SMALL_OFFSET + 1],
+            CompressionAlgorithm::Zstd,
+        )
+        .unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 1]);
 
         let compression_info = CompressionInfo::new(
             4096,
+            MAX_SMALL_OFFSET + 2,
             &[0, MAX_SMALL_OFFSET - 1, MAX_SMALL_OFFSET, MAX_SMALL_OFFSET + 1],
             CompressionAlgorithm::Zstd,
         )
@@ -268,14 +295,19 @@ mod tests {
         assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1, u32::MAX]);
         assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 1]);
 
-        let compression_info =
-            CompressionInfo::new(4096, &[0, MAX_SMALL_OFFSET + 10], CompressionAlgorithm::Zstd)
-                .unwrap();
+        let compression_info = CompressionInfo::new(
+            4096,
+            MAX_SMALL_OFFSET + 20,
+            &[0, MAX_SMALL_OFFSET + 10],
+            CompressionAlgorithm::Zstd,
+        )
+        .unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 10]);
 
         let compression_info = CompressionInfo::new(
             4096,
+            MAX_SMALL_OFFSET + 30,
             &[0, MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20],
             CompressionAlgorithm::Zstd,
         )

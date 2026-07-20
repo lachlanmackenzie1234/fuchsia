@@ -25,7 +25,7 @@ use fxfs::blob_metadata::{BlobFormat, BlobMetadata};
 use fxfs::errors::FxfsError;
 use fxfs::lock_keys;
 use fxfs::log::*;
-use fxfs::object_handle::{ObjectHandle, ReadObjectHandle};
+use fxfs::object_handle::ObjectHandle;
 use fxfs::object_store::transaction::LockKey;
 use fxfs::object_store::{AttributeId, DataObjectHandle, ObjectDescriptor, StoreObjectHandle};
 use fxfs::round::{round_down, round_up};
@@ -51,7 +51,6 @@ pub struct FxBlob {
     merkle_verifier: ReadSizedMerkleVerifier,
     compression_info: Option<CompressionInfo>,
     uncompressed_size: u64, // always set.
-    stored_size: u64,
     pager_packet_receiver_registration: Arc<PagerPacketReceiverRegistration<Self>>,
     chunks_supplied: AtomicBitVec,
 }
@@ -73,6 +72,7 @@ impl FxBlob {
                 *uncompressed_size,
                 Some(CompressionInfo::new(
                     *chunk_size,
+                    stored_size,
                     compressed_offsets,
                     CompressionAlgorithm::Zstd,
                 )?),
@@ -81,6 +81,7 @@ impl FxBlob {
                 *uncompressed_size,
                 Some(CompressionInfo::new(
                     *chunk_size,
+                    stored_size,
                     compressed_offsets,
                     CompressionAlgorithm::Lz4,
                 )?),
@@ -108,7 +109,6 @@ impl FxBlob {
                 merkle_verifier,
                 compression_info,
                 uncompressed_size,
-                stored_size,
                 pager_packet_receiver_registration: Arc::new(pager_packet_receiver_registration),
                 chunks_supplied,
             }
@@ -130,7 +130,6 @@ impl FxBlob {
         // chunks supplied bits isn't important.
         let chunks_supplied = AtomicBitVec::new(self.uncompressed_size.div_ceil(min_chunk_size));
         let vmo = self.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        let stored_size = handle.get_size();
 
         let new_blob = Arc::new(Self {
             handle: handle.into_store_object_handle(),
@@ -140,7 +139,6 @@ impl FxBlob {
             merkle_verifier,
             compression_info,
             uncompressed_size: self.uncompressed_size,
-            stored_size,
             pager_packet_receiver_registration: self.pager_packet_receiver_registration.clone(),
             chunks_supplied,
         });
@@ -353,10 +351,7 @@ impl PagerBacked for FxBlob {
             None => self.read_blocks(range.start, buffer.as_mut()).await?,
             Some(compression_info) => {
                 let compressed_offsets =
-                    match compression_info.compressed_range_for_uncompressed_range(&range)? {
-                        (start, None) => start..self.stored_size,
-                        (start, Some(end)) => start..end.get(),
-                    };
+                    compression_info.compressed_range_for_uncompressed_range(&range)?;
                 let bs = self.handle.block_size();
                 let aligned = round_down(compressed_offsets.start, bs)
                     ..round_up(compressed_offsets.end, bs).unwrap();
@@ -374,7 +369,8 @@ impl PagerBacked for FxBlob {
                     .with_context(|| {
                         format!(
                             "Failed to read compressed range {:?}, len {}",
-                            aligned, self.stored_size
+                            aligned,
+                            compression_info.compressed_size()
                         )
                     })?;
                     let compressed_buf_range = (compressed_offsets.start - aligned.start) as usize
@@ -513,7 +509,6 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_async::epoch::Epoch;
     use fxfs_make_blob_image::FxBlobBuilder;
-    use std::num::NonZero;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
@@ -656,58 +651,64 @@ mod tests {
 
     #[fuchsia::test]
     fn test_compression_info_offsets_must_start_with_zero() {
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[], ZSTD).is_err());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[1], ZSTD).is_err());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0], ZSTD).is_ok());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, 100, &[], ZSTD).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, 100, &[1], ZSTD).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, 100, &[0], ZSTD).is_ok());
     }
 
     #[fuchsia::test]
     fn test_compression_info_offsets_must_be_sorted() {
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 2], ZSTD).is_ok());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 2, 1], ZSTD).is_err());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 1], ZSTD).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, 100, &[0, 1, 2], ZSTD).is_ok());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, 100, &[0, 2, 1], ZSTD).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, 100, &[0, 1, 1], ZSTD).is_err());
     }
 
     #[fuchsia::test]
     fn test_compression_info_compressed_range_for_uncompressed_range() {
         fn check_compression_ranges(
             offsets: &[u64],
-            expected_ranges: &[(u64, Option<u64>)],
+            compressed_size: u64,
+            expected_ranges: &[Range<u64>],
             chunk_size: u64,
             read_ahead_size: u64,
         ) {
-            let compression_info = CompressionInfo::new(chunk_size, offsets, ZSTD).unwrap();
-            for (i, range) in expected_ranges.iter().enumerate() {
+            let compression_info =
+                CompressionInfo::new(chunk_size, compressed_size, offsets, ZSTD).unwrap();
+            for (i, expected_range) in expected_ranges.iter().enumerate() {
                 let i = i as u64;
                 let result = compression_info
                     .compressed_range_for_uncompressed_range(
                         &(i * read_ahead_size..(i + 1) * read_ahead_size),
                     )
                     .unwrap();
-                assert_eq!(result, (range.0, range.1.map(|end| NonZero::new(end).unwrap())));
+                assert_eq!(&result, expected_range);
             }
         }
         check_compression_ranges(
             &[0, 10, 20, 30],
-            &[(0, Some(10)), (10, Some(20)), (20, Some(30)), (30, None)],
+            30,
+            &[0..10, 10..20, 20..30, 30..30],
             COMPRESSED_BLOB_CHUNK_SIZE,
             COMPRESSED_BLOB_CHUNK_SIZE,
         );
         check_compression_ranges(
             &[0, 10, 20, 30],
-            &[(0, Some(20)), (20, None)],
+            30,
+            &[0..20, 20..30],
             COMPRESSED_BLOB_CHUNK_SIZE,
             COMPRESSED_BLOB_CHUNK_SIZE * 2,
         );
         check_compression_ranges(
             &[0, 10, 20, 30],
-            &[(0, None)],
+            30,
+            &[0..30],
             COMPRESSED_BLOB_CHUNK_SIZE,
             COMPRESSED_BLOB_CHUNK_SIZE * 4,
         );
         check_compression_ranges(
             &[0, 10, 20, 30, MAX_SMALL_OFFSET + 10],
-            &[(0, Some(MAX_SMALL_OFFSET + 10)), (MAX_SMALL_OFFSET + 10, None)],
+            MAX_SMALL_OFFSET + 10,
+            &[0..MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 10..MAX_SMALL_OFFSET + 10],
             COMPRESSED_BLOB_CHUNK_SIZE,
             COMPRESSED_BLOB_CHUNK_SIZE * 4,
         );
@@ -723,11 +724,12 @@ mod tests {
                 MAX_SMALL_OFFSET + 40,
                 MAX_SMALL_OFFSET + 50,
             ],
+            MAX_SMALL_OFFSET + 50,
             &[
-                (0, Some(20)),
-                (20, Some(MAX_SMALL_OFFSET + 10)),
-                (MAX_SMALL_OFFSET + 10, Some(MAX_SMALL_OFFSET + 30)),
-                (MAX_SMALL_OFFSET + 30, Some(MAX_SMALL_OFFSET + 50)),
+                0..20,
+                20..MAX_SMALL_OFFSET + 10,
+                MAX_SMALL_OFFSET + 10..MAX_SMALL_OFFSET + 30,
+                MAX_SMALL_OFFSET + 30..MAX_SMALL_OFFSET + 50,
             ],
             COMPRESSED_BLOB_CHUNK_SIZE,
             COMPRESSED_BLOB_CHUNK_SIZE * 2,
@@ -738,6 +740,7 @@ mod tests {
     fn test_compression_info_compressed_range_for_uncompressed_range_errors() {
         let compression_info = CompressionInfo::new(
             COMPRESSED_BLOB_CHUNK_SIZE,
+            MAX_SMALL_OFFSET + 50,
             &[
                 0,
                 10,
@@ -845,9 +848,15 @@ mod tests {
             compressed_offsets.push(compressed_data.len() as u64);
         }
         compressed_offsets.pop();
+        let compressed_size = compressed_data.len() as u64;
         (
-            CompressionInfo::new(CHUNK_SIZE as u64, &compressed_offsets, CompressionAlgorithm::Lz4)
-                .unwrap(),
+            CompressionInfo::new(
+                CHUNK_SIZE as u64,
+                compressed_size,
+                &compressed_offsets,
+                CompressionAlgorithm::Lz4,
+            )
+            .unwrap(),
             compressed_data,
             uncompressed_data,
         )
@@ -882,13 +891,12 @@ mod tests {
             compression_info: &CompressionInfo,
             chunks: Range<u64>,
         ) -> &'a [u8] {
-            let (start, end) = compression_info
+            let range = compression_info
                 .compressed_range_for_uncompressed_range(
                     &(chunks.start * CHUNK_SIZE as u64..chunks.end * CHUNK_SIZE as u64),
                 )
                 .unwrap();
-            let end = end.map_or(compressed_data.len() as u64, NonZero::<u64>::get);
-            &compressed_data[start as usize..end as usize]
+            &compressed_data[range.start as usize..range.end as usize]
         }
 
         const BLOB_SIZE: usize = CHUNK_SIZE * 4 + 4096;

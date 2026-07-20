@@ -343,14 +343,25 @@ impl DeliveryBlobWriter {
             self.generate_metadata(hashes).context("Failed to generate metadata for blob.")?;
         metadata.write_to(self.stage.handle()).await.context("Failed to write blob metadata")?;
 
+        let compressed_size = self.payload_persisted - self.payload_offset;
         let compression_info = match &metadata.format {
             BlobFormat::Uncompressed => None,
-            BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => Some(
-                CompressionInfo::new(*chunk_size, &compressed_offsets, CompressionAlgorithm::Zstd)?,
-            ),
-            BlobFormat::ChunkedLz4 { chunk_size, compressed_offsets, .. } => Some(
-                CompressionInfo::new(*chunk_size, &compressed_offsets, CompressionAlgorithm::Lz4)?,
-            ),
+            BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => {
+                Some(CompressionInfo::new(
+                    *chunk_size,
+                    compressed_size,
+                    &compressed_offsets,
+                    CompressionAlgorithm::Zstd,
+                )?)
+            }
+            BlobFormat::ChunkedLz4 { chunk_size, compressed_offsets, .. } => {
+                Some(CompressionInfo::new(
+                    *chunk_size,
+                    compressed_size,
+                    &compressed_offsets,
+                    CompressionAlgorithm::Lz4,
+                )?)
+            }
         };
         let merkle_verifier = metadata.into_merkle_verifier(root)?;
 
