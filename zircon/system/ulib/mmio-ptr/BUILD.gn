@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/rust/rustc_library.gni")
 import("//build/zircon/migrated_targets.gni")
 
 zx_library("mmio-ptr") {
@@ -13,6 +14,23 @@ zx_library("mmio-ptr") {
   sdk_headers = [
     "lib/mmio-ptr/fake.h",
     "lib/mmio-ptr/mmio-ptr.h",
+  ]
+}
+
+source_set("wrappers") {
+  visibility = [ ":*" ]
+  sources = [ "mmio-ptr.cc" ]
+  deps = [ ":mmio-ptr" ]
+}
+
+rustc_library("mmio-ptr-rs") {
+  name = "mmio_ptr"
+  edition = "2024"
+  source_root = "mmio-ptr.rs"
+  sources = [ source_root ]
+  deps = [
+    ":mmio-ptr",
+    ":wrappers",
   ]
 }
 

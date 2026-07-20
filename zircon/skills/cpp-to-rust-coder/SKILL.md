@@ -803,3 +803,7 @@ or debugging:
 | `LTRACEF_LEVEL(lvl, x...)` | `ltracef_level!(lvl, "fmt", x...)` | Guarded by `LOCAL_TRACE >= lvl` |
 | `if constexpr (LOCAL_TRACE) { expr; }` | `ltrace!(expr;)` | Execute expression/statement guarded by `LOCAL_TRACE >= 1` |
 
+### 20. MMIO
+
+Uses of `Mmio(Read|Write)(8|16|32|64)?` from `<lib/mmio-ptr/mmio-ptr.h>` should be replaced by
+equivalent uses of the similarly-spelled routines from the `mmio-ptr-rs` crate.
