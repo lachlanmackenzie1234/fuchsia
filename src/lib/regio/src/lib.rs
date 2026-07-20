@@ -5,10 +5,12 @@
 #![no_std]
 
 mod mmio;
-pub use mmio::{Mmio, MmioBank, MmioPtr, Offset};
+pub mod x86;
 
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+
+pub use mmio::{Mmio, MmioBank, MmioPtr, Offset};
 
 mod private {
     pub trait Sealed {}

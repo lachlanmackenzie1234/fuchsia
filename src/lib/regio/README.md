@@ -99,3 +99,16 @@ unsafe { uart.at(TXDATA) }.into_value(data).write();
 // Simple reads can fluidly chain from MmioPtr -> Mmio -> Layout.
 let _: u8 = unsafe { uart.at(RXDATA) }.read().data();
 ```
+
+## x86 MSRs
+
+`Msr` is an alias of `Register` used to model MSRs:
+
+```rust
+use regio::RwSafe;
+use regio::x86::Msr;
+
+const IA32_TIME_STAMP_COUNTER: Msr<0x10, u64, RwSafe> = Msr::new();
+
+println!("Current timestamp: {:#x}", IA32_TIME_STAMP_COUNTER.read().get());
+```
