@@ -449,7 +449,7 @@ pub struct RuntimeConfig {
     pub serial_number: SerialMode,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 #[serde(tag = "status", content = "serial", rename_all = "snake_case")]
 pub enum SerialMode {
     /// Legacy or uninitialized instance.
@@ -459,6 +459,49 @@ pub enum SerialMode {
     Disabled,
     /// Enabled with a specific serial number (generated or custom).
     Enabled(String),
+}
+
+// Manual implementation of Deserialize is required to maintain backward compatibility.
+// Stale emulator instances saved on disk prior to the introduction of SerialMode
+// serializes the serial_number as a flat JSON String. The new schema expects
+// an adjacently-tagged object structure. Hand-writing the deserializer allows us
+// to fallback gracefully to SerialMode::Enabled(string) if we parse the legacy format.
+impl<'de> serde::Deserialize<'de> for SerialMode {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Legacy(String),
+            New {
+                status: String,
+                #[serde(default)]
+                serial: Option<String>,
+            },
+        }
+
+        match <Option<Helper> as serde::Deserialize>::deserialize(deserializer)? {
+            None => Ok(SerialMode::Uninitialized),
+            Some(Helper::Legacy(s)) => Ok(SerialMode::Enabled(s)),
+            Some(Helper::New { status, serial }) => match status.as_str() {
+                "uninitialized" => Ok(SerialMode::Uninitialized),
+                "disabled" => Ok(SerialMode::Disabled),
+                "enabled" => {
+                    if let Some(s) = serial {
+                        Ok(SerialMode::Enabled(s))
+                    } else {
+                        Err(serde::de::Error::missing_field("serial"))
+                    }
+                }
+                _ => Err(serde::de::Error::unknown_variant(
+                    &status,
+                    &["uninitialized", "disabled", "enabled"],
+                )),
+            },
+        }
+    }
 }
 
 fn default_avx2_enabled() -> bool {
@@ -753,5 +796,67 @@ mod tests {
     #[test]
     fn test_is_proc_running_invalid_pid() {
         assert!(!is_proc_running(0, None));
+    }
+
+    #[test]
+    fn test_serial_mode_deserialize() {
+        // Legacy format (just a string)
+        let legacy_json = r#""EM-B89E30F7F""#;
+        let legacy_mode: SerialMode = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(legacy_mode, SerialMode::Enabled("EM-B89E30F7F".to_string()));
+
+        // Legacy format (null)
+        let legacy_null_json = r#"null"#;
+        let legacy_null_mode: SerialMode = serde_json::from_str(legacy_null_json).unwrap();
+        assert_eq!(legacy_null_mode, SerialMode::Uninitialized);
+
+        // New format: uninitialized
+        let new_uninit_json = r#"{"status": "uninitialized"}"#;
+        let new_uninit_mode: SerialMode = serde_json::from_str(new_uninit_json).unwrap();
+        assert_eq!(new_uninit_mode, SerialMode::Uninitialized);
+
+        // New format: disabled
+        let new_disabled_json = r#"{"status": "disabled"}"#;
+        let new_disabled_mode: SerialMode = serde_json::from_str(new_disabled_json).unwrap();
+        assert_eq!(new_disabled_mode, SerialMode::Disabled);
+
+        // New format: enabled
+        let new_enabled_json = r#"{"status": "enabled", "serial": "EM-B89E30F7F"}"#;
+        let new_enabled_mode: SerialMode = serde_json::from_str(new_enabled_json).unwrap();
+        assert_eq!(new_enabled_mode, SerialMode::Enabled("EM-B89E30F7F".to_string()));
+
+        // New format: enabled but missing serial (should fail)
+        let bad_enabled_json = r#"{"status": "enabled"}"#;
+        let bad_res: std::result::Result<SerialMode, _> = serde_json::from_str(bad_enabled_json);
+        assert!(bad_res.is_err());
+
+        // Test struct deserialization with null serial_number
+        #[derive(serde::Deserialize)]
+        struct MockConfig {
+            #[serde(default)]
+            serial_number: SerialMode,
+        }
+
+        let config_null_json = r#"{"serial_number": null}"#;
+        let config_null: MockConfig = serde_json::from_str(config_null_json).unwrap();
+        assert_eq!(config_null.serial_number, SerialMode::Uninitialized);
+
+        // Test struct deserialization with missing serial_number
+        let config_missing_json = r#"{}"#;
+        let config_missing: MockConfig = serde_json::from_str(config_missing_json).unwrap();
+        assert_eq!(config_missing.serial_number, SerialMode::Uninitialized);
+
+        // Round-trip test to ensure serialization format is correct (tag-adjacent)
+        let mode = SerialMode::Enabled("EM-B89E30F7F".to_string());
+        let serialized = serde_json::to_string(&mode).unwrap();
+        assert_eq!(serialized, r#"{"status":"enabled","serial":"EM-B89E30F7F"}"#);
+        let deserialized: SerialMode = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, mode);
+
+        let mode_disabled = SerialMode::Disabled;
+        let serialized_disabled = serde_json::to_string(&mode_disabled).unwrap();
+        assert_eq!(serialized_disabled, r#"{"status":"disabled"}"#);
+        let deserialized_disabled: SerialMode = serde_json::from_str(&serialized_disabled).unwrap();
+        assert_eq!(deserialized_disabled, mode_disabled);
     }
 }
