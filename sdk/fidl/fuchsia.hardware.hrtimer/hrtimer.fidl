@@ -80,6 +80,7 @@ type TimerProperties = table {
     /// supported.
     ///
     /// Optional.
+    @available(deprecated=HEAD, note="Drivers should report this as `false`")
     4: supports_event bool;
 
     /// If true then the `StartAndWait` and `StartAndWait2` methods are supported, if false or
@@ -129,6 +130,10 @@ open protocol Device {
     /// If the specified `ticks` is beyond the range supported for the timer as provided by
     /// `GetProperties`, then this call will return `INVALID_ARGS`.
     /// If the driver encounters an internal error, then this call will return `INTERNAL_ERROR`.
+    ///
+    @available(
+            deprecated=HEAD,
+            note="This API method is racy when combined with `SetEvent`.  Use `StartAndWait2` instead.")
     flexible Start(struct {
         id uint64;
         resolution Resolution;
@@ -203,6 +208,7 @@ open protocol Device {
     /// If this method is not supported for the given `id`, then this call will return
     /// `NOT_SUPPORTED`.
     /// If the driver encounters an internal error, then this call will return `INTERNAL_ERROR`.
+    @available(deprecated=HEAD, note="Use `StartAndWait2` instead.")
     flexible SetEvent(resource struct {
         id uint64;
         event zx.Handle:EVENT;
