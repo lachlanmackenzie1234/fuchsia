@@ -965,7 +965,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -974,7 +974,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2210,6 +2210,14 @@ From //build/config/compiler.gni:82
   ninja = "testsharder"
 }]
   install_host_tool = true
+}, {
+  bazel_label = "//tools/readme_fuchsia:readme_fuchsia_bin"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/readme_fuchsia_bin_/readme_fuchsia_bin"
+  ninja = "readme_fuchsia"
+}]
+  install_host_tool = true
+  ninja_name = "readme_fuchsia"
 }, {
   bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
   copy_outputs = [{
