@@ -159,12 +159,6 @@ impl<T, Access: Accessible> Clone for MmioPtr<T, Access> {
 
 impl<T, Access: Accessible> Copy for MmioPtr<T, Access> {}
 
-//
-// TODO(https://fxbug.dev/525077555): The unconditional use of read_volatile()
-// and write_volatile() below should be replaced by versions with
-// hypervisor-safe instructions.
-//
-
 impl<T, Access> IoHandle for MmioPtr<T, Access>
 where
     T: Copy,
@@ -173,27 +167,38 @@ where
     type Base = T;
 }
 
-impl<T, Access> ReadHandle for MmioPtr<T, Access>
-where
-    T: Copy,
-    Access: Readable,
-{
-    unsafe fn read_raw(&self) -> T {
-        unsafe { self.0.read_volatile() }
-    }
+macro_rules! impl_mmio_ptr_handle {
+    ($ty:ty, $read_fn:ident, $write_fn:ident) => {
+        impl<Access> ReadHandle for MmioPtr<$ty, Access>
+        where
+            Access: Readable,
+        {
+            #[inline(always)]
+            unsafe fn read_raw(&self) -> $ty {
+                unsafe { mmio_ptr::$read_fn(self.0) }
+            }
+        }
+
+        impl<Access> WriteHandle for MmioPtr<$ty, Access>
+        where
+            Access: Writable,
+        {
+            #[inline(always)]
+            unsafe fn write_raw(&self, value: $ty) {
+                // Regarding the `cast_mut()`, `MmioPtr`s with writable access were
+                // necessarily constructed with a mutable pointer (see above).
+                unsafe { mmio_ptr::$write_fn(value, self.0.cast_mut()) }
+            }
+        }
+    };
 }
 
-impl<T, Access> WriteHandle for MmioPtr<T, Access>
-where
-    T: Copy,
-    Access: Writable,
-{
-    unsafe fn write_raw(&self, value: T) {
-        // Regarding the `cast_mut()`, `MmioPtr`s with writable access were
-        // necessarily constructed with a mutable pointer (see above).
-        unsafe { self.0.cast_mut().write_volatile(value) }
-    }
-}
+impl_mmio_ptr_handle!(u8, read8, write8);
+impl_mmio_ptr_handle!(u16, read16, write16);
+impl_mmio_ptr_handle!(u32, read32, write32);
+
+#[cfg(target_pointer_width = "64")]
+impl_mmio_ptr_handle!(u64, read64, write64);
 
 /// Represents a contiguous region of memory containing registers. Contained
 /// registers are accessed via [`MmioBank::at`] and must feature access

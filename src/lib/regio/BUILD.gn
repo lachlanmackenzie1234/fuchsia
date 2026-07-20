@@ -14,7 +14,7 @@ rustc_library("regio") {
     "src/x86/mod.rs",
     "src/x86/msr.rs",
   ]
-  deps = []
+  deps = [ "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs" ]
 }
 
 fuchsia_unittest_package("regio-tests") {
