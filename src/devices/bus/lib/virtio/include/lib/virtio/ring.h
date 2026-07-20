@@ -36,7 +36,14 @@ class Ring {
   void SubmitChain(uint16_t desc_index);
   void Kick();
 
-  struct vring_desc* DescFromIndex(uint16_t index) { return &ring_.desc[index]; }
+  bool IsValidDescIndex(uint16_t index) const { return index < ring_.num; }
+
+  struct vring_desc* DescFromIndex(uint16_t index) {
+    if (!IsValidDescIndex(index)) {
+      return nullptr;
+    }
+    return &ring_.desc[index];
+  }
 
   template <typename T>
   void IrqRingUpdate(T free_chain);

@@ -69,11 +69,15 @@ void ScsiDevice::IrqRingUpdate() {
   // Parse our descriptor chain and add back to the free queue.
   auto free_chain = [this](vring_used_elem* elem) TA_NO_THREAD_SAFETY_ANALYSIS {
     auto index = static_cast<uint16_t>(elem->id);
-    vring_desc const* tail_desc;
+    vring_desc const* tail_desc = nullptr;
 
     // Reclaim the entire descriptor chain.
     for (;;) {
       vring_desc const* desc = request_queue_.DescFromIndex(index);
+      if (!desc) {
+        fdf::error("Invalid descriptor index {} in used ring", index);
+        break;
+      }
       const bool has_next = desc->flags & VRING_DESC_F_NEXT;
       const auto next = desc->next;
 
@@ -85,6 +89,9 @@ void ScsiDevice::IrqRingUpdate() {
       index = next;
     }
     desc_cv_.Broadcast();
+    if (!tail_desc) {
+      return;
+    }
     // Search for the IO that just completed, using tail_desc.
     for (int i = 0; i < MAX_IOS; i++) {
       scsi_io_slot* io_slot = &scsi_io_slot_table_[i];

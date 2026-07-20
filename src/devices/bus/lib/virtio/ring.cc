@@ -114,6 +114,10 @@ zx_status_t Ring::Init(uint16_t index, uint16_t count) {
 
 void Ring::FreeDesc(uint16_t desc_index) {
   zxlogf(TRACE, "%s: index %u free_count %u", __func__, desc_index, ring_.free_count);
+  if (!IsValidDescIndex(desc_index)) {
+    zxlogf(ERROR, "%s: index %u out of bounds (ring size %u)", __func__, desc_index, ring_.num);
+    return;
+  }
   ring_.desc[desc_index].next = ring_.free_list;
   ring_.free_list = desc_index;
   ring_.free_count++;
@@ -150,6 +154,10 @@ struct vring_desc* Ring::AllocDescChain(uint16_t count, uint16_t* start_index) {
 
 void Ring::SubmitChain(uint16_t desc_index) {
   zxlogf(TRACE, "%s: desc %u", __func__, desc_index);
+  if (!IsValidDescIndex(desc_index)) {
+    zxlogf(ERROR, "%s: index %u out of bounds (ring size %u)", __func__, desc_index, ring_.num);
+    return;
+  }
 
   /* add the chain to the available list */
   struct vring_avail* avail = ring_.avail;
