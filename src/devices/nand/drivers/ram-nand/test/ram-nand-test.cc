@@ -244,6 +244,22 @@ TEST_F(RamNandTest, ExportPartitionMap) {
   // EXPECT_EQ(partition_map.value(), kExpectedPartitionMap);
 }
 
+TEST_F(RamNandTest, ExportPartitionMapCountClamping) {
+  fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
+  config.export_partition_map = true;
+  config.partition_map.partition_count = fuchsia_hardware_nand::wire::kMaxPartitions + 5;
+
+  const std::string device_name = CreateDevice(std::move(config));
+
+  zx::result partition_map_result = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
+      driver_test().ConnectToDriverSvcDir(), device_name);
+  ASSERT_OK(partition_map_result);
+  const fuchsia_boot_metadata::PartitionMap& partition_map = partition_map_result.value();
+  ASSERT_TRUE(partition_map.partitions().has_value());
+  EXPECT_EQ(partition_map.partitions().value().size(),
+            static_cast<size_t>(fuchsia_hardware_nand::wire::kMaxPartitions));
+}
+
 TEST_F(RamNandTest, AddMetadata) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.export_nand_config = true;

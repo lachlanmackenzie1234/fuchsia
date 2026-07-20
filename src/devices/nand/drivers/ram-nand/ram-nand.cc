@@ -74,8 +74,7 @@ fuchsia_boot_metadata::PartitionMap ExtractPartitionMap(
        .guid{{0}}});
   std::ranges::copy(info.partition_map.device_guid, map.guid().value().begin());
 
-  const std::span src_partitions(info.partition_map.partitions.begin(),
-                                 info.partition_map.partition_count);
+  const std::span src_partitions(info.partition_map.partitions.begin(), GetPartitionCount(info));
   auto partitions =
       src_partitions |
       std::views::filter([](const fuchsia_hardware_nand::wire::Partition& partition) {
