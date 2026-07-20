@@ -4,14 +4,13 @@
 
 #include "wlantap-phy-impl.h"
 
+#include <fidl/fuchsia.wlan.internal/cpp/fidl.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/fit/defer.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
-
-#include <fidl/fuchsia.wlan.internal/cpp/fidl.h>
 
 #include <array>
 #include <cstddef>
@@ -25,9 +24,8 @@
 
 namespace wlan {
 
-
-
-std::string CountryCodeToStr(const std::array<uint8_t, fuchsia_wlan_internal::kCountryCodeLen>& country_code) {
+std::string CountryCodeToStr(
+    const std::array<uint8_t, fuchsia_wlan_internal::kCountryCodeLen>& country_code) {
   auto data = country_code.data();
   if (std::isprint(data[0]) && std::isprint(data[1])) {
     return std::string(reinterpret_cast<const char*>(data), fuchsia_wlan_internal::kCountryCodeLen);
@@ -148,9 +146,11 @@ void WlanPhyDevice::Init(zx::channel user_channel,
 
 void WlanPhyDevice::Init(InitRequest& request, InitCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  if (request.notify_client().has_value()) {
-    notify_client_ = std::move(request.notify_client().value());
+  if (!request.notify_client().has_value()) {
+    fdf::error("Failed to initialize WlanPhy server. notify_client client end not provided.");
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
   }
+  notify_client_ = std::move(request.notify_client().value());
   completer.Reply(fit::ok());
 }
 
