@@ -37,7 +37,6 @@ def fx_package(
         resources = [],
         tools = [],
         subpackages = [],
-        subpackages_to_flatten = [],
         tags = [],
         **kwargs):
     """Builds a fuchsia package.
@@ -65,9 +64,6 @@ def fx_package(
           resources will not have debug symbols stripped.
         tools: Additional tools that should be added to this package.
         subpackages: Additional subpackages that should be added to this package.
-        subpackages_to_flatten: The list of subpackages included in this package.
-          The packages included in this list will be cracked open and all the
-          components included will be include in the parent package.
         package_name: An optional name to use for this package, defaults to name.
         archive_name: An option name for the far file.
         platform: Optionally override the platform to build the package for.
@@ -100,7 +96,6 @@ def fx_package(
         collected_resources = collected_resources,
         tools = tools,
         subpackages = subpackages,
-        subpackages_to_flatten = subpackages_to_flatten,
         package_name = package_name or name,
         archive_name = archive_name,
         platform = platform,
@@ -116,7 +111,6 @@ def _build_fuchsia_package_impl(ctx):
         ffx_package = ctx.executable._package_tool,
         ffx_package_is_ffx = False,
         cmc_tool = ctx.file._cmc_tool,
-        meta_content_append_tool = ctx.executable._meta_content_append_tool,
         validate_component_manifests_tool = ctx.executable._validate_component_manifests,
         fuchsia_debug_symbol_info = fuchsia_debug_symbol_info,
         api_level = ctx.attr._current_api_level[BuildSettingInfo].value,
@@ -139,11 +133,6 @@ _build_fuchsia_package = rule(
             # TODO(b/519243783): Replace with a Bazel label once `cmc` is migrated to Bazel.
             default = "@gn_targets//toolchain_host_x64/tools/cmc",
             allow_single_file = True,
-        ),
-        "_meta_content_append_tool": attr.label(
-            default = "@fuchsia_rules_common//packages/tools:meta_content_append",
-            executable = True,
-            cfg = "exec",
         ),
         "_validate_component_manifests": attr.label(
             default = "@fuchsia_rules_common//packages/tools:validate_component_manifests",

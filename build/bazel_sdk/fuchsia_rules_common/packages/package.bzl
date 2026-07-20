@@ -64,20 +64,6 @@ COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES = {
         doc = "The list of subpackages included in this package",
         providers = [FuchsiaPackageInfo],
     ),
-    "subpackages_to_flatten": attr.label_list(
-        doc = """The list of subpackages included in this package.
-
-        The packages included in this list will be cracked open and all the
-        components included will be include in the parent package.
-
-        This is a workaround for lack of support for subpackages in
-        driver_test_realm. Please don't use it without consulting with the
-        SDK Experiences team!
-
-        TODO(https://fxbug.dev/330189874): Remove this attribute.
-        """,
-        providers = [FuchsiaPackageInfo],
-    ),
     "platform": attr.string(
         doc = """The Fuchsia platform to build for.
 
@@ -92,7 +78,6 @@ def common_build_fuchsia_package_impl(
         ffx_package,
         ffx_package_is_ffx,
         cmc_tool,
-        meta_content_append_tool,
         validate_component_manifests_tool,
         fuchsia_debug_symbol_info,
         api_level = ""):
@@ -193,47 +178,10 @@ def common_build_fuchsia_package_impl(
     # Write our package_manifest file. Sort for determinism.
     content = "\n".join(["%s=%s" % (r.dest, r.src.path) for r in sorted(package_resources, key = lambda s: s.dest)])
 
-    meta_content_inputs = []
-    if ctx.attr.subpackages_to_flatten:
-        subpackage_manifests = []
-        for package in ctx.attr.subpackages_to_flatten:
-            meta_content_inputs.extend(package[FuchsiaPackageInfo].files)
-            subpackage_manifests.append(package[FuchsiaPackageInfo].package_manifest.path)
-
-        meta_contents_dir = ctx.actions.declare_directory(pkg_dir + "_meta_contents_dir")
-        ffx_meta_extract_dir = ctx.actions.declare_directory(pkg_dir + "_extract_archive.ffx")
-
-        ctx.actions.run(
-            executable = meta_content_append_tool,
-            arguments = [
-                "--ffx",
-                ffx_package.path,
-                "--ffx-isolate-dir",
-                ffx_meta_extract_dir.path,
-                "--manifest-path",
-                manifest.path,
-                "--original-content",
-                content,
-                "--meta-contents-dir",
-                meta_contents_dir.path,
-                "--subpackage-manifests",
-            ] + subpackage_manifests,
-            inputs = meta_content_inputs + [ffx_package],
-            outputs = [
-                manifest,
-                meta_contents_dir,
-                ffx_meta_extract_dir,
-            ],
-            mnemonic = "MetaContentAppend",
-            progress_message = "Building manifest for %s" % ctx.label,
-        )
-        meta_content_inputs.append(meta_contents_dir)
-
-    else:
-        ctx.actions.write(
-            output = manifest,
-            content = content,
-        )
+    ctx.actions.write(
+        output = manifest,
+        content = content,
+    )
 
     # Create the meta/package file
     ctx.actions.write(
@@ -324,7 +272,7 @@ def common_build_fuchsia_package_impl(
     ctx.actions.run(
         executable = ffx_package,
         arguments = build_args,
-        inputs = build_inputs + subpackages_inputs + meta_content_inputs + [depfile],
+        inputs = build_inputs + subpackages_inputs + [depfile],
         outputs = build_outputs,
         mnemonic = "FuchsiaPackageBuild",
         progress_message = "Building package for %s" % ctx.label,
@@ -334,7 +282,7 @@ def common_build_fuchsia_package_impl(
     artifact_inputs = [r.src for r in package_resources] + [
         output_package_manifest,
         meta_far,
-    ] + subpackages_inputs + meta_content_inputs
+    ] + subpackages_inputs
 
     # Create the far file.
     archive_args = []

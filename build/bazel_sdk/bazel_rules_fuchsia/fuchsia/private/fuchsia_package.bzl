@@ -48,7 +48,6 @@ def fuchsia_package(
         resources = [],
         tools = [],
         subpackages = [],
-        subpackages_to_flatten = [],
         tags = [],
         **kwargs):
     """Builds a fuchsia package.
@@ -87,9 +86,6 @@ def fuchsia_package(
           resources will not have debug symbols stripped.
         tools: Additional tools that should be added to this package.
         subpackages: Additional subpackages that should be added to this package.
-        subpackages_to_flatten: The list of subpackages included in this package.
-          The packages included in this list will be cracked open and all the
-          components included will be include in the parent package.
         package_name: An optional name to use for this package, defaults to name.
         archive_name: An option name for the far file.
         fuchsia_api_level: The API level to build for.
@@ -130,7 +126,6 @@ def fuchsia_package(
         collected_resources = collected_resources,
         tools = tools,
         subpackages = subpackages,
-        subpackages_to_flatten = subpackages_to_flatten,
         package_name = package_name or name,
         archive_name = archive_name,
         fuchsia_api_level = fuchsia_api_level,
@@ -165,7 +160,6 @@ def _fuchsia_test_package(
         _test_component_mapping,
         _components = [],
         subpackages = [],
-        subpackages_to_flatten = [],
         test_realm = None,
         tags = [],
         target_compatible_with = [],
@@ -202,7 +196,6 @@ def _fuchsia_test_package(
         processed_binaries = processed_binaries,
         collected_resources = collected_resources,
         subpackages = subpackages,
-        subpackages_to_flatten = subpackages_to_flatten,
         package_name = package_name or name,
         archive_name = archive_name,
         fuchsia_api_level = fuchsia_api_level,
@@ -229,7 +222,6 @@ def fuchsia_test_package(
         name,
         test_components = [],
         components = [],
-        subpackages_to_flatten = [],
         fuchsia_api_level = None,
         platform = None,
         **kwargs):
@@ -245,7 +237,6 @@ def fuchsia_test_package(
         _components = components,
         fuchsia_api_level = fuchsia_api_level,
         platform = platform,
-        subpackages_to_flatten = subpackages_to_flatten,
         **kwargs
     )
 
@@ -298,7 +289,6 @@ def _build_fuchsia_package_impl(ctx):
         ffx_package = sdk.ffx_package,
         ffx_package_is_ffx = True,
         cmc_tool = sdk.cmc,
-        meta_content_append_tool = ctx.executable._meta_content_append_tool,
         validate_component_manifests_tool = ctx.executable._validate_component_manifests,
         fuchsia_debug_symbol_info = fuchsia_debug_symbol_info,
         api_level = get_fuchsia_api_level(ctx),
@@ -331,11 +321,6 @@ _build_fuchsia_package = rule(
         "_fuchsia_sdk_debug_symbols": attr.label(
             doc = "Include debug symbols from @fuchsia_sdk.",
             default = "@fuchsia_sdk//:debug_symbols",
-        ),
-        "_meta_content_append_tool": attr.label(
-            default = "@fuchsia_rules_common//packages/tools:meta_content_append",
-            executable = True,
-            cfg = "exec",
         ),
         "_validate_component_manifests": attr.label(
             default = "@fuchsia_rules_common//packages/tools:validate_component_manifests",
