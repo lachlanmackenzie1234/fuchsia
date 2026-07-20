@@ -13,9 +13,14 @@ rustc_library("mapping") {
   sources = [
     "src/extents.rs",
     "src/lib.rs",
+    "src/reader.rs",
   ]
 
-  deps = []
+  deps = [
+    "//src/lib/fuchsia-sync",
+    "//src/storage/lib/storage_device",
+    "//third_party/rust_crates:anyhow",
+  ]
 }
 
 fuchsia_unittest_package("mapping-tests") {

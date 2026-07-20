@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod extents;
+pub mod reader;
 
 pub use extents::{Extent, Extents, ExtentsIterator};
 
