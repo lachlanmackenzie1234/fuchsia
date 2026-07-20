@@ -254,7 +254,6 @@
                 "io_pgetevents01",
                 "ptrace06",
                 "recvmsg01",
-                "rename14",
 
                 // TODO(https://fxbug.dev/534918239): This test intentionally exhausts disk space to
                 // verify fallocate behavior under that condition. Intentionally exhausting space in
