@@ -213,7 +213,6 @@ void RxQueue::CompleteRxList(
   ZX_ASSERT_MSG(session_ != nullptr,
                 "Session should not be null while we still have inflight buffers");
   SharedAutoLock control_lock(&parent_->control_lock());
-  device_buffer_count_ -= rx_buffer_list.size();
   for (const auto& rx_buffer : rx_buffer_list.get()) {
     // Always increment frame index for anything the device sends us. The session
     // gets its local index for frames that make their way through.
@@ -229,6 +228,14 @@ void RxQueue::CompleteRxList(
       // Buffer contained no parts.
       LOG_WARN("attempted to return an rx buffer with no parts");
       continue;
+    }
+
+    if (device_buffer_count_ >= rx_parts.size()) {
+      device_buffer_count_ -= rx_parts.size();
+    } else {
+      LOGF_ERROR("device returned more rx parts (%ld) than device_buffer_count_ (%ld)",
+                 rx_parts.size(), device_buffer_count_);
+      device_buffer_count_ = 0;
     }
 
     for (const fuchsia_hardware_network_driver::wire::RxBufferPart& rx_part : rx_parts) {
@@ -339,7 +346,7 @@ int RxQueue::WatchThread(
       fbl::AutoLock rx_lock(&parent_->rx_lock());
       SharedAutoLock control_lock(&parent_->control_lock());
       const uint16_t rx_depth = parent_->info().rx_depth().value_or(0);
-      size_t push_count = rx_depth - device_buffer_count_;
+      size_t push_count = rx_depth > device_buffer_count_ ? rx_depth - device_buffer_count_ : 0;
       if (parent_->IsDataPlaneOpen()) {
         for (; pushed < push_count; pushed++) {
           if (PrepareBuff(&space_buffers[pushed]) != ZX_OK) {

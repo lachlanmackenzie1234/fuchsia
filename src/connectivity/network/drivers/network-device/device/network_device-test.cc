@@ -3693,5 +3693,88 @@ TEST_F(MultiVmoSessionTest, RejectsInvalidRxVmoId) {
   ASSERT_OK(session_.WaitClosed(TEST_DEADLINE));
 }
 
+TEST_F(NetworkDeviceTest, CompleteRxMultiPartBuffers) {
+  impl_.info().rx_threshold = impl_.info().rx_depth - 1;
+  ASSERT_OK(CreateDeviceWithPort13());
+  fidl::WireSyncClient connection = OpenConnection();
+  TestSession session;
+  uint16_t descriptor_count = impl_.info().rx_depth * 2;
+  ASSERT_OK(OpenSession(&session, descriptor_count));
+
+  ASSERT_OK(AttachSessionPort(session, port13_));
+  ASSERT_OK(WaitStart());
+
+  std::vector<uint16_t> descriptors;
+  descriptors.reserve(descriptor_count);
+  for (uint16_t i = 0; i < descriptor_count; i++) {
+    session.ResetDescriptor(i);
+    descriptors.push_back(i);
+  }
+
+  size_t actual;
+  ASSERT_OK(session.SendRx(descriptors.data(), impl_.info().rx_depth, &actual));
+  ASSERT_EQ(actual, impl_.info().rx_depth);
+  ASSERT_OK(WaitRxAvailable());
+  ASSERT_EQ(impl_.rx_buffer_count(), impl_.info().rx_depth);
+
+  // Return a single RxBuffer frame containing 2 parts.
+  {
+    std::unique_ptr buff1 = impl_.PopRxBuffer();
+    std::unique_ptr buff2 = impl_.PopRxBuffer();
+    ASSERT_TRUE(buff1);
+    ASSERT_TRUE(buff2);
+    buff1->SetReturnLength(100);
+    buff2->SetReturnLength(100);
+    std::unique_ptr ret = std::make_unique<RxFidlReturn>();
+    ret->PushPart(std::move(buff1));
+    ret->PushPart(std::move(buff2));
+    RxFidlReturnTransaction return_session(&impl_);
+    return_session.Enqueue(std::move(ret));
+    return_session.Commit();
+  }
+
+  // WatchThread should replenish both buffers to bring impl_.rx_buffer_count()
+  // back to rx_depth.
+  ASSERT_OK(WaitRxAvailable());
+  EXPECT_EQ(impl_.rx_buffer_count(), impl_.info().rx_depth);
+}
+
+TEST_F(NetworkDeviceTest, CompleteRxZeroPartBuffer) {
+  impl_.info().rx_threshold = impl_.info().rx_depth - 1;
+  ASSERT_OK(CreateDeviceWithPort13());
+  fidl::WireSyncClient connection = OpenConnection();
+  TestSession session;
+  uint16_t descriptor_count = impl_.info().rx_depth * 2;
+  ASSERT_OK(OpenSession(&session, descriptor_count));
+
+  ASSERT_OK(AttachSessionPort(session, port13_));
+  ASSERT_OK(WaitStart());
+
+  std::vector<uint16_t> descriptors;
+  descriptors.reserve(descriptor_count);
+  for (uint16_t i = 0; i < descriptor_count; i++) {
+    session.ResetDescriptor(i);
+    descriptors.push_back(i);
+  }
+
+  size_t actual;
+  ASSERT_OK(session.SendRx(descriptors.data(), descriptors.size(), &actual));
+  ASSERT_EQ(actual, descriptors.size());
+  ASSERT_OK(WaitRxAvailable());
+  ASSERT_EQ(impl_.rx_buffer_count(), impl_.info().rx_depth);
+
+  // Return a single RxBuffer frame containing 0 parts.
+  {
+    RxFidlReturnTransaction return_session(&impl_);
+    return_session.Enqueue(std::make_unique<RxFidlReturn>());
+    return_session.Commit();
+  }
+
+  // Expect device_buffer_count_ stays rx_depth and no extra buffer is pushed to
+  // device.
+  ASSERT_STATUS(WaitRxAvailable(zx::deadline_after(zx::msec(50))), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(impl_.rx_buffer_count(), impl_.info().rx_depth);
+}
+
 }  // namespace testing
 }  // namespace network
