@@ -32,6 +32,9 @@ config("vulkan_layer_config") {
 }
 
 source_set("layer_common") {
+  # TODO(b/535331289): avoid depending on validation layer internals
+  check_includes = false
+
   public_configs = [ ":vulkan_layer_config" ]
 
   sources = [
