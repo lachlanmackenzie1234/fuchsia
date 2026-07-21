@@ -4,7 +4,6 @@
 
 composite amlogic_pwm;
 
-
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC {
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE;
@@ -24,3 +23,8 @@ primary parent "pdev" {
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.PWM;
   }
 }
+
+optional parent "pin-states-0" {
+  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+}
+
