@@ -262,16 +262,17 @@ template("graphics_compute_compile_glsl_shader_foreach") {
     #       the invoker's target_name, or this won't work.
     #
     compiled_action_foreach(target_name) {
-      tool = "//third_party/glslang/src:spirv-remap"
+      tool = "//third_party/spirv-tools/src:spirv-opt"
       sources = get_target_outputs(":${_gen_opt_target_name}")
       public_deps = [ ":${_gen_opt_target_name}" ]
       outputs = [ "${_output_dir}/remap/{{source_name_part}}.spv" ]
       args = [
-        "--do-everything",  # See fxb:86545 for debugPrintfEXT()
-        "--input",
+        "-Os",
+        "--strip-debug",
+        "--compact-ids",
         "{{source}}",
-        "--output",
-        rebase_path("${_output_dir}/remap", root_build_dir),
+        "-o",
+        rebase_path(outputs[0], root_build_dir),
       ]
     }
   }
