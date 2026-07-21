@@ -11,7 +11,6 @@ rustc_library("sys_driver_rust") {
   with_unit_tests = true
   sources = [
     "src/lib.rs",
-    "src/magma_common_defs.rs",
     "src/magma_driver_base.rs",
     "src/magma_system_buffer.rs",
     "src/magma_system_connection.rs",
@@ -25,6 +24,7 @@ rustc_library("sys_driver_rust") {
     "src/utils.rs",
   ]
   deps = [
+    "lib/magma-common-defs",
     "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_rust",
     "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",

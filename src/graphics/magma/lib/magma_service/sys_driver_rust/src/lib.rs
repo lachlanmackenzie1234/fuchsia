@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub mod magma_common_defs;
+pub use magma_common_defs;
 pub mod magma_driver_base;
 pub mod magma_system_buffer;
 pub mod magma_system_connection;
