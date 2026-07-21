@@ -992,9 +992,6 @@ zx::result<> Dwc2::InitController() {
   auto fifo_base = metadata_.rx_fifo_size() + metadata_.nptx_fifo_size();
   auto dfifo_end = GHWCFG3::Get().ReadFrom(mmio).dfifo_depth();
 
-  // TODO(https://fxbug.dev/495423640): We should not be doing this based on
-  // static metadata sizes since it ends up encoding endpoint ordering at a
-  // distance, which can't be guaranteed by the rest of the stack.
   uint32_t total_tx_fifo_size = 0;
   for (uint32_t i = 0; i < std::size(metadata_.tx_fifo_sizes()); i++) {
     auto fifo_size = metadata_.tx_fifo_sizes()[i];
@@ -1426,9 +1423,6 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   }
 
   // Check if there is enough TX FIFO space for the IN endpoint.
-  //
-  // TODO(https://fxbug.dev/495423640): We should not be doing this based on
-  // static metadata sizes.
   if (is_in) {
     if (ep_num > metadata_.tx_fifo_sizes().size()) {
       fdf::error("Dwc2::ConfigureEndpoint: no allocated TX FIFO space for IN endpoint {}", ep_num);

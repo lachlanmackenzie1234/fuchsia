@@ -326,8 +326,6 @@ zx_status_t Nelson::UsbInit() {
       .usb_turnaround_time = 9,
       .rx_fifo_size = 256,   // for all OUT endpoints.
       .nptx_fifo_size = 32,  // for endpoint zero IN direction.
-      // TODO(https://fxbug.dev/495423640): This should be dynamically
-      // allocated.
       .tx_fifo_sizes = {128, 128, 128},
   });
 
