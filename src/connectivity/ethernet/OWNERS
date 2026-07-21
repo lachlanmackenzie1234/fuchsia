@@ -7,5 +7,5 @@ brunodalbo@google.com
 # Driver Framework Team for refactoring.
 include /src/devices/driver_framework/OWNERS
 
-# For USB-CDC and ACM driver work.
+# USB team for USB API migration
 include /src/devices/usb/OWNERS
