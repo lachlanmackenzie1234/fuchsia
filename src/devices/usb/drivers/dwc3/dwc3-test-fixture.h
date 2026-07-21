@@ -41,7 +41,7 @@ namespace fphy = fuchsia_hardware_usb_phy;
 namespace freset = fuchsia_hardware_reset;
 namespace fvreg = fuchsia_hardware_vreg;
 
-class Ep0TestHelper {
+class Dwc3TestHelper {
  public:
   using State = Dwc3::Ep0::State;
   static void HandleEp0TransferCompleteEvent(Dwc3& drv, uint8_t ep_num) {
@@ -796,7 +796,7 @@ class UnmanagedTestFixture : public TestFixture<false> {
         [&]() {
           bool powered = false;
           dut_.RunInDriverContext([&](Dwc3& drv) {
-            powered = (Ep0TestHelper::GetDeviceState(drv) ==
+            powered = (Dwc3TestHelper::GetDeviceState(drv) ==
                        fuchsia_hardware_usb_policy::wire::DeviceState::kPowered);
           });
           return powered;
@@ -806,8 +806,8 @@ class UnmanagedTestFixture : public TestFixture<false> {
 
   void TearDownAndPowerOffDriver() {
     dut_.RunInDriverContext([&](Dwc3& drv) {
-      Ep0TestHelper::SetEpRsrcId(drv, 0, 2);
-      Ep0TestHelper::SetEpRsrcId(drv, 1, 2);
+      Dwc3TestHelper::SetEpRsrcId(drv, 0, 2);
+      Dwc3TestHelper::SetEpRsrcId(drv, 1, 2);
     });
     EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
   }
@@ -816,7 +816,7 @@ class UnmanagedTestFixture : public TestFixture<false> {
     dut_.RunInDriverContext([&](Dwc3& drv) {
       auto [client_end, server_end] =
           fidl::Endpoints<fuchsia_hardware_usb_dci::UsbDciInterface>::Create();
-      Ep0TestHelper::BindDciInterface(drv, std::move(client_end));
+      Dwc3TestHelper::BindDciInterface(drv, std::move(client_end));
     });
   }
 
@@ -834,7 +834,7 @@ class UnmanagedTestFixture : public TestFixture<false> {
                                    std::move(server_end), server,
                                    std::forward<UnbindCallback>(unbind_cb));
       }
-      Ep0TestHelper::BindDciInterface(drv, std::move(client_end));
+      Dwc3TestHelper::BindDciInterface(drv, std::move(client_end));
     });
     return binding;
   }

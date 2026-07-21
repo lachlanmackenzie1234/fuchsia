@@ -108,6 +108,11 @@ void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
   auto* mmio = get_mmio();
   const uint8_t ep_num = ep.ep_num;
 
+  // Per the Synopsys DWC3 Databook specification for the StartTransfer command,
+  // the 64-bit TRB address must be mapped as follows:
+  // - DEPCMDPAR0 (offset 0x08) receives the High Address (bits 63:32)
+  // - DEPCMDPAR1 (offset 0x04) receives the Low Address (bits 31:0)
+  // This matches little-endian layout where the lower 32-bits sit at the lower offset.
   DEPCMDPAR0::Get(ep_num)
       .FromValue(0)
       .set_PARAMETER(static_cast<uint32_t>(trb_phys >> 32))

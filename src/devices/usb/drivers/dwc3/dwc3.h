@@ -399,7 +399,7 @@ class Dwc3 : public fdf::DriverBase2,
   friend class Dwc3Metrics;
   template <bool manage_lifetime, typename gtest_base>
   friend class TestFixture;
-  friend class Ep0TestHelper;
+  friend class Dwc3TestHelper;
 
   constexpr bool is_ep0_num(uint8_t ep_num) { return ((ep_num == kEp0Out) || (ep_num == kEp0In)); }
 
