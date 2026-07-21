@@ -30,6 +30,7 @@ bool cpp_thread_preempt_set_timeslice_extension(zx_duration_mono_t duration);
 void cpp_thread_preempt_clear_timeslice_extension();
 void cpp_thread_preempt_disable();
 void cpp_thread_preempt_enable();
+zx_status_t cpp_thread_current_sleep_relative(zx_duration_mono_t duration);
 
 void* cpp_thread_create_default(const char* name, thread_start_routine entry, void* arg) {
   return Thread::Create(name, entry, arg, DEFAULT_PRIORITY);
@@ -80,4 +81,7 @@ void cpp_thread_preempt_disable() { Thread::Current::preemption_state().PreemptD
 
 void cpp_thread_preempt_enable() { Thread::Current::preemption_state().PreemptReenable(); }
 
+zx_status_t cpp_thread_current_sleep_relative(zx_duration_mono_t duration) {
+  return Thread::Current::SleepRelative(duration);
+}
 }  // extern "C"

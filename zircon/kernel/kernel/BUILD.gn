@@ -106,6 +106,7 @@ source_set("ffi") {
   sources = [
     "stats_ffi.cc",
     "thread_ffi.cc",
+    "timer_ffi.cc",
   ]
   deps = [
     "//zircon/kernel/lib/kconcurrent",
@@ -122,12 +123,16 @@ rustc_library("kernel-rs") {
     "relaxed_atomic.rs",
     "stats.rs",
     "thread.rs",
+    "timer.rs",
     "types.rs",
   ]
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//src/lib/zr",
     "//third_party/rust_crates:paste",
+    "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/unittest:unittest-rs",
     "//zircon/kernel/platform:platform-rs",
   ]
   non_rust_deps = [ ":ffi" ]

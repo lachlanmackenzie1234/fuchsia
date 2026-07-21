@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 use platform_rs::DurationMono;
 use zx_status::Status;
-use zx_types::zx_instant_mono_t;
+use zx_types::{zx_instant_mono_t, zx_status_t};
 
 unsafe extern "C" {
     fn cpp_thread_create_default(
@@ -30,6 +30,7 @@ unsafe extern "C" {
     fn cpp_thread_preempt_clear_timeslice_extension();
     fn cpp_thread_preempt_disable();
     fn cpp_thread_preempt_enable();
+    fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
 }
 
 // LINT.IfChange(FxtRef)
@@ -271,6 +272,13 @@ impl Drop for AutoExpiringPreemptDisabler {
             preempt_clear_timeslice_extension();
         }
     }
+}
+
+/// Sleeps the current thread for the specified relative duration.
+pub fn sleep_relative(duration: DurationMono) -> Result<(), Status> {
+    // SAFETY: cpp_thread_current_sleep_relative is safe to call at any time in thread context.
+    let status = unsafe { cpp_thread_current_sleep_relative(duration) };
+    Status::ok(status)
 }
 
 #[cfg(test)]

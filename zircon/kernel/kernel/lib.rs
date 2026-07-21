@@ -7,4 +7,5 @@
 pub mod relaxed_atomic;
 pub mod stats;
 pub mod thread;
+pub mod timer;
 pub mod types;
