@@ -10,7 +10,6 @@ use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::HangingGet;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy};
-use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_media::AudioRenderUsage2;
 use fidl_fuchsia_media_sounds::{PlaySoundError, PlayerMarker, PlayerProxy};
@@ -122,7 +121,7 @@ pub struct FactoryResetHandler {
 /// listen for that.
 fn is_reset_requested(event: &ConsumerControlsEvent) -> bool {
     event.pressed_buttons.iter().any(|button| match button {
-        fidl_input_report::ConsumerControlButton::FactoryReset => true,
+        fidl_fuchsia_input::ConsumerControlButton::FactoryReset => true,
         _ => false,
     })
 }
@@ -558,12 +557,12 @@ mod tests {
     fn create_input_device_descriptor() -> input_device::InputDeviceDescriptor {
         input_device::InputDeviceDescriptor::ConsumerControls(ConsumerControlsDeviceDescriptor {
             buttons: vec![
-                fidl_input_report::ConsumerControlButton::CameraDisable,
-                fidl_input_report::ConsumerControlButton::FactoryReset,
-                fidl_input_report::ConsumerControlButton::MicMute,
-                fidl_input_report::ConsumerControlButton::Pause,
-                fidl_input_report::ConsumerControlButton::VolumeDown,
-                fidl_input_report::ConsumerControlButton::VolumeUp,
+                fidl_fuchsia_input::ConsumerControlButton::CameraDisable,
+                fidl_fuchsia_input::ConsumerControlButton::FactoryReset,
+                fidl_fuchsia_input::ConsumerControlButton::MicMute,
+                fidl_fuchsia_input::ConsumerControlButton::Pause,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeDown,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeUp,
             ],
             device_id: 0,
             is_injected: false,
@@ -572,7 +571,7 @@ mod tests {
 
     fn create_reset_consumer_controls_event() -> ConsumerControlsEvent {
         ConsumerControlsEvent::new(
-            vec![fidl_input_report::ConsumerControlButton::FactoryReset],
+            vec![fidl_fuchsia_input::ConsumerControlButton::FactoryReset],
             None,
         )
     }
@@ -580,11 +579,11 @@ mod tests {
     fn create_non_reset_consumer_controls_event() -> ConsumerControlsEvent {
         ConsumerControlsEvent::new(
             vec![
-                fidl_input_report::ConsumerControlButton::CameraDisable,
-                fidl_input_report::ConsumerControlButton::MicMute,
-                fidl_input_report::ConsumerControlButton::Pause,
-                fidl_input_report::ConsumerControlButton::VolumeDown,
-                fidl_input_report::ConsumerControlButton::VolumeUp,
+                fidl_fuchsia_input::ConsumerControlButton::CameraDisable,
+                fidl_fuchsia_input::ConsumerControlButton::MicMute,
+                fidl_fuchsia_input::ConsumerControlButton::Pause,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeDown,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeUp,
             ],
             None,
         )

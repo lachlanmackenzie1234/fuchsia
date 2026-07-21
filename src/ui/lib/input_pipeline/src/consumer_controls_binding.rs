@@ -6,7 +6,7 @@ use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, 
 use crate::{Transport, metrics, utils};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_fuchsia_input::ConsumerControlButton;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 

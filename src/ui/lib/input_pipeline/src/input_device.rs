@@ -178,7 +178,7 @@ pub enum PreviousDeviceState {
         pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
     },
     ConsumerControls {
-        pressed_buttons: Vec<fidl_fuchsia_input_report::ConsumerControlButton>,
+        pressed_buttons: Vec<fidl_fuchsia_input::ConsumerControlButton>,
     },
     LightSensor,
     #[cfg(test)]
@@ -780,8 +780,8 @@ mod tests {
                             consumer_control: Some(fidl_input_report::ConsumerControlDescriptor {
                                 input: Some(fidl_input_report::ConsumerControlInputDescriptor {
                                     buttons: Some(vec![
-                                        fidl_input_report::ConsumerControlButton::VolumeUp,
-                                        fidl_input_report::ConsumerControlButton::VolumeDown,
+                                        fidl_fuchsia_input::ConsumerControlButton::VolumeUp,
+                                        fidl_fuchsia_input::ConsumerControlButton::VolumeDown,
                                     ]),
                                     ..Default::default()
                                 }),
@@ -1088,8 +1088,8 @@ mod tests {
                             consumer_control: Some(fidl_input_report::ConsumerControlDescriptor {
                                 input: Some(fidl_input_report::ConsumerControlInputDescriptor {
                                     buttons: Some(vec![
-                                        fidl_input_report::ConsumerControlButton::VolumeUp,
-                                        fidl_input_report::ConsumerControlButton::VolumeDown,
+                                        fidl_fuchsia_input::ConsumerControlButton::VolumeUp,
+                                        fidl_fuchsia_input::ConsumerControlButton::VolumeDown,
                                     ]),
                                     ..Default::default()
                                 }),

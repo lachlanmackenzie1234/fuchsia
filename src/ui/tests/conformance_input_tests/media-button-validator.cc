@@ -139,13 +139,13 @@ class MediaButtonConformanceTest : public ui_conformance_test_base::ConformanceT
     ZX_ASSERT_OK(media_buttons_->SendButtonsState(request));
   }
 #else
-  void SimulatePress(fir::ConsumerControlButton button) {
+  void SimulatePress(fuchsia_input::wire::ConsumerControlButton button) {
     futi::MediaButtonsDeviceSimulateButtonPressRequest request;
     request.button(button);
     ZX_ASSERT_OK(media_buttons_->SimulateButtonPress(request));
   }
 
-  void SimulatePress(std::vector<fir::ConsumerControlButton> buttons) {
+  void SimulatePress(std::vector<fuchsia_input::wire::ConsumerControlButton> buttons) {
     futi::MediaButtonsDeviceSendButtonsStateRequest request;
     request.buttons(std::move(buttons));
     ZX_ASSERT_OK(media_buttons_->SendButtonsState(request));
@@ -227,7 +227,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   ZX_ASSERT_OK(device_listener_registry->RegisterListener({std::move(listener_client_end)}));
 
   {
-    SimulatePress(fir::ConsumerControlButton::kVolumeUp);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
     FX_LOGS(INFO) << "wait for button VOLUME_UP";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -237,7 +237,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   }
 
   {
-    SimulatePress(fir::ConsumerControlButton::kVolumeDown);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kVolumeDown);
     FX_LOGS(INFO) << "wait for button VOLUME_DOWN";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -247,7 +247,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   }
 
   {
-    SimulatePress(fir::ConsumerControlButton::kPause);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kPause);
     FX_LOGS(INFO) << "wait for button PAUSE";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -257,7 +257,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   }
 
   {
-    SimulatePress(fir::ConsumerControlButton::kMicMute);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kMicMute);
     FX_LOGS(INFO) << "wait for button MIC_MUTE";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -267,7 +267,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   }
 
   {
-    SimulatePress(fir::ConsumerControlButton::kCameraDisable);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kCameraDisable);
     FX_LOGS(INFO) << "wait for button CAMERA_DISABLE";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -277,7 +277,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   }
 
   {
-    SimulatePress(fir::ConsumerControlButton::kFunction);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kFunction);
     FX_LOGS(INFO) << "wait for button FUNCTION";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -287,7 +287,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   }
 
   {
-    SimulatePress(fir::ConsumerControlButton::kPower);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kPower);
     FX_LOGS(INFO) << "wait for button POWER";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -298,7 +298,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
 
   // The following button types are not yet supported.
   {
-    SimulatePress(fir::ConsumerControlButton::kReboot);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kReboot);
     FX_LOGS(INFO) << "wait for button REBOOT";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -308,7 +308,7 @@ TEST_F(MediaButtonConformanceTest, SimplePress) {
   }
 
   {
-    SimulatePress(fir::ConsumerControlButton::kFactoryReset);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kFactoryReset);
     FX_LOGS(INFO) << "wait for button FACTORY_RESET";
     RunLoopUntil([&listener]() { return listener.events_received().size() > 1; });
     EXPECT_EQ(listener.events_received().size(), 2u);
@@ -327,11 +327,11 @@ TEST_F(MediaButtonConformanceTest, MultiPress) {
 
   // press multi buttons.
   {
-    auto buttons = std::vector<fir::ConsumerControlButton>{
-        fuchsia_input_report::ConsumerControlButton::kCameraDisable,
-        fuchsia_input_report::ConsumerControlButton::kMicMute,
-        fuchsia_input_report::ConsumerControlButton::kPause,
-        fuchsia_input_report::ConsumerControlButton::kVolumeUp,
+    auto buttons = std::vector<fuchsia_input::wire::ConsumerControlButton>{
+        fuchsia_input::ConsumerControlButton::kCameraDisable,
+        fuchsia_input::ConsumerControlButton::kMicMute,
+        fuchsia_input::ConsumerControlButton::kPause,
+        fuchsia_input::ConsumerControlButton::kVolumeUp,
     };
     SimulatePress(std::move(buttons));
     RunLoopUntil([&listener]() { return listener.events_received().size() > 0; });
@@ -343,7 +343,7 @@ TEST_F(MediaButtonConformanceTest, MultiPress) {
 
   // release multi buttons.
   {
-    SimulatePress(std::vector<fir::ConsumerControlButton>());
+    SimulatePress(std::vector<fuchsia_input::wire::ConsumerControlButton>());
     RunLoopUntil([&listener]() { return listener.events_received().size() > 0; });
     EXPECT_EQ(listener.events_received().size(), 1u);
     EXPECT_EQ(ToString(listener.events_received()[0]), ToString(MakeEmptyEvent()));
@@ -364,7 +364,7 @@ TEST_F(MediaButtonConformanceTest, MultiListener) {
 
   // Both listener received events.
   {
-    SimulatePress(fir::ConsumerControlButton::kVolumeUp);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
     FX_LOGS(INFO) << "wait for button VOLUME_UP";
     RunLoopUntil([&listener1]() { return listener1.events_received().size() > 1; });
     RunLoopUntil([&listener2]() { return listener2->events_received().size() > 1; });
@@ -392,7 +392,7 @@ TEST_F(MediaButtonConformanceTest, MultiListener) {
 
   // then new listener receive only new events.
   {
-    SimulatePress(fir::ConsumerControlButton::kVolumeDown);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kVolumeDown);
     FX_LOGS(INFO) << "wait for button VOLUME_DOWN";
     RunLoopUntil([&listener1]() { return listener1.events_received().size() > 1; });
     RunLoopUntil([&listener2]() { return listener2->events_received().size() > 1; });
@@ -414,7 +414,7 @@ TEST_F(MediaButtonConformanceTest, MultiListener) {
   // drop listener2, and verify other listeners still working.
   listener2 = {};
   {
-    SimulatePress(fir::ConsumerControlButton::kPause);
+    SimulatePress(fuchsia_input::wire::ConsumerControlButton::kPause);
     FX_LOGS(INFO) << "wait for button PAUSE";
     RunLoopUntil([&listener1]() { return listener1.events_received().size() > 1; });
     RunLoopUntil([&listener3]() { return listener3.events_received().size() > 1; });

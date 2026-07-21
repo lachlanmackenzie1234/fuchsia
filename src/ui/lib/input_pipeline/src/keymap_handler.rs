@@ -192,7 +192,7 @@ mod tests {
 
     // A mod-specific version of `testing_utilities::create_consumer_controls_event`.
     fn create_unhandled_consumer_controls_event(
-        pressed_buttons: Vec<fidl_fuchsia_input_report::ConsumerControlButton>,
+        pressed_buttons: Vec<fidl_fuchsia_input::ConsumerControlButton>,
         event_time: zx::MonotonicInstant,
         device_descriptor: &input_device::InputDeviceDescriptor,
     ) -> input_device::UnhandledInputEvent {
@@ -243,9 +243,7 @@ mod tests {
                     zx::MonotonicInstant::ZERO,
                     &input_device::InputDeviceDescriptor::ConsumerControls(
                         consumer_controls_binding::ConsumerControlsDeviceDescriptor {
-                            buttons: vec![
-                                fidl_fuchsia_input_report::ConsumerControlButton::VolumeUp,
-                            ],
+                            buttons: vec![fidl_fuchsia_input::ConsumerControlButton::VolumeUp],
                             device_id: 1,
                             is_injected: false,
                         },

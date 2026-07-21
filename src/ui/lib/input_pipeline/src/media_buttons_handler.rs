@@ -7,7 +7,6 @@ use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::{Dispatcher, consumer_controls_binding, input_device, metrics};
 use async_trait::async_trait;
 use fidl::endpoints::Proxy;
-use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_fuchsia_ui_input as fidl_ui_input;
 use fidl_fuchsia_ui_policy as fidl_ui_policy;
 use fuchsia_inspect::health::Reporter;
@@ -184,25 +183,25 @@ impl MediaButtonsHandler {
         };
         for button in &event.pressed_buttons {
             match button {
-                fidl_input_report::ConsumerControlButton::VolumeUp => {
+                fidl_fuchsia_input::ConsumerControlButton::VolumeUp => {
                     new_event.volume = Some(new_event.volume.unwrap().saturating_add(1));
                 }
-                fidl_input_report::ConsumerControlButton::VolumeDown => {
+                fidl_fuchsia_input::ConsumerControlButton::VolumeDown => {
                     new_event.volume = Some(new_event.volume.unwrap().saturating_sub(1));
                 }
-                fidl_input_report::ConsumerControlButton::MicMute => {
+                fidl_fuchsia_input::ConsumerControlButton::MicMute => {
                     new_event.mic_mute = Some(true);
                 }
-                fidl_input_report::ConsumerControlButton::Pause => {
+                fidl_fuchsia_input::ConsumerControlButton::Pause => {
                     new_event.pause = Some(true);
                 }
-                fidl_input_report::ConsumerControlButton::CameraDisable => {
+                fidl_fuchsia_input::ConsumerControlButton::CameraDisable => {
                     new_event.camera_disable = Some(true);
                 }
-                fidl_input_report::ConsumerControlButton::Function => {
+                fidl_fuchsia_input::ConsumerControlButton::Function => {
                     new_event.function = Some(true);
                 }
-                fidl_input_report::ConsumerControlButton::Power => {
+                fidl_fuchsia_input::ConsumerControlButton::Power => {
                     new_event.power = Some(true);
                 }
                 _ => {}
@@ -320,7 +319,6 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_input_report as fidl_input_report;
     use fuchsia_async as fasync;
     use futures::TryStreamExt;
     use futures::channel::oneshot;
@@ -478,13 +476,13 @@ mod tests {
         let descriptor = testing_utilities::consumer_controls_device_descriptor();
         let input_events = vec![testing_utilities::create_consumer_controls_event(
             vec![
-                fidl_input_report::ConsumerControlButton::VolumeUp,
-                fidl_input_report::ConsumerControlButton::VolumeDown,
-                fidl_input_report::ConsumerControlButton::Pause,
-                fidl_input_report::ConsumerControlButton::MicMute,
-                fidl_input_report::ConsumerControlButton::CameraDisable,
-                fidl_input_report::ConsumerControlButton::Function,
-                fidl_input_report::ConsumerControlButton::Power,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeUp,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeDown,
+                fidl_fuchsia_input::ConsumerControlButton::Pause,
+                fidl_fuchsia_input::ConsumerControlButton::MicMute,
+                fidl_fuchsia_input::ConsumerControlButton::CameraDisable,
+                fidl_fuchsia_input::ConsumerControlButton::Function,
+                fidl_fuchsia_input::ConsumerControlButton::Power,
             ],
             event_time,
             &descriptor,
@@ -535,7 +533,7 @@ mod tests {
         // Setup events and expectations.
         let descriptor = testing_utilities::consumer_controls_device_descriptor();
         let input_events = vec![testing_utilities::create_consumer_controls_event(
-            vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+            vec![fidl_fuchsia_input::ConsumerControlButton::VolumeUp],
             event_time,
             &descriptor,
         )];
@@ -598,7 +596,7 @@ mod tests {
             // Generate input event to be handled by MediaButtonsHandler.
             let descriptor = testing_utilities::consumer_controls_device_descriptor();
             let input_event = testing_utilities::create_consumer_controls_event(
-                vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+                vec![fidl_fuchsia_input::ConsumerControlButton::VolumeUp],
                 event_time,
                 &descriptor,
             );
@@ -689,7 +687,7 @@ mod tests {
         let first_unhandled_input_event = input_device::UnhandledInputEvent {
             device_event: input_device::InputDeviceEvent::ConsumerControls(
                 consumer_controls_binding::ConsumerControlsEvent::new(
-                    vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+                    vec![fidl_fuchsia_input::ConsumerControlButton::VolumeUp],
                     None,
                 ),
             ),
@@ -759,7 +757,7 @@ mod tests {
         let second_unhandled_input_event = input_device::UnhandledInputEvent {
             device_event: input_device::InputDeviceEvent::ConsumerControls(
                 consumer_controls_binding::ConsumerControlsEvent::new(
-                    vec![fidl_input_report::ConsumerControlButton::MicMute],
+                    vec![fidl_fuchsia_input::ConsumerControlButton::MicMute],
                     None,
                 ),
             ),
@@ -907,7 +905,7 @@ mod tests {
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(
                     consumer_controls_binding::ConsumerControlsEvent::new(
-                        vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+                        vec![fidl_fuchsia_input::ConsumerControlButton::VolumeUp],
                         None,
                     ),
                 ),
@@ -920,7 +918,7 @@ mod tests {
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(
                     consumer_controls_binding::ConsumerControlsEvent::new(
-                        vec![fidl_input_report::ConsumerControlButton::VolumeUp],
+                        vec![fidl_fuchsia_input::ConsumerControlButton::VolumeUp],
                         None,
                     ),
                 ),
@@ -932,7 +930,7 @@ mod tests {
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(
                     consumer_controls_binding::ConsumerControlsEvent::new(
-                        vec![fidl_input_report::ConsumerControlButton::VolumeDown],
+                        vec![fidl_fuchsia_input::ConsumerControlButton::VolumeDown],
                         None,
                     ),
                 ),

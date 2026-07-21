@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fuchsia/input/cpp/fidl.h>
 #include <fuchsia/input/report/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/pointer/cpp/fidl.h>
@@ -61,7 +62,7 @@ using DevicePtr = fuchsia::ui::pointerinjector::DevicePtr;
 using DeviceType = fuchsia::ui::pointerinjector::DeviceType;
 using Target = fuchsia::ui::pointerinjector::Target;
 using Viewport = fuchsia::ui::pointerinjector::Viewport;
-using fir_Axis = fuchsia::input::report::Axis;
+using fir_Axis = fuchsia::input::Axis;
 
 // Macros for calling EXPECT on fuchsia::ui::pointer::MousePointerSample.
 // Delegates to ExpectEqualPointer(), but are macros to ensure we get the correct line number for

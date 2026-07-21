@@ -719,7 +719,7 @@ async fn handle_media_buttons_device_request_stream(
                 match request {
                     Some(Ok(MediaButtonsDeviceRequest::SimulateButtonPress { payload, responder })) => {
                         if let Some(button) = payload.button {
-                            let button = fidl_fuchsia_input_report::ConsumerControlButton::from_primitive(button.into_primitive()).unwrap();
+                            let button = fidl_fuchsia_input::ConsumerControlButton::from_primitive(button.into_primitive()).unwrap();
                             let wake_lease = if let Some(ref ag) = activity_governor {
                                 acquire_and_deposit_lease(ag, "input-helper-button").await
                             } else {
@@ -734,7 +734,7 @@ async fn handle_media_buttons_device_request_stream(
                     }
                     Some(Ok(MediaButtonsDeviceRequest::SendButtonsState { payload, responder })) => {
                         let buttons = match payload.buttons {
-                            Some(buttons) => buttons.into_iter().map(|b| fidl_fuchsia_input_report::ConsumerControlButton::from_primitive(b.into_primitive()).unwrap()).collect(),
+                            Some(buttons) => buttons.into_iter().map(|b| fidl_fuchsia_input::ConsumerControlButton::from_primitive(b.into_primitive()).unwrap()).collect(),
                             None => vec![],
                         };
                         let wake_lease = if let Some(ref ag) = activity_governor {
@@ -760,7 +760,7 @@ async fn handle_media_buttons_device_request_stream(
                     }
 
                     Some(Ok(MediaButtonsDeviceRequest::ScheduleSimulateButtonPress { payload, responder })) => {
-                        let button = fidl_fuchsia_input_report::ConsumerControlButton::from_primitive(payload.button.expect("missing button").into_primitive()).unwrap();
+                        let button = fidl_fuchsia_input::ConsumerControlButton::from_primitive(payload.button.expect("missing button").into_primitive()).unwrap();
                         let delay = zx::Duration::from_nanos(payload.delay.expect("missing delay"));
                         let sender = alarm_sender.clone();
                         let proxy = wake_alarm_proxy.clone();
@@ -860,7 +860,7 @@ async fn acquire_and_deposit_lease(
 
 fn send_media_button_press_and_release(
     media_buttons_device: &input_device::InputDevice,
-    button: fidl_fuchsia_input_report::ConsumerControlButton,
+    button: fidl_fuchsia_input::ConsumerControlButton,
     wake_lease: Option<zx::EventPair>,
 ) {
     let media_buttons_input_report =

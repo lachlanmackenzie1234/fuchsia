@@ -12,7 +12,7 @@ use crate::{
 use anyhow::{Context, Error, Result, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
-use fidl_fuchsia_input_report::Range;
+use fidl_fuchsia_input::Range;
 use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
 use fuchsia_inspect::health::Reporter;
@@ -593,7 +593,6 @@ mod tests {
         create_mouse_pointer_sample_event_with_wheel_physical_pixel, next_client_old_stream,
     };
     use assert_matches::assert_matches;
-    use fidl_fuchsia_input_report as fidl_input_report;
     use fidl_fuchsia_ui_pointerinjector as pointerinjector;
     use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
     use fuchsia_async as fasync;
@@ -609,19 +608,19 @@ mod tests {
     const DESCRIPTOR: input_device::InputDeviceDescriptor =
         input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
             device_id: 1,
-            absolute_x_range: Some(fidl_input_report::Range { min: 0, max: 100 }),
-            absolute_y_range: Some(fidl_input_report::Range { min: 0, max: 100 }),
-            wheel_v_range: Some(fidl_input_report::Axis {
-                range: fidl_input_report::Range { min: -1, max: 1 },
-                unit: fidl_input_report::Unit {
-                    type_: fidl_input_report::UnitType::Other,
+            absolute_x_range: Some(fidl_fuchsia_input::Range { min: 0, max: 100 }),
+            absolute_y_range: Some(fidl_fuchsia_input::Range { min: 0, max: 100 }),
+            wheel_v_range: Some(fidl_fuchsia_input::Axis {
+                range: fidl_fuchsia_input::Range { min: -1, max: 1 },
+                unit: fidl_fuchsia_input::Unit {
+                    type_: fidl_fuchsia_input::UnitType::Other,
                     exponent: 0,
                 },
             }),
-            wheel_h_range: Some(fidl_input_report::Axis {
-                range: fidl_input_report::Range { min: -1, max: 1 },
-                unit: fidl_input_report::Unit {
-                    type_: fidl_input_report::UnitType::Other,
+            wheel_h_range: Some(fidl_fuchsia_input::Axis {
+                range: fidl_fuchsia_input::Range { min: -1, max: 1 },
+                unit: fidl_fuchsia_input::Unit {
+                    type_: fidl_fuchsia_input::UnitType::Other,
                     exponent: 0,
                 },
             }),
@@ -1057,8 +1056,8 @@ mod tests {
         let descriptor =
             input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
                 device_id: DEVICE_ID,
-                absolute_x_range: Some(fidl_input_report::Range { min: -50, max: 50 }),
-                absolute_y_range: Some(fidl_input_report::Range { min: -50, max: 50 }),
+                absolute_x_range: Some(fidl_fuchsia_input::Range { min: -50, max: 50 }),
+                absolute_y_range: Some(fidl_fuchsia_input::Range { min: -50, max: 50 }),
                 wheel_v_range: None,
                 wheel_h_range: None,
                 buttons: None,

@@ -821,7 +821,6 @@ mod tests {
         get_touch_screen_device_descriptor, next_client_old_stream,
     };
     use assert_matches::assert_matches;
-    use fidl_fuchsia_input_report as fidl_input_report;
     use fidl_fuchsia_ui_input as fidl_ui_input;
     use fidl_fuchsia_ui_pointerinjector as pointerinjector;
     use fidl_fuchsia_ui_policy as fidl_ui_policy;
@@ -944,14 +943,14 @@ mod tests {
         input_device::InputDeviceDescriptor::Touchpad(touch_binding::TouchpadDeviceDescriptor {
             device_id: 1,
             contacts: vec![touch_binding::ContactDeviceDescriptor {
-                x_range: fidl_input_report::Range { min: 0, max: 100 },
-                y_range: fidl_input_report::Range { min: 0, max: 100 },
-                x_unit: fidl_input_report::Unit {
-                    type_: fidl_input_report::UnitType::Meters,
+                x_range: fidl_fuchsia_input::Range { min: 0, max: 100 },
+                y_range: fidl_fuchsia_input::Range { min: 0, max: 100 },
+                x_unit: fidl_fuchsia_input::Unit {
+                    type_: fidl_fuchsia_input::UnitType::Meters,
                     exponent: -6,
                 },
-                y_unit: fidl_input_report::Unit {
-                    type_: fidl_input_report::UnitType::Meters,
+                y_unit: fidl_fuchsia_input::Unit {
+                    type_: fidl_fuchsia_input::UnitType::Meters,
                     exponent: -6,
                 },
                 pressure_range: None,

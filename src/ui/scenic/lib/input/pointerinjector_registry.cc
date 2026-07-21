@@ -128,11 +128,11 @@ void PointerinjectorRegistry::Register(
   const InjectorId id = ++last_injector_id_;
   auto server_end = fidl::ServerEnd<fuchsia_ui_pointerinjector::Device>(injector.TakeChannel());
 
-  std::optional<fuchsia::input::report::Axis> scroll_v_range;
+  std::optional<fuchsia::input::Axis> scroll_v_range;
   if (config.has_scroll_v_range()) {
     scroll_v_range = config.scroll_v_range();
   }
-  std::optional<fuchsia::input::report::Axis> scroll_h_range;
+  std::optional<fuchsia::input::Axis> scroll_h_range;
   if (config.has_scroll_h_range()) {
     scroll_h_range = config.scroll_h_range();
   }

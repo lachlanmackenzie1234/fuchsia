@@ -680,7 +680,7 @@ mod tests {
     mod event_synthesis {
         use super::*;
         use fidl::endpoints;
-        use fidl_fuchsia_input_report::MOUSE_MAX_NUM_BUTTONS;
+        use fidl_fuchsia_input::MOUSE_MAX_NUM_BUTTONS;
         use fidl_fuchsia_ui_input::{
             InputDeviceMarker, InputDeviceProxy as FidlInputDeviceProxy, InputDeviceRequest,
             InputDeviceRequestStream, InputReport, MediaButtonsReport, MouseReport,
@@ -778,7 +778,7 @@ mod tests {
         /// Returns a u32 representation of `buttons`, where each u8 of `buttons` is an id of a button and
         /// indicates the position of a bit to set.
         ///
-        /// This supports hashsets containing numbers from 1 to fidl_input_report::MOUSE_MAX_NUM_BUTTONS.
+        /// This supports hashsets containing numbers from 1 to fidl_fuchsia_input::MOUSE_MAX_NUM_BUTTONS.
         ///
         /// # Parameters
         /// - `buttons`: The hashset containing the position of bits to be set.

@@ -38,7 +38,7 @@ void AddDeviceInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event
                                     .unit = {.type = unit, .exponent = exponent}});
   }
   if (!event.buttons.identifiers.empty()) {
-    FX_DCHECK(event.buttons.identifiers.size() <= fuchsia::input::report::MOUSE_MAX_NUM_BUTTONS);
+    FX_DCHECK(event.buttons.identifiers.size() <= fuchsia::input::MOUSE_MAX_NUM_BUTTONS);
     device_info.set_buttons(event.buttons.identifiers);
   }
   out_event.set_device_info(std::move(device_info));
@@ -111,7 +111,7 @@ fuchsia::ui::pointer::MousePointerSample MouseSourceBase::NewPointerSample(
     pointer.set_is_precision_scroll(event.is_precision_scroll.value());
   }
 
-  FX_DCHECK(event.buttons.pressed.size() <= fuchsia::input::report::MOUSE_MAX_NUM_BUTTONS);
+  FX_DCHECK(event.buttons.pressed.size() <= fuchsia::input::MOUSE_MAX_NUM_BUTTONS);
   if (!event.buttons.pressed.empty()) {
     pointer.set_pressed_buttons(event.buttons.pressed);
   }

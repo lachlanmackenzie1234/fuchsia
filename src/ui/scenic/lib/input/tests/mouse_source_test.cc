@@ -209,7 +209,7 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
     event.device_id = kDeviceId1;
     event.buttons = {.identifiers = {12, 34, 56}};
     event.scroll_v = {
-        .unit = fuchsia::input::report::UnitType::DEGREES,
+        .unit = fuchsia::input::UnitType::DEGREES,
         .exponent = 900,
         .range = {-98, 76},
     };
@@ -225,7 +225,7 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
     InternalMouseEvent event = IMEventTemplate();
     event.device_id = kDeviceId2;
     event.scroll_h = {
-        .unit = fuchsia::input::report::UnitType::METERS,
+        .unit = fuchsia::input::UnitType::METERS,
         .exponent = -111,
         .range = {100, 200},
     };
@@ -250,7 +250,7 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
       const auto& [range, unit] = device_info.scroll_v_range();
       EXPECT_EQ(range.min, -98);
       EXPECT_EQ(range.max, 76);
-      EXPECT_EQ(unit.type, fuchsia::input::report::UnitType::DEGREES);
+      EXPECT_EQ(unit.type, fuchsia::input::UnitType::DEGREES);
       EXPECT_EQ(unit.exponent, 900);
       EXPECT_FALSE(device_info.has_scroll_h_range());
       ASSERT_TRUE(device_info.has_buttons());
@@ -286,7 +286,7 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
       const auto& [range, unit] = device_info.scroll_h_range();
       EXPECT_EQ(range.min, 100);
       EXPECT_EQ(range.max, 200);
-      EXPECT_EQ(unit.type, fuchsia::input::report::UnitType::METERS);
+      EXPECT_EQ(unit.type, fuchsia::input::UnitType::METERS);
       EXPECT_EQ(unit.exponent, -111);
       EXPECT_FALSE(device_info.has_buttons());
 

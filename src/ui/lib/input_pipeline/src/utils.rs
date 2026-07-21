@@ -30,11 +30,11 @@ pub fn duplicate_view_ref_next(
 }
 
 pub fn axis_to_next(
-    axis: Option<&fidl_fuchsia_input_report::Axis>,
-) -> Option<fidl_next_fuchsia_input_report::Axis> {
-    axis.map(|a| fidl_next_fuchsia_input_report::Axis {
-        range: fidl_next_fuchsia_input_report::Range { min: a.range.min, max: a.range.max },
-        unit: fidl_next_fuchsia_input_report::Unit {
+    axis: Option<&fidl_fuchsia_input::Axis>,
+) -> Option<fidl_next_fuchsia_input::Axis> {
+    axis.map(|a| fidl_next_fuchsia_input::Axis {
+        range: fidl_next_fuchsia_input::Range { min: a.range.min, max: a.range.max },
+        unit: fidl_next_fuchsia_input::Unit {
             type_: a.unit.type_.into_primitive().into(),
             exponent: a.unit.exponent,
         },
@@ -42,10 +42,10 @@ pub fn axis_to_next(
 }
 
 pub fn axis_to_old(
-    axis: Option<&fidl_next_fuchsia_input_report::Axis>,
-) -> Option<fidl_fuchsia_input_report::Axis> {
-    axis.map(|a| fidl_fuchsia_input_report::Axis {
-        range: fidl_fuchsia_input_report::Range { min: a.range.min, max: a.range.max },
+    axis: Option<&fidl_next_fuchsia_input::Axis>,
+) -> Option<fidl_fuchsia_input::Axis> {
+    axis.map(|a| fidl_fuchsia_input::Axis {
+        range: fidl_fuchsia_input::Range { min: a.range.min, max: a.range.max },
         unit: unit_to_old(&a.unit),
     })
 }
@@ -59,21 +59,19 @@ pub fn viewport_to_next(
     }
 }
 
-pub fn range_to_old(
-    range: &fidl_next_fuchsia_input_report::Range,
-) -> fidl_fuchsia_input_report::Range {
-    fidl_fuchsia_input_report::Range { min: range.min, max: range.max }
+pub fn range_to_old(range: &fidl_next_fuchsia_input::Range) -> fidl_fuchsia_input::Range {
+    fidl_fuchsia_input::Range { min: range.min, max: range.max }
 }
 
-pub fn unit_to_old(unit: &fidl_next_fuchsia_input_report::Unit) -> fidl_fuchsia_input_report::Unit {
+pub fn unit_to_old(unit: &fidl_next_fuchsia_input::Unit) -> fidl_fuchsia_input::Unit {
     // SAFETY: The `fidl_next` generated enum is representation-compatible with `u32`
     // (typically `#[repr(u32)]`). Casting the pointer to `*const u32` and dereferencing
     // it is safe because the memory is initialized, aligned correctly, and we only
     // perform a read operation.
     let discriminant: u32 =
-        unsafe { *(&unit.type_ as *const fidl_next_fuchsia_input_report::UnitType as *const u32) };
-    fidl_fuchsia_input_report::Unit {
-        type_: fidl_fuchsia_input_report::UnitType::from_primitive_allow_unknown(discriminant),
+        unsafe { *(&unit.type_ as *const fidl_next_fuchsia_input::UnitType as *const u32) };
+    fidl_fuchsia_input::Unit {
+        type_: fidl_fuchsia_input::UnitType::from_primitive_allow_unknown(discriminant),
         exponent: unit.exponent,
     }
 }
@@ -102,24 +100,23 @@ pub fn touch_button_to_next(
 }
 
 pub fn consumer_control_button_to_old(
-    button: &fidl_next_fuchsia_input_report::ConsumerControlButton,
-) -> fidl_fuchsia_input_report::ConsumerControlButton {
+    button: &fidl_next_fuchsia_input::ConsumerControlButton,
+) -> fidl_fuchsia_input::ConsumerControlButton {
     // SAFETY: The `fidl_next` generated enum is representation-compatible with `u32`
     // (typically `#[repr(u32)]`). Casting the pointer to `*const u32` and dereferencing
     // it is safe because the memory is initialized, aligned correctly, and we only
     // perform a read operation.
-    let discriminant: u32 = unsafe {
-        *(button as *const fidl_next_fuchsia_input_report::ConsumerControlButton as *const u32)
-    };
-    fidl_fuchsia_input_report::ConsumerControlButton::from_primitive_allow_unknown(discriminant)
+    let discriminant: u32 =
+        unsafe { *(button as *const fidl_next_fuchsia_input::ConsumerControlButton as *const u32) };
+    fidl_fuchsia_input::ConsumerControlButton::from_primitive_allow_unknown(discriminant)
 }
 
 #[cfg(test)]
 pub fn consumer_control_button_to_next(
-    button: &fidl_fuchsia_input_report::ConsumerControlButton,
-) -> fidl_next_fuchsia_input_report::ConsumerControlButton {
+    button: &fidl_fuchsia_input::ConsumerControlButton,
+) -> fidl_next_fuchsia_input::ConsumerControlButton {
     let discriminant = button.into_primitive();
-    fidl_next_fuchsia_input_report::ConsumerControlButton::from(discriminant)
+    fidl_next_fuchsia_input::ConsumerControlButton::from(discriminant)
 }
 
 /// Cursor messages.

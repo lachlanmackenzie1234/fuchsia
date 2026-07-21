@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_input as fidl_input;
 use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -52,7 +53,7 @@ impl crate::traits::test_realm_component::TestRealmComponent for InputReportMock
                                                 let mut cc = fidl_input_report::ConsumerControlDescriptor::default();
                                                 cc.input = Some(fidl_input_report::ConsumerControlInputDescriptor {
                                                     buttons: Some(vec![
-                                                        fidl_input_report::ConsumerControlButton::FactoryReset,
+                                                        fidl_input::ConsumerControlButton::FactoryReset,
                                                     ]),
                                                     ..Default::default()
                                                 });
@@ -68,7 +69,7 @@ impl crate::traits::test_realm_component::TestRealmComponent for InputReportMock
                                                         report.event_time = Some(fasync::MonotonicInstant::now().into_nanos());
                                                         let mut cc = fidl_input_report::ConsumerControlInputReport::default();
                                                         cc.pressed_buttons = Some(vec![
-                                                            fidl_input_report::ConsumerControlButton::FactoryReset,
+                                                            fidl_input::ConsumerControlButton::FactoryReset,
                                                         ]);
                                                         report.consumer_control = Some(cc);
                                                         responder.send(Ok(vec![report])).unwrap();

@@ -7,7 +7,6 @@ use crate::utils::{self, Position};
 use crate::{Transport, metrics};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -240,16 +239,16 @@ pub struct MouseDeviceDescriptor {
     pub device_id: u32,
 
     /// The range of possible x values of absolute mouse positions reported by this device.
-    pub absolute_x_range: Option<fidl_input_report::Range>,
+    pub absolute_x_range: Option<fidl_fuchsia_input::Range>,
 
     /// The range of possible y values of absolute mouse positions reported by this device.
-    pub absolute_y_range: Option<fidl_input_report::Range>,
+    pub absolute_y_range: Option<fidl_fuchsia_input::Range>,
 
     /// The range of possible vertical wheel delta reported by this device.
-    pub wheel_v_range: Option<fidl_input_report::Axis>,
+    pub wheel_v_range: Option<fidl_fuchsia_input::Axis>,
 
     /// The range of possible horizontal wheel delta reported by this device.
-    pub wheel_h_range: Option<fidl_input_report::Axis>,
+    pub wheel_h_range: Option<fidl_fuchsia_input::Axis>,
 
     /// This is a vector of ids for the mouse buttons.
     pub buttons: Option<Vec<MouseButton>>,
@@ -652,17 +651,17 @@ mod tests {
             device_id,
             absolute_x_range: None,
             absolute_y_range: None,
-            wheel_v_range: Some(fidl_fuchsia_input_report::Axis {
-                range: fidl_input_report::Range { min: -1, max: 1 },
-                unit: fidl_input_report::Unit {
-                    type_: fidl_input_report::UnitType::Other,
+            wheel_v_range: Some(fidl_fuchsia_input::Axis {
+                range: fidl_fuchsia_input::Range { min: -1, max: 1 },
+                unit: fidl_fuchsia_input::Unit {
+                    type_: fidl_fuchsia_input::UnitType::Other,
                     exponent: 1,
                 },
             }),
-            wheel_h_range: Some(fidl_fuchsia_input_report::Axis {
-                range: fidl_input_report::Range { min: -1, max: 1 },
-                unit: fidl_input_report::Unit {
-                    type_: fidl_input_report::UnitType::Other,
+            wheel_h_range: Some(fidl_fuchsia_input::Axis {
+                range: fidl_fuchsia_input::Range { min: -1, max: 1 },
+                unit: fidl_fuchsia_input::Unit {
+                    type_: fidl_fuchsia_input::UnitType::Other,
                     exponent: 1,
                 },
             }),

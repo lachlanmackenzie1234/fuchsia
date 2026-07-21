@@ -12,10 +12,9 @@ namespace scenic_impl::input {
 
 namespace {
 
-ScrollInfo CreateScrollInfo(const fuchsia::input::report::Axis& axis,
-                            std::optional<int64_t> scroll_value) {
+ScrollInfo CreateScrollInfo(const fuchsia::input::Axis& axis, std::optional<int64_t> scroll_value) {
   ScrollInfo scroll_info = {
-      .unit = axis.unit.type,
+      .unit = static_cast<fuchsia::input::UnitType>(static_cast<uint32_t>(axis.unit.type)),
       .exponent = axis.unit.exponent,
       .range = {axis.range.min, axis.range.max},
   };

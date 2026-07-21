@@ -20,6 +20,7 @@ rustc_test("factory_reset_handler_test") {
 
   deps = [
     "//sdk/fidl/fuchsia.accessibility.scene:fuchsia.accessibility.scene_rust",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",

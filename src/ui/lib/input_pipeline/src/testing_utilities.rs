@@ -239,14 +239,14 @@ pub fn consumer_controls_device_descriptor() -> input_device::InputDeviceDescrip
     input_device::InputDeviceDescriptor::ConsumerControls(
         consumer_controls_binding::ConsumerControlsDeviceDescriptor {
             buttons: vec![
-                fidl_input_report::ConsumerControlButton::CameraDisable,
-                fidl_input_report::ConsumerControlButton::FactoryReset,
-                fidl_input_report::ConsumerControlButton::Function,
-                fidl_input_report::ConsumerControlButton::MicMute,
-                fidl_input_report::ConsumerControlButton::Pause,
-                fidl_input_report::ConsumerControlButton::Power,
-                fidl_input_report::ConsumerControlButton::VolumeDown,
-                fidl_input_report::ConsumerControlButton::VolumeUp,
+                fidl_fuchsia_input::ConsumerControlButton::CameraDisable,
+                fidl_fuchsia_input::ConsumerControlButton::FactoryReset,
+                fidl_fuchsia_input::ConsumerControlButton::Function,
+                fidl_fuchsia_input::ConsumerControlButton::MicMute,
+                fidl_fuchsia_input::ConsumerControlButton::Pause,
+                fidl_fuchsia_input::ConsumerControlButton::Power,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeDown,
+                fidl_fuchsia_input::ConsumerControlButton::VolumeUp,
             ],
             device_id: 0,
             is_injected: false,
@@ -260,7 +260,7 @@ pub fn consumer_controls_device_descriptor() -> input_device::InputDeviceDescrip
 /// - `buttons`: The buttons in the consumer control report.
 /// - `event_time`: The time of event.
 pub fn create_consumer_control_input_report(
-    buttons: Vec<fidl_input_report::ConsumerControlButton>,
+    buttons: Vec<fidl_fuchsia_input::ConsumerControlButton>,
     event_time: i64,
 ) -> fidl_next_fuchsia_input_report::InputReport {
     fidl_next_fuchsia_input_report::InputReport {
@@ -288,7 +288,7 @@ pub fn create_consumer_control_input_report(
 /// - `device_descriptor`: The device descriptor to add to the event.
 /// - `handled`: Whether the event has been consumed.
 pub fn create_consumer_controls_event_with_handled(
-    pressed_buttons: Vec<fidl_input_report::ConsumerControlButton>,
+    pressed_buttons: Vec<fidl_fuchsia_input::ConsumerControlButton>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
     handled: input_device::Handled,
@@ -311,7 +311,7 @@ pub fn create_consumer_controls_event_with_handled(
 /// - `event_time`: The time of event.
 /// - `device_descriptor`: The device descriptor to add to the event.
 pub fn create_consumer_controls_event(
-    pressed_buttons: Vec<fidl_input_report::ConsumerControlButton>,
+    pressed_buttons: Vec<fidl_fuchsia_input::ConsumerControlButton>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
 ) -> input_device::InputEvent {
@@ -620,14 +620,14 @@ pub fn get_touch_screen_device_descriptor() -> input_device::InputDeviceDescript
     input_device::InputDeviceDescriptor::TouchScreen(touch_binding::TouchScreenDeviceDescriptor {
         device_id: 1,
         contacts: vec![touch_binding::ContactDeviceDescriptor {
-            x_range: fidl_input_report::Range { min: 0, max: 100 },
-            y_range: fidl_input_report::Range { min: 0, max: 100 },
-            x_unit: fidl_input_report::Unit {
-                type_: fidl_input_report::UnitType::Meters,
+            x_range: fidl_fuchsia_input::Range { min: 0, max: 100 },
+            y_range: fidl_fuchsia_input::Range { min: 0, max: 100 },
+            x_unit: fidl_fuchsia_input::Unit {
+                type_: fidl_fuchsia_input::UnitType::Meters,
                 exponent: -6,
             },
-            y_unit: fidl_input_report::Unit {
-                type_: fidl_input_report::UnitType::Meters,
+            y_unit: fidl_fuchsia_input::Unit {
+                type_: fidl_fuchsia_input::UnitType::Meters,
                 exponent: -6,
             },
             pressure_range: None,
