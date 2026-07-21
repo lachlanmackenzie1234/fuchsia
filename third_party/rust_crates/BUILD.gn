@@ -2621,6 +2621,14 @@ group("zstd-0.13.3") {
   public_deps = [ ":zstd-v0_13_3" ]
 }
 
+group("zstd-safe") {
+  public_deps = [ ":zstd-safe-v7_2_4" ]
+}
+
+group("zstd-safe-7.2.4") {
+  public_deps = [ ":zstd-safe-v7_2_4" ]
+}
+
 license("addr-v0_15_6.license") {
   public_package_name = "addr"
   license_files = [
@@ -25209,6 +25217,7 @@ rustc_library("zstd-safe-v7_2_4") {
     "-Cmetadata=faffe229c81514e4",
     "-Cextra-filename=-faffe229c81514e4",
     "--cfg=feature=\"arrays\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"legacy\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"zdict_builder\"",

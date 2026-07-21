@@ -500,6 +500,7 @@ _NORMAL_DEPENDENCIES = {
             "xml-rs": Label("//third_party/rust_crates/vendor/xml-rs-0.8.26:xml"),
             "zerocopy": Label("//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy"),
             "zstd": Label("//third_party/rust_crates/vendor/zstd-0.13.3:zstd"),
+            "zstd-safe": Label("//third_party/rust_crates/vendor/zstd-safe-7.2.4:zstd_safe"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {
             "askama": Label("//third_party/rust_crates/vendor/askama-0.15.6:askama"),

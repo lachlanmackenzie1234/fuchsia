@@ -268,6 +268,7 @@ winnow = "0.7.13"
 xml-rs = "0.8"
 zerocopy = { version = "0.8.48", features = ["derive", "simd"] }
 zstd = "0.13.3"
+zstd-safe = "7.2.4"
 # keep-sorted end
 
 # Target-side only dependencies

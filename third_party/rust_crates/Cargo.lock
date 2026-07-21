@@ -2076,6 +2076,7 @@ dependencies = [
  "zeroize",
  "zip",
  "zstd",
+ "zstd-safe",
 ]
 
 [[package]]

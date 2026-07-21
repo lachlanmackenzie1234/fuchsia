@@ -55,6 +55,7 @@ rust_library(
     ),
     crate_features = [
         "arrays",
+        "default",
         "legacy",
         "std",
         "zdict_builder",
@@ -106,6 +107,7 @@ cargo_build_script(
     ),
     crate_features = [
         "arrays",
+        "default",
         "legacy",
         "std",
         "zdict_builder",
