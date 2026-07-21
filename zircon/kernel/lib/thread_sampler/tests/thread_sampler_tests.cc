@@ -193,6 +193,12 @@ class TestThreadSampler {
       ASSERT_EQ(sampler::SamplingState::Stopping, sampler.State());
       uint64_t ref_count2 = TestThreadSampler::get_buffer_ref_count(sampler);
       ASSERT_EQ(uint64_t{1}, ref_count2);
+      ref.reset();
+      // Restore state to Running so StopLocked() runs during Destroy() to cancel active timers.
+      {
+        Guard<Mutex> guard(TestThreadSampler::get_lock());
+        TestThreadSampler::set_state(sampler, sampler::SamplingState::Running);
+      }
       ASSERT_OK(sampler.Destroy().status_value());
     }
 

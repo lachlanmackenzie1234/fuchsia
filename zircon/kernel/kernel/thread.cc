@@ -1341,7 +1341,7 @@ void Thread::Current::DoSuspend() {
   }
 }
 
-void Thread::SignalSampleStack(Timer* timer, zx_time_t, void* session_id) {
+void Thread::SignalSampleStack(Timer* timer, zx_instant_mono_t, void* session_id) {
   // Regardless of if the thread is marked to be sampled or not we'll set the sample_stack thread
   // signal. This reduces the time we spend in the interrupt context and means we don't need to grab
   // a lock here. When we handle the thread signal in ProcessPendingSignals we'll check if the
