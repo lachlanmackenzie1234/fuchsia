@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <optional>
+#include <set>
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
 #include <gtest/gtest.h>
@@ -486,6 +487,86 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoSufficient) {
   ASSERT_TRUE(result.ok()) << "ConfigureEndpoint transport failed: " << result.status_string();
   ASSERT_TRUE(result.value().is_ok())
       << "ConfigureEndpoint failed: " << zx_status_get_string(result.value().error_value());
+}
+
+TEST_F(ManagedTestFixture, GetHardwareInfo) {
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+  // Dynamic cable connection triggers automatic core wake-up and soft reset.
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes)
+    auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
+    ghwparams0.SetReadCallback([]() -> uint32_t {
+      return GHWPARAMS0::Get().FromValue(0).set_DWC_USB31_MDWIDTH(2).reg_value();
+    });
+
+    // Mock GTXFIFOSIZ for FIFO 1 and 2
+    auto& gtxfifosiz1 = env.reg_region()[GTXFIFOSIZ::Get(1).addr()];
+    gtxfifosiz1.SetReadCallback(
+        []() -> uint32_t { return GTXFIFOSIZ::Get(1).FromValue(0).set_TXFDEP(256).reg_value(); });
+    auto& gtxfifosiz2 = env.reg_region()[GTXFIFOSIZ::Get(2).addr()];
+    gtxfifosiz2.SetReadCallback(
+        []() -> uint32_t { return GTXFIFOSIZ::Get(2).FromValue(0).set_TXFDEP(128).reg_value(); });
+  });
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok())
+      << "Failed to connect to UsbDciService: " << dci_service.status_string();
+  fidl::SyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  auto result = dci->GetHardwareInfo();
+  ASSERT_TRUE(result.is_ok()) << "GetHardwareInfo failed: "
+                              << result.error_value().FormatDescription();
+
+  auto& info = result.value().info();
+  ASSERT_TRUE(info.endpoints().has_value());
+  // 15 IN endpoints + 15 OUT endpoints = 30
+  EXPECT_EQ(info.endpoints()->size(), 30u);
+
+  std::set<uint8_t> actual_eps;
+  std::set<uint8_t> expected_eps;
+  for (uint8_t i = 1; i <= 15; i++) {
+    expected_eps.insert(i);         // OUT
+    expected_eps.insert(0x80 | i);  // IN
+  }
+
+  bool found_ep1_in = false;
+  bool found_ep2_in = false;
+  for (auto& ep : info.endpoints().value()) {
+    ASSERT_TRUE(ep.ep_address().has_value());
+    actual_eps.insert(ep.ep_address().value());
+
+    // Verify supported types (Bulk and Interrupt)
+    ASSERT_TRUE(ep.supported_types().has_value());
+    EXPECT_EQ(ep.supported_types()->size(), 2u);
+
+    auto& st_bulk = ep.supported_types().value()[0];
+    auto& st_intr = ep.supported_types().value()[1];
+
+    EXPECT_EQ(st_bulk.endpoint_type().value_or(fdescriptor::EndpointType::kControl),
+              fdescriptor::EndpointType::kBulk);
+    EXPECT_EQ(st_intr.endpoint_type().value_or(fdescriptor::EndpointType::kControl),
+              fdescriptor::EndpointType::kInterrupt);
+
+    if (ep.ep_address().value() == 0x81) {
+      EXPECT_EQ(st_bulk.max_packet_size_limit().value_or(0), 4096u);
+      found_ep1_in = true;
+    } else if (ep.ep_address().value() == 0x82) {
+      EXPECT_EQ(st_bulk.max_packet_size_limit().value_or(0), 2048u);
+      found_ep2_in = true;
+    } else if (ep.ep_address().value() & 0x80) {
+      // Other IN EPs
+      EXPECT_EQ(st_bulk.max_packet_size_limit().value_or(0), 0u);
+    } else {
+      // OUT EPs
+      EXPECT_EQ(st_bulk.max_packet_size_limit().value_or(0), 1024u);
+    }
+  }
+  EXPECT_EQ(actual_eps, expected_eps);
+  EXPECT_TRUE(found_ep1_in);
+  EXPECT_TRUE(found_ep2_in);
+  EXPECT_EQ(info.supports_dynamic_ep_sizing().value_or(true), false);
 }
 
 typedef struct {

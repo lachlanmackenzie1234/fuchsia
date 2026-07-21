@@ -573,6 +573,9 @@ class Dwc3 : public fdf::DriverBase2,
   // Knobs for testing
   bool enable_enqueue_many_trbs_ = true;
 
+  uint32_t num_in_eps_ = 0;
+  uint32_t num_out_eps_ = 0;
+
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state);
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state, uint8_t address);
 
