@@ -565,3 +565,9 @@ void BootOptions::PrintValue(const IntelHwpPolicy& value, FILE* out) {
 }
 
 #endif  // BOOT_OPTIONS_GENERATOR || defined(__x86_64__)
+
+// TODO(https://fxbug.dev/537008680): Expose BootOptions struct layout to Rust via bindgen/C ABI
+// and replace individual per-flag FFI getters with a single BootOptions::Get FFI getter.
+extern "C" bool cpp_boot_options_enable_debugging_syscalls() {
+  return BootOptions::Get()->enable_debugging_syscalls;
+}

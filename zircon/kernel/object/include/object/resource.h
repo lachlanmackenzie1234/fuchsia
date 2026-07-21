@@ -58,6 +58,8 @@ zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
 extern "C" {
 zx_status_t cpp_resource_validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
                                                      zx_rsrc_system_base_t base);
+zx_status_t cpp_resource_validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind,
+                                                  uintptr_t base, size_t size);
 }
 
 // Validates a resource based on type and low/high range.

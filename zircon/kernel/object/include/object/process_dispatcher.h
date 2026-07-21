@@ -444,6 +444,8 @@ zx_status_t cpp_process_dispatcher_make_and_add_handle(ProcessDispatcher* proces
                                                        zx_rights_t rights, zx_handle_t* out_handle);
 zx_status_t cpp_handle_table_get_dispatcher(zx_handle_t handle, fbl::RefPtr<Dispatcher>* out_disp,
                                             zx_rights_t* out_rights);
+zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher* process,
+                                                        uint32_t policy);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROCESS_DISPATCHER_H_

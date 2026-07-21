@@ -28,6 +28,8 @@
 #include "test-types.h"
 #endif
 
+extern "C" bool cpp_boot_options_enable_debugging_syscalls();
+
 struct BootOptions {
   // This returns the only instance of BootOptions that ever exists outside
   // test code.  It's implemented separately in phys and kernel proper: phys

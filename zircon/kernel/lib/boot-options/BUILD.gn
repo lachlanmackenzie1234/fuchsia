@@ -6,8 +6,17 @@
 
 import("//build/compiled_action.gni")
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/testing/golden_files.gni")
 import("//build/toolchain/toolchain_environment.gni")
+
+rustc_library("boot-options-rs") {
+  edition = "2024"
+  name = "boot_options_rs"
+  source_root = "boot_options.rs"
+  sources = [ "boot_options.rs" ]
+  non_rust_deps = [ ":boot-options" ]
+}
 
 if (current_toolchain == default_toolchain) {
   compiled_action("json") {

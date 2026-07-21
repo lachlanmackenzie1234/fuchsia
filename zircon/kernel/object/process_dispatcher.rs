@@ -44,4 +44,15 @@ impl ProcessDispatcher {
         Status::ok(status)?;
         Ok(out)
     }
+
+    /// Enforces basic policy for this process.
+    pub fn enforce_basic_policy(&self, policy: u32) -> Result<(), Status> {
+        let status = unsafe {
+            crate::process_dispatcher_ffi::cpp_process_dispatcher_enforce_basic_policy(
+                self as *const _,
+                policy,
+            )
+        };
+        Status::ok(status)
+    }
 }

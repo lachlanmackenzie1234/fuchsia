@@ -22,4 +22,9 @@ zx_status_t cpp_handle_table_get_dispatcher(zx_handle_t handle, fbl::RefPtr<Disp
   return up->handle_table().GetDispatcherAndRights(*up, handle, out_disp, out_rights);
 }
 
+zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher* process,
+                                                        uint32_t policy) {
+  return const_cast<ProcessDispatcher*>(process)->EnforceBasicPolicy(policy);
+}
+
 }  // extern "C"

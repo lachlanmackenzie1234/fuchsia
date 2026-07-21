@@ -20,4 +20,8 @@ unsafe extern "C" {
         out_dispatcher: *mut fbl::RefPtr<Dispatcher>,
         out_rights: *mut zx_rights_t,
     ) -> zx_status_t;
+    pub(crate) fn cpp_process_dispatcher_enforce_basic_policy(
+        process: *const ProcessDispatcher,
+        policy: u32,
+    ) -> zx_status_t;
 }
