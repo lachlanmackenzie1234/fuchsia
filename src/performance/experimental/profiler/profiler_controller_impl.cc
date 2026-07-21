@@ -39,7 +39,6 @@
 #include "sampler.h"
 #include "stack_sampler.h"
 #include "symbolization_context.h"
-#include "symbolizer_markup.h"
 #include "targets.h"
 #include "taskfinder.h"
 #include "test_component.h"
