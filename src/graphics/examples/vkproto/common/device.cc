@@ -42,13 +42,12 @@ bool Device::Init() {
   PhysicalDevice::AppendRequiredPhysDeviceExts(&exts, swapchain_enabled_);
 
   vk::PhysicalDeviceFeatures device_features;
-  vk::DeviceCreateInfo device_info;
+  vk::DeviceCreateInfo device_info{};
   device_info.setEnabledExtensionCount(static_cast<uint32_t>(exts.size()));
   device_info.queueCreateInfoCount = 1;
   device_info.pQueueCreateInfos = &queue_info;
   device_info.pEnabledFeatures = &device_features;
   device_info.setPpEnabledExtensionNames(exts.data());
-  device_info.enabledLayerCount = 0;
 
   vk::Device *device = new vk::Device;
   auto r_device = physical_device_.createDevice(&device_info, nullptr /* pAllocator */, device);
