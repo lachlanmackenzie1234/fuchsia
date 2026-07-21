@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -95,14 +96,18 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         self._download_ap_logs(self.log_path)
         await super().teardown_class()
 
+    # TODO(b/537123090): Move to netstack affordance
     async def wait_for_interface(
         self, netstack: AsyncNetstack, port_class: PortClass
-    ) -> None:
+    ) -> str:
         """Wait for an interface to become available.
 
         Args:
             netstack: Netstack affordance
             port_class: Desired type of interface
+
+        Return:
+            interface name
 
         Raises:
             TestAbortClass: Desired interface does not exist
@@ -113,8 +118,8 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             interfaces = await netstack.list_interfaces()
             for interface in interfaces:
                 if interface.port_class is port_class:
-                    return
-            time.sleep(1)  # Prevent denial-of-service
+                    return interface.name
+            await asyncio.sleep(1)  # Prevent denial-of-service
         raise signals.TestAbortClass(
             f"Expected presence of a {port_class.name} interface, got {interfaces}"
         )
