@@ -446,18 +446,18 @@
     },
     {
         "package": "fuchsia/third_party/cmake/linux-amd64",
-        "version": "git_revision:7a989a581c8da2fe9822096ee00b288c376b6117",
-        "instance_id": "AEnIwkKFpf7xjgK79jleHisKBDIQFzt9wy5be7NJndUC"
+        "version": "git_revision:4485e0f507896a3edea955d94e7cf06d75740a07",
+        "instance_id": "N_dNV8LfKKGB_qY0nVasj4Cyy4to7XoPaBbeIfjcuVMC"
     },
     {
         "package": "fuchsia/third_party/cmake/linux-arm64",
-        "version": "git_revision:7a989a581c8da2fe9822096ee00b288c376b6117",
-        "instance_id": "ECgu4IVD0mfJf8ZUXlXACxynjy8za9DPHMcSehfyCioC"
+        "version": "git_revision:4485e0f507896a3edea955d94e7cf06d75740a07",
+        "instance_id": "JlHmEohscC00nOLv7gS7QmpN6KBdNhVAUYbQDnia22sC"
     },
     {
         "package": "fuchsia/third_party/cmake/windows-amd64",
-        "version": "git_revision:7a989a581c8da2fe9822096ee00b288c376b6117",
-        "instance_id": "YTJTgKI62qdpXhIIA8KCkNwX5Va1Tp86GtLpYlWCnC8C"
+        "version": "git_revision:4485e0f507896a3edea955d94e7cf06d75740a07",
+        "instance_id": "LqCJz5Wj-Y2ugh1At-ES5EHbP_gSGAEWR98rXc8Tp6EC"
     },
     {
         "package": "fuchsia/third_party/crosvm/linux-amd64",

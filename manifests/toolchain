@@ -168,7 +168,7 @@
     <!-- CMake - Uploaded by cmake CI builds. Rolled manually as needed.
     -->
     <package name="fuchsia/third_party/cmake/${platform}"
-             version="git_revision:7a989a581c8da2fe9822096ee00b288c376b6117"
+             version="git_revision:4485e0f507896a3edea955d94e7cf06d75740a07"
              platforms="linux-amd64,linux-arm64,windows-amd64"
              path="prebuilt/third_party/cmake/{{.OS}}-{{.Arch}}"/>
 
