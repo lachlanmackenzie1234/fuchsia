@@ -500,6 +500,9 @@
                 // child process is exiting abnormally. Perhaps related to POLLPRI as well.
                 "MountTest.MountInfoAfterUnshare",
 
+                // TODO(https://fxbug.dev/537429210): Starnix does not support nr_blocks option.
+                "MountTest.TmpfsNrBlocksAllocation",
+
                 // msgqueue_test
                 // TODO(https://fxbug.dev/529448634): Requires SysV message queues.
                 "MsgqueueTest.InterruptRecv",
