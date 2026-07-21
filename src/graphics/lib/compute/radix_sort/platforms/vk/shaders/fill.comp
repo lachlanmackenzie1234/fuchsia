@@ -122,10 +122,10 @@ main()
 
   umulExtended(dwords_idx, 4, dwords_offset.y, dwords_offset.x);
 
-  writeonly RS_BUFREF_DEFINE_AT_OFFSET_U32VEC2(buffer_rs_dwords,
-                                               rs_dwords,
-                                               push.devaddr_dwords,
-                                               dwords_offset);
+  RS_BUFREF_DEFINE_AT_OFFSET_U32VEC2(buffer_rs_dwords,
+                                      rs_dwords,
+                                      push.devaddr_dwords,
+                                      dwords_offset);
 
   //
   // Fills are always aligned to RS_FILL_BLOCK_DWORDS

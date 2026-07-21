@@ -105,7 +105,7 @@ main()
   //
   // Define the init struct bufref
   //
-  writeonly RS_BUFREF_DEFINE(buffer_rs_indirect_info, rs_indirect_info, push.devaddr_info);
+  RS_BUFREF_DEFINE(buffer_rs_indirect_info, rs_indirect_info, push.devaddr_info);
 
   //
   // Size and set scatter dispatch
