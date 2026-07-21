@@ -31,7 +31,15 @@ python_host_test("python_format_test") {
   ]
 }
 
+python_host_test("commit_msg_checker_test") {
+  main_source = "commit_msg_checker_test.py"
+  sources = [ "//scripts/shac/commit_msg_checker.py" ]
+}
+
 group("tests") {
   testonly = true
-  deps = [ ":python_format_test" ]
+  deps = [
+    ":commit_msg_checker_test",
+    ":python_format_test",
+  ]
 }

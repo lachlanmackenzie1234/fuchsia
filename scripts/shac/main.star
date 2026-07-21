@@ -4,6 +4,7 @@
 
 # keep-sorted start
 load("./cml.star", "register_cml_checks")
+load("./commit_msg.star", "register_commit_msg_checks")
 load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
 load("./confusing_characters.star", "confusing_characters")
 load("./dart.star", "register_dart_checks")
@@ -156,6 +157,7 @@ def register_all_checks():
     # keeps-sorted start
     register_bazel_build_file_checks()
     register_cml_checks()
+    register_commit_msg_checks()
     register_dart_checks()
     register_doc_checks()
     register_fidl_checks()

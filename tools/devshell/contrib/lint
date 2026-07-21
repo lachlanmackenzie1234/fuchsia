@@ -26,6 +26,8 @@
 ##             double quotes with command substitution:
 ##                 fx lint --files="$(find some/path -name '*.cc')"
 ##   --target  Allows the user to specify a gn target.
+##   --commit-msg
+##             Lints the git commit message of the current branch/commit.
 ##   --git     The default; it uses `git diff` against the newest parent
 ##             commit in the upstream branch (or against HEAD if no such
 ##             commit is found).  Files that are locally modified, staged
@@ -94,6 +96,7 @@ DRY_RUN=
 VERBOSE=
 FIX_OPTION=
 TARGET=
+COMMIT_LINT=
 
 fx-config-read
 
@@ -106,6 +109,7 @@ while [ $# -gt 0 ]; do
     --fix) FIX_OPTION="-fix" ;;
     --all) GET_FILES=get_all_files ;;
     --git) GET_FILES=get_git_files ;;
+    --commit-msg|--commit) COMMIT_LINT="1" ;;
     --files=*)
       GET_FILES=:
       FILES=$(canonicalize "${PWD}" $(zap-commas "${ARG#--files=}"))
@@ -305,6 +309,9 @@ call_linters() {
   fi
   if (( "${#RUST_LINT_CMD[@]}" > 0 && "${#RUST_LINT_FILES[@]}" > 0 )); then
     execute "${RUST_LINT_CMD[@]}" "${COMMAND_ARGS[@]}" --files "${RUST_LINT_FILES[@]}" || return $?
+  fi
+  if [[ -n "${COMMIT_LINT}" ]]; then
+    execute "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}/scripts/shac/commit_msg_checker.py" "${COMMAND_ARGS[@]}" || return $?
   fi
 }
 
