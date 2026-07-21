@@ -492,6 +492,14 @@
                 "MountTest.TmpfsSymlinkUnallocCheck",
                 "MountTest.UmountPropagatedSubtreeFromPrivilegedNS",
 
+                // TODO(https://fxbug.dev/537045317): Starnix doesn't seem to support POLLPRI, at
+                // least not for pseudofilesystem nodes such as /proc/self/mounts.
+                "MountTest.PollMountInfo",
+
+                // TODO(https://fxbug.dev/537046916): Unclear without deeper debugging, as a forked
+                // child process is exiting abnormally. Perhaps related to POLLPRI as well.
+                "MountTest.MountInfoAfterUnshare",
+
                 // msgqueue_test
                 // TODO(https://fxbug.dev/529448634): Requires SysV message queues.
                 "MsgqueueTest.InterruptRecv",
