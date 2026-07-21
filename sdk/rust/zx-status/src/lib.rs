@@ -63,7 +63,32 @@ impl Status {
         if raw == Status::OK.0 { Ok(()) } else { Err(Status(raw)) }
     }
 
-    pub fn from_raw(raw: sys::zx_status_t) -> Self {
+    /// Returns the raw `zx_status_t` code corresponding to a `Result<(), Status>`.
+    ///
+    /// Returns `ZX_OK` (`0`) for `Ok(())`, and the underlying error code for `Err(status)`.
+    #[inline]
+    pub const fn result_into_raw(res: Result<(), Self>) -> sys::zx_status_t {
+        match res {
+            Ok(()) => sys::ZX_OK,
+            Err(status) => status.0,
+        }
+    }
+
+    /// Returns `Some(status)` if `raw` is not `ZX_OK`, otherwise returns `None`.
+    #[inline]
+    pub const fn try_from_raw(raw: sys::zx_status_t) -> Option<Self> {
+        if raw == sys::ZX_OK { None } else { Some(Status(raw)) }
+    }
+
+    /// Creates a `Status` from a raw `zx_status_t`.
+    ///
+    /// # Deprecated
+    ///
+    /// This function is deprecated because it does not verify whether `raw` is `0` (`ZX_OK`).
+    /// Prefer [`Status::ok`] or [`Status::try_from_raw`] instead.
+    #[inline]
+    #[doc(hidden)]
+    pub const fn from_raw(raw: sys::zx_status_t) -> Self {
         Status(raw)
     }
 
@@ -358,7 +383,7 @@ mod test {
             ("Status(-5050)", Status(-5050)),
         ];
         for &(expected, value) in &cases {
-            assert_eq!(expected, std::format!("{:?}", value));
+            assert_eq!(expected, std::format!("{value:?}"));
         }
     }
 
