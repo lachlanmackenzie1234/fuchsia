@@ -42,6 +42,5 @@ HandleOwner get_resource_handle(zx_rsrc_kind_t kind) {
   KernelHandle<ResourceDispatcher> rsrc;
   zx_status_t result = ResourceDispatcher::CreateRangedRoot(&rsrc, &rights, kind, name);
   ZX_ASSERT(result == ZX_OK);
-  // Create a handle and disallow changing the name.
-  return Handle::Make(ktl::move(rsrc), rights & ~ZX_RIGHT_SET_PROPERTY);
+  return Handle::Make(ktl::move(rsrc), rights);
 }
