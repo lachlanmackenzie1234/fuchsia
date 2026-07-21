@@ -5,7 +5,8 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
-import("//build/rust/rustc_library.gni")
+import("//build/rust/rustc_bindgen.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/params.gni")
 
 source_set("vm") {
@@ -131,9 +132,34 @@ library_headers("headers") {
   ]
 }
 
-rustc_library("vm-rs") {
+rustc_bindgen("vm-constants.bindgen") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/vm_constants.h" ]
+  deps = [ ":headers" ]
+  output_name = "vm_constants.rs"
+  cpp = true
+
+  if (enable_lock_dep) {
+    additional_clang_flags = [ "-DWITH_LOCK_DEP=1" ]
+  }
+
+  notice_year = 2026
+  var_allowlist = [ "kVmObjectPhysicalState.*" ]
+
+  expect_lints = [ "non_upper_case_globals" ]
+
+  raw_lines = [ "#![no_std]" ]
+}
+
+rustc_library("vm-constants-rs") {
   edition = "2024"
-  name = "vm"
+  source_root = "$target_gen_dir/vm_constants.rs"
+  sources = [ "$target_gen_dir/vm_constants.rs" ]
+  deps = [ ":vm-constants.bindgen" ]
+}
+
+kernel_rust_crate("vm-rs") {
+  crate_name = "vm"
   source_root = "lib.rs"
   sources = [
     "arch_vm_aspace.rs",
@@ -150,9 +176,12 @@ rustc_library("vm-rs") {
   ]
 
   deps = [
+    ":vm-constants-rs",
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
+    "//src/lib/ksync",
     "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
     "//zircon/kernel/kernel:kernel-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

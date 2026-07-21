@@ -47,6 +47,7 @@ source_set("top") {
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys:zircon-abi-spec",
     "//zircon/kernel/platform",
+    "//zircon/kernel/vm:vm-rs",
   ]
 }
 
