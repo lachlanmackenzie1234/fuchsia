@@ -8,10 +8,10 @@ use std::ops::Deref;
 
 use hashbrown::HashTable;
 
-use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::PolicyCursor;
 use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
+use super::{NewPolicy, U24Index};
 
 /// Helper to hash a byte slice name using the rapidhash hasher.
 pub(super) fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
@@ -32,8 +32,8 @@ pub(super) fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u6
 #[derive(Clone)]
 pub struct IdAndNameIndexed<C> {
     container: C,
-    id_to_index: Box<[Option<u32>]>,
-    name_to_index: HashTable<u32>,
+    id_to_index: Box<[Option<U24Index>]>,
+    name_to_index: HashTable<U24Index>,
     hasher: rapidhash::RapidBuildHasher,
 }
 
@@ -43,10 +43,7 @@ where
     T: HasPolicyId + HasName,
 {
     /// Constructs a new [`IdAndNameIndexed`] wrapping the supplied `container`.
-    ///
-    /// Panics if the container has more than `u32::MAX` items.
-    pub fn new(container: C) -> Self {
-        assert!(container.len() <= u32::MAX as usize, "too many items in IdAndNameIndexed");
+    pub fn new(container: C) -> Result<Self, ParseError> {
         let mut id_to_index = Vec::with_capacity(container.len() + 1);
         let hasher = rapidhash::RapidBuildHasher::default();
         let mut name_to_index = HashTable::with_capacity(container.len());
@@ -56,30 +53,29 @@ where
             if id >= id_to_index.len() {
                 id_to_index.resize(id + 1, None);
             }
-            id_to_index[id] = Some(index as u32);
+            let u24_idx: U24Index = index.try_into()?;
+            id_to_index[id] = Some(u24_idx);
 
             let name = item.name();
             let hash = hash_name(&hasher, name);
-            name_to_index.insert_unique(hash, index as u32, |&idx| {
-                hash_name(&hasher, container[idx as usize].name())
-            });
+            name_to_index
+                .insert_unique(hash, u24_idx, |&idx| hash_name(&hasher, container[idx].name()));
         }
 
-        Self { container, id_to_index: id_to_index.into_boxed_slice(), name_to_index, hasher }
+        Ok(Self { container, id_to_index: id_to_index.into_boxed_slice(), name_to_index, hasher })
     }
 
     /// Returns a reference to the item with the specified `id`, if it exists.
     pub fn get_by_id(&self, id: T::Id) -> Option<&T> {
         let idx = *self.id_to_index.get(id.as_u32() as usize)?;
-        idx.map(|i| &self.container[i as usize])
+        idx.map(|i| &self.container[i])
     }
 
     /// Returns a reference to the item with the specified `name`, if it exists.
     pub fn get_by_name(&self, name: &[u8]) -> Option<&T> {
         let hash = hash_name(&self.hasher, name);
-        let idx =
-            self.name_to_index.find(hash, |&idx| self.container[idx as usize].name() == name)?;
-        Some(&self.container[*idx as usize])
+        let idx = self.name_to_index.find(hash, |&idx| self.container[idx].name() == name)?;
+        Some(&self.container[*idx])
     }
 }
 
@@ -111,7 +107,7 @@ where
 {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let container = C::parse(cursor)?;
-        Ok(Self::new(container))
+        Self::new(container)
     }
 }
 
@@ -166,7 +162,7 @@ mod tests {
     #[test]
     fn test_indexed_empty() {
         let items: &[TestItem] = &[];
-        let indexed = IdAndNameIndexed::new(items);
+        let indexed = IdAndNameIndexed::new(items).unwrap();
         assert!(indexed.get_by_id(TestId::for_test(1)).is_none());
         assert!(indexed.get_by_name(b"foo").is_none());
     }
@@ -177,7 +173,7 @@ mod tests {
             TestItem { id: TestId::for_test(1), name: "foo" },
             TestItem { id: TestId::for_test(2), name: "bar" },
         ];
-        let indexed = IdAndNameIndexed::new(items);
+        let indexed = IdAndNameIndexed::new(items).unwrap();
 
         assert_eq!(
             indexed.get_by_id(TestId::for_test(1)),

@@ -17,6 +17,7 @@ pub(super) mod parser;
 pub(super) mod permissions;
 pub(super) mod roles;
 pub(super) mod traits;
+pub(super) mod u24_index;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
@@ -25,6 +26,7 @@ use metadata::{Config, Counts, Magic, PolicyVersion, Signature};
 pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX};
 use parser::{PolicyCursor, RemainingBytes};
 use traits::Validate;
+pub use u24_index::U24Index;
 
 pub(super) mod booleans;
 pub(super) mod types;

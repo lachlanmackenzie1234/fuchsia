@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::num::{NonZeroU16, NonZeroUsize};
+use std::num::NonZeroU16;
 
 use hashbrown::HashTable;
 use selinux_policy_derive::{HasPolicyId, Parse, Serialize};
@@ -13,7 +13,7 @@ use super::id_type::IdType;
 use super::indexed::hash_name;
 use super::parser::{Array, PolicyCursor};
 use super::traits::{HasName, Parse, PolicyId, Serialize, Validate};
-use super::NewPolicy;
+use super::{NewPolicy, U24Index};
 
 /// Tag type for type safety of policy type identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -27,25 +27,6 @@ pub type PermissiveTypeSet = IdSet<TypeId, true>;
 
 /// Set of [`TypeId`]s.
 pub type TypeSet = IdSet<TypeId>;
-
-/// Wrapper for [`usize`] that cannot be [`usize::MAX`].
-///
-/// Allows [`Option`]<[`NonMaxUsize`]> to have the same size in memory as a [`usize`]
-/// by using [`usize::MAX`] as a niche.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct NonMaxUsize {
-    value: NonZeroUsize,
-}
-
-impl NonMaxUsize {
-    pub fn new(value: usize) -> Option<Self> {
-        NonZeroUsize::new(value.wrapping_add(1)).map(|value| Self { value })
-    }
-
-    pub fn get(self) -> usize {
-        self.value.get().wrapping_sub(1)
-    }
-}
 
 impl Validate for TypeId {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
@@ -154,17 +135,16 @@ impl Validate for Type {
 /// Container for all types in the policy, providing indices for fast lookup by ID and Name.
 #[derive(Debug, Clone)]
 pub struct Types {
-    pub primary_names_count: u32,
+    primary_names_count: u32,
     /// In-order list of all types, attributes, and aliases.
-    pub ordered: Array<Type>,
+    ordered: Array<Type>,
 
     /// Maps TypeId -> index in `ordered`. Only contains Types and Attributes.
     /// Index is `TypeId - 1`.
-    by_id: Box<[Option<NonMaxUsize>]>,
+    by_id: Box<[Option<U24Index>]>,
 
     /// Maps name -> index in `ordered`. Only contains Types and Aliases.
-    /// Stores only u32 index to avoid keeping copies of type names.
-    by_name: HashTable<u32>,
+    by_name: HashTable<U24Index>,
     hasher: rapidhash::RapidBuildHasher,
 }
 
@@ -187,17 +167,18 @@ impl Parse for Types {
         let mut by_name = HashTable::new();
 
         for (index, t) in ordered.iter().enumerate() {
+            let u24_idx: U24Index = index.try_into()?;
             if t.properties == TypeKind::Type || t.properties == TypeKind::Attribute {
                 let id = t.id.as_u32() as usize;
                 if id > by_id.len() {
                     by_id.resize(id, None);
                 }
-                by_id[id - 1] = Some(NonMaxUsize::new(index).expect("index overflow"));
+                by_id[id - 1] = Some(u24_idx);
             }
             if t.properties == TypeKind::Type || t.properties == TypeKind::Alias {
                 let hash = hash_name(&hasher, t.name.as_ref());
-                by_name.insert_unique(hash, index as u32, |&idx| {
-                    hash_name(&hasher, ordered[idx as usize].name.as_ref())
+                by_name.insert_unique(hash, u24_idx, |&idx| {
+                    hash_name(&hasher, ordered[idx].name.as_ref())
                 });
             }
         }
@@ -229,14 +210,13 @@ impl Types {
 
     pub fn get_by_id(&self, id: TypeId) -> Option<&Type> {
         let index = self.by_id.get((id.as_u32() - 1) as usize)?.as_ref()?;
-        Some(&self.ordered[index.get()])
+        Some(&self.ordered[*index])
     }
 
     pub fn get_by_name(&self, name: &[u8]) -> Option<&Type> {
         let hash = hash_name(&self.hasher, name);
-        let idx =
-            self.by_name.find(hash, |&idx| self.ordered[idx as usize].name.as_ref() == name)?;
-        Some(&self.ordered[*idx as usize])
+        let idx = self.by_name.find(hash, |&idx| self.ordered[idx].name.as_ref() == name)?;
+        Some(&self.ordered[*idx])
     }
 
     pub fn is_empty(&self) -> bool {

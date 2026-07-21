@@ -38,6 +38,8 @@ pub enum ParseError {
     InvalidExtensibleBitmapHighBit { expected: u32, found: u32 },
     #[error("invalid enum value for {enum_name}: {value}")]
     InvalidEnumValue { enum_name: &'static str, value: u64 },
+    #[error("index out of range: {index} (maximum supported is {max})")]
+    IndexOutOfRange { index: usize, max: usize },
 }
 
 /// Errors that may be encountered validating a binary policy.

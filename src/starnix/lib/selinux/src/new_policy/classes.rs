@@ -142,7 +142,7 @@ impl Parse for Class {
         for _ in 0..permissions_count {
             permissions.push(Permission::parse(cursor)?);
         }
-        let permissions = IdAndNameIndexed::new(permissions.into_boxed_slice());
+        let permissions = IdAndNameIndexed::new(permissions.into_boxed_slice())?;
 
         let constraint_count = metadata.constraint_count as usize;
         let mut constraints = Vec::with_capacity(constraint_count);

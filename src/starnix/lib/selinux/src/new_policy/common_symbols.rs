@@ -54,7 +54,7 @@ impl Parse for CommonSymbol {
         for _ in 0..header.permissions_count {
             permissions_vec.push(Permission::parse(cursor)?);
         }
-        let permissions = IdAndNameIndexed::new(permissions_vec.into_boxed_slice());
+        let permissions = IdAndNameIndexed::new(permissions_vec.into_boxed_slice())?;
 
         let id = CommonSymbolId::from_u32(header.id)
             .ok_or(ParseError::InvalidId { value: header.id })?;
