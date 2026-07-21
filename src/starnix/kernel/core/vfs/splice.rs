@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::{IOVecPtr, MemoryAccessorExt, PAGE_SIZE};
+use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use crate::vfs::pipe::{Pipe, PipeFileObject, PipeOperands};
@@ -12,6 +13,8 @@ use starnix_logging::track_stub;
 use starnix_types::user_buffer::MAX_RW_COUNT;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::resource_limits::Resource;
+use starnix_uapi::signals::SIGXFSZ;
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::{errno, error, off_t, uapi};
 use std::sync::Arc;
@@ -170,7 +173,7 @@ pub fn splice(
     off_in: OffsetPtr,
     fd_out: FdNumber,
     off_out: OffsetPtr,
-    len: usize,
+    mut len: usize,
     flags: u32,
 ) -> Result<usize, Errno> {
     const KNOWN_FLAGS: u32 =
@@ -178,6 +181,10 @@ pub fn splice(
     if flags & !KNOWN_FLAGS != 0 {
         track_stub!(TODO("https://fxbug.dev/322875389"), "splice flags", flags & !KNOWN_FLAGS);
         return error!(EINVAL);
+    }
+
+    if len == 0 {
+        return Ok(0);
     }
 
     let non_blocking = flags & uapi::SPLICE_F_NONBLOCK != 0;
@@ -193,9 +200,36 @@ pub fn splice(
         return error!(ESPIPE);
     }
 
+    if operand_out.maybe_offset.is_some() && operand_out.file.offset.read() < 0 {
+        return error!(EINVAL);
+    }
+
     // fd_out has the O_APPEND flag set. This is not supported by splice().
     if operand_out.file.flags().contains(OpenFlags::APPEND) {
         return error!(EINVAL);
+    }
+
+    // Enforce RLIMITs for the running process, if applicable.
+    if operand_out.file.node().is_reg() {
+        let fsize_limit = current_task.thread_group().get_rlimit(Resource::FSIZE);
+        if fsize_limit != uapi::RLIM_INFINITY as u64 {
+            let out_offset = match operand_out.maybe_offset {
+                Some(off) => off as u64,
+                None => operand_out.file.offset.read() as u64,
+            };
+
+            // Signal an error if the given offset directly exceeds the RLIMIT.
+            if out_offset >= fsize_limit {
+                send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
+                return error!(EFBIG);
+            }
+
+            // Otherwise, ensure the buffer size conforms to the RLIMIT_FSIZE.
+            if out_offset + (len as u64) > fsize_limit {
+                send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
+                len = (fsize_limit - out_offset) as usize;
+            }
+        }
     }
 
     let spliced = match (operand_in.maybe_as_pipe(), operand_out.maybe_as_pipe()) {

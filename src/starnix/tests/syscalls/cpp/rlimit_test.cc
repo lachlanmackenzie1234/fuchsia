@@ -199,4 +199,166 @@ TEST(SetRLimitTest, ZeroFSizeOnFIFO) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+TEST(SetRLimitTest, SpliceToRegularFileWithZeroFSize) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    signal(SIGXFSZ, handle_sigxfsz);
+
+    struct rlimit limit = {
+        .rlim_cur = 0,
+        .rlim_max = 0,
+    };
+
+    ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &limit), 0)
+        << "setrlimit failed" << std::strerror(errno) << '\n';
+
+    int pipefd[2];
+    ASSERT_EQ(pipe2(pipefd, 0), 0) << "pipe2 failed: " << std::strerror(errno) << '\n';
+    fbl::unique_fd pipe_in(pipefd[0]);
+    fbl::unique_fd pipe_out(pipefd[1]);
+
+    uint8_t buf[0x20] = {0};
+    ASSERT_EQ(write(pipe_out.get(), buf, sizeof(buf)), static_cast<ssize_t>(sizeof(buf)));
+
+    fbl::unique_fd fd(test_helper::MemFdCreate("memfd", 0));
+    ASSERT_TRUE(fd.is_valid()) << "failed to create file: " << std::strerror(errno) << '\n';
+
+    EXPECT_EQ(splice(pipe_in.get(), nullptr, fd.get(), nullptr, sizeof(buf), 0), -1);
+    EXPECT_EQ(errno, EFBIG);
+    EXPECT_EQ(g_signal_count, 1u);
+
+    signal(SIGXFSZ, SIG_DFL);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(SetRLimitTest, SpliceToRegularFileTruncatedByFSize) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    signal(SIGXFSZ, handle_sigxfsz);
+
+    struct rlimit limit = {
+        .rlim_cur = 10,
+        .rlim_max = 10,
+    };
+
+    ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &limit), 0)
+        << "setrlimit failed" << std::strerror(errno) << '\n';
+
+    int pipefd[2];
+    ASSERT_EQ(pipe2(pipefd, 0), 0) << "pipe2 failed: " << std::strerror(errno) << '\n';
+    fbl::unique_fd pipe_in(pipefd[0]);
+    fbl::unique_fd pipe_out(pipefd[1]);
+
+    uint8_t buf[20] = {0};
+    ASSERT_EQ(write(pipe_out.get(), buf, sizeof(buf)), 20);
+
+    fbl::unique_fd fd(test_helper::MemFdCreate("memfd", 0));
+    ASSERT_TRUE(fd.is_valid()) << "failed to create file: " << std::strerror(errno) << '\n';
+
+    // Splice requested 20 bytes, but RLIMIT_FSIZE is 10. Should splice 10 bytes and deliver
+    // SIGXFSZ.
+    EXPECT_EQ(splice(pipe_in.get(), nullptr, fd.get(), nullptr, 20, 0), 10);
+    EXPECT_EQ(g_signal_count, 1u);
+
+    // Write more data into the pipe so the pipe is not empty.
+    ASSERT_EQ(write(pipe_out.get(), buf, 10), 10);
+
+    // Further splice starts at offset 10, which is equal to RLIMIT_FSIZE 10. Should fail with EFBIG
+    // and SIGXFSZ.
+    EXPECT_EQ(splice(pipe_in.get(), nullptr, fd.get(), nullptr, 10, 0), -1);
+    EXPECT_EQ(errno, EFBIG);
+    EXPECT_EQ(g_signal_count, 2u);
+
+    signal(SIGXFSZ, SIG_DFL);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(SetRLimitTest, SpliceToRegularFileWithExplicitOffset) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    signal(SIGXFSZ, handle_sigxfsz);
+
+    struct rlimit limit = {
+        .rlim_cur = 10,
+        .rlim_max = 10,
+    };
+
+    ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &limit), 0)
+        << "setrlimit failed" << std::strerror(errno) << '\n';
+
+    int pipefd[2];
+    ASSERT_EQ(pipe2(pipefd, 0), 0) << "pipe2 failed: " << std::strerror(errno) << '\n';
+    fbl::unique_fd pipe_in(pipefd[0]);
+    fbl::unique_fd pipe_out(pipefd[1]);
+
+    uint8_t buf[20] = {0};
+    ASSERT_EQ(write(pipe_out.get(), buf, sizeof(buf)), 20);
+
+    fbl::unique_fd fd(test_helper::MemFdCreate("memfd", 0));
+    ASSERT_TRUE(fd.is_valid()) << "failed to create file: " << std::strerror(errno) << '\n';
+
+    loff_t off_out = 5;
+    // Splice at offset 5 with limit 10: should splice 10 - 5 = 5 bytes, updating off_out to 10 and
+    // delivering SIGXFSZ.
+    EXPECT_EQ(splice(pipe_in.get(), nullptr, fd.get(), &off_out, 15, 0), 5);
+    EXPECT_EQ(off_out, 10);
+    EXPECT_EQ(g_signal_count, 1u);
+
+    // Write more data into the pipe so the pipe is not empty.
+    ASSERT_EQ(write(pipe_out.get(), buf, 10), 10);
+
+    // Further splice at offset 10 (off_out == 10) >= limit 10. Should fail with EFBIG.
+    EXPECT_EQ(splice(pipe_in.get(), nullptr, fd.get(), &off_out, 10, 0), -1);
+    EXPECT_EQ(errno, EFBIG);
+    EXPECT_EQ(g_signal_count, 2u);
+
+    signal(SIGXFSZ, SIG_DFL);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(SetRLimitTest, SpliceFromRegularFileToPipeWithZeroFSize) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    signal(SIGXFSZ, handle_sigxfsz);
+
+    fbl::unique_fd fd(test_helper::MemFdCreate("memfd", 0));
+    ASSERT_TRUE(fd.is_valid()) << "failed to create file: " << std::strerror(errno) << '\n';
+
+    uint8_t buf[10] = {0};
+    ASSERT_EQ(write(fd.get(), buf, sizeof(buf)), 10);
+    ASSERT_EQ(lseek(fd.get(), 0, SEEK_SET), 0);
+
+    struct rlimit limit = {
+        .rlim_cur = 0,
+        .rlim_max = 0,
+    };
+
+    ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &limit), 0)
+        << "setrlimit failed" << std::strerror(errno) << '\n';
+
+    int pipefd[2];
+    ASSERT_EQ(pipe2(pipefd, 0), 0) << "pipe2 failed: " << std::strerror(errno) << '\n';
+    fbl::unique_fd pipe_in(pipefd[0]);
+    fbl::unique_fd pipe_out(pipefd[1]);
+
+    // Splice from regular file to pipe when RLIMIT_FSIZE is 0 should succeed.
+    EXPECT_EQ(splice(fd.get(), nullptr, pipe_out.get(), nullptr, 10, 0), 10);
+    EXPECT_EQ(g_signal_count, 0u);
+
+    signal(SIGXFSZ, SIG_DFL);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 }  //  namespace
