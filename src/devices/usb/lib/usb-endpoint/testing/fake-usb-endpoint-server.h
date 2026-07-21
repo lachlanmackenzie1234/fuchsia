@@ -27,7 +27,7 @@ namespace fake_usb_endpoint {
 // overridden for specific use-cases.
 class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint> {
  public:
-  ~FakeEndpoint() {
+  ~FakeEndpoint() __TA_NO_THREAD_SAFETY_ANALYSIS {
     EXPECT_TRUE(expected_get_info_.empty());
     EXPECT_TRUE(requests_.empty());
     EXPECT_TRUE(completions_.empty());
@@ -35,6 +35,7 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
 
   virtual void Connect(async_dispatcher_t* dispatcher,
                        fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server) {
+    std::lock_guard<std::mutex> _(lock_);
     binding_ref_.emplace(fidl::BindServer(dispatcher, std::move(server), this));
   }
 
@@ -54,6 +55,7 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
   //  * info: if previous call of ExpectedGetInfo() indicated that the status to return is ZX_OK,
   //          returns the info from ExpectedGetInfo()
   void GetInfo(GetInfoCompleter::Sync& completer) override {
+    std::lock_guard<std::mutex> _(lock_);
     EXPECT_FALSE(expected_get_info_.empty());
     if (expected_get_info_.front().first != ZX_OK) {
       completer.Reply(fit::as_error(expected_get_info_.front().first));
@@ -68,43 +70,81 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
   // called or if there is already a completion saved from before.
   void QueueRequests(QueueRequestsRequest& request,
                      QueueRequestsCompleter::Sync& completer) override {
-    std::lock_guard<std::mutex> _(lock_);
-    // Add request to queue.
-    requests_.insert(requests_.end(), std::make_move_iterator(request.req().begin()),
-                     std::make_move_iterator(request.req().end()));
-
-    // Reply if there is a completion saved for it already.
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
-    while (!completions_.empty() && !requests_.empty()) {
-      zx_status_t status = completions_.front().first;
-      auto data = std::move(completions_.front().second);
-      completions_.pop();
-      auto completion = RequestCompleteLocked(status, std::move(data));
-      if (!completion.has_value()) {
-        break;
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> local_binding;
+    {
+      std::lock_guard<std::mutex> _(lock_);
+      local_binding = binding_ref_;
+
+      if (!enabled_) {
+        for (auto& req : request.req()) {
+          completions.emplace_back(std::move(fuchsia_hardware_usb_endpoint::Completion()
+                                                 .request(std::move(req))
+                                                 .status(ZX_ERR_BAD_STATE)
+                                                 .transfer_size(0)));
+        }
+      } else {
+        // Add request to queue.
+        requests_.insert(requests_.end(), std::make_move_iterator(request.req().begin()),
+                         std::make_move_iterator(request.req().end()));
+
+        // Reply if there is a completion saved for it already.
+        while (!completions_.empty() && !requests_.empty()) {
+          zx_status_t status = completions_.front().first;
+          auto data = std::move(completions_.front().second);
+          completions_.pop();
+          auto completion = RequestCompleteLocked(status, std::move(data));
+          if (!completion.has_value()) {
+            break;
+          }
+          completions.emplace_back(std::move(completion.value()));
+        }
       }
-      completions.emplace_back(std::move(completion.value()));
     }
-    if (completions.empty()) {
-      return;
+    if (!completions.empty() && local_binding.has_value()) {
+      // Ignore failures; the client may have already closed the channel.
+      auto _ = fidl::SendEvent(*local_binding)->OnCompletion(std::move(completions));
     }
-    ASSERT_TRUE(binding_ref_);
-    EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
   }
 
   void CancelAll(CancelAllCompleter::Sync& completer) override {
-    std::lock_guard<std::mutex> _(lock_);
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
-    std::vector<fuchsia_hardware_usb_request::Request> requests = std::move(requests_);
-    completions.reserve(requests_.size());
-    for (auto& request : requests) {
-      completions.emplace_back(std::move(fuchsia_hardware_usb_endpoint::Completion()
-                                             .request(std::move(request))
-                                             .status(ZX_ERR_CANCELED)
-                                             .transfer_size(0)));
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> local_binding;
+    {
+      std::lock_guard<std::mutex> _(lock_);
+      local_binding = binding_ref_;
+      completions = CancelAllLocked(/*is_disable=*/false);
     }
-    EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
+    if (!completions.empty() && local_binding.has_value()) {
+      // Ignore failures; the client may have already closed the channel.
+      auto _ = fidl::SendEvent(*local_binding)->OnCompletion(std::move(completions));
+    }
     completer.Reply(fit::ok());
+  }
+
+  void SetNextCancelStatus(zx_status_t status, size_t transfer_size = 0) {
+    std::lock_guard<std::mutex> _(lock_);
+    next_cancel_status_ = status;
+    next_cancel_transfer_size_ = transfer_size;
+  }
+
+  void SetEnabled(bool enabled) {
+    std::lock_guard<std::mutex> _(lock_);
+    enabled_ = enabled;
+  }
+
+  void DisableAndCancelAll() {
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> local_binding;
+    {
+      std::lock_guard<std::mutex> _(lock_);
+      local_binding = binding_ref_;
+      completions = CancelAllLocked(/*is_disable=*/true);
+    }
+    if (!completions.empty() && local_binding.has_value()) {
+      // Ignore failures; the client may have already closed the channel.
+      auto _ = fidl::SendEvent(*local_binding)->OnCompletion(std::move(completions));
+    }
   }
 
   // RegisterVmos: creates VMOs on demand.
@@ -152,6 +192,7 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
   //  * status: status to return on GetInfo()
   //  * info: if status is ZX_OK, return this info.
   virtual void ExpectGetInfo(zx_status_t status, fuchsia_hardware_usb_endpoint::EndpointInfo info) {
+    std::lock_guard<std::mutex> _(lock_);
     expected_get_info_.emplace(status, std::move(info));
   }
 
@@ -219,22 +260,35 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
     return zx::ok(std::move(ret));
   }
 
- private:
+ protected:
   using QueuedRequestComplete = std::variant<size_t, std::vector<uint8_t>>;
 
   void RequestCompleteAny(zx_status_t status, QueuedRequestComplete actual_or_data) {
-    std::lock_guard<std::mutex> _(lock_);
-    auto completion = RequestCompleteLocked(status, std::move(actual_or_data));
-    if (completion.has_value()) {
-      ASSERT_TRUE(binding_ref_);
-      std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
-      completions.emplace_back(std::move(completion.value()));
-      EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> local_binding;
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+    {
+      std::lock_guard<std::mutex> _(lock_);
+      // We must not early exit if `binding_ref_` is empty here. Tests may synthesize
+      // hardware state (like an unplug event) and queue completions before the
+      // endpoint connection is fully established. `RequestCompleteLocked` will safely
+      // stash these completions in `completions_` so they are delivered when requests arrive.
+      auto completion = RequestCompleteLocked(status, std::move(actual_or_data));
+      if (completion.has_value()) {
+        local_binding = binding_ref_;
+        completions.emplace_back(std::move(completion.value()));
+      }
+    }
+    if (!completions.empty() && local_binding.has_value()) {
+      // Ignore failures; the client may have already closed the channel.
+      auto _ = fidl::SendEvent(*local_binding)->OnCompletion(std::move(completions));
     }
   }
 
   std::optional<fuchsia_hardware_usb_endpoint::Completion> RequestCompleteLocked(
       zx_status_t status, QueuedRequestComplete actual_or_data) __TA_REQUIRES(lock_) {
+    if (!enabled_) {
+      return std::nullopt;
+    }
     if (requests_.empty()) {
       // Save completion for next incoming request.
       completions_.emplace(status, std::move(actual_or_data));
@@ -300,39 +354,81 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
     return std::move(completion);
   }
 
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding_ref_;
+  std::vector<fuchsia_hardware_usb_endpoint::Completion> CancelAllLocked(bool is_disable)
+      __TA_REQUIRES(lock_) {
+    if (is_disable) {
+      enabled_ = false;
+      completions_ = {};
+    }
+    std::vector<fuchsia_hardware_usb_request::Request> requests = std::move(requests_);
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+    completions.reserve(requests.size());
+    for (auto& request : requests) {
+      zx_status_t status = ZX_ERR_CANCELED;
+      size_t transfer_size = 0;
+      if (next_cancel_status_.has_value()) {
+        status = *next_cancel_status_;
+        transfer_size = next_cancel_transfer_size_;
+        next_cancel_status_.reset();
+      }
+      completions.emplace_back(std::move(fuchsia_hardware_usb_endpoint::Completion()
+                                             .request(std::move(request))
+                                             .status(status)
+                                             .transfer_size(transfer_size)));
+    }
+    return completions;
+  }
+
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding_ref_
+      __TA_GUARDED(lock_);
 
   std::mutex lock_;
-  std::queue<std::pair<zx_status_t, fuchsia_hardware_usb_endpoint::EndpointInfo>>
-      expected_get_info_;
+  std::queue<std::pair<zx_status_t, fuchsia_hardware_usb_endpoint::EndpointInfo>> expected_get_info_
+      __TA_GUARDED(lock_);
   std::vector<fuchsia_hardware_usb_request::Request> requests_ __TA_GUARDED(lock_);
   std::queue<std::pair<zx_status_t, QueuedRequestComplete>> completions_ __TA_GUARDED(lock_);
   std::unordered_map<uint64_t, zx::vmo> vmos_ __TA_GUARDED(lock_);
+  std::optional<zx_status_t> next_cancel_status_ __TA_GUARDED(lock_);
+  size_t next_cancel_transfer_size_ __TA_GUARDED(lock_);
+  bool enabled_ __TA_GUARDED(lock_) = true;
 };
 
 template <typename ProtocolType, typename FakeEndpointType>
 class FakeUsbFidlProviderBase : public fidl::Server<ProtocolType> {
  public:
   explicit FakeUsbFidlProviderBase(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
-  virtual ~FakeUsbFidlProviderBase() { EXPECT_TRUE(expected_connect_to_endpoint_.empty()); }
+  virtual ~FakeUsbFidlProviderBase() __TA_NO_THREAD_SAFETY_ANALYSIS {
+    EXPECT_TRUE(expected_connect_to_endpoint_.empty());
+  }
 
   virtual void ExpectConnectToEndpoint(uint8_t ep_addr) {
+    std::lock_guard<std::mutex> _(lock_);
     expected_connect_to_endpoint_.push(ep_addr);
   }
 
-  FakeEndpointType& fake_endpoint(uint8_t ep_addr) { return fake_endpoints_[ep_addr]; }
+  FakeEndpointType& fake_endpoint(uint8_t ep_addr) {
+    std::lock_guard<std::mutex> _(lock_);
+    // Returning a reference while locked is safe because `std::map` guarantees reference stability
+    // and FakeEndpoint manages its own internal state lock.
+    return fake_endpoints_[ep_addr];
+  }
 
   void ConnectToEndpoint(
       fidl::Request<typename ProtocolType::ConnectToEndpoint>& request,
       typename fidl::internal::NaturalCompleter<typename ProtocolType::ConnectToEndpoint>::Sync&
           completer) override {
-    EXPECT_FALSE(expected_connect_to_endpoint_.empty());
+    {
+      std::lock_guard<std::mutex> _(lock_);
+      EXPECT_FALSE(expected_connect_to_endpoint_.empty());
 
-    auto expected = expected_connect_to_endpoint_.front();
-    expected_connect_to_endpoint_.pop();
-    EXPECT_EQ(expected, request.ep_addr());
-
-    fake_endpoints_[expected].Connect(dispatcher_, std::move(request.ep()));
+      uint8_t expected = expected_connect_to_endpoint_.front();
+      expected_connect_to_endpoint_.pop();
+      EXPECT_EQ(expected, request.ep_addr());
+      // Calling Connect() (which acquires the Endpoint lock) while holding the Provider lock
+      // establishes a safe Provider -> Endpoint lock hierarchy and avoids lock acquire/release
+      // churn.
+      fake_endpoints_[expected].Connect(dispatcher_, std::move(request.ep()));
+    }
     completer.Reply(fit::ok());
   }
 
@@ -340,11 +436,12 @@ class FakeUsbFidlProviderBase : public fidl::Server<ProtocolType> {
   async_dispatcher_t* dispatcher() const { return dispatcher_; }
 
  private:
+  std::mutex lock_;
   async_dispatcher_t* dispatcher_;
 
-  std::queue<uint8_t> expected_connect_to_endpoint_;
+  std::queue<uint8_t> expected_connect_to_endpoint_ __TA_GUARDED(lock_);
 
-  std::map<uint8_t, FakeEndpointType> fake_endpoints_;
+  std::map<uint8_t, FakeEndpointType> fake_endpoints_ __TA_GUARDED(lock_);
 };
 
 // FakeUsbFidlProvider is, as its name suggests, a fake USB FIDL server for testing.
@@ -416,6 +513,7 @@ class FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction, FakeEndpoi
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::ConfigureEndpoint>::Sync& completer)
       override {
+    this->fake_endpoint(request.endpoint_address()).SetEnabled(true);
     completer.Reply(fit::ok());
   }
 
@@ -423,6 +521,7 @@ class FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction, FakeEndpoi
       fidl::Request<fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>& request,
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>::Sync& completer) override {
+    this->fake_endpoint(request.endpoint_address()).DisableAndCancelAll();
     completer.Reply(fit::ok());
   }
 

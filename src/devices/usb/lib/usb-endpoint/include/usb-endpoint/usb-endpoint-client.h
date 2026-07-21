@@ -175,7 +175,15 @@ class EndpointClient : public internal::EndpointClientBase,
     } else {
       zxlogf(ERROR, "on_fidl_error: %s", error.FormatDescription().c_str());
     }
+    if (on_unbind_) {
+      auto cb = std::move(on_unbind_);
+      cb();
+    }
   }
+
+  // Sets a callback to be executed once when the endpoint's FIDL channel unbinds
+  // (e.g. peer closed, cancelled). The callback is one-shot.
+  void SetOnUnbind(fit::closure callback) { on_unbind_ = std::move(callback); }
 
  private:
   // device_: pointer to device implementing on_completion_. Should not and will not outlive
@@ -183,6 +191,7 @@ class EndpointClient : public internal::EndpointClientBase,
   DeviceType* device_;
   // on_completion_: member function of device_ that is called for each request completed.
   OnCompletionFuncType on_completion_;
+  fit::closure on_unbind_;
 };
 
 template <class DeviceType>
