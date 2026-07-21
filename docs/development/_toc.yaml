@@ -79,6 +79,9 @@ toc:
     - title: "Error codes"
       section:
       - include: /docs/development/error_codes/_toc.yaml
+  - title: "Power"
+    section:
+    - include: /docs/development/power/_toc.yaml
   - title: "Sessions"
     section:
     - include: /docs/development/sessions/_toc.yaml
