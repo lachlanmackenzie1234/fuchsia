@@ -211,6 +211,8 @@ func mainImpl(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
+		fmt.Printf("\n[Tip]: Pass the full label (e.g. `--main-pb %s`) to skip the extra gn gen pass, and speed up `fx set`.\n", label)
 	}
 
 	// Set the build dir used by subsequent fx commands.
