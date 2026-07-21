@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![no_std]
+
 unsafe extern "C" {
     fn mmio_read8(buffer: *const u8) -> u8;
     fn mmio_write8(data: u8, buffer: *mut u8);
