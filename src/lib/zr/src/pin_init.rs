@@ -44,7 +44,7 @@ macro_rules! unsafe_pinned_drop_ffi {
             fn drop(self: core::pin::Pin<&mut Self>) {
                 unsafe {
                     let me = self.get_unchecked_mut();
-                    $ffi_fn(me.as_mut_ptr());
+                    $ffi_fn($crate::ToMutPtr::to_mut_ptr(me) as *mut _);
                 }
             }
         }

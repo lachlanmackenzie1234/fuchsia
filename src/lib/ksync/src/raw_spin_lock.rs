@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::raw_kernel_mutex::LockEntryStorage;
-use crate::raw_lock::RawLock;
 use core::ffi::c_void;
 use pin_init::{PinInit, pin_data};
 
