@@ -52,7 +52,7 @@ uint64_t ThreadAbiReg(std::same_as<Thread> auto& thread) {
   return 0;
 }
 
-// TODO(https://fxbug.dev/478347581): The support for the old way can be
+// TODO(https://fxbug.dev/537374958): The support for the old way can be
 // removed entirely when API levels <= 30 are no longer supported at all.  Once
 // this happens, __sanitizer_memory_snapshot and maybe some other places can
 // simplify some code that works around races where a thread doesn't have its
@@ -272,7 +272,7 @@ void AsmTrampoline(uintptr_t arg1, uintptr_t arg2) {
 
 #endif
 
-// TODO(https://fxbug.dev/478347581): All of that should be replaced with:
+// TODO(https://fxbug.dev/537374958): All of that should be replaced with:
 //   thread.thread_handle()->start(&StartThread, sp, func, arg, tp, scsp)
 zx::result<> StartKernelThread(Thread& thread, ThreadFunction* func, void* arg) {
   StartTrampoline trampoline{thread};

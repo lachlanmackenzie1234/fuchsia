@@ -485,9 +485,7 @@ class MemorySnapshot {
     }
 
     // Report the handful of particular pointers stashed in the TCB itself.
-    // These are literal cached malloc allocations. Members like `start_arg` or
-    // `result` might be set up before the thread register is set up, so they
-    // can hold values that no ReportTls call will reach.
+    // These are literal cached malloc allocations.
     void* ptrs[] = {
         tcb->locale,
         tcb->dlerror_buf,
