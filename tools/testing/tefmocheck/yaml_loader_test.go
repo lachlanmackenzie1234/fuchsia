@@ -166,3 +166,15 @@ func TestLoadChecksFromYAML_Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadChecksFromYAMLEmpty(t *testing.T) {
+	yamlData := "failure_mode_checks:\n"
+	checks, err := LoadChecksFromYAML([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("LoadChecksFromYAML failed on empty config: %v", err)
+	}
+
+	if len(checks) != 0 {
+		t.Errorf("Expected 0 checks, got %d", len(checks))
+	}
+}
