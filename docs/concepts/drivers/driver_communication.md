@@ -99,22 +99,10 @@ have one protocol.)
 
 ### Advertise the service {:#advertise-service .numbered}
 
-Advertising a service is slightly different between DFv1 and DFv2:
-
-*   {DFv1}
-
-    ```cpp
-    zx::result add_result =
-          DdkAddService<fuchsia_examples::EchoService>(std::move(handler));
-    ```
-
-
-*  {DFv2}
-
-  ```cpp
-    zx::result add_result =
-        outgoing()->AddService<fuchsia_examples::EchoService>(std::move(handler));
-  ```
+```cpp
+zx::result add_result =
+    outgoing()->AddService<fuchsia_examples::EchoService>(std::move(handler));
+```
 
 ### Driver to Driver: Add offer when creating the child
 
@@ -131,9 +119,6 @@ add it to the offers you pass in when creating the child. For this example:
 This instructs the Driver Manager to route that service from you to your child.
 Since the instance name will not be randomized, it is recommended to specify the
 instance name as the name of the child component as an argument to `AddService`.
-This is not possible in DFv1. For more information about routing services to
-children, please refer to the
-[DFv2 migration guide for services][dfv2-migration-services].
 
 ## Route the service
 
@@ -408,19 +393,10 @@ effort.
 [components]: /docs/concepts/components/v2/README.md
 [connect-components]: /docs/development/components/connect.md
 [troubleshoot-routes]: /docs/development/components/connect.md#troubleshooting-troubleshooting
-[dfv2-migration-services]: /docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/update-other-services-to-dfv2.md
 
 <!-- Gerrit links -->
-[overnet-usb-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1200181
 [usb-peripheral-dtr-client-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1199584
 [usb-peripheral-routing-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1200394
-[usb-peripheral-driver-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1200182
-[cpu-ctl-client-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1065241
 [cpu-ctl-routing-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1028574
-[cpu-ctl-dfv2-driver-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1028575
-[cpu-ctl-dfv1-driver-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1064310
-[usb-peripheral-routing-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1200394
-[devfs-driver-routing-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1205609
-[adb-servicememberwatcher-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1197984
 [rust-dtr-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1203869/8/src/devices/tests/v2/services/test.rs
 [vsock-migration-cl]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1213569
