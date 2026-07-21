@@ -5,26 +5,50 @@
 use async_trait::async_trait;
 use ffx_target_echo_args::EchoCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{FfxError, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool};
 use schemars::JsonSchema;
 use serde::Serialize;
 use target_connector::Connector;
 use target_holders::RemoteControlProxyHolder;
 use thiserror::Error;
+use traceable_error::TraceableBox;
+use traceable_error_derive::TraceableError;
 
-#[derive(FfxError, Error, Debug)]
+/// Custom error type for the `ffx target echo` plugin.
+///
+/// We derive `TraceableError` here so that failures occurring within this tool
+/// produce structured, deterministic layer codes (e.g., `ffx_target_echo::EchoError::Writer`).
+/// This enables distributed diagnostic systems to trace the exact causal chain of failures
+/// across multi-layered software boundaries without relying on fragile string parsing.
+#[derive(Error, Debug, TraceableError)]
 pub enum EchoError {
-    #[exit_with_code(1)]
     #[error("Failed to establish connection to Remote Control Service: {0}")]
     TargetConnectionFailed(#[source] fho::Error),
 
-    #[exit_with_code(1)]
     #[error("Echo capability failed: {0}")]
+    #[trace(opaque)]
     EchoCapabilityFailed(#[from] fidl::Error),
 
-    #[exit_with_code(1)]
     #[error("FFX Writer error: {0}")]
+    #[trace(opaque)]
     Writer(#[from] ffx_writer::Error),
+}
+
+/// We implement `From<EchoError> for fho::Error` explicitly using `TraceableBox` rather
+/// than relying on standard type-erasing conversions into `anyhow::Error` / `fho::Error`.
+///
+/// Converting a concrete tool error directly into untyped conduits (`anyhow::Error`) normally
+/// creates an opaque tracing boundary, discarding structured layer code history. By wrapping
+/// `EchoError` inside a `TraceableBox` before nesting it in `FfxError::Error` (with default exit code 1)
+/// and `fho::Error`, the FHO execution framework and error loggers can successfully downcast through
+/// the error chain and preserve the complete chronological trajectory of diagnostic layer codes.
+impl From<EchoError> for fho::Error {
+    fn from(e: EchoError) -> Self {
+        fho::Error::from(anyhow::Error::from(errors::FfxError::Error(
+            anyhow::Error::from(TraceableBox::from(e)),
+            1,
+        )))
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema, PartialEq)]
@@ -58,7 +82,7 @@ impl FfxMain for EchoTool {
             Ok(()) => Ok(()),
             Err(e) => {
                 let error_msg = e.to_string();
-                let _ = writer.machine_or(&EchoMessage::UnexpectedError(error_msg), &e);
+                let _ = writer.machine(&EchoMessage::UnexpectedError(error_msg));
                 Err(e)
             }
         }
@@ -115,12 +139,10 @@ async fn echo_impl(
                     writer.machine_or(&EchoMessage::Message(r), user_out)?;
                 }
                 Err(e) => {
-                    let message = format!("ERROR: {e:?}");
-                    writer.machine_or(
-                        &EchoMessage::UnexpectedError(message.clone()),
-                        message.clone(),
-                    )?;
                     if cmd.repeat {
+                        let message = format!("ERROR: {e:?}");
+                        writer
+                            .machine_or(&EchoMessage::UnexpectedError(message.clone()), &message)?;
                         break;
                     } else {
                         return Err(EchoError::EchoCapabilityFailed(e));
