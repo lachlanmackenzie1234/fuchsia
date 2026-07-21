@@ -12,7 +12,6 @@
                 "timerfd01",
                 "pipe13",
                 "prctl09",
-                "pth_str01",
             ],
         },
     ],
