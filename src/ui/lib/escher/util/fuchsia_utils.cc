@@ -5,6 +5,7 @@
 #include "src/ui/lib/escher/util/fuchsia_utils.h"
 
 #include <fuchsia/sysmem/cpp/fidl.h>
+#include <zircon/compiler.h>
 
 #include "src/ui/lib/escher/impl/naive_image.h"
 #include "src/ui/lib/escher/util/image_utils.h"
@@ -210,6 +211,8 @@ ColorSpace FromSysmemColorSpace(fuchsia::sysmem::ColorSpaceType sysmem_color_spa
     case fuchsia::sysmem::ColorSpaceType::DO_NOT_CARE:
       return ColorSpace::kDoNotCare;
   }
+  __UNREACHABLE;
+  return ColorSpace::kInvalid;
 }
 
 }  // namespace escher

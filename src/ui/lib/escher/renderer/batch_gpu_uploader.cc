@@ -52,6 +52,9 @@ void BatchGpuUploader::ScheduleWriteBuffer(const BufferPtr& target,
                                            vk::DeviceSize target_offset, vk::DeviceSize copy_size) {
   TRACE_DURATION("gfx", "escher::BatchGpuUploader::ScheduleWriteBuffer");
   vk::DeviceSize src_offset = AlignedToNext(current_offset_, kByteAlignment);
+
+  FX_CHECK(target_offset < target->size() && copy_size > 0);
+
   vk::DeviceSize writeable_size = target->size() - target_offset;
   FX_DCHECK(writeable_size >= copy_size) << "copy_size + target_offset exceeds the buffer size";
   auto write_size = std::min(copy_size, writeable_size);
@@ -83,6 +86,14 @@ void BatchGpuUploader::ScheduleWriteImage(const ImagePtr& target,
   // For now we expect that we only accept full image to be uploadable.
   FX_DCHECK(region.imageOffset == vk::Offset3D(0, 0, 0) &&
             region.imageExtent == vk::Extent3D(target->width(), target->height(), 1U));
+
+  if (region.imageOffset.x < 0 || region.imageOffset.y < 0 || region.imageOffset.z < 0 ||
+      static_cast<uint64_t>(region.imageOffset.x) + region.imageExtent.width > target->width() ||
+      static_cast<uint64_t>(region.imageOffset.y) + region.imageExtent.height > target->height() ||
+      static_cast<uint64_t>(region.imageOffset.z) + region.imageExtent.depth > 1U) {
+    FX_DCHECK(false);
+    return;
+  }
 
   TRACE_DURATION("gfx", "escher::BatchGpuUploader::ScheduleWriteImage");
   vk::DeviceSize src_offset = AlignedToNext(current_offset_, kByteAlignment);

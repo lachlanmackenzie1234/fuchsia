@@ -66,7 +66,6 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
       "vk/command_buffer_unittest.cc",
       "vk/descriptor_set_allocator_cache_unittest.cc",
       "vk/descriptor_set_allocator_unittest.cc",
-      "vk/descriptor_set_layout_unittest.cc",
       "vk/fake_gpu_allocator.cc",
       "vk/framebuffer_allocator_unittest.cc",
       "vk/gpu_allocator_unittest.cc",
@@ -139,7 +138,6 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
   # Add all test cases which are expected to fail here
   vulkan_test("escher_unittests_expected_failure") {
     sources = [
-      "renderer/batch_gpu_uploader_unittest.cc",
       "renderer/frame_unittest.cc",
       "renderer/protected_memory_unittest.cc",
       "run_all_unittests.cc",
@@ -172,6 +170,43 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
     deps = [
       "//src/ui/lib/escher/test/common:gtest_escher",
       "//src/ui/lib/escher/test/common:readback_fixtures",
+    ]
+
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    configs += [ "//build/config:Wno-conversion" ]
+  }
+
+  vulkan_test("escher_fatal_unittests") {
+    sources = [
+      "renderer/batch_gpu_uploader_unittest.cc",
+      "run_all_unittests.cc",
+      "vk/descriptor_set_layout_unittest.cc",
+    ]
+
+    deps = [
+      "base:base_unittests",
+      "//src/lib/fxl",
+      "//src/ui/lib/escher/test/common:gtest_escher",
+      "//src/ui/lib/escher/test/common:readback_fixtures",
+      "//third_party/glm",
+      "//third_party/googletest:gmock",
+    ]
+
+    if (is_fuchsia) {
+      deps += [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-default",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//src/lib/testing/loop_fixture",
+      ]
+    }
+
+    libs = [ "pthread" ]
+
+    include_dirs = [
+      "//lib",
+      "//src/ui/lib/escher",
     ]
 
     # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings

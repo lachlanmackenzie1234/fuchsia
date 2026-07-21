@@ -27,6 +27,8 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/ui/lib/escher/vk/vulkan_limits.h"
+
 namespace escher {
 namespace impl {
 
@@ -41,12 +43,22 @@ bool DescriptorSetLayout::IsValid() {
   conflicts |= (seen_bits & sampled_buffer_mask);
   seen_bits |= sampled_buffer_mask;
   conflicts |= (seen_bits & input_attachment_mask);
+  seen_bits |= input_attachment_mask;
 
   if (conflicts != 0) {
     FX_LOGS(WARNING) << "multiple descriptors in set share binding indices: " << std::hex
                      << conflicts;
     return false;
   }
+
+  // If this fails fix similar bit shifts throughout codebase.
+  static_assert(VulkanLimits::kNumBindings < 32, "bit shift overflow");
+  if (seen_bits >= (1U << VulkanLimits::kNumBindings)) {
+    FX_LOGS(WARNING) << "descriptor bindings exceed the maximum limit of "
+                     << VulkanLimits::kNumBindings;
+    return false;
+  }
+
   return true;
 }
 

@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/ui/lib/escher/geometry/types.h"
 #include "src/ui/lib/escher/renderer/batch_gpu_downloader.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/util/image_utils.h"
@@ -22,7 +23,8 @@ namespace {
 std::pair<ImagePtr, vk::BufferImageCopy> Create1x1ImageAndRegion(EscherWeakPtr escher) {
   // Create a 1x1 RGBA (8-bit channels) image to write to.
   ImageFactoryAdapter image_factory(escher->gpu_allocator(), escher->resource_recycler());
-  ImagePtr image = image_utils::NewImage(&image_factory, vk::Format::eR8G8B8A8Unorm, 1, 1);
+  ImagePtr image =
+      image_utils::NewImage(&image_factory, vk::Format::eR8G8B8A8Unorm, ColorSpace::kSrgb, 1, 1);
   vk::BufferImageCopy region;
   region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
   region.imageSubresource.mipLevel = 0;
@@ -49,7 +51,7 @@ VK_TEST_F(BatchGpuUploaderTest, CreateDestroyUploader) {
     uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
   }
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(batch_upload_done);
 }
@@ -68,7 +70,7 @@ VK_TEST_F(BatchGpuUploaderTest, CallbackTriggeredOnEmptyUploader) {
   bool callback_executed = false;
 
   uploader->Submit([&callback_executed] { callback_executed = true; });
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(callback_executed);
 }
@@ -104,7 +106,7 @@ VK_TEST_F(BatchGpuUploaderTest, WriteBufferUsingWriteFunction) {
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
   EXPECT_TRUE(write_finished);
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(batch_upload_done);
 }
@@ -130,7 +132,7 @@ VK_TEST_F(BatchGpuUploaderTest, WriteBufferUsingVectorOfUint8) {
   // Submit the work.
   bool batch_upload_done = false;
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(batch_upload_done);
 }
@@ -156,7 +158,7 @@ VK_TEST_F(BatchGpuUploaderTest, WriteBufferUsingVectorOfAnyType) {
   // Submit the work.
   bool batch_upload_done = false;
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(batch_upload_done);
 }
@@ -183,7 +185,7 @@ VK_TEST_F(BatchGpuUploaderTest, LazyInitializationTest) {
   // BatchGpuUploader must be submitted before it is destroyed.
   bool batch_upload_done = false;
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(batch_upload_done);
 }
@@ -218,7 +220,7 @@ VK_TEST_F(BatchGpuUploaderTest, WriteImageUsingWriteFunction) {
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
   EXPECT_TRUE(write_finished);
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   // Verify that the image layout was set correctly.
   EXPECT_TRUE(image->layout() == kTargetImageLayout);
   EXPECT_TRUE(escher->Cleanup());
@@ -246,7 +248,7 @@ VK_TEST_F(BatchGpuUploaderTest, WriteImageUsingVectorOfUint8) {
   bool batch_upload_done = false;
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   // Verify that the image layout was set correctly.
   EXPECT_TRUE(image->layout() == kTargetImageLayout);
   EXPECT_TRUE(escher->Cleanup());
@@ -274,7 +276,7 @@ VK_TEST_F(BatchGpuUploaderTest, WriteImageUsingVectorOfAnyType) {
   bool batch_upload_done = false;
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   // Verify that the image layout was set correctly.
   EXPECT_TRUE(image->layout() == kTargetImageLayout);
   EXPECT_TRUE(escher->Cleanup());
@@ -298,7 +300,7 @@ VK_TEST_F(BatchGpuUploaderTest, ChangeLayout) {
   // Submit the work.
   bool batch_upload_done = false;
   uploader->Submit([&batch_upload_done]() { batch_upload_done = true; });
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(image->layout() == kTargetImageLayout);
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(batch_upload_done);
@@ -312,7 +314,7 @@ VK_TEST_F(BatchGpuUploaderTest, ChangeLayout) {
   // Submit the work.
   bool batch_upload_done_2 = false;
   uploader_2->Submit([&batch_upload_done_2]() { batch_upload_done_2 = true; });
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
 
   // Verify that the image layout was set correctly.
   EXPECT_TRUE(image->layout() == kTargetImageLayout_2);
@@ -338,7 +340,7 @@ VK_TEST_F(BatchGpuUploaderTest, SubmitImageToCommandBuffer) {
   cmds->Submit([&uploaded]() { uploaded = true; });
   EXPECT_FALSE(uploader->HasContentToUpload());
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(uploaded);
 
@@ -356,7 +358,7 @@ VK_TEST_F(BatchGpuUploaderTest, SubmitImageToCommandBuffer) {
   bool downloaded = false;
   downloader->Submit([&downloaded]() { downloaded = true; });
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(downloaded && pixel_correct);
 }
@@ -388,9 +390,30 @@ VK_TEST_F(BatchGpuUploaderTest, ReuseAfterSubmission) {
   uploader->Submit([&uploaded_2]() { uploaded_2 = true; });
   EXPECT_FALSE(uploader->HasContentToUpload());
 
-  escher->vk_device().waitIdle();
+  (void)escher->vk_device().waitIdle();
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_TRUE(uploaded_1 && uploaded_2);
+}
+
+VK_TEST_F(BatchGpuUploaderTest, WriteBufferWithOffsetOutOfBoundsDeathTest) {
+  auto escher = test::GetEscher()->GetWeakPtr();
+  const size_t buffer_size = 3 * sizeof(vec3);
+  // Create buffer to write to.
+  BufferFactoryAdapter buffer_factory(escher->gpu_allocator(), escher->resource_recycler());
+  BufferPtr vertex_buffer = buffer_factory.NewBuffer(
+      buffer_size, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+  // Do write with an offset out of bounds
+  // This explicitly tests the integer underflow edge case.
+  EXPECT_DEATH(
+      {
+        auto uploader = BatchGpuUploader::New(escher);
+        uploader->ScheduleWriteBuffer(
+            vertex_buffer, [](uint8_t* host_ptr, size_t size) {},
+            /* target_offset */ buffer_size + 10, /* copy_size */ buffer_size);
+      },
+      "");
 }
 
 VK_TEST_F(BatchGpuUploaderTest, UnfinishedWorkDeathTest) {

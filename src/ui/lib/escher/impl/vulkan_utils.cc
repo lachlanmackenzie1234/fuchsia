@@ -182,13 +182,13 @@ void ClipToRect(vk::Rect2D* clippee, const vk::Rect2D& clipper) {
   int32_t max_y = std::min((clippee->offset.y + clippee->extent.height),
                            (clipper.offset.y + clipper.extent.height));
 
-  // Detect overflow.
-  FX_DCHECK(max_x >= min_x && max_y >= min_y);
+  FX_CHECK(max_x >= min_x);
+  FX_CHECK(max_y >= min_y);
 
   clippee->offset.x = min_x;
   clippee->offset.y = min_y;
-  clippee->extent.width = max_x - min_x;
-  clippee->extent.height = max_y - min_y;
+  clippee->extent.width = static_cast<uint32_t>(max_x - min_x);
+  clippee->extent.height = static_cast<uint32_t>(max_y - min_y);
 }
 
 vk::BufferImageCopy GetDefaultBufferImageCopy(size_t width, size_t height) {

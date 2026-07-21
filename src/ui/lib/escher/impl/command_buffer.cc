@@ -112,6 +112,9 @@ void CommandBuffer::AddWaitSemaphore(SemaphorePtr semaphore, vk::PipelineStageFl
 void CommandBuffer::AddSignalSemaphore(SemaphorePtr semaphore) {
   FX_DCHECK(is_active_);
   if (semaphore) {
+    if (ContainsSignalSemaphore(semaphore)) {
+      return;
+    }
     signal_semaphores_.push_back(std::move(semaphore));
   }
 }
@@ -134,9 +137,27 @@ void CommandBuffer::KeepAlive(const Resource* resource) {
 void CommandBuffer::CopyImage(const ImagePtr& src_image, const ImagePtr& dst_image,
                               vk::ImageLayout src_layout, vk::ImageLayout dst_layout,
                               vk::ImageCopy* region) {
+  FX_CHECK(region);
+
   // If commandBuffer is a protected command buffer, then dstImage must not be an unprotected image.
   // https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/vkCmdCopyImage.html
   FX_CHECK(!use_protected_memory() || dst_image->use_protected_memory());
+
+  if (region->srcOffset.x < 0 || region->srcOffset.y < 0 || region->srcOffset.z < 0 ||
+      static_cast<uint64_t>(region->srcOffset.x) + region->extent.width > src_image->width() ||
+      static_cast<uint64_t>(region->srcOffset.y) + region->extent.height > src_image->height() ||
+      static_cast<uint64_t>(region->srcOffset.z) + region->extent.depth > 1U) {
+    FX_DCHECK(false);
+    return;
+  }
+
+  if (region->dstOffset.x < 0 || region->dstOffset.y < 0 || region->dstOffset.z < 0 ||
+      static_cast<uint64_t>(region->dstOffset.x) + region->extent.width > dst_image->width() ||
+      static_cast<uint64_t>(region->dstOffset.y) + region->extent.height > dst_image->height() ||
+      static_cast<uint64_t>(region->dstOffset.z) + region->extent.depth > 1U) {
+    FX_DCHECK(false);
+    return;
+  }
 
   command_buffer_.copyImage(src_image->vk(), src_layout, dst_image->vk(), dst_layout, 1, region);
   KeepAlive(src_image);
@@ -149,6 +170,21 @@ void CommandBuffer::CopyBuffer(const BufferPtr& src, const BufferPtr& dst, vk::B
   // https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/vkCmdCopyBuffer.html
   // We do not use protected buffers.
   FX_CHECK(!use_protected_memory());
+
+  if (region.srcOffset >= src->size() || region.dstOffset >= dst->size()) {
+    FX_DCHECK(false);
+    return;
+  }
+
+  vk::DeviceSize src_readable = src->size() - region.srcOffset;
+  vk::DeviceSize dst_writeable = dst->size() - region.dstOffset;
+  vk::DeviceSize clamped_size = std::min({region.size, src_readable, dst_writeable});
+  FX_DCHECK(clamped_size == region.size);
+  region.size = clamped_size;
+
+  if (region.size == 0) {
+    return;
+  }
 
   command_buffer_.copyBuffer(src->vk(), dst->vk(), 1 /* region_count */, &region);
   KeepAlive(src);

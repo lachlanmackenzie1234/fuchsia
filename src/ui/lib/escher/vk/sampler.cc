@@ -4,6 +4,8 @@
 
 #include "src/ui/lib/escher/vk/sampler.h"
 
+#include <zircon/compiler.h>
+
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/resources/resource_recycler.h"
 #include "src/ui/lib/escher/util/image_utils.h"
@@ -39,6 +41,8 @@ vk::SamplerYcbcrModelConversion GetYcbcrModelForColorSpace(ColorSpace color_spac
       FX_NOTREACHED() << "Invalid Color space";
       return vk::SamplerYcbcrModelConversion::eYcbcrIdentity;
   }
+  __UNREACHABLE;
+  return vk::SamplerYcbcrModelConversion::eYcbcrIdentity;
 }
 
 vk::SamplerYcbcrRange GetYcbcrRangeForColorSpace(ColorSpace color_space) {
@@ -61,6 +65,8 @@ vk::SamplerYcbcrRange GetYcbcrRangeForColorSpace(ColorSpace color_space) {
       FX_NOTREACHED() << "Invalid Color space";
       return vk::SamplerYcbcrRange::eItuNarrow;
   }
+  __UNREACHABLE;
+  return vk::SamplerYcbcrRange::eItuNarrow;
 }
 
 }  // namespace
@@ -73,8 +79,8 @@ Sampler::Sampler(ResourceRecycler* resource_recycler, vk::Format format, vk::Fil
     : Resource(resource_recycler), is_immutable_(false) {
   auto device = resource_recycler->vulkan_context().device;
 
-  // TODO(https://fxbug.dev/42098808): eG8B8R82Plane420Unorm/eG8B8G8R8422Unorm is not enough to assume NV12,
-  // but they're currently the only formats we support at the sampler level.
+  // TODO(https://fxbug.dev/42098808): eG8B8R82Plane420Unorm/eG8B8G8R8422Unorm is not enough to
+  // assume NV12, but they're currently the only formats we support at the sampler level.
   if (image_utils::IsYuvFormat(format)) {
     FX_DCHECK(resource_recycler->caps().allow_ycbcr);
 

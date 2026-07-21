@@ -31,6 +31,12 @@ fuchsia_test_component("escher_unittests_expected_failure") {
   test_type = "vulkan"
 }
 
+fuchsia_test_component("escher_fatal_unittests") {
+  manifest = "meta/escher_fatal_unittests.cml"
+  deps = [ "test:escher_fatal_unittests" ]
+  test_type = "vulkan"
+}
+
 fuchsia_test_component("escher_renderer_tests") {
   manifest = "meta/escher_renderer_tests.cml"
   deps = [ "test:escher_renderer_tests" ]
@@ -58,6 +64,22 @@ fuchsia_test_package("escher_tests") {
 
   test_specs = {
     environments = basic_envs + vulkan_envs
+  }
+}
+
+fuchsia_test_package("escher_fatal_tests") {
+  test_components = [ ":escher_fatal_unittests" ]
+  deps = [
+    "shaders:escher_shaders_resources",
+    "shaders:escher_shaders_spirv_resources",
+    "//src/lib/vulkan:vulkan_validation_layers",
+  ]
+
+  test_specs = {
+    environments = basic_envs + vulkan_envs
+    log_settings = {
+      max_severity = "FATAL"
+    }
   }
 }
 

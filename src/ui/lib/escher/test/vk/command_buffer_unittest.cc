@@ -71,10 +71,9 @@ VK_TEST_F(CommandBufferTest, Dirtyness) {
   EXPECT_EQ(GetDirty(cb, DirtyBits::kDirtyPushConstantsBit), 0u);
   EXPECT_EQ(GetDirty(cb, DirtyBits::kDirtyDynamicBits), 0u);
 
-  // TODO(https://fxbug.dev/42151125): ideally only submitted CommandBuffers would need to be cleaned
-  // up: if a never-submitted CB is destroyed, then it shouldn't keep anything
-  // alive, and it shouldn't cause problems in e.g. CommandBufferPool due to a
-  // forever-straggling buffer.
+  // TODO(https://fxbug.dev/42151125): ideally only submitted CommandBuffers would need to be
+  // cleaned up: if a never-submitted CB is destroyed, then it shouldn't keep anything alive, and it
+  // shouldn't cause problems in e.g. CommandBufferPool due to a forever-straggling buffer.
   EXPECT_TRUE(cb->Submit(nullptr));
 }
 
@@ -99,10 +98,9 @@ VK_TEST_F(CommandBufferTest, StaticStateSetting) {
     }
   }
 
-  // TODO(https://fxbug.dev/42151125): ideally only submitted CommandBuffers would need to be cleaned
-  // up: if a never-submitted CB is destroyed, then it shouldn't keep anything
-  // alive, and it shouldn't cause problems in e.g. CommandBufferPool due to a
-  // forever-straggling buffer.
+  // TODO(https://fxbug.dev/42151125): ideally only submitted CommandBuffers would need to be
+  // cleaned up: if a never-submitted CB is destroyed, then it shouldn't keep anything alive, and it
+  // shouldn't cause problems in e.g. CommandBufferPool due to a forever-straggling buffer.
   EXPECT_TRUE(cb->Submit(nullptr));
 }
 
@@ -327,10 +325,9 @@ VK_TEST_F(CommandBufferTest, StaticStateSettingMatches) {
 #undef TEST_SETTER3
 #undef TEST_SETTER4
 
-  // TODO(https://fxbug.dev/42151125): ideally only submitted CommandBuffers would need to be cleaned
-  // up: if a never-submitted CB is destroyed, then it shouldn't keep anything
-  // alive, and it shouldn't cause problems in e.g. CommandBufferPool due to a
-  // forever-straggling buffer.
+  // TODO(https://fxbug.dev/42151125): ideally only submitted CommandBuffers would need to be
+  // cleaned up: if a never-submitted CB is destroyed, then it shouldn't keep anything alive, and it
+  // shouldn't cause problems in e.g. CommandBufferPool due to a forever-straggling buffer.
   EXPECT_TRUE(cb->Submit(nullptr));
 }
 

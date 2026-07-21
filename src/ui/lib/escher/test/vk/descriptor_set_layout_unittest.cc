@@ -46,6 +46,12 @@ TEST(DescriptorSetLayout, Validate) {
       EXPECT_TRUE(layout.IsValid());
     }
   }
+
+  // Adding a binding at or beyond VulkanLimits::kNumBindings should fail.
+  // This explicitly tests the out-of-bounds Vulkan limits edge case.
+  layout = original_layout;
+  layout.sampled_image_mask |= (1U << VulkanLimits::kNumBindings);
+  EXPECT_FALSE(layout.IsValid());
 }
 
 }  // namespace

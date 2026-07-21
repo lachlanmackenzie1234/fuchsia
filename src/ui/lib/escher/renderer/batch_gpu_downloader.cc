@@ -60,7 +60,15 @@ void BatchGpuDownloader::ScheduleReadBuffer(const BufferPtr& source,
                                             vk::DeviceSize copy_size) {
   TRACE_DURATION("gfx", "escher::BatchGpuDownloader::ScheduleReadBuffer");
   vk::DeviceSize dst_offset = AlignedToNext(current_offset_, kByteAlignment);
-  copy_size = copy_size == 0U ? source->size() : copy_size;
+
+  if (source_offset >= source->size()) {
+    return;
+  }
+
+  vk::DeviceSize readable_size = source->size() - source_offset;
+  // Adjusted `copy_size` is guaranteed to be positive.
+  copy_size = copy_size == 0U ? readable_size : std::min(copy_size, readable_size);
+
   auto region = vk::BufferCopy(source_offset, dst_offset, copy_size);
 
   copy_info_records_.push_back(
@@ -79,11 +87,11 @@ void BatchGpuDownloader::ScheduleReadImage(const ImagePtr& source,
   if (region == vk::BufferImageCopy()) {
     region = impl::GetDefaultBufferImageCopy(source->width(), source->height());
   }
-  FX_DCHECK(region.bufferOffset == 0U);
+  FX_DCHECK(region.bufferOffset == 0U) << "Should be guaranteed by `GetDefaultBufferImageCopy()`";
 
   // For now we expect that we only accept full image to be downloadable.
-  FX_DCHECK(region.imageOffset == vk::Offset3D(0, 0, 0) &&
-            region.imageExtent == vk::Extent3D(source->width(), source->height(), 1U));
+  FX_CHECK(region.imageOffset == vk::Offset3D(0, 0, 0) &&
+           region.imageExtent == vk::Extent3D(source->width(), source->height(), 1U));
 
   TRACE_DURATION("gfx", "escher::BatchGpuDownloader::ScheduleReadImage");
   vk::DeviceSize dst_offset = AlignedToNext(current_offset_, kByteAlignment);
