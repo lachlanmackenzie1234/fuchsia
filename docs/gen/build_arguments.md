@@ -890,7 +890,7 @@ This should never be set as a build argument.
 }
   aarch64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/23"
   variants = {
   asan = {
@@ -974,7 +974,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2218,6 +2218,13 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
   ninja_name = "readme_fuchsia"
+}, {
+  bazel_label = "//tools/testing/testparser:testparser_cmd"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/testparser_cmd_/testparser_cmd"
+  ninja = "testparser"
+}]
+  ninja_name = "testparser"
 }, {
   bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
   copy_outputs = [{
