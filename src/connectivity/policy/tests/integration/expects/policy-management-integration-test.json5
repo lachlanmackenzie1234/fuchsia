@@ -31,6 +31,9 @@
                 "network_properties::test_track_dns_changes_ns2*",
                 "network_properties::test_network_token_correlation_ns2*",
                 "network_properties::test_network_registry_dns_propagation_ns2*",
+                "network_properties::test_network_registry_socket_marks_propagation_ns2*",
+                "network_properties::test_network_token_peer_closed_on_removal_ns2*",
+                "network_properties::test_network_registry_fuchsia_priority_ns2*",
             ],
         },
         {

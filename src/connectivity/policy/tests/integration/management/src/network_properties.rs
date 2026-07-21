@@ -10,22 +10,30 @@ use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_policy_testing as fnp_testing;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_posix_socket as fposix_socket;
-use fuchsia_async::DurationExt as _;
+use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 use futures::channel::mpsc;
 use futures::future::join;
 use futures::lock::Mutex;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
 use log::info;
 use net_declare::fidl_ip_v6;
+use net_types::ip::{Ip, Ipv4};
 use netstack_testing_common::realms::{
     self, KnownServiceProvider, Manager, ManagerConfig, Netstack, NetstackExt, SocketProxyType,
     TestSandboxExt as _,
 };
-use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, wait_for_component_stopped};
+use netstack_testing_common::{
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    wait_for_component_stopped,
+};
 use netstack_testing_macros::netstack_test;
 use policy_properties::{NetworkTokenExt, NetworksWatchDefaultResponseExt};
-use policy_testing_common::{NetcfgOwnedDeviceArgs, with_netcfg_owned_device};
+use policy_testing_common::{NetcfgOwnedDeviceArgs, add_default_route, with_netcfg_owned_device};
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 use std::pin::pin;
@@ -740,6 +748,11 @@ async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> 
     Ok(())
 }
 
+const TEST_NETWORK_ID: u32 = 2;
+const TEST_MARK: u32 = 123;
+const TEST_NETWORK_ID_2: u32 = 3;
+const TEST_MARK_2: u32 = 456;
+
 #[netstack_test]
 #[variant(N, Netstack)]
 #[variant(M, Manager)]
@@ -768,12 +781,7 @@ async fn test_network_registry_dns_propagation<N: Netstack, M: Manager>(
                     )
                     .expect("failed to connect to Networks");
 
-                const TEST_NETWORK_ID: u32 = 2;
-                const TEST_MARK: u32 = 123;
                 const NDP_DNS_SERVER: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::1");
-
-                const TEST_NETWORK_ID_2: u32 = 3;
-                const TEST_MARK_2: u32 = 456;
                 const NDP_DNS_SERVER_2: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::2");
 
                 // Add the first delegated network.
@@ -871,6 +879,423 @@ async fn test_network_registry_dns_propagation<N: Netstack, M: Manager>(
 
                 // Ensure that watch_properties does not return again with additional DNS updates.
                 assert!(watch_update(&networks, &network_token).now_or_never().is_none());
+            }
+            .boxed_local()
+        },
+    )
+    .await;
+
+    Ok(())
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(M, Manager)]
+async fn test_network_registry_socket_marks_propagation<N: Netstack, M: Manager>(name: &str) {
+    let _if_name = with_netcfg_owned_device::<M, N, _>(
+        name,
+        ManagerConfig::EnableSocketProxy,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::None,
+            ..Default::default()
+        },
+        |_if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let delegated_networks = realm
+                    .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Netcfg NetworkRegistry");
+
+                let networks = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Networks");
+
+                // Add delegated network with a socket mark.
+                delegated_networks
+                    .add(&network(TEST_NETWORK_ID, Some(TEST_MARK)))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to add network");
+
+                // Set the delegated network as default.
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Value(TEST_NETWORK_ID))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to set default");
+
+                // call WatchDefault to get the new default network.
+                let network_token = networks
+                    .watch_default()
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token");
+
+                let watch_update =
+                    |networks: &fnp_properties::NetworksProxy,
+                     network: &fnp_properties::NetworkToken| {
+                        networks
+                            .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                                network: Some(network.duplicate().expect("couldn't duplicate")),
+                                properties: Some(vec![fnp_properties::Property::SocketMarks]),
+                                __source_breaking: fidl::marker::SourceBreaking,
+                            })
+                            .fuse()
+                    };
+
+                // WatchProperties and verify socket mark is propagated.
+                let update = watch_update(&networks, &network_token)
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                assert_matches!(
+                    update.as_slice(),
+                    [fnp_properties::PropertyUpdate::SocketMarks(fnet::Marks {
+                        mark_1: Some(TEST_MARK),
+                        ..
+                    })]
+                );
+
+                // Update the network mark.
+                delegated_networks
+                    .update(&network(TEST_NETWORK_ID, Some(TEST_MARK_2)))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to update network");
+
+                // Verify the mark update is propagated.
+                let update2 = watch_update(&networks, &network_token)
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                assert_matches!(
+                    update2.as_slice(),
+                    [fnp_properties::PropertyUpdate::SocketMarks(fnet::Marks {
+                        mark_1: Some(TEST_MARK_2),
+                        ..
+                    })]
+                );
+
+                // Add a second network and set it as default.
+                delegated_networks
+                    .add(&network(TEST_NETWORK_ID_2, Some(TEST_MARK_2)))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to add network 2");
+
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Value(TEST_NETWORK_ID_2))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to set default network 2");
+
+                // WatchDefault should notify that the default network has changed to
+                // the second network.
+                let network_token_2 = networks
+                    .watch_default()
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token 2");
+
+                // Verify the properties of the new default network token.
+                let update3 = watch_update(&networks, &network_token_2)
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                assert_matches!(
+                    update3.as_slice(),
+                    [fnp_properties::PropertyUpdate::SocketMarks(fnet::Marks {
+                        mark_1: Some(TEST_MARK_2),
+                        ..
+                    })]
+                );
+
+                // WatchProperties on the old default token should return InvalidNetworkToken
+                // since the token was invalidated and dropped when the default network changed.
+                let properties_gone = watch_update(&networks, &network_token).await;
+                assert_matches!(
+                    properties_gone,
+                    Ok(Err(fnp_properties::WatchError::InvalidNetworkToken))
+                );
+
+                // Remove all the networks.
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to unset default network");
+
+                delegated_networks
+                    .remove(TEST_NETWORK_ID)
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to remove network 1");
+
+                delegated_networks
+                    .remove(TEST_NETWORK_ID_2)
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to remove network 2");
+            }
+            .boxed_local()
+        },
+    )
+    .await;
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(M, Manager)]
+async fn test_network_registry_fuchsia_priority<N: Netstack, M: Manager>(
+    name: &str,
+) -> Result<(), anyhow::Error> {
+    let _if_name = with_netcfg_owned_device::<M, N, _>(
+        name,
+        ManagerConfig::EnableSocketProxy,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::Fake,
+            ..Default::default()
+        },
+        |if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let delegated_networks = realm
+                    .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
+                        realms::constants::fake_socket_proxy::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to FakeSocketProxy NetworkRegistry");
+
+                let networks = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Networks");
+
+                let root_routes = realm
+                    .connect_to_protocol::<fnet_root::RoutesV4Marker>()
+                    .expect("connect to fuchsia.net.root.RoutesV4");
+                let (route_set, server_end) =
+                    fidl::endpoints::create_proxy::<fnet_routes_admin::RouteSetV4Marker>();
+                root_routes.global_route_set(server_end).expect("create global RouteSetV4");
+
+                // Add a default route to make Fuchsia the default network.
+                assert!(add_default_route::<Ipv4>(realm, if_id, &route_set).await);
+
+                // Watch default network should return the Fuchsia default network token.
+                let default_fuchsia_token = networks
+                    .watch_default()
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token");
+
+                // Verify that only DnsConfiguration is returned and no SocketMarks property
+                // is present since Fuchsia networks have no socket marks.
+                let update = networks
+                    .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                        network: Some(default_fuchsia_token.duplicate().expect("dup failed")),
+                        properties: Some(vec![
+                            fnp_properties::Property::SocketMarks,
+                            fnp_properties::Property::DnsConfiguration,
+                        ]),
+                        __source_breaking: fidl::marker::SourceBreaking,
+                    })
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                assert_matches!(
+                    update.as_slice(),
+                    [fnp_properties::PropertyUpdate::DnsConfiguration(_)]
+                );
+
+                // Add a delegated network and set it as default.
+                delegated_networks
+                    .add(&network(TEST_NETWORK_ID, Some(TEST_MARK)))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to add network");
+
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Value(TEST_NETWORK_ID))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to set default");
+
+                // Attempt to watch default. Since Fuchsia still has priority, the call to the
+                // hanging get should not complete.
+                let mut watch_fut = pin!(networks.watch_default());
+
+                // Verify that watch_fut does not resolve before route removal (times out).
+                assert_matches!(
+                    watch_fut
+                        .as_mut()
+                        .map(Ok)
+                        .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || {
+                            Err(zx::Status::TIMED_OUT)
+                        })
+                        .await,
+                    Err(zx::Status::TIMED_OUT)
+                );
+
+                // Remove the Fuchsia default route to unset the Fuchsia default network.
+                let default_route = fnet_routes_ext::Route {
+                    destination: Ipv4::ALL_ADDRS_SUBNET,
+                    action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<
+                        Ipv4,
+                    > {
+                        outbound_interface: if_id,
+                        next_hop: None,
+                    }),
+                    properties: fnet_routes_ext::RouteProperties {
+                        specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                            metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                                fnet_routes::Empty,
+                            ),
+                        },
+                    },
+                };
+                assert!(
+                    fnet_routes_ext::admin::remove_route::<Ipv4>(
+                        &route_set,
+                        &default_route.try_into().expect("convert into fidl route"),
+                    )
+                    .await
+                    .expect("failed to remove default route")
+                    .expect("remove route error")
+                );
+
+                // WatchDefault should resolve and return the delegated default network.
+                let _default_delegated_token = watch_fut
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token");
+
+                // Verify that the Fuchsia token transmits PEER_CLOSED.
+                fasync::OnSignals::new(
+                    &default_fuchsia_token.value,
+                    zx::Signals::EVENTPAIR_PEER_CLOSED,
+                )
+                .await
+                .map(|_signal: zx::Signals| ())
+                .unwrap();
+            }
+            .boxed_local()
+        },
+    )
+    .await;
+
+    Ok(())
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(M, Manager)]
+async fn test_network_token_peer_closed_on_removal<N: Netstack, M: Manager>(
+    name: &str,
+) -> Result<(), anyhow::Error> {
+    let _if_name = with_netcfg_owned_device::<M, N, _>(
+        name,
+        ManagerConfig::EnableSocketProxy,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::Fake,
+            ..Default::default()
+        },
+        |_if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let delegated_networks = realm
+                    .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
+                        realms::constants::fake_socket_proxy::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to FakeSocketProxy NetworkRegistry");
+
+                let networks = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Networks");
+
+                let token_resolver = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworkTokenResolverMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to NetworkTokenResolver");
+
+                // Add delegated network and set as default.
+                delegated_networks
+                    .add(&network(TEST_NETWORK_ID, Some(TEST_MARK)))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to add network");
+
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Value(TEST_NETWORK_ID))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to set default");
+
+                // Watch default to get its token, and resolve it.
+                let default_starnix_token = networks
+                    .watch_default()
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token");
+
+                let resolved_starnix_token = token_resolver
+                    .resolve_token(default_starnix_token.duplicate().expect("dup failed"))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to resolve token");
+
+                // Unset default delegated network.
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to unset default");
+
+                // Verify that default_starnix_token transmits PEER_CLOSED since it is no longer
+                // the default network.
+                fasync::OnSignals::new(
+                    &default_starnix_token.value,
+                    zx::Signals::EVENTPAIR_PEER_CLOSED,
+                )
+                .await
+                .map(|_signal: zx::Signals| ())
+                .unwrap();
+
+                // Remove the delegated network.
+                delegated_networks
+                    .remove(TEST_NETWORK_ID)
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to remove network");
+
+                // Verify that resolved_starnix_token transmits PEER_CLOSED because the
+                // network was removed.
+                let peer_closed_fut = fasync::OnSignals::new(
+                    &resolved_starnix_token.value,
+                    zx::Signals::EVENTPAIR_PEER_CLOSED,
+                );
+                let _signals = fasync::TimeoutExt::on_timeout(
+                    peer_closed_fut,
+                    fasync::MonotonicInstant::after(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT),
+                    || Err(zx::Status::TIMED_OUT),
+                )
+                .await
+                .expect("failed to wait for resolved token PEER_CLOSED");
             }
             .boxed_local()
         },
