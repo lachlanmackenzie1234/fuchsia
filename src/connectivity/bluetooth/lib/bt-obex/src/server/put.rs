@@ -5,8 +5,8 @@
 use log::trace;
 
 use crate::error::Error;
-use crate::header::{Header, HeaderSet, SingleResponseMode};
-use crate::operation::{OpCode, RequestPacket, ResponseCode, ResponsePacket};
+use crate::header::{Header, HeaderIdentifier, HeaderSet, SingleResponseMode};
+use crate::operation::{MAX_OBJECT_SIZE, OpCode, RequestPacket, ResponseCode, ResponsePacket};
 use crate::server::handler::ObexOperationError;
 use crate::server::{ApplicationResponse, OperationRequest, ServerOperation};
 
@@ -29,21 +29,64 @@ pub struct PutOperation {
     /// and Some<T> when negotiated.
     /// Defaults to disabled if never negotiated.
     srm: Option<SingleResponseMode>,
+    /// The maximum total payload size allowed for an object in this operation.
+    max_object_size: usize,
     state: State,
 }
 
 impl PutOperation {
     pub fn new(srm_supported: bool) -> Self {
+        Self::new_with_max_size(srm_supported, MAX_OBJECT_SIZE)
+    }
+
+    fn new_with_max_size(srm_supported: bool, max_object_size: usize) -> Self {
         Self {
             srm_supported,
             srm: None,
+            max_object_size,
             state: State::Request { headers: HeaderSet::new(), staged_data: None },
         }
     }
 
     #[cfg(test)]
     fn new_at_state(state: State) -> Self {
-        Self { srm_supported: false, srm: None, state }
+        Self { srm_supported: false, srm: None, max_object_size: MAX_OBJECT_SIZE, state }
+    }
+
+    /// Validates that incoming payload data does not exceed maximum size limits and stages it.
+    fn validate_and_stage_data(
+        max_object_size: usize,
+        request_headers: &mut HeaderSet,
+        current_headers: &mut HeaderSet,
+        staged_data: &mut Option<Vec<u8>>,
+        is_final: bool,
+    ) -> Result<Result<(), OperationRequest>, Error> {
+        let body_data = request_headers.remove_body(is_final).ok();
+        let new_data_len = body_data.as_ref().map_or(0, |d| d.len());
+
+        let has_oversized_length_header = match request_headers
+            .get(&HeaderIdentifier::Length)
+            .or_else(|| current_headers.get(&HeaderIdentifier::Length))
+        {
+            Some(Header::Length(len)) => *len as usize > max_object_size,
+            _ => false,
+        };
+
+        let current_len = staged_data.as_ref().map_or(0, |v| v.len());
+        if has_oversized_length_header || current_len.saturating_add(new_data_len) > max_object_size
+        {
+            return Ok(Err(OperationRequest::single_response(ResponsePacket::new_empty(
+                ResponseCode::RequestedEntityTooLarge,
+            ))));
+        }
+
+        if let Some(mut data) = body_data {
+            let staged = staged_data.get_or_insert(Vec::new());
+            staged.append(&mut data);
+        }
+
+        current_headers.try_append(std::mem::take(request_headers))?;
+        Ok(Ok(()))
     }
 }
 
@@ -63,11 +106,16 @@ impl ServerOperation for PutOperation {
             State::Request { headers, staged_data } if code == OpCode::Put => {
                 // A non-final PUT request may contain a Body header specifying user data (among
                 // other informational headers).
-                if let Ok(mut data) = request_headers.remove_body(/*final= */ false) {
-                    let staged = staged_data.get_or_insert(Vec::new());
-                    staged.append(&mut data);
+                if let Err(op_req) = Self::validate_and_stage_data(
+                    self.max_object_size,
+                    &mut request_headers,
+                    headers,
+                    staged_data,
+                    /*is_final=*/ false,
+                )? {
+                    self.state = State::Complete;
+                    return Ok(op_req);
                 }
-                headers.try_append(request_headers)?;
 
                 // The response to the `request` depends on the current SRM status.
                 // If SRM is enabled, then no response is needed.
@@ -87,16 +135,22 @@ impl ServerOperation for PutOperation {
                 };
                 let response =
                     ResponsePacket::new_no_data(ResponseCode::Continue, response_headers);
-                Ok(OperationRequest::SendPackets(vec![response]))
+                Ok(OperationRequest::single_response(response))
             }
             State::Request { headers, staged_data } if code == OpCode::PutFinal => {
                 // A final PUT request may contain an EndOfBody header specifying user data (among
                 // other informational headers).
-                if let Ok(mut data) = request_headers.remove_body(/*final= */ true) {
-                    let staged = staged_data.get_or_insert(Vec::new());
-                    staged.append(&mut data);
+                if let Err(op_req) = Self::validate_and_stage_data(
+                    self.max_object_size,
+                    &mut request_headers,
+                    headers,
+                    staged_data,
+                    /*is_final=*/ true,
+                )? {
+                    self.state = State::Complete;
+                    return Ok(op_req);
                 }
-                headers.try_append(request_headers)?;
+
                 let request_headers = std::mem::replace(headers, HeaderSet::new());
                 let request_data = std::mem::take(staged_data);
                 self.state = State::RequestPhaseComplete;
@@ -123,9 +177,7 @@ impl ServerOperation for PutOperation {
         }
 
         let response = match response {
-            Ok(ApplicationResponse::Put) => {
-                ResponsePacket::new_no_data(ResponseCode::Ok, HeaderSet::new())
-            }
+            Ok(ApplicationResponse::Put) => ResponsePacket::new_empty(ResponseCode::Ok),
             Err((code, response_headers)) => {
                 trace!("Application rejected PUT request: {code:?}");
                 ResponsePacket::new_no_data(code, response_headers)
@@ -382,6 +434,67 @@ mod tests {
         let final_response = final_responses.first().expect("one response");
         assert_eq!(*final_response.code(), ResponseCode::Ok);
         assert!(final_response.headers().is_empty());
+        assert!(operation.is_complete());
+    }
+
+    #[fuchsia::test]
+    fn put_request_with_oversized_length_header_rejected() {
+        let mut operation = PutOperation::new_with_max_size(
+            /*srm_supported=*/ false, /*max_object_size=*/ 100,
+        );
+
+        let headers =
+            HeaderSet::from_headers(vec![Header::name("foo.txt"), Header::Length(101)]).unwrap();
+        let request = RequestPacket::new_put(headers);
+        let response = operation.handle_peer_request(request).expect("valid request");
+        let response_packet = expect_single_packet(response);
+        assert_eq!(*response_packet.code(), ResponseCode::RequestedEntityTooLarge);
+        assert!(operation.is_complete());
+    }
+
+    #[fuchsia::test]
+    fn multi_packet_put_exceeds_max_object_size_rejected() {
+        let mut operation = PutOperation::new_with_max_size(
+            /*srm_supported=*/ false, /*max_object_size=*/ 50,
+        );
+
+        // First request sends 30 bytes of data (within 50-byte limit).
+        let body1 = vec![0u8; 30];
+        let headers1 = HeaderSet::from_header(Header::Body(body1));
+        let request1 = RequestPacket::new_put(headers1);
+        let response1 = operation.handle_peer_request(request1).expect("valid request");
+        let response_packet1 = expect_single_packet(response1);
+        assert_eq!(*response_packet1.code(), ResponseCode::Continue);
+        assert!(!operation.is_complete());
+
+        // Second request sends another 30 bytes (total 60 bytes > 50-byte limit).
+        let body2 = vec![0u8; 30];
+        let headers2 = HeaderSet::from_header(Header::Body(body2));
+        let request2 = RequestPacket::new_put(headers2);
+        let response2 = operation.handle_peer_request(request2).expect("valid request");
+        let response_packet2 = expect_single_packet(response2);
+        assert_eq!(*response_packet2.code(), ResponseCode::RequestedEntityTooLarge);
+        assert!(operation.is_complete());
+    }
+
+    #[fuchsia::test]
+    fn put_request_headers_only_exceeds_max_object_size_rejected() {
+        let mut operation = PutOperation::new_with_max_size(
+            /*srm_supported=*/ false, /*max_object_size=*/ 100,
+        );
+
+        // Put request containing only informational headers (no Body/EndOfBody data)
+        // with a Length header specifying a payload larger than 100 bytes.
+        let headers = HeaderSet::from_headers(vec![
+            Header::name("header_only.txt"),
+            Header::Type("text/plain".into()),
+            Header::Length(105),
+        ])
+        .unwrap();
+        let request = RequestPacket::new_put(headers);
+        let response = operation.handle_peer_request(request).expect("valid request");
+        let response_packet = expect_single_packet(response);
+        assert_eq!(*response_packet.code(), ResponseCode::RequestedEntityTooLarge);
         assert!(operation.is_complete());
     }
 }

@@ -48,6 +48,12 @@ pub enum OperationRequest {
     None,
 }
 
+impl OperationRequest {
+    pub fn single_response(packet: ResponsePacket) -> Self {
+        Self::SendPackets(vec![packet])
+    }
+}
+
 /// Represents a response from the upper layer application during a multi-step operation.
 #[derive(Debug)]
 pub enum ApplicationResponse {

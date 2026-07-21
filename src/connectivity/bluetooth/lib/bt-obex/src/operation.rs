@@ -4,7 +4,7 @@
 
 use bitflags::bitflags;
 use core::fmt::Debug;
-use packet_encoding::{decodable_enum, Decodable, Encodable};
+use packet_encoding::{Decodable, Encodable, decodable_enum};
 use std::cmp::PartialEq;
 
 use crate::error::{Error, PacketError};
@@ -23,6 +23,11 @@ pub const MAX_PACKET_SIZE: usize = std::u16::MAX as usize;
 /// The minimum size of the OBEX maximum packet length is 255 bytes.
 /// Defined in OBEX 1.5. Section 3.4.1.4.
 pub const MIN_MAX_PACKET_SIZE: usize = 255;
+
+/// The default maximum size allowed for an OBEX object transfer (64 MB).
+// TODO(https://fxbug.dev/536942228): Remove or make configurable when upper
+// layer profiles can specify their own maximum object size limit.
+pub const MAX_OBJECT_SIZE: usize = 64 * 1024 * 1024;
 
 bitflags! {
     /// The flags used in a SetPath operation.
@@ -395,6 +400,11 @@ decodable_enum! {
 pub type ResponsePacket = Packet<ResponseCode>;
 
 impl ResponsePacket {
+    /// Creates a response packet with the given response code and no data or headers.
+    pub fn new_empty(code: ResponseCode) -> Self {
+        Self::new_no_data(code, HeaderSet::new())
+    }
+
     pub fn new_no_data(code: ResponseCode, headers: HeaderSet) -> Self {
         Self::new(code, vec![], headers)
     }
