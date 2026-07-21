@@ -5,6 +5,8 @@
 #ifndef SRC_LIB_VULKAN_SWAPCHAIN_PLATFORM_EVENT_H_
 #define SRC_LIB_VULKAN_SWAPCHAIN_PLATFORM_EVENT_H_
 
+#include <memory>
+
 #include <vulkan/vulkan.h>
 
 #include "vk_dispatch_table_helper.h"
