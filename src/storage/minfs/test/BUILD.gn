@@ -35,6 +35,7 @@ test("minfs_unit") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/fvm",
     "//src/storage/lib/block_client/cpp",
     "//src/storage/lib/block_client/cpp:fake_device",

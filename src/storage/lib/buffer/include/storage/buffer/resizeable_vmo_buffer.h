@@ -5,52 +5,48 @@
 #ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_RESIZEABLE_VMO_BUFFER_H_
 #define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_RESIZEABLE_VMO_BUFFER_H_
 
-#include <lib/fzl/resizeable-vmo-mapper.h>
 #include <lib/zx/result.h>
-#include <zircon/compiler.h>
+#include <lib/zx/vmo.h>
+#include <zircon/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
 
 #include <storage/buffer/block_buffer.h>
+#include <storage/buffer/mapped_vmo.h>
 #include <storage/buffer/vmoid_registry.h>
 
 namespace storage {
 
 // A resizeable VMO buffer. The buffer isn't usable until Attach is called.
-class ResizeableVmoBuffer : public storage::BlockBuffer {
+class ResizeableVmoBuffer : public BlockBuffer {
  public:
-  using Handle = vmoid_t;
-
-  ResizeableVmoBuffer(uint32_t block_size) : block_size_(block_size) {}
+  explicit ResizeableVmoBuffer(uint32_t block_size) : block_size_(block_size) {}
 
   ResizeableVmoBuffer(ResizeableVmoBuffer&&) = default;
   ResizeableVmoBuffer& operator=(ResizeableVmoBuffer&&) = delete;
 
   // BlockBuffer interface:
-  size_t capacity() const override { return vmo_.size() / block_size_; }
+  size_t capacity() const override { return mapped_vmo_.size() / block_size_; }
   uint32_t BlockSize() const override { return block_size_; }
   vmoid_t vmoid() const override { return vmoid_.get(); }
-  zx_handle_t Vmo() const override { return vmo_.vmo().get(); }
+  zx_handle_t Vmo() const override { return mapped_vmo_.vmo().get(); }
   void* Data(size_t index) override {
-    return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(vmo_.start()) + index * block_size_);
+    return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(mapped_vmo_.start()) +
+                                   index * block_size_);
   }
   const void* Data(size_t index) const override {
-    return reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(vmo_.start()) +
+    return reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(mapped_vmo_.start()) +
                                          index * block_size_);
   }
 
-  const zx::vmo& vmo() { return vmo_.vmo(); }
-  zx::result<> Grow(size_t block_count) {
-    return zx::make_result(vmo_.Grow(block_count * block_size_));
-  }
-  zx::result<> Shrink(size_t block_count) {
-    return zx::make_result(vmo_.Shrink(block_count * block_size_));
-  }
+  const zx::vmo& vmo() { return mapped_vmo_.vmo(); }
+  zx::result<> Grow(size_t block_count) { return mapped_vmo_.Grow(block_count * block_size_); }
+  zx::result<> Shrink(size_t block_count) { return mapped_vmo_.Shrink(block_count * block_size_); }
 
-  // Avoid using this method unless *absolutely* necessary. Eventually, other interfaces that take
-  // different handle types should go away and this should no longer be required.
-  Handle GetHandle() { return vmoid(); }
-
-  zx::result<> Attach(const char* name, storage::VmoidRegistry* device);
-  zx::result<> Detach(storage::VmoidRegistry* device);
+  zx::result<> Attach(std::string_view name, VmoidRegistry& device);
+  zx::result<> Detach(VmoidRegistry& device);
 
   zx_status_t Zero(size_t index, size_t count) override;
 
@@ -58,8 +54,8 @@ class ResizeableVmoBuffer : public storage::BlockBuffer {
   ResizeableVmoBuffer();
 
   uint32_t block_size_;
-  fzl::ResizeableVmoMapper vmo_;
-  storage::Vmoid vmoid_;
+  MappedVmo mapped_vmo_;
+  Vmoid vmoid_;
 };
 
 }  // namespace storage

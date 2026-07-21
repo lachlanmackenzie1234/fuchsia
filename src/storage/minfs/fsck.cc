@@ -6,23 +6,51 @@
 
 #include <lib/cksum.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/result.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/status.h>
+#include <zircon/types.h>
 
-#include <iomanip>
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <ios>
 #include <limits>
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <tuple>
 #include <utility>
+#include <vector>
 
+#include <bitmap/raw-bitmap.h>
+#include <bitmap/storage.h>
+#include <fbl/algorithm.h>
+#include <fbl/array.h>
+#include <fbl/ref_ptr.h>
 #include <safemath/checked_math.h>
+#include <storage/operation/operation.h>
 
+#include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
+#include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
+#include "src/storage/lib/vfs/cpp/transaction/device_transaction_handler.h"
+#include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
+#include "src/storage/minfs/allocator/allocator.h"
+#include "src/storage/minfs/bcache.h"
 #include "src/storage/minfs/format.h"
-#include "zircon/errors.h"
+#include "src/storage/minfs/minfs_private.h"
+#include "src/storage/minfs/mount.h"
+#include "src/storage/minfs/runner.h"
+#include "src/storage/minfs/storage_bitmap.h"
+#include "src/storage/minfs/vnode.h"
 
 #ifdef __Fuchsia__
 
@@ -33,23 +61,11 @@
 
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
 
-#else
-
-#include <storage/buffer/array_buffer.h>
-
 #endif
-
-#include "src/storage/minfs/runner.h"
 
 namespace minfs {
 
 namespace {
-
-#ifdef __Fuchsia__
-using RawBitmap = bitmap::RawBitmapGeneric<bitmap::VmoStorage>;
-#else
-using RawBitmap = bitmap::RawBitmapGeneric<bitmap::DefaultStorage>;
-#endif
 
 // The structure is initialized to an invalid state such that the block offset is the last block
 // that an inode can address and that block is a double indirect block - this potentially cannot
@@ -162,8 +178,8 @@ class MinfsChecker {
 
   std::unique_ptr<Runner> runner_;
   Minfs& fs_;
-  RawBitmap checked_inodes_;
-  RawBitmap checked_blocks_;
+  bitmap::RawBitmapGeneric<bitmap::DefaultStorage> checked_inodes_;
+  bitmap::RawBitmapGeneric<bitmap::DefaultStorage> checked_blocks_;
   ino_t max_inode_ = 0;
 
   // blk_info_ provides reverse lookup capability - a block number is mapped to
@@ -1042,7 +1058,7 @@ zx::result<uint32_t> CalculateBitsSetBitmap(fs::TransactionHandler* transaction_
 zx::result<uint32_t> CalculateBitsSetBitmap(fs::TransactionHandler* transaction_handler,
                                             blk_t start_block, uint32_t num_blocks) {
 #endif
-  minfs::RawBitmap bitmap;
+  minfs::StorageBitmap bitmap;
   zx_status_t status = bitmap.Reset(static_cast<size_t>(num_blocks) * kMinfsBlockBits);
   if (status != ZX_OK) {
     return zx::error(status);
@@ -1050,8 +1066,7 @@ zx::result<uint32_t> CalculateBitsSetBitmap(fs::TransactionHandler* transaction_
 
 #ifdef __Fuchsia__
   storage::OwnedVmoid map_vmoid;
-  status =
-      device->BlockAttachVmo(bitmap.StorageUnsafe()->GetVmo(), &map_vmoid.GetReference(device));
+  status = device->BlockAttachVmo(bitmap.StorageUnsafe()->vmo(), &map_vmoid.GetReference(device));
   if (status != ZX_OK) {
     return zx::error(status);
   }

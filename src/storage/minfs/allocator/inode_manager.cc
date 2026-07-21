@@ -5,13 +5,31 @@
 #include "src/storage/minfs/allocator/inode_manager.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/result.h>
+#include <lib/zx/vmo.h>
 #include <stdlib.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
 
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <utility>
 
-#include <storage/buffer/block_buffer.h>
+#include <storage/buffer/owned_vmoid.h>
+#include <storage/buffer/vmoid_registry.h>
+#include <storage/operation/operation.h>
 
+#include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/block_protocol/types.h"
+#include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
+#include "src/storage/minfs/allocator/allocator.h"
+#include "src/storage/minfs/allocator/metadata.h"
+#include "src/storage/minfs/allocator/storage.h"
 #include "src/storage/minfs/format.h"
+#include "src/storage/minfs/pending_work.h"
+#include "src/storage/minfs/superblock.h"
 #include "src/storage/minfs/unowned_vmo_buffer.h"
 
 namespace minfs {
@@ -39,10 +57,10 @@ zx::result<std::unique_ptr<InodeManager>> InodeManager::Create(
 
   uint64_t inoblks =
       (static_cast<uint64_t>(inodes) + kMinfsInodesPerBlock - 1) / kMinfsInodesPerBlock;
-  if (zx_status_t status =
+  if (zx::result result =
           mgr->inode_table_.CreateAndMap(inoblks * sb->BlockSize(), "minfs-inode-table");
-      status != ZX_OK) {
-    return zx::error(status);
+      result.is_error()) {
+    return result.take_error();
   }
 
   storage::Vmoid vmoid;
@@ -107,8 +125,8 @@ zx::result<Inode> InodeManager::Load(ino_t ino) const {
 
 zx_status_t InodeManager::Grow(size_t inodes) {
   size_t inoblks = (inodes + kMinfsInodesPerBlock - 1) / kMinfsInodesPerBlock;
-  if (zx_status_t status = inode_table_.Grow(inoblks * BlockSize()); status != ZX_OK) {
-    FX_LOGS(WARNING) << "InodeManager::Grow: failed: " << status;
+  if (zx::result result = inode_table_.Grow(inoblks * BlockSize()); result.is_error()) {
+    FX_PLOGS(WARNING, result.status_value()) << "InodeManager::Grow: failed";
     return ZX_ERR_NO_SPACE;
   }
   inode_count_ = inodes;

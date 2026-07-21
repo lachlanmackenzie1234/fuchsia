@@ -9,18 +9,27 @@
 #define SRC_STORAGE_MINFS_ALLOCATOR_INODE_MANAGER_H_
 
 #include <lib/zx/result.h>
+#include <zircon/assert.h>
+#include <zircon/types.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 
-#include <fbl/macros.h>
-
+#include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
+#include "src/storage/minfs/allocator/allocator_reservation.h"
+#include "src/storage/minfs/allocator/metadata.h"
 #include "src/storage/minfs/format.h"
+#include "src/storage/minfs/pending_work.h"
+#include "src/storage/minfs/superblock.h"
+#include "src/storage/minfs/writeback.h"
 
 #ifdef __Fuchsia__
-#include <lib/fzl/resizeable-vmo-mapper.h>
+#include <storage/buffer/mapped_vmo.h>
 
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#else
+#include "src/storage/minfs/bcache.h"
 #endif
 
 #include "src/storage/minfs/allocator/allocator.h"
@@ -123,7 +132,7 @@ class InodeManager : public InspectableInodeManager {
   uint32_t block_size_ = {};
   std::unique_ptr<Allocator> inode_allocator_;
 #ifdef __Fuchsia__
-  fzl::ResizeableVmoMapper inode_table_;
+  storage::MappedVmo inode_table_;
 #else
   Bcache* bc_;
 #endif

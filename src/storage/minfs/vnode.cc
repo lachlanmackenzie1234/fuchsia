@@ -5,35 +5,52 @@
 #include "src/storage/minfs/vnode.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/result.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <zircon/assert.h>
+#include <zircon/compiler.h>
+#include <zircon/errors.h>
 #include <zircon/time.h>
+#include <zircon/types.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string_view>
 
 #include <fbl/algorithm.h>
+#include <fbl/ref_ptr.h>
 #include <safemath/checked_math.h>
+#include <safemath/safe_conversions.h>
 
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/lib/vfs/cpp/vfs_types.h"
+#include "src/storage/minfs/block_utils.h"
+#include "src/storage/minfs/directory.h"
+#include "src/storage/minfs/file.h"
+#include "src/storage/minfs/format.h"
+#include "src/storage/minfs/lazy_buffer.h"
+#include "src/storage/minfs/minfs_private.h"
+#include "src/storage/minfs/pending_work.h"
+#include "src/storage/minfs/writeback.h"
 
 #ifdef __Fuchsia__
-#include <zircon/syscalls.h>
+#include <fidl/fuchsia.io/cpp/markers.h>
+#include <fidl/fuchsia.io/cpp/wire_types.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/zx/vmo.h>
 
 #include <utility>
 
-#include <fbl/auto_lock.h>
+#include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
+#include "src/storage/minfs/transaction_limits.h"
+#include "src/storage/minfs/vnode_mapper.h"
 #endif
-
-#include "src/storage/minfs/directory.h"
-#include "src/storage/minfs/file.h"
-#include "src/storage/minfs/minfs_private.h"
-#include "src/storage/minfs/vnode.h"
 
 namespace minfs {
 
@@ -128,45 +145,20 @@ zx::result<> VnodeMinfs::InitVmo() {
     return zx::ok();
   }
 
-  const size_t vmo_size = fbl::round_up(GetSize(), fs_->BlockSize());
-  if (zx_status_t status = zx::vmo::create(vmo_size, ZX_VMO_RESIZABLE, &vmo_); status != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to initialize vmo; error: " << status;
-    return zx::error(status);
-  }
-  vmo_size_ = vmo_size;
-
-  zx_object_set_property(vmo_.get(), ZX_PROP_NAME, "minfs-inode", 11);
-
-  if (zx_status_t status = fs_->bc_->BlockAttachVmo(vmo_, &vmoid_); status != ZX_OK) {
-    vmo_.reset();
-    return zx::error(status);
-  }
-
-  fs::BufferedOperationsBuilder builder;
+  const uint64_t vmo_size = fbl::round_up(GetSize(), fs_->BlockSize());
   VnodeMapper mapper(this);
   VnodeIterator iterator;
-  if (auto status = iterator.Init(&mapper, nullptr, 0); status.is_error())
+  if (auto status = iterator.Init(&mapper, nullptr, 0); status.is_error()) {
     return status.take_error();
-  uint64_t block_count = vmo_size / fs_->BlockSize();
-  while (block_count > 0) {
-    blk_t block = iterator.Blk();
-    uint64_t count = iterator.GetContiguousBlockCount(block_count);
-    if (block) {
-      fs_->ValidateBno(block);
-      fs::internal::BorrowedBuffer buffer(vmoid_.get());
-      builder.Add(storage::Operation{.type = storage::OperationType::kRead,
-                                     .vmo_offset = iterator.file_block(),
-                                     .dev_offset = block + fs_->Info().dat_block,
-                                     .length = count},
-                  &buffer);
-    }
-    if (auto status = iterator.Advance(count); status.is_error())
-      return status.take_error();
-    block_count -= count;
   }
-
-  zx_status_t status = fs_->GetMutableBcache()->RunRequests(builder.TakeOperations());
-  return zx::make_result(status);
+  uint64_t block_count = vmo_size / fs_->BlockSize();
+  zx::result<zx::vmo> vmo = fs_->LoadVnodeVmo(std::move(iterator), block_count);
+  if (vmo.is_error()) {
+    return vmo.take_error();
+  }
+  vmo_size_ = vmo_size;
+  vmo_ = std::move(vmo.value());
+  return zx::ok();
 }
 
 #endif
@@ -252,7 +244,7 @@ zx::result<> VnodeMinfs::RemoveInodeLink(Transaction* transaction) {
     // the subsequent operations in this block.
     size_t oc;
     {
-      std::lock_guard lock(mutex_);
+      std::scoped_lock lock(mutex_);
       oc = open_count();
     }
 
@@ -291,7 +283,7 @@ void VnodeMinfs::RecycleNode() {
   {
     // Need to hold the lock to check open_count(), but be careful not to hold it across this class
     // getting deleted at the bottom of this function.
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     count = open_count();
   }
   ZX_DEBUG_ASSERT_MSG(count == 0, "open_count=%zu", count);
@@ -306,20 +298,6 @@ void VnodeMinfs::RecycleNode() {
 }
 
 VnodeMinfs::~VnodeMinfs() {
-#ifdef __Fuchsia__
-  // Detach the vmoids from the underlying block device,
-  // so the underlying VMO may be released.
-  size_t request_count = 0;
-  BlockFifoRequest request[2];
-  if (vmoid_.IsAttached()) {
-    request[request_count].vmoid = vmoid_.TakeId();
-    request[request_count].command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
-    request_count++;
-  }
-  if (request_count) {
-    fs_->bc_->GetDevice()->FifoTransaction(request, request_count);
-  }
-#endif
   if (indirect_file_) {
     auto status = indirect_file_->Detach(fs_->bc_.get());
     ZX_DEBUG_ASSERT_MSG(status.is_ok(), "indirect_file detach failed: status=%d",
@@ -329,7 +307,7 @@ VnodeMinfs::~VnodeMinfs() {
 
 zx::result<> VnodeMinfs::Purge(Transaction* transaction) {
   {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     ZX_DEBUG_ASSERT(open_count() == 0);
   }
   ZX_DEBUG_ASSERT(IsUnlinked());
@@ -362,7 +340,7 @@ zx::result<> VnodeMinfs::RemoveUnlinked() {
 
 zx_status_t VnodeMinfs::CloseNode() {
   {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     if (open_count() != 0) {
       return ZX_OK;
     }
@@ -391,9 +369,7 @@ zx::result<> VnodeMinfs::ReadInternal(PendingWork* transaction, void* vdata, siz
     *actual = 0;
     return zx::ok();
   }
-  if (len > (GetSize() - off)) {
-    len = GetSize() - off;
-  }
+  len = std::min(len, GetSize() - off);
 
 #ifdef __Fuchsia__
   if (auto status = InitVmo(); status.is_error()) {
@@ -648,7 +624,7 @@ zx::result<fbl::RefPtr<VnodeMinfs>> VnodeMinfs::Recreate(Minfs* fs, ino_t ino) {
   }
   out->inode_ = *inode;
   out->ino_ = ino;
-  out->SetSize(static_cast<uint32_t>(out->inode_.size));
+  out->SetSize(out->inode_.size);
   return zx::ok(std::move(out));
 }
 

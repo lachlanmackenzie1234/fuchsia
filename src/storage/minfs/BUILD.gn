@@ -48,6 +48,7 @@ static_library("minfs") {
     "resizeable_buffer.h",
     "runner.cc",
     "runner.h",
+    "storage_bitmap.h",
     "superblock.h",
     "transaction_limits.cc",
     "unowned_vmo_buffer.h",

@@ -6,15 +6,32 @@
 
 #include "src/storage/minfs/allocator/allocator.h"
 
+#include <lib/zx/result.h>
+#include <lib/zx/vmo.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <utility>
 
 #include <fbl/array.h>
 #include <gtest/gtest.h>
+#include <storage/buffer/block_buffer.h>
+#include <storage/buffer/owned_vmoid.h>
+#include <storage/operation/operation.h>
+#include <storage/operation/unbuffered_operation.h>
+#include <storage/operation/unbuffered_operations_builder.h>
 
+#include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/minfs/allocator/allocator_reservation.h"
+#include "src/storage/minfs/allocator/metadata.h"
+#include "src/storage/minfs/allocator/storage.h"
 #include "src/storage/minfs/format.h"
+#include "src/storage/minfs/pending_work.h"
 
 namespace minfs {
 namespace {
@@ -27,7 +44,7 @@ class FakeStorage : public AllocatorStorage {
   FakeStorage(const FakeStorage&) = delete;
   FakeStorage& operator=(const FakeStorage&) = delete;
 
-  FakeStorage(uint32_t units) : pool_used_(0), pool_total_(units) {}
+  explicit FakeStorage(uint32_t units) : pool_used_(0), pool_total_(units) {}
 
   ~FakeStorage() {}
 
@@ -66,9 +83,11 @@ class FakeStorage : public AllocatorStorage {
 class FakeTransaction : public PendingWork {
  public:
   void EnqueueMetadata(storage::Operation operation, storage::BlockBuffer* buffer) final {
-    storage::UnbufferedOperation unbuffered_operation = {.vmo = zx::unowned_vmo(buffer->Vmo()),
-                                                         .op = std::move(operation)};
-    metadata_operations_.Add(std::move(unbuffered_operation));
+    storage::UnbufferedOperation unbuffered_operation = {
+        .vmo = zx::unowned_vmo(buffer->Vmo()),
+        .op = operation,
+    };
+    metadata_operations_.Add(unbuffered_operation);
   }
 
   void EnqueueData(storage::Operation operation, storage::BlockBuffer* buffer) final {}

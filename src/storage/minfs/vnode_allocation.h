@@ -7,9 +7,11 @@
 #ifndef SRC_STORAGE_MINFS_VNODE_ALLOCATION_H_
 #define SRC_STORAGE_MINFS_VNODE_ALLOCATION_H_
 
+#include <zircon/assert.h>
+#include <zircon/types.h>
+
 #include <bitmap/rle-bitmap.h>
 
-#include "src/storage/minfs/allocator/allocator.h"
 #include "src/storage/minfs/format.h"
 
 namespace minfs {

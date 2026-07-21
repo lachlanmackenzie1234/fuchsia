@@ -4,12 +4,29 @@
 
 #include "src/storage/minfs/lazy_buffer.h"
 
+#include <lib/zx/result.h>
+#include <zircon/assert.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <string_view>
+#include <utility>
+
+#include "src/storage/minfs/bcache.h"
+#include "src/storage/minfs/block_utils.h"
+#include "src/storage/minfs/buffer_view.h"
+#include "src/storage/minfs/lazy_reader.h"
+#include "src/storage/minfs/pending_work.h"
+
 namespace minfs {
 
-zx::result<std::unique_ptr<LazyBuffer>> LazyBuffer::Create(Bcache* bcache, const char* name,
+zx::result<std::unique_ptr<LazyBuffer>> LazyBuffer::Create(Bcache* bcache, std::string_view name,
                                                            uint32_t block_size) {
   std::unique_ptr<LazyBuffer> buffer(new LazyBuffer(block_size));
-  auto status = buffer->buffer_.Attach(name, bcache);
+  auto status = buffer->buffer_.Attach(name, *bcache);
   if (status.is_error())
     return status.take_error();
   return zx::ok(std::move(buffer));
@@ -18,8 +35,7 @@ zx::result<std::unique_ptr<LazyBuffer>> LazyBuffer::Create(Bcache* bcache, const
 void LazyBuffer::Shrink(size_t block_count) {
   lazy_reader_.SetLoaded(BlockRange(block_count, std::numeric_limits<uint64_t>::max()), false);
   // ResizeableVmoBuffer has a minimum block size of 1.
-  if (block_count < 1)
-    block_count = 1;
+  block_count = std::max<size_t>(block_count, 1);
   if (block_count < buffer_.capacity()) {
     auto status = buffer_.Shrink(block_count);
     ZX_DEBUG_ASSERT(status.is_ok());

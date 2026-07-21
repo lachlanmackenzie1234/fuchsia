@@ -5,9 +5,20 @@
 #ifndef SRC_STORAGE_MINFS_LAZY_BUFFER_H_
 #define SRC_STORAGE_MINFS_LAZY_BUFFER_H_
 
+#include <lib/fit/function.h>
+#include <lib/zx/result.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string_view>
+#include <utility>
+
 #include "src/storage/minfs/bcache.h"
+#include "src/storage/minfs/block_utils.h"
 #include "src/storage/minfs/buffer_view.h"
 #include "src/storage/minfs/lazy_reader.h"
+#include "src/storage/minfs/pending_work.h"
 #include "src/storage/minfs/resizeable_buffer.h"
 
 namespace minfs {
@@ -28,7 +39,7 @@ class LazyBuffer {
 
   // Create an instance of LazyBuffer.
   [[nodiscard]] static zx::result<std::unique_ptr<LazyBuffer>> Create(Bcache* bcache,
-                                                                      const char* name,
+                                                                      std::string_view name,
                                                                       uint32_t block_size);
 
   LazyBuffer(const LazyBuffer&) = delete;
@@ -40,7 +51,7 @@ class LazyBuffer {
   ResizeableBufferType& buffer() { return buffer_; }
 
   // Users must call Detach before destruction.
-  zx::result<> Detach(Bcache* bcache) { return buffer_.Detach(bcache); }
+  zx::result<> Detach(Bcache* bcache) { return buffer_.Detach(*bcache); }
 
   [[nodiscard]] zx::result<> Grow(size_t block_count) { return buffer_.Grow(block_count); }
 

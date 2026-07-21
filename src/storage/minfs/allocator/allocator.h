@@ -8,33 +8,36 @@
 #ifndef SRC_STORAGE_MINFS_ALLOCATOR_ALLOCATOR_H_
 #define SRC_STORAGE_MINFS_ALLOCATOR_ALLOCATOR_H_
 
-#include <lib/fit/function.h>
+#include <lib/zx/result.h>
+#include <zircon/compiler.h>
 
+#include <cstddef>
 #include <memory>
 #include <mutex>
+#include <utility>
+#include <vector>
 
-#include <bitmap/raw-bitmap.h>
 #include <bitmap/rle-bitmap.h>
-#include <bitmap/storage.h>
-#include <fbl/macros.h>
 
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/minfs/allocator/allocator_reservation.h"
 #include "src/storage/minfs/allocator/storage.h"
-#include "src/storage/minfs/format.h"
-#include "src/storage/minfs/superblock.h"
-#include "src/storage/minfs/writeback.h"
+#include "src/storage/minfs/pending_work.h"
+#include "src/storage/minfs/storage_bitmap.h"
+
+#ifdef __Fuchsia__
+#include <cstdint>
+
+#include <fbl/vector.h>
+#endif
 
 namespace minfs {
 
 #ifdef __Fuchsia__
-using RawBitmap = bitmap::RawBitmapGeneric<bitmap::VmoStorage>;
 struct BlockRegion {
   uint64_t offset;
   uint64_t length;
 };
-#else
-using RawBitmap = bitmap::RawBitmapGeneric<bitmap::DefaultStorage>;
 #endif
 
 class Allocator;
@@ -51,7 +54,7 @@ class AllocatorReservationKey {
 
  private:
   friend AllocatorReservation;
-  AllocatorReservationKey() {}
+  AllocatorReservationKey() = default;
 };
 
 // PendingChange tracks pending allocations and will prevent elements from being allocated twice.
@@ -229,7 +232,7 @@ class Allocator {
   // Represents the Allocator's backing storage.
   std::unique_ptr<AllocatorStorage> storage_;
   // A bitmap interface into |storage_|.
-  RawBitmap map_ __TA_GUARDED(lock_);
+  StorageBitmap map_ __TA_GUARDED(lock_);
 
   std::vector<PendingChange*> pending_changes_ __TA_GUARDED(lock_);
 };

@@ -255,7 +255,6 @@ class VnodeMinfs : public fs::Vnode,
 #ifdef __Fuchsia__
   zx::vmo vmo_{};
   uint64_t vmo_size_ = 0;
-  storage::Vmoid vmoid_;
   fs::WatcherContainer watcher_{};
 #endif
 

@@ -57,13 +57,13 @@ BlobLoader::BlobLoader(TransactionManager* txn_manager, BlockIteratorProvider* b
       metrics_(std::move(metrics)),
       read_mapper_(std::move(read_mapper)) {}
 
-BlobLoader::~BlobLoader() { [[maybe_unused]] auto status = read_mapper_.Detach(txn_manager_); }
+BlobLoader::~BlobLoader() { [[maybe_unused]] auto status = read_mapper_.Detach(*txn_manager_); }
 
 zx::result<std::unique_ptr<BlobLoader>> BlobLoader::Create(
     TransactionManager* txn_manager, BlockIteratorProvider* block_iter_provider,
     NodeFinder* node_finder, std::shared_ptr<BlobfsMetrics> metrics) {
   storage::ResizeableVmoBuffer read_mapper(txn_manager->Info().block_size);
-  if (auto status = read_mapper.Attach("blobfs-loader", txn_manager); status.is_error()) {
+  if (auto status = read_mapper.Attach("blobfs-loader", *txn_manager); status.is_error()) {
     FX_LOGS(ERROR) << "blobfs: Failed to attach read vmo: " << status.status_string();
     return status.take_error();
   }

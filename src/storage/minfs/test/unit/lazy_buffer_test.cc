@@ -4,15 +4,31 @@
 
 #include "src/storage/minfs/lazy_buffer.h"
 
-#include <span>
+#include <lib/zx/result.h>
+#include <zircon/errors.h>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <span>
+#include <utility>
+#include <vector>
+
+#include <fbl/algorithm.h>
 #include <gtest/gtest.h>
-#include <storage/buffer/resizeable_vmo_buffer.h>
+#include <storage/buffer/vmo_buffer.h>
+#include <storage/operation/operation.h>
 
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/minfs/bcache.h"
+#include "src/storage/minfs/block_utils.h"
+#include "src/storage/minfs/buffer_view.h"
 #include "src/storage/minfs/format.h"
-#include "src/storage/minfs/minfs.h"
+#include "src/storage/minfs/lazy_reader.h"
+#include "src/storage/minfs/pending_work.h"
+#include "src/storage/minfs/resizeable_buffer.h"
 
 namespace minfs {
 namespace {
@@ -64,7 +80,7 @@ class LazyBufferTest : public testing::Test {
     auto flusher = [this, &mapper](BaseBufferView* view) {
       return buffer_->Flush(
           nullptr, &mapper, view,
-          [this](storage::ResizeableVmoBuffer* buffer, BlockRange range, DeviceBlock device_block) {
+          [this](ResizeableBufferType* buffer, BlockRange range, DeviceBlock device_block) {
             return zx::make_result(
                 bcache_->RunOperation(storage::Operation{.type = storage::OperationType::kWrite,
                                                          .vmo_offset = range.Start(),

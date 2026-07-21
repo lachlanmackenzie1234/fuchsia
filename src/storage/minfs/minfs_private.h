@@ -9,51 +9,56 @@
 #define SRC_STORAGE_MINFS_MINFS_PRIVATE_H_
 
 #include <inttypes.h>
+#include <lib/zx/result.h>
+#include <zircon/assert.h>
+#include <zircon/compiler.h>
+#include <zircon/time.h>
+#include <zircon/types.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
-#ifdef __Fuchsia__
-#include <fidl/fuchsia.io/cpp/wire.h>
-#include <lib/fzl/resizeable-vmo-mapper.h>
-#include <lib/inspect/cpp/inspect.h>
-#include <lib/sync/completion.h>
-#include <lib/zx/result.h>
-#include <lib/zx/time.h>
-#include <lib/zx/vmo.h>
-#include <zircon/compiler.h>
-
-#include "src/storage/lib/vfs/cpp/journal/journal.h"
-#include "src/storage/lib/vfs/cpp/managed_vfs.h"
-#include "src/storage/lib/vfs/cpp/watcher.h"
-#include "src/storage/minfs/minfs_inspect_tree.h"
-#endif
-
-#include <lib/fit/function.h>
-
-#include <fbl/algorithm.h>
 #include <fbl/intrusive_hash_table.h>
-#include <fbl/intrusive_single_list.h>
-#include <fbl/macros.h>
+#include <fbl/ref_ptr.h>
 
 #include "src/storage/lib/vfs/cpp/inspect/node_operations.h"
-#include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
 #include "src/storage/lib/vfs/cpp/vfs.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"
-#include "src/storage/minfs/format.h"
-#include "src/storage/minfs/minfs.h"
-#include "src/storage/minfs/superblock.h"
-#include "src/storage/minfs/transaction_limits.h"
-#include "src/storage/minfs/writeback.h"
-
-#ifdef __Fuchsia__
-#include "src/storage/minfs/vnode_allocation.h"
-#endif
-
 #include "src/storage/minfs/allocator/allocator.h"
 #include "src/storage/minfs/allocator/inode_manager.h"
 #include "src/storage/minfs/bcache.h"
+#include "src/storage/minfs/cached_block_transaction.h"
+#include "src/storage/minfs/format.h"
+#include "src/storage/minfs/mount.h"
+#include "src/storage/minfs/pending_work.h"
+#include "src/storage/minfs/superblock.h"
+#include "src/storage/minfs/transaction_limits.h"
 #include "src/storage/minfs/vnode.h"
+#include "src/storage/minfs/writeback.h"
+
+#ifdef __Fuchsia__
+#include <lib/async/cpp/task.h>
+#include <lib/async/dispatcher.h>
+#include <lib/zx/event.h>
+#include <lib/zx/time.h>
+#include <lib/zx/vmo.h>
+
+#include <mutex>
+
+#include <fbl/mutex.h>
+#include <fbl/vector.h>
+#include <storage/buffer/vmoid_registry.h>
+
+#include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
+#include "src/storage/lib/vfs/cpp/journal/journal.h"
+#include "src/storage/lib/vfs/cpp/journal/superblock.h"
+#include "src/storage/lib/vfs/cpp/managed_vfs.h"
+#include "src/storage/minfs/minfs_inspect_tree.h"
+#include "src/storage/minfs/vnode_mapper.h"
+#endif
 
 constexpr uint32_t kExtentCount = 6;
 
@@ -374,6 +379,18 @@ class Minfs final : public TransactionalFs {
 
   PlatformVfs* vfs() { return vfs_; }
 
+#ifdef __Fuchsia__
+  // Reads |block_count| blocks from |iterator| into a VMO and returns it. The returned VMO is
+  // resizable.
+  //
+  // An internal VMO is used to read the pages from the block device and the pages are then
+  // transferred to the returned VMO. This avoids registering and unregistering a new VMO for every
+  // request but comes with the downside that this function can't be run concurrently. Minfs is
+  // single threaded so this shouldn't be an issue.
+  zx::result<zx::vmo> LoadVnodeVmo(VnodeIterator iterator, uint64_t block_count)
+      __TA_EXCLUDES(load_vnode_vmo_mutex_);
+#endif
+
  private:
   using HashTable = fbl::HashTable<ino_t, VnodeMinfs*>;
 
@@ -381,6 +398,7 @@ class Minfs final : public TransactionalFs {
   Minfs(async_dispatcher_t* dispatcher, std::unique_ptr<Bcache> bc,
         std::unique_ptr<SuperblockManager> sb, std::unique_ptr<Allocator> block_allocator,
         std::unique_ptr<InodeManager> inodes, const MountOptions& mount_options,
+        zx::vmo load_vnode_vmo_transfer_buf, storage::Vmoid load_vnode_vmo_vmoid,
         fs::ManagedVfs* vfs);
 #else
   Minfs(std::unique_ptr<Bcache> bc, std::unique_ptr<SuperblockManager> sb,
@@ -429,7 +447,7 @@ class Minfs final : public TransactionalFs {
 #endif
   // Vnodes exist in the hash table as long as one or more reference exists;
   // when the Vnode is deleted, it is immediately removed from the map.
-  HashTable vnode_hash_ __TA_GUARDED(hash_lock_){};
+  HashTable vnode_hash_ __TA_GUARDED(hash_lock_);
 
 #ifdef __Fuchsia__
   std::unique_ptr<fs::Journal> journal_;
@@ -446,6 +464,15 @@ class Minfs final : public TransactionalFs {
   // Store start block + length for all extents. These may differ from info block for
   // sparse files.
   BlockOffsets offsets_;
+#endif
+
+#ifdef __Fuchsia__
+  // This mutex guards access to the shared transfer buffer used in |LoadVnodeVmo|. Minfs is single-
+  // threaded and reads are synchronous, so concurrent calls to |LoadVnodeVmo| are not expected. A
+  // mutex is used as a defensive measure with negligible performance overhead.
+  std::mutex load_vnode_vmo_mutex_;
+  zx::vmo load_vnode_vmo_transfer_buf_ __TA_GUARDED(load_vnode_vmo_mutex_);
+  storage::Vmoid load_vnode_vmo_vmoid_ __TA_GUARDED(load_vnode_vmo_mutex_);
 #endif
 
   TransactionLimits limits_;

@@ -18,20 +18,25 @@ test("storage_buffer") {
     }
   }
   sources = [
+    "array_buffer_test.cc",
     "block_buffer_view_test.cc",
     "blocking_ring_buffer_test.cc",
+    "mapped_vmo_test.cc",
     "owned_vmoid_test.cc",
     "resizeable_vmo_buffer_test.cc",
     "ring_buffer_test.cc",
+    "vmo_bitmap_storage_test.cc",
     "vmo_buffer_test.cc",
     "vmoid_registry_test.cc",
   ]
   deps = [
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/lib/buffer",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
+    "//zircon/system/ulib/bitmap",
   ]
 }
 

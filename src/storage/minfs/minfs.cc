@@ -7,48 +7,93 @@
 #include <inttypes.h>
 #include <lib/cksum.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/result.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#include <sys/types.h>
 #include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/time.h>
+#include <zircon/types.h>
 
+#include <cstdint>
+#include <ctime>
 #include <iomanip>
+#include <ios>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <utility>
 
 #include <bitmap/raw-bitmap.h>
+#include <bitmap/storage.h>
 #include <fbl/algorithm.h>
-#include <fbl/alloc_checker.h>
+#include <fbl/ref_ptr.h>
 #include <safemath/safe_math.h>
 
 #include "src/storage/lib/trace/trace.h"
-#include "src/storage/lib/vfs/cpp/journal/format.h"
 #include "src/storage/lib/vfs/cpp/journal/initializer.h"
+#include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
+#include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
 #include "src/storage/minfs/allocator/allocator_reservation.h"
+#include "src/storage/minfs/allocator/metadata.h"
+#include "src/storage/minfs/allocator/storage.h"
+#include "src/storage/minfs/bcache.h"
+#include "src/storage/minfs/format.h"
 #include "src/storage/minfs/fsck.h"
 #include "src/storage/minfs/minfs_private.h"
+#include "src/storage/minfs/mount.h"
+#include "src/storage/minfs/pending_work.h"
+#include "src/storage/minfs/superblock.h"
+#include "src/storage/minfs/transaction_limits.h"
 #include "src/storage/minfs/writeback.h"
 
 #ifdef __Fuchsia__
+#include <fidl/fuchsia.fs/cpp/common_types.h>
+#include <fidl/fuchsia.storage.block/cpp/wire_types.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/async/dispatcher.h>
 #include <lib/fit/defer.h>
-#include <lib/zx/clock.h>
+#include <lib/fit/function.h>
+#include <lib/fpromise/result.h>
+#include <lib/sync/completion.h>
 #include <lib/zx/event.h>
+#include <lib/zx/vmo.h>
+#include <zircon/compiler.h>
+#include <zircon/syscalls/object.h>
+
+#include <mutex>
 
 #include <fbl/auto_lock.h>
-#include <storage/buffer/owned_vmoid.h>
+#include <fbl/ref_counted_upgradeable.h>
+#include <fbl/vector.h>
+#include <storage/buffer/blocking_ring_buffer.h>
+#include <storage/buffer/vmoid_registry.h>
+#include <storage/operation/operation.h>
+#include <storage/operation/unbuffered_operation.h>
 
-#include "sdk/lib/sys/cpp/service_directory.h"
 #include "src/storage/fvm/client.h"
-#include "src/storage/lib/vfs/cpp/journal/header_view.h"
+#include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
+#include "src/storage/lib/vfs/cpp/inspect/inspect_data.h"
+#include "src/storage/lib/vfs/cpp/journal/format.h"
 #include "src/storage/lib/vfs/cpp/journal/journal.h"
 #include "src/storage/lib/vfs/cpp/journal/replay.h"
+#include "src/storage/lib/vfs/cpp/journal/superblock.h"
+#include "src/storage/lib/vfs/cpp/managed_vfs.h"
+#include "src/storage/minfs/allocator/allocator.h"
+#include "src/storage/minfs/minfs_inspect_tree.h"
+#include "src/storage/minfs/vnode_mapper.h"
+#else
+#include <fbl/unique_fd.h>
+#include <fbl/vector.h>
+
+#include "src/storage/lib/vfs/cpp/vfs.h"
 #endif
 
 namespace minfs {
@@ -544,8 +589,22 @@ void Minfs::Terminate() {
   }
   StopWriteback();
   dispatcher_ = nullptr;
-  fbl::AutoLock lock(&hash_lock_);
-  vnode_hash_.clear();
+
+  {
+    fbl::AutoLock lock(&hash_lock_);
+    vnode_hash_.clear();
+  }
+
+  {
+    std::scoped_lock load_vnode_vmo_lock(load_vnode_vmo_mutex_);
+    if (load_vnode_vmo_vmoid_.IsAttached()) {
+      if (zx_status_t status = bc_->BlockDetachVmo(std::move(load_vnode_vmo_vmoid_));
+          status != ZX_OK) {
+        FX_PLOGS(ERROR, status) << "Failed to detach load_vnode_transfer_buf";
+        ZX_DEBUG_ASSERT_MSG(false, "Failed to detach load_vnode_transfer_buf");
+      }
+    }
+  }
 #endif
 }
 
@@ -731,6 +790,7 @@ void Minfs::Sync(SyncCallback closure) {
 Minfs::Minfs(async_dispatcher_t* dispatcher, std::unique_ptr<Bcache> bc,
              std::unique_ptr<SuperblockManager> sb, std::unique_ptr<Allocator> block_allocator,
              std::unique_ptr<InodeManager> inodes, const MountOptions& mount_options,
+             zx::vmo load_vnode_vmo_transfer_buf, storage::Vmoid load_vnode_vmo_vmoid,
              fs::ManagedVfs* vfs)
     : bc_(std::move(bc)),
       sb_(std::move(sb)),
@@ -738,6 +798,8 @@ Minfs::Minfs(async_dispatcher_t* dispatcher, std::unique_ptr<Bcache> bc,
       inodes_(std::move(inodes)),
       journal_sync_task_([this]() { Sync(); }),
       inspect_tree_(dispatcher, bc_->device()),
+      load_vnode_vmo_transfer_buf_(std::move(load_vnode_vmo_transfer_buf)),
+      load_vnode_vmo_vmoid_(std::move(load_vnode_vmo_vmoid)),
       limits_(sb_->Info()),
       mount_options_(mount_options),
       dispatcher_(dispatcher),
@@ -1258,9 +1320,20 @@ zx::result<std::unique_ptr<Minfs>> Minfs::Create(FuchsiaDispatcher dispatcher,
   std::unique_ptr<Minfs> out_fs;
 
 #ifdef __Fuchsia__
-  out_fs = std::unique_ptr<Minfs>(new Minfs(dispatcher, std::move(bc), std::move(sb),
-                                            std::move(block_allocator), std::move(inodes), options,
-                                            vfs));
+  zx::vmo load_vnode_vmo_transfer_buf;
+  if (zx_status_t status = zx::vmo::create(0, ZX_VMO_UNBOUNDED, &load_vnode_vmo_transfer_buf);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+  storage::Vmoid load_vnode_vmo_vmoid;
+  if (zx_status_t status = bc->BlockAttachVmo(load_vnode_vmo_transfer_buf, &load_vnode_vmo_vmoid);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  out_fs = std::unique_ptr<Minfs>(new Minfs(
+      dispatcher, std::move(bc), std::move(sb), std::move(block_allocator), std::move(inodes),
+      options, std::move(load_vnode_vmo_transfer_buf), std::move(load_vnode_vmo_vmoid), vfs));
   if (options.writability != Writability::ReadOnlyDisk) {
     auto status = out_fs->InitializeJournal(std::move(journal_superblock_or.value()));
     if (status.is_error()) {
@@ -1524,8 +1597,8 @@ zx::result<> Mkfs(const MountOptions& options, Bcache* bc) {
   info.oldest_minor_version = kMinfsCurrentMinorVersion;
   DumpInfo(info);
 
-  RawBitmap abm;
-  RawBitmap ibm;
+  bitmap::RawBitmapGeneric<bitmap::DefaultStorage> abm;
+  bitmap::RawBitmapGeneric<bitmap::DefaultStorage> ibm;
 
   // By allocating the bitmap and then shrinking it, we keep the underlying
   // storage a block multiple but ensure we can't allocate beyond the last
@@ -1737,6 +1810,65 @@ zx::result<uint64_t> SparseUsedSize(fbl::unique_fd fd, off_t start, off_t end,
 #ifdef __Fuchsia__
 fbl::Vector<BlockRegion> Minfs::GetAllocatedRegions() const {
   return block_allocator_->GetAllocatedRegions();
+}
+#endif
+
+#ifdef __Fuchsia__
+zx::result<zx::vmo> Minfs::LoadVnodeVmo(VnodeIterator iterator, uint64_t block_count) {
+  std::scoped_lock lock(load_vnode_vmo_mutex_);
+  fs::BufferedOperationsBuilder builder;
+  uint64_t vmo_size = block_count * BlockSize();
+  uint32_t data_start_block = Info().dat_block;
+  while (block_count > 0) {
+    blk_t block = iterator.Blk();
+    uint64_t count = iterator.GetContiguousBlockCount(block_count);
+    if (block) {
+      ValidateBno(block);
+      fs::internal::BorrowedBuffer buffer(load_vnode_vmo_vmoid_.get());
+      builder.Add(
+          storage::Operation{
+              .type = storage::OperationType::kRead,
+              .vmo_offset = iterator.file_block(),
+              .dev_offset = block + data_start_block,
+              .length = count,
+          },
+          &buffer);
+    }
+    if (auto status = iterator.Advance(count); status.is_error()) {
+      return status.take_error();
+    }
+    block_count -= count;
+  }
+
+  // If any of the below operations fail, pages may be left behind in the transfer vmo. If a file in
+  // a later call to |LoadVnodeVmo| is sparse and has a hole where the left behind pages are, then
+  // the pages would erroneously get transferred into that file's vmo. This defer will remove all of
+  // the pages from the transfer vmo in the case of an error.
+  auto zero_transfer_buf = fit::defer([this, vmo_size] {
+    // The lock is still held when this callback is called but the compiler's thread-safety-analysis
+    // doesn't know that.
+    []() __TA_ASSERT(load_vnode_vmo_mutex_) {}();
+    // If zeroing out the transfer buffer fails then we can't guarantee that data from one file
+    // won't end up in another which could leak information. Panicking avoids the leak.
+    ZX_ASSERT(load_vnode_vmo_transfer_buf_.op_range(ZX_VMO_OP_ZERO, 0, vmo_size, nullptr, 0) ==
+              ZX_OK);
+  });
+  if (zx_status_t status = bc_->RunRequests(builder.TakeOperations()); status != ZX_OK) {
+    return zx::error(status);
+  }
+  zx::vmo vmo;
+  if (zx_status_t status = zx::vmo::create(vmo_size, ZX_VMO_RESIZABLE, &vmo); status != ZX_OK) {
+    return zx::error(status);
+  }
+  vmo.set_property(ZX_PROP_NAME, "minfs-inode", 11);
+  if (zx_status_t status = vmo.transfer_data(0, 0, vmo_size, &load_vnode_vmo_transfer_buf_, 0);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  // The pages have been transferred out of the transfer vmo. There's nothing left to zero.
+  zero_transfer_buf.cancel();
+  return zx::ok(std::move(vmo));
 }
 #endif
 

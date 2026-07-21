@@ -4,14 +4,24 @@
 
 #include "src/storage/minfs/allocator/allocator.h"
 
+#include <lib/zx/result.h>
+#include <lib/zx/vmo.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zircon/assert.h>
+#include <zircon/types.h>
 
-#include <limits>
+#include <cstdint>
+#include <mutex>
 #include <utility>
 
-#include <bitmap/raw-bitmap.h>
+#include <fbl/vector.h>
 #include <storage/buffer/block_buffer.h>
+#include <storage/buffer/owned_vmoid.h>
+
+#include "src/storage/lib/block_protocol/types.h"
+#include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
+#include "src/storage/minfs/pending_work.h"
 
 namespace minfs {
 
@@ -21,7 +31,7 @@ namespace {
 // TODO(https://fxbug.dev/42124749): Remove this.
 class UnownedBuffer : public storage::BlockBuffer {
  public:
-  UnownedBuffer(vmoid_t vmoid) : vmoid_(vmoid) {}
+  explicit UnownedBuffer(vmoid_t vmoid) : vmoid_(vmoid) {}
   ~UnownedBuffer() {}
 
   // BlockBuffer interface:
@@ -46,7 +56,7 @@ Allocator::~Allocator() {
 zx::result<> Allocator::LoadStorage(fs::BufferedOperationsBuilder* builder) {
   std::scoped_lock lock(lock_);
   storage::OwnedVmoid vmoid;
-  auto status = storage_->AttachVmo(map_.StorageUnsafe()->GetVmo(), &vmoid);
+  auto status = storage_->AttachVmo(map_.StorageUnsafe()->vmo(), &vmoid);
   if (status.is_error()) {
     return status.take_error();
   }
@@ -65,7 +75,7 @@ size_t Allocator::GetAvailableLocked() const {
   return storage_->PoolAvailable() - total_reserved;
 }
 
-WriteData Allocator::GetMapDataLocked() { return map_.StorageUnsafe()->GetVmo().get(); }
+WriteData Allocator::GetMapDataLocked() { return map_.StorageUnsafe()->vmo().get(); }
 
 fbl::Vector<BlockRegion> Allocator::GetAllocatedRegions() const {
   std::scoped_lock lock(lock_);
