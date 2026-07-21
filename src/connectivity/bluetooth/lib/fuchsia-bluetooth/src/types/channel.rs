@@ -17,10 +17,10 @@ use std::task::{Context, Poll};
 
 use crate::error::Error;
 
+pub mod fidl_client;
 pub mod socket;
 
-// TODO(b/414410187): Add mod for FIDL client/server.
-
+use fidl_client::FidlClientConnection;
 use socket::SocketConnection;
 
 /// The Channel mode in use for a L2CAP channel.
@@ -91,6 +91,7 @@ impl From<ChannelMode> for fidl_bt::ChannelMode {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub enum ConnectionBackendType {
     Socket,
     FidlClient,
@@ -154,6 +155,20 @@ impl Channel {
             audio_offload_ext: None,
             terminated: false,
         })
+    }
+
+    pub fn from_fidl_client(proxy: fidl_bt::ChannelProxy, max_tx_size: usize) -> Self {
+        let connection = Box::new(FidlClientConnection::new(proxy, max_tx_size));
+        Channel {
+            connection,
+            mode: ChannelMode::Basic,
+            max_tx_size,
+            flush_timeout: Arc::new(Mutex::new(None)),
+            audio_direction_ext: None,
+            l2cap_parameters_ext: None,
+            audio_offload_ext: None,
+            terminated: false,
+        }
     }
 
     pub fn from_socket_infallible(socket: zx::Socket, max_tx_size: usize) -> Self {
@@ -352,13 +367,21 @@ impl TryFrom<fidl_fuchsia_bluetooth_bredr::Channel> for Channel {
             Ok(c) => c,
         };
 
-        let socket = fidl.socket.ok_or(zx::Status::INVALID_ARGS)?;
-        let connection = Box::new(SocketConnection::new(socket));
+        let max_tx_size = fidl.max_tx_sdu_size.ok_or(zx::Status::INVALID_ARGS)? as usize;
+
+        let connection: Box<dyn Connection> = if let Some(conn) = fidl.connection {
+            let proxy = conn.into_proxy();
+            Box::new(FidlClientConnection::new(proxy, max_tx_size)) as Box<dyn Connection>
+        } else if let Some(socket) = fidl.socket {
+            Box::new(SocketConnection::new(socket)) as Box<dyn Connection>
+        } else {
+            return Err(zx::Status::INVALID_ARGS);
+        };
 
         Ok(Self {
             connection,
             mode,
-            max_tx_size: fidl.max_tx_sdu_size.ok_or(zx::Status::INVALID_ARGS)? as usize,
+            max_tx_size,
             flush_timeout: Arc::new(Mutex::new(
                 fidl.flush_timeout.map(zx::MonotonicDuration::from_nanos),
             )),
@@ -367,5 +390,231 @@ impl TryFrom<fidl_fuchsia_bluetooth_bredr::Channel> for Channel {
             audio_offload_ext: fidl.ext_audio_offload.map(|c| c.into_proxy()),
             terminated: false,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::endpoints::create_request_stream;
+    use fidl_fuchsia_bluetooth as fidl_bt;
+    use fidl_fuchsia_bluetooth_bredr as bredr;
+    use fuchsia_async as fasync;
+    use futures::StreamExt;
+    use std::pin::pin;
+
+    fn build_socket_bredr_channel() -> (bredr::Channel, zx::Socket) {
+        let (remote, local) = zx::Socket::create_datagram();
+        (
+            bredr::Channel {
+                socket: Some(remote),
+                channel_mode: Some(fidl_bt::ChannelMode::Basic),
+                max_tx_sdu_size: Some(1004),
+                ..Default::default()
+            },
+            local,
+        )
+    }
+
+    #[test]
+    fn direction_ext() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (no_ext, _local) = build_socket_bredr_channel();
+        let channel = Channel::try_from(no_ext).unwrap();
+
+        assert!(
+            exec.run_singlethreaded(channel.set_audio_priority(A2dpDirection::Normal)).is_err()
+        );
+        assert!(exec.run_singlethreaded(channel.set_audio_priority(A2dpDirection::Sink)).is_err());
+
+        let (mut ext, _local) = build_socket_bredr_channel();
+        let (client_end, mut direction_request_stream) =
+            create_request_stream::<bredr::AudioDirectionExtMarker>();
+        ext.ext_direction = Some(client_end);
+
+        let channel = Channel::try_from(ext).unwrap();
+
+        let audio_direction_fut = channel.set_audio_priority(A2dpDirection::Normal);
+        let mut audio_direction_fut = pin!(audio_direction_fut);
+
+        assert!(exec.run_until_stalled(&mut audio_direction_fut).is_pending());
+
+        match exec.run_until_stalled(&mut direction_request_stream.next()) {
+            Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
+                priority,
+                responder,
+            }))) => {
+                assert_eq!(bredr::A2dpDirectionPriority::Normal, priority);
+                responder.send(Ok(())).expect("response to send cleanly");
+            }
+            x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
+        };
+
+        match exec.run_until_stalled(&mut audio_direction_fut) {
+            Poll::Ready(Ok(())) => {}
+            _x => panic!("Expected ok result from audio direction response"),
+        };
+
+        let audio_direction_fut = channel.set_audio_priority(A2dpDirection::Sink);
+        let mut audio_direction_fut = pin!(audio_direction_fut);
+
+        assert!(exec.run_until_stalled(&mut audio_direction_fut).is_pending());
+
+        match exec.run_until_stalled(&mut direction_request_stream.next()) {
+            Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
+                priority,
+                responder,
+            }))) => {
+                assert_eq!(bredr::A2dpDirectionPriority::Sink, priority);
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth::ErrorCode::Failed))
+                    .expect("response to send cleanly");
+            }
+            x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
+        };
+
+        match exec.run_until_stalled(&mut audio_direction_fut) {
+            Poll::Ready(Err(_)) => {}
+            _x => panic!("Expected error result from audio direction response"),
+        };
+    }
+
+    #[test]
+    fn flush_timeout() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (mut no_ext, _local) = build_socket_bredr_channel();
+        no_ext.flush_timeout = Some(50_000_000); // 50 milliseconds
+        let channel = Channel::try_from(no_ext).unwrap();
+
+        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), channel.flush_timeout());
+
+        // Within 2 milliseconds, doesn't change.
+        let res = exec.run_singlethreaded(
+            channel.set_flush_timeout(Some(zx::MonotonicDuration::from_millis(49))),
+        );
+        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), res.expect("shouldn't error"));
+        let res = exec.run_singlethreaded(
+            channel.set_flush_timeout(Some(zx::MonotonicDuration::from_millis(51))),
+        );
+        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), res.expect("shouldn't error"));
+
+        assert!(
+            exec.run_singlethreaded(
+                channel.set_flush_timeout(Some(zx::MonotonicDuration::from_millis(200)))
+            )
+            .is_err()
+        );
+        assert!(exec.run_singlethreaded(channel.set_flush_timeout(None)).is_err());
+
+        let (mut ext, _local) = build_socket_bredr_channel();
+        let (client_end, mut l2cap_request_stream) =
+            create_request_stream::<bredr::L2capParametersExtMarker>();
+        ext.ext_l2cap = Some(client_end);
+
+        let channel = Channel::try_from(ext).unwrap();
+
+        {
+            let flush_timeout_fut = channel.set_flush_timeout(None);
+            let mut flush_timeout_fut = pin!(flush_timeout_fut);
+
+            // Requesting no change returns right away with no change.
+            match exec.run_until_stalled(&mut flush_timeout_fut) {
+                Poll::Ready(Ok(None)) => {}
+                x => panic!("Expected no flush timeout to not stall, got {:?}", x),
+            }
+        }
+
+        let req_duration = zx::MonotonicDuration::from_millis(42);
+
+        {
+            let flush_timeout_fut = channel.set_flush_timeout(Some(req_duration));
+            let mut flush_timeout_fut = pin!(flush_timeout_fut);
+
+            assert!(exec.run_until_stalled(&mut flush_timeout_fut).is_pending());
+
+            match exec.run_until_stalled(&mut l2cap_request_stream.next()) {
+                Poll::Ready(Some(Ok(bredr::L2capParametersExtRequest::RequestParameters {
+                    request,
+                    responder,
+                }))) => {
+                    assert_eq!(Some(req_duration.into_nanos()), request.flush_timeout);
+                    // Send a different response
+                    let params = fidl_bt::ChannelParameters {
+                        flush_timeout: Some(50_000_000), // 50ms
+                        ..Default::default()
+                    };
+                    responder.send(&params).expect("response to send cleanly");
+                }
+                x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
+            };
+
+            match exec.run_until_stalled(&mut flush_timeout_fut) {
+                Poll::Ready(Ok(Some(duration))) => {
+                    assert_eq!(zx::MonotonicDuration::from_millis(50), duration)
+                }
+                x => panic!("Expected ready result from params response, got {:?}", x),
+            };
+        }
+
+        // Channel should have recorded the new flush timeout.
+        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), channel.flush_timeout());
+    }
+
+    #[test]
+    fn audio_offload() {
+        let _exec = fasync::TestExecutor::new();
+
+        let (no_ext, _local) = build_socket_bredr_channel();
+        let channel = Channel::try_from(no_ext).unwrap();
+
+        assert!(channel.audio_offload().is_none());
+
+        let (mut ext, _local) = build_socket_bredr_channel();
+        let (client_end, mut _audio_offload_ext_req_stream) =
+            create_request_stream::<bredr::AudioOffloadExtMarker>();
+        ext.ext_audio_offload = Some(client_end);
+
+        let channel = Channel::try_from(ext).unwrap();
+
+        let offload_ext = channel.audio_offload();
+        assert!(offload_ext.is_some());
+        // We can get the audio offload multiple times without dropping
+        assert!(channel.audio_offload().is_some());
+        // And with dropping
+        drop(offload_ext);
+        assert!(channel.audio_offload().is_some());
+    }
+
+    #[test]
+    fn channel_from_fidl_priority() {
+        let _exec = fasync::TestExecutor::new();
+
+        // Case 1: Both FIDL connection and socket are present.
+        // FIDL connection should be preferred over socket.
+        let (client_end, _server_end) =
+            fidl::endpoints::create_endpoints::<fidl_bt::ChannelMarker>();
+        let (mut fidl_both, _socket_local) = build_socket_bredr_channel();
+        fidl_both.connection = Some(client_end);
+
+        let chan = Channel::try_from(fidl_both).expect("to convert successfully");
+        assert_eq!(chan.connection.connection_type(), ConnectionBackendType::FidlClient);
+
+        // Case 2: Only socket is present.
+        // Should fall back to traditional socket transport.
+        let (socket_only, _socket_local) = build_socket_bredr_channel();
+
+        let chan = Channel::try_from(socket_only).expect("to convert successfully");
+        assert_eq!(chan.connection.connection_type(), ConnectionBackendType::Socket);
+
+        // Case 3: Neither is present.
+        // Should fail to convert as we need at least one transport.
+        let fidl_empty = bredr::Channel {
+            channel_mode: Some(fidl_bt::ChannelMode::Basic),
+            max_tx_sdu_size: Some(1004),
+            ..Default::default()
+        };
+        assert!(Channel::try_from(fidl_empty).is_err());
     }
 }
