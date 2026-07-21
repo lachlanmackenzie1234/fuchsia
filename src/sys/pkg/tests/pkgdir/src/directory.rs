@@ -6,7 +6,7 @@ use crate::{PackageSource, dirs_to_test, repeat_by_n};
 use anyhow::{Context as _, Error, anyhow};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _, create_proxy};
 use fidl_fuchsia_io as fio;
-use fuchsia_fs::directory::{DirEntry, DirentKind, open_directory};
+use fuchsia_fs::directory::{DirEntry, DirentKind};
 use futures::StreamExt;
 use futures::future::Future;
 use itertools::Itertools as _;
@@ -645,87 +645,75 @@ async fn clone() {
 async fn clone_per_package_source(source: PackageSource) {
     let root_dir = &source.dir;
 
-    for flag in [fio::PERM_READABLE, fio::PERM_EXECUTABLE, fio::Flags::FLAG_SEND_REPRESENTATION] {
-        assert_clone_directory_overflow(
-            root_dir,
-            ".",
-            vec![
-                DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
-                DirEntry {
-                    name: "dir_overflow_readdirents".to_string(),
-                    kind: DirentKind::Directory,
-                },
-                DirEntry { name: "exceeds_max_buf".to_string(), kind: DirentKind::File },
-                DirEntry { name: "file".to_string(), kind: DirentKind::File },
-                DirEntry { name: "meta".to_string(), kind: DirentKind::Directory },
-                DirEntry { name: "file_0".to_string(), kind: DirentKind::File },
-                DirEntry { name: "file_1".to_string(), kind: DirentKind::File },
-                DirEntry { name: "file_4095".to_string(), kind: DirentKind::File },
-                DirEntry { name: "file_4096".to_string(), kind: DirentKind::File },
-                DirEntry { name: "file_4097".to_string(), kind: DirentKind::File },
-            ],
-        )
-        .await;
+    assert_clone_directory_overflow(
+        root_dir,
+        ".",
+        vec![
+            DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "dir_overflow_readdirents".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "exceeds_max_buf".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file".to_string(), kind: DirentKind::File },
+            DirEntry { name: "meta".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "file_0".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_1".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_4095".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_4096".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_4097".to_string(), kind: DirentKind::File },
+        ],
+    )
+    .await;
 
-        assert_clone_directory_no_overflow(
-            root_dir,
-            "dir",
-            flag,
-            vec![
-                DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
-                DirEntry { name: "file".to_string(), kind: DirentKind::File },
-            ],
-        )
-        .await;
-        if flag.intersects(fio::PERM_EXECUTABLE) {
-            // neither the "meta" dir nor meta subdirectories can be opened with the executable
-            // right, so they can not be cloned with the executable right.
-        } else {
-            assert_clone_directory_overflow(
-                root_dir,
-                "meta",
-                vec![
-                    DirEntry { name: "contents".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
-                    DirEntry {
-                        name: "dir_overflow_readdirents".to_string(),
-                        kind: DirentKind::Directory,
-                    },
-                    DirEntry { name: "exceeds_max_buf".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "file".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "package".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "fuchsia.abi".to_string(), kind: DirentKind::Directory },
-                    DirEntry { name: "file_0".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "file_1".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "file_4095".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "file_4096".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "file_4097".to_string(), kind: DirentKind::File },
-                ],
-            )
-            .await;
-            assert_clone_directory_no_overflow(
-                root_dir,
-                "meta/dir",
-                flag,
-                vec![
-                    DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
-                    DirEntry { name: "file".to_string(), kind: DirentKind::File },
-                ],
-            )
-            .await;
-        }
-    }
+    assert_clone_directory_no_overflow(
+        root_dir,
+        "dir",
+        vec![
+            DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "file".to_string(), kind: DirentKind::File },
+        ],
+    )
+    .await;
+
+    assert_clone_directory_overflow(
+        root_dir,
+        "meta",
+        vec![
+            DirEntry { name: "contents".to_string(), kind: DirentKind::File },
+            DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "dir_overflow_readdirents".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "exceeds_max_buf".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file".to_string(), kind: DirentKind::File },
+            DirEntry { name: "package".to_string(), kind: DirentKind::File },
+            DirEntry { name: "fuchsia.abi".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "file_0".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_1".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_4095".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_4096".to_string(), kind: DirentKind::File },
+            DirEntry { name: "file_4097".to_string(), kind: DirentKind::File },
+        ],
+    )
+    .await;
+
+    assert_clone_directory_no_overflow(
+        root_dir,
+        "meta/dir",
+        vec![
+            DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
+            DirEntry { name: "file".to_string(), kind: DirentKind::File },
+        ],
+    )
+    .await;
 }
 
 async fn assert_clone_directory_no_overflow(
     package_root: &fio::DirectoryProxy,
     path: &str,
-    flags: fio::Flags,
     expected_dirents: Vec<DirEntry>,
 ) {
-    let parent = open_directory(package_root, path, flags).await.expect("open parent directory");
+    let parent = open_parent(package_root, path).await;
     let (clone, server_end) = create_proxy::<fio::DirectoryMarker>();
-    parent.open(".", flags, &Default::default(), server_end.into_channel()).expect("cloned node");
+
+    let node_request = fidl::endpoints::ServerEnd::new(server_end.into_channel());
+    parent.clone(node_request).expect("cloned node");
     assert_read_dirents_no_overflow(&clone, expected_dirents).await;
 }
 
