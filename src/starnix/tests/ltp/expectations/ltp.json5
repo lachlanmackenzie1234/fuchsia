@@ -330,31 +330,8 @@
                 // TODO(https://fxbug.dev/465929750): Requires CONFIG_AF_UNIX_OOB.
                 "cve-2025-38236",
 
-                // Temporarily skipping until a roll containing these tests is available.
-                "cve.cve-2025-21756",
-                "ioctl10",
-                "ioctl_pidfd01",
-                "ioctl_pidfd02",
-                "ioctl_pidfd03",
-                "ioctl_pidfd04",
-                "ioctl_pidfd05",
-                "ioctl_pidfd06",
-                "landlock09",
-                "landlock10",
-                "listxattr04",
-                "lsm_get_self_attr01",
-                "lsm_get_self_attr02",
-                "lsm_get_self_attr03",
-                "lsm_list_modules01",
-                "lsm_list_modules02",
-                "lsm_set_self_attr01",
-                "mount04",
-                "mount08",
-                "mount_setattr02",
+                // TODO(https://fxbug.dev/322874684): Needs /proc/sys/vm/max_map_count
                 "munmap04",
-                "set_thread_area02",
-                "statmount09",
-                "unshare05",
 
                 // TODO(https://fxbug.dev/496317235): Temporarily skip since
                 // this fails with the currently rolled LTP and will pass with
