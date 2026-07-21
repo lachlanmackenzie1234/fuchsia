@@ -884,12 +884,13 @@ static_assertions::const_assert_eq!(
 
 impl<'a> HandleDisposition<'a> {
     #[inline]
-    pub fn new(
+    pub fn new<R: Into<Result<(), Status>>>(
         handle_op: HandleOp<'a>,
         object_type: ObjectType,
         rights: Rights,
-        status: Status,
+        status: R,
     ) -> Self {
+        let status = Status::from_raw(Status::result_into_raw(status.into()));
         let (operation, handle) = match handle_op {
             HandleOp::Move(h) => (sys::ZX_HANDLE_OP_MOVE, h.into_raw()),
             HandleOp::Duplicate(h) => (sys::ZX_HANDLE_OP_DUPLICATE, h.raw_handle()),

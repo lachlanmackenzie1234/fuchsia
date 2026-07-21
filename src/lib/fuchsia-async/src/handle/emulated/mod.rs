@@ -1671,12 +1671,13 @@ pub struct HandleDisposition<'a> {
 
 impl<'a> HandleDisposition<'a> {
     /// Create a new HandleDisposition.
-    pub fn new(
+    pub fn new<R: Into<Result<(), Status>>>(
         handle_op: HandleOp<'a>,
         object_type: ObjectType,
         rights: Rights,
-        result: Status,
+        result: R,
     ) -> Self {
+        let result = Status::from_raw(Status::result_into_raw(result.into()));
         Self { handle_op, object_type, rights, result }
     }
 
