@@ -136,6 +136,7 @@ kernel_rust_crate("syscalls-rs") {
   source_root = "lib.rs"
   sources = [
     "counter.rs",
+    "debuglog.rs",
     "lib.rs",
     "test.rs",
   ]
@@ -143,6 +144,9 @@ kernel_rust_crate("syscalls-rs") {
     "macros:syscalls-macro",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/debuglog:debuglog-rs",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
     "//zircon/kernel/object:object-rs",
     "//zircon/vdso:private",

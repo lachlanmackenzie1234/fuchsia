@@ -5,4 +5,5 @@
 #![no_std]
 
 mod counter;
+mod debuglog;
 mod test;

@@ -129,16 +129,16 @@ _ZX_SYSCALL_DECL(debug_send_command, zx_status_t, /* no attributes */, 3,
 _ZX_SYSCALL_DECL(debug_write, zx_status_t, /* no attributes */, 2, (buffer, buffer_size),
                  (const char* buffer, size_t buffer_size))
 
-_ZX_SYSCALL_DECL(debuglog_create, zx_status_t, /* no attributes */, 3, (resource, options, out),
+_ZX_SYSCALL_DECL(debuglog_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3, (resource, options, out),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint32_t options,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out))
 
-_ZX_SYSCALL_DECL(debuglog_read, zx_status_t, /* no attributes */, 4,
+_ZX_SYSCALL_DECL(debuglog_read, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
                  (handle, options, buffer, buffer_size),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t options,
                   void* buffer, size_t buffer_size))
 
-_ZX_SYSCALL_DECL(debuglog_write, zx_status_t, /* no attributes */, 4,
+_ZX_SYSCALL_DECL(debuglog_write, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
                  (handle, options, buffer, buffer_size),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t options,
                   const void* buffer, size_t buffer_size))

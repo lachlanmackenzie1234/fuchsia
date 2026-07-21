@@ -39,6 +39,7 @@ source_set("object") {
     "job_dispatcher.cc",
     "job_policy.cc",
     "log_dispatcher.cc",
+    "log_dispatcher_ffi.cc",
     "mbuf.cc",
     "memory_watchdog.cc",
     "message_packet.cc",
@@ -123,6 +124,10 @@ library_headers("headers") {
     # <object/log_dispatcher.h> has #include <lib/debuglog.h>.
     "//zircon/kernel/lib/debuglog:headers",
 
+    # <object/log_dispatcher.h> and <object/counter_dispatcher.h> have #include
+    # <lib/object-constants.h>.
+    "//zircon/kernel/lib/object-constants:headers",
+
     # <object/clock_dispatcher.h> includes things from kconcurrent
     "//zircon/kernel/lib/kconcurrent:headers",
 
@@ -185,6 +190,8 @@ kernel_rust_crate("object-rs") {
     "dispatcher.rs",
     "dispatcher_ffi.rs",
     "handle.rs",
+    "log_dispatcher.rs",
+    "log_dispatcher_ffi.rs",
     "object.rs",
     "process_dispatcher.rs",
     "process_dispatcher_ffi.rs",
@@ -200,6 +207,7 @@ kernel_rust_crate("object-rs") {
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/counters:counters-rs",
+    "//zircon/kernel/lib/debuglog:debuglog-rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

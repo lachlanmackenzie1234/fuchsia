@@ -9,10 +9,15 @@ mod counter_dispatcher_ffi;
 mod dispatcher;
 mod dispatcher_ffi;
 mod handle;
+mod log_dispatcher;
+mod log_dispatcher_ffi;
 mod process_dispatcher;
 mod process_dispatcher_ffi;
+mod resource_ffi;
 
 pub use counter_dispatcher::*;
 pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use handle::{HandleValue, KernelHandle};
+pub use log_dispatcher::*;
 pub use process_dispatcher::ProcessDispatcher;
+pub use resource_ffi::validate_resource_kind_base;

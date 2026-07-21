@@ -4,7 +4,8 @@ description: >
   Guide and best practices for porting Zircon C++ Dispatcher types and
   syscalls to Rust using facade objects, OpaqueRefCountedFacade,
   IsOpaqueRefCounted, DispatcherState synchronization, generic handle
-  resolution, and FFI shims.
+  resolution, pin-init sub-object initialization, UserSignalSelf sharing,
+  bindgen constants, and FFI shims.
 ---
 
 # Porting Zircon Dispatchers from C++ to Rust
@@ -23,16 +24,22 @@ their associated syscalls from C++ to Rust.
     `ZX_ERR_BAD_HANDLE`, `ZX_ERR_WRONG_TYPE`, `ZX_ERR_ACCESS_DENIED`, and
     `ZX_ERR_INVALID_ARGS`).
 2.  **Code Sharing & Boilerplate Reduction (DRY)**: Do not duplicate FFI
-    bridging, handle table lookup, downcasting, or reference-counting code
-    across individual dispatcher subtypes. Leverage shared infrastructure in
-    `fbl` and `kernel/object`.
+    bridging, handle table lookup, downcasting, or signal checking across
+    individual dispatcher subtypes. Leverage shared infrastructure in `fbl`,
+    `kernel/object`, and base `Dispatcher` helpers (such as
+    `UserSignalSelfSolo`).
 3.  **Facade Object Pattern**: Subtype dispatchers wrapping C++ objects or
     zero-sized FFI handles use facade types with zero-sized interior mutability
     wrappers (`OpaqueRefCountedFacade`).
 4.  **State & Synchronization Separation**: Internal mutable state is held in a
     dedicated `#[guarded]` `<Type>DispatcherState` struct embedded within the
-    dispatcher's memory layout.
-5.  **Fallible Allocation & Status Handling**: Kernel operations must be
+    dispatcher's memory layout. Embedded C++/native sub-storages use in-place
+    `pin-init` initializers.
+5.  **Bindgen & Single Source of Truth for Constants**: Do not duplicate
+    `constexpr` or `#define` constants across languages. Generate constants
+    directly via bindgen target libraries (e.g., `debuglog-types`), and simplify
+    `var_allowlist` patterns (e.g., `[ "k.*" ]` in `object-constants`).
+6.  **Fallible Allocation & Status Handling**: Kernel operations must be
     fallible. Use `zx_status::Status` for error propagation with `Result<T,
     Status>`.
 
@@ -131,20 +138,33 @@ zr::static_assert_size_and_align!(
 );
 ```
 
-### 3. In-Place Pin-Init Construction
-Construct the state struct safely in-place using `PinInit`:
+### 3. In-Place Pin-Init Construction & Sub-Object Pinning
+Construct the state struct safely in-place using `PinInit`. For embedded fields
+that require pinning or native C++ initialization (such as `DlogReaderStorage`),
+annotate the field with `#[pin]` inside `#[guarded]` structs and initialize it
+in-place using `field <- ...`:
 
 ```rust
-impl CounterDispatcherState {
-    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
+impl LogDispatcherState {
+    pub fn init(
+        dispatcher: *const LogDispatcher,
+        flags: u32,
+    ) -> impl pin_init::PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
             canary: Canary::new(),
-            value: 0.into(),
+            flags,
             lock <- KMutex::init(),
+            reader <- ksync::kcell_init(unsafe {
+                DlogReaderStorage::init(flags, rust_log_dispatcher_notify, dispatcher.cast_mut().cast())
+            }),
         })
     }
 }
 ```
+
+Sub-objects should expose a single `unsafe fn init(...) -> impl
+pin_init::PinInit<Self, ...>` rather than two-phase `new()` and `initialize()`
+functions.
 
 ### 4. Offset Pointer Accessor in Facade Struct
 The facade struct `<Type>Dispatcher` resolves its state by calculating the
@@ -197,9 +217,59 @@ pub unsafe extern "C" fn rust_counter_dispatcher_state_get_lock(
 }
 ```
 
+### 7. State Destruction Without Acquiring State Locks (`get_inner_mut`)
+
+During dispatcher state destruction, the C++ destructor calls the FFI function
+`rust_<type>_dispatcher_state_destroy`, which simply drops the state in place:
+
+```rust
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_log_dispatcher_state_destroy(state: &mut LogDispatcherState) {
+    // SAFETY: The caller is destroying the dispatcher and will not use it again.
+    unsafe {
+        core::ptr::drop_in_place(state);
+    }
+}
+```
+
+All cleanup logic (such as disconnecting readers or incrementing destroy
+counters) should be implemented in the `PinnedDrop` trait for
+`<Type>DispatcherState`.
+
+Acquiring state locks during destruction (e.g. via `ksync::lock!`) can cause
+lock order inversions or lockdep failures if cleanup functions acquire external
+subsystem locks (e.g., `DLog`). Since `drop` has unique access (`&mut self` via
+`Pin::get_unchecked_mut`), use `.get_inner_mut()` or `.as_mut()` on `KCell`
+fields to access guarded data mutably without taking the lock.
+
+Note that because the state struct is initialized via `pin_init` (often
+implicitly via `#[guarded]`), we must use `#[pin_data(PinnedDrop)]` on the
+struct and implement `PinnedDrop` instead of standard `Drop`. Make sure
+`#[guarded]` is placed above `#[pin_data(PinnedDrop)]` so that the macro
+expansion order is correct.
+
+```rust
+#[guarded]
+#[pin_data(PinnedDrop)]
+#[repr(C)]
+pub struct LogDispatcherState { ... }
+
+#[pinned_drop]
+impl PinnedDrop for LogDispatcherState {
+    fn drop(self: Pin<&mut Self>) {
+        DISPATCHER_LOG_DESTROY_COUNT.add(1);
+        let this = self.project();
+        if (*this.flags & ZX_LOG_FLAG_READABLE) != 0 {
+            let reader_pin = this.reader.get_pinned_mut();
+            reader_pin.disconnect();
+        }
+    }
+}
+```
+
 ---
 
-## 4. Dispatcher Base & Downcasting (`DispatcherOps` & `Dispatcher`)
+## 4. Dispatcher Base, Downcasting, & Signal Handling
 
 All dispatcher subtypes implement `DispatcherOps` to associate their unique lock
 class and `zx_obj_type_t`:
@@ -235,23 +305,95 @@ let counter = process.get_dispatcher_with_rights::<CounterDispatcher>(
 )?;
 ```
 
+### Shared Signal Handling (`UserSignalSelfSolo`)
+
+Instead of re-implementing `user_signal_self` bounds checking and error handling
+in every dispatcher, call the `UserSignalSelfSolo` helper method on the C++
+side:
+
+```cpp
+zx_status_t LogDispatcher::user_signal_self(uint32_t clear_mask, uint32_t set_mask) {
+  return UserSignalSelfSolo(this, clear_mask, set_mask, 0);
+}
+
+zx_status_t CounterDispatcher::user_signal_self(uint32_t clear_mask, uint32_t set_mask) {
+  return UserSignalSelfSolo(this, clear_mask, set_mask, ZX_COUNTER_SIGNALED);
+}
+```
+
+`UserSignalSelfSolo` handles validation of `allowed_signals = ZX_USER_SIGNAL_ALL
+| extra_signals`, checks `is_waitable()`, updates signal state via
+`UpdateState`, and returns appropriate status codes (`ZX_OK`,
+`ZX_ERR_INVALID_ARGS`, or `ZX_ERR_NOT_SUPPORTED`).
+
 ---
 
-## 5. Porting Syscalls & Handle Creation
+## 5. Porting Syscalls, Bindgen, Rights, & Tracing
 
 Syscalls related to the dispatcher are implemented under
 `zircon/kernel/lib/syscalls/<dispatcher>.rs` and declared in FIDL under
 `zircon/vdso/<dispatcher>.fidl`.
 
-### Creating Handles (`KernelHandle`)
+### Bindgen Library Conventions
 
-When a syscall creates a new dispatcher object, wrap it in a `KernelHandle<T>`:
+1.  **Subsystem Bindgen Crates**: Place subsystem headers and bindgen
+    definitions in dedicated helper targets (e.g.,
+    `rustc_library("debuglog-types")` using `debuglog-bindings.bindgen`). Do not
+    append `-rs` to bindgen target names.
+2.  **Simplified Allowlist**: In `object-constants/BUILD.gn`, use `var_allowlist
+    = [ "k.*" ]` so all future `constexpr` object layout constants automatically
+    match without manual GN edits.
+3.  **Use SDK Constants directly**: Use constants from `zx_types` or bindgen
+    crates instead of manually duplicating numbers.
+
+### Internal Creation Shims & Default Rights
+
+When non-syscall kernel callers (e.g., `userboot.cc`) need to construct a
+dispatcher, expose an FFI trampoline:
 
 ```rust
-let (counter_dispatcher, rights) = CounterDispatcher::create(initial_value)?;
-let mut handle = KernelHandle::new(counter_dispatcher);
-let handle_value = process.make_handle(&mut handle, rights)?;
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_log_dispatcher_create(
+    flags: u32,
+    rights_out: *mut zx_rights_t,
+    handle_out: *mut KernelHandle<LogDispatcher>,
+) -> zx_status_t {
+    unsafe {
+        match LogDispatcher::create(flags) {
+            Ok((handle, rights)) => {
+                rights_out.write(rights);
+                handle_out.write(handle);
+                zx_types::ZX_OK
+            }
+            Err(status) => status.into_raw(),
+        }
+    }
+}
 ```
+
+In the dispatcher's header:
+
+```cpp
+// Helper for internal kernel callers (such as userboot.cc) to create a LogDispatcher.
+static zx_status_t Create(uint32_t flags, KernelHandle<LogDispatcher>* handle, zx_rights_t* rights) {
+  return rust_log_dispatcher_create(flags, rights, handle);
+}
+```
+
+This centralizes rights assignment (such as `ZX_DEFAULT_LOG_READ_RIGHTS` vs
+`ZX_DEFAULT_LOG_WRITE_RIGHTS`) in Rust inside `LogDispatcher::create`.
+
+### Local Trace Logging (`ltrace`)
+
+Preserve all C++ `LTRACE` statements when porting syscalls:
+
+1.  Add `"//zircon/kernel/lib/ltrace:ltrace"` to `syscalls-rs` `deps` in
+    `BUILD.gn`.
+2.  Declare `const LOCAL_TRACE: u32 = 0;` at the top of the syscall module.
+3.  Use `ltracef!` for entry and argument logging:
+   ```rust
+   ltracef!("options {:#x}\n", options);
+   ```
 
 ---
 
@@ -264,8 +406,17 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
 2.  **Naming Conventions**:
    - Rust exposed to C++: `rust_$module_$type_$method`
    - C++ exposed to Rust: `cpp_$namespace_$type_$method`
-3.  **Safety Assertions**: Always verify structural memory layout parity across
+3.  **Clean Destructor Overrides**: Omit redundant `override` specifiers on
+    final C++ methods (e.g., `~LogDispatcher() final;`).
+4.  **Safety Assertions**: Always verify structural memory layout parity across
     language boundaries using compile-time static assertions:
    ```rust
    zr::static_assert!(core::mem::size_of::<CounterDispatcher>() == core::mem::size_of::<usize>());
    ```
+5.  **C++ Header Prototype Declarations**: All C++ FFI helper functions defined
+    in `.cc` files (e.g. `cpp_*`) MUST have prototype declarations enclosed in
+    `extern "C"` blocks inside an included C++ header file (e.g. `debuglog.h`,
+    `resource.h`, `dispatcher.h`). Defining `extern "C"` functions in C++
+    without prior prototype declarations in header files causes GCC
+    `-Werror=missing-declarations` build failures.
+
