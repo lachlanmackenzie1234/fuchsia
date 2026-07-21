@@ -541,16 +541,6 @@ func (t *Device) irisFlash(ctx context.Context, pbPath string) error {
 	vendorBootPath := flashImages["vendor_boot"]
 	vendorKernelBootPath := flashImages["vendor_kernel_boot"]
 
-	oemCmds := [][]string{
-		{"oem", "uart", "virt-disable", "apc"},
-		{"oem", "uart", "config", "apc", "115200"},
-		{"oem", "uart", "enable", "apc"},
-		{"oem", "uart", "mux", "apc"},
-	}
-	if err := t.bulkRunFastboot(ctx, fastbootPath, oemCmds); err != nil {
-		return err
-	}
-
 	var vbmetaCmds [][]string
 	if vbmetaPath != "" {
 		vbmetaCmds = [][]string{
