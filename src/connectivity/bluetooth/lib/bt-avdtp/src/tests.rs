@@ -2498,3 +2498,80 @@ fn delay_report_reject_command() {
 
     assert_matches!(error, Error::RemoteRejected(e) if e == RemoteReject::rejected(SignalIdentifier::DelayReport, 0x12));
 }
+
+#[test]
+fn get_capabilities_response_decode_single_byte_error() {
+    let payload = &[0x01];
+    let res = GetCapabilitiesResponse::decode(payload);
+    assert_matches!(res, Err(Error::Encoding));
+}
+
+#[test]
+fn get_capabilities_response_decode_malformed_length_error() {
+    let payload = &[
+        0x01, // ServiceCategory (e.g., MediaTransport)
+        0x0a, // Claimed capability length: 10 bytes (only 0 extra bytes remaining)
+    ];
+    let res = GetCapabilitiesResponse::decode(payload);
+    assert_matches!(res, Err(Error::Encoding));
+}
+
+#[test]
+fn get_capabilities_response_decode_skips_unsupported_capability() {
+    #[rustfmt::skip]
+    let payload = &[
+        // Valid MediaTransport (Category 0x01, Length 0x00)
+        0x01, 0x00,
+        // Unsupported ServiceCategory (0xff, Length 0x01, Payload 0x00)
+        0xff, 0x01, 0x00,
+        // Valid Reporting (Category 0x02, Length 0x00)
+        0x02, 0x00,
+    ];
+    let res = GetCapabilitiesResponse::decode(payload);
+    assert_matches!(res, Ok(_));
+    let response = res.unwrap();
+    let caps: Vec<ServiceCapability> = response.into();
+    assert_eq!(caps.len(), 2);
+    assert_matches!(caps[0], ServiceCapability::MediaTransport);
+    assert_matches!(caps[1], ServiceCapability::Reporting);
+}
+
+#[test]
+fn get_capabilities_response_decode_skips_malformed_recognized_capability() {
+    #[rustfmt::skip]
+    let payload = &[
+        // Recognized MediaTransport (Category 0x01) but malformed length (0x01 instead of 0x00)
+        0x01, 0x01, 0x00,
+        // Valid Reporting (Category 0x02, Length 0x00)
+        0x02, 0x00,
+    ];
+    let res = GetCapabilitiesResponse::decode(payload);
+    assert_matches!(res, Ok(_));
+    let response = res.unwrap();
+    let caps: Vec<ServiceCapability> = response.into();
+    assert_eq!(caps.len(), 1);
+    assert_matches!(caps[0], ServiceCapability::Reporting);
+}
+
+#[test]
+fn get_capabilities_response_decode_malformed_unrecognized_capability_fails() {
+    #[rustfmt::skip]
+    let payload = &[
+        // Valid MediaTransport (Category 0x01, Length 0x00)
+        0x01, 0x00,
+        // Unsupported ServiceCategory (0xff) but truncated length (claims 10 bytes, only 1 byte left)
+        0xff, 0x0a, 0x00,
+    ];
+    let res = GetCapabilitiesResponse::decode(payload);
+    assert_matches!(res, Err(Error::Encoding));
+}
+
+#[test]
+fn get_capabilities_response_decode_empty_payload() {
+    let payload = &[];
+    let res = GetCapabilitiesResponse::decode(payload);
+    assert_matches!(res, Ok(_));
+    let response = res.unwrap();
+    let caps: Vec<ServiceCapability> = response.into();
+    assert!(caps.is_empty());
+}

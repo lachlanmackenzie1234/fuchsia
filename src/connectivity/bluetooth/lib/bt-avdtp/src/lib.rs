@@ -704,7 +704,7 @@ impl GetCapabilitiesResponder {
 }
 
 #[derive(Debug)]
-struct GetCapabilitiesResponse {
+pub(crate) struct GetCapabilitiesResponse {
     capabilities: Vec<ServiceCapability>,
 }
 
@@ -725,11 +725,17 @@ impl Decodable for GetCapabilitiesResponse {
                     // Advance `idx` by the payload amount, but don't push the invalid capability.
                     // Increment by 1 byte for ServiceCategory, 1 byte for payload length,
                     // `length_of_capability` bytes for capability length.
+                    if from.len() - idx < 2 {
+                        return Err(Error::Encoding);
+                    }
                     info!(
                         "GetCapabilitiesResponse decode: Capability {:?} not supported.",
                         from[idx]
                     );
                     let length_of_capability = from[idx + 1] as usize;
+                    if from.len() - idx < 2 + length_of_capability {
+                        return Err(Error::Encoding);
+                    }
                     idx = idx + 2 + length_of_capability;
                 }
             }
