@@ -17,7 +17,6 @@ use super::simple::{
 use super::state::ShellState;
 use crate::builtins::is_builtin;
 use crate::errors::{io_err_str, zx_status_str};
-use crate::eval::EXIT_SIGINT;
 use crate::fd::Fd;
 use crate::parser::ast::{ASTBuilder, Command, CommandTag};
 use crate::process::{clone_fd_to_action, make_pipe, spawn_command};
@@ -222,9 +221,9 @@ pub fn wait_for_process_to_exit(
 
     wait_res.map_err(|err| format!("Wait failed: {}", zx_status_str(err)))?;
 
-    let exit_code = if ctx.signal_state.is_pending(ShellSignals::INT) {
-        ctx.signal_state.clear(ShellSignals::INT);
-        EXIT_SIGINT
+    let exit_code = if let Some(code) = ctx.signal_state.pending_exit_code() {
+        ctx.signal_state.take_pending();
+        code
     } else {
         proc.info()
             .map_err(|err| format!("Failed to get process info: {}", zx_status_str(err)))?

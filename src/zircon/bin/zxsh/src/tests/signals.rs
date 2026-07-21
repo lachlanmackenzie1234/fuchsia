@@ -79,6 +79,18 @@ fn test_run_pending_traps_default_sigint_exit() {
 }
 
 #[test]
+fn test_run_pending_traps_default_sigterm_exit() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+    state.opt_interactive = false;
+
+    ctx.signal_state.set(ShellSignals::TERM);
+
+    let res = run_pending_traps(&mut state, &mut ctx).unwrap();
+    assert_eq!(res, Some(EvalOutcome::Exit(143)));
+}
+
+#[test]
 fn test_run_pending_traps_other_signals() {
     let mut state = ShellState::new();
     let mut ctx = ExecutionContext::initial().unwrap();

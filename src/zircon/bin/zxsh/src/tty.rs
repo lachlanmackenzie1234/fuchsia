@@ -27,6 +27,22 @@ impl ShellSignals {
         (ShellSignals::HUP, b"HUP"),
         (ShellSignals::QUIT, b"QUIT"),
     ];
+
+    /// Returns the POSIX signal number associated with a single signal flag.
+    pub fn posix_number(&self) -> Option<i32> {
+        match *self {
+            ShellSignals::INT => Some(libc::SIGINT),
+            ShellSignals::TERM => Some(libc::SIGTERM),
+            ShellSignals::HUP => Some(libc::SIGHUP),
+            ShellSignals::QUIT => Some(libc::SIGQUIT),
+            _ => None,
+        }
+    }
+
+    /// Returns the standard shell exit code (128 + POSIX signal number) for this signal.
+    pub fn exit_code(&self) -> Option<i32> {
+        self.posix_number().map(|num| 128 + num)
+    }
 }
 
 /// Represents the state of pending signals in the shell.
@@ -59,6 +75,17 @@ impl ShellSignalState {
     /// Takes all pending signals, clearing them from the state.
     pub fn take_pending(&mut self) -> ShellSignals {
         std::mem::take(&mut self.pending)
+    }
+
+    /// If any signal is pending, returns the exit code (128 + POSIX signal number) for the first
+    /// pending signal.
+    pub fn pending_exit_code(&self) -> Option<i32> {
+        for &(sig, _) in ShellSignals::ALL {
+            if self.is_pending(sig) {
+                return sig.exit_code();
+            }
+        }
+        None
     }
 }
 

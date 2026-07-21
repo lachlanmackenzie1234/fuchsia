@@ -6,6 +6,7 @@ pub mod args;
 pub mod arithmetic;
 pub mod ast;
 pub mod collections;
+pub mod control_flow;
 pub mod errors;
 pub mod expand;
 pub mod format;

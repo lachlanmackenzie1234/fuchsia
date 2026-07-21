@@ -12,6 +12,7 @@ use crate::parser::{parse_script, tokenize};
 use crate::relative;
 
 mod arithmetic;
+mod control_flow;
 mod execution_context;
 mod expand;
 mod format;
@@ -25,6 +26,10 @@ mod state;
 // Imports for the implementation in this file
 use crate::subshell::SubshellScriptArgs;
 
+use control_flow::{
+    eval_background, eval_case, eval_for, eval_if, eval_logical_and, eval_logical_or, eval_loop,
+    eval_sequence,
+};
 pub use simple::eval_simple;
 pub use spawn::{eval_pipeline, spawn_subshell_vmo, wait_for_process_to_exit};
 
@@ -35,7 +40,7 @@ pub use execution_context::{ClosedReader, ClosedWriter, ExecutionContext};
 pub use expand::expand_string;
 pub use format::command_to_bstring;
 pub use redirect::eval_redirect;
-pub use signals::{EXIT_SIGINT, run_exit_trap, run_pending_traps};
+pub use signals::{run_exit_trap, run_pending_traps};
 pub use state::{
     RLIM_INFINITY, RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellEnv, ShellPath, ShellState,
 };
@@ -137,8 +142,8 @@ fn eval_command_inner(
     state: &mut ShellState,
     ctx: &mut ExecutionContext,
 ) -> Result<EvalOutcome, String> {
-    if ctx.signal_state.is_pending(ShellSignals::INT) {
-        return Ok(EvalOutcome::Code(EXIT_SIGINT));
+    if let Some(code) = ctx.signal_state.pending_exit_code() {
+        return Ok(EvalOutcome::Code(code));
     }
 
     let tag = builder.get_ref(cmd_ptr).tag;
@@ -146,15 +151,15 @@ fn eval_command_inner(
         CommandTag::SIMPLE => eval_simple(builder, cmd_ptr, state, ctx),
         CommandTag::PIPELINE => eval_pipeline(builder, cmd_ptr, state, ctx),
         CommandTag::REDIRECT => eval_redirect(builder, cmd_ptr, state, ctx),
-        CommandTag::IF
-        | CommandTag::WHILE
-        | CommandTag::UNTIL
-        | CommandTag::FOR
-        | CommandTag::CASE
-        | CommandTag::LOGICAL_AND
-        | CommandTag::LOGICAL_OR
-        | CommandTag::BACKGROUND
-        | CommandTag::SEQUENCE => Err("Not implemented yet".to_string()),
+        CommandTag::IF => eval_if(builder, cmd_ptr, state, ctx),
+        CommandTag::WHILE => eval_loop(builder, cmd_ptr, state, ctx, true),
+        CommandTag::UNTIL => eval_loop(builder, cmd_ptr, state, ctx, false),
+        CommandTag::FOR => eval_for(builder, cmd_ptr, state, ctx),
+        CommandTag::CASE => eval_case(builder, cmd_ptr, state, ctx),
+        CommandTag::LOGICAL_AND => eval_logical_and(builder, cmd_ptr, state, ctx),
+        CommandTag::LOGICAL_OR => eval_logical_or(builder, cmd_ptr, state, ctx),
+        CommandTag::BACKGROUND => eval_background(builder, cmd_ptr, state, ctx),
+        CommandTag::SEQUENCE => eval_sequence(builder, cmd_ptr, state, ctx),
         CommandTag::SUBSHELL => {
             let sub_cmd = {
                 let cmd = builder.get_ref(cmd_ptr);

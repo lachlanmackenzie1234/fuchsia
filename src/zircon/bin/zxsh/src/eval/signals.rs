@@ -6,8 +6,6 @@ use crate::eval::{EvalOutcome, ExecutionContext, ShellState, eval_string};
 use crate::tty::ShellSignals;
 use bstr::BStr;
 
-pub const EXIT_SIGINT: i32 = 130;
-
 pub fn run_pending_traps(
     state: &mut ShellState,
     ctx: &mut ExecutionContext,
@@ -26,12 +24,10 @@ pub fn run_pending_traps(
                 if !matches!(outcome, EvalOutcome::Code(_)) {
                     return Ok(Some(outcome));
                 }
-            } else if sig == ShellSignals::INT {
-                if state.opt_interactive {
-                    return Err("".to_string());
-                } else {
-                    return Ok(Some(EvalOutcome::Exit(EXIT_SIGINT)));
-                }
+            } else if sig == ShellSignals::INT && state.opt_interactive {
+                return Err("".to_string());
+            } else if let Some(exit_code) = sig.exit_code() {
+                return Ok(Some(EvalOutcome::Exit(exit_code)));
             }
         }
     }

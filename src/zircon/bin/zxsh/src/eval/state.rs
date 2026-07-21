@@ -47,6 +47,38 @@ impl<'a> Drop for StateBackupGuard<'a> {
     }
 }
 
+/// A RAII scope guard that increments `ShellState::ignore_err_depth` on creation
+/// and decrements it when dropped.
+pub struct IgnoreErrGuard<'a> {
+    pub state: &'a mut ShellState,
+}
+
+impl<'a> IgnoreErrGuard<'a> {
+    pub fn new(state: &'a mut ShellState) -> Self {
+        state.ignore_err_depth += 1;
+        Self { state }
+    }
+}
+
+impl Drop for IgnoreErrGuard<'_> {
+    fn drop(&mut self) {
+        self.state.ignore_err_depth -= 1;
+    }
+}
+
+impl<'a> std::ops::Deref for IgnoreErrGuard<'a> {
+    type Target = ShellState;
+    fn deref(&self) -> &ShellState {
+        self.state
+    }
+}
+
+impl<'a> std::ops::DerefMut for IgnoreErrGuard<'a> {
+    fn deref_mut(&mut self) -> &mut ShellState {
+        self.state
+    }
+}
+
 /// Represents a variable call stack frame (e.g. inside a shell function invocation).
 #[derive(Clone)]
 pub struct Frame {
