@@ -35,10 +35,12 @@ rustc_library("lib") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",
+    "//third_party/rust_crates:crc32fast",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:tokio",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   test_deps = [
@@ -53,6 +55,8 @@ rustc_library("lib") {
     "src/fastboot_proxy.rs",
     "src/interface_factory.rs",
     "src/lib.rs",
+    "src/stream.rs",
+    "src/util.rs",
   ]
 }
 

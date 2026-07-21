@@ -441,6 +441,10 @@ group("crc-3.4.0") {
   public_deps = [ ":crc-v3_4_0" ]
 }
 
+group("crc32fast") {
+  public_deps = [ ":crc32fast-v1_5_0" ]
+}
+
 group("criterion") {
   public_deps = [ ":criterion-v0_2_11" ]
 }

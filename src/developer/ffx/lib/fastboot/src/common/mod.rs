@@ -19,6 +19,8 @@ use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, RebootEvent, UploadProgress};
+use ffx_fastboot_interface::stream::generate_command_list;
+use ffx_fastboot_interface::util::convert_log_err;
 use ffx_flash_manifest::{ManifestParams, OemFile, SSH_OEM_COMMAND};
 use futures::prelude::*;
 use futures::try_join;
@@ -27,13 +29,18 @@ use sdk::SdkVersion;
 use sparse::reader::SparseReader;
 use sparse::{build_sparse_files, resparse_sparse_img};
 use std::fs::File;
-use std::num::ParseIntError;
+use std::io::Read;
+use std::num::{NonZeroU64, ParseIntError};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
+use zerocopy::IntoBytes;
 
 pub const MISSING_CREDENTIALS: &str = "The flash manifest is missing the credential files to unlock this device.\n\
      Please unlock the target and try again.";
+
+// Several methods operate on u64 but need size_of::<u32>()
+const U32_SIZE: u64 = std::mem::size_of::<u32>() as u64;
 
 pub mod crypto;
 pub mod vars;
@@ -206,7 +213,7 @@ pub async fn flash_partition<F: FileResolver + Sync, T: FastbootInterface>(
 }
 
 async fn flash_basic_impl<T: FastbootInterface>(
-    messenger: Sender<Event>,
+    messenger: &Sender<Event>,
     name: &str,
     file_to_upload: &str,
     fastboot_interface: &mut T,
@@ -290,7 +297,7 @@ async fn flash_basic_impl<T: FastbootInterface>(
         messenger
             .send(Event::Upload(UploadProgress::OnReady { partition: name.to_owned(), files: 1 }))
             .await?;
-        do_flash(name, &messenger, fastboot_interface, &file_to_upload, timeout).await?;
+        do_flash(name, messenger, fastboot_interface, &file_to_upload, timeout).await?;
     }
     messenger
         .send(Event::FlashPartitionFinished {
@@ -333,6 +340,90 @@ async fn get_hex_int<T: FromHexStr>(
         .map_err(|e| e.into())
 }
 
+async fn streaming_flash_impl<T: FastbootInterface>(
+    _messenger: &Sender<Event>,
+    _name: &str,
+    filepath: &str,
+    fastboot_interface: &mut T,
+    segment_size_bytes: u64,
+    partition_start_byte: u64,
+) -> Result<bool> {
+    let max_download_size_bytes =
+        get_hex_int::<u64>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?;
+    let max_download_words = NonZeroU64::new(max_download_size_bytes / U32_SIZE)
+        .ok_or(FfxFastbootError::StreamingFlash {
+            message: format!("Bad max download size: {max_download_size_bytes}"),
+        })
+        .inspect_err(|e| log::error!("{e}"))?;
+
+    let segment_size_words = NonZeroU64::new(segment_size_bytes / U32_SIZE)
+        .ok_or(FfxFastbootError::StreamingFlash {
+            message: format!("Bad segment size: {segment_size_bytes}"),
+        })
+        .inspect_err(|e| log::error!("{e}"))?;
+
+    if segment_size_words > max_download_words {
+        let err = FfxFastbootError::StreamingFlash {
+            message: format!(
+                "Max download < segment size: {max_download_size_bytes} < {segment_size_bytes}"
+            ),
+        };
+        log::error!("{err}");
+        return Err(err);
+    }
+
+    if partition_start_byte % U32_SIZE != 0 {
+        let err = FfxFastbootError::StreamingFlash {
+            message: format!("Bad partition start: {partition_start_byte}"),
+        };
+        log::error!("{err}");
+        return Err(err);
+    }
+    let partition_start_word = partition_start_byte / U32_SIZE;
+
+    let mut file_handle = File::open(&filepath)
+        .map_err(|e| FfxFastbootError::FileOpen { path: PathBuf::from(&filepath), source: e })?;
+    let file_length = file_handle
+        .metadata()
+        .map_err(|e| FfxFastbootError::FileMetadata { path: PathBuf::from(&filepath), source: e })?
+        .len();
+    if file_length % U32_SIZE != 0 {
+        // Possibly an error, but basic flash should handle it correctly anyway.
+        return Ok(false);
+    }
+    if let Ok(true) = SparseReader::is_sparse_file(&mut file_handle) {
+        // TODO(b/529455096): sparse files could be
+        // converted to a streaming flash representation.
+        log::debug!("Streaming flash is incompatible with sparse images");
+        return Ok(false);
+    }
+
+    // The file contents is a Vec<u32> because 'fill' value checks compare u32 values,
+    // and it's easier to start with a stricter alignment and loosen it when required.
+    let mut file_contents = Vec::<u32>::with_capacity(convert_log_err(file_length / U32_SIZE)?);
+    // TODO(b/529455096): async I/O for file read
+    let bytes_read = file_handle.read(file_contents.as_mut_slice().as_mut_bytes())?;
+    if bytes_read != usize::try_from(file_length)? {
+        let err =
+            FfxFastbootError::FileRead { actual: bytes_read.try_into()?, expected: file_length };
+        log::error!("{err}");
+        return Err(err);
+    }
+
+    let command_list = generate_command_list(
+        &file_contents,
+        max_download_words.into(),
+        segment_size_words.into(),
+        partition_start_word.into(),
+    );
+
+    // TODO(b/529455096): use the stream commands to do something.
+    for (_command, _segment) in command_list.commands_iter() {}
+
+    // TODO(b/529455096): return Ok(true) when implementation is complete
+    Ok(false)
+}
+
 pub async fn flash_partition_impl<T: FastbootInterface>(
     messenger: Sender<Event>,
     name: &str,
@@ -345,19 +436,34 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
         format!("{}:{}", base, parameter)
     }
 
-    if let Ok(_segment_size) = get_hex_int::<u64>(STREAM_SEGMENT_SIZE, fb_intf).await
-        && let Ok(_partition_start) =
-            get_hex_int::<u64>(parameterized_var(PARTITION_START, name).as_str(), fb_intf).await
-        && let Ok(_partition_size) =
-            get_hex_int::<u64>(parameterized_var(PARTITION_SIZE, name).as_str(), fb_intf).await
-    {
-        // TODO(b/529455096): implement streaming flash support
-        log::debug!("Streaming flash is not yet supported: b/529455096");
+    let mut try_flash_stream = async || {
+        if let Ok(segment_size) = get_hex_int::<u64>(STREAM_SEGMENT_SIZE, fb_intf).await
+            && let Ok(partition_start) =
+                get_hex_int::<u64>(parameterized_var(PARTITION_START, name).as_str(), fb_intf).await
+            && let Ok(_partition_size) =
+                get_hex_int::<u64>(parameterized_var(PARTITION_SIZE, name).as_str(), fb_intf).await
+        {
+            streaming_flash_impl(
+                &messenger,
+                name,
+                file_to_upload,
+                fb_intf,
+                segment_size,
+                partition_start,
+            )
+            .await
+            .inspect_err(|e| log::error!("Streaming flash error: {e}"))
+        } else {
+            Ok(false)
+        }
+    };
+
+    if let Ok(true) = try_flash_stream().await {
+        return Ok(());
     }
 
-    // TODO(b/529455096): move behind streaming flash fallback logic
     flash_basic_impl(
-        messenger,
+        &messenger,
         name,
         file_to_upload,
         fb_intf,
@@ -949,7 +1055,7 @@ mod test {
         assert!(matches!(err, FfxFastbootError::InlineUploadOverflow { .. }));
     }
 
-    #[fuchsia::test(logging = true)]
+    #[fuchsia::test()]
     async fn test_streaming_flash_fails_cleanly() -> std::result::Result<(), anyhow::Error> {
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
@@ -1040,77 +1146,5 @@ mod test {
         assert_eq!(expected, messages);
 
         Ok(())
-    }
-
-    #[fuchsia::test(logging = true)]
-    async fn test_streaming_flash_unsupported() {
-        let tmp_file = NamedTempFile::new().expect("tmp access failed");
-        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
-
-        let tmp_img_files = [(); 2].map(|_| NamedTempFile::new().expect("tmp access failed"));
-        let partition_to_path = tmp_img_files
-            .iter()
-            .zip(["zircon_a", "zircon_b"].iter())
-            .map(|(tmpfile, partition_name)| {
-                [partition_name, tmpfile.path().to_str().expect("non-unicode tmp path")]
-            })
-            .collect::<Vec<[&str; 2]>>();
-
-        let manifest = json!({
-            "hw_revision": "fastboot",
-            "products": [
-                {
-                    "name": "stream",
-                    "requires_unlock": false,
-                    "bootloader_partitions": [],
-                    "partitions": partition_to_path.as_slice(),
-                    "oem_files": []
-                }
-            ],
-        });
-
-        let v: FlashManifest = from_str(&manifest.to_string()).unwrap();
-        let (state, mut proxy) = setup();
-        {
-            let mut state = state.lock().unwrap();
-            state.set_multiple_vars([
-                (IS_USERSPACE_VAR, "no"),
-                (REVISION_VAR, "fastboot"),
-                (MAX_DOWNLOAD_SIZE_VAR, "8192"),
-                (STREAM_SEGMENT_SIZE, "0x1000"),
-                (format!("{}:{}", PARTITION_SIZE, "zircon_a").as_str(), "0x1000"),
-                (format!("{}:{}", PARTITION_START, "zircon_a").as_str(), "0x0"),
-                (format!("{}:{}", PARTITION_SIZE, "zircon_b").as_str(), "0x1000"),
-                (format!("{}:{}", PARTITION_START, "zircon_b").as_str(), "0x1000"),
-            ]);
-        }
-        let (client, _server) = mpsc::channel(100);
-        let res = v
-            .flash(
-                &client,
-                &mut TestResolver::new(),
-                &mut proxy,
-                ManifestParams {
-                    manifest: Some(PathBuf::from(tmp_file_name)),
-                    product: "stream".to_string(),
-                    op: Command::Boot(BootParams {
-                        zbi: None,
-                        vbmeta: None,
-                        slot: "a".to_string(),
-                    }),
-                    ..Default::default()
-                },
-                None,
-            )
-            .await;
-
-        assert!(res.is_ok());
-
-        let s = state.lock().unwrap();
-        assert_eq!(s.get_var_call_count("stream-segment-size"), (true, 2));
-        assert_eq!(s.get_var_call_count("partition-size:zircon_a"), (true, 1));
-        assert_eq!(s.get_var_call_count("partition-start:zircon_a"), (true, 1));
-        assert_eq!(s.get_var_call_count("partition-size:zircon_b"), (true, 1));
-        assert_eq!(s.get_var_call_count("partition-start:zircon_b"), (true, 1));
     }
 }

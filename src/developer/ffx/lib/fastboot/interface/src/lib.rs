@@ -5,6 +5,8 @@
 pub mod fastboot_interface;
 pub mod fastboot_proxy;
 pub mod interface_factory;
+pub mod stream;
+pub mod util;
 
 pub mod test {
     use super::fastboot_interface::{

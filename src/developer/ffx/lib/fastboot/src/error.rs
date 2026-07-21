@@ -22,6 +22,9 @@ pub enum FfxFastbootError {
     #[error("Failed to get metadata for file {path}: {source}")]
     FileMetadata { path: PathBuf, source: std::io::Error },
 
+    #[error("File read ended early: expected {expected} bytes, got {actual}")]
+    FileRead { expected: u64, actual: u64 },
+
     #[error("Sparse image error: {0}")]
     Sparse(#[from] sparse::SparseError),
 
@@ -175,4 +178,7 @@ pub enum FfxFastbootError {
 
     #[error("Upload prefix '{prefix}' is too large for the max command size ({max_len})")]
     InlineUploadOverflow { prefix: String, max_len: usize },
+
+    #[error("Fastboot streaming flash error: {message}")]
+    StreamingFlash { message: String },
 }
