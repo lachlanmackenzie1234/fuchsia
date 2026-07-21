@@ -203,7 +203,7 @@ pub unsafe extern "C" fn rust_vm_object_physical_state_get_parent_user_id(
 /// The caller must ensure `ptr` points to an initialized `VmObjectPhysicalState`.
 /// The caller must ensure that the `ChildListLock` is held.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_object_physical_state_get_parent(
+pub unsafe extern "C" fn rust_vm_object_physical_state_get_parent_locked(
     ptr: *const VmObjectPhysicalState,
 ) -> *mut VmObjectPhysical {
     // SAFETY: The caller guarantees `ptr` points to an initialized `VmObjectPhysicalState`
@@ -221,7 +221,7 @@ pub unsafe extern "C" fn rust_vm_object_physical_state_get_parent(
 /// The caller must ensure `ptr` points to an initialized `VmObjectPhysicalState`.
 /// The caller must ensure that the `ChildListLock` is held.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_object_physical_state_set_parent(
+pub unsafe extern "C" fn rust_vm_object_physical_state_set_parent_locked(
     ptr: *mut VmObjectPhysicalState,
     parent: *mut VmObjectPhysical,
 ) {

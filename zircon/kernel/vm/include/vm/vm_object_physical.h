@@ -19,7 +19,9 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/mutex.h>
+#include <object/opaque_storage.h>
 #include <vm/vm.h>
+#include <vm/vm_constants.h>
 #include <vm/vm_object.h>
 
 extern "C" void cpp_vm_object_physical_free(VmObjectPhysical* vmo);
@@ -29,15 +31,9 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
  public:
   static zx_status_t Create(paddr_t base, uint64_t size, fbl::RefPtr<VmObjectPhysical>* vmo);
 
-  // Define the lock retrieval functions differently depending on whether we should be returning a
-  // local lock instance, or the common one in the hierarchy_state_ptr. Due to the TA_RET_CAP
-  // statements we cannot perform |if constexpr| or equivalent indirection in the function body, and
-  // must have two completely different function definitions.
-  // In the absence of a local lock it is assumed, and enforced in vm_object_lock.h, that there is a
-  // shared lock in the hierarchy state. If there is both a local and a shared lock then the local
-  // lock is to be used for the improved lock tracking.
-  Lock<CriticalMutex>* lock() const override TA_RET_CAP(lock_) { return &lock_; }
-  Lock<CriticalMutex>& lock_ref() const override TA_RET_CAP(lock_) { return lock_; }
+  Lock<CriticalMutex>* get_lock() const;
+  Lock<CriticalMutex>* lock() const override TA_RET_CAP(get_lock()) { return get_lock(); }
+  Lock<CriticalMutex>& lock_ref() const override TA_RET_CAP(get_lock()) { return *get_lock(); }
 
   VmObject* self_locked() TA_REQ(lock()) TA_ASSERT(self_locked()->lock()) { return this; }
 
@@ -50,10 +46,10 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
     return is_slice() ? ChildType::kSlice : ChildType::kNotChild;
   }
   bool is_contiguous() const override { return true; }
-  bool is_slice() const { return is_slice_; }
-  uint64_t parent_user_id() const override { return parent_user_id_; }
+  bool is_slice() const;
+  uint64_t parent_user_id() const override;
 
-  uint64_t size_locked() const override { return size_; }
+  uint64_t size_locked() const override;
 
   zx_status_t Lookup(uint64_t offset, uint64_t len, LookupFunction lookup_fn) override;
   zx_status_t LookupContiguous(uint64_t offset, uint64_t len, paddr_t* out_paddr) override;
@@ -86,6 +82,10 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
 
   void MaybeDeadTransition() {}
 
+  // Helper functions for FFI access
+  const void* state() const { return &opaque_storage_; }
+  void* state() { return &opaque_storage_; }
+
  private:
   // private constructor (use Create())
   VmObjectPhysical(paddr_t base, uint64_t size, bool is_slice_, uint64_t parent_user_id);
@@ -97,16 +97,14 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmObjectPhysical);
 
+  // parent pointer FFI helpers
+  fbl::RefPtr<VmObjectPhysical> parent_locked() const TA_REQ(ChildListLock::Get());
+  void set_parent_locked(fbl::RefPtr<VmObjectPhysical> parent) TA_REQ(ChildListLock::Get());
+
+  paddr_t base() const;
+
   // members
-  mutable LOCK_DEP_INSTRUMENT(VmObjectPhysical, CriticalMutex, lockdep::LockFlagsNestable) lock_;
-
-  const uint64_t size_ = 0;
-  const paddr_t base_ = 0;
-  const bool is_slice_ = false;
-  const uint64_t parent_user_id_;
-
-  // parent pointer (may be null)
-  fbl::RefPtr<VmObjectPhysical> parent_ TA_GUARDED(ChildListLock::Get()) = nullptr;
+  OpaqueStorage<kVmObjectPhysicalStateSize, kVmObjectPhysicalStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_PHYSICAL_H_

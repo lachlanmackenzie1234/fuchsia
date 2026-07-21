@@ -21,6 +21,7 @@
 #include <vm/physmap.h>
 #include <vm/vm.h>
 #include <vm/vm_address_region.h>
+#include <vm/vm_constants.h>
 
 #include "vm_priv.h"
 
@@ -28,13 +29,34 @@
 
 #define LOCAL_TRACE VM_GLOBAL_TRACE(0)
 
+extern "C" {
+void rust_vm_object_physical_state_init(void* state, paddr_t base, uint64_t size, bool is_slice,
+                                        uint64_t parent_user_id);
+void rust_vm_object_physical_state_destroy(void* state);
+Lock<CriticalMutex>* rust_vm_object_physical_state_get_lock(const void* state);
+uint64_t rust_vm_object_physical_state_get_size(const void* state);
+paddr_t rust_vm_object_physical_state_get_base(const void* state);
+bool rust_vm_object_physical_state_get_is_slice(const void* state);
+uint64_t rust_vm_object_physical_state_get_parent_user_id(const void* state);
+VmObjectPhysical* rust_vm_object_physical_state_get_parent_locked(const void* state);
+void rust_vm_object_physical_state_set_parent_locked(void* state, VmObjectPhysical* parent);
+}
+
 VmObjectPhysical::VmObjectPhysical(paddr_t base, uint64_t size, bool is_slice,
                                    uint64_t parent_user_id)
-    : VmObject(0), size_(size), base_(base), is_slice_(is_slice), parent_user_id_(parent_user_id) {
-  LTRACEF("%p, size %#" PRIx64 "\n", this, size_);
+    : VmObject(0) {
+  LTRACEF("%p, size %#" PRIx64 "\n", this, size);
 
-  DEBUG_ASSERT(IsPageRounded(size_));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+  static_assert(
+      offsetof(VmObjectPhysical, opaque_storage_) == kVmObjectPhysicalStateOffset,
+      "kVmObjectPhysicalStateOffset must match offsetof(VmObjectPhysical, opaque_storage_)");
+#pragma GCC diagnostic pop
 
+  DEBUG_ASSERT(IsPageRounded(size));
+
+  rust_vm_object_physical_state_init(&opaque_storage_, base, size, is_slice, parent_user_id);
   AddToGlobalList();
 }
 
@@ -44,15 +66,44 @@ VmObjectPhysical::~VmObjectPhysical() {
 
   {
     Guard<CriticalMutex> guard{ChildListLock::Get()};
-    if (parent_) {
-      parent_->RemoveChild(this, guard.take());
+    fbl::RefPtr<VmObjectPhysical> parent_ptr = parent_locked();
+    if (parent_ptr) {
+      parent_ptr->RemoveChild(this, guard.take());
       // Avoid recursing destructors when we delete our parent by using the deferred deletion
       // method.
-      VmDeferredDeleter<VmObjectPhysical>::DoDeferredDelete(ktl::move(parent_));
+      VmDeferredDeleter<VmObjectPhysical>::DoDeferredDelete(ktl::move(parent_ptr));
+      set_parent_locked(nullptr);
     }
   }
 
   RemoveFromGlobalList();
+  rust_vm_object_physical_state_destroy(&opaque_storage_);
+}
+
+Lock<CriticalMutex>* VmObjectPhysical::get_lock() const {
+  return rust_vm_object_physical_state_get_lock(state());
+}
+
+bool VmObjectPhysical::is_slice() const {
+  return rust_vm_object_physical_state_get_is_slice(state());
+}
+
+uint64_t VmObjectPhysical::parent_user_id() const {
+  return rust_vm_object_physical_state_get_parent_user_id(state());
+}
+
+uint64_t VmObjectPhysical::size_locked() const {
+  return rust_vm_object_physical_state_get_size(state());
+}
+
+paddr_t VmObjectPhysical::base() const { return rust_vm_object_physical_state_get_base(state()); }
+
+fbl::RefPtr<VmObjectPhysical> VmObjectPhysical::parent_locked() const {
+  return fbl::ImportFromRawPtr(rust_vm_object_physical_state_get_parent_locked(state()));
+}
+
+void VmObjectPhysical::set_parent_locked(fbl::RefPtr<VmObjectPhysical> parent) {
+  rust_vm_object_physical_state_set_parent_locked(state(), fbl::ExportToRawPtr(&parent));
 }
 
 zx_status_t VmObjectPhysical::Create(paddr_t base, uint64_t size,
@@ -108,13 +159,15 @@ zx_status_t VmObjectPhysical::CreateChildSlice(uint64_t offset, uint64_t size, b
 
   // Slice must be wholly contained.
   uint64_t our_size;
+  paddr_t our_base;
   {
     // size_ is not an atomic variable and although it should not be changing, as we are not
     // allowing this operation on resizable vmo's, we should still be holding the lock to
     // correctly read size_. Unfortunately we must also drop then drop the lock in order to
     // perform the allocation.
     Guard<CriticalMutex> guard{lock()};
-    our_size = size_;
+    our_size = size_locked();
+    our_base = base();
   }
   if (!InRange(offset, size, our_size)) {
     return ZX_ERR_INVALID_ARGS;
@@ -125,8 +178,9 @@ zx_status_t VmObjectPhysical::CreateChildSlice(uint64_t offset, uint64_t size, b
   // We can read and store the user_id here since for a slice to be being created the dispatcher
   // side of this object must have completed, and hence the user_id has been set.
   fbl::AllocChecker ac;
-  auto vmo = fbl::AdoptRef<VmObjectPhysical>(
-      new (&ac) VmObjectPhysical(base_ + offset, size, /*is_slice=*/true, user_id()));
+  auto vmo =
+      fbl::AdoptRef<VmObjectPhysical>(new (&ac) VmObjectPhysical(our_base + offset, size,
+                                                                 /*is_slice=*/true, user_id()));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -137,7 +191,7 @@ zx_status_t VmObjectPhysical::CreateChildSlice(uint64_t offset, uint64_t size, b
     // Inherit the current cache policy
     vmo->cache_policy_ = cache_policy_;
     // Initialize parent
-    vmo->parent_ = fbl::RefPtr(this);
+    vmo->set_parent_locked(fbl::RefPtr(this));
 
     // add the new vmo as a child.
     AddChild(vmo.get());
@@ -159,7 +213,7 @@ void VmObjectPhysical::Dump(uint depth, bool verbose) {
   for (uint i = 0; i < depth; ++i) {
     printf("  ");
   }
-  printf("object %p base %#" PRIxPTR " size %#" PRIx64 " ref %d\n", this, base_, size_,
+  printf("object %p base %#" PRIxPTR " size %#" PRIx64 " ref %d\n", this, base(), size_locked(),
          ref_count_debug());
 }
 
@@ -172,7 +226,7 @@ zx_status_t VmObjectPhysical::Lookup(uint64_t offset, uint64_t len,
   }
 
   Guard<CriticalMutex> guard{lock()};
-  if (unlikely(!InRange(offset, len, size_))) {
+  if (unlikely(!InRange(offset, len, size_locked()))) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -180,8 +234,10 @@ zx_status_t VmObjectPhysical::Lookup(uint64_t offset, uint64_t len,
   uint64_t end = offset + len;
   uint64_t end_page_offset = RoundUpPageSize(end);
 
+  paddr_t base_addr = base();
+
   for (size_t idx = 0; cur_offset < end_page_offset; cur_offset += kPageSize, ++idx) {
-    zx_status_t status = lookup_fn(cur_offset, base_ + cur_offset);
+    zx_status_t status = lookup_fn(cur_offset, base_addr + cur_offset);
     if (unlikely(status != ZX_ERR_NEXT)) {
       if (status == ZX_ERR_STOP) {
         return ZX_OK;
@@ -199,7 +255,7 @@ zx_status_t VmObjectPhysical::CommitRangePinned(uint64_t offset, uint64_t len, b
     return ZX_ERR_INVALID_ARGS;
   }
   Guard<CriticalMutex> guard{lock()};
-  if (unlikely(!InRange(offset, len, size_))) {
+  if (unlikely(!InRange(offset, len, size_locked()))) {
     return ZX_ERR_OUT_OF_RANGE;
   }
   // Physical VMOs are always committed and so are always pinned.
@@ -209,7 +265,7 @@ zx_status_t VmObjectPhysical::CommitRangePinned(uint64_t offset, uint64_t len, b
 zx_status_t VmObjectPhysical::PrefetchRange(uint64_t offset, uint64_t len) {
   canary_.Assert();
 
-  if (!InRange(offset, len, size_)) {
+  if (!InRange(offset, len, rust_vm_object_physical_state_get_size(state()))) {
     return ZX_ERR_OUT_OF_RANGE;
   }
   if (len == 0) {
@@ -229,11 +285,11 @@ zx_status_t VmObjectPhysical::LookupContiguousLocked(uint64_t offset, uint64_t l
   if (unlikely(len == 0 || !IsPageRounded(offset))) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (unlikely(!InRange(offset, len, size_))) {
+  if (unlikely(!InRange(offset, len, size_locked()))) {
     return ZX_ERR_OUT_OF_RANGE;
   }
   if (out_paddr) {
-    *out_paddr = base_ + offset;
+    *out_paddr = base() + offset;
   }
   return ZX_OK;
 }
@@ -256,7 +312,7 @@ zx_status_t VmObjectPhysical::SetMappingCachePolicy(const arch_mmu_flags_t cache
 
   Guard<CriticalMutex> list_guard{ChildListLock::Get()};
   // If this VMO is mapped already it is not safe to allow its caching policy to change
-  if (self_locked()->num_mappings_locked() != 0 || children_list_len_ != 0 || parent_) {
+  if (self_locked()->num_mappings_locked() != 0 || children_list_len_ != 0 || parent_locked()) {
     LTRACEF(
         "Warning: trying to change cache policy while this vmo has mappings, children or a "
         "parent!\n");
@@ -271,17 +327,8 @@ zx_status_t VmObjectPhysical::SetMappingCachePolicy(const arch_mmu_flags_t cache
 }
 
 extern "C" {
-void* cpp_vm_object_get_ref_counted(const VmObject* vmo);
-void* cpp_vm_object_physical_get_ref_counted(const VmObjectPhysical* vmo);
-void cpp_vm_object_physical_free(VmObjectPhysical* vmo);
 VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size, zx_status_t* out_status);
 VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo);
-
-void* cpp_vm_object_physical_get_ref_counted(const VmObjectPhysical* vmo) {
-  return cpp_vm_object_get_ref_counted(static_cast<const VmObject*>(vmo));
-}
-
-void cpp_vm_object_physical_free(VmObjectPhysical* vmo) { delete vmo; }
 
 VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size,
                                                 zx_status_t* out_status) {
