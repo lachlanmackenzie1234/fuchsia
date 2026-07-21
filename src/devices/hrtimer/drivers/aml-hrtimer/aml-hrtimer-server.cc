@@ -403,27 +403,7 @@ void AmlHrtimerServer::RecordEvent(int64_t now, uint64_t id, EventType type, uin
 }
 
 void AmlHrtimerServer::Start(StartRequest& request, StartCompleter::Sync& completer) {
-  fdf::debug("Timer id: {} start, requested ticks: {}", request.id(), request.ticks());
-  RecordEvent(zx::clock::get_monotonic().get(), request.id(), EventType::Start, request.ticks());
-  size_t timer_index = TimerIndexFromId(request.id());
-  if (timer_index >= kNumberOfTimers) {
-    fdf::error("Invalid timer id: {}", request.id());
-    completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
-    return;
-  }
-  timers_[timer_index].start_ticks_left = request.ticks();
-  if (!request.resolution().duration()) {
-    fdf::error("Invalid resolution, no duration for timer id: {}", request.id());
-    completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
-    return;
-  }
-  timers_[timer_index].resolution_nsecs = request.resolution().duration().value();
-  auto start_result = StartHardware(timer_index);
-  if (start_result.is_error()) {
-    completer.Reply(zx::error(start_result.error_value()));
-    return;
-  }
-  completer.Reply(zx::ok());
+  completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kNotSupported));
 }
 
 void AmlHrtimerServer::StartAndWait(StartAndWaitRequest& request,
@@ -682,19 +662,7 @@ fit::result<const fuchsia_hardware_hrtimer::DriverError> AmlHrtimerServer::Start
 }
 
 void AmlHrtimerServer::SetEvent(SetEventRequest& request, SetEventCompleter::Sync& completer) {
-  size_t timer_index = TimerIndexFromId(request.id());
-  if (timer_index >= kNumberOfTimers) {
-    fdf::error("Invalid timer id: {}", request.id());
-    completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
-    return;
-  }
-  if (!timers_properties_[timer_index].supports_notifications) {
-    fdf::error("Notifications not supported for timer id: {}", request.id());
-    completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kNotSupported));
-    return;
-  }
-  timers_[timer_index].event.emplace(std::move(request.event()));
-  completer.Reply(zx::ok());
+  completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kNotSupported));
 }
 
 void AmlHrtimerServer::GetProperties(GetPropertiesCompleter::Sync& completer) {
@@ -733,7 +701,7 @@ void AmlHrtimerServer::GetProperties(GetPropertiesCompleter::Sync& completer) {
         timer_properties.max_ticks(std::numeric_limits<uint64_t>::max());
         break;
     }
-    timer_properties.supports_event(i.supports_notifications);
+    timer_properties.supports_event(false);
     // Only support wait if we can return a lease in StartAndWait.
     timer_properties.supports_wait(sag_ && i.supports_notifications);
     timer_properties.supports_read(false);

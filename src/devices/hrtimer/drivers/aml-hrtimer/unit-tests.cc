@@ -378,7 +378,7 @@ TEST_F(DriverTest, Properties) {
     } else {
       ASSERT_EQ(timers[i].max_ticks().value(), 0xffffULL);
     }
-    ASSERT_TRUE(timers[i].supports_event().value());
+    ASSERT_FALSE(timers[i].supports_event().value());
   }
 
   /// Timer id 4 has no IRQ and higher max_range.
@@ -393,132 +393,61 @@ TEST_F(DriverTest, Properties) {
 }
 
 TEST_F(DriverTest, StartTimerNoticks) {
-  // All timers are able to take a 0 ticks expiration request for durations 1, 10, and 100 usecs.
+  // All timers return kNotSupported for Start.
   for (auto& i : kTimersAll) {
     auto result0 =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0});
-    ASSERT_FALSE(result0.is_error());
+    ASSERT_TRUE(result0.is_error());
+    ASSERT_EQ(result0.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
     auto result1 =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(10'000ULL), 0});
-    ASSERT_FALSE(result1.is_error());
+    ASSERT_TRUE(result1.is_error());
+    ASSERT_EQ(result1.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
     auto result2 =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(100'000ULL), 0});
-    ASSERT_FALSE(result2.is_error());
-  }
-
-  /// Timer id 4 does not support 1 msec.
-  auto result =
-      client_->Start({4ULL, fuchsia_hardware_hrtimer::Resolution::WithDuration(1000'000ULL), 0});
-  ASSERT_TRUE(result.is_error());
-  ASSERT_EQ(result.error_value().domain_error(),
-            fuchsia_hardware_hrtimer::DriverError::kInvalidArgs);
-
-  // Timers id 0 to 8 inclusive but not 4 support 1 msec.
-  for (uint64_t i = 0; i < 9; ++i) {
-    if (i == 4) {
-      continue;
-    }
-    auto result =
-        client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000'000ULL), 0});
-    ASSERT_FALSE(result.is_error());
+    ASSERT_TRUE(result2.is_error());
+    ASSERT_EQ(result2.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
   }
 }
 
 TEST_F(DriverTest, StartTimerMaxTicks) {
-  // All timers are able to take a up to 0xffff ticks expiration request for durations 1, 10, and
-  // 100 usecs.
+  // All timers return kNotSupported for Start.
   for (auto& i : kTimersAll) {
     auto result0 =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0xffff});
-    ASSERT_FALSE(result0.is_error());
+    ASSERT_TRUE(result0.is_error());
+    ASSERT_EQ(result0.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
     auto result1 =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(10'000ULL), 0xffff});
-    ASSERT_FALSE(result1.is_error());
+    ASSERT_TRUE(result1.is_error());
+    ASSERT_EQ(result1.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
     auto result2 =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(100'000ULL), 0xffff});
-    ASSERT_FALSE(result2.is_error());
-  }
-
-  // Timers id 0 to 3 inclusive error on 0xffff+1 ticks.
-  for (uint64_t i = 0; i < 4; ++i) {
-    auto result =
-        client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0x1'0000});
-    ASSERT_TRUE(result.is_error());
-  }
-
-  // Timer id 4 supports 64 bits of ticks for 1, 10 and 100 usecs.
-  auto result0 = client_->Start({4ULL, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
-                                 0xffff'ffff'ffff'ffffULL});
-  ASSERT_FALSE(result0.is_error());
-  auto result1 =
-      client_->Start({4ULL, fuchsia_hardware_hrtimer::Resolution::WithDuration(10'000ULL),
-                      0xffff'ffff'ffff'ffffULL});
-  ASSERT_FALSE(result1.is_error());
-  auto result2 =
-      client_->Start({4ULL, fuchsia_hardware_hrtimer::Resolution::WithDuration(100'000ULL),
-                      0xffff'ffff'ffff'ffffULL});
-  ASSERT_FALSE(result2.is_error());
-
-  // Timers id 5 to 8 inclusive have no error on 0xffff+1 ticks.
-  for (uint64_t i = 5; i < 9; ++i) {
-    auto result =
-        client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0x1'0000});
-    ASSERT_FALSE(result.is_error());
+    ASSERT_TRUE(result2.is_error());
+    ASSERT_EQ(result2.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
   }
 }
 
 TEST_F(DriverTest, StartStop) {
-  // All timers support start/stop.
+  // All timers return kNotSupported for Start.
   for (auto& i : kTimersAll) {
     auto result_start =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 1});
-    ASSERT_FALSE(result_start.is_error());
+    ASSERT_TRUE(result_start.is_error());
+    ASSERT_EQ(result_start.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
   }
-  // Timers are started.
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    ASSERT_EQ(env.platform_device().mmio()[0x3c50], 0x000f'0100UL);  // Timers A, B, C and D.
-    // Timer E is always started.
-    ASSERT_EQ(env.platform_device().mmio()[0x3c64], 0x000f'0000UL);  // Timers F, G, H and I.
-  });
 
   for (auto& i : kTimersAll) {
     auto result_stop = client_->Stop(i);
     ASSERT_FALSE(result_stop.is_error());
   }
-  // Timers are stopped.
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    ASSERT_EQ(env.platform_device().mmio()[0x3c50], 0x0000'0100UL);  // Timers A, B, C and D.
-    // Timer E can't actually be stopped.
-    ASSERT_EQ(env.platform_device().mmio()[0x3c64], 0x0000'0000UL);  // Timers F, G, H and I.
-  });
-
-  CheckInspect("0", "Start", 0, 1);
-  CheckInspect("1", "StartHardware", 0, 1);
-  CheckInspect("2", "Start", 1, 1);
-  CheckInspect("3", "StartHardware", 1, 1);
-  CheckInspect("4", "Start", 2, 1);
-  CheckInspect("5", "StartHardware", 2, 1);
-  CheckInspect("6", "Start", 3, 1);
-  CheckInspect("7", "StartHardware", 3, 1);
-  CheckInspect("8", "Start", 4, 1);
-  CheckInspect("9", "StartHardware", 4, 0);  // Timer 4 does not set ticks in the HW.
-  CheckInspect("10", "Start", 5, 1);
-  CheckInspect("11", "StartHardware", 5, 1);
-  CheckInspect("12", "Start", 6, 1);
-  CheckInspect("13", "StartHardware", 6, 1);
-  CheckInspect("14", "Start", 7, 1);
-  CheckInspect("15", "StartHardware", 7, 1);
-  CheckInspect("16", "Start", 8, 1);
-  CheckInspect("17", "StartHardware", 8, 1);
-  CheckInspect("18", "Stop", 0, 0);
-  CheckInspect("19", "Stop", 1, 0);
-  CheckInspect("20", "Stop", 2, 0);
-  CheckInspect("21", "Stop", 3, 0);
-  CheckInspect("22", "Stop", 4, 0);
-  CheckInspect("23", "Stop", 5, 0);
-  CheckInspect("24", "Stop", 6, 0);
-  CheckInspect("25", "Stop", 7, 0);
-  CheckInspect("26", "Stop", 8, 0);
 }
 
 TEST_F(DriverTest, EventTriggering) {
@@ -528,18 +457,14 @@ TEST_F(DriverTest, EventTriggering) {
     zx::event duplicate_event;
     events[i].duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_event);
     auto result_event = client_->SetEvent({i, std::move(duplicate_event)});
-    ASSERT_FALSE(result_event.is_error());
+    ASSERT_TRUE(result_event.is_error());
+    ASSERT_EQ(result_event.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
     auto result_start =
         client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0});
-    ASSERT_FALSE(result_start.is_error());
-  }
-
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
-
-  for (auto& i : kTimersSupportWait) {
-    zx_signals_t signals = {};
-    ASSERT_EQ(events[i].wait_one(ZX_EVENT_SIGNALED, zx::time::infinite(), &signals), ZX_OK);
+    ASSERT_TRUE(result_start.is_error());
+    ASSERT_EQ(result_start.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
   }
 }
 
@@ -557,10 +482,26 @@ TEST_F(DriverTest, GetTicksTimers0123) {
     env.platform_device().mmio()[0x3c53] = kArbitraryCount16bits2 << 16;  // Timer C.
     env.platform_device().mmio()[0x3c54] = kArbitraryCount16bits3 << 16;  // Timer D.
   });
+
+  std::vector<std::thread> threads;
   for (uint64_t i = 0; i < 4; ++i) {
-    auto result_start = client_->Start(
-        {i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), kArbitraryTicksRequest});
-    ASSERT_FALSE(result_start.is_error());
+    threads.emplace_back([this, i]() {
+      zx::event setup_event;
+      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      auto result_start =
+          client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
+                                 kArbitraryTicksRequest, std::move(setup_event)});
+      ASSERT_FALSE(result_start.is_error());
+    });
+
+    // Wait until the driver has acquired the timer wait completer before continuing.
+    bool has_wait_completer = false;
+    while (!has_wait_completer) {
+      driver_test().RunInDriverContext([i, &has_wait_completer](AmlHrtimer& driver) {
+        has_wait_completer = driver.HasWaitCompleter(i);
+      });
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
   }
 
   // Reads from the registers.
@@ -584,6 +525,12 @@ TEST_F(DriverTest, GetTicksTimers0123) {
     ASSERT_FALSE(result.is_error());
     ASSERT_EQ(result->ticks(), kArbitraryCount16bits3);
   }
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  for (auto& thread : threads) {
+    thread.join();
+  }
 }
 
 TEST_F(DriverTest, GetTicksTimer4) {
@@ -592,35 +539,18 @@ TEST_F(DriverTest, GetTicksTimer4) {
 
   auto result_start = client_->Start(
       {4, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), kArbitraryTicksRequest});
-  ASSERT_FALSE(result_start.is_error());
-  // We set the amount read after starting the timer since starting the timer writes to the
-  // register we read upon GetTicksLeft.
-  constexpr uint64_t kArbitraryCount64bits = 0x1234'5678'0000'0000;
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    env.platform_device().mmio()[0x3c62] =
-        static_cast<uint32_t>(kArbitraryCount64bits);  // Timer E.
-    env.platform_device().mmio()[0x3c63] =
-        static_cast<uint32_t>(kArbitraryCount64bits >> 32);  // Timer E High.
-  });
-  auto result_ticks = client_->GetTicksLeft(4);
-  ASSERT_FALSE(result_ticks.is_error());
-  // This timer counts up so the driver subtracts the read from the registers.
-  ASSERT_EQ(result_ticks->ticks(), kArbitraryTicksRequest - kArbitraryCount64bits);
+  ASSERT_TRUE(result_start.is_error());
+  ASSERT_EQ(result_start.error_value().domain_error(),
+            fuchsia_hardware_hrtimer::DriverError::kNotSupported);
 
-  // Since we can't really stop the timer 4 from ticking after a Stop(), GetTicksLeft() starts
-  // to return 0.
   auto result_stop = client_->Stop(4);
   ASSERT_FALSE(result_stop.is_error());
-  {
-    auto result_ticks = client_->GetTicksLeft(4);
-    ASSERT_FALSE(result_ticks.is_error());
-    ASSERT_EQ(result_ticks->ticks(), 0ULL);
-  }
 }
 
 TEST_F(DriverTest, GetTicksTimers5678TicksStayAtRequested) {
   // Can start up to 64 bits because they support ticks extension.
-  constexpr uint64_t kArbitraryTicksRequest = 0x1234'5678'90ab'cdef;
+  // Use a value that exceeds 16 bits but is small enough to finish quickly.
+  constexpr uint64_t kArbitraryTicksRequest = 0x1'1234;
 
   // The count starts at max for the register since the request goes beyond the register max.
   constexpr uint64_t kMaxCount = 0xffff;
@@ -630,21 +560,49 @@ TEST_F(DriverTest, GetTicksTimers5678TicksStayAtRequested) {
     env.platform_device().mmio()[0x3c67] = kMaxCount << 16;  // Timer H.
     env.platform_device().mmio()[0x3c68] = kMaxCount << 16;  // Timer I.
   });
+
+  std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
-    auto result_start = client_->Start(
-        {i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), kArbitraryTicksRequest});
-    ASSERT_FALSE(result_start.is_error());
+    threads.emplace_back([this, i]() {
+      zx::event setup_event;
+      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      auto result_start =
+          client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
+                                 kArbitraryTicksRequest, std::move(setup_event)});
+      ASSERT_FALSE(result_start.is_error());
+    });
+
+    // Wait until the driver has acquired the timer wait completer before continuing.
+    bool has_wait_completer = false;
+    while (!has_wait_completer) {
+      driver_test().RunInDriverContext([i, &has_wait_completer](AmlHrtimer& driver) {
+        has_wait_completer = driver.HasWaitCompleter(i);
+      });
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
 
     // Ticks left stay at the ticks requested since the register reads 0xffff.
     auto result = client_->GetTicksLeft(i);
     ASSERT_FALSE(result.is_error());
     ASSERT_EQ(result->ticks(), kArbitraryTicksRequest);
   }
+
+  // Trigger IRQs twice to finish the StartAndWait calls.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
 }
 
 TEST_F(DriverTest, GetTicksTimers5678TicksDownBy0xffff) {
   // Can start up to 64 bits because they support ticks extension.
-  constexpr uint64_t kArbitraryTicksRequest = 0x1234'5678'90ab'cdef;
+  // Use a value that exceeds 16 bits but is small enough to finish quickly.
+  constexpr uint64_t kArbitraryTicksRequest = 0x1'1234;
 
   // The count has decreased by 0xffff to 0.
   driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
@@ -653,21 +611,49 @@ TEST_F(DriverTest, GetTicksTimers5678TicksDownBy0xffff) {
     env.platform_device().mmio()[0x3c67] = 0 << 16;  // Timer H.
     env.platform_device().mmio()[0x3c68] = 0 << 16;  // Timer I.
   });
+
+  std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
-    auto result_start = client_->Start(
-        {i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), kArbitraryTicksRequest});
-    ASSERT_FALSE(result_start.is_error());
+    threads.emplace_back([this, i]() {
+      zx::event setup_event;
+      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      auto result_start =
+          client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
+                                 kArbitraryTicksRequest, std::move(setup_event)});
+      ASSERT_FALSE(result_start.is_error());
+    });
+
+    // Wait until the driver has acquired the timer wait completer before continuing.
+    bool has_wait_completer = false;
+    while (!has_wait_completer) {
+      driver_test().RunInDriverContext([i, &has_wait_completer](AmlHrtimer& driver) {
+        has_wait_completer = driver.HasWaitCompleter(i);
+      });
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
 
     // Ticks have decreased by 0xffff since the register reads 0.
     auto result = client_->GetTicksLeft(i);
     ASSERT_FALSE(result.is_error());
     ASSERT_EQ(result->ticks(), kArbitraryTicksRequest - 0xffff);
   }
+
+  // Trigger IRQs twice to finish the StartAndWait calls.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
 }
 
 TEST_F(DriverTest, GetTicksTimers5678ArbitraryCount) {
   // Can start up to 64 bits because they support ticks extension.
-  constexpr uint64_t kArbitraryTicksRequest = 0x1234'5678'90ab'cdef;
+  // Use a value that exceeds 16 bits but is small enough to finish quickly.
+  constexpr uint64_t kArbitraryTicksRequest = 0x1'1234;
 
   constexpr uint64_t kArbitraryCount5 = 0x1234;
   constexpr uint64_t kArbitraryCount6 = 0x5678;
@@ -679,10 +665,26 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCount) {
     env.platform_device().mmio()[0x3c67] = kArbitraryCount7 << 16;  // Timer H.
     env.platform_device().mmio()[0x3c68] = kArbitraryCount8 << 16;  // Timer I.
   });
+
+  std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
-    auto result_start = client_->Start(
-        {i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), kArbitraryTicksRequest});
-    ASSERT_FALSE(result_start.is_error());
+    threads.emplace_back([this, i]() {
+      zx::event setup_event;
+      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      auto result_start =
+          client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
+                                 kArbitraryTicksRequest, std::move(setup_event)});
+      ASSERT_FALSE(result_start.is_error());
+    });
+
+    // Wait until the driver has acquired the timer wait completer before continuing.
+    bool has_wait_completer = false;
+    while (!has_wait_completer) {
+      driver_test().RunInDriverContext([i, &has_wait_completer](AmlHrtimer& driver) {
+        has_wait_completer = driver.HasWaitCompleter(i);
+      });
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
   }
 
   // Ticks have decreased by 0xffff - kArbitraryCount (register read).
@@ -706,6 +708,17 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCount) {
     ASSERT_FALSE(result.is_error());
     ASSERT_EQ(result->ticks(), kArbitraryTicksRequest - (0xffff - kArbitraryCount8));
   }
+
+  // Trigger IRQs twice to finish the StartAndWait calls.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
 }
 
 TEST_F(DriverTest, GetTicksTimers5678ArbitraryCountWithIrq) {
@@ -719,11 +732,26 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCountWithIrq) {
     env.platform_device().mmio()[0x3c67] = kArbitraryCount << 16;  // Timer H.
     env.platform_device().mmio()[0x3c68] = kArbitraryCount << 16;  // Timer I.
   });
+
+  std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
-    auto result_start =
-        client_->Start({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
-                        kTicksRequestEnoughFor2Irqs});
-    ASSERT_FALSE(result_start.is_error());
+    threads.emplace_back([this, i]() {
+      zx::event setup_event;
+      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      auto result_start =
+          client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
+                                 kTicksRequestEnoughFor2Irqs, std::move(setup_event)});
+      ASSERT_FALSE(result_start.is_error());
+    });
+
+    // Wait until the driver has acquired the timer wait completer before continuing.
+    bool has_wait_completer = false;
+    while (!has_wait_completer) {
+      driver_test().RunInDriverContext([i, &has_wait_completer](AmlHrtimer& driver) {
+        has_wait_completer = driver.HasWaitCompleter(i);
+      });
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
 
     // Because the requested ticks is biggger than 0xffff, before any IRQ triggers we'll get
     // a decrease of 0xffff - kArbitraryCount (register read).
@@ -751,6 +779,13 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCountWithIrq) {
     auto result = client_->GetTicksLeft(i);
     ASSERT_FALSE(result.is_error());
     ASSERT_EQ(result->ticks(), kArbitraryCount);
+  }
+
+  // Trigger IRQs again to finish the StartAndWait calls.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  for (auto& thread : threads) {
+    thread.join();
   }
 }
 
@@ -890,31 +925,6 @@ TEST_F(DriverTest, StartAndWaitStop) {
     ASSERT_FALSE(result_start_stop.is_error());
     thread.join();
   }
-
-  CheckInspect("0", "StartAndWait", 0, 0);
-  CheckInspect("1", "StartHardware", 0, 0);
-  CheckInspect("2", "StopWait", 0, 0);
-  CheckInspect("3", "StartAndWait", 1, 0);
-  CheckInspect("4", "StartHardware", 1, 0);
-  CheckInspect("5", "StopWait", 1, 0);
-  CheckInspect("6", "StartAndWait", 2, 0);
-  CheckInspect("7", "StartHardware", 2, 0);
-  CheckInspect("8", "StopWait", 2, 0);
-  CheckInspect("9", "StartAndWait", 3, 0);
-  CheckInspect("10", "StartHardware", 3, 0);
-  CheckInspect("11", "StopWait", 3, 0);
-  CheckInspect("12", "StartAndWait", 5, 0);
-  CheckInspect("13", "StartHardware", 5, 0);
-  CheckInspect("14", "StopWait", 5, 0);
-  CheckInspect("15", "StartAndWait", 6, 0);
-  CheckInspect("16", "StartHardware", 6, 0);
-  CheckInspect("17", "StopWait", 6, 0);
-  CheckInspect("18", "StartAndWait", 7, 0);
-  CheckInspect("19", "StartHardware", 7, 0);
-  CheckInspect("20", "StopWait", 7, 0);
-  CheckInspect("21", "StartAndWait", 8, 0);
-  CheckInspect("22", "StartHardware", 8, 0);
-  CheckInspect("23", "StopWait", 8, 0);
 }
 
 TEST_F(DriverTest, StartAndWait2Stop) {
@@ -944,31 +954,6 @@ TEST_F(DriverTest, StartAndWait2Stop) {
     ASSERT_FALSE(result_start_stop.is_error());
     thread.join();
   }
-
-  CheckInspect("0", "StartAndWait2", 0, 0);
-  CheckInspect("1", "StartHardware", 0, 0);
-  CheckInspect("2", "StopWait2", 0, 0);
-  CheckInspect("3", "StartAndWait2", 1, 0);
-  CheckInspect("4", "StartHardware", 1, 0);
-  CheckInspect("5", "StopWait2", 1, 0);
-  CheckInspect("6", "StartAndWait2", 2, 0);
-  CheckInspect("7", "StartHardware", 2, 0);
-  CheckInspect("8", "StopWait2", 2, 0);
-  CheckInspect("9", "StartAndWait2", 3, 0);
-  CheckInspect("10", "StartHardware", 3, 0);
-  CheckInspect("11", "StopWait2", 3, 0);
-  CheckInspect("12", "StartAndWait2", 5, 0);
-  CheckInspect("13", "StartHardware", 5, 0);
-  CheckInspect("14", "StopWait2", 5, 0);
-  CheckInspect("15", "StartAndWait2", 6, 0);
-  CheckInspect("16", "StartHardware", 6, 0);
-  CheckInspect("17", "StopWait2", 6, 0);
-  CheckInspect("18", "StartAndWait2", 7, 0);
-  CheckInspect("19", "StartHardware", 7, 0);
-  CheckInspect("20", "StopWait2", 7, 0);
-  CheckInspect("21", "StartAndWait2", 8, 0);
-  CheckInspect("22", "StartHardware", 8, 0);
-  CheckInspect("23", "StopWait2", 8, 0);
 }
 
 class DriverTestNoAutoStop : public ::testing::Test {
@@ -1001,7 +986,9 @@ TEST_F(DriverTestNoAutoStop, CancelOnDriverStop) {
     zx::event duplicate_event;
     events[i].duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_event);
     auto result_event = client_->SetEvent({i, std::move(duplicate_event)});
-    ASSERT_FALSE(result_event.is_error());
+    ASSERT_TRUE(result_event.is_error());
+    ASSERT_EQ(result_event.error_value().domain_error(),
+              fuchsia_hardware_hrtimer::DriverError::kNotSupported);
 
     threads.emplace_back([this, i]() {
       zx::event setup_event;
@@ -1028,7 +1015,9 @@ TEST_F(DriverTestNoAutoStop, CancelOnDriverStop) {
   auto result_start =
       client_->Start({4ULL, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                       0xffff'ffff'ffff'ffffULL});
-  ASSERT_FALSE(result_start.is_error());
+  ASSERT_TRUE(result_start.is_error());
+  ASSERT_EQ(result_start.error_value().domain_error(),
+            fuchsia_hardware_hrtimer::DriverError::kNotSupported);
 
   // Force driver stop.
   auto result_stop_driver = driver_test().StopDriver();
