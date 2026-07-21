@@ -501,7 +501,7 @@ pub struct NetworkPropertiesChange {
     pub network_type: Option<fnp_socketproxy::NetworkType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NetworkUpdate {
     /// Change a network's properties.
     Properties(NetworkPropertiesChange),
@@ -543,7 +543,7 @@ enum UpdateApplied {
     NetworkRemoved(NetworkId),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PropertyUpdate {
     LoseDefaultNetwork,
     ChangeNetwork(NetworkId, NetworkUpdate),
@@ -1123,7 +1123,7 @@ impl NetpolNetworksService {
                         transport: props
                             .network_type
                             .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
-                        is_fuchsia_provisioned: matches!(network_id, NetworkId::Fuchsia(_)),
+                        is_fuchsia_provisioned: network_id.is_fuchsia(),
                         connectivity_state: props.connectivity_state,
                     }));
                 }
@@ -1179,10 +1179,7 @@ impl NetpolNetworksService {
                                 transport: props
                                     .network_type
                                     .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
-                                is_fuchsia_provisioned: matches!(
-                                    default_network,
-                                    NetworkId::Fuchsia(_)
-                                ),
+                                is_fuchsia_provisioned: default_network.is_fuchsia(),
                                 connectivity_state: props.connectivity_state,
                             },
                         ));
@@ -1276,11 +1273,40 @@ impl<Stream: futures::Stream + Unpin> futures::stream::FusedStream for Connectio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use std::num::NonZeroU64;
     const ID_1: InterfaceId = InterfaceId(NonZeroU64::new(1).unwrap());
     const ID_2: InterfaceId = InterfaceId(NonZeroU64::new(2).unwrap());
     const NAME_1: &str = "testif1";
     const NAME_2: &str = "testif2";
+
+    const FUCHSIA_ID_1: NetworkId = NetworkId::Fuchsia(ID_1);
+    const FUCHSIA_ID_2: NetworkId = NetworkId::Fuchsia(ID_2);
+    const DELEGATED_ID_1: NetworkId = NetworkId::Delegated(ID_1);
+    const DELEGATED_ID_2: NetworkId = NetworkId::Delegated(ID_2);
+
+    fn test_marks() -> fnet::Marks {
+        fnet::Marks { mark_1: Some(123), ..Default::default() }
+    }
+
+    fn delegated_properties() -> NetworkProperties {
+        NetworkProperties { socket_marks: Some(test_marks()), ..Default::default() }
+    }
+
+    fn fuchsia_properties() -> NetworkProperties {
+        NetworkProperties::default()
+    }
+
+    fn added_properties(name: &str) -> NetworkPropertiesChange {
+        NetworkPropertiesChange {
+            added: true,
+            marks: None,
+            dns_servers: None,
+            connectivity_state: None,
+            name: Some(name.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+        }
+    }
 
     impl NetpolNetworksService {
         pub(crate) fn default_network(&self) -> Option<NetworkId> {
@@ -1290,15 +1316,23 @@ mod tests {
         pub(crate) fn has_network(&self, id: NetworkId) -> bool {
             self.network_registry.networks.contains_key(&id)
         }
+
+        pub(crate) fn has_token(&self, network_id: NetworkId, is_default: bool) -> bool {
+            self.tokens.get_token(&NetworkTokenContents { network_id, is_default }).is_some()
+        }
+
+        pub(crate) fn ensure_token_for_test(&mut self, network_id: NetworkId, is_default: bool) {
+            let _token: crate::network::token_registry::TokenEntry<'_, _> =
+                self.tokens.ensure_token(NetworkTokenContents { network_id, is_default });
+        }
     }
 
     #[test]
     fn test_handle_changed_network_delegated() {
         let mut networks = RegisteredNetworks::default();
-        let delegated_id = NetworkId::Delegated(ID_1);
 
         // Add a new delegated network
-        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
+        let marks = test_marks();
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
@@ -1308,16 +1342,16 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
-            networks.handle_changed_network(delegated_id, event),
+            networks.handle_changed_network(DELEGATED_ID_1, event),
             UpdateApplied::NetworkChanged {
-                network_id: delegated_id,
+                network_id: DELEGATED_ID_1,
                 added: true,
                 changed_marks: true,
                 name: Some(NAME_1.to_string()),
                 network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
             }
         );
-        let properties = networks.networks.get(&delegated_id).expect("network should be present");
+        let properties = networks.networks.get(&DELEGATED_ID_1).expect("network should be present");
         assert_eq!(properties.socket_marks, Some(marks.clone()));
         assert_eq!(
             properties.connectivity_state,
@@ -1334,9 +1368,9 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
-            networks.handle_changed_network(delegated_id, event),
+            networks.handle_changed_network(DELEGATED_ID_1, event),
             UpdateApplied::NetworkChanged {
-                network_id: delegated_id,
+                network_id: DELEGATED_ID_1,
                 added: false,
                 changed_marks: false,
                 name: Some(NAME_1.to_string()),
@@ -1344,7 +1378,7 @@ mod tests {
             }
         );
 
-        let properties = networks.networks.get(&delegated_id).expect("network should be present");
+        let properties = networks.networks.get(&DELEGATED_ID_1).expect("network should be present");
         assert_eq!(properties.socket_marks, Some(marks.clone()));
         assert_eq!(
             properties.connectivity_state,
@@ -1362,16 +1396,16 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
-            networks.handle_changed_network(delegated_id, event),
+            networks.handle_changed_network(DELEGATED_ID_1, event),
             UpdateApplied::NetworkChanged {
-                network_id: delegated_id,
+                network_id: DELEGATED_ID_1,
                 added: false,
                 changed_marks: true,
                 name: Some(NAME_1.to_string()),
                 network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
             }
         );
-        let properties = networks.networks.get(&delegated_id).expect("network should be present");
+        let properties = networks.networks.get(&DELEGATED_ID_1).expect("network should be present");
         assert_eq!(properties.socket_marks, Some(new_marks));
         assert_eq!(
             properties.connectivity_state,
@@ -1382,7 +1416,6 @@ mod tests {
     #[test]
     fn test_handle_changed_network_fuchsia() {
         let mut networks = RegisteredNetworks::default();
-        let fuchsia_id = NetworkId::Fuchsia(ID_2);
 
         // Add a Fuchsia network
         let event = NetworkPropertiesChange {
@@ -1394,16 +1427,16 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Wifi),
         };
         assert_eq!(
-            networks.handle_changed_network(fuchsia_id, event),
+            networks.handle_changed_network(FUCHSIA_ID_2, event),
             UpdateApplied::NetworkChanged {
-                network_id: fuchsia_id,
+                network_id: FUCHSIA_ID_2,
                 added: true,
                 changed_marks: true,
                 name: Some(NAME_2.to_string()),
                 network_type: Some(fnp_socketproxy::NetworkType::Wifi),
             }
         );
-        let properties = networks.networks.get(&fuchsia_id).expect("network should be present");
+        let properties = networks.networks.get(&FUCHSIA_ID_2).expect("network should be present");
         assert_eq!(properties.socket_marks, None);
         assert_eq!(
             properties.connectivity_state,
@@ -1420,9 +1453,9 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Wifi),
         };
         assert_eq!(
-            networks.handle_changed_network(fuchsia_id, event),
+            networks.handle_changed_network(FUCHSIA_ID_2, event),
             UpdateApplied::NetworkChanged {
-                network_id: fuchsia_id,
+                network_id: FUCHSIA_ID_2,
                 added: false,
                 changed_marks: false,
                 name: Some(NAME_2.to_string()),
@@ -1430,7 +1463,7 @@ mod tests {
             }
         );
 
-        let properties = networks.networks.get(&fuchsia_id).expect("network should be present");
+        let properties = networks.networks.get(&FUCHSIA_ID_2).expect("network should be present");
         assert_eq!(
             properties.connectivity_state,
             Some(fnp_socketproxy::ConnectivityState::FullConnectivity)
@@ -1440,9 +1473,7 @@ mod tests {
     #[test]
     fn test_handle_changed_network_validation() {
         let mut networks = RegisteredNetworks::default();
-        let fuchsia_id = NetworkId::Fuchsia(ID_1);
-        let network_id = NetworkId::Delegated(ID_1);
-        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
+        let marks = test_marks();
 
         // Update a non-added network
         let event = NetworkPropertiesChange {
@@ -1453,7 +1484,7 @@ mod tests {
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
-        assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
+        assert_eq!(networks.handle_changed_network(DELEGATED_ID_1, event), UpdateApplied::None);
 
         // Add the network
         let event = NetworkPropertiesChange {
@@ -1465,9 +1496,9 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
-            networks.handle_changed_network(network_id, event),
+            networks.handle_changed_network(DELEGATED_ID_1, event),
             UpdateApplied::NetworkChanged {
-                network_id,
+                network_id: DELEGATED_ID_1,
                 added: true,
                 changed_marks: true,
                 name: Some(NAME_1.to_string()),
@@ -1484,7 +1515,7 @@ mod tests {
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
-        assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
+        assert_eq!(networks.handle_changed_network(DELEGATED_ID_1, event), UpdateApplied::None);
 
         // Fuchsia network with marks
         let event = NetworkPropertiesChange {
@@ -1495,10 +1526,9 @@ mod tests {
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
-        assert_eq!(networks.handle_changed_network(fuchsia_id, event), UpdateApplied::None);
+        assert_eq!(networks.handle_changed_network(FUCHSIA_ID_1, event), UpdateApplied::None);
 
         // Delegated network without marks
-        let delegated_id = NetworkId::Delegated(ID_1);
         let event = NetworkPropertiesChange {
             added: true,
             marks: None,
@@ -1507,138 +1537,256 @@ mod tests {
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
-        assert_eq!(networks.handle_changed_network(delegated_id, event), UpdateApplied::None);
-
-        // Make the network default
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(network_id, NetworkUpdate::MakeDefault)),
-            RegistryUpdateResult {
-                event: UpdateApplied::None,
-                default_changed: Some(DefaultChangedEvent { previous_default: None })
-            }
-        );
-
-        // Attempt to remove default network. This is invalid change since
-        // the default must be unset prior to removal.
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(network_id, NetworkUpdate::Remove)),
-            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
-        );
-
-        // Verify it was not removed
-        assert!(networks.networks.contains_key(&network_id));
-        assert_eq!(networks.default_network, Some(network_id));
+        assert_eq!(networks.handle_changed_network(DELEGATED_ID_1, event), UpdateApplied::None);
     }
 
+    // Unit tests the election algorithm directly by manipulating internal state.
+    // Verifies prioritization and intermediate fallback election logic.
+    #[test]
+    fn fallback_election_and_prioritization() {
+        let mut networks = RegisteredNetworks::default();
+
+        // Initial State: Empty, no default network.
+        assert_eq!(networks.calculate_active_default(), None);
+
+        // Add a delegated network and set as the Starnix default.
+        let _ = networks.networks.insert(DELEGATED_ID_1, delegated_properties());
+        networks.starnix_default = Some(DELEGATED_ID_1);
+        assert_eq!(
+            networks.handle_default_network_update(),
+            Some(DefaultChangedEvent { previous_default: None })
+        );
+        assert_eq!(networks.default_network, Some(DELEGATED_ID_1));
+
+        // Replace the delegated network with another delegated network.
+        // The new network should take over.
+        let _ = networks.networks.insert(DELEGATED_ID_2, delegated_properties());
+        networks.starnix_default = Some(DELEGATED_ID_2);
+        assert_eq!(
+            networks.handle_default_network_update(),
+            Some(DefaultChangedEvent { previous_default: Some(DELEGATED_ID_1) })
+        );
+        assert_eq!(networks.default_network, Some(DELEGATED_ID_2));
+
+        // Add a Fuchsia network. This Fuchsia network should take over because of
+        // Fuchsia network priority.
+        let _ = networks.networks.insert(FUCHSIA_ID_2, fuchsia_properties());
+        assert_eq!(
+            networks.handle_default_network_update(),
+            Some(DefaultChangedEvent { previous_default: Some(DELEGATED_ID_2) })
+        );
+        assert_eq!(networks.default_network, Some(FUCHSIA_ID_2));
+
+        // Add a Fuchsia network with a smaller ID. The smaller ID Fuchsia network
+        // should take over.
+        let _ = networks.networks.insert(FUCHSIA_ID_1, fuchsia_properties());
+        assert_eq!(
+            networks.handle_default_network_update(),
+            Some(DefaultChangedEvent { previous_default: Some(FUCHSIA_ID_2) })
+        );
+        assert_eq!(networks.default_network, Some(FUCHSIA_ID_1));
+
+        // Remove FUCHSIA_ID_1. The next Fuchsia network should take over.
+        let _ = networks.networks.remove(&FUCHSIA_ID_1);
+        assert_eq!(
+            networks.handle_default_network_update(),
+            Some(DefaultChangedEvent { previous_default: Some(FUCHSIA_ID_1) })
+        );
+        assert_eq!(networks.default_network, Some(FUCHSIA_ID_2));
+
+        // Remove FUCHSIA_ID_2. There are no more Fuchsia networks, so the default
+        // should fallback to the delegated network.
+        let _ = networks.networks.remove(&FUCHSIA_ID_2);
+        assert_eq!(
+            networks.handle_default_network_update(),
+            Some(DefaultChangedEvent { previous_default: Some(FUCHSIA_ID_2) })
+        );
+        assert_eq!(networks.default_network, Some(DELEGATED_ID_2));
+
+        // Unset the default delegated network prior to removal.
+        assert_eq!(
+            networks.apply(PropertyUpdate::LoseDefaultNetwork),
+            RegistryUpdateResult {
+                event: UpdateApplied::None,
+                default_changed: Some(DefaultChangedEvent {
+                    previous_default: Some(DELEGATED_ID_2)
+                })
+            }
+        );
+        assert_eq!(networks.default_network, None);
+
+        // Remove the delegated network.
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove)),
+            RegistryUpdateResult {
+                event: UpdateApplied::NetworkRemoved(DELEGATED_ID_1),
+                default_changed: None
+            }
+        );
+    }
+
+    // Tests the integration of `RegisteredNetworks::apply` updates, verifying
+    // fallback priority from Fuchsia to Delegated networks and ensuring that
+    // active default delegated networks cannot be removed.
     #[test]
     fn test_remove_fuchsia_network_fallback() {
         let mut networks = RegisteredNetworks::default();
-        let fuchsia_id1 = NetworkId::Fuchsia(ID_1);
-        let fuchsia_id2 = NetworkId::Fuchsia(ID_2);
-        let delegated_id = NetworkId::Delegated(ID_1);
+        let marks = test_marks();
+        let fuchsia_added = NetworkPropertiesChange { added: true, ..Default::default() };
 
-        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
-
-        // Add two Fuchsia networks and one Delegated network to the registry.
-        let fuchsia_added_network_change =
-            NetworkPropertiesChange { added: true, ..Default::default() };
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(
-                fuchsia_id1,
-                NetworkUpdate::Properties(fuchsia_added_network_change.clone())
-            )),
-            RegistryUpdateResult {
-                event: UpdateApplied::NetworkChanged {
-                    network_id: fuchsia_id1,
-                    added: true,
-                    changed_marks: true,
-                    name: None,
-                    network_type: None,
-                },
-                default_changed: Some(DefaultChangedEvent { previous_default: None })
-            }
+        // Add a Fuchsia network. This should become the default network.
+        let result = networks.apply(PropertyUpdate::ChangeNetwork(
+            FUCHSIA_ID_1,
+            NetworkUpdate::Properties(fuchsia_added.clone()),
+        ));
+        assert_matches!(
+            result.event,
+            UpdateApplied::NetworkChanged { network_id: id, added: true, .. }
+            if id == FUCHSIA_ID_1
         );
+        assert_eq!(result.default_changed, Some(DefaultChangedEvent { previous_default: None }));
+
+        // Add a second Fuchsia network. This should not change the default network.
+        let result = networks.apply(PropertyUpdate::ChangeNetwork(
+            FUCHSIA_ID_2,
+            NetworkUpdate::Properties(fuchsia_added),
+        ));
+        assert_matches!(
+            result.event,
+            UpdateApplied::NetworkChanged { network_id: id, added: true, .. }
+            if id == FUCHSIA_ID_2
+        );
+        assert_eq!(result.default_changed, None);
+
+        // Add a delegated network. This should not change the default network.
+        let result = networks.apply(PropertyUpdate::ChangeNetwork(
+            DELEGATED_ID_1,
+            NetworkUpdate::Properties(NetworkPropertiesChange {
+                added: true,
+                marks: Some(marks),
+                ..Default::default()
+            }),
+        ));
+        assert_matches!(
+            result.event,
+            UpdateApplied::NetworkChanged { network_id: id, added: true, .. }
+            if id == DELEGATED_ID_1
+        );
+        assert_eq!(result.default_changed, None);
+
+        // Make the delegated network default (ignored because a Fuchsia
+        // network is present).
+        let result = networks
+            .apply(PropertyUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::MakeDefault));
         assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(
-                fuchsia_id2,
-                NetworkUpdate::Properties(fuchsia_added_network_change)
-            )),
+            result,
+            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
+        );
+        assert_eq!(networks.default_network, Some(FUCHSIA_ID_1));
+
+        // Remove the first Fuchsia network (fallback to the second Fuchsia
+        // network).
+        let result =
+            networks.apply(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_1, NetworkUpdate::Remove));
+        assert_eq!(result.event, UpdateApplied::NetworkRemoved(FUCHSIA_ID_1));
+        assert_eq!(
+            result.default_changed,
+            Some(DefaultChangedEvent { previous_default: Some(FUCHSIA_ID_1) })
+        );
+        assert_eq!(networks.default_network, Some(FUCHSIA_ID_2));
+
+        // Remove the second Fuchsia network (fallback to the
+        // delegated network since it is default).
+        let result =
+            networks.apply(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_2, NetworkUpdate::Remove));
+        assert_eq!(result.event, UpdateApplied::NetworkRemoved(FUCHSIA_ID_2));
+        assert_eq!(
+            result.default_changed,
+            Some(DefaultChangedEvent { previous_default: Some(FUCHSIA_ID_2) })
+        );
+        assert_eq!(networks.default_network, Some(DELEGATED_ID_1));
+
+        // Remove the delegated network (rejected because it is default).
+        let result =
+            networks.apply(PropertyUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove));
+        assert_eq!(
+            result,
+            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
+        );
+        assert!(networks.networks.contains_key(&DELEGATED_ID_1));
+        assert_eq!(networks.default_network, Some(DELEGATED_ID_1));
+    }
+
+    #[test]
+    fn remove_non_default_fuchsia_preserves_default() {
+        let mut networks = RegisteredNetworks::default();
+
+        // Add both networks.
+        let _ = networks.networks.insert(FUCHSIA_ID_1, NetworkProperties::default());
+        let _ = networks.networks.insert(FUCHSIA_ID_2, NetworkProperties::default());
+
+        // On election, FUCHSIA_ID_1 (the smaller ID) is elected as default.
+        assert_eq!(
+            networks.handle_default_network_update(),
+            Some(DefaultChangedEvent { previous_default: None })
+        );
+        assert_eq!(networks.default_network, Some(FUCHSIA_ID_1));
+
+        // Remove the non-default network.
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_2, NetworkUpdate::Remove)),
             RegistryUpdateResult {
-                event: UpdateApplied::NetworkChanged {
-                    network_id: fuchsia_id2,
-                    added: true,
-                    changed_marks: true,
-                    name: None,
-                    network_type: None,
-                },
+                event: UpdateApplied::NetworkRemoved(FUCHSIA_ID_2),
                 default_changed: None
             }
         );
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(
-                delegated_id,
-                NetworkUpdate::Properties(NetworkPropertiesChange {
-                    added: true,
-                    marks: Some(marks),
-                    ..Default::default()
-                })
-            )),
-            RegistryUpdateResult {
-                event: UpdateApplied::NetworkChanged {
-                    network_id: delegated_id,
-                    added: true,
-                    changed_marks: true,
-                    name: None,
-                    network_type: None,
-                },
-                default_changed: None
-            }
-        );
 
-        // Make the Delegated network default. Since Fuchsia networks are
-        // present, they are prioritized, so the active default network does
-        // not change.
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(delegated_id, NetworkUpdate::MakeDefault)),
-            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
-        );
+        // Verify that FUCHSIA_ID_1 is still the active default.
+        assert_eq!(networks.default_network, Some(FUCHSIA_ID_1));
+    }
 
-        // Verify the active default is Fuchsia's network with the lowest ID.
-        assert_eq!(networks.default_network, Some(fuchsia_id1));
+    #[fuchsia::test]
+    async fn remove_default_network_cleans_up_tokens() {
+        let mut service = NetpolNetworksService::default();
 
-        // Remove the Fuchsia active default network directly (allowed
-        // statelessly for Fuchsia networks)
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(fuchsia_id1, NetworkUpdate::Remove)),
-            RegistryUpdateResult {
-                event: UpdateApplied::NetworkRemoved(fuchsia_id1),
-                default_changed: Some(DefaultChangedEvent { previous_default: Some(fuchsia_id1) })
-            }
-        );
+        // Add two Fuchsia networks via ChangeNetwork updates.
+        service
+            .update(PropertyUpdate::ChangeNetwork(
+                FUCHSIA_ID_1,
+                NetworkUpdate::Properties(added_properties(NAME_1)),
+            ))
+            .await;
 
-        // Verify the fallback default is the next available Fuchsia network.
-        assert_eq!(networks.default_network, Some(fuchsia_id2));
+        service
+            .update(PropertyUpdate::ChangeNetwork(
+                FUCHSIA_ID_2,
+                NetworkUpdate::Properties(added_properties(NAME_2)),
+            ))
+            .await;
 
-        // Remove the fallback Fuchsia network.
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(fuchsia_id2, NetworkUpdate::Remove)),
-            RegistryUpdateResult {
-                event: UpdateApplied::NetworkRemoved(fuchsia_id2),
-                default_changed: Some(DefaultChangedEvent { previous_default: Some(fuchsia_id2) })
-            }
-        );
+        // On election, FUCHSIA_ID_1 (the smaller ID) is elected as default.
+        assert_eq!(service.default_network(), Some(FUCHSIA_ID_1));
 
-        // Verify the fallback default is the Delegated network since there are
-        // no Fuchsia networks left.
-        assert_eq!(networks.default_network, Some(delegated_id));
+        // Ensure non-default tokens exist for both networks.
+        assert!(service.has_token(FUCHSIA_ID_1, false /* is_default */));
+        assert!(service.has_token(FUCHSIA_ID_2, false /* is_default */));
 
-        // Remove the Delegated network directly. This must be rejected because
-        // it is the Starnix default.
-        assert_eq!(
-            networks.apply(PropertyUpdate::ChangeNetwork(delegated_id, NetworkUpdate::Remove)),
-            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
-        );
-        assert!(networks.networks.contains_key(&delegated_id));
-        assert_eq!(networks.default_network, Some(delegated_id));
+        // Manually create default token for FUCHSIA_ID_1 to simulate a client WatchDefault call.
+        service.ensure_token_for_test(FUCHSIA_ID_1, true /* is_default */);
+        assert!(service.has_token(FUCHSIA_ID_1, true /* is_default */));
+
+        // Remove FUCHSIA_ID_1 (the default network). This should trigger fallback to FUCHSIA_ID_2
+        // and clean up FUCHSIA_ID_1's tokens.
+        service.update(PropertyUpdate::ChangeNetwork(FUCHSIA_ID_1, NetworkUpdate::Remove)).await;
+
+        // Verify fallback happened.
+        assert_eq!(service.default_network(), Some(FUCHSIA_ID_2));
+
+        // Verify FUCHSIA_ID_1 tokens are gone.
+        assert!(!service.has_token(FUCHSIA_ID_1, false /* is_default */));
+        assert!(!service.has_token(FUCHSIA_ID_1, true /* is_default */));
+
+        // Verify FUCHSIA_ID_2 tokens still exist.
+        assert!(service.has_token(FUCHSIA_ID_2, false /* is_default */));
     }
 }
