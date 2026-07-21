@@ -101,13 +101,18 @@ impl InodeDataUnion {
 }
 
 #[derive(Debug, Clone)]
-struct NodeInner {
+pub struct NodeInner {
     inode_offset: u64,
     format: InodeFormat,
     mode: u16,
     size: u64,
     data_union: InodeDataUnion,
     ino: u32,
+    nid: u64,
+    link_count: u32,
+    uid: u32,
+    gid: u32,
+    mtime_ns: u64,
 }
 
 impl NodeInner {
@@ -148,18 +153,41 @@ impl NodeInner {
             InodeVersion::Extended => 64,
         }
     }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+    pub fn ino(&self) -> u32 {
+        self.ino
+    }
+    pub fn nid(&self) -> u64 {
+        self.nid
+    }
+    pub fn link_count(&self) -> u32 {
+        self.link_count
+    }
+    pub fn uid(&self) -> u32 {
+        self.uid
+    }
+    pub fn gid(&self) -> u32 {
+        self.gid
+    }
+    pub fn mtime_ns(&self) -> u64 {
+        self.mtime_ns
+    }
+    pub fn mode(&self) -> u16 {
+        self.mode
+    }
 }
 
 /// A directory node in the EROFS image.
 #[derive(Debug, Clone)]
 pub struct DirectoryNode(NodeInner);
 
-impl DirectoryNode {
-    pub fn size(&self) -> u64 {
-        self.0.size
-    }
-    pub fn ino(&self) -> u32 {
-        self.0.ino
+impl std::ops::Deref for DirectoryNode {
+    type Target = NodeInner;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -207,12 +235,10 @@ pub struct DirectoryEntry {
 #[derive(Debug, Clone)]
 pub struct FileNode(NodeInner);
 
-impl FileNode {
-    pub fn size(&self) -> u64 {
-        self.0.size
-    }
-    pub fn ino(&self) -> u32 {
-        self.0.ino
+impl std::ops::Deref for FileNode {
+    type Target = NodeInner;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -233,9 +259,11 @@ impl Node {
     }
 
     fn parse_compact(
+        nid: u64,
         inode_offset: u64,
         format: InodeFormat,
         inode: format::InodeCompact,
+        build_time_ns: u64,
     ) -> Result<Self, ParsingError> {
         let data_union = InodeDataUnion::parse(inode.i_u, format);
         Ok(Self::new(NodeInner {
@@ -245,15 +273,27 @@ impl Node {
             size: inode.size.get().into(),
             data_union,
             ino: inode.ino.get(),
+            nid,
+            link_count: inode.link_count.get().into(),
+            uid: inode.uid.get().into(),
+            gid: inode.gid.get().into(),
+            mtime_ns: build_time_ns,
         }))
     }
 
     fn parse_extended(
+        nid: u64,
         inode_offset: u64,
         format: InodeFormat,
         inode: format::InodeExtended,
     ) -> Result<Self, ParsingError> {
         let data_union = InodeDataUnion::parse(inode.i_u, format);
+        let mtime_ns = inode
+            .mtime
+            .get()
+            .checked_mul(1_000_000_000)
+            .and_then(|t| t.checked_add(inode.mtime_ns.get().into()))
+            .ok_or(ParsingError::Overflow)?;
         Ok(Self::new(NodeInner {
             inode_offset,
             format,
@@ -261,10 +301,20 @@ impl Node {
             size: inode.size.get(),
             data_union,
             ino: inode.ino.get(),
+            nid,
+            link_count: inode.link_count.get(),
+            uid: inode.uid.get(),
+            gid: inode.gid.get(),
+            mtime_ns,
         }))
     }
 
-    fn from_nid(nid: u64, meta_addr: u64, reader: &dyn Reader) -> Result<Self, ErofsError> {
+    fn from_nid(
+        nid: u64,
+        meta_addr: u64,
+        build_time_ns: u64,
+        reader: &dyn Reader,
+    ) -> Result<Self, ErofsError> {
         let node_offset =
             nid.checked_mul(format::INODE_SLOT_SIZE).ok_or(ParsingError::InvalidNid(nid))?;
         let inode_offset =
@@ -274,27 +324,27 @@ impl Node {
         reader.read(inode_offset, &mut head)?;
         let format = InodeFormat::parse(u16::from_le_bytes(head))?;
         let node = match format.version {
-            InodeVersion::Compact => {
-                Self::parse_compact(inode_offset, format, reader.read_object(inode_offset)?)?
-            }
+            InodeVersion::Compact => Self::parse_compact(
+                nid,
+                inode_offset,
+                format,
+                reader.read_object(inode_offset)?,
+                build_time_ns,
+            )?,
             InodeVersion::Extended => {
-                Self::parse_extended(inode_offset, format, reader.read_object(inode_offset)?)?
+                Self::parse_extended(nid, inode_offset, format, reader.read_object(inode_offset)?)?
             }
         };
         Ok(node)
     }
+}
 
-    pub fn size(&self) -> u64 {
+impl std::ops::Deref for Node {
+    type Target = NodeInner;
+    fn deref(&self) -> &Self::Target {
         match self {
-            Node::Directory(node) => node.size(),
-            Node::File(node) => node.size(),
-        }
-    }
-
-    pub fn ino(&self) -> u32 {
-        match self {
-            Node::Directory(node) => node.ino(),
-            Node::File(node) => node.ino(),
+            Node::Directory(d) => d,
+            Node::File(f) => f,
         }
     }
 }
@@ -305,6 +355,9 @@ pub struct ErofsFilesystem {
     block_size: u64,
     meta_addr: u64,
     root_node: DirectoryNode,
+    total_bytes: u64,
+    total_inodes: u64,
+    build_time_ns: u64,
 }
 
 impl ErofsFilesystem {
@@ -314,12 +367,28 @@ impl ErofsFilesystem {
         let block_size = 1u64 << super_block.block_size_bits;
         let meta_block_addr = super_block.meta_block_addr.get().into();
         let meta_addr = block_size.checked_mul(meta_block_addr).ok_or(ParsingError::Overflow)?;
+        let total_inodes = super_block.inode_count.get();
+        let build_time_ns = super_block
+            .epoch
+            .get()
+            .checked_mul(1_000_000_000)
+            .and_then(|t| t.checked_add(super_block.fixed_nsec.get().into()))
+            .ok_or(ParsingError::Overflow)?;
+        let total_bytes = (super_block.blocks.get() as u64) * block_size;
         let root_nid = super_block.root_nid.get().into();
-        let root_node = match Node::from_nid(root_nid, meta_addr, &reader)? {
+        let root_node = match Node::from_nid(root_nid, meta_addr, build_time_ns, &reader)? {
             Node::Directory(node) => node,
             _ => return Err(ParsingError::InvalidRootNode.into()),
         };
-        Ok(Self { reader, block_size, meta_addr, root_node })
+        Ok(Self {
+            reader,
+            block_size,
+            meta_addr,
+            root_node,
+            total_bytes,
+            total_inodes,
+            build_time_ns,
+        })
     }
 
     fn parse_superblock(reader: &dyn Reader) -> Result<format::SuperBlock, ErofsError> {
@@ -381,12 +450,20 @@ impl ErofsFilesystem {
 
     /// Returns the node with the given nid.
     pub fn node(&self, nid: u64) -> Result<Node, ErofsError> {
-        Node::from_nid(nid, self.meta_addr, &self.reader)
+        Node::from_nid(nid, self.meta_addr, self.build_time_ns, &self.reader)
     }
 
     /// Returns the root node of the EROFS image.
     pub fn root_node(&self) -> DirectoryNode {
         self.root_node.clone()
+    }
+
+    pub fn total_bytes(&self) -> u64 {
+        self.total_bytes
+    }
+
+    pub fn total_inodes(&self) -> u64 {
+        self.total_inodes
     }
 
     /// Reads the data of the given file node into a buffer.
@@ -821,5 +898,34 @@ mod tests {
             }
             entry_offset += filled;
         }
+    }
+
+    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
+    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[fuchsia::test]
+    fn test_filesystem_metadata(path: &str) {
+        let runfiles = fs::read(path).expect("failed to read test file");
+        let reader = Arc::new(VecReader::new(runfiles));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+
+        assert!(fs.total_bytes() > 0);
+        assert!(fs.total_inodes() > 0);
+    }
+
+    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
+    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[fuchsia::test]
+    fn test_node_metadata(path: &str) {
+        let runfiles = fs::read(path).expect("failed to read test file");
+        let reader = Arc::new(VecReader::new(runfiles));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
+
+        assert!(root_node.link_count() >= 2);
+        assert!(root_node.mtime_ns() > 0);
+
+        let file1_node = fs.lookup(&root_node, "file1").unwrap().unwrap();
+        assert_eq!(file1_node.link_count(), 1);
+        assert!(file1_node.mtime_ns() > 0);
     }
 }

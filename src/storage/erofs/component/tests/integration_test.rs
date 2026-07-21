@@ -261,3 +261,93 @@ async fn test_erofs_file_readahead() {
     assert_eq!(buf1[0], expected[0]);
     assert_eq!(buf2[0], expected[4100]);
 }
+
+#[fuchsia::test]
+async fn test_erofs_file_attributes() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    let file = fuchsia_fs::directory::open_file(&root_client, "file1", fio::PERM_READABLE)
+        .await
+        .expect("Failed to open file1");
+
+    let (mut_attrs, immut_attrs) = file
+        .get_attributes(fio::NodeAttributesQuery::all())
+        .await
+        .expect("Failed to get attributes")
+        .map_err(zx::Status::from_raw)
+        .expect("get_attributes returned error");
+
+    assert_eq!(immut_attrs.protocols, Some(fio::NodeProtocolKinds::FILE));
+    assert_eq!(
+        immut_attrs.abilities,
+        Some(fio::Operations::GET_ATTRIBUTES | fio::Operations::READ_BYTES)
+    );
+    assert!(immut_attrs.id.is_some());
+    assert_eq!(immut_attrs.link_count, Some(1));
+
+    assert!(mut_attrs.mode.is_some());
+    let mode = mut_attrs.mode.unwrap();
+    assert_eq!(mode & 0o170000, 0o100000); // Regular file
+
+    assert!(mut_attrs.uid.is_some());
+    assert!(mut_attrs.gid.is_some());
+    assert!(mut_attrs.modification_time.is_some());
+    assert!(mut_attrs.modification_time.unwrap() > 0);
+}
+
+#[fuchsia::test]
+async fn test_erofs_directory_attributes() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    let (mut_attrs, immut_attrs) = root_client
+        .get_attributes(fio::NodeAttributesQuery::all())
+        .await
+        .expect("Failed to get attributes")
+        .map_err(zx::Status::from_raw)
+        .expect("get_attributes returned error");
+
+    assert_eq!(immut_attrs.protocols, Some(fio::NodeProtocolKinds::DIRECTORY));
+    assert_eq!(
+        immut_attrs.abilities,
+        Some(
+            fio::Operations::GET_ATTRIBUTES
+                | fio::Operations::ENUMERATE
+                | fio::Operations::TRAVERSE,
+        )
+    );
+    assert!(immut_attrs.id.is_some());
+    // root link count should be at least 2 (. and ..) + subdirs (large_dir)
+    assert!(immut_attrs.link_count.unwrap() >= 3);
+
+    assert!(mut_attrs.mode.is_some());
+    let mode = mut_attrs.mode.unwrap();
+    assert_eq!(mode & 0o170000, 0o040000); // Directory
+
+    assert!(mut_attrs.uid.is_some());
+    assert!(mut_attrs.gid.is_some());
+    assert!(mut_attrs.modification_time.is_some());
+    assert!(mut_attrs.modification_time.unwrap() > 0);
+}
+
+#[fuchsia::test]
+async fn test_erofs_query_filesystem() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    let (status, info) =
+        root_client.query_filesystem().await.expect("query_filesystem FIDL call failed");
+
+    assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+    assert!(info.is_some());
+    let info = info.unwrap();
+
+    assert!(info.total_bytes > 0);
+    assert_eq!(info.used_bytes, info.total_bytes);
+    assert!(info.total_nodes > 0);
+    assert_eq!(info.used_nodes, info.total_nodes);
+    assert_eq!(info.block_size, 4096);
+    assert_eq!(info.max_filename_size, 255);
+    assert_eq!(info.fs_type, 0x65726f66); // EROFS magic or VfsType
+
+    let name_bytes: Vec<u8> = info.name.iter().map(|&b| b as u8).take_while(|&b| b != 0).collect();
+    assert_eq!(name_bytes, b"erofs");
+}

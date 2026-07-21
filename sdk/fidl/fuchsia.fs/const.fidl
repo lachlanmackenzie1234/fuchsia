@@ -12,4 +12,6 @@ type VfsType = flexible enum {
     FACTORYFS = 0x1e694d21;
     FXFS = 0x73667866;
     F2FS = 0xfe694d21;
+    @available(added=HEAD)
+    EROFS = 0x65726f66;
 };

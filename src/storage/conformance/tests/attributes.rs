@@ -36,6 +36,27 @@ async fn get_attributes_file_query_all() {
     let file_proxy =
         dir.open_node::<fio::FileMarker>(TEST_FILE, fio::PERM_READABLE, None).await.unwrap();
 
+    // Set some mutable attributes if we can, so the mutable filesystems that support these match
+    // the immutable ones that also support them (EROFS in particular).
+    if harness.supports_mutable_attrs() {
+        let file_writable = dir
+            .open_node::<fio::FileMarker>(TEST_FILE, fio::PERM_READABLE | fio::PERM_WRITABLE, None)
+            .await
+            .unwrap();
+        let initial_attrs = fio::MutableNodeAttributes {
+            mode: supported_attrs.contains(fio::NodeAttributesQuery::MODE).then_some(0o100644),
+            uid: supported_attrs.contains(fio::NodeAttributesQuery::UID).then_some(100),
+            gid: supported_attrs.contains(fio::NodeAttributesQuery::GID).then_some(200),
+            rdev: supported_attrs.contains(fio::NodeAttributesQuery::RDEV).then_some(300),
+            ..Default::default()
+        };
+        file_writable
+            .update_attributes(&initial_attrs)
+            .await
+            .unwrap()
+            .expect("update_attributes failed");
+    }
+
     // fuchsia.io/Node.GetAttributes
     // All of the attributes are requested. Filesystems are allowed to return None for attributes
     // they don't support.
@@ -64,11 +85,27 @@ async fn get_attributes_file_query_all() {
         assert_matches!(mutable_attrs.access_time, None);
     }
 
-    // The posix attributes weren't set so they should all be None.
-    assert_matches!(mutable_attrs.mode, None);
-    assert_matches!(mutable_attrs.uid, None);
-    assert_matches!(mutable_attrs.gid, None);
-    assert_matches!(mutable_attrs.rdev, None);
+    // Check exact values for supported POSIX attributes.
+    if supported_attrs.contains(fio::NodeAttributesQuery::MODE) {
+        assert_matches!(mutable_attrs.mode, Some(0o100644));
+    } else {
+        assert_matches!(mutable_attrs.mode, None);
+    }
+    if supported_attrs.contains(fio::NodeAttributesQuery::UID) {
+        assert_matches!(mutable_attrs.uid, Some(100));
+    } else {
+        assert_matches!(mutable_attrs.uid, None);
+    }
+    if supported_attrs.contains(fio::NodeAttributesQuery::GID) {
+        assert_matches!(mutable_attrs.gid, Some(200));
+    } else {
+        assert_matches!(mutable_attrs.gid, None);
+    }
+    if supported_attrs.contains(fio::NodeAttributesQuery::RDEV) {
+        assert_matches!(mutable_attrs.rdev, Some(300));
+    } else {
+        assert_matches!(mutable_attrs.rdev, None);
+    }
 
     // All node types must report at least protocols and abilities.
     assert_matches!(immutable_attrs.protocols, Some(fio::NodeProtocolKinds::FILE));
@@ -107,6 +144,27 @@ async fn get_attributes_directory_query_all() {
     let dir_proxy =
         dir.open_node::<fio::DirectoryMarker>("dir", fio::PERM_READABLE, None).await.unwrap();
 
+    // Set some mutable attributes if we can, so the mutable filesystems that support these match
+    // the immutable ones that also support them (EROFS in particular).
+    if harness.supports_mutable_attrs() {
+        let dir_writable = dir
+            .open_node::<fio::DirectoryMarker>("dir", fio::PERM_READABLE | fio::PERM_WRITABLE, None)
+            .await
+            .unwrap();
+        let initial_attrs = fio::MutableNodeAttributes {
+            mode: supported_attrs.contains(fio::NodeAttributesQuery::MODE).then_some(0o40755),
+            uid: supported_attrs.contains(fio::NodeAttributesQuery::UID).then_some(100),
+            gid: supported_attrs.contains(fio::NodeAttributesQuery::GID).then_some(200),
+            rdev: supported_attrs.contains(fio::NodeAttributesQuery::RDEV).then_some(300),
+            ..Default::default()
+        };
+        dir_writable
+            .update_attributes(&initial_attrs)
+            .await
+            .unwrap()
+            .expect("update_attributes failed");
+    }
+
     // fuchsia.io/Node.GetAttributes
     // All of the attributes are requested. Filesystems are allowed to return None for attributes
     // they don't support.
@@ -135,11 +193,27 @@ async fn get_attributes_directory_query_all() {
         assert_matches!(mutable_attrs.access_time, None);
     }
 
-    // The posix attributes weren't set so they should all be None.
-    assert_matches!(mutable_attrs.mode, None);
-    assert_matches!(mutable_attrs.uid, None);
-    assert_matches!(mutable_attrs.gid, None);
-    assert_matches!(mutable_attrs.rdev, None);
+    // Check exact values for supported POSIX attributes.
+    if supported_attrs.contains(fio::NodeAttributesQuery::MODE) {
+        assert_matches!(mutable_attrs.mode, Some(0o40755));
+    } else {
+        assert_matches!(mutable_attrs.mode, None);
+    }
+    if supported_attrs.contains(fio::NodeAttributesQuery::UID) {
+        assert_matches!(mutable_attrs.uid, Some(100));
+    } else {
+        assert_matches!(mutable_attrs.uid, None);
+    }
+    if supported_attrs.contains(fio::NodeAttributesQuery::GID) {
+        assert_matches!(mutable_attrs.gid, Some(200));
+    } else {
+        assert_matches!(mutable_attrs.gid, None);
+    }
+    if supported_attrs.contains(fio::NodeAttributesQuery::RDEV) {
+        assert_matches!(mutable_attrs.rdev, Some(300));
+    } else {
+        assert_matches!(mutable_attrs.rdev, None);
+    }
 
     // All node types must report at least protocols and abilities.
     assert_matches!(immutable_attrs.protocols, Some(fio::NodeProtocolKinds::DIRECTORY));

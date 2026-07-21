@@ -4,10 +4,10 @@
 
 use crate::flags::Rights;
 use fidl::endpoints::create_proxy;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio, fidl_fuchsia_io_test as io_test,
-};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io_test as io_test;
 
 /// Helper struct for connecting to an io1 test harness and running a conformance test on it.
 pub struct TestHarness {
@@ -169,6 +169,9 @@ fn get_supported_file_rights(config: &io_test::HarnessConfig) -> fio::Rights {
 // that support mutable attributes must support [`fio::NodeAttributesQuery::CREATION_TIME`]
 // and [`fio::NodeAttributesQuery::MODIFICATION_TIME`].
 fn supports_mutable_attrs(config: &io_test::HarnessConfig) -> bool {
+    if !config.supports_mutable_file && !config.supports_modify_directory {
+        return false;
+    }
     let all_mutable_attrs: fio::NodeAttributesQuery = fio::NodeAttributesQuery::ACCESS_TIME
         | fio::NodeAttributesQuery::MODIFICATION_TIME
         | fio::NodeAttributesQuery::CREATION_TIME

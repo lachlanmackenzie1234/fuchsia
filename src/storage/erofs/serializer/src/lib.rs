@@ -152,7 +152,7 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
         sb_ext_slots: 0,
         root_nid: LEU16::new(0),
         inode_count: LEU64::new(nodes.len() as u64),
-        epoch: LEU64::new(0),
+        epoch: LEU64::new(1700000000),
         fixed_nsec: LEU32::new(0),
         blocks: LEU32::new(total_blocks),
         meta_block_addr: LEU32::new(1),
@@ -187,8 +187,8 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
             reserved_1: [0; 4],
             i_u,
             ino: LEU32::new(nodes[i].nid as u32),
-            uid: LEU16::new(0),
-            gid: LEU16::new(0),
+            uid: LEU16::new(100),
+            gid: LEU16::new(200),
             reserved_2: [0; 4],
         };
         let offset = 4096 + i * 32;

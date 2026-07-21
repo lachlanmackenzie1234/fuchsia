@@ -47,7 +47,15 @@ async fn run(mut stream: TestHarnessRequestStream, pager: Arc<ErofsPager>) -> Re
                         | fio::NodeAttributesQuery::ABILITIES
                         | fio::NodeAttributesQuery::CONTENT_SIZE
                         | fio::NodeAttributesQuery::STORAGE_SIZE
-                        | fio::NodeAttributesQuery::ID,
+                        | fio::NodeAttributesQuery::ID
+                        | fio::NodeAttributesQuery::MODE
+                        | fio::NodeAttributesQuery::UID
+                        | fio::NodeAttributesQuery::GID
+                        | fio::NodeAttributesQuery::LINK_COUNT
+                        | fio::NodeAttributesQuery::CREATION_TIME
+                        | fio::NodeAttributesQuery::MODIFICATION_TIME
+                        | fio::NodeAttributesQuery::ACCESS_TIME
+                        | fio::NodeAttributesQuery::CHANGE_TIME,
                     // Unsupported options:
                     supports_executable_file: false,
                     supports_remote_dir: false,

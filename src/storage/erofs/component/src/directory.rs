@@ -63,7 +63,7 @@ impl DirectoryEntry for ErofsDirectory {
 
 impl GetEntryInfo for ErofsDirectory {
     fn entry_info(&self) -> EntryInfo {
-        EntryInfo::new(self.node.ino() as u64, fio::DirentType::Directory)
+        EntryInfo::new(self.node.nid(), fio::DirentType::Directory)
     }
 }
 
@@ -72,16 +72,31 @@ impl vfs::node::Node for ErofsDirectory {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
-        Ok(vfs::immutable_attributes!(
+        let mtime = self.node.mtime_ns();
+        Ok(vfs::attributes!(
             requested_attributes,
+            Mutable {
+                mode: self.node.mode() as u32,
+                uid: self.node.uid(),
+                gid: self.node.gid(),
+                creation_time: mtime,
+                modification_time: mtime,
+                access_time: mtime,
+            },
             Immutable {
                 protocols: fio::NodeProtocolKinds::DIRECTORY,
                 abilities: fio::Operations::GET_ATTRIBUTES
                     | fio::Operations::ENUMERATE
                     | fio::Operations::TRAVERSE,
-                id: self.node.ino() as u64,
+                id: self.node.nid(),
+                link_count: self.node.link_count() as u64,
+                change_time: mtime,
             }
         ))
+    }
+
+    fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status> {
+        self.volume.query_filesystem()
     }
 }
 
@@ -179,14 +194,7 @@ impl Directory for ErofsDirectory {
                     _ => fio::DirentType::Unknown,
                 };
 
-                // We have to go parse the child inode entry to find the ino.
-                let child = self.volume.fs().node(entry.nid).map_err(|e| {
-                    log::error!("Failed to lookup child node {} for ino: {:?}", entry.nid, e);
-                    e.to_status()
-                })?;
-                let ino = child.ino();
-
-                let entry_info = EntryInfo::new(ino as u64, dirent_type);
+                let entry_info = EntryInfo::new(entry.nid, dirent_type);
                 match sink.append(&entry_info, &entry.name) {
                     AppendResult::Ok(new_sink) => {
                         sink = new_sink;

@@ -90,7 +90,7 @@ impl DirectoryEntry for ErofsFile {
 
 impl GetEntryInfo for ErofsFile {
     fn entry_info(&self) -> EntryInfo {
-        EntryInfo::new(self.node.ino() as u64, fio::DirentType::File)
+        EntryInfo::new(self.node.nid(), fio::DirentType::File)
     }
 }
 
@@ -99,15 +99,26 @@ impl Node for ErofsFile {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
+        let mtime = self.node.mtime_ns();
         let content_size = self.node.size();
-        Ok(vfs::immutable_attributes!(
+        Ok(vfs::attributes!(
             requested_attributes,
+            Mutable {
+                mode: self.node.mode() as u32,
+                uid: self.node.uid(),
+                gid: self.node.gid(),
+                creation_time: mtime,
+                modification_time: mtime,
+                access_time: mtime,
+            },
             Immutable {
                 protocols: fio::NodeProtocolKinds::FILE,
                 abilities: fio::Operations::GET_ATTRIBUTES | fio::Operations::READ_BYTES,
                 content_size: content_size,
                 storage_size: content_size,
-                id: self.node.ino() as u64,
+                id: self.node.nid(),
+                link_count: self.node.link_count() as u64,
+                change_time: mtime,
             }
         ))
     }
