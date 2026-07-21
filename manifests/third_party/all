@@ -463,7 +463,7 @@
              path="third_party/re2/src"
              remote="https://fuchsia.googlesource.com/third_party/re2"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="123d379e288f3c113c26dca952d78ad5f4fc98fd"/>
+             revision="b654eab8f96ef2264105343d56d45d0bf1134231"/>
     <project name="third_party/sbase"
              path="third_party/sbase"
              remote="https://fuchsia.googlesource.com/third_party/sbase"

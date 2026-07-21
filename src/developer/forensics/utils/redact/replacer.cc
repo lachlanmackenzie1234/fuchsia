@@ -15,6 +15,7 @@
 
 #include <re2/re2.h>
 
+#include "absl/strings/string_view.h"
 #include "src/developer/forensics/utils/regexp.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -66,8 +67,8 @@ std::vector<Redaction> BuildRedactions(
     const std::vector<std::string>& ignore_prefixes,
     ::fit::function<std::string(const std::string& match)> build_redacted) {
   std::vector<Redaction> redactions;
-  re2::StringPiece text_view(text);
-  re2::StringPiece match;
+  absl::string_view text_view(text);
+  absl::string_view match;
 
   while (RE2::FindAndConsume(&text_view, regexp, &match)) {
     const bool has_prefix =
@@ -313,9 +314,9 @@ std::string CanonicalizeMac(const std::string& original_mac) {
                  [](char c) { return std::tolower(c); });
 
   std::string canonical_mac = "00:00:00:00:00:00";
-  re2::StringPiece lowercased_mac_view(lowercased_mac);
+  absl::string_view lowercased_mac_view(lowercased_mac);
   for (size_t i = 0; i < NUM_MAC_BYTES; ++i) {
-    re2::StringPiece mac_byte;
+    absl::string_view mac_byte;
     re2::RE2::FindAndConsume(&lowercased_mac_view, R"(([[:xdigit:]]{1,2}))", &mac_byte);
 
     if (mac_byte.length() == 2) {

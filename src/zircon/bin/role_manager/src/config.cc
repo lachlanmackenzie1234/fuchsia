@@ -26,6 +26,8 @@
 #include <src/lib/files/directory.h>
 #include <src/lib/files/file.h>
 
+#include "absl/strings/string_view.h"
+
 using fuchsia_scheduler::Parameter;
 using fuchsia_scheduler::ParameterValue;
 using zircon_profile::Profile;
@@ -726,7 +728,7 @@ fit::result<zx_status_t, Role> Role::Create(std::string_view name_with_selectors
   }
 
   // Parse the selectors.
-  re2::StringPiece input{selectors};
+  absl::string_view input{selectors};
   std::string key, raw_value;
   while (re2::RE2::Consume(&input, kReSelector, &key, &raw_value)) {
     ParameterValue value = ParameterValue::WithStringValue(raw_value);

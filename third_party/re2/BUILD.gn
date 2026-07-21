@@ -12,6 +12,7 @@ config("re2_skipped_warnings") {
   visibility = [ ":*" ]
   cflags = [
     "-Wno-conversion",
+    "-Wno-deprecated-declarations",
     "-Wno-extra-semi",
     "-Wno-missing-field-initializers",
     "-Wno-tautological-unsigned-enum-zero-compare",
@@ -26,6 +27,7 @@ config("re2_skipped_warnings") {
 source_set("re2_source") {
   visibility = [ ":*" ]
   sources = [
+    "src/re2/bitmap256.cc",
     "src/re2/bitmap256.h",
     "src/re2/bitstate.cc",
     "src/re2/compile.cc",
@@ -53,27 +55,28 @@ source_set("re2_source") {
     "src/re2/simplify.cc",
     "src/re2/sparse_array.h",
     "src/re2/sparse_set.h",
-    "src/re2/stringpiece.cc",
-    "src/re2/stringpiece.h",
     "src/re2/tostring.cc",
     "src/re2/unicode_casefold.cc",
     "src/re2/unicode_casefold.h",
     "src/re2/unicode_groups.cc",
     "src/re2/unicode_groups.h",
     "src/re2/walker-inl.h",
-    "src/util/flags.h",
-    "src/util/logging.h",
-    "src/util/mix.h",
-    "src/util/mutex.h",
     "src/util/rune.cc",
     "src/util/strutil.cc",
     "src/util/strutil.h",
     "src/util/utf.h",
-    "src/util/util.h",
   ]
   public = [ "src/re2/re2.h" ]
   public_configs = [ ":re2_config" ]
   configs += [ ":re2_skipped_warnings" ]
+  public_deps = [
+    "//third_party/abseil-cpp/absl/base",
+    "//third_party/abseil-cpp/absl/base:core_headers",
+    "//third_party/abseil-cpp/absl/flags:flag",
+    "//third_party/abseil-cpp/absl/log:absl_check",
+    "//third_party/abseil-cpp/absl/log:absl_log",
+    "//third_party/abseil-cpp/absl/strings",
+  ]
 
   # Ensure the symbols are not hidden else the .so won't have any exported
   # symbols. When we build the .so (below) we supply a linker script which
@@ -83,8 +86,9 @@ source_set("re2_source") {
 
 # Building as a shared library to reduce space usage in production images.
 # See space analysis in fxrev.dev/532721.
-target(default_library_type, "re2") {
-  deps = [ ":re2_source" ]
+target(default_library_type, "re2_lib") {
+  output_name = "re2"
+  public_deps = [ ":re2_source" ]
   public = [ "src/re2/re2.h" ]
   public_configs = [ ":re2_config" ]
   configs += [ ":re2_skipped_warnings" ]
@@ -96,6 +100,21 @@ target(default_library_type, "re2") {
     ldflags = [ "-Wl,--version-script=" +
                 rebase_path(version_script, root_build_dir) ]
   }
+}
+
+group("re2") {
+  public_deps = [
+    ":re2_lib",
+
+    # The re2.h header contains inline functions that call into abseil-cpp
+    # (specifically absl/base/call_once.h and absl/strings/string_view.h).
+    #
+    # Since GN does not propagate source_set public_deps across a
+    # shared_library boundary for linking, we must explicitly expose them here
+    # so consumers get the absl static libraries on their link line.
+    "//third_party/abseil-cpp/absl/base",
+    "//third_party/abseil-cpp/absl/strings",
+  ]
 }
 
 source_set("testing") {
@@ -113,12 +132,11 @@ source_set("testing") {
     "src/re2/testing/string_generator.h",
     "src/re2/testing/tester.cc",
     "src/re2/testing/tester.h",
-    "src/util/benchmark.h",
     "src/util/pcre.cc",
     "src/util/pcre.h",
-    "src/util/test.h",
   ]
   public_deps = [ ":re2_source" ]
+  deps = [ "//third_party/googletest:gtest" ]
   configs += [ ":re2_skipped_warnings" ]
 }
 
@@ -139,9 +157,11 @@ executable("re2_fast_tests_bin") {
     "src/re2/testing/set_test.cc",
     "src/re2/testing/simplify_test.cc",
     "src/re2/testing/string_generator_test.cc",
-    "src/util/test.cc",
   ]
-  deps = [ ":testing" ]
+  deps = [
+    ":testing",
+    "//src/lib/fxl/test:gtest_main",
+  ]
   configs += [ ":re2_skipped_warnings" ]
 }
 
@@ -154,45 +174,26 @@ executable("re2_slow_tests_bin") {
     "src/re2/testing/exhaustive3_test.cc",
     "src/re2/testing/exhaustive_test.cc",
     "src/re2/testing/random_test.cc",
-    "src/util/test.cc",
   ]
-  deps = [ ":testing" ]
-  configs += [ ":re2_skipped_warnings" ]
-}
-
-executable("re2_benchmarks") {
-  testonly = true
-  sources = [
-    "src/re2/testing/regexp_benchmark.cc",
-    "src/util/benchmark.cc",
+  deps = [
+    ":testing",
+    "//src/lib/fxl/test:gtest_main",
   ]
-  deps = [ ":re2_source" ]
-  public_deps = [ ":testing" ]
   configs += [ ":re2_skipped_warnings" ]
 }
 
 fuchsia_unittest_package("re2_fast_tests") {
-  deps = [
-    ":re2_fast_tests_bin",
-    "//src/sys/testing/elftest",
-  ]
+  deps = [ ":re2_fast_tests_bin" ]
 }
 
 fuchsia_unittest_package("re2_slow_tests") {
-  deps = [
-    ":re2_slow_tests_bin",
-    "//src/sys/testing/elftest",
-  ]
+  deps = [ ":re2_slow_tests_bin" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":re2_fast_tests",
-
-    # Ensure these build, but don't run them by default: benchmarks don't have
-    # a pass/fail status and the slow tests take hours to run.
-    ":re2_benchmarks",
     ":re2_slow_tests_bin",
   ]
 }

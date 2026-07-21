@@ -10,12 +10,14 @@
 
 #include <re2/re2.h>
 
+#include "absl/strings/string_view.h"
+
 namespace fuzzing {
 
 using fuchsia::fuzzer::ProcessStats;
 
 bool ParseLibFuzzerStats(std::string_view line, UpdateReason* reason, Status* status) {
-  re2::StringPiece input(line);
+  absl::string_view input(line);
   uint32_t runs;
   if (!re2::RE2::Consume(&input, "#(\\d+)", &runs)) {
     return false;

@@ -24,6 +24,7 @@
 #include <openssl/sha.h>
 #include <re2/re2.h>
 
+#include "absl/strings/string_view.h"
 #include "src/lib/files/directory.h"
 #include "src/lib/files/eintr_wrapper.h"
 #include "src/lib/files/file.h"
@@ -787,7 +788,7 @@ ZxPromise<> LibFuzzerRunner::ParseStderr() {
 
           // When running explicit test inputs, libFuzzer doesn't save artifacts. Record the input
           // name to determine which caused the error.
-          re2::StringPiece input(line);
+          absl::string_view input(line);
           if (re2::RE2::Consume(&input, "Running: (\\S+)", &result_input_pathname_)) {
             continue;
           }
