@@ -38,10 +38,27 @@ import("//tools/cmc/build/cmc.gni")
 #   visibility
 template("fuchsia_driver_component") {
   if (current_toolchain == default_toolchain) {
-    assert(!(defined(invoker.manifest) && defined(invoker.cm_label)),
-           "`manifest` and `cm_label` cannot be defined simultaneously")
-    assert(defined(invoker.manifest) || defined(invoker.cm_label),
-           "`manifest` or `cm_label` must be defined")
+    _has_manifest = defined(invoker.manifest)
+    _has_cm_label = defined(invoker.cm_label)
+    _has_dml_label = defined(invoker.dml_label)
+
+    _manifest_sources = 0
+    if (_has_manifest) {
+      _manifest_sources += 1
+    }
+    if (_has_cm_label) {
+      _manifest_sources += 1
+    }
+    if (_has_dml_label) {
+      _manifest_sources += 1
+    }
+    assert(
+        _manifest_sources == 1,
+        "Exactly one of `manifest`, `cm_label`, or `dml_label` must be defined")
+
+    if (_has_dml_label) {
+      _cm_label = "${invoker.dml_label}_manifest"
+    }
 
     driver_path =
         get_path_info(get_path_info(invoker.target_name, "abspath"), "dir")
@@ -103,16 +120,23 @@ template("fuchsia_driver_component") {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
-                               "cm_label",
                                "component_name",
-                               "deps",
-                               "manifest",
                                "manifest_deps",
                                "restricted_features",
                                "testonly",
                                "visibility",
                              ])
-      if (!defined(deps)) {
+      if (defined(_cm_label)) {
+        cm_label = _cm_label
+      } else if (defined(invoker.cm_label)) {
+        cm_label = invoker.cm_label
+      } else if (defined(invoker.manifest)) {
+        manifest = invoker.manifest
+      }
+
+      if (defined(invoker.deps)) {
+        deps = invoker.deps
+      } else {
         deps = []
       }
       if (create_driver_doc) {

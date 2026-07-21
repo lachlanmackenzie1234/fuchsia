@@ -146,6 +146,9 @@ template("bind_host_test") {
         ":${response_file_target}",
         "//tools/bindc:host($host_toolchain)",
       ]
+      if (defined(invoker.deps)) {
+        deps += invoker.deps
+      }
     }
 
     host_test(test_target) {
@@ -365,9 +368,14 @@ template("bindc") {
 #
 # Parameters
 #
-#   rules (required)
+#   rules (optional)
 #     [path]: Path to the bind rules source file.
-#     Note: This becomes optional when disable_autobind is true. See below.
+#     Note: This becomes optional when disable_autobind is true. See below. Should not be supplied
+#     at the same time as dml_label.
+#
+#   dml_label (optional)
+#     [label]: A dml target that generates a .bind file. If provided, this file
+#     will be used as the bind rules source. Should not be specified at the same time as rules.
 #
 #   deps (optional)
 #     [lib of labels]: List of bind_library targets included by the bind rules.
@@ -393,9 +401,28 @@ template("bindc") {
 #     Forwarded from invoker.
 #
 template("driver_bind_rules") {
-  assert(defined(invoker.rules) ||
+  _has_dml_label = defined(invoker.dml_label)
+  assert(defined(invoker.rules) || _has_dml_label ||
              (defined(invoker.disable_autobind) && invoker.disable_autobind),
-         "Need a bind rules source")
+         "Need a bind rules source or dml_label")
+
+  _invoker_rules = ""
+  if (defined(invoker.rules)) {
+    _invoker_rules = invoker.rules
+  }
+
+  _invoker_deps = []
+  if (defined(invoker.deps)) {
+    _invoker_deps = invoker.deps
+  }
+
+  if (_has_dml_label) {
+    _dml_outputs = get_target_outputs(invoker.dml_label)
+    _bind_files = filter_include(_dml_outputs, [ "*.bind" ])
+    assert(_bind_files != [], "dml_label must output a .bind file")
+    _invoker_rules = _bind_files[0]
+    _invoker_deps += [ invoker.dml_label ]
+  }
 
   bind_output = "$target_name.bindbc"
   if (defined(invoker.bind_output)) {
@@ -407,13 +434,15 @@ template("driver_bind_rules") {
     forward_variables_from(invoker,
                            [
                              "applicable_licenses",
-                             "rules",
-                             "deps",
                              "testonly",
                              "disable_autobind",
                              "disable_new_bytecode",
                              "visibility",
                            ])
+    if (_invoker_rules != "") {
+      rules = _invoker_rules
+    }
+    deps = _invoker_deps
     bytecode_output = bind_output
   }
 
@@ -432,10 +461,12 @@ template("driver_bind_rules") {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
-                               "rules",
-                               "deps",
                                "tests",
                              ])
+      if (_invoker_rules != "") {
+        rules = _invoker_rules
+      }
+      deps = _invoker_deps
     }
   }
 }
