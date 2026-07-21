@@ -6,4 +6,5 @@
 
 mod counter;
 mod debuglog;
+mod sampler;
 mod test;

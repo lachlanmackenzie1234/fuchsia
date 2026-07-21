@@ -576,6 +576,7 @@ multiconst!(zx_obj_type_t, [
     ZX_OBJ_TYPE_MSI                 = 32;
     ZX_OBJ_TYPE_IOB                 = 33;
     ZX_OBJ_TYPE_COUNTER             = 34;
+    ZX_OBJ_TYPE_SAMPLER             = 36;
 ]);
 
 // System ABI commits to having no more than 64 object types.
@@ -2165,6 +2166,8 @@ multiconst!(u32, [
     ZX_POL_NEW_PROFILE           = 13;
     ZX_POL_NEW_PAGER             = 14;
     ZX_POL_AMBIENT_MARK_VMO_EXEC = 15;
+    ZX_POL_NEW_IOB               = 16;
+    ZX_POL_NEW_SAMPLER           = 17;
 
     // policy actions
     ZX_POL_ACTION_ALLOW           = 0;
@@ -2762,8 +2765,12 @@ multiconst!(u32, [
     ZX_IOMMU_TYPE_INTEL = 1;
 ]);
 
+pub const ZX_SAMPLER_MIN_PERIOD: zx_duration_t = 10_000;
+pub const ZX_SAMPLER_MAX_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable))]
 pub struct zx_sampler_config_t {
     pub period: zx_duration_t,
     pub buffer_size: usize,

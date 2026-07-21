@@ -26,4 +26,9 @@ constexpr size_t kLogDispatcherStateOffset = 48;
 constexpr size_t kDlogReaderStorageSize = 48;
 constexpr size_t kDlogReaderStorageAlign = 8;
 
+// Size and alignment for SamplerDispatcherState.
+constexpr size_t kSamplerDispatcherStateSize = 64;
+constexpr size_t kSamplerDispatcherStateAlign = 8;
+constexpr size_t kSamplerDispatcherStateOffset = 48;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

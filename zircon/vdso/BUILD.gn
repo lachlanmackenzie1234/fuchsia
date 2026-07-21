@@ -191,6 +191,7 @@ kernel_rust_crate("syscall-signatures") {
   deps = [
     ":zx_zither.kernel.gen($default_toolchain)",
     "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
     "//zircon/kernel/object:object-rs",
   ]

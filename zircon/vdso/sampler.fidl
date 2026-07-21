@@ -124,6 +124,7 @@ closed protocol Sampler {
     /// [`zx_sampler_stop()`]: sampler_stop.md
     /// [FXT Format]: /docs/reference/tracing/trace-format.md
     /// [`zx_vmar_map_iob()`]: vmar_map_iob.md
+    @rust
     @next
     strict Create(resource struct {
         rsrc Handle:RESOURCE;
@@ -174,6 +175,7 @@ closed protocol Sampler {
     ///
     /// [`zx_sampler_create()`]: sampler_create.md
     /// [`zx_sampler_stop()`]: sampler_stop.md
+    @rust
     @next
     strict Start(resource struct {
         iobuffer Handle;
@@ -219,6 +221,7 @@ closed protocol Sampler {
     ///
     /// [`zx_sampler_create()`]: sampler_create.md
     /// [`zx_sampler_start()`]: sampler_stop.md
+    @rust
     @next
     strict Stop(resource struct {
         iobuffer Handle;
@@ -272,6 +275,7 @@ closed protocol Sampler {
     /// [`zx_sampler_create()`]: sampler_create.md
     /// [`zx_sampler_start()`]: sampler_start.md
     /// [`zx_sampler_stop()`]: sampler_stop.md
+    @rust
     @next
     strict Read(resource struct {
         iobuffer Handle;

@@ -55,7 +55,6 @@ source_set("impl") {
     "profile.cc",
     "resource.cc",
     "restricted.cc",
-    "sampler.cc",
     "socket.cc",
     "stream.cc",
     "system.cc",
@@ -138,6 +137,7 @@ kernel_rust_crate("syscalls-rs") {
     "counter.rs",
     "debuglog.rs",
     "lib.rs",
+    "sampler.rs",
     "test.rs",
   ]
   deps = [
@@ -145,6 +145,7 @@ kernel_rust_crate("syscalls-rs") {
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/debuglog:debuglog-rs",
     "//zircon/kernel/lib/user_copy:user-copy-rs",

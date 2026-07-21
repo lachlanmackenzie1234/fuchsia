@@ -7,30 +7,31 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SAMPLER_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SAMPLER_DISPATCHER_H_
 
+#include <lib/object-constants.h>
+#include <lib/thread_sampler/thread_sampler.h>
 #include <lib/zx/result.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 #include <object/thread_dispatcher.h>
 
+class SamplerDispatcher;
+extern "C" {
+zx_status_t cpp_sampler_dispatcher_create(const zx_sampler_config_t* config,
+                                          KernelHandle<SamplerDispatcher>* handle_out);
+zx_status_t cpp_sampler_dispatcher_start(const SamplerDispatcher* dispatcher);
+zx_status_t cpp_sampler_dispatcher_stop(const SamplerDispatcher* dispatcher);
+zx_status_t cpp_sampler_dispatcher_read_user(const SamplerDispatcher* dispatcher, void* ptr,
+                                             size_t len, size_t* actual_out);
+bool cpp_sampler_enabled();
+}
+
 // A Sampler manages sampling threads and writing the results out to per cpu buffers.
-class SamplerDispatcher : public SoloDispatcher<SamplerDispatcher, ZX_DEFAULT_SAMPLER_RIGHTS> {
+class SamplerDispatcher final : public Dispatcher {
  public:
-  ~SamplerDispatcher() override = default;
-
-  // When the user drops their end of the buffer/sampler, we need to stop sampling and clean up the
-  // state.
-  void on_zero_handles() override;
-
-  zx_obj_type_t get_type() const override { return ZX_OBJ_TYPE_SAMPLER; }
-
-  static zx::result<KernelHandle<SamplerDispatcher>> Create(const zx_sampler_config_t& config);
-  zx::result<> Start();
-  zx::result<> Stop();
-  zx::result<> AddThread(const fbl::RefPtr<ThreadDispatcher>& thread);
-
   // Given a thread's registers, pid, and tid, walk the thread's user stack and write each
   // pointer to the sampling buffers if sampling is enabled.
   //
@@ -43,21 +44,33 @@ class SamplerDispatcher : public SoloDispatcher<SamplerDispatcher, ZX_DEFAULT_SA
   static zx::result<> SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
                                    const void* gregs, uint64_t session_id);
 
-  // Read out the data contained in the sampler buffers into `ptr` return the number of bytes
-  // written. The Sampling state must be Stopped before calling this function.
-  //
-  // `len` _must_ be at least equal to the total size of the sampler buffers, which can be queried
-  // by passing a nullptr `ptr`. In this case, no data will be written and the return value will be
-  // the required minimum size of the buffer to write to.
-  ktl::pair<zx_status_t, size_t> ReadUser(user_out_ptr<void> ptr, size_t len);
+  ~SamplerDispatcher() final;
+
+  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_SAMPLER; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return true; }
+
+  // When the user drops their end of the buffer/sampler, we need to stop sampling and clean up the
+  // state.
+  void on_zero_handles() final;
+
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final;
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  using Dispatcher::UpdateState;
+  using Dispatcher::UpdateStateLocked;
 
  protected:
-  SamplerDispatcher() = default;
+  Lock<CriticalMutex>* get_lock() const final;
 
-  // Given information about a thread and its registers, walk its userstack and write out a sample
-  // if sampling is enabled.
-  zx::result<> SampleThreadImpl(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
-                                const void* gregs);
+ private:
+  friend zx_status_t cpp_sampler_dispatcher_create(const zx_sampler_config_t*,
+                                                   KernelHandle<SamplerDispatcher>*);
+  SamplerDispatcher();
+
+  OpaqueStorage<kSamplerDispatcherStateSize, kSamplerDispatcherStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SAMPLER_DISPATCHER_H_

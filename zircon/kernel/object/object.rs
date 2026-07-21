@@ -14,6 +14,8 @@ mod log_dispatcher_ffi;
 mod process_dispatcher;
 mod process_dispatcher_ffi;
 mod resource_ffi;
+mod sampler_dispatcher;
+mod sampler_dispatcher_ffi;
 
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
@@ -21,3 +23,5 @@ pub use handle::{HandleValue, KernelHandle};
 pub use log_dispatcher::*;
 pub use process_dispatcher::ProcessDispatcher;
 pub use resource_ffi::{validate_ranged_resource, validate_resource_kind_base};
+pub use sampler_dispatcher::SamplerDispatcher;
+pub use sampler_dispatcher_ffi::*;
