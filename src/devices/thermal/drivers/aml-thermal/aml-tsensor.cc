@@ -36,7 +36,7 @@ constexpr int32_t kCalD_ = 9411;
 }  // namespace
 
 zx_status_t AmlTSensor::NotifyThermalDaemon() {
-  zx_port_packet_t thermal_port_packet;
+  zx_port_packet_t thermal_port_packet = {};
   thermal_port_packet.key = current_trip_idx_;
   thermal_port_packet.type = ZX_PKT_TYPE_USER;
   return zx_port_queue(port_, &thermal_port_packet);

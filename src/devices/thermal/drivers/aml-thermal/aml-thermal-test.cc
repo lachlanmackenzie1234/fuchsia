@@ -11,6 +11,9 @@
 #include <stdint.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls.h>
+#include <string.h>
+#include <zircon/syscalls/port.h>
 #include <zircon/types.h>
 
 #include <cstddef>
@@ -305,6 +308,18 @@ TEST_F(AmlTSensorTest, GetStateChangePortTest) {
   Create(false);
   zx_handle_t port;
   EXPECT_OK(tsensor_->GetStateChangePort(&port));
+
+  zx_port_packet_t packet;
+  memset(&packet, 0xff, sizeof(packet));
+  EXPECT_OK(zx_port_wait(port, zx_deadline_after(ZX_SEC(5)), &packet));
+  EXPECT_EQ(packet.key, 0);
+  EXPECT_EQ(packet.type, ZX_PKT_TYPE_USER);
+  EXPECT_EQ(packet.status, 0);
+  for (uint64_t val : packet.user.u64) {
+    EXPECT_EQ(val, 0);
+  }
+
+  zx_handle_close(port);
 }
 
 TEST_F(AmlTSensorTest, LessTripPointsTest) { Create(true); }
