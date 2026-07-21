@@ -21,23 +21,31 @@ const InspectSettings kDefaultInspectSettings = {.maximum_size = 256 * 1024};
 Inspector::Inspector() : Inspector(kDefaultInspectSettings) {}
 
 Inspector::Inspector(const InspectSettings& settings)
-    : root_(std::make_shared<Node>()),
-      value_list_(std::make_shared<ValueList>()),
-      value_mutex_(std::make_shared<std::mutex>()) {
+    : ctx_{
+          .root_ = std::make_shared<Node>(),
+          .state_ = nullptr,
+          .value_list_ = std::make_shared<ValueList>(),
+          .value_mutex_ = std::make_shared<std::mutex>(),
+      } {
   if (settings.maximum_size == 0) {
     return;
   }
 
-  state_ = State::CreateWithSize(settings.maximum_size);
-  if (!state_) {
+  ctx_.state_ = State::CreateWithSize(settings.maximum_size);
+  if (!ctx_.state_) {
     return;
   }
 
-  *root_ = state_->CreateRootNode();
+  *ctx_.root_ = ctx_.state_->CreateRootNode();
 }
 
 Inspector::Inspector(zx::vmo vmo)
-    : root_(std::make_shared<Node>()), value_list_(std::make_shared<ValueList>()) {
+    : ctx_{
+          .root_ = std::make_shared<Node>(),
+          .state_ = nullptr,
+          .value_list_ = std::make_shared<ValueList>(),
+          .value_mutex_ = std::make_shared<std::mutex>(),
+      } {
   size_t size;
 
   zx_status_t status;
@@ -55,27 +63,43 @@ Inspector::Inspector(zx::vmo vmo)
     return;
   }
 
-  state_ = State::Create(std::make_unique<Heap>(std::move(vmo)));
-  if (!state_) {
+  ctx_.state_ = State::Create(std::make_unique<Heap>(std::move(vmo)));
+  if (!ctx_.state_) {
     return;
   }
 
-  *root_ = state_->CreateRootNode();
+  *ctx_.root_ = ctx_.state_->CreateRootNode();
+}
+
+WeakInspector Inspector::AsWeak() const {
+  return WeakInspector(internal::WeakContext{
+      .root_ = ctx_.root_,
+      .state_ = ctx_.state_,
+      .value_list_ = ctx_.value_list_,
+      .value_mutex_ = ctx_.value_mutex_,
+  });
+}
+
+Inspector WeakInspector::lock() const {
+  return Inspector(internal::StrongContext{.root_ = ctx_.root_.lock(),
+                                           .state_ = ctx_.state_.lock(),
+                                           .value_list_ = ctx_.value_list_.lock(),
+                                           .value_mutex_ = ctx_.value_mutex_.lock()});
 }
 
 std::optional<zx::vmo> Inspector::FrozenVmoCopy() const {
-  if (!state_) {
+  if (!ctx_.state_) {
     return {};
   }
 
-  return state_->FrozenVmoCopy();
+  return ctx_.state_->FrozenVmoCopy();
 }
 
 zx::vmo Inspector::DuplicateVmo() const {
   zx::vmo ret;
 
-  if (state_) {
-    state_->DuplicateVmo(&ret);
+  if (ctx_.state_) {
+    ctx_.state_->DuplicateVmo(&ret);
   }
 
   return ret;
@@ -84,7 +108,7 @@ zx::vmo Inspector::DuplicateVmo() const {
 std::optional<zx::vmo> Inspector::CopyVmo() const {
   zx::vmo ret;
 
-  if (!state_->Copy(&ret)) {
+  if (!ctx_.state_ || !ctx_.state_->Copy(&ret)) {
     return {};
   }
 
@@ -93,7 +117,7 @@ std::optional<zx::vmo> Inspector::CopyVmo() const {
 
 std::optional<std::vector<uint8_t>> Inspector::CopyBytes() const {
   std::vector<uint8_t> ret;
-  if (!state_->CopyBytes(&ret)) {
+  if (!ctx_.state_ || !ctx_.state_->CopyBytes(&ret)) {
     return {};
   }
 
@@ -101,18 +125,26 @@ std::optional<std::vector<uint8_t>> Inspector::CopyBytes() const {
 }
 
 InspectStats Inspector::GetStats() const {
-  if (!state_) {
+  if (!ctx_.state_) {
     return InspectStats{};
   }
-  return state_->GetStats();
+  return ctx_.state_->GetStats();
 }
 
-Node& Inspector::GetRoot() const { return *root_; }
+Node& Inspector::GetRoot() const { return *ctx_.root_; }
 
-std::vector<std::string> Inspector::GetChildNames() const { return state_->GetLinkNames(); }
+std::vector<std::string> Inspector::GetChildNames() const {
+  if (!ctx_.state_) {
+    return {};
+  }
+  return ctx_.state_->GetLinkNames();
+}
 
 fpromise::promise<Inspector> Inspector::OpenChild(const std::string& child_name) const {
-  return state_->CallLinkCallback(child_name);
+  if (!ctx_.state_) {
+    return fpromise::make_result_promise<Inspector>(fpromise::error());
+  }
+  return ctx_.state_->CallLinkCallback(child_name);
 }
 
 void Inspector::AtomicUpdate(AtomicUpdateCallbackFn callback) {
@@ -134,26 +166,33 @@ const char* FAILED_ALLOCATIONS_KEY = "failed_allocations";
 void Inspector::CreateStatsNode() {
   GetRoot().CreateLazyNode(
       FUCHSIA_INSPECT_STATS,
-      [&] {
-        auto stats = this->GetStats();
-        Inspector insp;
-        insp.GetRoot().CreateUint(CURRENT_SIZE_KEY, stats.size, &insp);
-        insp.GetRoot().CreateUint(MAXIMUM_SIZE_KEY, stats.maximum_size, &insp);
-        if (stats.maximum_size > 0) {
-          insp.GetRoot().CreateUint(UTILIZATION_PER_TEN_K_KEY,
-                                    (stats.size * 10000) / stats.maximum_size, &insp);
+      [weak_insp = AsWeak()] {
+        auto insp = weak_insp.lock();
+        if (!insp) {
+          return fpromise::make_ok_promise(Inspector());
         }
-        insp.GetRoot().CreateUint(TOTAL_DYNAMIC_CHILDREN_KEY, stats.dynamic_child_count, &insp);
-        insp.GetRoot().CreateUint(ALLOCATED_BLOCKS_KEY, stats.allocated_blocks, &insp);
-        insp.GetRoot().CreateUint(DEALLOCATED_BLOCKS_KEY, stats.deallocated_blocks, &insp);
-        insp.GetRoot().CreateUint(FAILED_ALLOCATIONS_KEY, stats.failed_allocations, &insp);
-        return fpromise::make_ok_promise(insp);
+        auto stats = insp.GetStats();
+        Inspector stats_insp;
+        stats_insp.GetRoot().CreateUint(CURRENT_SIZE_KEY, stats.size, &stats_insp);
+        stats_insp.GetRoot().CreateUint(MAXIMUM_SIZE_KEY, stats.maximum_size, &stats_insp);
+        if (stats.maximum_size > 0) {
+          stats_insp.GetRoot().CreateUint(UTILIZATION_PER_TEN_K_KEY,
+                                          (stats.size * 10000) / stats.maximum_size, &stats_insp);
+        }
+        stats_insp.GetRoot().CreateUint(TOTAL_DYNAMIC_CHILDREN_KEY, stats.dynamic_child_count,
+                                        &stats_insp);
+        stats_insp.GetRoot().CreateUint(ALLOCATED_BLOCKS_KEY, stats.allocated_blocks, &stats_insp);
+        stats_insp.GetRoot().CreateUint(DEALLOCATED_BLOCKS_KEY, stats.deallocated_blocks,
+                                        &stats_insp);
+        stats_insp.GetRoot().CreateUint(FAILED_ALLOCATIONS_KEY, stats.failed_allocations,
+                                        &stats_insp);
+        return fpromise::make_ok_promise(stats_insp);
       },
       this);
 }
 
 namespace internal {
-std::shared_ptr<State> GetState(const Inspector* inspector) { return inspector->state_; }
+std::shared_ptr<State> GetState(const Inspector* inspector) { return inspector->ctx_.state_; }
 }  // namespace internal
 
 }  // namespace inspect

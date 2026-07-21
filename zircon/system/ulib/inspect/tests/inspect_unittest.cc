@@ -472,6 +472,57 @@ TEST(Inspect, CreateStatsNode) {
   expected.allocated_blocks = 381u;
   expected.deallocated_blocks = 2u;
   expected.failed_allocations = 2u;
+}
+
+TEST(Inspect, WeakInspector) {
+  inspect::WeakInspector weak_insp;
+  EXPECT_FALSE(bool(weak_insp));
+  EXPECT_FALSE(bool(weak_insp.lock()));
+
+  {
+    Inspector inspector;
+    inspector.GetRoot().CreateInt("val", 42, &inspector);
+    weak_insp = inspector.AsWeak();
+    EXPECT_TRUE(bool(weak_insp));
+
+    auto locked_insp = weak_insp.lock();
+    EXPECT_TRUE(bool(locked_insp));
+    locked_insp.GetRoot().CreateInt("val2", 100, &locked_insp);
+
+    auto res = inspect::ReadFromVmo(inspector.DuplicateVmo());
+    ASSERT_TRUE(res.is_ok());
+    auto hierarchy = res.take_value();
+    EXPECT_TRUE(hierarchy.node().get_property<inspect::IntPropertyValue>("val2") != nullptr);
+  }
+
+  EXPECT_FALSE(bool(weak_insp));
+  auto expired_insp = weak_insp.lock();
+  EXPECT_FALSE(bool(expired_insp));
+}
+
+TEST(Inspect, CreateStatsNodeCopy) {
+  std::optional<Inspector> copy;
+  {
+    Inspector original;
+    original.CreateStatsNode();
+    copy = original;
+  }
+  // The original Inspector is destroyed, but 'copy' remains alive.
+  // Querying stats on 'copy' should succeed without Use-After-Free.
+  auto children = copy->GetChildNames();
+  ASSERT_EQ(1u, children.size());
+  EXPECT_EQ(FUCHSIA_INSPECT_STATS, children[0]);
+
+  inspect::Hierarchy hierarchy;
+  ReadChildHierarchy(&*copy, &hierarchy, FUCHSIA_INSPECT_STATS);
+  inspect::InspectStats expected = {};
+  expected.size = 1 * kPageSize;
+  expected.maximum_size = 256 * 1024;
+  expected.utilization_per_ten_k = 156;
+  expected.dynamic_child_count = 1u;
+  expected.allocated_blocks = 4u;
+  expected.deallocated_blocks = 0u;
+  expected.failed_allocations = 0u;
   CheckStats(&hierarchy, &expected);
 }
 
