@@ -112,7 +112,7 @@ TEST(Vulkan, ReadbackLoopWithFenceWait) {
     EXPECT_EQ(vk::Result::eSuccess,
               device.waitForFences(*fence, /* waitAll= */ true, ms_to_ns(1000)));
 
-    device.resetFences(*fence);
+    EXPECT_EQ(vk::Result::eSuccess, device.resetFences(*fence));
 
     EXPECT_TRUE(test.Readback());
   }

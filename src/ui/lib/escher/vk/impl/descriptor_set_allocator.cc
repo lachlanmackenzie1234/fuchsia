@@ -159,7 +159,11 @@ void DescriptorSetAllocator::PoolPolicy::DestroyPoolObjectBlock(CacheItem* objec
   vk::DescriptorPool pool = it->second;
   pools_.erase(it);
   FX_DCHECK(pool);
+#if VK_HEADER_VERSION >= 350
+  FX_DCHECK(vk_device_.resetDescriptorPool(pool) == vk::Result::eSuccess);
+#else
   vk_device_.resetDescriptorPool(pool);
+#endif
   vk_device_.destroyDescriptorPool(pool);
 
   // This isn't necessary, but do it anyway in case CacheItem is someday changed
