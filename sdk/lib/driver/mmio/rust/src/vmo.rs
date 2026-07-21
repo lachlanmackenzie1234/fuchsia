@@ -33,7 +33,14 @@ impl VmoMapping {
         Self::map_with_cache_policy(offset, size, vmo, CachePolicy::UnCachedDevice)
     }
 
-    fn map_with_cache_policy(
+    /// Like [`VmoMapping::map`] but specifying a `cache_policy`.
+    ///
+    /// *NOTE*: Code targeting a real MMIO mapped region must *always* use
+    /// [`CachePolicy::UnCachedDevice`] and production code should prefer to use
+    /// [`VmoMapping::map`]. This is exposed *exclusively* to allow test code to
+    /// pick a different cache policy when `vmo` is not in fact backed by an
+    /// actual MMIO VMO.
+    pub fn map_with_cache_policy(
         offset: usize,
         size: usize,
         vmo: Vmo,
