@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use p256::elliptic_curve::sec1::FromEncodedPoint;
-use p256::{EncodedPoint, FieldBytes, PublicKey, SecretKey};
+use p256::elliptic_curve::sec1::FromSec1Point;
+use p256::{FieldBytes, PublicKey, Sec1Point, SecretKey};
 use sha2::{Digest, Sha256};
 
 use crate::types::{Error, SharedSecret};
@@ -26,11 +26,11 @@ pub fn public_key_from_bytes(bytes: Vec<u8>) -> Result<PublicKey, Error> {
         return Err(Error::internal("Invalid public key length"));
     }
 
-    let x = FieldBytes::clone_from_slice(&bytes[..32]);
-    let y = FieldBytes::clone_from_slice(&bytes[32..64]);
+    let x = FieldBytes::try_from(&bytes[..32]).expect("slice length mismatch");
+    let y = FieldBytes::try_from(&bytes[32..64]).expect("slice length mismatch");
 
-    let remote_public_point = EncodedPoint::from_affine_coordinates(&x, &y, false);
-    let key: Option<PublicKey> = PublicKey::from_encoded_point(&remote_public_point).into();
+    let remote_public_point = Sec1Point::from_affine_coordinates(&x, &y, false);
+    let key: Option<PublicKey> = PublicKey::from_sec1_point(&remote_public_point).into();
     key.ok_or_else(|| Error::internal("Invalid remote public key point"))
 }
 

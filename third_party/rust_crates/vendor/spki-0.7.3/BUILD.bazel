@@ -54,9 +54,17 @@ rust_library(
     ),
     crate_features = [
         "alloc",
-        "pem",
-        "std",
-    ],
+    ] + select({
+        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
+            "pem",  # aarch64-unknown-fuchsia
+            "std",  # aarch64-unknown-fuchsia
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
+            "pem",  # x86_64-unknown-fuchsia
+            "std",  # x86_64-unknown-fuchsia
+        ],
+        "//conditions:default": [],
+    }),
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [

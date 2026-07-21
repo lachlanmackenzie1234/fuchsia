@@ -54,9 +54,14 @@ rust_library(
     ),
     crate_features = [
         "alloc",
+        "ctutils",
         "default",
         "der",
+        "pem",
         "point",
+        "serde",
+        "std",
+        "subtle",
         "zeroize",
     ],
     crate_root = "src/lib.rs",
@@ -82,7 +87,10 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/zeroize",
         "//third_party/rust_crates/vendor/base16ct-1.0.0:base16ct",
+        "//third_party/rust_crates/vendor/ctutils-0.4.2:ctutils",
         "//third_party/rust_crates/vendor/der-0.8.1:der",
         "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array",
+        "//third_party/rust_crates/vendor/serdect-0.4.3:serdect",
+        "//third_party/rust_crates/vendor/subtle-2.6.1:subtle",
     ],
 )

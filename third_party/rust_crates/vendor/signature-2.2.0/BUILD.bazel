@@ -56,7 +56,6 @@ rust_library(
         "alloc",
         "digest",
         "rand_core",
-        "std",
     ],
     crate_root = "src/lib.rs",
     edition = "2021",

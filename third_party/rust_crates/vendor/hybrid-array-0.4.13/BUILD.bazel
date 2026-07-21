@@ -52,6 +52,11 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "alloc",
+        "subtle",
+        "zeroize",
+    ],
     crate_root = "src/lib.rs",
     edition = "2024",
     rustc_flags = [
@@ -73,6 +78,8 @@ rust_library(
     }),
     version = "0.4.13",
     deps = [
+        "//third_party/rust_crates/forks/zeroize",
+        "//third_party/rust_crates/vendor/subtle-2.6.1:subtle",
         "//third_party/rust_crates/vendor/typenum-1.20.1:typenum",
     ],
 )

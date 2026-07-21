@@ -1292,11 +1292,11 @@ group("p256-0.11.1") {
 }
 
 group("p256") {
-  public_deps = [ ":p256-v0_13_2" ]
+  public_deps = [ ":p256-v0_14_0" ]
 }
 
-group("p256-0.13.2") {
-  public_deps = [ ":p256-v0_13_2" ]
+group("p256-0.14.0") {
+  public_deps = [ ":p256-v0_14_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -4050,7 +4050,6 @@ rustc_library("base16ct-v0_2_0") {
     "--cap-lints=allow",
     "-Cmetadata=816639a384b050ff",
     "-Cextra-filename=-816639a384b050ff",
-    "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
@@ -4083,6 +4082,7 @@ rustc_library("base16ct-v1_0_0") {
     "--cap-lints=allow",
     "-Cmetadata=3c0cfa2d3b26a96f",
     "-Cextra-filename=-3c0cfa2d3b26a96f",
+    "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
@@ -6831,44 +6831,50 @@ rustc_library("crypto-bigint-v0_4_9") {
   applicable_licenses = [ ":crypto-bigint-v0_4_9.license" ]
 }
 
-license("crypto-bigint-v0_5_5.license") {
+license("crypto-bigint-v0_7_5.license") {
   public_package_name = "crypto_bigint"
   license_files = [
-    "//third_party/rust_crates/vendor/crypto-bigint-0.5.5/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/crypto-bigint-0.5.5/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/crypto-bigint-0.7.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crypto-bigint-0.7.5/LICENSE-MIT",
   ]
 }
 
-rustc_library("crypto-bigint-v0_5_5") {
+rustc_library("crypto-bigint-v0_7_5") {
   crate_name = "crypto_bigint"
   source_root =
-      "//third_party/rust_crates/vendor/crypto-bigint-0.5.5/src/lib.rs"
-  output_name = "crypto_bigint-236776db25e8857a"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/crypto-bigint-0.7.5/src/lib.rs"
+  output_name = "crypto_bigint-273455dad600fe1c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":zeroize-v1_8_1" ]
-  deps += [ ":generic-array-v0_14_9" ]
-  deps += [ ":rand_core-v0_6_4" ]
+  deps += [ ":cpubits-v0_1_1" ]
+  deps += [ ":ctutils-v0_4_2" ]
+  deps += [ ":getrandom-v0_4_3" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":num-traits-v0_2_19" ]
+  deps += [ ":rand_core-v0_10_1" ]
   deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=236776db25e8857a",
-    "-Cextra-filename=-236776db25e8857a",
-    "--cfg=feature=\"generic-array\"",
+    "-Cmetadata=273455dad600fe1c",
+    "-Cextra-filename=-273455dad600fe1c",
+    "--cfg=feature=\"getrandom\"",
+    "--cfg=feature=\"hybrid-array\"",
     "--cfg=feature=\"rand_core\"",
+    "--cfg=feature=\"subtle\"",
     "--cfg=feature=\"zeroize\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crypto-bigint-v0_5_5.license" ]
+  applicable_licenses = [ ":crypto-bigint-v0_7_5.license" ]
 }
 
 license("crypto-common-v0_1_6.license") {
@@ -7061,6 +7067,7 @@ rustc_library("ctutils-v0_4_2") {
 
   deps = []
   deps += [ ":cmov-v0_5_4" ]
+  deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
@@ -7068,6 +7075,7 @@ rustc_library("ctutils-v0_4_2") {
     "--cap-lints=allow",
     "-Cmetadata=9253178295ce98d9",
     "-Cextra-filename=-9253178295ce98d9",
+    "--cfg=feature=\"subtle\"",
   ]
 
   visibility = [ ":*" ]
@@ -8126,57 +8134,53 @@ rustc_library("ecdsa-v0_14_8") {
   applicable_licenses = [ ":ecdsa-v0_14_8.license" ]
 }
 
-license("ecdsa-v0_16_9.license") {
+license("ecdsa-v0_17_0.license") {
   public_package_name = "ecdsa"
   license_files = [
-    "//third_party/rust_crates/vendor/ecdsa-0.16.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ecdsa-0.16.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ecdsa-0.17.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ecdsa-0.17.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("ecdsa-v0_16_9") {
+rustc_library("ecdsa-v0_17_0") {
   crate_name = "ecdsa"
-  source_root = "//third_party/rust_crates/vendor/ecdsa-0.16.9/src/lib.rs"
-  output_name = "ecdsa-d6567e2e26f842ac"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/ecdsa-0.17.0/src/lib.rs"
+  output_name = "ecdsa-7e6c02111f5638d1"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":der-v0_7_10" ]
-  deps += [ ":digest-v0_10_7" ]
-  deps += [ ":elliptic-curve-v0_13_8" ]
-  deps += [ ":rfc6979-v0_4_0" ]
-  deps += [ ":serdect-v0_2_0" ]
-  deps += [ ":signature-v2_2_0" ]
-  deps += [ ":spki-v0_7_3" ]
+  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":der-v0_8_1" ]
+  deps += [ ":digest-v0_11_3" ]
+  deps += [ ":elliptic-curve-v0_14_1" ]
+  deps += [ ":rfc6979-v0_6_0" ]
+  deps += [ ":serdect-v0_4_3" ]
+  deps += [ ":signature-v3_0_0" ]
+  deps += [ ":spki-v0_8_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d6567e2e26f842ac",
-    "-Cextra-filename=-d6567e2e26f842ac",
+    "-Cmetadata=7e6c02111f5638d1",
+    "-Cextra-filename=-7e6c02111f5638d1",
+    "--cfg=feature=\"algorithm\"",
     "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"arithmetic\"",
     "--cfg=feature=\"der\"",
     "--cfg=feature=\"digest\"",
-    "--cfg=feature=\"hazmat\"",
     "--cfg=feature=\"pem\"",
     "--cfg=feature=\"pkcs8\"",
-    "--cfg=feature=\"rfc6979\"",
     "--cfg=feature=\"serde\"",
-    "--cfg=feature=\"serdect\"",
-    "--cfg=feature=\"signing\"",
     "--cfg=feature=\"spki\"",
     "--cfg=feature=\"std\"",
-    "--cfg=feature=\"verifying\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ecdsa-v0_16_9.license" ]
+  applicable_licenses = [ ":ecdsa-v0_17_0.license" ]
 }
 
 license("either-v1_15_0.license") {
@@ -8278,53 +8282,54 @@ rustc_library("elliptic-curve-v0_12_3") {
   applicable_licenses = [ ":elliptic-curve-v0_12_3.license" ]
 }
 
-license("elliptic-curve-v0_13_8.license") {
+license("elliptic-curve-v0_14_1.license") {
   public_package_name = "elliptic_curve"
   license_files = [
-    "//third_party/rust_crates/vendor/elliptic-curve-0.13.8/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/elliptic-curve-0.13.8/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/elliptic-curve-0.14.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/elliptic-curve-0.14.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("elliptic-curve-v0_13_8") {
+rustc_library("elliptic-curve-v0_14_1") {
   crate_name = "elliptic_curve"
   source_root =
-      "//third_party/rust_crates/vendor/elliptic-curve-0.13.8/src/lib.rs"
-  output_name = "elliptic_curve-d729f255f442efc8"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/elliptic-curve-0.14.1/src/lib.rs"
+  output_name = "elliptic_curve-a8479bf5eb77877d"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":zeroize-v1_8_1" ]
-  deps += [ ":base16ct-v0_2_0" ]
-  deps += [ ":crypto-bigint-v0_5_5" ]
-  deps += [ ":digest-v0_10_7" ]
-  deps += [ ":ff-v0_13_1" ]
-  deps += [ ":generic-array-v0_14_9" ]
-  deps += [ ":group-v0_13_0" ]
-  deps += [ ":hkdf-v0_12_4" ]
-  deps += [ ":pem-rfc7468-v0_7_0" ]
-  deps += [ ":pkcs8-v0_10_2" ]
-  deps += [ ":rand_core-v0_6_4" ]
-  deps += [ ":sec1-v0_7_3" ]
-  deps += [ ":serdect-v0_2_0" ]
+  deps += [ ":base16ct-v1_0_0" ]
+  deps += [ ":crypto-bigint-v0_7_5" ]
+  deps += [ ":crypto-common-v0_2_2" ]
+  deps += [ ":digest-v0_11_3" ]
+  deps += [ ":ff-v0_14_0" ]
+  deps += [ ":group-v0_14_0" ]
+  deps += [ ":hkdf-v0_13_0" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":pem-rfc7468-v1_0_0" ]
+  deps += [ ":pkcs8-v0_11_0" ]
+  deps += [ ":rand_core-v0_10_1" ]
+  deps += [ ":sec1-v0_8_1" ]
+  deps += [ ":serdect-v0_4_3" ]
   deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d729f255f442efc8",
-    "-Cextra-filename=-d729f255f442efc8",
+    "-Cmetadata=a8479bf5eb77877d",
+    "-Cextra-filename=-a8479bf5eb77877d",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"arithmetic\"",
     "--cfg=feature=\"digest\"",
     "--cfg=feature=\"ecdh\"",
     "--cfg=feature=\"ff\"",
+    "--cfg=feature=\"getrandom\"",
     "--cfg=feature=\"group\"",
-    "--cfg=feature=\"hazmat\"",
     "--cfg=feature=\"pem\"",
     "--cfg=feature=\"pkcs8\"",
     "--cfg=feature=\"sec1\"",
@@ -8332,9 +8337,14 @@ rustc_library("elliptic-curve-v0_13_8") {
     "--cfg=feature=\"std\"",
   ]
 
+  aliased_deps = {
+    bigint = ":crypto-bigint-v0_7_5.actual"
+    common = ":crypto-common-v0_2_2.actual"
+    array = ":hybrid-array-v0_4_13.actual"
+  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":elliptic-curve-v0_13_8.license" ]
+  applicable_licenses = [ ":elliptic-curve-v0_14_1.license" ]
 }
 
 license("encode_unicode-v1_0_0.license") {
@@ -8912,39 +8922,39 @@ rustc_library("ff-v0_12_1") {
   applicable_licenses = [ ":ff-v0_12_1.license" ]
 }
 
-license("ff-v0_13_1.license") {
+license("ff-v0_14_0.license") {
   public_package_name = "ff"
   license_files = [
-    "//third_party/rust_crates/vendor/ff-0.13.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ff-0.13.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ff-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ff-0.14.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("ff-v0_13_1") {
+rustc_library("ff-v0_14_0") {
   crate_name = "ff"
-  source_root = "//third_party/rust_crates/vendor/ff-0.13.1/src/lib.rs"
-  output_name = "ff-3ba408af30a022f3"
+  source_root = "//third_party/rust_crates/vendor/ff-0.14.0/src/lib.rs"
+  output_name = "ff-2b3e69835964ac69"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rand_core-v0_6_4" ]
+  deps += [ ":rand_core-v0_10_1" ]
   deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=3ba408af30a022f3",
-    "-Cextra-filename=-3ba408af30a022f3",
+    "-Cmetadata=2b3e69835964ac69",
+    "-Cextra-filename=-2b3e69835964ac69",
     "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ff-v0_13_1.license" ]
+  applicable_licenses = [ ":ff-v0_14_0.license" ]
 }
 
 license("filetime-v0_2_29.license") {
@@ -9968,7 +9978,6 @@ rustc_library("generic-array-v0_14_9") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":typenum-v1_20_1" ]
 
   rustenv = []
@@ -9978,7 +9987,6 @@ rustc_library("generic-array-v0_14_9") {
     "-Cmetadata=b9a26d4a850f87d7",
     "-Cextra-filename=-b9a26d4a850f87d7",
     "--cfg=feature=\"more_lengths\"",
-    "--cfg=feature=\"zeroize\"",
     "--cfg=relaxed_coherence",
   ]
 
@@ -10401,41 +10409,41 @@ rustc_library("group-v0_12_1") {
   applicable_licenses = [ ":group-v0_12_1.license" ]
 }
 
-license("group-v0_13_0.license") {
+license("group-v0_14_0.license") {
   public_package_name = "group"
   license_files = [
-    "//third_party/rust_crates/vendor/group-0.13.0/COPYRIGHT",
-    "//third_party/rust_crates/vendor/group-0.13.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/group-0.13.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/group-0.14.0/COPYRIGHT",
+    "//third_party/rust_crates/vendor/group-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/group-0.14.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("group-v0_13_0") {
+rustc_library("group-v0_14_0") {
   crate_name = "group"
-  source_root = "//third_party/rust_crates/vendor/group-0.13.0/src/lib.rs"
-  output_name = "group-58682b1ad86e084a"
+  source_root = "//third_party/rust_crates/vendor/group-0.14.0/src/lib.rs"
+  output_name = "group-10e992444b1e59f2"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ff-v0_13_1" ]
-  deps += [ ":rand_core-v0_6_4" ]
+  deps += [ ":ff-v0_14_0" ]
+  deps += [ ":rand_core-v0_10_1" ]
   deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=58682b1ad86e084a",
-    "-Cextra-filename=-58682b1ad86e084a",
+    "-Cmetadata=10e992444b1e59f2",
+    "-Cextra-filename=-10e992444b1e59f2",
     "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":group-v0_13_0.license" ]
+  applicable_licenses = [ ":group-v0_14_0.license" ]
 }
 
 license("half-v2_7_1.license") {
@@ -11230,6 +11238,8 @@ rustc_library("hybrid-array-v0_4_13") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":subtle-v2_6_1" ]
   deps += [ ":typenum-v1_20_1" ]
 
   rustenv = []
@@ -11238,6 +11248,9 @@ rustc_library("hybrid-array-v0_4_13") {
     "--cap-lints=allow",
     "-Cmetadata=371632f869a471a5",
     "-Cextra-filename=-371632f869a471a5",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"subtle\"",
+    "--cfg=feature=\"zeroize\"",
   ]
 
   visibility = [ ":*" ]
@@ -14426,36 +14439,37 @@ rustc_library("p256-v0_11_1") {
   applicable_licenses = [ ":p256-v0_11_1.license" ]
 }
 
-license("p256-v0_13_2.license") {
+license("p256-v0_14_0.license") {
   public_package_name = "p256"
   license_files = [
-    "//third_party/rust_crates/vendor/p256-0.13.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/p256-0.13.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/p256-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/p256-0.14.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("p256-v0_13_2") {
+rustc_library("p256-v0_14_0") {
   crate_name = "p256"
-  source_root = "//third_party/rust_crates/vendor/p256-0.13.2/src/lib.rs"
-  output_name = "p256-a1da7003824c23e7"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/p256-0.14.0/src/lib.rs"
+  output_name = "p256-a6a529591856564d"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ecdsa-v0_16_9" ]
-  deps += [ ":elliptic-curve-v0_13_8" ]
-  deps += [ ":primeorder-v0_13_6" ]
-  deps += [ ":serdect-v0_2_0" ]
-  deps += [ ":sha2-v0_10_9" ]
+  deps += [ ":ecdsa-v0_17_0" ]
+  deps += [ ":elliptic-curve-v0_14_1" ]
+  deps += [ ":primefield-v0_14_0" ]
+  deps += [ ":primeorder-v0_14_0" ]
+  deps += [ ":serdect-v0_4_3" ]
+  deps += [ ":sha2-v0_11_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a1da7003824c23e7",
-    "-Cextra-filename=-a1da7003824c23e7",
+    "-Cmetadata=a6a529591856564d",
+    "-Cextra-filename=-a6a529591856564d",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"arithmetic\"",
     "--cfg=feature=\"default\"",
@@ -14463,8 +14477,10 @@ rustc_library("p256-v0_13_2") {
     "--cfg=feature=\"ecdh\"",
     "--cfg=feature=\"ecdsa\"",
     "--cfg=feature=\"ecdsa-core\"",
+    "--cfg=feature=\"getrandom\"",
     "--cfg=feature=\"pem\"",
     "--cfg=feature=\"pkcs8\"",
+    "--cfg=feature=\"precomputed-tables\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"serdect\"",
     "--cfg=feature=\"sha2\"",
@@ -14473,11 +14489,11 @@ rustc_library("p256-v0_13_2") {
   ]
 
   aliased_deps = {
-    ecdsa_core = ":ecdsa-v0_16_9.actual"
+    ecdsa_core = ":ecdsa-v0_17_0.actual"
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":p256-v0_13_2.license" ]
+  applicable_licenses = [ ":p256-v0_14_0.license" ]
 }
 
 license("parking-v2_2_1.license") {
@@ -15613,8 +15629,6 @@ rustc_library("pkcs8-v0_10_2") {
     "-Cmetadata=9f831a47836867a3",
     "-Cextra-filename=-9f831a47836867a3",
     "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"pem\"",
-    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -15649,6 +15663,9 @@ rustc_library("pkcs8-v0_11_0") {
     "--cap-lints=allow",
     "-Cmetadata=a32f0fa44c6c5edc",
     "-Cextra-filename=-a32f0fa44c6c5edc",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"pem\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -16098,40 +16115,88 @@ rustc_library("prettytable-rs-v0_10_0") {
   applicable_licenses = [ ":prettytable-rs-v0_10_0.license" ]
 }
 
-license("primeorder-v0_13_6.license") {
-  public_package_name = "primeorder"
+license("primefield-v0_14_0.license") {
+  public_package_name = "primefield"
   license_files = [
-    "//third_party/rust_crates/vendor/primeorder-0.13.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/primeorder-0.13.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/primefield-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/primefield-0.14.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("primeorder-v0_13_6") {
-  crate_name = "primeorder"
-  source_root = "//third_party/rust_crates/vendor/primeorder-0.13.6/src/lib.rs"
-  output_name = "primeorder-922bf93b439b3886"
-  edition = "2021"
+rustc_library("primefield-v0_14_0") {
+  crate_name = "primefield"
+  source_root = "//third_party/rust_crates/vendor/primefield-0.14.0/src/lib.rs"
+  output_name = "primefield-c1db639bb1ce8ffc"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":elliptic-curve-v0_13_8" ]
-  deps += [ ":serdect-v0_2_0" ]
+  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":crypto-bigint-v0_7_5" ]
+  deps += [ ":crypto-common-v0_2_2" ]
+  deps += [ ":ff-v0_14_0" ]
+  deps += [ ":rand_core-v0_10_1" ]
+  deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=922bf93b439b3886",
-    "-Cextra-filename=-922bf93b439b3886",
+    "-Cmetadata=c1db639bb1ce8ffc",
+    "-Cextra-filename=-c1db639bb1ce8ffc",
+  ]
+
+  aliased_deps = {
+    bigint = ":crypto-bigint-v0_7_5.actual"
+    common = ":crypto-common-v0_2_2.actual"
+  }
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":primefield-v0_14_0.license" ]
+}
+
+license("primeorder-v0_14_0.license") {
+  public_package_name = "primeorder"
+  license_files = [
+    "//third_party/rust_crates/vendor/primeorder-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/primeorder-0.14.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("primeorder-v0_14_0") {
+  crate_name = "primeorder"
+  source_root = "//third_party/rust_crates/vendor/primeorder-0.14.0/src/lib.rs"
+  output_name = "primeorder-e5a93cb9f0a97149"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":elliptic-curve-v0_14_1" ]
+  deps += [ ":once_cell-v1_21_3" ]
+  deps += [ ":primefield-v0_14_0" ]
+  deps += [ ":serdect-v0_4_3" ]
+  deps += [ ":wnaf-v0_14_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=e5a93cb9f0a97149",
+    "-Cextra-filename=-e5a93cb9f0a97149",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"basepoint-table\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"serdect\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":primeorder-v0_13_6.license" ]
+  applicable_licenses = [ ":primeorder-v0_14_0.license" ]
 }
 
 license("proc-macro2-v1_0_106.license") {
@@ -17794,38 +17859,41 @@ rustc_library("rfc6979-v0_3_1") {
   applicable_licenses = [ ":rfc6979-v0_3_1.license" ]
 }
 
-license("rfc6979-v0_4_0.license") {
+license("rfc6979-v0_6_0.license") {
   public_package_name = "rfc6979"
   license_files = [
-    "//third_party/rust_crates/vendor/rfc6979-0.4.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rfc6979-0.4.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rfc6979-0.6.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rfc6979-0.6.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("rfc6979-v0_4_0") {
+rustc_library("rfc6979-v0_6_0") {
   crate_name = "rfc6979"
-  source_root = "//third_party/rust_crates/vendor/rfc6979-0.4.0/src/lib.rs"
-  output_name = "rfc6979-928d1a3f4d41205d"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/rfc6979-0.6.0/src/lib.rs"
+  output_name = "rfc6979-6220ae86cbc0ebf8"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hmac-v0_12_1" ]
-  deps += [ ":subtle-v2_6_1" ]
+  deps += [ ":crypto-bigint-v0_7_5" ]
+  deps += [ ":hmac-v0_13_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=928d1a3f4d41205d",
-    "-Cextra-filename=-928d1a3f4d41205d",
+    "-Cmetadata=6220ae86cbc0ebf8",
+    "-Cextra-filename=-6220ae86cbc0ebf8",
   ]
 
+  aliased_deps = {
+    bigint = ":crypto-bigint-v0_7_5.actual"
+  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rfc6979-v0_4_0.license" ]
+  applicable_licenses = [ ":rfc6979-v0_6_0.license" ]
 }
 
 license("ring-v0_17_8.license") {
@@ -19537,8 +19605,6 @@ rustc_library("sec1-v0_7_3") {
   deps += [ ":der-v0_7_10" ]
   deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":pkcs8-v0_10_2" ]
-  deps += [ ":serdect-v0_2_0" ]
-  deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
@@ -19549,12 +19615,8 @@ rustc_library("sec1-v0_7_3") {
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"der\"",
-    "--cfg=feature=\"pem\"",
     "--cfg=feature=\"pkcs8\"",
     "--cfg=feature=\"point\"",
-    "--cfg=feature=\"serde\"",
-    "--cfg=feature=\"std\"",
-    "--cfg=feature=\"subtle\"",
     "--cfg=feature=\"zeroize\"",
   ]
 
@@ -19583,8 +19645,11 @@ rustc_library("sec1-v0_8_1") {
   deps = []
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":base16ct-v1_0_0" ]
+  deps += [ ":ctutils-v0_4_2" ]
   deps += [ ":der-v0_8_1" ]
   deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":serdect-v0_4_3" ]
+  deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
@@ -19593,9 +19658,14 @@ rustc_library("sec1-v0_8_1") {
     "-Cmetadata=7c0e03fc14a13278",
     "-Cextra-filename=-7c0e03fc14a13278",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"ctutils\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"der\"",
+    "--cfg=feature=\"pem\"",
     "--cfg=feature=\"point\"",
+    "--cfg=feature=\"serde\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"subtle\"",
     "--cfg=feature=\"zeroize\"",
   ]
 
@@ -20085,39 +20155,39 @@ rustc_library("serdect-v0_1_0") {
   applicable_licenses = [ ":serdect-v0_1_0.license" ]
 }
 
-license("serdect-v0_2_0.license") {
+license("serdect-v0_4_3.license") {
   public_package_name = "serdect"
   license_files = [
-    "//third_party/rust_crates/vendor/serdect-0.2.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serdect-0.2.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serdect-0.4.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serdect-0.4.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("serdect-v0_2_0") {
+rustc_library("serdect-v0_4_3") {
   crate_name = "serdect"
-  source_root = "//third_party/rust_crates/vendor/serdect-0.2.0/src/lib.rs"
-  output_name = "serdect-695ac1d2111803a6"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/serdect-0.4.3/src/lib.rs"
+  output_name = "serdect-7ca14c91b4d5817"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":base16ct-v0_2_0" ]
+  deps += [ ":base16ct-v1_0_0" ]
   deps += [ ":serde-v1_0_228" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=695ac1d2111803a6",
-    "-Cextra-filename=-695ac1d2111803a6",
+    "-Cmetadata=7ca14c91b4d5817",
+    "-Cextra-filename=-7ca14c91b4d5817",
     "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serdect-v0_2_0.license" ]
+  applicable_licenses = [ ":serdect-v0_4_3.license" ]
 }
 
 license("serial_test-v3_5_0.license") {
@@ -20604,12 +20674,48 @@ rustc_library("signature-v2_2_0") {
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"digest\"",
     "--cfg=feature=\"rand_core\"",
-    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":signature-v2_2_0.license" ]
+}
+
+license("signature-v3_0_0.license") {
+  public_package_name = "signature"
+  license_files = [
+    "//third_party/rust_crates/vendor/signature-3.0.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/signature-3.0.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("signature-v3_0_0") {
+  crate_name = "signature"
+  source_root = "//third_party/rust_crates/vendor/signature-3.0.0/src/lib.rs"
+  output_name = "signature-a7700f978b3296c3"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":digest-v0_11_3" ]
+  deps += [ ":rand_core-v0_10_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a7700f978b3296c3",
+    "-Cextra-filename=-a7700f978b3296c3",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"digest\"",
+    "--cfg=feature=\"rand_core\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":signature-v3_0_0.license" ]
 }
 
 license("simd-adler32-v0_3_7.license") {
@@ -21172,6 +21278,7 @@ rustc_library("subtle-v2_6_1") {
     "--cap-lints=allow",
     "-Cmetadata=821717df2f9b87f1",
     "-Cextra-filename=-821717df2f9b87f1",
+    "--cfg=feature=\"const-generics\"",
     "--cfg=feature=\"i128\"",
   ]
 
@@ -24749,6 +24856,44 @@ rustc_library("winnow-v1_0_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":winnow-v1_0_1.license" ]
+}
+
+license("wnaf-v0_14_0.license") {
+  public_package_name = "wnaf"
+  license_files = [
+    "//third_party/rust_crates/vendor/wnaf-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/wnaf-0.14.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("wnaf-v0_14_0") {
+  crate_name = "wnaf"
+  source_root = "//third_party/rust_crates/vendor/wnaf-0.14.0/src/lib.rs"
+  output_name = "wnaf-29a21c961071c1e3"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":ff-v0_14_0" ]
+  deps += [ ":group-v0_14_0" ]
+  deps += [ ":hybrid-array-v0_4_13" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=29a21c961071c1e3",
+    "-Cextra-filename=-29a21c961071c1e3",
+  ]
+
+  aliased_deps = {
+    array = ":hybrid-array-v0_4_13.actual"
+  }
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":wnaf-v0_14_0.license" ]
 }
 
 license("x509-cert-v0_2_5.license") {

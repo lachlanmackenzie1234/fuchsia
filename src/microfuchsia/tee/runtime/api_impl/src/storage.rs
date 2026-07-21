@@ -11,7 +11,8 @@ use std::ops::{Bound, Deref, DerefMut};
 use std::rc::Rc;
 
 use num_traits::FromPrimitive as _;
-use p256::elliptic_curve::sec1::ToEncodedPoint as _;
+use p256::elliptic_curve::common::Generate as _;
+use p256::elliptic_curve::sec1::ToSec1Point as _;
 use rsa::traits::{PrivateKeyParts as _, PublicKeyParts as _};
 use rsa::{BigUint, RsaPrivateKey};
 use tee_internal::{
@@ -492,7 +493,7 @@ impl KeyType for EccKeypair {
                 secret
                     .public_key()
                     .as_affine()
-                    .to_encoded_point(/*compress=*/ false)
+                    .to_sec1_point(/*compress=*/ false)
                     .x()
                     .unwrap()
                     .as_slice()
@@ -502,7 +503,7 @@ impl KeyType for EccKeypair {
                 secret
                     .public_key()
                     .as_affine()
-                    .to_encoded_point(/*compress=*/ false)
+                    .to_sec1_point(/*compress=*/ false)
                     .y()
                     .unwrap()
                     .as_slice()
@@ -552,7 +553,7 @@ impl KeyType for EccKeypair {
 
         // Check that provided public parameters coincide with those computed
         // by the private key abstraction.
-        let point = secret.public_key().as_affine().to_encoded_point(/*compress=*/ false);
+        let point = secret.public_key().as_affine().to_sec1_point(/*compress=*/ false);
         if point.x().unwrap().as_slice() != public_value_x {
             return Err(Error::BadParameters);
         }
@@ -578,7 +579,7 @@ impl KeyType for EccKeypair {
             return Err(Error::NotSupported);
         }
 
-        self.secret = Some(Box::new(P256SecretKey::random(&mut Rng {})));
+        self.secret = Some(Box::new(P256SecretKey::generate_from_rng(&mut Rng {})));
         Ok(())
     }
 }

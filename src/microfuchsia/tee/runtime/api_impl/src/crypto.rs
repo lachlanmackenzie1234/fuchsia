@@ -89,6 +89,25 @@ impl RngCore for Rng {
 
 impl CryptoRng for Rng {}
 
+impl p256::elliptic_curve::rand_core::TryRng for Rng {
+    type Error = p256::elliptic_curve::rand_core::Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.next_u32())
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(self.next_u64())
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl p256::elliptic_curve::rand_core::TryCryptoRng for Rng {}
+
 // A MAC abstraction conveniently shaped for our API glue needs.
 trait Mac {
     fn output_size(&self) -> usize;

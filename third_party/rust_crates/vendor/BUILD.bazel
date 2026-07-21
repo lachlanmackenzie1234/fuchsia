@@ -1753,14 +1753,14 @@ alias(
 )
 
 alias(
-    name = "p256-0.13.2",
-    actual = "//third_party/rust_crates/vendor/p256-0.13.2:p256",
+    name = "p256-0.14.0",
+    actual = "//third_party/rust_crates/vendor/p256-0.14.0:p256",
     tags = ["manual"],
 )
 
 alias(
     name = "p256",
-    actual = "//third_party/rust_crates/vendor/p256-0.13.2:p256",
+    actual = "//third_party/rust_crates/vendor/p256-0.14.0:p256",
     tags = ["manual"],
 )
 

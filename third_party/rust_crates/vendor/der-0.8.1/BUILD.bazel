@@ -54,18 +54,32 @@ rust_library(
     ),
     crate_features = [
         "alloc",
-        "derive",
-        "flagset",
         "oid",
         "pem",
         "std",
         "zeroize",
-    ],
+    ] + select({
+        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
+            "derive",  # aarch64-unknown-fuchsia
+            "flagset",  # aarch64-unknown-fuchsia
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
+            "derive",  # x86_64-unknown-fuchsia
+            "flagset",  # x86_64-unknown-fuchsia
+        ],
+        "//conditions:default": [],
+    }),
     crate_root = "src/lib.rs",
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor/der_derive-0.8.0:der_derive",
-    ],
+    proc_macro_deps = select({
+        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/der_derive-0.8.0:der_derive",  # aarch64-unknown-fuchsia
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/der_derive-0.8.0:der_derive",  # x86_64-unknown-fuchsia
+        ],
+        "//conditions:default": [],
+    }),
     rustc_flags = [
         "--cap-lints=allow",
     ],
@@ -87,7 +101,14 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/zeroize",
         "//third_party/rust_crates/vendor/const-oid-0.10.2:const_oid",
-        "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",
         "//third_party/rust_crates/vendor/pem-rfc7468-1.0.0:pem_rfc7468",
-    ],
+    ] + select({
+        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",  # aarch64-unknown-fuchsia
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
+            "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",  # x86_64-unknown-fuchsia
+        ],
+        "//conditions:default": [],
+    }),
 )
