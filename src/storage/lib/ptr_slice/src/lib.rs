@@ -321,6 +321,11 @@ impl<'a> MutPtrByteSlice<'a> {
         }
     }
 
+    /// Returns the raw mutable pointer to the slice.
+    pub fn as_raw_mut_slice_ptr(&self) -> *mut [u8] {
+        self.slice
+    }
+
     /// Returns a raw pointer to the start of the slice.
     pub fn as_ptr(&self) -> *const u8 {
         self.slice as *const u8

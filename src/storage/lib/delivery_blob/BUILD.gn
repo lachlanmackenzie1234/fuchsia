@@ -27,6 +27,7 @@ rustc_library("delivery_blob") {
     "src/lib.rs",
   ]
   deps = [
+    "//src/storage/lib/ptr_slice",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//third_party/lz4/rust:lz4",
     "//third_party/rust_crates:bitflags",

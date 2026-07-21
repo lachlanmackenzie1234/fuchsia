@@ -20,6 +20,7 @@ use thiserror::Error;
 use zerocopy::{IntoBytes, Ref};
 
 pub mod compression;
+pub use compression::DataBuffer;
 mod format;
 
 // This library assumes usize is large enough to hold a u64.
