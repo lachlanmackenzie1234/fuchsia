@@ -44,6 +44,7 @@ readonly OUTPUT="src/zbi_format.rs"
 
 readonly INPUT=( \
 	"${FUCHSIA_DIR}/sdk/lib/zbi-format/include/lib/zbi-format/*.h" \
+	"${FUCHSIA_DIR}/sdk/lib/zbi-format/include/lib/zbi-format/internal/storage.h" \
 )
 
 tmp="$(mktemp --suffix=.h)"
@@ -74,6 +75,7 @@ echo ${tmp}
     --allowlist-var 'ZBI_.+' \
     --blocklist-type 'zbi_topology_.+_t_.*' \
     --blocklist-type 'zbi_topology_(entity|architecture_info|processor|node)_t' \
+    --blocklist-type 'zbi_dcfg_arm_smmu_driver_t' \
     --use-core \
     -- -x c \
     -I ${FUCHSIA_DIR}/sdk/lib/zbi-format/include \
