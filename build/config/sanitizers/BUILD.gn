@@ -105,18 +105,32 @@ sanitizer_rustflags("cfi.rustflags") {
 
 variant("asan") {
   c_family_flags = [ "-fsanitize=address" ]
-  cflags = [
-    # See https://fxbug.dev/42144902 and
-    # https://github.com/google/sanitizers/issues/1017.
-    "-mllvm",
-    "-asan-use-private-alias=1",
 
-    # -fsanitize-address-use-odr-indicator (the default) adds default visibility
+  llvm_flags = [
+    # -asan-use-odr-indicator (enabled by default) adds default visibility
     # symbols to check at runtime if any symbols have been interposed upon,
     # meaning there were multiple definitions of a symbol at runtime. We don't
     # want ASan to change the abi by introducing new symbols. Moreover, having
     # the same symbol defined in multiple shared objects is well defined.
-    "-fno-sanitize-address-use-odr-indicator",
+    #
+    # TODO(https://fxbug.dev/537001226): Note that rust doesn't provide a frontend
+    # equivalent for -fno-sanitize-address-use-odr-indicator so we need to use
+    # backend flags to disable it. Consequently, not using the frontend flag
+    # would result in `-asan-use-private-alias` being 1 anyway. Ideally, we'd
+    # use the frontend flags to control this rather than manually setting
+    # various backend flags.
+    "-asan-use-odr-indicator=0",
+
+    # See https://fxbug.dev/42144902 and
+    # https://github.com/google/sanitizers/issues/1017.
+    #
+    # Note this would normally be set to zero if we used
+    # -fno-sanitize-address-use-odr-indicator, but we're instead using the
+    # backend flag to set -asan-use-odr-indicator which would mean this flag
+    # defaults to 1 anyway, but let's keep it anyway since if rust ends up
+    # adding the equivalent frontend flag and we switch back to the frontend
+    # flags for rust and clang, then we'll need this again.
+    "-asan-use-private-alias=1",
   ]
 
   configs = [
@@ -136,13 +150,10 @@ variant("asan") {
 }
 
 # Disable "stack malloc" code generation.
-config("asan-use-after-return-never") {
+compiler_config("asan-use-after-return-never") {
   if (!is_gcc && toolchain_variant.tags + [ "asan" ] - [ "asan" ] !=
                  toolchain_variant.tags) {
-    cflags = [
-      "-mllvm",
-      "-asan-use-after-return=never",
-    ]
+    llvm_flags = [ "-asan-use-after-return=never" ]
   }
 }
 
