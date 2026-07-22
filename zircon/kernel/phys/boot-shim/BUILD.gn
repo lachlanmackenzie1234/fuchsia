@@ -70,7 +70,6 @@ if (have_devicetree) {
     include_dirs = [ "//" ]
     deps = [
       ":devicetree",
-      "//third_party/modp_b64:modp_b64_c",
       "//zircon/kernel/lib/devicetree",
       "//zircon/kernel/lib/libc",
       "//zircon/kernel/phys:address-space",

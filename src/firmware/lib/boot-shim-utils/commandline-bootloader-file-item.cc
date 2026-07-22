@@ -11,9 +11,75 @@
 #include <limits>
 #include <ranges>
 
-#include "third_party/modp_b64/modp_b64.h"
-
 namespace {
+
+constexpr size_t kBase64DecodeError = static_cast<size_t>(-1);
+
+size_t Base64Decode(const char* src, size_t len, char* dst) {
+  if (len % 4 != 0) {
+    return kBase64DecodeError;
+  }
+
+  auto decode_char = [](char c) -> int {
+    if (c >= 'A' && c <= 'Z')
+      return c - 'A';
+    if (c >= 'a' && c <= 'z')
+      return c - 'a' + 26;
+    if (c >= '0' && c <= '9')
+      return c - '0' + 52;
+    if (c == '+')
+      return 62;
+    if (c == '/')
+      return 63;
+    if (c == '=')
+      return 0;
+    return -1;
+  };
+
+  char* p = dst;
+  for (size_t i = 0; i < len; i += 4) {
+    if (src[i] == '=' || src[i + 1] == '=') {
+      return kBase64DecodeError;
+    }
+    if (src[i + 2] == '=' && src[i + 3] != '=') {
+      return kBase64DecodeError;
+    }
+
+    int c0 = decode_char(src[i]);
+    int c1 = decode_char(src[i + 1]);
+    int c2 = decode_char(src[i + 2]);
+    int c3 = decode_char(src[i + 3]);
+
+    if (c0 < 0 || c1 < 0 || c2 < 0 || c3 < 0) {
+      return kBase64DecodeError;
+    }
+
+    size_t pad = 0;
+    if (src[i + 3] == '=') {
+      pad++;
+      if (src[i + 2] == '=') {
+        pad++;
+      }
+    }
+
+    if (pad > 0 && (i + 4 < len)) {
+      return kBase64DecodeError;
+    }
+
+    uint32_t val = (static_cast<uint32_t>(c0) << 18) | (static_cast<uint32_t>(c1) << 12) |
+                   (static_cast<uint32_t>(c2) << 6) | static_cast<uint32_t>(c3);
+
+    *p++ = static_cast<char>((val >> 16) & 0xFF);
+    if (pad < 2) {
+      *p++ = static_cast<char>((val >> 8) & 0xFF);
+    }
+    if (pad < 1) {
+      *p++ = static_cast<char>(val & 0xFF);
+    }
+  }
+
+  return static_cast<size_t>(p - dst);
+}
 
 // Executes `callback` on each `cmdline` arg starting with `prefix`.
 template <typename Callback>
@@ -112,8 +178,8 @@ CommandlineBootloaderFileItem::AppendItems(DataZbi& zbi) const {
 
   // Decode Base64 in-place. Since decoded data is always smaller, this only overwrites data which
   // has already been read so is safe to do.
-  size_t decoded_size = modp_b64_decode(base64_buffer, base64_buffer, base64_size_);
-  if (decoded_size == MODP_B64_ERROR) {
+  size_t decoded_size = Base64Decode(base64_buffer, base64_size_, base64_buffer);
+  if (decoded_size == kBase64DecodeError) {
     return fit::error(DataZbi::Error{
         .zbi_error = "Invalid Base64 in commandline bootloader file chunks",
         .item_offset = 0,

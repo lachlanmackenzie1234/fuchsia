@@ -19,12 +19,8 @@ source_set("boot-shim-utils") {
     "include/lib/boot-shim-utils/devicetree-bootloader-files-item.h",
   ]
 
-  # Needed to locate modp_b64 headers.
-  include_dirs = [ "//" ]
-
   public_deps = [
     "//sdk/lib/fit",
-    "//third_party/modp_b64:modp_b64_c",
     "//zircon/kernel/phys/lib/boot-shim",
   ]
 
