@@ -31,6 +31,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error, mode};
 
 use crate::DirectoryNodes;
+use crate::cpuset::CpusetCpusFile;
 use crate::events::EventsFile;
 use crate::freeze::FreezeFile;
 use crate::fs::CgroupVersion;
@@ -45,6 +46,7 @@ const KILL_FILE: &str = "cgroup.kill";
 const TYPE_FILE: &str = "cgroup.type";
 const SUBTREE_CONTROL_FILE: &str = "cgroup.subtree_control";
 const TASKS_FILE: &str = "tasks";
+const CPUS_FILE: &str = "cpus";
 
 #[derive(Debug)]
 pub struct CgroupDirectory {
@@ -105,7 +107,7 @@ impl CgroupDirectory {
                     ),
                 );
             }
-            CgroupVersion::V1(_) => {
+            CgroupVersion::V1(key) => {
                 // TODO(https://fxbug.dev/401298305): "tasks" should contain task IDs (TIDs)
                 // of all threads in the cgroup, and allow migrating individual threads. Currently
                 // it uses `ControlGroupNode` which only supports process IDs (PIDs).
@@ -123,6 +125,15 @@ impl CgroupDirectory {
                         FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
                     ),
                 );
+                if key.controllers.contains(&starnix_core::task::ControllerType::Cpuset) {
+                    interface_files.insert(
+                        CPUS_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            CpusetCpusFile::new_node(self.cgroup.clone()),
+                            FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                        ),
+                    );
+                }
             }
         }
     }
@@ -196,7 +207,7 @@ impl CgroupDirectory {
                     ),
                 ]);
             }
-            CgroupVersion::V1(_) => {
+            CgroupVersion::V1(key) => {
                 // TODO(https://fxbug.dev/401298305): "tasks" should contain task IDs (TIDs)
                 // of all threads in the cgroup, and allow migrating individual threads. Currently
                 // it uses `ControlGroupNode` which only supports process IDs (PIDs).
@@ -214,6 +225,15 @@ impl CgroupDirectory {
                         FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
                     ),
                 );
+                if key.controllers.contains(&starnix_core::task::ControllerType::Cpuset) {
+                    interface_files.insert(
+                        CPUS_FILE.into(),
+                        fs.create_node_and_allocate_node_id(
+                            CpusetCpusFile::new_node(cgroup.clone()),
+                            FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
+                        ),
+                    );
+                }
             }
         }
         CgroupDirectoryHandle(Arc::new(Self {

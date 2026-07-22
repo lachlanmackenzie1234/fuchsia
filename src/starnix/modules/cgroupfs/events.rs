@@ -58,10 +58,12 @@ impl FileOps for EventsFile {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         let cgroup = self.cgroup()?;
+        let freezer = cgroup.freezer().ok_or_else(|| errno!(ENODEV))?;
+        let effective_freezer_state = freezer.get_freezer_state().effective_freezer_state;
         let events_str = format!(
             "populated {}\nfrozen {}\n",
             cgroup.is_populated() as u8,
-            cgroup.get_freezer_state().effective_freezer_state
+            effective_freezer_state
         );
         let content: Cow<'_, [u8]> = events_str.as_bytes().to_owned().into();
         if offset >= content.len() {

@@ -4,6 +4,7 @@
 
 #![recursion_limit = "512"]
 
+mod cpuset;
 mod directory;
 mod events;
 mod freeze;

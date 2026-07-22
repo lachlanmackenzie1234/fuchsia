@@ -38,15 +38,18 @@ impl BytesFileOps for FreezeFile {
     fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let state_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
         let cgroup = self.cgroup()?;
+        let freezer = cgroup.freezer().ok_or_else(|| errno!(ENODEV))?;
         match state_str.trim() {
-            "1" => Ok(cgroup.freeze()),
-            "0" => Ok(cgroup.thaw()),
+            "1" => Ok(freezer.freeze()),
+            "0" => Ok(freezer.thaw()),
             _ => error!(EINVAL),
         }
     }
 
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let state_str = format!("{}\n", self.cgroup()?.get_freezer_state().self_freezer_state);
+        let cgroup = self.cgroup()?;
+        let freezer = cgroup.freezer().ok_or_else(|| errno!(ENODEV))?;
+        let state_str = format!("{}\n", freezer.get_freezer_state().self_freezer_state);
         Ok(state_str.as_bytes().to_owned().into())
     }
 }

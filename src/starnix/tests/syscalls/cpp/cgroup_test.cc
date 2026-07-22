@@ -909,3 +909,86 @@ TEST_F(CgroupV1Test, MultiMountsWithDifferentNaming) {
   umount(mnt_bar.path().c_str());
   umount(mnt_foo.path().c_str());
 }
+
+TEST_F(CgroupV1Test, CpusetController) {
+  std::string root = MountCgroupV1("cpuset");
+  if (root.empty()) {
+    GTEST_SKIP() << "cgroup v1 cpuset is unavailable on this Linux system";
+    return;
+  }
+
+  std::string cpuset_suffix = "/cpus";
+  struct stat buffer;
+  if (stat((root + "/cpus").c_str(), &buffer) != 0) {
+    if (stat((root + "/cpuset.cpus").c_str(), &buffer) == 0) {
+      cpuset_suffix = "/cpuset.cpus";
+    } else {
+      FAIL() << "Neither cpus nor cpuset.cpus exists in " << root;
+    }
+  }
+
+  ASSERT_THAT(stat((root + cpuset_suffix).c_str(), &buffer), SyscallSucceeds());
+
+  // Read default CPUs. It should not be empty.
+  std::ifstream cpus_file(root + cpuset_suffix);
+  std::string cpus_str;
+  std::getline(cpus_file, cpus_str);
+  cpus_file.close();
+  EXPECT_FALSE(cpus_str.empty());
+
+  // Create child cgroup.
+  std::string child = root + "/child";
+  CreateCgroup(child);
+  ASSERT_THAT(stat((child + cpuset_suffix).c_str(), &buffer), SyscallSucceeds());
+
+  // Write to child cpus.
+  std::ofstream child_cpus_file_write(child + cpuset_suffix);
+  child_cpus_file_write << "0";
+  child_cpus_file_write.close();
+
+  // Read back child cpus.
+  std::ifstream child_cpus_file_read(child + cpuset_suffix);
+  std::string child_cpus_str;
+  std::getline(child_cpus_file_read, child_cpus_str);
+  child_cpus_file_read.close();
+  EXPECT_EQ(child_cpus_str, "0");
+
+  // Write invalid CPU (assuming we don't have 9999 CPUs).
+  int fd = open((child + cpuset_suffix).c_str(), O_WRONLY);
+  ASSERT_GE(fd, 0);
+  EXPECT_THAT(write(fd, "9999\n", 5), SyscallFailsWithErrno(ERANGE));
+
+  // Write invalid CPU range where start > end.
+  EXPECT_THAT(write(fd, "2-1\n", 4), SyscallFailsWithErrno(EINVAL));
+
+  // Write invalid CPU range where end is out of range.
+  EXPECT_THAT(write(fd, "0-9999\n", 7), SyscallFailsWithErrno(ERANGE));
+  close(fd);
+
+  // Write valid range "0-0".
+  {
+    std::ofstream file(child + cpuset_suffix);
+    file << "0-0\n";
+  }
+  {
+    std::ifstream file(child + cpuset_suffix);
+    std::string val;
+    std::getline(file, val);
+    EXPECT_EQ(val, "0");
+  }
+
+  // Write valid multi-CPU range if system has multiple CPUs.
+  long num_cpus = sysconf(_SC_NPROCESSORS_CONF);
+  if (num_cpus >= 2) {
+    {
+      std::ofstream file(child + cpuset_suffix);
+      file << "0-1\n";
+    }
+    {
+      std::ifstream file(child + cpuset_suffix);
+      std::string val;
+      std::getline(file, val);
+      EXPECT_EQ(val, "0-1");
+    }
+  }
+}

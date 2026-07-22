@@ -25,6 +25,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crate::signals::KernelSignal;
+use zx;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ControllerType {
@@ -142,7 +143,7 @@ impl KernelCgroups {
 
         cgroup1.next_hierarchy_id += 1;
         let hierarchy_id = cgroup1.next_hierarchy_id;
-        let root = CgroupRoot::new(hierarchy_id);
+        let root = CgroupRoot::new(hierarchy_id, controllers.clone());
         cgroup1.hierarchies.insert(key, root.clone());
         for c in controllers {
             cgroup1.controllers.insert(*c, root.clone());
@@ -167,7 +168,10 @@ impl KernelCgroups {
 
 impl Default for KernelCgroups {
     fn default() -> Self {
-        Self { cgroup2: CgroupRoot::new(0), cgroup1: Default::default() }
+        Self {
+            cgroup2: CgroupRoot::new(0, ControllerType::ALL.iter().cloned().collect()),
+            cgroup1: Default::default(),
+        }
     }
 }
 
@@ -202,6 +206,42 @@ pub struct CgroupFreezerState {
     pub effective_freezer_state: FreezerState,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CpusetControllerState {
+    pub cpus: Option<Vec<u32>>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct FreezerControllerState {
+    pub self_freezer_state: FreezerState,
+    pub inherited_freezer_state: FreezerState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControllerState {
+    Cpuset(CpusetControllerState),
+    Freezer(FreezerControllerState),
+}
+
+pub trait FreezerOps: Send + Sync + 'static {
+    /// Get the freezer `self state` and `effective state`.
+    fn get_freezer_state(&self) -> CgroupFreezerState;
+
+    /// Freeze all tasks in the cgroup.
+    fn freeze(&self);
+
+    /// Thaw all tasks in the cgroup.
+    fn thaw(&self);
+}
+
+pub trait CpusetOps: Send + Sync + 'static {
+    /// Returns the cpuset cpus of the cgroup.
+    fn cpuset_cpus(&self) -> Vec<u32>;
+
+    /// Sets the cpuset cpus of the cgroup.
+    fn set_cpuset_cpus(&self, cpus: Vec<u32>);
+}
+
 /// Common operations of all cgroups.
 pub trait CgroupOps: Send + Sync + 'static {
     /// Returns the unique ID of the cgroup. ID of root cgroup is 0.
@@ -233,14 +273,11 @@ pub trait CgroupOps: Send + Sync + 'static {
     /// Whether the cgroup or any of its descendants have any processes.
     fn is_populated(&self) -> bool;
 
-    /// Get the freezer `self state` and `effective state`.
-    fn get_freezer_state(&self) -> CgroupFreezerState;
+    /// Returns freezer ops if freezer controller is supported.
+    fn freezer(&self) -> Option<&dyn FreezerOps>;
 
-    /// Freeze all tasks in the cgroup.
-    fn freeze(&self);
-
-    /// Thaw all tasks in the cgroup.
-    fn thaw(&self);
+    /// Returns cpuset ops if cpuset controller is supported.
+    fn cpuset(&self) -> Option<&dyn CpusetOps>;
 }
 
 /// `CgroupPidTable` contains the mapping of `ThreadGroup` (by pid) to non-root cgroup.
@@ -323,6 +360,9 @@ pub struct CgroupRoot {
     /// The ID of this hierarchy. 0 is reserved for cgroup v2.
     pub hierarchy_id: u32,
 
+    /// Controllers supported by this hierarchy.
+    pub controllers: BTreeSet<ControllerType>,
+
     /// Look up cgroup by pid. Must be locked before child states.
     pid_table: LockDepMutex<CgroupPidTable, CgroupPidTableLock>,
 
@@ -337,9 +377,10 @@ pub struct CgroupRoot {
 }
 
 impl CgroupRoot {
-    pub fn new(hierarchy_id: u32) -> Arc<CgroupRoot> {
+    pub fn new(hierarchy_id: u32, controllers: BTreeSet<ControllerType>) -> Arc<CgroupRoot> {
         Arc::new_cyclic(|weak_self| Self {
             hierarchy_id,
+            controllers,
             pid_table: Default::default(),
             children: Default::default(),
             weak_self: weak_self.clone(),
@@ -420,17 +461,21 @@ impl CgroupOps for CgroupRoot {
         false
     }
 
-    fn get_freezer_state(&self) -> CgroupFreezerState {
-        Default::default()
+    fn freezer(&self) -> Option<&dyn FreezerOps> {
+        None
     }
 
-    fn freeze(&self) {
-        unreachable!("Root cgroup cannot freeze any processes.");
+    fn cpuset(&self) -> Option<&dyn CpusetOps> {
+        if self.controllers.contains(&ControllerType::Cpuset) { Some(self) } else { None }
+    }
+}
+
+impl CpusetOps for CgroupRoot {
+    fn cpuset_cpus(&self) -> Vec<u32> {
+        (0..zx::system_get_num_cpus()).collect()
     }
 
-    fn thaw(&self) {
-        unreachable!("Root cgroup cannot thaw any processes.");
-    }
+    fn set_cpuset_cpus(&self, _cpus: Vec<u32>) {}
 }
 
 #[derive(Debug, Default)]
@@ -516,14 +561,39 @@ struct CgroupState {
     /// Wait queue to thaw all blocked tasks in this cgroup.
     wait_queue: WaitQueue,
 
-    /// The cgroup's own freezer state.
-    self_freezer_state: FreezerState,
-
-    /// Effective freezer state inherited from the parent cgroup.
-    inherited_freezer_state: FreezerState,
+    /// Controller-specific state.
+    controllers: HashMap<ControllerType, ControllerState>,
 }
 
 impl CgroupState {
+    fn freezer(&self) -> Option<&FreezerControllerState> {
+        match self.controllers.get(&ControllerType::Freezer) {
+            Some(ControllerState::Freezer(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    fn freezer_mut(&mut self) -> Option<&mut FreezerControllerState> {
+        match self.controllers.get_mut(&ControllerType::Freezer) {
+            Some(ControllerState::Freezer(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    fn cpuset(&self) -> Option<&CpusetControllerState> {
+        match self.controllers.get(&ControllerType::Cpuset) {
+            Some(ControllerState::Cpuset(state)) => Some(state),
+            _ => None,
+        }
+    }
+
+    fn cpuset_mut(&mut self) -> Option<&mut CpusetControllerState> {
+        match self.controllers.get_mut(&ControllerType::Cpuset) {
+            Some(ControllerState::Cpuset(state)) => Some(state),
+            _ => None,
+        }
+    }
+
     /// Creates a new Waiter that subscribes to the Cgroup's freezer WaitQueue. This `Waiter` can be
     /// sent as a part of a `KernelSignal::Freeze` to freeze a `Task`.
     fn create_freeze_waiter(&self) -> Waiter {
@@ -560,7 +630,11 @@ impl CgroupState {
     }
 
     fn get_effective_freezer_state(&self) -> FreezerState {
-        std::cmp::max(self.self_freezer_state, self.inherited_freezer_state)
+        if let Some(freezer) = self.freezer() {
+            std::cmp::max(freezer.self_freezer_state, freezer.inherited_freezer_state)
+        } else {
+            FreezerState::Thawed
+        }
     }
 
     fn add_process(&mut self, thread_group: &ThreadGroup) -> Result<(), Errno> {
@@ -589,7 +663,9 @@ impl CgroupState {
 
     fn propagate_freeze(&mut self, inherited_freezer_state: FreezerState) {
         let prev_effective_freezer_state = self.get_effective_freezer_state();
-        self.inherited_freezer_state = inherited_freezer_state;
+        if let Some(freezer) = self.freezer_mut() {
+            freezer.inherited_freezer_state = inherited_freezer_state;
+        }
         if prev_effective_freezer_state == FreezerState::Frozen {
             return;
         }
@@ -612,7 +688,9 @@ impl CgroupState {
     }
 
     fn propagate_thaw(&mut self, inherited_freezer_state: FreezerState) {
-        self.inherited_freezer_state = inherited_freezer_state;
+        if let Some(freezer) = self.freezer_mut() {
+            freezer.inherited_freezer_state = inherited_freezer_state;
+        }
         if self.get_effective_freezer_state() == FreezerState::Thawed {
             self.wait_queue.notify_all();
             for child in self.children.get_children() {
@@ -688,12 +766,38 @@ impl Cgroup {
         root: &Weak<CgroupRoot>,
         parent: Option<Weak<Cgroup>>,
     ) -> CgroupHandle {
+        let root_shared = root.upgrade().expect("root must exist");
+        let mut controllers = HashMap::new();
+        for controller in &root_shared.controllers {
+            match controller {
+                ControllerType::Cpuset => {
+                    controllers.insert(
+                        *controller,
+                        ControllerState::Cpuset(CpusetControllerState::default()),
+                    );
+                }
+                ControllerType::Freezer => {
+                    controllers.insert(
+                        *controller,
+                        ControllerState::Freezer(FreezerControllerState::default()),
+                    );
+                }
+                _ => {}
+            }
+        }
+
         Arc::new_cyclic(|weak| Self {
             id,
             root: root.clone(),
             name: name.to_owned(),
             parent,
-            state: Default::default(),
+            state: LockDepMutex::new(CgroupState {
+                children: Default::default(),
+                processes: Default::default(),
+                deleted: false,
+                wait_queue: Default::default(),
+                controllers,
+            }),
             weak_self: weak.clone(),
         })
     }
@@ -714,6 +818,10 @@ impl Cgroup {
 
     fn count_descendants(&self) -> u64 {
         self.state.lock().children.count_descendants()
+    }
+
+    fn is_controller_supported(&self, controller: ControllerType) -> bool {
+        self.root().map(|r| r.controllers.contains(&controller)).unwrap_or(false)
     }
 }
 
@@ -762,8 +870,11 @@ impl CgroupOps for Cgroup {
         // This allow_subclass is safe because the lock is being acquired
         // in a strictly top-down traversal of the Cgroup tree (from parent
         // to child), so no lock ordering cycles can be formed.
+        let effective_freezer = state.get_effective_freezer_state();
         let _token = allow_subclass();
-        new_child.state.lock().inherited_freezer_state = state.get_effective_freezer_state();
+        if let Some(freezer) = new_child.state.lock().freezer_mut() {
+            freezer.inherited_freezer_state = effective_freezer;
+        }
         state.children.insert_child(name.into(), new_child)
     }
 
@@ -819,10 +930,21 @@ impl CgroupOps for Cgroup {
         })
     }
 
+    fn freezer(&self) -> Option<&dyn FreezerOps> {
+        if self.is_controller_supported(ControllerType::Freezer) { Some(self) } else { None }
+    }
+
+    fn cpuset(&self) -> Option<&dyn CpusetOps> {
+        if self.is_controller_supported(ControllerType::Cpuset) { Some(self) } else { None }
+    }
+}
+
+impl FreezerOps for Cgroup {
     fn get_freezer_state(&self) -> CgroupFreezerState {
         let state = self.state.lock();
+        let self_freezer_state = state.freezer().map(|f| f.self_freezer_state).unwrap_or_default();
         CgroupFreezerState {
-            self_freezer_state: state.self_freezer_state,
+            self_freezer_state,
             effective_freezer_state: state.get_effective_freezer_state(),
         }
     }
@@ -830,17 +952,41 @@ impl CgroupOps for Cgroup {
     fn freeze(&self) {
         fuchsia_trace::duration!(CATEGORY_STARNIX, "CgroupFreeze");
         let mut state = self.state.lock();
-        let inherited_freezer_state = state.inherited_freezer_state;
+        let inherited_freezer_state =
+            state.freezer().map(|f| f.inherited_freezer_state).unwrap_or_default();
         state.propagate_freeze(inherited_freezer_state);
-        state.self_freezer_state = FreezerState::Frozen;
+        if let Some(freezer) = state.freezer_mut() {
+            freezer.self_freezer_state = FreezerState::Frozen;
+        }
     }
 
     fn thaw(&self) {
         fuchsia_trace::duration!(CATEGORY_STARNIX, "CgroupThaw");
         let mut state = self.state.lock();
-        state.self_freezer_state = FreezerState::Thawed;
-        let inherited_freezer_state = state.inherited_freezer_state;
+        if let Some(freezer) = state.freezer_mut() {
+            freezer.self_freezer_state = FreezerState::Thawed;
+        }
+        let inherited_freezer_state =
+            state.freezer().map(|f| f.inherited_freezer_state).unwrap_or_default();
         state.propagate_thaw(inherited_freezer_state);
+    }
+}
+
+impl CpusetOps for Cgroup {
+    fn cpuset_cpus(&self) -> Vec<u32> {
+        self.state
+            .lock()
+            .cpuset()
+            .and_then(|c| c.cpus.clone())
+            .unwrap_or_else(|| (0..zx::system_get_num_cpus()).collect())
+    }
+
+    fn set_cpuset_cpus(&self, cpus: Vec<u32>) {
+        // TODO(b/322255433): Translate the cpuset logic into Zircon
+        let mut state = self.state.lock();
+        if let Some(cpuset) = state.cpuset_mut() {
+            cpuset.cpus = Some(cpus);
+        }
     }
 }
 
@@ -855,7 +1001,7 @@ mod test {
     #[::fuchsia::test]
     async fn cgroup_path_from_root() {
         spawn_kernel_and_run(async |_| {
-            let root = CgroupRoot::new(0);
+            let root = CgroupRoot::new(0, BTreeSet::new());
 
             let test_cgroup =
                 root.new_child("test".into()).expect("new_child on root cgroup succeeds");

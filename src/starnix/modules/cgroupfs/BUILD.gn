@@ -18,6 +18,7 @@ rustc_library("cgroupfs") {
   with_unit_tests = true
 
   sources = [
+    "cpuset.rs",
     "directory.rs",
     "events.rs",
     "freeze.rs",
@@ -36,6 +37,7 @@ rustc_library("cgroupfs") {
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
+    "//sdk/rust/zx",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
