@@ -26,8 +26,7 @@ class ZirconJobHandle final : public JobHandle, public debug::ZirconExceptionWat
   std::string GetName() const override;
   std::vector<std::unique_ptr<JobHandle>> GetChildJobs() const override;
   std::vector<std::unique_ptr<ProcessHandle>> GetChildProcesses() const override;
-  debug::Status WatchJobExceptions(JobExceptionObserver* observer,
-                                   JobExceptionChannelType type) override;
+  debug::Status Attach(JobExceptionObserver* observer, AttachConfig config) override;
 
  private:
   // ZirconExceptionWatcher implementation.
@@ -38,6 +37,7 @@ class ZirconJobHandle final : public JobHandle, public debug::ZirconExceptionWat
 
   debug::MessageLoop::WatchHandle job_watch_handle_;
   JobExceptionObserver* exception_observer_ = nullptr;
+  JobExceptionChannelType exception_channel_type_ = JobExceptionChannelType::kNone;
 };
 
 }  // namespace debug_agent

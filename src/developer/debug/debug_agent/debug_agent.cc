@@ -805,6 +805,13 @@ debug::Status DebugAgent::AddDebuggedProcess(DebuggedProcessCreateInfo&& create_
   return debug::Status();
 }
 
+debug::Status DebugAgent::TrackProcess(std::unique_ptr<ProcessHandle> process,
+                                       DebuggedProcess** added) {
+  DebuggedProcessCreateInfo create_info(std::move(process));
+  create_info.priority = debug_ipc::AttachConfig::Priority::kMinimal;
+  return AddDebuggedProcess(std::move(create_info), added);
+}
+
 debug_ipc::ExceptionStrategy DebugAgent::GetExceptionStrategy(debug_ipc::ExceptionType type) {
   auto strategy = exception_strategies_.find(type);
   if (strategy == exception_strategies_.end()) {
@@ -969,7 +976,7 @@ debug::Status DebugAgent::AttachToExistingProcess(zx_koid_t process_koid,
 debug::Status DebugAgent::AttachToRootJob() {
   DebuggedJobCreateInfo info(system_interface().GetRootJob());
   // Only ever attach to the root job's debugger channel.
-  info.type = JobExceptionChannelType::kDebugger;
+  info.priority = debug_ipc::AttachConfig::Priority::kWeak;
 
   // The root job is otherwise treated just like any other job.
   auto status = AddDebuggedJob(std::move(info), &root_job_);
@@ -987,9 +994,7 @@ debug::Status DebugAgent::AttachToExistingJob(zx_koid_t job_koid,
                                               debug_ipc::AttachReply* reply) {
   DebuggedJob* debugged_job;
   DebuggedJobCreateInfo info(system_interface().GetJob(job_koid));
-  info.type = (config.priority == debug_ipc::AttachConfig::Priority::kWeak)
-                  ? JobExceptionChannelType::kDebugger
-                  : JobExceptionChannelType::kException;
+  info.priority = config.priority;
 
   // Check the validity of the JobHandle here. We don't pass the job's koid to |AddDebuggedJob|, so
   // it can only get the koid by dereferencing the JobHandle, so we can print a better error message

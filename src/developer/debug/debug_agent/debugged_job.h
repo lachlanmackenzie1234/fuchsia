@@ -10,6 +10,7 @@
 #include "src/developer/debug/debug_agent/job_exception_channel_type.h"
 #include "src/developer/debug/debug_agent/job_exception_observer.h"
 #include "src/developer/debug/debug_agent/job_handle.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/lib/fxl/macros.h"
 
 namespace debug_agent {
@@ -22,7 +23,8 @@ struct DebuggedJobCreateInfo {
 
   std::unique_ptr<JobHandle> handle;
 
-  JobExceptionChannelType type;
+  // See documentation in AttachConfig.
+  debug_ipc::AttachConfig::Priority priority = debug_ipc::AttachConfig::Priority::kStrong;
 };
 
 class DebuggedJob : public JobExceptionObserver {

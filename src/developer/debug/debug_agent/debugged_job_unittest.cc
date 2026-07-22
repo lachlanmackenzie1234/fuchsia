@@ -43,7 +43,7 @@ TEST(DebuggedJob, ReportUnhandledException) {
   DebuggedJobCreateInfo create_info(std::move(mock_job_handle));
   // This tells the MockJobHandle that we are allowed to receive exception events, mimicking a real
   // system.
-  create_info.type = JobExceptionChannelType::kException;
+  create_info.priority = debug_ipc::AttachConfig::Priority::kStrong;
   job.Init(std::move(create_info));
 
   auto mock_exception = std::make_unique<MockExceptionHandle>(kProcess1Koid, kProcess1Thread1Koid);
@@ -63,5 +63,44 @@ TEST(DebuggedJob, ReportUnhandledException) {
 
   // The exception should be released after the notification is sent.
   EXPECT_EQ(mock_exception, nullptr);
+}
+
+TEST(DebuggedJob, Init_AttachConfig) {
+  debug_agent::MockDebugAgentHarness harness;
+  DebuggedJob job(harness.debug_agent());
+
+  constexpr zx_koid_t kJobKoid = 1234;
+  auto mock_job_handle = std::make_unique<MockJobHandle>(kJobKoid);
+  MockJobHandle* handle_ptr = mock_job_handle.get();
+
+  DebuggedJobCreateInfo create_info(std::move(mock_job_handle));
+  create_info.priority = debug_ipc::AttachConfig::Priority::kMinimal;
+  ASSERT_TRUE(job.Init(std::move(create_info)).ok());
+
+  EXPECT_EQ(job.type(), JobExceptionChannelType::kNone);
+  EXPECT_EQ(handle_ptr->observer(), &job);
+  EXPECT_EQ(handle_ptr->observer_type(), JobExceptionChannelType::kNone);
+
+  // Test kWeak priority.
+  auto mock_job_handle_weak = std::make_unique<MockJobHandle>(kJobKoid);
+  MockJobHandle* handle_weak_ptr = mock_job_handle_weak.get();
+  DebuggedJob job_weak(harness.debug_agent());
+  DebuggedJobCreateInfo create_info_weak(std::move(mock_job_handle_weak));
+  create_info_weak.priority = debug_ipc::AttachConfig::Priority::kWeak;
+  ASSERT_TRUE(job_weak.Init(std::move(create_info_weak)).ok());
+  EXPECT_EQ(job_weak.type(), JobExceptionChannelType::kDebugger);
+  EXPECT_EQ(handle_weak_ptr->observer(), &job_weak);
+  EXPECT_EQ(handle_weak_ptr->observer_type(), JobExceptionChannelType::kDebugger);
+
+  // Test kStrong priority.
+  auto mock_job_handle_strong = std::make_unique<MockJobHandle>(kJobKoid);
+  MockJobHandle* handle_strong_ptr = mock_job_handle_strong.get();
+  DebuggedJob job_strong(harness.debug_agent());
+  DebuggedJobCreateInfo create_info_strong(std::move(mock_job_handle_strong));
+  create_info_strong.priority = debug_ipc::AttachConfig::Priority::kStrong;
+  ASSERT_TRUE(job_strong.Init(std::move(create_info_strong)).ok());
+  EXPECT_EQ(job_strong.type(), JobExceptionChannelType::kException);
+  EXPECT_EQ(handle_strong_ptr->observer(), &job_strong);
+  EXPECT_EQ(handle_strong_ptr->observer_type(), JobExceptionChannelType::kException);
 }
 }  // namespace debug_agent

@@ -60,6 +60,10 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
 
   void RemoveDebuggedProcess(zx_koid_t process_koid);
 
+  // Configures the debug agent to track/debug |process| with minimal attach priority.
+  // The newly created DebuggedProcess is returned via |added| if the operation succeeds.
+  debug::Status TrackProcess(std::unique_ptr<ProcessHandle> process, DebuggedProcess** added);
+
   Breakpoint* GetBreakpoint(uint32_t breakpoint_id);
   void RemoveBreakpoint(uint32_t breakpoint_id);
 

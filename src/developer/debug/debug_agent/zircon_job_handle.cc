@@ -41,29 +41,45 @@ std::vector<std::unique_ptr<ProcessHandle>> ZirconJobHandle::GetChildProcesses()
   return result;
 }
 
-debug::Status ZirconJobHandle::WatchJobExceptions(JobExceptionObserver* observer,
-                                                  JobExceptionChannelType type) {
+debug::Status ZirconJobHandle::Attach(JobExceptionObserver* observer, AttachConfig attach_config) {
+  if (!observer || attach_config.exception_channel_type == JobExceptionChannelType::kNone) {
+    if (job_watch_handle_.watching()) {
+      job_watch_handle_.StopWatching();
+    }
+    exception_observer_ = observer;
+    exception_channel_type_ = JobExceptionChannelType::kNone;
+    return debug::Status();
+  }
+
+  if (job_watch_handle_.watching() &&
+      attach_config.exception_channel_type != exception_channel_type_) {
+    job_watch_handle_.StopWatching();
+  }
+
   debug::Status status;
 
-  if (!observer) {
-    // Unregistering.
-    job_watch_handle_.StopWatching();
-  } else if (!exception_observer_) {
-    // Registering for the first time.
+  if (!job_watch_handle_.watching()) {
+    // Registering for the first time or re-registering after StopWatching().
     debug::MessageLoopFuchsia* loop = debug::MessageLoopFuchsia::Current();
     FX_DCHECK(loop);  // Loop must be created on this thread first.
 
     DEBUG_LOG(Agent) << "Registering for JobExceptions";
-    debug::MessageLoopFuchsia::WatchJobConfig config;
-    config.job_name = GetName();
-    config.job_handle = job_.get();
-    config.job_koid = job_koid_;
-    config.use_debugger_channel = type == JobExceptionChannelType::kDebugger;
-    config.watcher = this;
-    status = debug::ZxStatus(loop->WatchJobExceptions(std::move(config), &job_watch_handle_));
+    debug::MessageLoopFuchsia::WatchJobConfig watch_config;
+    watch_config.job_name = GetName();
+    watch_config.job_handle = job_.get();
+    watch_config.job_koid = job_koid_;
+    watch_config.use_debugger_channel =
+        attach_config.exception_channel_type == JobExceptionChannelType::kDebugger;
+    watch_config.watcher = this;
+    status = debug::ZxStatus(loop->WatchJobExceptions(std::move(watch_config), &job_watch_handle_));
   }
 
-  exception_observer_ = observer;
+  if (status.ok()) {
+    exception_observer_ = observer;
+    exception_channel_type_ = attach_config.exception_channel_type;
+  } else if (!job_watch_handle_.watching()) {
+    exception_channel_type_ = JobExceptionChannelType::kNone;
+  }
   return status;
 }
 

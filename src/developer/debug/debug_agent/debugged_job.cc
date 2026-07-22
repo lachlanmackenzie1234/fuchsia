@@ -6,6 +6,7 @@
 
 #include "lib/syslog/cpp/macros.h"
 #include "src/developer/debug/debug_agent/debug_agent.h"
+#include "src/developer/debug/debug_agent/debugged_process.h"
 
 namespace debug_agent {
 
@@ -19,13 +20,26 @@ debug::Status DebuggedJob::Init(DebuggedJobCreateInfo&& info) {
     return debug::Status("Cannot initialize DebuggedJob with an invalid JobHandle.");
   }
 
-  type_ = info.type;
   job_handle_ = std::move(info.handle);
 
-  if (auto status = job_handle_->WatchJobExceptions(this, info.type); status.has_error()) {
+  JobHandle::AttachConfig config;
+  switch (info.priority) {
+    case debug_ipc::AttachConfig::Priority::kMinimal:
+      config.exception_channel_type = JobExceptionChannelType::kNone;
+      break;
+    case debug_ipc::AttachConfig::Priority::kWeak:
+      config.exception_channel_type = JobExceptionChannelType::kDebugger;
+      break;
+    case debug_ipc::AttachConfig::Priority::kStrong:
+      config.exception_channel_type = JobExceptionChannelType::kException;
+      break;
+  }
+
+  if (auto status = job_handle_->Attach(this, config); status.has_error()) {
     return status;
   }
 
+  type_ = config.exception_channel_type;
   return debug::Status();
 }
 
@@ -74,20 +88,31 @@ void DebuggedJob::OnUnhandledException(std::unique_ptr<ExceptionHandle> exceptio
   // job handled the exception. By virtue of being attached to the job only, we are not actually
   // interactively debugging the exception, we just collect some information and report it to all
   // clients.
-  //
-  // Note that we do actually have a DebuggedProcess and DebuggedThread by virtue of the
-  // ProcessStarting and ThreadStarting notifications, so we already have everything we need here.
   auto process = debug_agent_->GetDebuggedProcess(exception_handle->GetPid());
 
-  // There's nothing stopping from something else in the system removing this process before we have
-  // a chance to handle the exception. We cannot assert the validity of |process|.
+  // We are not guaranteed to be paying attention to ProcessStarting events from this job, therefore
+  // we might not have created a DebuggedProcess object. If we don't, make one now. It's also
+  // entirely possible for something else in the system to have issued a zx_task_kill on this
+  // process, so there is no guarantee that we can get a handle to the process object.
   if (!process) {
-    LOGS(Warn) << "Got exception for unknown process pid: " << exception_handle->GetPid();
-    return;
+    auto process_handle = job_handle_->FindProcess(exception_handle->GetPid());
+    if (process_handle) {
+      debug::Status status = debug_agent_->TrackProcess(std::move(process_handle), &process);
+      if (status.has_error() || !process) {
+        LOGS(Warn) << "Failed to attach on-demand to process pid " << exception_handle->GetPid()
+                   << ": " << status.message();
+        return;
+      }
+    } else {
+      LOGS(Warn) << "Got exception for unknown process pid: " << exception_handle->GetPid();
+      return;
+    }
   }
 
-  // Make sure the DebuggedProcess knows about all of the threads. This will never remove threads,
-  // only add new ones.
+  // Make sure the DebuggedProcess knows about all of the threads. This can be the case if we have
+  // already created a DebuggedProcess but not claimed its exception channel at all. This method is
+  // idempotent, it does not remove any threads, any currently pending thread starting events will
+  // be instantly acknowledged. See DebuggedProcess::OnThreadStarting.
   process->PopulateCurrentThreads();
 
   auto thread = process->GetThread(exception_handle->GetTid());

@@ -37,6 +37,9 @@ class MockJobHandle final : public JobHandle {
   // exception without being subscribed to the "normal" exception channel, this function will assert
   // if an invalid info is passed to this method with an observer that previously registered with
   // the incorrect job exception channel.
+  JobExceptionObserver* observer() const { return observer_; }
+  JobExceptionChannelType observer_type() const { return observer_type_; }
+
   void OnException(std::unique_ptr<MockExceptionHandle> exception, MockJobExceptionInfo info);
 
   // JobHandle implementation.
@@ -45,10 +48,9 @@ class MockJobHandle final : public JobHandle {
   std::string GetName() const override { return name_; }
   std::vector<std::unique_ptr<JobHandle>> GetChildJobs() const override;
   std::vector<std::unique_ptr<ProcessHandle>> GetChildProcesses() const override;
-  debug::Status WatchJobExceptions(JobExceptionObserver* observer,
-                                   JobExceptionChannelType type) override {
+  debug::Status Attach(JobExceptionObserver* observer, AttachConfig config) override {
     observer_ = observer;
-    observer_type_ = type;
+    observer_type_ = config.exception_channel_type;
     return debug::Status();
   }
 
