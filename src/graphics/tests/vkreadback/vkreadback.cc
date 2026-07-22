@@ -259,6 +259,15 @@ bool VkReadbackTest::InitImage() {
   RTN_IF_VKH_ERR(false, create_image_result.result, "vk::Device::createImageUnique()\n");
   image_ = std::move(create_image_result.value);
 
+  vk::StructureChain<vk::MemoryRequirements2, vk::MemoryDedicatedRequirements>
+      memory_requirements_chain =
+          ctx_->device()
+              ->getImageMemoryRequirements2<vk::MemoryRequirements2,
+                                            vk::MemoryDedicatedRequirements>(
+                  vk::ImageMemoryRequirementsInfo2(*image_));
+  use_dedicated_memory_ =
+      memory_requirements_chain.get<vk::MemoryDedicatedRequirements>().requiresDedicatedAllocation;
+
   //
   // Create the device memory to be bound to this image.
   //
@@ -300,16 +309,8 @@ bool VkReadbackTest::InitImage() {
 }
 
 bool VkReadbackTest::AllocateDeviceMemory() {
-  vk::StructureChain<vk::MemoryRequirements2, vk::MemoryDedicatedRequirements>
-      memory_requirements_chain =
-          ctx_->device()
-              ->getImageMemoryRequirements2<vk::MemoryRequirements2,
-                                            vk::MemoryDedicatedRequirements>(
-                  vk::ImageMemoryRequirementsInfo2(*image_));
-  const vk::MemoryRequirements& image_memory_requirements =
-      memory_requirements_chain.get<vk::MemoryRequirements2>().memoryRequirements;
-  use_dedicated_memory_ =
-      memory_requirements_chain.get<vk::MemoryDedicatedRequirements>().requiresDedicatedAllocation;
+  const vk::MemoryRequirements image_memory_requirements =
+      ctx_->device()->getImageMemoryRequirements(*image_);
 
   if (use_dedicated_memory_) {
     // If driver requires dedicated allocation to be used, per Vulkan specs,
@@ -417,7 +418,8 @@ bool VkReadbackTest::AllocateFuchsiaImportedMemory(zx::vmo exported_memory_vmo) 
     RTN_MSG(false, "Can't find host mappable memory type for zircon VMO.\n");
   }
 
-  vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryZirconHandleInfoFUCHSIA>
+  vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryZirconHandleInfoFUCHSIA,
+                     vk::MemoryDedicatedAllocateInfo>
       imported_mem_alloc_info_chain;
 
   vk::MemoryAllocateInfo& imported_mem_alloc_info =
@@ -430,8 +432,13 @@ bool VkReadbackTest::AllocateFuchsiaImportedMemory(zx::vmo exported_memory_vmo) 
   import_memory_handle_info.handleType = vk::ExternalMemoryHandleTypeFlagBits::eZirconVmoFUCHSIA;
   import_memory_handle_info.handle = exported_memory_vmo.get();
 
+  imported_mem_alloc_info_chain.get<vk::MemoryDedicatedAllocateInfo>().image = *image_;
+  if (!use_dedicated_memory_) {
+    imported_mem_alloc_info_chain.unlink<vk::MemoryDedicatedAllocateInfo>();
+  }
+
   vk::ResultValue<vk::UniqueDeviceMemory> allocate_memory_result =
-      device->allocateMemoryUnique(imported_mem_alloc_info);
+      device->allocateMemoryUnique(imported_mem_alloc_info_chain.get());
   RTN_IF_VKH_ERR(false, allocate_memory_result.result,
                  "vk::Device::allocateMemory() failed for import memory\n");
 
@@ -481,7 +488,8 @@ bool VkReadbackTest::AllocateAndroidImportedMemory(AHardwareBuffer* ahb) {
     RTN_MSG(false, "Can't find host mappable memory type for android hardware buffer.\n");
   }
 
-  vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportAndroidHardwareBufferInfoANDROID>
+  vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportAndroidHardwareBufferInfoANDROID,
+                     vk::MemoryDedicatedAllocateInfo>
       imported_mem_alloc_info_chain;
 
   vk::MemoryAllocateInfo& imported_mem_alloc_info =
@@ -493,8 +501,13 @@ bool VkReadbackTest::AllocateAndroidImportedMemory(AHardwareBuffer* ahb) {
       imported_mem_alloc_info_chain.get<vk::ImportAndroidHardwareBufferInfoANDROID>();
   import_memory_handle_info.buffer = ahb;
 
+  imported_mem_alloc_info_chain.get<vk::MemoryDedicatedAllocateInfo>().image = *image_;
+  if (!use_dedicated_memory_) {
+    imported_mem_alloc_info_chain.unlink<vk::MemoryDedicatedAllocateInfo>();
+  }
+
   vk::ResultValue<vk::UniqueDeviceMemory> allocate_memory_result =
-      ctx_->device()->allocateMemoryUnique(imported_mem_alloc_info);
+      ctx_->device()->allocateMemoryUnique(imported_mem_alloc_info_chain.get());
   RTN_IF_VKH_ERR(false, allocate_memory_result.result,
                  "vk::Device::allocateMemory() failed for import memory\n");
 
