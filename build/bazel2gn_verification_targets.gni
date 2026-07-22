@@ -14,6 +14,7 @@ bazel2gn_verification_targets = [
   "//build/tools/tarmaker:verify_bazel2gn",
   "//examples/fidl/fuchsia.examples.docs:verify_bazel2gn",
   "//examples/fidl/fuchsia.examples:verify_bazel2gn",
+  "//sdk/ctf/plasa/model:verify_bazel2gn",
   "//sdk/lib/async-default:verify_bazel2gn",
   "//sdk/lib/async-loop:verify_bazel2gn",
   "//sdk/lib/async:verify_bazel2gn",
