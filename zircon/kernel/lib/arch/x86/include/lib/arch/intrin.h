@@ -13,12 +13,6 @@
 
 // Provide the standard Intel x86 intrinsics API via the compiler headers.
 
-#if !defined(__clang__)
-// GCC's <x86intrin.h> indirectly includes its <mm_malloc.h>, which
-// is useless to us but requires an <errno.h> with declarations.
-#define _MM_MALLOC_H_INCLUDED
-#endif
-
 #include <immintrin.h>
 #include <x86intrin.h>
 
