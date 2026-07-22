@@ -209,4 +209,15 @@ tools_bazel_root_targets = [
       },
     ]
   },
+  {
+    bazel_label = "//sdk/ctf/plasa/clang_doc_filter:clang_doc_filter"
+    ninja_name = "clang_doc_filter"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/clang_doc_filter_/clang_doc_filter"
+        ninja = "clang_doc_filter"
+      },
+    ]
+    install_host_tool = true
+  },
 ]
