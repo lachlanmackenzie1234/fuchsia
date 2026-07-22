@@ -660,7 +660,7 @@ TEST_P(TEST_CLASS_NAME, PresentAndAcquireNoSemaphore) {
   test_->allows_validation_errors_ = true;
   uint32_t image_index;
   // Acquire all initial images.
-  for (uint32_t i = 0; i < 3; i++) {
+  for (uint32_t i = 0; i < TestSwapchain::kSwapchainImageCount; i++) {
     EXPECT_EQ(VK_SUCCESS,
               test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0, VK_NULL_HANDLE,
                                              VK_NULL_HANDLE, &image_index));
@@ -696,7 +696,7 @@ TEST_P(TEST_CLASS_NAME, PresentAndAcquireNoSemaphore) {
 
   constexpr uint32_t kFrameCount = 100;
   for (uint32_t i = 0; i < kFrameCount; i++) {
-    present_index = i % 3;
+    present_index = i % TestSwapchain::kSwapchainImageCount;
     auto swapchain_images = test_->GetSwapchainImages(swapchain);
     test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     ASSERT_EQ(VK_SUCCESS, test_->queue_present_khr_(queue, &present_info));
@@ -714,7 +714,7 @@ TEST_P(TEST_CLASS_NAME, PresentAndAcquireNoSemaphore) {
               test_->acquire_next_image_khr_(test_->vk_device_, swapchain, kTimeoutNs,
                                              VK_NULL_HANDLE, VK_NULL_HANDLE, &image_index));
     // The previous present image should be available.
-    ASSERT_EQ(present_index, (image_index + 1) % 3);
+    ASSERT_EQ(present_index, (image_index + 1) % TestSwapchain::kSwapchainImageCount);
 
     ASSERT_EQ(VK_NOT_READY,
               test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0, VK_NULL_HANDLE,
@@ -722,6 +722,7 @@ TEST_P(TEST_CLASS_NAME, PresentAndAcquireNoSemaphore) {
     test_->allows_validation_errors_ = false;
   }
 
+  vkDeviceWaitIdle(test_->vk_device_);
   test_->destroy_swapchain_khr_(test_->vk_device_, swapchain, nullptr);
   vkDestroySurfaceKHR(test_->vk_instance_, surface, nullptr);
 
@@ -789,6 +790,7 @@ TEST_P(TEST_CLASS_NAME, FifoAcquireAndPresent) {
     ASSERT_EQ(VK_SUCCESS, test_->queue_present_khr_(queue, &present_info));
   }
 
+  vkDeviceWaitIdle(test_->vk_device_);
   test_->destroy_swapchain_khr_(test_->vk_device_, swapchain, nullptr);
   vkDestroySurfaceKHR(test_->vk_instance_, surface, nullptr);
   vkDestroySemaphore(test_->vk_device_, acquire_semaphore, nullptr);
@@ -869,6 +871,7 @@ TEST_P(TEST_CLASS_NAME, ImmediateAcquireAndPresent) {
     ASSERT_EQ(VK_SUCCESS, test_->queue_present_khr_(queue, &present_info));
   }
 
+  vkDeviceWaitIdle(test_->vk_device_);
   test_->destroy_swapchain_khr_(test_->vk_device_, swapchain, nullptr);
   vkDestroySurfaceKHR(test_->vk_instance_, surface, nullptr);
   vkDestroySemaphore(test_->vk_device_, acquire_semaphore, nullptr);
@@ -914,14 +917,17 @@ TEST_P(TEST_CLASS_NAME, ForceQuit) {
   }
 
   uint32_t image_index;
+  VkSemaphore acquire_semaphore = MakeSingleUseSemaphore();
   EXPECT_EQ(VK_SUCCESS,
-            test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0,
-                                           MakeSingleUseSemaphore(), VK_NULL_HANDLE, &image_index));
+            test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0, acquire_semaphore,
+                                           VK_NULL_HANDLE, &image_index));
 
   auto swapchain_images = test_->GetSwapchainImages(swapchain);
-  test_->TransitionLayout(swapchain_images[image_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  test_->TransitionLayout(swapchain_images[image_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                          acquire_semaphore);
 
   uint32_t present_index = image_index;
+  ASSERT_LT(present_index, TestSwapchain::kSwapchainImageCount);
   VkResult present_result;
   VkPresentInfoKHR present_info = {
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -940,6 +946,7 @@ TEST_P(TEST_CLASS_NAME, ForceQuit) {
   test_->fake_flatland_.reset();
 #endif
 
+  vkDeviceWaitIdle(test_->vk_device_);
   test_->destroy_swapchain_khr_(test_->vk_device_, swapchain, nullptr);
   vkDestroySurfaceKHR(test_->vk_instance_, surface, nullptr);
 }
@@ -976,11 +983,13 @@ TEST_P(TEST_CLASS_NAME, DeviceLostAvoidSemaphoreHang) {
   }
 
   uint32_t image_index;
+  VkSemaphore acquire_semaphores[TestSwapchain::kSwapchainImageCount];
   // Acquire all initial images.
-  for (uint32_t i = 0; i < 3; i++) {
-    EXPECT_EQ(VK_SUCCESS, test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0,
-                                                         MakeSingleUseSemaphore(), VK_NULL_HANDLE,
-                                                         &image_index));
+  for (uint32_t i = 0; i < TestSwapchain::kSwapchainImageCount; i++) {
+    acquire_semaphores[i] = MakeSingleUseSemaphore();
+    EXPECT_EQ(VK_SUCCESS,
+              test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0, acquire_semaphores[i],
+                                             VK_NULL_HANDLE, &image_index));
     EXPECT_EQ(i, image_index);
   }
 
@@ -998,11 +1007,15 @@ TEST_P(TEST_CLASS_NAME, DeviceLostAvoidSemaphoreHang) {
   };
 
   present_index = 0;
+  ASSERT_LT(present_index, TestSwapchain::kSwapchainImageCount);
   auto swapchain_images = test_->GetSwapchainImages(swapchain);
-  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                          acquire_semaphores[present_index]);
   ASSERT_EQ(VK_SUCCESS, test_->queue_present_khr_(queue, &present_info));
   present_index = 1;
-  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  ASSERT_LT(present_index, TestSwapchain::kSwapchainImageCount);
+  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                          acquire_semaphores[present_index]);
   ASSERT_EQ(VK_SUCCESS, test_->queue_present_khr_(queue, &present_info));
 
   VkSemaphoreCreateInfo semaphore_create_info{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
@@ -1044,12 +1057,15 @@ TEST_P(TEST_CLASS_NAME, DeviceLostAvoidSemaphoreHang) {
   acquire_future.wait();
 
   present_index = 2;
-  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  ASSERT_LT(present_index, TestSwapchain::kSwapchainImageCount);
+  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                          acquire_semaphores[present_index]);
   EXPECT_EQ(VK_SUCCESS, test_->queue_present_khr_(queue, &present_info));
   EXPECT_EQ(VK_ERROR_SURFACE_LOST_KHR, present_result);
 
   vkDestroySemaphore(test_->vk_device_, semaphore, nullptr);
 
+  vkDeviceWaitIdle(test_->vk_device_);
   test_->destroy_swapchain_khr_(test_->vk_device_, swapchain, nullptr);
   vkDestroySurfaceKHR(test_->vk_instance_, surface, nullptr);
 }
@@ -1086,11 +1102,13 @@ TEST_P(TEST_CLASS_NAME, AcquireZeroTimeout) {
     vkGetDeviceQueue(test_->vk_device_, 0, 0, &queue);
   }
   uint32_t image_index;
+  VkSemaphore acquire_semaphores[TestSwapchain::kSwapchainImageCount];
   // Acquire all initial images.
-  for (uint32_t i = 0; i < 3; i++) {
-    EXPECT_EQ(VK_SUCCESS, test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0,
-                                                         MakeSingleUseSemaphore(), VK_NULL_HANDLE,
-                                                         &image_index));
+  for (uint32_t i = 0; i < TestSwapchain::kSwapchainImageCount; i++) {
+    acquire_semaphores[i] = MakeSingleUseSemaphore();
+    EXPECT_EQ(VK_SUCCESS,
+              test_->acquire_next_image_khr_(test_->vk_device_, swapchain, 0, acquire_semaphores[i],
+                                             VK_NULL_HANDLE, &image_index));
     EXPECT_EQ(i, image_index);
   }
 
@@ -1100,8 +1118,10 @@ TEST_P(TEST_CLASS_NAME, AcquireZeroTimeout) {
                                            MakeSingleUseSemaphore(), VK_NULL_HANDLE, &image_index));
 
   uint32_t present_index = 0;
+  ASSERT_LT(present_index, TestSwapchain::kSwapchainImageCount);
   auto swapchain_images = test_->GetSwapchainImages(swapchain);
-  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  test_->TransitionLayout(swapchain_images[present_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                          acquire_semaphores[present_index]);
   VkResult present_result;
   VkPresentInfoKHR present_info = {
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -1132,6 +1152,7 @@ TEST_P(TEST_CLASS_NAME, AcquireZeroTimeout) {
   test_->fake_flatland_.reset();
 #endif
 
+  vkDeviceWaitIdle(test_->vk_device_);
   test_->destroy_swapchain_khr_(test_->vk_device_, swapchain, nullptr);
   vkDestroySurfaceKHR(test_->vk_instance_, surface, nullptr);
 }
