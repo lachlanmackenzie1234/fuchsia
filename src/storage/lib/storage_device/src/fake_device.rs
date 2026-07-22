@@ -135,7 +135,7 @@ impl Device for FakeDevice {
             size,
             inner.data.len()
         );
-        buffer.as_mut_slice().copy_from_slice(&inner.data[offset..offset + size]);
+        buffer.copy_from_slice(&inner.data[offset..offset + size]);
         Ok(())
     }
 
@@ -166,7 +166,7 @@ impl Device for FakeDevice {
             size,
             inner.data.len()
         );
-        inner.data[offset..offset + size].copy_from_slice(buffer.as_slice());
+        buffer.copy_to_slice(&mut inner.data[offset..offset + size]);
         let first_block = offset / self.allocator.block_size();
         for block in first_block..first_block + size / self.allocator.block_size() {
             inner.blocks_written_since_last_barrier.push(block)
@@ -282,7 +282,7 @@ mod tests {
             for i in 0..indices.len() {
                 let mut buffer = device.allocate_buffer(TEST_DEVICE_BLOCK_SIZE).await;
                 if i == 2 || i == 5 {
-                    buffer.as_mut_slice().copy_from_slice(
+                    buffer.copy_from_slice(
                         &data[indices[i] * TEST_DEVICE_BLOCK_SIZE
                             ..indices[i] * TEST_DEVICE_BLOCK_SIZE + TEST_DEVICE_BLOCK_SIZE],
                     );
@@ -292,7 +292,7 @@ mod tests {
                         .await
                         .expect("Failed to write to FakeDevice");
                 } else {
-                    buffer.as_mut_slice().copy_from_slice(
+                    buffer.copy_from_slice(
                         &data[indices[i] * TEST_DEVICE_BLOCK_SIZE
                             ..indices[i] * TEST_DEVICE_BLOCK_SIZE + TEST_DEVICE_BLOCK_SIZE],
                     );
@@ -315,21 +315,23 @@ mod tests {
                     .read(i as u64 * TEST_DEVICE_BLOCK_SIZE as u64, read_buffer.as_mut())
                     .await
                     .expect("failed to read from FakeDevice");
+                let mut read_data = vec![0u8; TEST_DEVICE_BLOCK_SIZE];
+                read_buffer.copy_to_slice(&mut read_data);
                 let expected_data = &data[indices[i] * TEST_DEVICE_BLOCK_SIZE
                     ..indices[i] * TEST_DEVICE_BLOCK_SIZE + TEST_DEVICE_BLOCK_SIZE];
                 if i < 2 {
-                    if expected_data != read_buffer.as_slice() {
+                    if expected_data != &read_data[..] {
                         discard = true;
                     }
                 } else if i < 5 {
                     if discard == true {
-                        assert_ne!(expected_data, read_buffer.as_slice());
+                        assert_ne!(expected_data, &read_data[..]);
                         discard_2 = true;
-                    } else if expected_data != read_buffer.as_slice() {
+                    } else if expected_data != &read_data[..] {
                         discard_2 = true;
                     }
                 } else if discard_2 == true {
-                    assert_ne!(expected_data, read_buffer.as_slice());
+                    assert_ne!(expected_data, &read_data[..]);
                 }
             }
         }

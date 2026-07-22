@@ -524,9 +524,44 @@ impl<T: Copy + FromBytes> ChunkMut<'_, T> {
     }
 }
 
+impl std::io::Read for PtrByteSlice<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let remaining = self.len();
+        if remaining == 0 {
+            return Ok(0);
+        }
+        let to_read = std::cmp::min(remaining, buf.len());
+        let (a, b) = self.split_at(to_read);
+        a.copy_to_slice(&mut buf[..to_read]);
+        *self = b;
+        Ok(to_read)
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        if buf.len() > self.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "failed to fill whole buffer",
+            ));
+        }
+        let (a, b) = self.split_at(buf.len());
+        a.copy_to_slice(buf);
+        *self = b;
+        Ok(())
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        let len = self.len();
+        self.append_to(buf);
+        *self = self.subslice(len..len);
+        Ok(len)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
     use zerocopy::IntoBytes;
 
     #[derive(Copy, Clone, Debug, FromBytes, IntoBytes)]
@@ -587,5 +622,19 @@ mod tests {
         let mut bytes = [0u8; 15];
         let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
         let _ = slice.chunks_mut::<Aligned4>();
+    }
+
+    #[test]
+    fn test_reader() {
+        let bytes = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let mut slice = PtrByteSlice::from(&bytes[..]);
+        let mut buf = [0u8; 4];
+        assert_eq!(Read::read(&mut slice, &mut buf).unwrap(), 4);
+        assert_eq!(buf, [1, 2, 3, 4]);
+        assert_eq!(slice.len(), 6);
+        let mut rest = Vec::new();
+        assert_eq!(slice.read_to_end(&mut rest).unwrap(), 6);
+        assert_eq!(rest, [5, 6, 7, 8, 9, 10]);
+        assert_eq!(slice.len(), 0);
     }
 }

@@ -75,7 +75,9 @@ impl Device for FileBackedDevice {
         assert_eq!(buffer.len() % self.block_size() as usize, 0);
         ensure!(offset + buffer.len() as u64 <= self.size(), "Reading past end of file");
         // This isn't actually async, but that probably doesn't matter for host usage.
-        self.file.read_exact_at(buffer.as_mut_slice(), offset)?;
+        let mut data = vec![0u8; buffer.len()];
+        self.file.read_exact_at(&mut data, offset)?;
+        buffer.copy_from_slice(&data);
         Ok(())
     }
 
@@ -90,7 +92,8 @@ impl Device for FileBackedDevice {
         assert_eq!(buffer.len() % self.block_size() as usize, 0);
         ensure!(offset + buffer.len() as u64 <= self.size(), "Writing past end of file");
         // This isn't actually async, but that probably doesn't matter for host usage.
-        self.file.write_all_at(buffer.as_slice(), offset)?;
+        let data = buffer.to_vec();
+        self.file.write_all_at(&data, offset)?;
         Ok(())
     }
 
@@ -178,16 +181,18 @@ mod tests {
         {
             let mut buf1 = device.allocate_buffer(8192).await;
             let mut buf2 = device.allocate_buffer(8192).await;
-            buf1.as_mut_slice().fill(0xaa as u8);
-            buf2.as_mut_slice().fill(0xbb as u8);
+            buf1.fill(0xaa);
+            buf2.fill(0xbb);
             device.write(65536, buf1.as_ref()).await.expect("Write failed");
             device.write(65536 + 8192, buf2.as_ref()).await.expect("Write failed");
         }
         {
             let mut buf = device.allocate_buffer(16384).await;
             device.read(65536, buf.as_mut()).await.expect("Read failed");
-            assert_eq!(buf.as_slice()[..8192], vec![0xaa as u8; 8192]);
-            assert_eq!(buf.as_slice()[8192..], vec![0xbb as u8; 8192]);
+            let mut data = vec![0u8; 16384];
+            buf.copy_to_slice(&mut data);
+            assert_eq!(data[..8192], vec![0xaa as u8; 8192]);
+            assert_eq!(data[8192..], vec![0xbb as u8; 8192]);
         }
 
         device.close().await.expect("Close failed");
@@ -201,7 +206,7 @@ mod tests {
         {
             let mut buf = device.allocate_buffer(8192).await;
             let offset = (device.size() as usize - buf.len() + device.block_size() as usize) as u64;
-            buf.as_mut_slice().fill(0xaa as u8);
+            buf.fill(0xaa);
             device.write(offset, buf.as_ref()).await.expect_err("Write should have failed");
             device.read(offset, buf.as_mut()).await.expect_err("Read should have failed");
         }
@@ -217,8 +222,8 @@ mod tests {
         {
             let mut buf1 = device.allocate_buffer(8192).await;
             let mut buf2 = device.allocate_buffer(8192).await;
-            buf1.as_mut_slice().fill(0xaa as u8);
-            buf2.as_mut_slice().fill(0xbb as u8);
+            buf1.fill(0xaa);
+            buf2.fill(0xbb);
             device.write(65536, buf1.as_ref()).await.expect("Write failed");
             device.write(65536 + 8192, buf2.as_ref()).await.expect("Write failed");
         }
@@ -230,8 +235,10 @@ mod tests {
         {
             let mut buf = device.allocate_buffer(16384).await;
             device.read(65536, buf.as_mut()).await.expect("Read failed");
-            assert_eq!(buf.as_slice()[..8192], vec![0xaa as u8; 8192]);
-            assert_eq!(buf.as_slice()[8192..], vec![0xbb as u8; 8192]);
+            let mut data = vec![0u8; 16384];
+            buf.copy_to_slice(&mut data);
+            assert_eq!(data[..8192], vec![0xaa as u8; 8192]);
+            assert_eq!(data[8192..], vec![0xbb as u8; 8192]);
         }
         device.close().await.expect("Close failed");
     }

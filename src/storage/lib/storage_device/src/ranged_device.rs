@@ -130,10 +130,10 @@ mod tests {
         let device = Arc::new(FakeDevice::new(8, BLOCK_SIZE as u32));
 
         let mut buffer = device.allocate_buffer(BLOCK_SIZE).await;
-        buffer.as_mut_slice().copy_from_slice(&[1; 512]);
+        buffer.fill(1);
         device.write(BLOCK_SIZE as u64, buffer.as_ref()).await.expect("failed to write to device");
 
-        buffer.as_mut_slice().copy_from_slice(&[2; 512]);
+        buffer.fill(2);
         device
             .write(2 * BLOCK_SIZE as u64, buffer.as_ref())
             .await
@@ -150,19 +150,25 @@ mod tests {
             .read(0, ranged_device_buffer.as_mut())
             .await
             .expect("failed to read from RangedDevice");
-        assert_eq!(ranged_device_buffer.as_slice(), [1; 512]);
+        let mut data = [0u8; 512];
+        ranged_device_buffer.copy_to_slice(&mut data);
+        assert_eq!(data, [1; 512]);
 
         sub_device
             .read(BLOCK_SIZE as u64, ranged_device_buffer.as_mut())
             .await
             .expect("failed to read from RangedDevice");
-        assert_eq!(ranged_device_buffer.as_slice(), [2; 512]);
+        let mut data = [0u8; 512];
+        ranged_device_buffer.copy_to_slice(&mut data);
+        assert_eq!(data, [2; 512]);
 
         sub_device
             .read(2 * BLOCK_SIZE as u64, ranged_device_buffer.as_mut())
             .await
             .expect("failed to read from RangedDevice");
-        assert_eq!(ranged_device_buffer.as_slice(), [0; 512]);
+        let mut data = [0u8; 512];
+        ranged_device_buffer.copy_to_slice(&mut data);
+        assert_eq!(data, [0; 512]);
 
         sub_device
             .read(3 * BLOCK_SIZE as u64, ranged_device_buffer.as_mut())
@@ -184,14 +190,14 @@ mod tests {
         .expect("failed to create new RangedDevice");
 
         let mut invalid_buffer = sub_device.allocate_buffer(4 * BLOCK_SIZE).await;
-        invalid_buffer.as_mut_slice().copy_from_slice(&[3; 2048]);
+        invalid_buffer.fill(3);
         sub_device
             .write(0, invalid_buffer.as_ref())
             .await
             .expect_err("unexpectedly passed writing a buffer that is too big");
 
         let mut write_buffer = sub_device.allocate_buffer(BLOCK_SIZE).await;
-        write_buffer.as_mut_slice().copy_from_slice(&[3; 512]);
+        write_buffer.fill(3);
         let write_block_offset = 2;
         sub_device
             .write(write_block_offset * BLOCK_SIZE as u64, write_buffer.as_ref())
@@ -204,6 +210,8 @@ mod tests {
             .read((block_offset + write_block_offset) * BLOCK_SIZE as u64, read_buffer.as_mut())
             .await
             .expect("failed to read from device");
-        assert_eq!(read_buffer.as_slice(), [3; 512]);
+        let mut data = [0u8; 512];
+        read_buffer.copy_to_slice(&mut data);
+        assert_eq!(data, [3; 512]);
     }
 }

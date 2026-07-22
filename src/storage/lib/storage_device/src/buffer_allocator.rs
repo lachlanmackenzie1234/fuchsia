@@ -326,6 +326,11 @@ impl BufferAllocator {
         self.source
     }
 
+    /// Returns an identifier for this allocator based on its memory address.
+    pub fn identifier(&self) -> usize {
+        std::ptr::from_ref(self).addr()
+    }
+
     /// Allocates a Buffer with capacity for `size` bytes. Blocks until there are enough bytes
     /// available to satisfy the request.
     ///
@@ -536,9 +541,9 @@ mod tests {
         let allocator = BufferAllocator::new(8192, source);
 
         let mut buf = allocator.allocate_buffer(8192).await;
-        buf.as_mut_slice().fill(0xaa as u8);
+        buf.fill(0xaa);
         let mut vec = vec![0 as u8; 8192];
-        vec.copy_from_slice(buf.as_slice());
+        buf.copy_to_slice(&mut vec);
         assert_eq!(vec, vec![0xaa as u8; 8192]);
     }
 
@@ -579,9 +584,9 @@ mod tests {
 
         let mut buf = allocator.allocate_buffer(1024 * 1024).await;
         assert_eq!(buf.len(), 1024 * 1024);
-        buf.as_mut_slice().fill(0xaa as u8);
+        buf.fill(0xaa);
         let mut vec = vec![0 as u8; 1024 * 1024];
-        vec.copy_from_slice(buf.as_slice());
+        buf.copy_to_slice(&mut vec);
         assert_eq!(vec, vec![0xaa as u8; 1024 * 1024]);
     }
 
@@ -644,8 +649,10 @@ mod tests {
                             );
                             if let Ok(mut buf) = allocator.try_allocate_buffer(size) {
                                 let val = rng.random::<u8>();
-                                buf.as_mut_slice().fill(val);
-                                for v in buf.as_slice() {
+                                buf.fill(val);
+                                let mut data = vec![0u8; size];
+                                buf.copy_to_slice(&mut data);
+                                for v in &data {
                                     assert_eq!(v, &val);
                                 }
                                 buffers.push(buf);
@@ -677,43 +684,53 @@ mod tests {
             let mut bref = buf.subslice_mut(1000..2000);
             assert_eq!(bref.len(), 1000);
             assert_eq!(bref.range(), base + 1000..base + 2000);
-            bref.as_mut_slice().fill(0xbb);
+            bref.fill(0xbb);
             {
                 let mut bref2 = bref.reborrow().subslice_mut(0..100);
                 assert_eq!(bref2.len(), 100);
                 assert_eq!(bref2.range(), base + 1000..base + 1100);
-                bref2.as_mut_slice().fill(0xaa);
+                bref2.fill(0xaa);
             }
             {
                 let mut bref2 = bref.reborrow().subslice_mut(900..1000);
                 assert_eq!(bref2.len(), 100);
                 assert_eq!(bref2.range(), base + 1900..base + 2000);
-                bref2.as_mut_slice().fill(0xcc);
+                bref2.fill(0xcc);
             }
-            assert_eq!(bref.as_slice()[..100], vec![0xaa; 100]);
-            assert_eq!(bref.as_slice()[100..900], vec![0xbb; 800]);
+            let mut data = vec![0u8; 1000];
+            bref.copy_to_slice(&mut data);
+            assert_eq!(data[..100], vec![0xaa; 100]);
+            assert_eq!(data[100..900], vec![0xbb; 800]);
 
             let bref = bref.subslice_mut(900..);
             assert_eq!(bref.len(), 100);
-            assert_eq!(bref.as_slice(), vec![0xcc; 100]);
+            let mut data = vec![0u8; 100];
+            bref.copy_to_slice(&mut data);
+            assert_eq!(data, vec![0xcc; 100]);
         }
         {
             let bref = buf.as_ref();
             assert_eq!(bref.len(), 4096);
             assert_eq!(bref.range(), base..base + 4096);
-            assert_eq!(bref.as_slice()[0..1000], vec![0x00; 1000]);
+            let mut data = vec![0u8; 4096];
+            bref.copy_to_slice(&mut data);
+            assert_eq!(data[0..1000], vec![0x00; 1000]);
             {
                 let bref2 = bref.subslice(1000..2000);
                 assert_eq!(bref2.len(), 1000);
                 assert_eq!(bref2.range(), base + 1000..base + 2000);
-                assert_eq!(bref2.as_slice()[..100], vec![0xaa; 100]);
-                assert_eq!(bref2.as_slice()[100..900], vec![0xbb; 800]);
-                assert_eq!(bref2.as_slice()[900..1000], vec![0xcc; 100]);
+                let mut data2 = vec![0u8; 1000];
+                bref2.copy_to_slice(&mut data2);
+                assert_eq!(data2[..100], vec![0xaa; 100]);
+                assert_eq!(data2[100..900], vec![0xbb; 800]);
+                assert_eq!(data2[900..1000], vec![0xcc; 100]);
             }
 
             let bref = bref.subslice(2048..);
             assert_eq!(bref.len(), 2048);
-            assert_eq!(bref.as_slice(), vec![0x00; 2048]);
+            let mut data = vec![0u8; 2048];
+            bref.copy_to_slice(&mut data);
+            assert_eq!(data, vec![0x00; 2048]);
         }
     }
 
@@ -732,10 +749,10 @@ mod tests {
             let (mut s1, mut s2) = bref.split_at_mut(2048);
             assert_eq!(s1.len(), 2048);
             assert_eq!(s1.range(), base..base + 2048);
-            s1.as_mut_slice().fill(0xaa);
+            s1.fill(0xaa);
             assert_eq!(s2.len(), 2048);
             assert_eq!(s2.range(), base + 2048..base + 4096);
-            s2.as_mut_slice().fill(0xbb);
+            s2.fill(0xbb);
         }
         {
             let bref = buf.as_ref();
@@ -750,10 +767,18 @@ mod tests {
             assert_eq!(s3.range(), base + 2048..base + 2048);
             assert_eq!(s4.len(), 2048);
             assert_eq!(s4.range(), base + 2048..base + 4096);
-            assert_eq!(s1.as_slice(), vec![0xaa; 1]);
-            assert_eq!(s2.as_slice(), vec![0xaa; 2047]);
-            assert_eq!(s3.as_slice(), &[] as &[u8]);
-            assert_eq!(s4.as_slice(), vec![0xbb; 2048]);
+            let mut d1 = vec![0u8; 1];
+            s1.copy_to_slice(&mut d1);
+            assert_eq!(d1, vec![0xaa; 1]);
+            let mut d2 = vec![0u8; 2047];
+            s2.copy_to_slice(&mut d2);
+            assert_eq!(d2, vec![0xaa; 2047]);
+            let mut d3 = vec![0u8; 0];
+            s3.copy_to_slice(&mut d3);
+            assert_eq!(d3, &[] as &[u8]);
+            let mut d4 = vec![0u8; 2048];
+            s4.copy_to_slice(&mut d4);
+            assert_eq!(d4, vec![0xbb; 2048]);
         }
     }
 
@@ -804,12 +829,14 @@ mod tests {
         let allocator = Arc::new(BufferAllocator::new(512, source));
 
         let mut buf = allocator.allocate_buffer(BUFFER_SIZE).await;
-        buf.as_mut_slice().fill(0xaa);
+        buf.fill(0xaa);
         std::mem::drop(buf);
 
         allocator.clean_transfer_buffer();
         let buf = allocator.allocate_buffer(BUFFER_SIZE).await;
-        assert_eq!(buf.as_slice(), vec![0; BUFFER_SIZE]);
+        let mut data = vec![0u8; BUFFER_SIZE];
+        buf.copy_to_slice(&mut data);
+        assert_eq!(data, vec![0; BUFFER_SIZE]);
     }
 
     #[fuchsia::test]
@@ -818,24 +845,30 @@ mod tests {
         let allocator = Arc::new(BufferAllocator::new(512, source));
 
         let mut buf1 = allocator.allocate_buffer(1024).await;
-        buf1.as_mut_slice().fill(0xaa);
+        buf1.fill(0xaa);
         let mut buf2 = allocator.allocate_buffer(1024).await;
-        buf2.as_mut_slice().fill(0xbb);
+        buf2.fill(0xbb);
         assert_eq!(buf2.range().start, 1024);
         let mut buf3 = allocator.allocate_buffer(2048).await;
-        buf3.as_mut_slice().fill(0xcc);
+        buf3.fill(0xcc);
         std::mem::drop(buf1);
         std::mem::drop(buf3);
 
         allocator.clean_transfer_buffer();
 
         let buf1 = allocator.allocate_buffer(1024).await;
-        assert_eq!(buf1.as_slice(), vec![0; 1024]);
+        let mut data1 = vec![0u8; 1024];
+        buf1.copy_to_slice(&mut data1);
+        assert_eq!(data1, vec![0; 1024]);
 
-        assert_eq!(buf2.as_slice(), vec![0xbb; 1024]);
+        let mut data2 = vec![0u8; 1024];
+        buf2.copy_to_slice(&mut data2);
+        assert_eq!(data2, vec![0xbb; 1024]);
 
         let buf3 = allocator.allocate_buffer(2048).await;
-        assert_eq!(buf3.as_slice(), vec![0; 2048]);
+        let mut data3 = vec![0u8; 2048];
+        buf3.copy_to_slice(&mut data3);
+        assert_eq!(data3, vec![0; 2048]);
     }
 
     #[fuchsia::test]

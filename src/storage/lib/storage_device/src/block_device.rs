@@ -33,27 +33,8 @@ impl<T: BlockClient> BlockDevice<T> {
         let allocator = BufferAllocator::new(remote.block_size() as usize, buffer_source);
         Ok(Self { allocator, remote, read_only, vmoid })
     }
-}
 
-#[async_trait]
-impl<T: BlockClient> Device for BlockDevice<T> {
-    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
-        self.allocator.allocate_buffer(size)
-    }
-
-    fn clean_transfer_buffer(&self) {
-        self.allocator.clean_transfer_buffer();
-    }
-
-    fn block_size(&self) -> u32 {
-        self.remote.block_size()
-    }
-
-    fn block_count(&self) -> u64 {
-        self.remote.block_count()
-    }
-
-    async fn read_with_opts(
+    async fn read_with_opts_internal(
         &self,
         offset: u64,
         buffer: MutableBufferRef<'_>,
@@ -80,7 +61,7 @@ impl<T: BlockClient> Device for BlockDevice<T> {
             .await?)
     }
 
-    async fn write_with_opts(
+    async fn write_with_opts_internal(
         &self,
         offset: u64,
         buffer: BufferRef<'_>,
@@ -108,6 +89,58 @@ impl<T: BlockClient> Device for BlockDevice<T> {
                 opts,
             )
             .await?)
+    }
+}
+
+#[async_trait]
+impl<T: BlockClient> Device for BlockDevice<T> {
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
+        self.allocator.allocate_buffer(size)
+    }
+
+    fn clean_transfer_buffer(&self) {
+        self.allocator.clean_transfer_buffer();
+    }
+
+    fn block_size(&self) -> u32 {
+        self.remote.block_size()
+    }
+
+    fn block_count(&self) -> u64 {
+        self.remote.block_count()
+    }
+
+    async fn read_with_opts(
+        &self,
+        offset: u64,
+        mut buffer: MutableBufferRef<'_>,
+        read_opts: ReadOptions,
+    ) -> Result<(), Error> {
+        if buffer.allocator_id() != self.allocator.identifier() {
+            // Foreign buffer (from another allocator). Force copy!
+            let mut temp_buf = self.allocator.allocate_buffer(buffer.len()).await;
+            self.read_with_opts_internal(offset, temp_buf.as_mut(), read_opts).await?;
+            buffer.as_mut_ptr_slice().copy_from_ptr_slice(temp_buf.as_ptr_slice());
+            Ok(())
+        } else {
+            self.read_with_opts_internal(offset, buffer, read_opts).await
+        }
+    }
+
+    async fn write_with_opts(
+        &self,
+        offset: u64,
+        buffer: BufferRef<'_>,
+        opts: WriteOptions,
+    ) -> Result<(), Error> {
+        if buffer.allocator_id() != self.allocator.identifier() {
+            // Foreign buffer (from another allocator). Force copy!
+            let mut temp_buf = self.allocator.allocate_buffer(buffer.len()).await;
+            temp_buf.as_mut().as_mut_ptr_slice().copy_from_ptr_slice(buffer.as_ptr_slice());
+            self.write_with_opts_internal(offset, temp_buf.as_ref(), opts).await
+        } else {
+            self.write_with_opts_internal(offset, buffer, opts).await
+        }
     }
 
     async fn trim(&self, range: Range<u64>) -> Result<(), Error> {
@@ -177,16 +210,18 @@ mod tests {
         {
             let mut buf1 = device.allocate_buffer(8192).await;
             let mut buf2 = device.allocate_buffer(1024).await;
-            buf1.as_mut_slice().fill(0xaa as u8);
-            buf2.as_mut_slice().fill(0xbb as u8);
+            buf1.fill(0xaa);
+            buf2.fill(0xbb);
             device.write(65536, buf1.as_ref()).await.expect("Write failed");
             device.write(65536 + 8192, buf2.as_ref()).await.expect("Write failed");
         }
         {
             let mut buf = device.allocate_buffer(8192 + 1024).await;
             device.read(65536, buf.as_mut()).await.expect("Read failed");
-            assert_eq!(buf.as_slice()[..8192], vec![0xaa as u8; 8192]);
-            assert_eq!(buf.as_slice()[8192..], vec![0xbb as u8; 1024]);
+            let mut data = vec![0u8; 8192 + 1024];
+            buf.copy_to_slice(&mut data);
+            assert_eq!(data[..8192], vec![0xaa as u8; 8192]);
+            assert_eq!(data[8192..], vec![0xbb as u8; 1024]);
         }
 
         device.close().await.expect("Close failed");
@@ -197,7 +232,7 @@ mod tests {
         let device =
             BlockDevice::new(FakeBlockClient::new(1024, 1024), true).await.expect("new failed");
         let mut buf1 = device.allocate_buffer(8192).await;
-        buf1.as_mut_slice().fill(0xaa as u8);
+        buf1.fill(0xaa);
         let err = device.write(65536, buf1.as_ref()).await.expect_err("Write succeeded");
         assert_eq!(err.root_cause().downcast_ref::<Status>().unwrap(), &Status::ACCESS_DENIED);
     }
@@ -207,7 +242,7 @@ mod tests {
         let device =
             BlockDevice::new(FakeBlockClient::new(1024, 1024), false).await.expect("new failed");
         let mut buf1 = device.allocate_buffer(device.block_size() as usize * 2).await;
-        buf1.as_mut_slice().fill(0xaa as u8);
+        buf1.fill(0xaa);
 
         // Write checks
         {
@@ -278,5 +313,26 @@ mod tests {
                 device.trim(0..(device.block_size() as u64 + 1)).await.expect_err("Read succeeded");
             assert_eq!(err.root_cause().downcast_ref::<Status>().unwrap(), &Status::INVALID_ARGS);
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_foreign_buffer_read_write() {
+        let device1 =
+            BlockDevice::new(FakeBlockClient::new(1024, 1024), false).await.expect("new failed");
+        let device2 =
+            BlockDevice::new(FakeBlockClient::new(1024, 1024), false).await.expect("new failed");
+
+        // Write data using a buffer allocated from device2 to device1 (foreign write)
+        let mut foreign_buf = device2.allocate_buffer(8192).await;
+        foreign_buf.fill(0xaa);
+        device1.write(0, foreign_buf.as_ref()).await.expect("Foreign write failed");
+
+        // Read data back using a buffer allocated from device2 from device1 (foreign read)
+        let mut foreign_read_buf = device2.allocate_buffer(8192).await;
+        device1.read(0, foreign_read_buf.as_mut()).await.expect("Foreign read failed");
+
+        let mut data = vec![0u8; 8192];
+        foreign_read_buf.copy_to_slice(&mut data);
+        assert_eq!(data, vec![0xaa; 8192]);
     }
 }
