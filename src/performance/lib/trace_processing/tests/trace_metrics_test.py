@@ -253,7 +253,7 @@ class MetricProcessorsTest(unittest.TestCase):
                     TCR(
                         label="total_input_latency",
                         unit=U.milliseconds,
-                        values=[0.005, 0.003, 0.002, 0.007, 0.009],
+                        values=[0.003, 0.002, 0.007, 0.009],
                     ),
                 ],
             ),
@@ -264,7 +264,7 @@ class MetricProcessorsTest(unittest.TestCase):
                 ),
                 model_file="input_latency_metric.json",
                 expected_results=trace_utils.standard_metrics_set(
-                    [0.005, 0.003, 0.002, 0.007, 0.009],
+                    [0.003, 0.002, 0.007, 0.009],
                     "InputLatency",
                     U.milliseconds,
                 ),

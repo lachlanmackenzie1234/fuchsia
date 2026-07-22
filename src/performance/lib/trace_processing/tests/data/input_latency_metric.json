@@ -2,6 +2,15 @@
     "displayTimeUnit": "ns",
     "traceEvents": [
         {
+            "dur": 15,
+            "pid": 54310,
+            "tid": 14043,
+            "ts": 90,
+            "ph": "X",
+            "cat": "input",
+            "name": "PointerinjectorRegistry::Register"
+        },
+        {
             "dur": 1.5,
             "pid": 31893,
             "tid": 45015,
