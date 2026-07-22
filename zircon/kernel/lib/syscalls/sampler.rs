@@ -25,7 +25,6 @@ fn check_sampler_supported() -> Result<(), Status> {
     Ok(())
 }
 
-/// Handles `zx_sampler_create` syscall.
 #[syscall]
 pub fn sys_sampler_create(
     rsrc: HandleValue,
@@ -35,7 +34,9 @@ pub fn sys_sampler_create(
 ) -> Result<(), ErrorStatus> {
     ltracef!("options {:#x}\n", options);
 
-    // TODO(https://fxbug.dev/536066024): Check that `options` is 0.
+    if options != 0 {
+        return Err(Status::INVALID_ARGS.into());
+    }
 
     check_sampler_supported()?;
 
@@ -68,7 +69,6 @@ pub fn sys_sampler_create(
     Ok(())
 }
 
-/// Handles `zx_sampler_start` syscall.
 #[syscall]
 pub fn sys_sampler_start(sampler_handle: HandleValue) -> Result<(), ErrorStatus> {
     ltracef!("handle {:#x}\n", sampler_handle.raw_value());
@@ -80,7 +80,6 @@ pub fn sys_sampler_start(sampler_handle: HandleValue) -> Result<(), ErrorStatus>
     Ok(())
 }
 
-/// Handles `zx_sampler_stop` syscall.
 #[syscall]
 pub fn sys_sampler_stop(sampler_handle: HandleValue) -> Result<(), ErrorStatus> {
     ltracef!("handle {:#x}\n", sampler_handle.raw_value());
@@ -92,7 +91,6 @@ pub fn sys_sampler_stop(sampler_handle: HandleValue) -> Result<(), ErrorStatus> 
     Ok(())
 }
 
-/// Handles `zx_sampler_read` syscall.
 #[syscall]
 pub fn sys_sampler_read(
     sampler_handle: HandleValue,

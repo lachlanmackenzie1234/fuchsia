@@ -218,6 +218,26 @@ TEST(ThreadSampler, SamplerLifetime) {
   ASSERT_OK(zx_handle_close(sampler));
 }
 
+TEST(ThreadSampler, InvalidOptions) {
+  NEEDS_NEXT_SKIP(zx_sampler_create);
+
+  size_t buffer_size = zx_system_get_page_size();
+  zx_sampler_config_t config{
+      .period = zx::msec(1).get(),
+      .buffer_size = buffer_size,
+  };
+  zx_handle_t sampler;
+
+  zx::unowned_resource system_resource = standalone::GetSystemResource();
+  zx::result<zx::resource> result =
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
+  ASSERT_OK(result.status_value());
+  zx::resource sampling_resource = std::move(result.value());
+
+  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 1, &config, &sampler);
+  ASSERT_EQ(create_res, ZX_ERR_INVALID_ARGS);
+}
+
 TEST(ThreadSampler, DroppedSampler) {
   NEEDS_NEXT_SKIP(zx_sampler_create);
 
