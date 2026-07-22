@@ -62,7 +62,7 @@ Some host-only components (such as `partitions_config`) may not be part of the d
 
 ## 3. Multi-Repository Graceful Migration Workflow
 
-When a dependency upgrade affects code in another repository (such as `//vendor/...` or other `jiri`-managed sub-repositories), **do not break the build tree** by attempting atomic changes across repositories. Instead, gracefully stage the release:
+When a dependency upgrade affects code in another repository (such as `//vendor/...` or other `jiri`-managed sub-repositories), **do not break the build tree** by attempting atomic changes across repositories. Instead, gracefully stage the release. Note that we always want to update `fuchsia.git` to use the latest version if possible. We only want to set up a commit that adds a GN group for the older version if there are any references to the crate in any of the other repositories, like `vendor/...`.
 
 1.  **Check Sibling Dependencies & Transitive Stacks**: First verify whether updating sibling dependencies together allows `fuchsia.git` targets to compile cleanly.
     *   **Shared Foundational Crates (e.g., `der`, `spki`)**: When a target in a sub-repository depends on both an upgraded crate (e.g., `pkcs8 0.11.0`) and sibling crates (`sec1`, `pkcs1`) that share foundational types (`der`, `spki`), mixing versions across those crates will cause trait bound errors (`Decode`, `Encode`). Ensure either:
