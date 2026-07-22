@@ -6,6 +6,7 @@ import("../../libc.gni")
 
 llvm_libc_source_set("printf_core") {
   visibility = [ "../*" ]
+  dir = "__support/printf_core"
   public = [
     "converter.h",
     "core_structs.h",

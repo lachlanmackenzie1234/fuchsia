@@ -4,7 +4,7 @@
 
 #include "wrapper.h"
 
-#include "src/stdio/printf_core/printf_main.h"
+#include "src/__support/printf_core/printf_main.h"
 
 namespace LIBC_NAMESPACE::printf_core {
 
