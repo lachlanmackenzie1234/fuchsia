@@ -1,47 +1,52 @@
 ---
 name: cpp-to-rust-dispatcher
 description: >
-  Guide and best practices for porting Zircon C++ Dispatcher types and
-  syscalls to Rust using facade objects, OpaqueRefCountedFacade,
-  IsOpaqueRefCounted, DispatcherState synchronization, generic handle
-  resolution, pin-init sub-object initialization, UserSignalSelf sharing,
-  bindgen constants, and FFI shims.
+  Specialized guide for porting Zircon C++ Dispatcher types and syscalls to
+  Rust using facade objects, OpaqueRefCountedFacade, IsOpaqueRefCounted,
+  DispatcherState synchronization, generic handle resolution, pin-init
+  initialization, UserSignalSelf sharing, bindgen constants, and FFI shims.
 ---
 
 # Porting Zircon Dispatchers from C++ to Rust
 
-This skill documents the standard patterns, architectural conventions, and
+This skill documents the specialized patterns, architectural conventions, and
 code-sharing practices for migrating Zircon kernel `Dispatcher` subtypes and
 their associated syscalls from C++ to Rust.
+
+> [!NOTE]
+> This skill extends the general Zircon C++ to Rust porting guidelines.
+> All general memory layout, fallible allocation (`kalloc`), synchronization (`ksync`),
+> intrusive container (`fbl`), testing, trace logging (`ltrace`), and code organization
+> rules defined in `zircon/skills/cpp-to-rust-rubric/SKILL.md` apply to
+> dispatcher ports as well.
 
 ---
 
 ## 1. Core Principles
 
-1.  **Exact Behavioral & Functional Parity**: The Rust implementation of a
+1.  **Rubric Compliance**: Follow all general rules in
+    `zircon/skills/cpp-to-rust-rubric/SKILL.md`.
+2.  **Exact Behavioral & Functional Parity**: The Rust implementation of a
     dispatcher and its syscalls must behave identically to the C++ version
     across all success, error, and concurrency paths (including error codes like
     `ZX_ERR_BAD_HANDLE`, `ZX_ERR_WRONG_TYPE`, `ZX_ERR_ACCESS_DENIED`, and
     `ZX_ERR_INVALID_ARGS`).
-2.  **Code Sharing & Boilerplate Reduction (DRY)**: Do not duplicate FFI
+3.  **Code Sharing & Boilerplate Reduction (DRY)**: Do not duplicate FFI
     bridging, handle table lookup, downcasting, or signal checking across
     individual dispatcher subtypes. Leverage shared infrastructure in `fbl`,
     `kernel/object`, and base `Dispatcher` helpers (such as
     `UserSignalSelfSolo`).
-3.  **Facade Object Pattern**: Subtype dispatchers wrapping C++ objects or
+4.  **Facade Object Pattern**: Subtype dispatchers wrapping C++ objects or
     zero-sized FFI handles use facade types with zero-sized interior mutability
     wrappers (`OpaqueRefCountedFacade`).
-4.  **State & Synchronization Separation**: Internal mutable state is held in a
+5.  **State & Synchronization Separation**: Internal mutable state is held in a
     dedicated `#[guarded]` `<Type>DispatcherState` struct embedded within the
     dispatcher's memory layout. Embedded C++/native sub-storages use in-place
     `pin-init` initializers.
-5.  **Bindgen & Single Source of Truth for Constants**: Do not duplicate
+6.  **Bindgen & Single Source of Truth for Constants**: Do not duplicate
     `constexpr` or `#define` constants across languages. Generate constants
     directly via bindgen target libraries (e.g., `debuglog-types`), and simplify
     `var_allowlist` patterns (e.g., `[ "k.*" ]` in `object-constants`).
-6.  **Fallible Allocation & Status Handling**: Kernel operations must be
-    fallible. Use `zx_status::Status` for error propagation with `Result<T,
-    Status>`.
 
 ---
 
@@ -60,32 +65,38 @@ graph TD
     Facade -->|blanket impls| RefCount[fbl::HasRefCount & fbl::Recyclable]
 ```
 
-### Struct Definition
+### Struct Definition & Facade Macro Integration
 
-Each concrete dispatcher subtype defines a `#[repr(C)]` facade struct containing
-`_facade: fbl::OpaqueRefCountedFacade<TargetBase>`:
+Each concrete dispatcher subtype facade is declared directly using
+`impl_dispatcher_facade!` (for stateless facades) or
+`impl_dispatcher_facade_with_state!` (for stateful facades). The macros
+automatically apply `#[repr(C)]`, embed `_facade:
+fbl::OpaqueRefCountedFacade<Dispatcher>`, and implement `Deref<Target =
+Dispatcher>`, `IsOpaqueRefCounted`, and `DispatcherOps`:
 
 ```rust
-use fbl::{IsOpaqueRefCounted, OpaqueRefCountedFacade};
-use zircon_object::dispatcher::Dispatcher;
+// Stateless facade (e.g., ThreadDispatcher, ProcessDispatcher):
+crate::impl_dispatcher_facade!(
+    pub struct ThreadDispatcher,
+    zx_types::ZX_OBJ_TYPE_THREAD
+);
 
-#[repr(C)]
-pub struct CounterDispatcher {
-    _facade: OpaqueRefCountedFacade<Dispatcher>,
-}
-
-unsafe impl IsOpaqueRefCounted for CounterDispatcher {
-    type TargetBase = Dispatcher;
-}
+// Stateful facade (e.g., CounterDispatcher, SuspendTokenDispatcher):
+crate::impl_dispatcher_facade_with_state!(
+    pub struct CounterDispatcher,
+    CounterDispatcherState,
+    ZX_OBJ_TYPE_COUNTER,
+    object_constants::kCounterDispatcherStateOffset
+);
 ```
 
 ### Benefits:
 - **Zero Memory Overhead**: `OpaqueRefCountedFacade` wraps `zr::OpaqueFacade` to
   communicate interior mutability to LLVM optimization passes without adding
   size bytes.
-- **Automatic Trait Implementations**: `HasRefCount` and `Recyclable` are
-  automatically implemented for `CounterDispatcher` via blanket trait impls on
-  `IsOpaqueRefCounted`.
+- **Automatic Trait & Struct Generation**: Struct definition (`#[repr(C)]`
+  layout), `HasRefCount`, `Recyclable`, `IsOpaqueRefCounted`, `Deref`, and
+  `DispatcherOps` are automatically generated via the facade macros.
 - **Thread Safety**: Automatically provides `Send` and `Sync` implementations.
 
 ---
@@ -166,11 +177,13 @@ Sub-objects should expose a single `unsafe fn init(...) -> impl
 pin_init::PinInit<Self, ...>` rather than two-phase `new()` and `initialize()`
 functions.
 
-### 4. Offset Pointer Accessor in Facade Struct
-The facade struct `<Type>Dispatcher` resolves its state by calculating the
-offset pointer to `kCounterDispatcherStateOffset`:
+### 4. Offset Pointer Accessor in Facade Struct (Auto-generated)
+The stateful facade macro `impl_dispatcher_facade_with_state!` automatically
+generates the `pub fn state(&self) -> &$state` method, which resolves the state
+by calculating the offset pointer to `k<Type>DispatcherStateOffset`:
 
 ```rust
+// (Auto-generated by impl_dispatcher_facade_with_state!)
 impl CounterDispatcher {
     pub fn state(&self) -> &CounterDispatcherState {
         unsafe {
@@ -272,9 +285,11 @@ impl PinnedDrop for LogDispatcherState {
 ## 4. Dispatcher Base, Downcasting, & Signal Handling
 
 All dispatcher subtypes implement `DispatcherOps` to associate their unique lock
-class and `zx_obj_type_t`:
+class and `zx_obj_type_t` (automatically generated by `impl_dispatcher_facade!`
+/ `impl_dispatcher_facade_with_state!`):
 
 ```rust
+// (Auto-generated by impl_dispatcher_facade! / impl_dispatcher_facade_with_state!)
 use zircon_object::dispatcher::DispatcherOps;
 use zircon_object::types::zx_obj_type_t;
 
@@ -419,4 +434,11 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
     `resource.h`, `dispatcher.h`). Defining `extern "C"` functions in C++
     without prior prototype declarations in header files causes GCC
     `-Werror=missing-declarations` build failures.
-
+6.  **Use Rust References in FFI Signatures Instead of Raw Pointers**: FFI
+    trampolines callable from C++ that receive non-null references to
+    initialized objects (such as `rust_<type>_dispatcher_state_destroy` or
+    `rust_<type>_dispatcher_on_zero_handles`) should prefer taking `&<Type>` or
+    `&mut <State>` references directly in their Rust signatures rather than raw
+    pointers (`*const` or `*mut`). This avoids manual pointer dereferencing
+    within the FFI shim while maintaining ABI compatibility with C++ raw pointer
+    parameters.
