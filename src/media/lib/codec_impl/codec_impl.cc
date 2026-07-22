@@ -850,22 +850,19 @@ void CodecImpl::CloseCurrentStream_StreamControl(uint64_t stream_lifetime_ordina
                                                  bool release_input_buffers,
                                                  bool release_output_buffers) {
   ZX_DEBUG_ASSERT(IsStreamControl());
-  {  // scope lock
-    ScopedLock lock(lock_);
-    if (IsStoppingLocked()) {
-      return;
-    }
-    EnsureStreamClosed(lock);
-    if (release_input_buffers) {
-      EnsureBuffersNotConfigured(lock, kInputPort, false);
-    }
+  ScopedLock lock(lock_);
+  if (IsStoppingLocked()) {
+    return;
+  }
+  EnsureStreamClosed(lock);
+  if (release_input_buffers) {
+    EnsureBuffersNotConfigured(lock, kInputPort, false);
   }
   if (release_output_buffers) {
-    libsync::Completion deconfig_done;
-    PostToSharedFidl([this, &deconfig_done] {
+    auto is_deconfig_done = std::make_shared<bool>(false);
+    PostToSharedFidl([this, is_deconfig_done] {
       ScopedLock lock(lock_);
       if (IsStoppingLocked()) {
-        deconfig_done.Signal();
         return;
       }
       // When !is_dynamic_buffers_supported_, this prevents RecycleOutputPacket() on output domain
@@ -875,9 +872,16 @@ void CodecImpl::CloseCurrentStream_StreamControl(uint64_t stream_lifetime_ordina
       // last_required_buffer_constraints_version_ordinal_ to a new value.
       StartIgnoringClientOldOutputConfig(lock);
       EnsureBuffersNotConfigured(lock, kOutputPort, false);
-      deconfig_done.Signal();
+      *is_deconfig_done = true;
+      wake_stream_control_condition_.notify_all();
     });
-    deconfig_done.Wait();
+    // Wait for the posted task on the SharedFidl thread to complete the deconfiguration. This
+    // thread (StreamControl) needs to wait for the FIDL thread to finish updating the buffer
+    // states. We also check IsStoppingLocked() to ensure we don't get stuck if the CodecImpl is
+    // being torn down.
+    while (!IsStoppingLocked() && !*is_deconfig_done) {
+      wake_stream_control_condition_.wait(lock.unique_lock());
+    }
   }
 }
 
