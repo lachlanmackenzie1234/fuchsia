@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_LIB_POWER_MANAGEMENT_INCLUDE_LIB_POWER_MANAGEMENT_POWER_LEVEL_CONTROLLER_H_
 
 #include <lib/zx/result.h>
-#include <zircon/syscalls-next.h>
 
 #include <atomic>
 
@@ -23,11 +22,11 @@ struct PowerLevelUpdateRequest;
 
 // Enum representing supported control interfaces.
 enum class ControlInterface : uint64_t {
-  kCpuDriver = ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER,
-  kArmPsci = ZX_PROCESSOR_POWER_CONTROL_ARM_PSCI,
-  kArmWfi = ZX_PROCESSOR_POWER_CONTROL_ARM_WFI,
-  kRiscvSbi = ZX_PROCESSOR_POWER_CONTROL_RISCV_SBI,
-  kRiscvWfi = ZX_PROCESSOR_POWER_CONTROL_RISCV_WFI,
+  kCpuDriver,
+  kArmPsci,
+  kArmWfi,
+  kRiscvSbi,
+  kRiscvWfi,
 };
 
 constexpr const char* ToString(ControlInterface control_interface) {
@@ -45,26 +44,6 @@ constexpr const char* ToString(ControlInterface control_interface) {
     default:
       return "[unknown]";
   }
-}
-
-// List of support control interfaces.
-static constexpr auto kSupportedControlInterfaces = std::to_array(
-    {ControlInterface::kArmPsci, ControlInterface::kArmWfi, ControlInterface::kRiscvSbi,
-     ControlInterface::kRiscvWfi, ControlInterface::kCpuDriver});
-
-// Returns whether the interface is a supported or not.
-constexpr bool IsSupportedControlInterface(zx_processor_power_control_t interface) {
-  for (ControlInterface supported_interface : kSupportedControlInterfaces) {
-    if (supported_interface == static_cast<ControlInterface>(interface)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Returns whether the interface is handled by the kernel or not.
-constexpr bool IsKernelControlInterface(ControlInterface interface) {
-  return interface != ControlInterface::kCpuDriver;
 }
 
 // Base class for power level controllers that can control the active power
@@ -100,10 +79,6 @@ class PowerLevelController : public fbl::RefCounted<PowerLevelController> {
 
   // Returns the control interface this power level controller implements.
   ControlInterface control_interface() const { return control_interface_; }
-
-  // Returns true if power level controller supports fast path invocation from
-  // scheduler context.
-  virtual bool is_fast_path() const { return false; }
 
  protected:
   // Implementations will determine when to switch this flag. The flag must always

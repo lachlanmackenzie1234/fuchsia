@@ -9,6 +9,7 @@
 #include <lib/dump/depth_printer.h>
 #include <lib/page/size.h>
 #include <trace.h>
+#include <zircon/syscalls/port.h>
 
 #include <kernel/lockdep.h>
 #include <ktl/utility.h>

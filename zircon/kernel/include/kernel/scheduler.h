@@ -495,12 +495,10 @@ class Scheduler {
   using PowerDomain = power_management::PowerDomain;
   using PowerDomainSet = power_management::PowerDomainSet;
 
-  // Sets the power domain set for this scheduler instance, returning the previous domain set.
-  // Called by kernel tests and sys_system_set_processor_power_domain.
-  PowerDomainSet ExchangePowerDomainSet(const PowerDomainSet& power_domain_set)
-      TA_EXCL(queue_lock_) {
+  // Sets the power domain set for this scheduler instance, returning the previous set.
+  PowerDomainSet ExchangePowerDomainSet(PowerDomainSet domain_set) TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    PowerDomainSet previous = power_level_control_.ExchangePowerDomainSet(power_domain_set);
+    PowerDomainSet previous = power_level_control_.ExchangePowerDomainSet(ktl::move(domain_set));
 
     // Update the cross-processor shadow value of the max processing rate to match the current power
     // domain value.
@@ -508,6 +506,15 @@ class Scheduler {
 
     return previous;
   }
+
+  // Sets the power domain set for all CPUs.
+  static void SetPowerDomainSet(PowerDomainSet power_domain_set);
+
+  // Updates the current power level with the value reported by the power level
+  // controller.
+  static zx::result<cpu_mask_t> UpdatePowerLevel(uint32_t domain_id, uint64_t controller_id,
+                                                 power_management::ControlInterface interface,
+                                                 uint64_t arg);
 
   // Updates the current power level for this CPU with the value reported by the power level
   // controller. Called by kernel tests and sys_system_set_processor_power_state.
@@ -529,10 +536,16 @@ class Scheduler {
   // Returns true if the request was sent, false otherwise.
   bool RequestPowerLevelForTesting(uint8_t power_level) TA_EXCL(queue_lock_);
 
+  // Returns the current power domain set for this scheduler instance.
+  PowerDomainSet GetPowerDomainSetForTesting() TA_EXCL(queue_lock_) {
+    Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
+    return power_level_control_.power_domain_set();
+  }
+
   // Returns the current power domain for this scheduler instance.
   fbl::RefPtr<PowerDomain> GetPowerDomainForTesting() TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return fbl::RefPtr{power_level_control_.domain()};
+    return power_level_control_.domain();
   }
 
   // Returns the current active power coefficient.
@@ -1495,20 +1508,18 @@ class Scheduler {
   // Instances of PowerLevelControl are protected by Scheduler::queue_lock_.
   class PowerLevelControl {
    public:
-    explicit PowerLevelControl(Scheduler* scheduler) : request_dpc_{DpcHandler, scheduler} {}
+    explicit PowerLevelControl(Scheduler* scheduler) : scheduler_{scheduler} {}
 
-    // Sets/resets the power domain and power domain set associated with this scheduler.
-    PowerDomainSet ExchangePowerDomainSet(const PowerDomainSet& power_domain_set) {
-      PowerDomainSet previous = power_state_.UpdatePowerDomainSet(power_domain_set, cpu());
+    // Sets/resets the power domain set associated with this scheduler, returning the previous set.
+    PowerDomainSet ExchangePowerDomainSet(PowerDomainSet new_domain_set) {
+      PowerDomainSet previous_domain_set =
+          power_state_.UpdatePowerDomainSet(ktl::move(new_domain_set), cpu());
 
       // Clear the request to ensure that a DPC racing with a domain change cannot latch a pending
       // request intended for the previous domain and the new domain ref pointer together.
       pending_update_request_.reset();
 
-      // Reset the processing rate using either the current rate for the domain or the default. If
-      // domain is empty, the energy model has been cleared by userspace and the actual processing
-      // rate is unclear. If the domain is being replaced/updated, either the current active power
-      // level is known, or an update will be sent later.
+      // Reset the processing rate using either the current rate for the domain or the default.
       if (const SchedProcessingRate rate = power_state_.active_processing_rate(); rate > 0) {
         updated_processing_rate_ = rate;
       } else {
@@ -1522,7 +1533,7 @@ class Scheduler {
       max_processing_rate_ =
           domain() ? domain()->model().max_processing_rate() : default_processing_rate_;
 
-      return previous;
+      return previous_domain_set;
     }
 
     // Called by the power level controller server (e.g. the userspace component servicing the
@@ -1621,19 +1632,7 @@ class Scheduler {
     // adjusted.
     void ReevaluateCurrentPowerLevel();
 
-    // Sends a pending power level request immediately using the fast path power
-    // level controller, if supported.
-    //
-    // Because this operation needs to update bookkeeping on other CPUs that are
-    // currently protected by their respective queue locks, the local CPU's
-    // queue lock must be temporarily released, which could result in an
-    // incomplete critical section if local invariants are changed by a remote
-    // processor. Care must be taken to ensure the caller's invariants are
-    // either maintained or re-validated across this operation.
-    cpu_mask_t SendPendingPowerLevelRequestFastPath(
-        Guard<MonitoredSpinLock, NoIrqSave>& queue_guard);
-
-    // Called by RescheduleCommon to send a pending request to the registered
+    // Sends a pending power level request immediately using the registered
     // power level controller.
     //
     // Because this operation needs to update bookkeeping on other CPUs that are
@@ -1642,16 +1641,18 @@ class Scheduler {
     // incomplete critical section if local invariants are changed by a remote
     // processor. Care must be taken to ensure the caller's invariants are
     // either maintained or re-validated across this operation.
-    void SendPendingPowerLevelRequest(Guard<MonitoredSpinLock, NoIrqSave>& queue_guard);
+    //
+    // Returns the mask of CPUs that should be rescheduled immediately.
+    cpu_mask_t SendPendingPowerLevelRequest(Guard<MonitoredSpinLock, NoIrqSave>& queue_guard);
 
     // Returns true if power control is enabled.
     bool is_enabled() const { return power_state_.is_enabled(); }
 
-    // Returns the power domain associated with this scheduler.
-    PowerDomain* domain() const { return power_state_.domain(); }
-
-    // Returns the system power domain set cache for this processor.
+    // Returns the power domain set.
     const PowerDomainSet& power_domain_set() const { return power_state_.power_domain_set(); }
+
+    // Returns the power domain associated with this scheduler.
+    const fbl::RefPtr<PowerDomain>& domain() const { return power_state_.domain(); }
 
     // Returns the id of the domain associated with this scheduler.
     ktl::optional<uint32_t> domain_id() const { return power_state_.domain_id(); }
@@ -1742,11 +1743,8 @@ class Scheduler {
     }
 
    private:
-    Scheduler& scheduler() { return *request_dpc_.arg<Scheduler>(); }
+    Scheduler& scheduler() { return *scheduler_; }
     cpu_num_t cpu() { return scheduler().this_cpu(); }
-
-    static void TimerHandler(Timer* timer, zx_instant_mono_t now, void* arg);
-    static void DpcHandler(Dpc* dpc);
 
     SchedProcessingRate processing_rate_{1};
     SchedProcessingRate processing_rate_reciprocal_{1};
@@ -1756,7 +1754,7 @@ class Scheduler {
 
     // The min and max effective processing rate for this processor. These
     // values influence both the actual processing rate of the power domain the
-    // processor belongs to and the effective processing of this specific
+    // processor belongs to and the effective processing rate of this specific
     // processor.
     SchedProcessingRate processing_rate_limit_min_{0};
     SchedProcessingRate processing_rate_limit_max_{1};
@@ -1765,8 +1763,7 @@ class Scheduler {
 
     power_management::PowerState power_state_;
     ktl::optional<power_management::PowerLevelUpdateRequest> pending_update_request_;
-    Timer request_timer_;
-    Dpc request_dpc_;
+    Scheduler* const scheduler_;
   };
 
   TA_GUARDED(queue_lock_)

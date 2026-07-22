@@ -16,7 +16,6 @@
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
-#include <zircon/syscalls-next.h>
 #include <zircon/time.h>
 #include <zircon/types.h>
 
@@ -28,6 +27,13 @@
 #include <string_view>
 #include <utility>
 
+#ifdef _KERNEL
+#include <kernel/cpu.h>
+#else
+using cpu_mask_t = uint64_t;
+constexpr cpu_mask_t cpu_num_to_mask(uint64_t num) { return cpu_mask_t{1} << num; }
+#endif
+
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
@@ -36,6 +42,24 @@ namespace power_management {
 
 // forward declaration.
 class EnergyModel;
+
+struct ProcessorPowerLevel {
+  uint64_t options;
+  uint64_t processing_rate;
+  uint64_t power_coefficient_nw;
+  ControlInterface control_interface;
+  uint64_t control_argument;
+  const char* diagnostic_name;
+};
+
+struct ProcessorPowerLevelTransition {
+  zx_duration_mono_t latency;
+  uint64_t energy_nj;
+  uint8_t from;
+  uint8_t to;
+};
+
+constexpr uint64_t kPowerLevelOptionsDomainIndependent = 1u << 0;
 
 // Kernel representation of `zx_processor_power_level_t` with useful accessors and option support.
 class PowerLevel {
@@ -63,9 +87,9 @@ class PowerLevel {
   }
 
   constexpr PowerLevel() = default;
-  explicit PowerLevel(uint8_t level_index, const zx_processor_power_level_t& level)
+  explicit PowerLevel(uint8_t level_index, const ProcessorPowerLevel& level)
       : options_(level.options),
-        control_(static_cast<ControlInterface>(level.control_interface)),
+        control_(level.control_interface),
         control_argument_(level.control_argument),
         processing_rate_(ToProcessingRate(level.processing_rate)),
         power_coefficient_nw_(level.power_coefficient_nw),
@@ -74,9 +98,14 @@ class PowerLevel {
                                           level.processing_rate
                                     : 0),
         level_(level_index) {
-    memcpy(name_.data(), level.diagnostic_name, name_.size());
-    size_t end = std::string_view(name_.data(), name_.size()).find('\0');
-    name_len_ = end == std::string_view::npos ? ZX_MAX_NAME_LEN : end;
+    if (level.diagnostic_name) {
+      size_t i = 0;
+      for (; i < name_.size() - 1 && level.diagnostic_name[i] != '\0'; ++i) {
+        name_[i] = level.diagnostic_name[i];
+      }
+      name_[i] = '\0';
+      name_len_ = i;
+    }
   }
 
   // Power level type. Idle and Active power levels are orthogonal, that is, an entity may be idle
@@ -114,7 +143,7 @@ class PowerLevel {
   // This level may be transitioned in a per cpu basis, without affecting other entities in the
   // same power domain.
   constexpr bool TargetsCpus() const {
-    return (options_ & ZX_PROCESSOR_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT) != 0;
+    return (options_ & kPowerLevelOptionsDomainIndependent) != 0;
   }
 
   // This level may be transitioned in a per power domain basis, that is, all other entities in
@@ -123,7 +152,7 @@ class PowerLevel {
   // This means that underlying hardware elements are share and it is not possible to transition a
   // single member of the power domain.
   constexpr bool TargetsPowerDomain() const {
-    return (options_ & ZX_PROCESSOR_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT) == 0;
+    return (options_ & kPowerLevelOptionsDomainIndependent) == 0;
   }
 
   // Name used to identify this power level, for diagnostic purposes.
@@ -134,7 +163,7 @@ class PowerLevel {
 
  private:
   // Options.
-  zx_processor_power_level_options_t options_{};
+  uint64_t options_{};
 
   // Control interface used to transition to this level.
   ControlInterface control_{};
@@ -156,7 +185,6 @@ class PowerLevel {
 
   // Level as described in the model shared with user.
   uint8_t level_{0};
-  [[maybe_unused]] std::array<uint8_t, 7> reserved_{};
 };
 
 // Represents an entry in a transition matrix, where the position in the matrix denotes
@@ -167,14 +195,12 @@ class PowerLevelTransition {
   // Returns an invalid transition.
   static constexpr PowerLevelTransition Invalid() { return {}; }
   static constexpr PowerLevelTransition Zero() {
-    return PowerLevelTransition(
-        zx_processor_power_level_transition_t{.latency = 0, .energy_nj = 0});
+    return PowerLevelTransition(ProcessorPowerLevelTransition{.latency = 0, .energy_nj = 0});
   }
 
   constexpr PowerLevelTransition() = default;
-  explicit constexpr PowerLevelTransition(const zx_processor_power_level_transition_t& transition)
-      : latency_(zx_duration_from_nsec(transition.latency)),
-        energy_cost_nj_(transition.energy_nj) {}
+  explicit constexpr PowerLevelTransition(const ProcessorPowerLevelTransition& transition)
+      : latency_(transition.latency), energy_cost_nj_(transition.energy_nj) {}
 
   // Latency for transitioning from a given level to another.
   constexpr zx_duration_mono_t latency() const { return latency_; }
@@ -183,7 +209,7 @@ class PowerLevelTransition {
   constexpr uint64_t energy_cost_nj() const { return energy_cost_nj_; }
 
   // Whether the transition is valid or not.
-  explicit constexpr operator bool() {
+  explicit constexpr operator bool() const {
     return latency_ != Invalid().latency() && energy_cost_nj_ != Invalid().energy_cost_nj_;
   }
 
@@ -214,7 +240,7 @@ struct TransitionMatrix {
   friend EnergyModel;
   TransitionMatrix(std::span<const PowerLevelTransition> transitions, size_t num_rows)
       : transitions_(transitions), num_rows_(num_rows) {
-    ZX_DEBUG_ASSERT(transitions_.size() != 0);
+    ZX_DEBUG_ASSERT(!transitions_.empty());
     ZX_DEBUG_ASSERT(num_rows_ != 0);
     ZX_DEBUG_ASSERT(transitions_.size() % num_rows_ == 0);
     ZX_DEBUG_ASSERT(transitions.size() / num_rows_ == num_rows_);
@@ -236,9 +262,8 @@ struct TransitionMatrix {
 // count to detect stale values derived from the previous energy model.
 class EnergyModel {
  public:
-  static zx::result<EnergyModel> Create(
-      std::span<const zx_processor_power_level_t> levels,
-      std::span<const zx_processor_power_level_transition_t> transitions);
+  static zx::result<EnergyModel> Create(std::span<const ProcessorPowerLevel> levels,
+                                        std::span<const ProcessorPowerLevelTransition> transitions);
 
   EnergyModel() = default;
   EnergyModel(const EnergyModel&) = delete;
@@ -332,7 +357,7 @@ class EnergyModel {
 // Instances of PowerDomain are safe for concurrent use.
 class PowerDomain : public fbl::RefCounted<PowerDomain> {
  public:
-  PowerDomain(uint32_t id, zx_cpu_set_t cpus, EnergyModel model,
+  PowerDomain(uint32_t id, cpu_mask_t cpus, EnergyModel model,
               fbl::RefPtr<PowerLevelController> controller)
       : cpus_(cpus), id_(id), energy_model_(std::move(model)), controller_(std::move(controller)) {
     ZX_DEBUG_ASSERT(controller_ != nullptr);
@@ -342,7 +367,7 @@ class PowerDomain : public fbl::RefCounted<PowerDomain> {
   constexpr uint32_t id() const { return id_; }
 
   // Set of CPUs associated with `model()`.
-  constexpr const zx_cpu_set_t& cpus() const { return cpus_; }
+  constexpr cpu_mask_t cpus() const { return cpus_; }
 
   // Model describing the behavior of the power domain.
   constexpr const EnergyModel& model() const { return energy_model_; }
@@ -381,7 +406,7 @@ class PowerDomain : public fbl::RefCounted<PowerDomain> {
  private:
   friend class PowerState;
 
-  const zx_cpu_set_t cpus_;
+  const cpu_mask_t cpus_;
   const uint32_t id_;
   const EnergyModel energy_model_;
 
@@ -404,8 +429,11 @@ class PowerDomainSet {
 
   using ArrayType = std::array<fbl::RefPtr<PowerDomain>, kMaxPowerDomains>;
 
-  // Empty by default.
-  PowerDomainSet() = default;
+  constexpr PowerDomainSet() = default;
+  PowerDomainSet(const PowerDomainSet&) = default;
+  PowerDomainSet& operator=(const PowerDomainSet&) = default;
+  PowerDomainSet(PowerDomainSet&&) = default;
+  PowerDomainSet& operator=(PowerDomainSet&&) = default;
   ~PowerDomainSet() = default;
 
   // Creates a PowerDomainSet with the given PowerDomain as its only entry for testing.
@@ -425,15 +453,14 @@ class PowerDomainSet {
     return nullptr;
   }
 
-  // Returns a borrowed pointer to the power domain for the given CPU id, or nullptr is there isn't
+  // Returns a borrowed pointer to the power domain for the given CPU id, or nullptr if there isn't
   // one. Returns a raw pointer to avoid unnecessary ref count changes in contexts where the set is
   // guaranteed not to change and maintain the lifetime of its power domain elements.
   PowerDomain* FindByCpuNum(uint32_t cpu_num) const {
-    ZX_DEBUG_ASSERT(cpu_num < ZX_CPU_SET_MAX_CPUS);
-    const uint32_t mask_index = cpu_num / ZX_CPU_SET_BITS_PER_WORD;
-    const uint64_t mask_bit = uint64_t{1} << (cpu_num % ZX_CPU_SET_BITS_PER_WORD);
+    ZX_DEBUG_ASSERT(cpu_num < sizeof(cpu_mask_t) * 8);
+    const cpu_mask_t cpu_mask = cpu_num_to_mask(cpu_num);
     for (const auto& element : domains_) {
-      if (element && (element->cpus().mask[mask_index] & mask_bit)) {
+      if (element && (element->cpus() & cpu_mask)) {
         return element.get();
       }
     }
@@ -507,144 +534,36 @@ class PowerDomainSet {
   // Returns true if all of the array elements are empty.
   constexpr bool is_empty() const { return count() == 0u; }
 
- private:
-  // Allow PowerDomainRegistry to add and remove power domains from the set.
-  friend class PowerDomainRegistry;
-
-  // Private constructor used by the testing named constructors.
-  explicit PowerDomainSet(ArrayType domains) : domains_{std::move(domains)} {}
-
-  zx::result<fbl::RefPtr<PowerDomain>> Update(const fbl::RefPtr<PowerDomain>& power_domain) {
+  zx::result<> Add(fbl::RefPtr<PowerDomain> power_domain) {
     // A power domain consists of a domain id, a CPU mask, and a list of power
-    // level descriptions. Each power domain in a power domain set must have
+    // level descriptions. Each power domain in a power domain set must have a
     // domain id that is unique among the power domains in the set and a CPU
-    // mask that does not intersect with any other power domains in the set.
-    //
-    // The following updates to the set are permitted:
-    // 1. A new power domain is added with a unique domain id and
-    //    CPU set that is non-intersecting with other power domains.
-    // 2. A power domain is replaced by a new power domain with the same id and
-    //    a potentially different CPU set, provided the CPU set is
-    //    non-intersecting with other power domains.
-    // 3. A power domain is replaced by a new power domain with an identical CPU
-    //    set and a potentially different domain id, provide the domain id is
-    //    unique among power domains in the set.
-    //
-    fbl::RefPtr<PowerDomain>* element_to_update = nullptr;
-    fbl::RefPtr<PowerDomain>* first_empty_elemnt = nullptr;
+    // mask that does not intersect with the CPU mask of any other power domains
+    // in the set.
+    fbl::RefPtr<PowerDomain>* first_empty_element = nullptr;
     for (auto& element : domains_) {
       if (element) {
-        if (element->id() == power_domain->id() ||
-            HasSameCpuSet(element->cpus().mask, power_domain->cpus().mask)) {
-          // If an element with a matching domain id and/or CPU set was already
-          // found, then this update is attempting to make the power domain set
-          // inconsistent by replicating either the domain id or the CPU set of
-          // a another power domain.
-          if (element_to_update) {
-            return zx::error(ZX_ERR_INVALID_ARGS);
-          }
-
-          // Make note of the element to update with the new power domain, but
-          // continue to check the rest of the power domains for intersection
-          // with the CPU set.
-          element_to_update = &element;
-        } else if (HasOverlappingCpuSet(element->cpus().mask, power_domain->cpus().mask)) {
+        if (element->id() == power_domain->id() || (element->cpus() & power_domain->cpus()) != 0) {
           return zx::error(ZX_ERR_INVALID_ARGS);
         }
-      } else if (first_empty_elemnt == nullptr) {
-        first_empty_elemnt = &element;
+      } else if (first_empty_element == nullptr) {
+        first_empty_element = &element;
       }
     }
 
-    // Replace an existing domain if a suitable match is found in the array.
-    if (element_to_update) {
-      fbl::RefPtr<PowerDomain> previous_element = power_domain;
-      element_to_update->swap(previous_element);
-      return zx::ok(std::move(previous_element));
-    }
-
-    // If no existing domain was replaced and there is at least one empty
-    // element, add the new domain first empty element.
-    if (first_empty_elemnt) {
-      *first_empty_elemnt = power_domain;
-      return zx::ok(nullptr);
+    if (first_empty_element) {
+      *first_empty_element = std::move(power_domain);
+      return zx::ok();
     }
 
     return zx::error(ZX_ERR_NO_SPACE);
   }
 
-  fbl::RefPtr<PowerDomain> Remove(uint32_t domain_id) {
-    for (auto& element : domains_) {
-      if (element && element->id() == domain_id) {
-        return std::move(element);
-      }
-    }
-    return nullptr;
-  }
-
-  template <size_t N>
-  static constexpr bool HasOverlappingCpuSet(const uint64_t (&a)[N], const uint64_t (&b)[N]) {
-    for (size_t i = 0; i < N; ++i) {
-      if ((a[i] & b[i]) != 0) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  template <size_t N>
-  static constexpr bool HasSameCpuSet(const uint64_t (&a)[N], const uint64_t (&b)[N]) {
-    for (size_t i = 0; i < N; ++i) {
-      if (a[i] != b[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
+ private:
+  // Private constructor used by the testing named constructors.
+  explicit PowerDomainSet(ArrayType domains) : domains_{std::move(domains)} {}
 
   ArrayType domains_;
-};
-
-// Tracks the set of configured power domains and provides methods for
-// updating, querying, and visiting the power domain set.
-class PowerDomainRegistry {
- public:
-  // Callback provided by the host environment to update per-CPU copies of the
-  // power domain set when the main set changes.
-  using UpdateCallback = fit::inline_function<void(const PowerDomainSet&)>;
-
-  // Constructs a power domain registry with the given optional callback. The
-  // given callback may do nothing, but it may not be nullptr.
-  explicit PowerDomainRegistry(UpdateCallback update_callback = [](const auto&) {})
-      : update_callback_{std::move(update_callback)} {
-    ZX_DEBUG_ASSERT(update_callback_);
-  }
-
-  // Registers the given power domain, using the given callback to update each
-  // CPU with a copy of the new power domain set.
-  zx::result<fbl::RefPtr<PowerDomain>> Register(const fbl::RefPtr<PowerDomain>& power_domain);
-
-  // Unregisters the given power domain, using the given callback to update each
-  // CPU with a copy of the new power domain set.
-  zx::result<fbl::RefPtr<PowerDomain>> Unregister(uint32_t domain_id);
-
-  // Returns a reference to the power domain with the given domain id, or
-  // nullptr if one does not exist.
-  PowerDomain* Find(uint32_t domain_id) const {
-    return power_domain_set_.FindByDomainId(domain_id);
-  }
-
-  // Visits each registered power domain.
-  template <typename Visitor>
-  void Visit(Visitor&& visitor) const {
-    return power_domain_set_.Visit(std::forward<Visitor>(visitor));
-  }
-
-  const PowerDomainSet& power_domain_set() const { return power_domain_set_; }
-
- private:
-  PowerDomainSet power_domain_set_;
-  UpdateCallback update_callback_;
 };
 
 }  // namespace power_management

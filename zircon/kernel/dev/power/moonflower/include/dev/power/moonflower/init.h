@@ -8,5 +8,6 @@
 #define ZIRCON_KERNEL_DEV_POWER_MOONFLOWER_INCLUDE_DEV_POWER_MOONFLOWER_INIT_H_
 
 void moonflower_power_init_early();
+void moonflower_power_init();
 
 #endif  // ZIRCON_KERNEL_DEV_POWER_MOONFLOWER_INCLUDE_DEV_POWER_MOONFLOWER_INIT_H_

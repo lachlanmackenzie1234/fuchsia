@@ -6,12 +6,8 @@
 
 #include "lib/power-management/energy-model.h"
 
-#include <zircon/errors.h>
-// TODO(https://fxbug.dev/415033686): Stop using `syscalls-next.h` on host.
-#define FUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST
-#include <zircon/syscalls-next.h>
-#undef FUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST
 #include <lib/stdcompat/utility.h>
+#include <zircon/errors.h>
 #include <zircon/time.h>
 #include <zircon/types.h>
 
@@ -28,12 +24,15 @@ namespace {
 
 using power_management::ControlInterface;
 using power_management::EnergyModel;
+using power_management::kPowerLevelOptionsDomainIndependent;
 using power_management::PowerDomain;
-using power_management::PowerDomainRegistry;
+
 using power_management::PowerDomainSet;
 using power_management::PowerLevel;
 using power_management::PowerLevelTransition;
 using power_management::ProcessingRate;
+using power_management::ProcessorPowerLevel;
+using power_management::ProcessorPowerLevelTransition;
 using power_management::Utilization;
 
 // Utility to test whether the given ranged object contains the given element.
@@ -55,11 +54,11 @@ TEST(PowerLevelTest, ToFromRate) {
 }
 
 TEST(PowerLevelTest, Ctor) {
-  constexpr zx_processor_power_level_t kLevel = {
+  constexpr ProcessorPowerLevel kLevel = {
       .options = 0,
       .processing_rate = 456,
       .power_coefficient_nw = 789,
-      .control_interface = cpp23::to_underlying(ControlInterface::kArmPsci),
+      .control_interface = ControlInterface::kArmPsci,
       .control_argument = 12345,
       .diagnostic_name = "foobar one two three",
   };
@@ -69,7 +68,7 @@ TEST(PowerLevelTest, Ctor) {
   EXPECT_EQ(level.level(), 0);
   EXPECT_EQ(level.processing_rate(), PowerLevel::ToProcessingRate(kLevel.processing_rate));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
-  EXPECT_EQ(level.control(), static_cast<ControlInterface>(kLevel.control_interface));
+  EXPECT_EQ(level.control(), kLevel.control_interface);
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);
   EXPECT_EQ(level.type(), PowerLevel::Type::kActive);
   EXPECT_EQ(level.name(), std::string_view(kLevel.diagnostic_name));
@@ -78,11 +77,11 @@ TEST(PowerLevelTest, Ctor) {
 }
 
 TEST(PowerLevelTest, Ctor2) {
-  constexpr zx_processor_power_level_t kLevel = {
-      .options = ZX_PROCESSOR_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
+  constexpr ProcessorPowerLevel kLevel = {
+      .options = kPowerLevelOptionsDomainIndependent,
       .processing_rate = 123,
       .power_coefficient_nw = 789,
-      .control_interface = cpp23::to_underlying(ControlInterface::kArmPsci),
+      .control_interface = ControlInterface::kArmPsci,
       .control_argument = 12345,
       .diagnostic_name = "foobar one two three",
   };
@@ -92,7 +91,7 @@ TEST(PowerLevelTest, Ctor2) {
   EXPECT_EQ(level.level(), 123);
   EXPECT_EQ(level.processing_rate(), PowerLevel::ToProcessingRate(kLevel.processing_rate));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
-  EXPECT_EQ(level.control(), static_cast<ControlInterface>(kLevel.control_interface));
+  EXPECT_EQ(level.control(), kLevel.control_interface);
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);
   EXPECT_EQ(level.type(), PowerLevel::Type::kActive);
   EXPECT_EQ(level.name(), std::string_view(kLevel.diagnostic_name));
@@ -101,7 +100,7 @@ TEST(PowerLevelTest, Ctor2) {
 }
 
 TEST(PowerLevelTransitionTest, Ctor) {
-  static constexpr zx_processor_power_level_transition_t kTransition = {
+  static constexpr ProcessorPowerLevelTransition kTransition = {
       .latency = 456,
       .energy_nj = 1234,
       .from = 0,
@@ -110,17 +109,17 @@ TEST(PowerLevelTransitionTest, Ctor) {
 
   PowerLevelTransition transition(kTransition);
 
-  EXPECT_EQ(transition.latency(), zx_duration_from_nsec(kTransition.latency));
+  EXPECT_EQ(transition.latency(), kTransition.latency);
   EXPECT_EQ(transition.energy_cost_nj(), kTransition.energy_nj);
 }
 
 TEST(PowerModelTest, Create) {
-  static constexpr auto kPowerLevels = std::to_array<zx_processor_power_level_t>({
+  static constexpr auto kPowerLevels = std::to_array<ProcessorPowerLevel>({
       {
           .options = 0,
           .processing_rate = 0,
           .power_coefficient_nw = 1,
-          .control_interface = cpp23::to_underlying(ControlInterface::kArmPsci),
+          .control_interface = ControlInterface::kArmPsci,
           .control_argument = 1,
           .diagnostic_name = "0",
       },
@@ -128,7 +127,7 @@ TEST(PowerModelTest, Create) {
           .options = 0,
           .processing_rate = 4,
           .power_coefficient_nw = 8,
-          .control_interface = cpp23::to_underlying(ControlInterface::kCpuDriver),
+          .control_interface = ControlInterface::kCpuDriver,
           .control_argument = 3,
           .diagnostic_name = "1",
       },
@@ -136,7 +135,7 @@ TEST(PowerModelTest, Create) {
           .options = 0,
           .processing_rate = 0,
           .power_coefficient_nw = 2,
-          .control_interface = cpp23::to_underlying(ControlInterface::kArmWfi),
+          .control_interface = ControlInterface::kArmWfi,
           .control_argument = 0,
           .diagnostic_name = "2",
       },
@@ -144,13 +143,13 @@ TEST(PowerModelTest, Create) {
           .options = 0,
           .processing_rate = 4,
           .power_coefficient_nw = 10,
-          .control_interface = cpp23::to_underlying(ControlInterface::kCpuDriver),
+          .control_interface = ControlInterface::kCpuDriver,
           .control_argument = 1,
           .diagnostic_name = "3",
       },
   });
 
-  static constexpr auto kTransitions = std::to_array<zx_processor_power_level_transition_t>({
+  static constexpr auto kTransitions = std::to_array<ProcessorPowerLevelTransition>({
       {
           .latency = 1,
           .energy_nj = 2,
@@ -158,50 +157,42 @@ TEST(PowerModelTest, Create) {
           .to = 0,
       },
       {
-
           .latency = 2,
           .energy_nj = 3,
           .from = 2,
           .to = 0,
-
       },
       {
-
           .latency = 3,
           .energy_nj = 4,
           .from = 3,
           .to = 0,
       },
       {
-
           .latency = 1,
           .energy_nj = 2,
           .from = 0,
           .to = 1,
       },
       {
-
           .latency = 3,
           .energy_nj = 4,
           .from = 2,
           .to = 1,
       },
       {
-
           .latency = 4,
           .energy_nj = 5,
           .from = 3,
           .to = 1,
       },
       {
-
           .latency = 2,
           .energy_nj = 3,
           .from = 0,
           .to = 2,
       },
       {
-
           .latency = 3,
           .energy_nj = 4,
           .from = 1,
@@ -214,22 +205,18 @@ TEST(PowerModelTest, Create) {
           .to = 2,
       },
       {
-
           .latency = 3,
           .energy_nj = 4,
           .from = 0,
           .to = 3,
-
       },
       {
-
           .latency = 4,
           .energy_nj = 5,
           .from = 1,
           .to = 3,
       },
       {
-
           .latency = 5,
           .energy_nj = 6,
           .from = 2,
@@ -305,12 +292,12 @@ TEST(PowerModelTest, Create) {
 }
 
 TEST(PowerModelTest, CreateWithEmptyTransitionsIsOk) {
-  static constexpr auto kPowerLevels = std::to_array<zx_processor_power_level_t>({
+  static constexpr auto kPowerLevels = std::to_array<ProcessorPowerLevel>({
       {
           .options = 0,
           .processing_rate = 0,
           .power_coefficient_nw = 1,
-          .control_interface = cpp23::to_underlying(ControlInterface::kArmPsci),
+          .control_interface = ControlInterface::kArmPsci,
           .control_argument = 1,
           .diagnostic_name = "0",
       },
@@ -318,7 +305,7 @@ TEST(PowerModelTest, CreateWithEmptyTransitionsIsOk) {
           .options = 0,
           .processing_rate = 4,
           .power_coefficient_nw = 8,
-          .control_interface = cpp23::to_underlying(ControlInterface::kCpuDriver),
+          .control_interface = ControlInterface::kCpuDriver,
           .control_argument = 3,
           .diagnostic_name = "1",
       },
@@ -326,7 +313,7 @@ TEST(PowerModelTest, CreateWithEmptyTransitionsIsOk) {
           .options = 0,
           .processing_rate = 0,
           .power_coefficient_nw = 2,
-          .control_interface = cpp23::to_underlying(ControlInterface::kArmWfi),
+          .control_interface = ControlInterface::kArmWfi,
           .control_argument = 0,
           .diagnostic_name = "2",
       },
@@ -334,7 +321,7 @@ TEST(PowerModelTest, CreateWithEmptyTransitionsIsOk) {
           .options = 0,
           .processing_rate = 4,
           .power_coefficient_nw = 10,
-          .control_interface = cpp23::to_underlying(ControlInterface::kCpuDriver),
+          .control_interface = ControlInterface::kCpuDriver,
           .control_argument = 1,
           .diagnostic_name = "3",
       },
@@ -393,118 +380,69 @@ TEST(PowerModelTest, CreateWithEmptyTransitionsIsOk) {
   EXPECT_FALSE(energy_model->FindPowerLevel(static_cast<ControlInterface>(495), 0));
 }
 
-TEST(PowerDomainRegistryTest, FindDomain) {
+TEST(PowerDomainSetTest, FindDomain) {
   std::array domains_to_register{
       MakePowerDomainHelper(0, 1, 2, 3),
       MakePowerDomainHelper(1, 4, 5, 6),
       MakePowerDomainHelper(2, 7, 8, 9),
   };
 
-  PowerDomainRegistry registry;
-  for (const auto& domain : domains_to_register) {
-    ASSERT_TRUE(registry.Register(domain).is_ok());
+  std::array<PowerDomain*, 3> raw_domains;
+  for (size_t i = 0; i < domains_to_register.size(); ++i) {
+    raw_domains[i] = domains_to_register[i].get();
   }
 
-  for (const auto& domain : domains_to_register) {
-    EXPECT_EQ(registry.Find(domain->id()), domain.get());
+  PowerDomainSet domain_set;
+  for (auto& domain : domains_to_register) {
+    ASSERT_TRUE(domain_set.Add(std::move(domain)).is_ok());
   }
 
-  EXPECT_EQ(registry.Find(112345567), nullptr);
+  for (const auto* domain : raw_domains) {
+    EXPECT_EQ(domain_set.FindByDomainId(domain->id()), domain);
+  }
+
+  EXPECT_EQ(domain_set.FindByDomainId(112345567), nullptr);
 }
 
-TEST(PowerDomainRegistryTest, RegisterUpdateUnregisterPowerDomains) {
+TEST(PowerDomainSetTest, RegisterConflictingPowerDomains) {
   std::array unique_domains_to_register = {
       MakePowerDomainHelper(0, 0, 1, 2),
       MakePowerDomainHelper(1, 4, 5, 6),
       MakePowerDomainHelper(2, 8, 9, 10),
   };
 
-  std::array unique_domains_to_update = {
-      MakePowerDomainHelper(0, 0, 1, 2, 3),
-      MakePowerDomainHelper(1, 4, 5, 6, 7),
-      MakePowerDomainHelper(2, 8, 9, 10, 11),
-  };
-
   std::array conflicting_domains_to_register = {
       MakePowerDomainHelper(3, 12, 13, 14, 0),
       MakePowerDomainHelper(4, 16, 17, 18, 1),
       MakePowerDomainHelper(5, 20, 21, 22, 2),
+      MakePowerDomainHelper(0, 24, 25, 26, 27),
   };
 
-  std::array conflicting_domains_to_update = {
-      MakePowerDomainHelper(0, 0, 1, 2, 4),
-      MakePowerDomainHelper(1, 4, 5, 7, 8),
-      MakePowerDomainHelper(2, 8, 9, 10, 0),
-  };
-
-  // Called by the registry after each update to the power domain set maintained
-  // by the registry. On each update, the power domain set must only contain a
-  // subset of the unique power domains that are registered by the test.
-  const auto update_callback = [&](const PowerDomainSet& domain_set) {
-    domain_set.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
-      EXPECT_TRUE(InRange(unique_domains_to_register, domain) ||
-                  InRange(unique_domains_to_update, domain))
-          << "domain " << domain->id();
-    });
-  };
-
-  PowerDomainRegistry registry{update_callback};
-  for (const fbl::RefPtr<PowerDomain>& domain : unique_domains_to_register) {
-    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
-    ASSERT_TRUE(registry.Register(domain).is_ok());
+  std::array<PowerDomain*, 3> raw_unique_domains;
+  for (size_t i = 0; i < unique_domains_to_register.size(); ++i) {
+    raw_unique_domains[i] = unique_domains_to_register[i].get();
   }
 
-  // All of the domains registered so far should be present in the registry.
-  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_register.size());
-  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
-    EXPECT_TRUE(InRange(unique_domains_to_register, domain));
+  PowerDomainSet domain_set;
+  for (auto& domain : unique_domains_to_register) {
+    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
+    ASSERT_TRUE(domain_set.Add(std::move(domain)).is_ok());
+  }
+
+  // All of the domains registered so far should be present in the set.
+  EXPECT_EQ(domain_set.count(), unique_domains_to_register.size());
+  domain_set.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
+    EXPECT_TRUE(InRange(raw_unique_domains, domain.get()));
   });
 
-  // Update each registered domain.
-  for (const fbl::RefPtr<PowerDomain>& domain : unique_domains_to_update) {
+  // Attempt and fail to register conflicting domains.
+  for (auto& domain : conflicting_domains_to_register) {
     EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
-    ASSERT_TRUE(registry.Register(domain).is_ok());
+    ASSERT_FALSE(domain_set.Add(std::move(domain)).is_ok());
   }
 
-  // All of the updated domains should be present in the registry.
-  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_update.size());
-  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
-    EXPECT_TRUE(InRange(unique_domains_to_update, domain));
-  });
-
-  // Attempt and fail to register new domain ids with CPU sets that intersect
-  // with the already registered domains.
-  for (const fbl::RefPtr<PowerDomain>& domain : conflicting_domains_to_register) {
-    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
-    ASSERT_FALSE(registry.Register(domain).is_ok());
-  }
-
-  // The domain set should remain unchanged from the last successful updates.
-  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_update.size());
-  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
-    EXPECT_TRUE(InRange(unique_domains_to_update, domain));
-  });
-
-  // Attempt and fail to update existing domain ids with CPU sets that intersect
-  // with other registered domains.
-  for (const fbl::RefPtr<PowerDomain>& domain : conflicting_domains_to_update) {
-    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
-    ASSERT_FALSE(registry.Register(domain).is_ok());
-  }
-
-  // The domain set should remain unchanged from the last successful updates.
-  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_update.size());
-  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
-    EXPECT_TRUE(InRange(unique_domains_to_update, domain));
-  });
-
-  // Unregister each domain and ensure that the updated domain set reflects the
-  // change.
-  for (const fbl::RefPtr<PowerDomain>& domain : unique_domains_to_update) {
-    EXPECT_TRUE(registry.Unregister(domain->id()).is_ok());
-    EXPECT_EQ(registry.Find(domain->id()), nullptr);
-  }
-  EXPECT_EQ(registry.power_domain_set().count(), 0u);
+  // The domain set should remain unchanged.
+  EXPECT_EQ(domain_set.count(), unique_domains_to_register.size());
 }
 
 }  // namespace

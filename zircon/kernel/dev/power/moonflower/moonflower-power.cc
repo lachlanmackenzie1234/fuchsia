@@ -5,6 +5,8 @@
 // https://opensource.org/licenses/MIT
 #include <lib/ddk/platform-defs.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
+#include <lib/power-management/energy-model.h>
+#include <lib/power-management/pdev-power-level-controller.h>
 #include <lib/zbi-format/driver-config.h>
 #include <trace.h>
 #include <zircon/types.h>
@@ -14,6 +16,8 @@
 #include <dev/power.h>
 #include <dev/power/moonflower/init.h>
 #include <dev/psci.h>
+#include <fbl/ref_ptr.h>
+#include <kernel/scheduler.h>
 #include <lk/init.h>
 #include <pdev/power.h>
 #include <phys/handoff.h>
@@ -97,6 +101,49 @@ constexpr size_t kPowerDomainCount = 1;
 constexpr uint32_t kDomainId = 0;
 constexpr uint64_t kMaxOppIndex = 3;
 
+constexpr power_management::ProcessorPowerLevel kPowerLevels[] = {
+    {
+        .options = power_management::kPowerLevelOptionsDomainIndependent,
+        .processing_rate = 0,
+        .power_coefficient_nw = 100'000,
+        .control_interface = power_management::ControlInterface::kArmWfi,
+        .control_argument = 0,
+        .diagnostic_name = "WFI",
+    },
+    {
+        .options = 0,
+        .processing_rate = 360,
+        .power_coefficient_nw = 20'000'000,
+        .control_interface = power_management::ControlInterface::kCpuDriver,
+        .control_argument = 3,
+        .diagnostic_name = "LowSVS",
+    },
+    {
+        .options = 0,
+        .processing_rate = 506,
+        .power_coefficient_nw = 31'000'000,
+        .control_interface = power_management::ControlInterface::kCpuDriver,
+        .control_argument = 2,
+        .diagnostic_name = "SVS",
+    },
+    {
+        .options = 0,
+        .processing_rate = 798,
+        .power_coefficient_nw = 66'000'000,
+        .control_interface = power_management::ControlInterface::kCpuDriver,
+        .control_argument = 1,
+        .diagnostic_name = "Nominal",
+    },
+    {
+        .options = 0,
+        .processing_rate = 1000,
+        .power_coefficient_nw = 102'000'000,
+        .control_interface = power_management::ControlInterface::kCpuDriver,
+        .control_argument = 0,
+        .diagnostic_name = "Turbo",
+    },
+};
+
 MMIO_PTR volatile uint32_t* opp_index_reg = nullptr;
 
 zx_status_t moonflower_opp_set(uint32_t domain_id, uint64_t opp) {
@@ -149,4 +196,49 @@ void moonflower_power_init_early() {
   dprintf(INFO, "POWER: registering moonflower power hooks\n");
   init_opp_reg();
   pdev_register_power(&moonflower_power_ops);
+}
+
+void moonflower_power_init() {
+  dprintf(INFO, "POWER: initializing moonflower power domain\n");
+
+  auto energy_model_result = power_management::EnergyModel::Create(kPowerLevels, {});
+  if (energy_model_result.is_error()) {
+    dprintf(CRITICAL, "POWER: Failed to create energy model: %d\n",
+            energy_model_result.status_value());
+    return;
+  }
+
+  auto controller_result = power_management::PDevPowerLevelController::Get(kDomainId);
+  if (controller_result.is_error()) {
+    dprintf(CRITICAL, "POWER: Failed to get PDevPowerLevelController for domain %u: %d\n",
+            kDomainId, controller_result.status_value());
+    return;
+  }
+  auto controller = std::move(controller_result).value();
+
+  // The moonflower board uses an SoC with a single cluster of 4 cores. All
+  // cores reside in the same physical power domain, so we can hardcode the CPU
+  // mask instead of querying the topology. If this driver is extended to
+  // support other Monaco-based SoCs in the future, this should be revisited and
+  // moved to a more generic driver, since this is a board-specific
+  // configuration.
+  const cpu_mask_t domain_cpus_mask = 0xf;
+
+  fbl::AllocChecker ac;
+  auto domain = fbl::MakeRefCountedChecked<power_management::PowerDomain>(
+      &ac, kDomainId, domain_cpus_mask, std::move(energy_model_result).value(), controller);
+  if (!ac.check()) {
+    dprintf(CRITICAL, "POWER: Failed to allocate PowerDomain\n");
+    return;
+  }
+
+  power_management::PowerDomainSet domain_set;
+  auto register_result = domain_set.Add(std::move(domain));
+  if (register_result.is_error()) {
+    dprintf(CRITICAL, "POWER: Failed to add power domain to set: %d\n",
+            register_result.status_value());
+  } else {
+    Scheduler::SetPowerDomainSet(std::move(domain_set));
+    dprintf(INFO, "POWER: Registered moonflower power domain\n");
+  }
 }

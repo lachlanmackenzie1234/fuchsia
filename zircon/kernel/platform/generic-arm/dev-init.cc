@@ -135,4 +135,8 @@ void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   if (arch_handoff.generic32_watchdog_driver) {
     Generic32BitWatchdogLateInit();
   }
+
+  if (arch_handoff.moonflower_power_driver) {
+    moonflower_power_init();
+  }
 }

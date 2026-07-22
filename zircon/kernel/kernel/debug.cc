@@ -20,7 +20,6 @@
 #include <lib/concurrent/copy.h>
 #include <lib/console.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
-#include <lib/power-management/kernel-registry.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
 #include <stdio.h>
@@ -370,17 +369,20 @@ static int cmd_rppm(int argc, const cmd_args* argv, uint32_t flags) {
 
   if (!strcmp(argv[1].str, "dump")) {
     // Dump the configuration of each registered power domain.
-    power_management::KernelPowerDomainRegistry::Visit(
-        [](const fbl::RefPtr<power_management::PowerDomain>& domain) {
-          printf("Power domain %u:\n", domain->id());
-          for (size_t index = 0; const auto& power_level : domain->model().levels()) {
-            printf("  %3zu. rate=%-8s power=%10" PRIu64 " nw cost=%10" PRIu64
-                   " nw/rate control=%s\n",
-                   index++, Format(power_level.processing_rate(), ffl::String::Dec, 6).c_str(),
-                   power_level.power_coefficient_nw(), power_level.power_cost_nw_per_rate(),
-                   ToString(power_level.control()));
-          }
-        });
+    // SAFETY: The local copy of the power domain set maintains ref counts of
+    // each power domain, ensuring that they remain alive for the duration of
+    // this command.
+    const power_management::PowerDomainSet power_domain_set =
+        percpu::Get(BOOT_CPU_ID).scheduler.GetPowerDomainSetForTesting();
+    power_domain_set.Visit([](const fbl::RefPtr<power_management::PowerDomain>& domain) {
+      printf("Power domain %u:\n", domain->id());
+      for (size_t index = 0; const auto& power_level : domain->model().levels()) {
+        printf("  %3zu. rate=%-8s power=%10" PRIu64 " nw cost=%10" PRIu64 " nw/rate control=%s\n",
+               index++, Format(power_level.processing_rate(), ffl::String::Dec, 6).c_str(),
+               power_level.power_coefficient_nw(), power_level.power_cost_nw_per_rate(),
+               ToString(power_level.control()));
+      }
+    });
 
     printf("\n");
 

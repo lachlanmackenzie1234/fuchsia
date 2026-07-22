@@ -27,24 +27,22 @@ PowerDomainSet PowerState::UpdatePowerDomainSet(PowerDomainSet power_domain_set,
   }
 
   active_power_level_ = desired_active_power_level_ = std::nullopt;
-  if (domain) {
+  domain_ = fbl::RefPtr<PowerDomain>(domain);
+
+  if (domain_) {
     const zx::result<uint64_t> control_argument_result =
-        domain->controller()->GetCurrentPowerLevel(domain->id());
+        domain_->controller()->GetCurrentPowerLevel(domain_->id());
     if (control_argument_result.is_ok()) {
-      active_power_level_ = desired_active_power_level_ = domain->model().FindPowerLevel(
-          domain->controller()->control_interface(), control_argument_result.value());
+      active_power_level_ = desired_active_power_level_ = domain_->model().FindPowerLevel(
+          domain_->controller()->control_interface(), control_argument_result.value());
     }
 
-    domain->total_normalized_utilization_.fetch_add(normalized_utilization_.raw_value(),
-                                                    std::memory_order_relaxed);
+    domain_->total_normalized_utilization_.fetch_add(normalized_utilization_.raw_value(),
+                                                     std::memory_order_relaxed);
   }
 
   using std::swap;
   swap(power_domain_set, power_domain_set_);
-
-  domain_ = domain;
-  fast_path_controller_ =
-      domain && domain->controller()->is_fast_path() ? domain->controller().get() : nullptr;
 
   return power_domain_set;
 }
@@ -79,7 +77,7 @@ std::optional<PowerLevelUpdateRequest> PowerState::RequestTransition(uint32_t cp
 
   if (level.TargetsCpus()) {
     transition.target_id = cpu_num;
-    transition.options |= ZX_PROCESSOR_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT;
+    transition.options |= kPowerLevelOptionsDomainIndependent;
   }
 
   return transition;

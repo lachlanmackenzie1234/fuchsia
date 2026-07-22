@@ -27,8 +27,8 @@
 namespace power_management {
 
 zx::result<EnergyModel> EnergyModel::Create(
-    std::span<const zx_processor_power_level_t> levels,
-    std::span<const zx_processor_power_level_transition_t> transitions) {
+    std::span<const ProcessorPowerLevel> levels,
+    std::span<const ProcessorPowerLevelTransition> transitions) {
   // Allocations below would be UB.
   if (levels.size() < 1) {
     return zx::error(ZX_ERR_INVALID_ARGS);
@@ -45,13 +45,6 @@ zx::result<EnergyModel> EnergyModel::Create(
     }
 
     if (transition.to >= levels.size()) {
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-  }
-
-  // Validate that power level interfaces are supported values.
-  for (const auto& level : levels) {
-    if (!IsSupportedControlInterface(level.control_interface)) {
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
   }
@@ -150,38 +143,16 @@ zx::result<EnergyModel> EnergyModel::Create(
                             std::move(power_levels_lookup), idle_levels});
 }
 
-zx::result<fbl::RefPtr<PowerDomain>> PowerDomainRegistry::Register(
-    const fbl::RefPtr<PowerDomain>& power_domain) {
-  zx::result<fbl::RefPtr<PowerDomain>> result = power_domain_set_.Update(power_domain);
-  if (result.is_error()) {
-    return result.take_error();
-  }
-
-  update_callback_(power_domain_set_);
-  return result;
-}
-
-zx::result<fbl::RefPtr<PowerDomain>> PowerDomainRegistry::Unregister(uint32_t domain_id) {
-  fbl::RefPtr<PowerDomain> power_domain = power_domain_set_.Remove(domain_id);
-  if (!power_domain) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-
-  update_callback_(power_domain_set_);
-  return zx::ok(std::move(power_domain));
-}
-
 std::optional<uint8_t> EnergyModel::FindPowerLevel(ControlInterface interface_id,
                                                    uint64_t control_argument) const {
-  const auto compare = [this](size_t i, const zx_processor_power_level_t& b) {
+  const auto compare = [this](size_t i, const ProcessorPowerLevel& b) {
     const auto& a = power_levels_[i];
-    return cpp23::to_underlying(a.control()) < b.control_interface ||
-           (cpp23::to_underlying(a.control()) == b.control_interface &&
-            a.control_argument() < b.control_argument);
+    return a.control() < b.control_interface ||
+           (a.control() == b.control_interface && a.control_argument() < b.control_argument);
   };
 
-  const zx_processor_power_level_t power_level{
-      .control_interface = cpp23::to_underlying(interface_id),
+  const ProcessorPowerLevel power_level{
+      .control_interface = interface_id,
       .control_argument = control_argument,
   };
 

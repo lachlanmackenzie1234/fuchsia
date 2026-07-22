@@ -6,10 +6,10 @@
 
 #include "lib/power-management/pdev-power-level-controller.h"
 
-#include <lib/power-management/kernel-registry.h>
 #include <lib/power-management/power-state.h>
 
 #include <dev/power.h>
+#include <kernel/scheduler.h>
 
 namespace power_management {
 
@@ -63,8 +63,8 @@ zx::result<uint32_t> PDevPowerLevelController::Post(const PowerLevelUpdateReques
     return zx::error(status);
   }
 
-  return KernelPowerDomainRegistry::UpdatePowerLevel(pending.domain_id, id(), control_interface(),
-                                                     pending.control_argument);
+  return Scheduler::UpdatePowerLevel(pending.domain_id, id(), control_interface(),
+                                     pending.control_argument);
 }
 
 zx::result<uint64_t> PDevPowerLevelController::GetCurrentPowerLevel(uint32_t domain_id) const {

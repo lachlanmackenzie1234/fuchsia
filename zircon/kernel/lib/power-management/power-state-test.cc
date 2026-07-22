@@ -23,7 +23,7 @@ namespace {
 
 using power_management::ControlInterface;
 using power_management::PowerDomain;
-using power_management::PowerDomainRegistry;
+
 using power_management::PowerDomainSet;
 using power_management::PowerLevelUpdateRequest;
 using power_management::PowerState;
@@ -50,15 +50,12 @@ TEST(PowerStateTest, Default) {
 }
 
 TEST(PowerStateTest, UpdateDomainSetsModel) {
-  const uint32_t cpu = 0;
-  fbl::RefPtr<PowerDomain> domain = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4, 5);
+  auto domain = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4, 5);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
 
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  EXPECT_EQ(state.domain(), domain.get());
+  EXPECT_EQ(state.domain(), domain);
   EXPECT_FALSE(state.active_power_level());
   EXPECT_FALSE(state.desired_active_power_level());
   EXPECT_EQ(0u, state.active_power_coefficient_nw());
@@ -68,67 +65,39 @@ TEST(PowerStateTest, UpdateDomainSetsModel) {
 }
 
 TEST(PowerStateTest, UpdateDomainKeepsPowerLevelWhenSameModelId) {
-  const uint32_t cpu = 0;
-  fbl::RefPtr<PowerDomain> domain = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4, 5);
-  fbl::RefPtr<PowerDomain> domain2 = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4);
+  auto domain = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4, 5);
+  auto domain2 = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
-
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
   ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel + 1).status_value());
 
   static_cast<FakePowerLevelController*>(domain2->controller().get())->current_power_level =
       kMinActivePowerLevel;
 
-  EXPECT_TRUE(registry.Register(domain2).is_ok());
-  EXPECT_EQ(registry.power_domain_set().count(), 1u);
-  EXPECT_EQ(state.domain(), domain2.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain2), 0);
+  EXPECT_EQ(state.domain(), domain2);
   EXPECT_EQ(state.active_power_level(), kMinActivePowerLevel);
   EXPECT_EQ(state.desired_active_power_level(), kMinActivePowerLevel);
 }
 
 TEST(PowerStateTest, UpdateDomainClearsPowerLevelWhenDifferentModelId) {
-  const uint32_t cpu = 0;
-  fbl::RefPtr<PowerDomain> domain = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4, 5);
-  fbl::RefPtr<PowerDomain> domain2 = MakePowerDomainHelper(kModelId + 1, 0, 1, 2, 3, 4, 5);
+  auto domain = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4, 5);
+  auto domain2 = MakePowerDomainHelper(kModelId + 1, 0, 1, 2, 3, 4, 5);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
-
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
   ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel + 1).status_value());
 
   static_cast<FakePowerLevelController*>(domain2->controller().get())->current_power_level =
       kMinActivePowerLevel;
 
-  EXPECT_TRUE(registry.Register(domain2).is_ok());
-  EXPECT_EQ(registry.power_domain_set().count(), 1u);
-  EXPECT_EQ(state.domain(), domain2.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain2), 0);
+  EXPECT_EQ(state.domain(), domain2);
   EXPECT_EQ(state.active_power_level(), kMinActivePowerLevel);
   EXPECT_EQ(state.desired_active_power_level(), kMinActivePowerLevel);
-}
-
-TEST(PowerStateTest, UpdateDomainNullptrClearsState) {
-  const uint32_t cpu = 0;
-  fbl::RefPtr<PowerDomain> domain = MakePowerDomainHelper(kModelId, 0, 1, 2, 3, 4, 5);
-
-  PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
-
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
-  ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel).status_value());
-
-  EXPECT_TRUE(registry.Unregister(domain->id()).is_ok());
-  EXPECT_EQ(state.domain(), nullptr);
-  EXPECT_FALSE(state.active_power_level());
-  EXPECT_FALSE(state.desired_active_power_level());
 }
 
 TEST(PowerStateTest, TransitionWhenModelIsUnknown) {
@@ -137,77 +106,58 @@ TEST(PowerStateTest, TransitionWhenModelIsUnknown) {
 }
 
 TEST(PowerStateTest, TransitionWhenPowerLevelIsUnknown) {
-  const uint32_t cpu = 0;
   auto energy_model = MakeFakeEnergyModel(kTotalPowerLevels);
   auto domain = MakePowerDomainHelper(kModelId, energy_model, 0, 1, 2, 3, 4, 5);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
-
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
 
   EXPECT_FALSE(state.RequestTransition(1, kMinActivePowerLevel + 1));
 }
 
 TEST(PowerStateTest, TransitionWhenPowerLevelIsDesiredPowerLevel) {
-  const uint32_t cpu = 0;
   auto energy_model = MakeFakeEnergyModel(kTotalPowerLevels);
   auto domain = MakePowerDomainHelper(kModelId, energy_model, 0, 1, 2, 3, 4, 5);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
-
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
   ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel).status_value());
 
   EXPECT_FALSE(state.RequestTransition(1, kMinActivePowerLevel));
 }
 
 TEST(PowerStateTest, TransitionWhenPowerLevelIsTooHigh) {
-  const uint32_t cpu = 0;
   auto energy_model = MakeFakeEnergyModel(kTotalPowerLevels);
   auto domain = MakePowerDomainHelper(kModelId, energy_model, 0, 1, 2, 3, 4, 5);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
-
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
   ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel).status_value());
 
   EXPECT_DEATH(state.RequestTransition(1, kTotalPowerLevels), "ASSERT FAILED");
 }
 
 TEST(PowerStateTest, TransitionWhenPowerLevelIsTooLow) {
-  const uint32_t cpu = 0;
   auto energy_model = MakeFakeEnergyModel(kTotalPowerLevels);
   auto domain = MakePowerDomainHelper(kModelId, energy_model, 0, 1, 2, 3, 4, 5);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
-
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
   ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel).status_value());
 
   EXPECT_DEATH(state.RequestTransition(1, kMaxIdlePowerLevel), "ASSERT FAILED");
 }
 
 TEST(PowerStateTest, UpdateUtilizationReflectsOnDomain) {
-  const uint32_t cpu = 0;
   auto energy_model = MakeFakeEnergyModel(kTotalPowerLevels);
   auto domain = MakePowerDomainHelper(kModelId, energy_model, 0, 1, 2, 3, 4, 5);
   auto domain2 = MakePowerDomainHelper(kModelId + 1, energy_model, 0, 1, 2, 3, 4, 5);
 
   PowerState state;
-  PowerDomainRegistry registry{
-      [&](const PowerDomainSet& domain_set) { state.UpdatePowerDomainSet(domain_set, cpu); }};
 
   EXPECT_EQ(kZeroUtilization, state.normalized_utilization());
   EXPECT_EQ(kZeroUtilization, domain->total_normalized_utilization());
@@ -221,8 +171,8 @@ TEST(PowerStateTest, UpdateUtilizationReflectsOnDomain) {
   EXPECT_EQ(kZeroUtilization, domain2->total_normalized_utilization());
 
   // Associating with a domain should update the domain total.
-  EXPECT_TRUE(registry.Register(domain).is_ok());
-  ASSERT_EQ(state.domain(), domain.get());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
 
   EXPECT_EQ(kOneHalfUtilization, domain->total_normalized_utilization());
   EXPECT_EQ(kZeroUtilization, domain2->total_normalized_utilization());
@@ -236,32 +186,11 @@ TEST(PowerStateTest, UpdateUtilizationReflectsOnDomain) {
 
   // Changing to a different domain should move the utilization from the
   // previous domain to the new domain.
-  EXPECT_TRUE(registry.Register(domain2).is_ok());
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain2), 0);
 
   EXPECT_EQ(kOneQuarterUtilization, state.normalized_utilization());
   EXPECT_EQ(kZeroUtilization, domain->total_normalized_utilization());
   EXPECT_EQ(kOneQuarterUtilization, domain2->total_normalized_utilization());
-}
-
-TEST(PowerLevelTransitionTest, PortPacket) {
-  PowerLevelUpdateRequest request = {
-      .domain_id = 1,
-      .target_id = 2,
-      .control = ControlInterface::kArmWfi,
-      .control_argument = 12345,
-      .options = 1221212121,
-  };
-
-  zx_port_packet_t port_packet = request.port_packet();
-
-  EXPECT_EQ(port_packet.key, request.domain_id);
-  EXPECT_EQ(port_packet.type, ZX_PKT_TYPE_PROCESSOR_POWER_LEVEL_TRANSITION_REQUEST);
-  EXPECT_EQ(port_packet.status, ZX_OK);
-  EXPECT_EQ(port_packet.processor_power_level_transition.domain_id, request.target_id);
-  EXPECT_EQ(port_packet.processor_power_level_transition.control_interface,
-            static_cast<uint64_t>(request.control));
-  EXPECT_EQ(port_packet.processor_power_level_transition.control_argument,
-            request.control_argument);
 }
 
 }  // namespace

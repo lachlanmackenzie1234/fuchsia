@@ -1562,9 +1562,10 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread, UnblockType unblock_type) {
     // TODO(https://fxbug.dev/448191466): Move the energy model into the ZBI and
     // allocate power domain data structures only during early init, removing
     // the need for locking or snapshotting.
-    Guard<MonitoredSpinLock, NoIrqSave> guard{&Get()->queue_lock_, SOURCE_TAG};
-    const PowerDomainSet& power_domain_set = Get()->power_level_control_.power_domain_set();
-    const auto power_level_control_enabled = Get()->power_level_control_.is_enabled();
+    Scheduler* scheduler = Get();
+    Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
+    const PowerDomainSet& power_domain_set = scheduler->power_level_control_.power_domain_set();
+    const auto power_level_control_enabled = scheduler->power_level_control_.is_enabled();
 
     for (const auto& entry : search_set.const_iterator()) {
       const cpu_num_t candidate_cpu = entry.cpu;
@@ -2182,7 +2183,12 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     // and synchronized using the queue lock. Doing so creates an incomplete
     // critical section that can result in incoherent reads of the values
     // updated in different acquisitions of the queue lock.
-    power_level_control_.SendPendingPowerLevelRequest(queue_guard);
+    if (const cpu_mask_t reschedule_mask =
+            power_level_control_.SendPendingPowerLevelRequest(queue_guard)) {
+      // Reschedule the other CPUs affected by the power level change. The
+      // current CPU is filtered out by mp_reschedule.
+      mp_reschedule(reschedule_mask, 0);
+    }
   }
 
   // Update the current processing rate only after any uses in the reschedule
@@ -3066,7 +3072,7 @@ Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime 
         // CPUs. If the fast path is not supported, the request will be left
         // pending on the target CPU and flushed during its reschedule.
         cpus_to_reschedule =
-            target->power_level_control_.SendPendingPowerLevelRequestFastPath(target_queue_guard);
+            target->power_level_control_.SendPendingPowerLevelRequest(target_queue_guard);
       }
       break;
     }
@@ -3499,9 +3505,7 @@ void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
             !is_domain_handled) {
           cpus_to_evaluate_updates |= cpu_mask;
 
-          // TODO(eieio): Rationalize energy model CPU set with kernel CPU mask.
-          const cpu_mask_t domain_cpu_mask =
-              static_cast<cpu_mask_t>(scheduler->power_level_control_.domain()->cpus().mask[0]);
+          const cpu_mask_t domain_cpu_mask = scheduler->power_level_control_.domain()->cpus();
           cpus_for_handled_domains |= domain_cpu_mask;
         }
       } break;
@@ -3758,26 +3762,23 @@ bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
 
 bool Scheduler::PowerLevelControl::PendPowerLevelRequestForRate(
     SchedProcessingRate processing_rate) {
-  if (ktl::optional<uint8_t> power_level =
-          power_state_.power_domain_set().LookupPowerLevel(cpu(), processing_rate)) {
-    return PendPowerLevelRequest(*power_level);
+  if (domain()) {
+    if (const power_management::PowerLevel* power_level =
+            domain()->model().FindActivePowerLevelForRate(processing_rate)) {
+      return PendPowerLevelRequest(power_level->level());
+    }
   }
   return false;
 }
 
 void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
   SchedUtilization max_clamped_demand{0};
-
-  percpu::ForEach([&](cpu_num_t cpu_num, percpu* percpu) {
-    const size_t bit_num = cpu_num % ZX_CPU_SET_BITS_PER_WORD;
-    const size_t index = cpu_num / ZX_CPU_SET_BITS_PER_WORD;
-    DEBUG_ASSERT(index < ZX_CPU_SET_MAX_CPUS / ZX_CPU_SET_BITS_PER_WORD);
-
-    if (domain() && domain()->cpus().mask[index] & uint64_t{1} << bit_num) {
-      max_clamped_demand =
-          ktl::max(max_clamped_demand, percpu->scheduler.exported_clamped_deadline_utilization());
-    }
-  });
+  cpu_mask_t domain_cpus = domain() ? domain()->cpus() : 0;
+  while (domain_cpus != 0) {
+    const cpu_num_t cpu_num = remove_cpu_from_mask(domain_cpus);
+    max_clamped_demand = ktl::max(
+        max_clamped_demand, percpu::Get(cpu_num).scheduler.exported_clamped_deadline_utilization());
+  }
 
   LOCAL_KTRACE_INSTANT(QUEUE, "ReevaluateCurrentPowerLevel",
                        ("max_clamped_utilization", max_clamped_demand),
@@ -3789,11 +3790,10 @@ void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
   }
 }
 
-cpu_mask_t Scheduler::PowerLevelControl::SendPendingPowerLevelRequestFastPath(
+cpu_mask_t Scheduler::PowerLevelControl::SendPendingPowerLevelRequest(
     Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
-  // If there is a fast path, handle posting the request directly.
-  if (power_state_.fast_path_controller() && pending_update_request_.has_value() &&
-      power_state_.is_serving()) {
+  cpu_mask_t cpus_to_reschedule_mask = 0;
+  if (domain() && pending_update_request_.has_value() && power_state_.is_serving()) {
     // Use swap to move the pending request into the local optional, leaving the
     // member optional empty. Using ktl::move is insufficient, since moving from
     // an optional does not leave it empty, it just leaves the underlying value
@@ -3801,83 +3801,69 @@ cpu_mask_t Scheduler::PowerLevelControl::SendPendingPowerLevelRequestFastPath(
     ktl::optional<power_management::PowerLevelUpdateRequest> request;
     request.swap(pending_update_request_);
 
-    cpu_mask_t cpus_to_reschedule_mask = 0;
     if (request.has_value()) {
       ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(
           QUEUE, "sched_opp_request_fast", ("domain_id", request->domain_id),
           ("control_argument", request->control_argument));
 
       queue_guard.CallUnlocked([&] {
-        if (const zx::result<cpu_mask_t> result =
-                power_state_.fast_path_controller()->Post(*request);
+        if (const zx::result<cpu_mask_t> result = domain()->controller()->Post(*request);
             result.is_ok()) {
           cpus_to_reschedule_mask = result.value();
         } else {
-          KERNEL_OOPS("Failed to set OPP with fast path: domain_id=%" PRIu32
-                      " control_argument=%" PRIu64 ": %d\n",
+          KERNEL_OOPS("Failed to set OPP: domain_id=%" PRIu32 " control_argument=%" PRIu64 ": %d\n",
                       request->domain_id, request->control_argument, result.status_value());
         }
       });
 
       trace = KTRACE_END_SCOPE(("cpus_to_reschedule_mask", cpus_to_reschedule_mask));
     }
-
-    return cpus_to_reschedule_mask;
   }
-
-  return 0;
+  return cpus_to_reschedule_mask;
 }
 
-void Scheduler::PowerLevelControl::SendPendingPowerLevelRequest(
-    Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
-  // Try the fast path first before deferring to the timer/dpc slow path.
-  if (const cpu_mask_t reschedule_mask = SendPendingPowerLevelRequestFastPath(queue_guard)) {
-    // Reschedule any CPUs affected by the power level request. If the local CPU
-    // is affected, it will be handled later in RescheduleCommon after this
-    // method returns.
-    // TODO(eieio): See if this can be replaced with a call to Scheduler::RescheduleMask.
-    mp_reschedule(reschedule_mask, 0);
-  }
-
-  if (pending_update_request_.has_value() && power_state_.is_serving()) {
-    ktrace::Scope trace = KTRACE_CPU_BEGIN_SCOPE(
-        "kernel:sched", "sched_opp_request_slow", ("domain_id", pending_update_request_->domain_id),
-        ("control_argument", pending_update_request_->control_argument));
-
-    request_timer_.Cancel();
-    request_timer_.Set(Deadline::infinite_past(), TimerHandler, this);
-  }
+void Scheduler::SetPowerDomainSet(PowerDomainSet power_domain_set) {
+  percpu::ForEach([&power_domain_set](cpu_num_t cpu_num, percpu* percpu) {
+    percpu->scheduler.ExchangePowerDomainSet(power_domain_set);
+  });
 }
 
-void Scheduler::PowerLevelControl::TimerHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
-  // Only queue the DPC if the timer handler is running on the expected CPU. If the timer handler
-  // is running on a different CPU, the CPU it services went offline while the timer was pending
-  // and its power level requests are no longer relevant.
-  PowerLevelControl* power_level_control = static_cast<PowerLevelControl*>(arg);
-  if (power_level_control->cpu() == arch_curr_cpu_num()) {
-    DpcRunner::Enqueue(power_level_control->request_dpc_);
-  }
-}
-
-void Scheduler::PowerLevelControl::DpcHandler(Dpc* dpc) {
-  Scheduler* scheduler = dpc->arg<Scheduler>();
-  fbl::RefPtr<power_management::PowerDomain> domain;
-  ktl::optional<power_management::PowerLevelUpdateRequest> request;
-
+zx::result<cpu_mask_t> Scheduler::UpdatePowerLevel(uint32_t domain_id, uint64_t controller_id,
+                                                   power_management::ControlInterface interface,
+                                                   uint64_t arg) {
+  // Get a ref to the power domain using the power domain set for the current
+  // CPU.
+  fbl::RefPtr<PowerDomain> domain;
   {
+    Scheduler* scheduler = Get();
     Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-    domain = fbl::RefPtr{scheduler->power_level_control_.power_state_.domain()};
-    request.swap(scheduler->power_level_control_.pending_update_request_);
+    const PowerDomainSet& power_domain_set = scheduler->power_level_control_.power_domain_set();
+    domain = fbl::RefPtr{power_domain_set.FindByDomainId(domain_id)};
   }
 
-  if (domain && domain->controller()->is_serving() && request.has_value()) {
-    ktrace::Scope trace =
-        KTRACE_BEGIN_SCOPE("kernel:sched", "sched_opp_request", ("domain_id", request->domain_id),
-                           ("control_argument", request->control_argument));
-    const zx::result result = domain->controller()->Post(*request);
-    ASSERT(result.status_value() != ZX_ERR_SHOULD_WAIT);
+  if (!domain) {
+    return zx::error(ZX_ERR_NOT_FOUND);
   }
 
-  // If the power domain for this CPU changed, the last ref to the old power
-  // domain may be dropped here.
+  if (domain->controller()->id() != controller_id ||
+      domain->controller()->control_interface() != interface) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  ktl::optional<uint8_t> power_level = domain->model().FindPowerLevel(interface, arg);
+  if (!power_level.has_value()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  cpu_mask_t domain_cpus = domain->cpus();
+  cpu_mask_t cpus_to_reschedule_mask = 0;
+  while (domain_cpus != 0) {
+    const cpu_num_t cpu_num = remove_cpu_from_mask(domain_cpus);
+    Scheduler* scheduler = Get(cpu_num);
+    if (scheduler->UpdateActivePowerLevel(*power_level).is_ok()) {
+      cpus_to_reschedule_mask |= cpu_num_to_mask(cpu_num);
+    }
+  }
+
+  return zx::ok(cpus_to_reschedule_mask);
 }

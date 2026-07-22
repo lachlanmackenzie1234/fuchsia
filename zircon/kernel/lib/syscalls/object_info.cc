@@ -7,7 +7,6 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/heap.h>
 #include <lib/power-management/energy-model.h>
-#include <lib/power-management/kernel-registry.h>
 #include <lib/stall.h>
 #include <lib/syscalls/forward.h>
 #include <lib/zircon-internal/macros.h>
@@ -238,41 +237,7 @@ zx::result<zx_info_process_handle_stats_t> GetHandleStats(ProcessDispatcher* pro
 }
 
 zx::result<fbl::Array<zx_power_domain_info_t>> GetPowerDomainsInfo(size_t max_copy) {
-  // Alternatively clamp `max_copy` to `arch_max_num_cpus()`.
-  size_t power_domain_count = 0;
-  power_management::KernelPowerDomainRegistry::Visit(
-      [&power_domain_count](const auto& power_domain) { ++power_domain_count; });
-
-  // Avoid arbitrary large buffers.
-  max_copy = ktl::min(power_domain_count, max_copy);
-
-  ktl::unique_ptr<zx_power_domain_info_t[]> entries = nullptr;
-  if (max_copy > 0) {
-    fbl::AllocChecker ac;
-    entries = ktl::make_unique<zx_power_domain_info_t[]>(&ac, max_copy);
-    if (!ac.check()) {
-      return zx::error(ZX_ERR_NO_MEMORY);
-    }
-  }
-  // Reset the count, in case we are racing against an update, so we can return somewhat
-  // consistent `avail`.
-  power_domain_count = 0;
-  power_management::KernelPowerDomainRegistry::Visit(
-      [&power_domain_count, &entries,
-       max_copy](const fbl::RefPtr<power_management::PowerDomain>& domain) {
-        if (power_domain_count < max_copy) {
-          zx_power_domain_info_t& entry = entries[power_domain_count];
-          entry = {
-              .cpus = domain->cpus(),
-              .domain_id = domain->id(),
-              .idle_power_levels = static_cast<uint8_t>(domain->model().idle_levels().size()),
-              .active_power_levels = static_cast<uint8_t>(domain->model().active_levels().size()),
-          };
-        }
-        power_domain_count++;
-      });
-
-  return zx::ok(fbl::Array{entries.release(), power_domain_count});
+  return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
 // Copies to usermode the actual (number of records written) and the avail (number of records

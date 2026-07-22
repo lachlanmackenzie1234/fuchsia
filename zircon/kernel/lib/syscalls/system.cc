@@ -13,9 +13,7 @@
 #include <lib/instrumentation/asan.h>
 #include <lib/page/size.h>
 #include <lib/power-management/energy-model.h>
-#include <lib/power-management/kernel-registry.h>
 #include <lib/power-management/pdev-power-level-controller.h>
-#include <lib/power-management/port-power-level-controller.h>
 #include <lib/relaxed_atomic.h>
 #include <lib/syscalls/forward.h>
 #include <lib/zbi-format/kernel.h>
@@ -867,153 +865,10 @@ zx_status_t sys_system_set_processor_power_domain(
     zx_handle_t port, user_in_ptr<const zx_processor_power_level_t> power_levels,
     size_t num_power_levels, user_in_ptr<const zx_processor_power_level_transition_t> transitions,
     size_t num_transitions) {
-  zx_status_t status =
-      validate_ranged_resource(resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_CPU_BASE, 1);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  if (num_power_levels > ZX_MAX_POWER_LEVELS ||
-      num_transitions > ZX_MAX_POWER_LEVEL_TRANSFORMATIONS) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  zx_processor_power_domain_t domain_info;
-  if (domain.copy_from_user(&domain_info) != ZX_OK) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  bool all_zero = true;
-  for (auto& c : domain_info.cpus.mask) {
-    all_zero = all_zero && (c == 0);
-  }
-
-  // No need to validate any of the other parameters, when we are unregistering
-  // a power domain.
-  if (all_zero) {
-    // If a power domain was just unregistered it will be deallocated here as
-    // the ref ptr in the zx::result is dropped.
-    return power_management::KernelPowerDomainRegistry::Unregister(domain_info.domain_id)
-        .status_value();
-  }
-
-  if (num_power_levels == 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  size_t max_cpus = arch_max_num_cpus();
-  size_t bucket = max_cpus / ZX_CPU_SET_BITS_PER_WORD;
-  size_t bits = max_cpus % ZX_CPU_SET_BITS_PER_WORD;
-  size_t mask = ~((1ull << bits) - 1);
-
-  // We are not allowed to set cpus beyond our max cpus.
-  if ((domain_info.cpus.mask[bucket] & mask) != 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  for (size_t i = bucket + 1; i < ZX_CPU_SET_MAX_CPUS / ZX_CPU_SET_BITS_PER_WORD; ++i) {
-    if (domain_info.cpus.mask[i] != 0) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-  }
-
-  // Check the port has required rights.
-  ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<PortDispatcher> port_dispatcher;
-  if (zx_status_t res = up->handle_table().GetDispatcherWithRights(
-          *up, port, ZX_RIGHT_WRITE | ZX_RIGHT_READ, &port_dispatcher);
-      res != ZX_OK) {
-    return res;
-  }
-
-  // Set up the power domain and model.
-  fbl::AllocChecker ac;
-  auto levels = ktl::make_unique<zx_processor_power_level_t[]>(&ac, num_power_levels);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  ktl::unique_ptr<zx_processor_power_level_transition_t[]> sparse_transitions = nullptr;
-
-  if (num_transitions > 0) {
-    sparse_transitions =
-        ktl::make_unique<zx_processor_power_level_transition_t[]>(&ac, num_transitions);
-    if (!ac.check()) {
-      return ZX_ERR_NO_MEMORY;
-    }
-
-    if (zx_status_t res =
-            transitions.copy_array_from_user(sparse_transitions.get(), num_transitions);
-        res != ZX_OK) {
-      return res;
-    }
-  }
-
-  if (zx_status_t res = power_levels.copy_array_from_user(levels.get(), num_power_levels);
-      res != ZX_OK) {
-    return res;
-  }
-
-  auto model =
-      power_management::EnergyModel::Create(ktl::span(levels.get(), num_power_levels),
-                                            ktl::span(sparse_transitions.get(), num_transitions));
-  if (model.is_error()) {
-    return model.error_value();
-  }
-
-  const bool force_user_control =
-      options & ZX_SYSTEM_SET_PROCESSOR_POWER_DOMAIN_OPTION_FORCE_USER_DRIVER;
-
-  zx::result<fbl::RefPtr<power_management::PowerLevelController>> controller_result;
-  if (power_management::PDevPowerLevelController::IsSupported() && !force_user_control) {
-    controller_result = power_management::PDevPowerLevelController::Get(domain_info.domain_id);
-  } else {
-    controller_result =
-        power_management::PortPowerLevelController::Create(ktl::move(port_dispatcher));
-  }
-  if (controller_result.is_error()) {
-    return controller_result.error_value();
-  }
-
-  auto power_domain = fbl::MakeRefCountedChecked<power_management::PowerDomain>(
-      &ac, domain_info.domain_id, domain_info.cpus, ktl::move(model).value(),
-      ktl::move(controller_result).value());
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  // Register power domain with the registry and update schedulers. If this
-  // power domain replaces another power domain, the previous power domain may
-  // be deallocated here when the ref pointer is released.
-  return power_management::KernelPowerDomainRegistry::Register(power_domain).status_value();
+  return ZX_ERR_NOT_SUPPORTED;
 }
 
 zx_status_t sys_system_set_processor_power_state(
     zx_handle_t port, user_in_ptr<const zx_processor_power_state_t> power_state_pointer) {
-  if (port == ZX_HANDLE_INVALID) {
-    return ZX_ERR_BAD_HANDLE;
-  }
-  zx_processor_power_state_t power_state = {};
-  if (zx_status_t result = power_state_pointer.copy_from_user(&power_state); result != ZX_OK) {
-    return result;
-  }
-
-  ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<PortDispatcher> port_dispatcher;
-  if (zx_status_t result =
-          up->handle_table().GetDispatcherWithRights(*up, port, ZX_RIGHT_READ, &port_dispatcher);
-      result != ZX_OK) {
-    return result;
-  }
-
-  const zx::result<cpu_mask_t> result =
-      power_management::KernelPowerDomainRegistry::UpdatePowerLevel(
-          power_state.domain_id, port_dispatcher->get_koid(),
-          static_cast<power_management::ControlInterface>(power_state.control_interface),
-          power_state.control_argument);
-  if (result.is_ok()) {
-    Scheduler::RescheduleCpus(result.value());
-  }
-
-  return result.status_value();
+  return ZX_ERR_NOT_SUPPORTED;
 }

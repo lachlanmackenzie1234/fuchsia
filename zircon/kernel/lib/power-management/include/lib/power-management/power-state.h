@@ -9,8 +9,6 @@
 
 #include <stdint.h>
 #include <zircon/errors.h>
-#include <zircon/syscalls-next.h>
-#include <zircon/syscalls/port.h>
 
 #include <atomic>
 #include <cstdint>
@@ -26,18 +24,6 @@ namespace power_management {
 
 // Represents a requested power level update to be executed at a later stage.
 struct PowerLevelUpdateRequest {
-  constexpr zx_port_packet port_packet() const {
-    return {.key = domain_id,
-            .type = ZX_PKT_TYPE_PROCESSOR_POWER_LEVEL_TRANSITION_REQUEST,
-            .status = ZX_OK,
-            .processor_power_level_transition = {
-                .domain_id = target_id,
-                .options = options,
-                .control_interface = static_cast<uint64_t>(control),
-                .control_argument = control_argument,
-            }};
-  }
-
   // Domain ID where the request is originating from.
   uint32_t domain_id;
 
@@ -67,16 +53,9 @@ class PowerState {
   // Returns true if the power domain is set.
   bool is_enabled() const { return !!domain(); }
 
-  // Local copy of the full set of power domains in the system.
-  const PowerDomainSet& power_domain_set() const { return power_domain_set_; }
-
   // Domain the PowerState is being modeled after. Returns nullptr is there is
   // no power domain configured for processor owning this power state.
-  PowerDomain* domain() const { return domain_; }
-
-  // The PowerLevelController associated with this PowerState and processor, IFF
-  // it supports fast path invocation from scheduler context.
-  PowerLevelController* fast_path_controller() const { return fast_path_controller_; }
+  const fbl::RefPtr<PowerDomain>& domain() const { return domain_; }
 
   // Returns the id of the domain this power state belongs to.
   std::optional<uint32_t> domain_id() const {
@@ -184,10 +163,11 @@ class PowerState {
     return Utilization{0};
   }
 
-  // Exchanges the given power domain set with the current power domain set, returning the previous
-  // value. From the new power domain set, updates the specific power domain and related energy
-  // models associated with processor that owns this PowerState.
+  // Updates the power domain set and associates this power state with the domain in the set
+  // matching the given CPU number. Returns the previous power domain set.
   PowerDomainSet UpdatePowerDomainSet(PowerDomainSet power_domain_set, uint32_t cpu_num);
+
+  const PowerDomainSet& power_domain_set() const { return power_domain_set_; }
 
   // Posts a request to transition the power domain associated with this power state to a given
   // active power level from the current energy model.
@@ -214,19 +194,11 @@ class PowerState {
   }
 
  private:
-  // The full set of power domains in the system.
+  // The power domain set configured for this processor.
   PowerDomainSet power_domain_set_;
 
-  // The power domain the processor belongs to. The lifetime of this PowerDomain
-  // instance is managed by the PowerDomainSet. Changes to that set could
-  // invalidate this pointer and must be kept in sync.
-  PowerDomain* domain_{nullptr};
-
-  // The power level controller if it supports direct invocation from scheduler
-  // context. The lifetime of this PowerLevelController instance is managed by
-  // the PowerDomainSet. Changes to that set could invalidate this pointer and
-  // must be kept in sync.
-  PowerLevelController* fast_path_controller_{nullptr};
+  // The power domain the processor belongs to.
+  fbl::RefPtr<PowerDomain> domain_{nullptr};
 
   // The power level when the processor is actively running.
   std::optional<uint8_t> active_power_level_;

@@ -24,11 +24,7 @@ library_headers("headers") {
   ]
 
   if (is_kernel) {
-    headers += [
-      "lib/power-management/pdev-power-level-controller.h",
-      "lib/power-management/port-power-level-controller.h",
-      "lib/power-management/kernel-registry.h",
-    ]
+    headers += [ "lib/power-management/pdev-power-level-controller.h" ]
     public_deps += [ "//zircon/kernel/object" ]
   }
 }
@@ -41,11 +37,7 @@ source_set("power-management") {
   public_deps = [ ":headers" ]
   deps = [ "//zircon/system/ulib/fbl" ]
   if (is_kernel) {
-    sources += [
-      "kernel-registry.cc",
-      "pdev-power-level-controller.cc",
-      "port-power-level-controller.cc",
-    ]
+    sources += [ "pdev-power-level-controller.cc" ]
     deps += [
       "//zircon/kernel/dev/pdev/power",
       "//zircon/kernel/lib/ktl",

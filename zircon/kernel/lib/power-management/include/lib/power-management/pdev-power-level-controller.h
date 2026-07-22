@@ -43,8 +43,6 @@ class PDevPowerLevelController final : public PowerLevelController {
   // this id.
   uint64_t id() const final { return ZX_KOID_INVALID; }
 
-  bool is_fast_path() const final { return true; }
-
   static bool IsSupported();
 
   size_t domain_count() const { return domain_count_; }
