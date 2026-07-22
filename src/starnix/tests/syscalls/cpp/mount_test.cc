@@ -660,14 +660,23 @@ TEST_F(MountTest, UmountIsNotRecursive) {
 
 TEST_F(MountTest, UmountWithMntAttachIsRecursive) {
   // Test that when umount is called with `MNT_DETACH` it will umount nested
-  // mounts.
+  // mounts and remove them from /proc/self/mountinfo.
   ASSERT_SUCCESS(MakeDir("a"));
   auto dir = TestPath("a");
   ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
   ASSERT_SUCCESS(MakeDir("a/b"));
   auto nested_dir = TestPath("a/b");
   ASSERT_THAT(mount(nullptr, nested_dir.c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
+
+  // Verify both dir and nested_dir appear in /proc/self/mountinfo before unmounting.
+  EXPECT_TRUE(test_helper::ReadMountInfoLine(dir).has_value());
+  EXPECT_TRUE(test_helper::ReadMountInfoLine(nested_dir).has_value());
+
   EXPECT_THAT(umount2(dir.c_str(), MNT_DETACH), SyscallSucceeds());
+
+  // Verify both dir and nested_dir are removed from /proc/self/mountinfo after MNT_DETACH.
+  EXPECT_FALSE(test_helper::ReadMountInfoLine(dir).has_value());
+  EXPECT_FALSE(test_helper::ReadMountInfoLine(nested_dir).has_value());
 }
 
 TEST_F(MountTest, BasicRemotefsMount) {
