@@ -70,6 +70,21 @@ impl<'a> PtrByteSlice<'a> {
         self.len() == 0
     }
 
+    /// Reads a copy of a value of type `T` from the start of the slice.
+    ///
+    /// The read is performed unaligned, so the slice does not need to be aligned to `T`.
+    pub fn read<T: Copy + FromBytes>(&self) -> Option<T> {
+        let size = std::mem::size_of::<T>();
+        if size > self.len() {
+            return None;
+        }
+        let ptr = self.slice as *const T;
+        // SAFETY: `self.slice` points to valid memory of `self.len()` bytes.
+        // We verified that `size` is within bounds.
+        // We use read_unaligned so alignment is not required.
+        unsafe { Some(std::ptr::read_unaligned(ptr)) }
+    }
+
     /// Copies the contents of this slice into a safe Rust mutable slice.
     ///
     /// # Panics
@@ -215,6 +230,39 @@ impl<'a> MutPtrByteSlice<'a> {
     /// Returns `true` if the slice has a length of 0.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Reads a copy of a value of type `T` from the start of the slice.
+    ///
+    /// The read is performed unaligned, so the slice does not need to be aligned to `T`.
+    pub fn read<T: Copy + FromBytes>(&self) -> Option<T> {
+        let size = std::mem::size_of::<T>();
+        if size > self.len() {
+            return None;
+        }
+        let ptr = self.slice as *const T;
+        // SAFETY: `self.slice` points to valid memory of `self.len()` bytes.
+        // We verified that `size` is within bounds.
+        // We use read_unaligned so alignment is not required.
+        unsafe { Some(std::ptr::read_unaligned(ptr)) }
+    }
+
+    /// Writes a value of type `T` to the start of the slice.
+    ///
+    /// The write is performed unaligned, so the slice does not need to be aligned to `T`.
+    pub fn write<T: Copy + FromBytes>(&mut self, val: T) -> Option<()> {
+        let size = std::mem::size_of::<T>();
+        if size > self.len() {
+            return None;
+        }
+        let ptr = self.slice as *mut T;
+        // SAFETY: `self.slice` points to valid memory of `self.len()` bytes.
+        // We verified that `size` is within bounds.
+        // We use write_unaligned so alignment is not required.
+        unsafe {
+            std::ptr::write_unaligned(ptr, val);
+        }
+        Some(())
     }
 
     /// Copies the contents of this slice into a safe Rust mutable slice.
@@ -636,5 +684,50 @@ mod tests {
         assert_eq!(slice.read_to_end(&mut rest).unwrap(), 6);
         assert_eq!(rest, [5, 6, 7, 8, 9, 10]);
         assert_eq!(slice.len(), 0);
+    }
+
+    #[test]
+    fn test_read_success() {
+        let bytes = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8];
+        let slice = PtrByteSlice::from(&bytes[..]);
+
+        let val = slice.read::<Aligned4>().unwrap();
+        // We use from_ne_bytes to be independent of endianness for the raw bytes comparison,
+        // but Aligned4 is just a wrapper around u32.
+        assert_eq!(val.0, u32::from_ne_bytes([1, 2, 3, 4]));
+
+        // Unaligned read
+        let sub = slice.subslice(1..8);
+        let val_unaligned = sub.read::<Aligned4>().unwrap();
+        assert_eq!(val_unaligned.0, u32::from_ne_bytes([2, 3, 4, 5]));
+    }
+
+    #[test]
+    fn test_read_bounds_failure() {
+        let bytes = [1u8, 2u8, 3u8];
+        let slice = PtrByteSlice::from(&bytes[..]);
+        assert!(slice.read::<Aligned4>().is_none());
+    }
+
+    #[test]
+    fn test_mut_read_write_success() {
+        let mut bytes = [0u8; 8];
+        let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
+
+        // Write aligned
+        slice.write(Aligned4(0x12345678)).unwrap();
+        assert_eq!(slice.read::<Aligned4>().unwrap().0, 0x12345678);
+
+        // Write unaligned
+        let mut sub = slice.subslice_mut(1..8);
+        sub.write(Aligned4(0xabcdef01)).unwrap();
+        assert_eq!(sub.read::<Aligned4>().unwrap().0, 0xabcdef01);
+    }
+
+    #[test]
+    fn test_mut_write_bounds_failure() {
+        let mut bytes = [0u8; 3];
+        let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
+        assert!(slice.write(Aligned4(0)).is_none());
     }
 }

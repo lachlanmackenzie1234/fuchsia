@@ -52,8 +52,8 @@ impl CheckpointPack {
     ) -> Result<Self, Error> {
         let mut segment = device.allocate_buffer(SEGMENT_SIZE).await;
         device.read(offset, segment.as_mut()).await?;
-        let segment = segment.as_slice();
-        Self::parse_checkpoint(segment)
+        let data = segment.to_vec();
+        Self::parse_checkpoint(&data)
     }
 
     fn parse_checkpoint(segment: &[u8]) -> Result<Self, Error> {

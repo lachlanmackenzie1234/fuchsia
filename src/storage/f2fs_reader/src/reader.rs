@@ -14,7 +14,6 @@ use crate::superblock::{
 use anyhow::{Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
 use storage_device::Device;
 use storage_device::buffer::Buffer;
@@ -215,11 +214,12 @@ impl F2fsReader {
             // The NAT journal entries come first.
             let summary_addr = self.summary_block_addr();
             let block = self.read_raw_block(summary_addr).await?;
-            let n_nats = u16::read_from_bytes(&block.as_slice()[..2]).unwrap();
-            let nat_journal = NatJournal::read_from_bytes(
-                &block.as_slice()[2..2 + std::mem::size_of::<NatJournal>()],
-            )
-            .unwrap();
+            let n_nats = block.as_ptr_slice().read::<u16>().unwrap();
+            let nat_journal = block
+                .as_ptr_slice()
+                .subslice(2..2 + std::mem::size_of::<NatJournal>())
+                .read::<NatJournal>()
+                .unwrap();
             ensure!(
                 (n_nats as usize) <= nat_journal.entries.len(),
                 "n_nats {} larger than block size {}",
@@ -235,12 +235,15 @@ impl F2fsReader {
             let summary_addr = self.summary_block_addr();
             let block = self.read_raw_block(summary_addr).await?;
 
-            let summary = SummaryBlock::read_from_bytes(block.as_slice())
-                .map_err(|_| anyhow!("Failed to parse SummaryBlock"))?;
+            let summary = block
+                .as_ptr_slice()
+                .read::<SummaryBlock>()
+                .ok_or_else(|| anyhow!("Block size too small"))?;
             ensure!(summary.footer.entry_type == 0u8, "sum_type != 0 in summary footer");
             #[cfg(not(fuzz))]
             {
-                let actual_checksum = f2fs_crc32(F2FS_MAGIC, &block.as_slice()[..BLOCK_SIZE - 4]);
+                let data = block.to_vec();
+                let actual_checksum = f2fs_crc32(F2FS_MAGIC, &data[..BLOCK_SIZE - 4]);
                 let expected_checksum = summary.footer.check_sum;
                 if actual_checksum != expected_checksum {
                     // TODO(b/487023899): Confirm semantics.
@@ -312,10 +315,12 @@ impl F2fsReader {
             // bound to inode.header.size and we can just skip NULL blocks.
             for mut extent in inode.data_blocks() {
                 for _ in 0..extent.length {
-                    let dentry_block = DentryBlock::read_from_bytes(
-                        self.read_raw_block(extent.physical_block_num).await?.as_slice(),
-                    )
-                    .unwrap();
+                    let dentry_block = self
+                        .read_raw_block(extent.physical_block_num)
+                        .await?
+                        .as_ptr_slice()
+                        .read::<DentryBlock>()
+                        .ok_or_else(|| anyhow!("Block size too small"))?;
                     entries.append(&mut dentry_block.get_entries(
                         ino,
                         advise_flags.contains(inode::AdviseFlags::Encrypted),
@@ -368,11 +373,7 @@ impl F2fsReader {
 
     /// Reads and returns a data block of a file.
     /// On success, this will return Some(Buffer) containing the data or None if the file is sparse.
-    pub async fn read_data(
-        &self,
-        inode: &Inode,
-        block_num: u32,
-    ) -> Result<Option<Buffer<'_>>, Error> {
+    pub async fn read_data(&self, inode: &Inode, block_num: u32) -> Result<Option<Vec<u8>>, Error> {
         let inline_flags = inode.header.inline_flags;
         ensure!(
             !inline_flags.contains(crate::InlineFlags::Data),
@@ -383,11 +384,12 @@ impl F2fsReader {
             // Treat as an empty page
             return Ok(None);
         }
-        let mut buffer = self.read_raw_block(block_addr).await?;
+        let buffer = self.read_raw_block(block_addr).await?;
+        let mut data = buffer.to_vec();
         if let Some(decryptor) = self.get_decryptor_for_inode(inode) {
-            decryptor.decrypt_data(inode.footer.ino, block_num, buffer.as_mut().as_mut_slice());
+            decryptor.decrypt_data(inode.footer.ino, block_num, &mut data);
         }
-        Ok(Some(buffer))
+        Ok(Some(data))
     }
 }
 
@@ -395,7 +397,7 @@ impl F2fsReader {
 impl Reader for F2fsReader {
     /// `block_addr` is the physical block offset on the device.
     async fn read_raw_block(&self, block_addr: u32) -> Result<Buffer<'_>, Error> {
-        if let Some(block) = self.cache.get_buffer(block_addr, self.device.deref()).await {
+        if let Some(block) = self.cache.get_buffer(block_addr, self.device.as_ref()).await {
             return Ok(block);
         }
 
@@ -410,10 +412,10 @@ impl Reader for F2fsReader {
             .map_err(|_| anyhow!("device read failed"))?;
 
         for i in 0..count {
-            let slice = &buffer.as_slice()[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
-            self.cache.insert(block_addr + i as u32, slice.to_vec());
+            let subslice = buffer.as_ptr_slice().subslice(i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE);
+            self.cache.insert(block_addr + i as u32, subslice.to_vec());
         }
-        Ok(self.cache.get_buffer(block_addr, self.device.deref()).await.unwrap())
+        Ok(self.cache.get_buffer(block_addr, self.device.as_ref()).await.unwrap())
     }
 
     async fn read_node(&self, nid: u32) -> Result<Buffer<'_>, Error> {
@@ -436,10 +438,12 @@ impl Reader for F2fsReader {
         let nat_block_addr = self.nat().get_nat_block_for_entry(nid)?;
         let offset = self.nat().get_nat_block_offset_for_entry(nid);
         let block = self.read_raw_block(nat_block_addr).await?;
-        Ok(RawNatEntry::read_from_bytes(
-            &block.as_slice()[offset..offset + std::mem::size_of::<RawNatEntry>()],
-        )
-        .unwrap())
+        let entry = block
+            .as_ptr_slice()
+            .subslice(offset..offset + std::mem::size_of::<RawNatEntry>())
+            .read::<RawNatEntry>()
+            .ok_or_else(|| anyhow!("Block size too small"))?;
+        Ok(entry)
     }
 }
 
@@ -534,12 +538,12 @@ mod test {
         assert!(inode.inline_data.is_none());
         for i in 0..8 {
             assert_eq!(
-                f2fs.read_data(&inode, i).await.expect("read data").unwrap().as_slice(),
-                &[0u8; BLOCK_SIZE]
+                f2fs.read_data(&inode, i).await.expect("read data").unwrap(),
+                vec![0u8; BLOCK_SIZE]
             );
         }
         assert_eq!(
-            &f2fs.read_data(&inode, 8).await.expect("read data").unwrap().as_slice()[..9],
+            &f2fs.read_data(&inode, 8).await.expect("read data").unwrap()[..9],
             b"01234567\0"
         );
 
@@ -580,7 +584,7 @@ mod test {
         // Raw read of block.
         let block =
             f2fs.read_raw_block(data_blocks[0].physical_block_num).await.expect("read sparse");
-        assert_eq!(&block.as_slice()[..3], b"foo");
+        assert_eq!(&block.to_vec()[..3], b"foo");
         // The following chain of blocks are designed to land in each of the self.nids[] ranges.
         assert_eq!(data_blocks[1].logical_block_num, 923);
         assert_eq!(data_blocks[1].length, 1);
@@ -594,11 +598,10 @@ mod test {
         assert_eq!(data_blocks[5].length, 2);
         let block =
             f2fs.read_raw_block(data_blocks[5].physical_block_num).await.expect("read sparse");
-        assert_eq!(block.as_slice(), &[0; BLOCK_SIZE]);
+        assert_eq!(block.to_vec(), vec![0; BLOCK_SIZE]);
         // Exercise helper method to read block.
         assert_eq!(
-            &f2fs.read_data(&inode, 104671684).await.expect("read data block").unwrap().as_slice()
-                [..3],
+            &f2fs.read_data(&inode, 104671684).await.expect("read data block").unwrap()[..3],
             b"bar"
         );
         // Exercise helper method on zero page. Expect to get back 'None'.
@@ -752,10 +755,7 @@ mod test {
         );
         let short_data =
             f2fs.read_data(&short_file, 0).await.expect("read_data").expect("non-empty page");
-        assert_eq!(
-            &short_data.as_slice()[..short_file.header.size as usize],
-            b"test45678abcdef_12345678"
-        );
+        assert_eq!(&short_data[..short_file.header.size as usize], b"test45678abcdef_12345678");
 
         let symlink_ino = resolve_inode_path(&f2fs, "/fscrypt/a/b/symlink")
             .await

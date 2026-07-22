@@ -737,7 +737,7 @@ pub async fn verify(
                             let len = handle.read(0, buffer.as_mut()).await.context("read")?;
                             let f2fs_block = inode.inline_data.as_ref().unwrap();
                             assert_eq!(
-                                &buffer.as_slice()[..len],
+                                &buffer.to_vec()[..len],
                                 f2fs_block.as_ref(),
                                 "Inline data mismatch."
                             );
@@ -755,8 +755,8 @@ pub async fn verify(
                                         .await
                                         .unwrap();
                                     assert_eq!(
-                                        &fxfs_buffer.as_slice()[..len],
-                                        &f2fs_block.as_slice()[..len],
+                                        &fxfs_buffer.to_vec()[..len],
+                                        &f2fs_block[..len],
                                         "File content mismatch for ino {}",
                                         object_id
                                     );
@@ -777,9 +777,8 @@ pub async fn verify(
                             let descriptor_block = extent.logical_block_num + extent.length - 1;
                             let descriptor_data =
                                 f2fs.read_data(&inode, descriptor_block).await.unwrap().unwrap();
-                            let f2fs_descriptor =
-                                FsVerityDescriptor::from_bytes(descriptor_data.as_slice())
-                                    .expect("Validating descriptor");
+                            let f2fs_descriptor = FsVerityDescriptor::from_bytes(&descriptor_data)
+                                .expect("Validating descriptor");
                             assert_eq!(fxfs_root.as_slice(), f2fs_descriptor.root);
                             assert_eq!(
                                 fxfs_descriptor.salt.unwrap_or_default().as_slice(),
@@ -910,7 +909,7 @@ pub async fn deep_copy_files(
                 )
                 .await
                 .expect("new default encrypted file transaction");
-            buffer.as_mut_slice()[..len].copy_from_slice(&inode.inline_data.as_ref().unwrap());
+            buffer.subslice_mut(..len).copy_from_slice(&inode.inline_data.as_ref().unwrap());
             object
                 .raw_multi_write(
                     &mut transaction,
@@ -951,9 +950,9 @@ pub async fn deep_copy_files(
                                 )
                                 .await
                                 .expect("read f2fs data block");
-                            let descriptor = FsVerityDescriptor::from_bytes(
-                                &buffer.as_slice()[..F2FS_BLOCK_SIZE as usize],
-                            )?;
+                            let data = buffer.to_vec();
+                            let descriptor =
+                                FsVerityDescriptor::from_bytes(&data[..F2FS_BLOCK_SIZE as usize])?;
                             ensure!(
                                 descriptor.file_size == inode.header.size,
                                 "Verity file size mismatch"

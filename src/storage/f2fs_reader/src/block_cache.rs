@@ -23,14 +23,19 @@ impl BlockCache {
         block_addr: u32,
         device: &'a dyn Device,
     ) -> Option<Buffer<'a>> {
-        let mut block = device.allocate_buffer(self.block_size).await;
-        let mut cache = self.cache.lock();
-        if let Some(data) = cache.get_mut(&block_addr) {
-            block.as_mut_slice().copy_from_slice(&*data);
-            Some(block)
-        } else {
-            None
+        let has_block = {
+            let mut cache = self.cache.lock();
+            cache.get_mut(&block_addr).is_some()
+        };
+        if has_block {
+            let mut block = device.allocate_buffer(self.block_size).await;
+            let mut cache = self.cache.lock();
+            if let Some(data) = cache.get_mut(&block_addr) {
+                block.copy_from_slice(&*data);
+                return Some(block);
+            }
         }
+        None
     }
 
     pub fn insert(&self, block_addr: u32, data: Vec<u8>) {

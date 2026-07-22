@@ -202,10 +202,11 @@ pub struct RawAddrBlock {
 impl TryFrom<Buffer<'_>> for Box<RawAddrBlock> {
     type Error = Error;
     fn try_from(block: Buffer<'_>) -> Result<Self, Self::Error> {
-        Ok(Box::new(
-            RawAddrBlock::read_from_bytes(block.as_slice())
-                .map_err(|_| anyhow!("RawAddrBlock read failed"))?,
-        ))
+        let raw = block
+            .as_ptr_slice()
+            .read::<RawAddrBlock>()
+            .ok_or_else(|| anyhow!("Block size too small"))?;
+        Ok(Box::new(raw))
     }
 }
 
@@ -233,6 +234,7 @@ impl Inode {
         let mut this = {
             let block = f2fs.read_node(ino).await?;
             block_addrs.push(f2fs.get_nat_entry(ino).await?.block_addr);
+            let data = block.to_vec();
             // Layout:
             //   header: InodeHeader
             //   extra: InodeExtraAttr # optional, based on header flag.
@@ -240,8 +242,7 @@ impl Inode {
             //   [u8; 200]      # optional, inline_xattr.
             //   [u32; 5]       # nids (for large block maps)
             //   InodeFooter
-            let (header, rest): (Ref<_, InodeHeader>, _) =
-                Ref::from_prefix(block.as_slice()).unwrap();
+            let (header, rest): (Ref<_, InodeHeader>, _) = Ref::from_prefix(&data[..]).unwrap();
             let (rest, footer): (_, Ref<_, InodeFooter>) = Ref::from_suffix(rest).unwrap();
             ensure!(footer.ino == ino, "Footer ino doesn't match.");
 
@@ -313,7 +314,8 @@ impl Inode {
         // Note that this call is done outside the above block to reduce the size of the future
         // that '.await' produces by ensuring any unnecessary local variables are out of scope.
         if this.header.xattr_nid != 0 {
-            raw_xattr.extend_from_slice(f2fs.read_node(this.header.xattr_nid).await?.as_slice());
+            let node_block = f2fs.read_node(this.header.xattr_nid).await?;
+            raw_xattr.extend_from_slice(&node_block.to_vec());
             this.block_addrs.push(f2fs.get_nat_entry(this.header.xattr_nid).await?.block_addr);
         }
         this.xattr = decode_xattr(&raw_xattr)?;
@@ -631,7 +633,7 @@ mod test {
                 None => Err(anyhow!("unexpected block {block_addr}")),
                 Some(value) => {
                     let mut block = self.allocator.allocate_buffer(BLOCK_SIZE).await;
-                    block.as_mut_slice().copy_from_slice(value.as_ref());
+                    block.copy_from_slice(value.as_ref());
                     Ok(block)
                 }
             }
@@ -642,7 +644,7 @@ mod test {
                 None => Err(anyhow!("unexpected nid {nid}")),
                 Some(value) => {
                     let mut block = self.allocator.allocate_buffer(BLOCK_SIZE).await;
-                    block.as_mut_slice().copy_from_slice(value.as_ref());
+                    block.copy_from_slice(value.as_ref());
                     Ok(block)
                 }
             }

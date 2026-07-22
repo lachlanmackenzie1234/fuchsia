@@ -280,7 +280,6 @@ async fn test_fxfs_read_lblk32_ino_file() {
         let ino = recurse_resolve_f2fs(&f2fs, f2fs.root_ino(), "fscrypt/a/b/inlined").await;
         let inode = f2fs.read_inode(ino).await.expect("read file");
         let f2fs_data = f2fs.read_data(&inode, 0).await.expect("read data");
-        let f2fs_data = f2fs_data.map(|b| b.as_slice().to_vec());
         (f2fs.superblock().clone(), f2fs_data, ino)
     };
 
@@ -373,7 +372,7 @@ async fn test_fxfs_read_lblk32_ino_file() {
         let mut buf = fxfs_object.allocate_buffer(4096).await;
         assert_eq!(fxfs_object.read(0, buf.as_mut()).await.expect("read"), EXPECTED_CONTENTS.len());
         assert_eq!(
-            &buf.as_slice()[..EXPECTED_CONTENTS.len()],
+            &buf.to_vec()[..EXPECTED_CONTENTS.len()],
             &expected_data[..EXPECTED_CONTENTS.len()]
         );
     }
