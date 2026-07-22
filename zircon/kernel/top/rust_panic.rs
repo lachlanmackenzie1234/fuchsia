@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int, c_uint};
 use core::panic::PanicInfo;
 
 unsafe extern "C" {
-    fn panic(fmt: *const c_char, line: c_int, ...) -> !;
+    fn panic(fmt: *const c_char, ...) -> !;
 }
 
 #[panic_handler]
@@ -20,14 +20,13 @@ fn rust_panic(info: &PanicInfo<'_>) -> ! {
     };
 
     if let Some(location) = info.location() {
-        let file = location.file();
+        let file = location.file_as_c_str();
         let line = location.line();
         unsafe {
             panic(
-                c"%.*s:%d: %.*s".as_ptr(),
-                file.len() as c_int,
+                c"%s:%u: %.*s".as_ptr(),
                 file.as_ptr(),
-                line as c_int,
+                line as c_uint,
                 msg_str.len() as c_int,
                 msg_str.as_ptr(),
             );

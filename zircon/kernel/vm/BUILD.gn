@@ -53,6 +53,7 @@ source_set("vm") {
     "vmm.cc",
   ]
   deps = [
+    ":vm-rs",
     "//src/lib/zbitl",
     "//third_party/lz4",
     "//zircon/kernel/lib/arch",

@@ -6,6 +6,6 @@
 
 import("//zircon/kernel/kernel_rust_crate.gni")
 
-kernel_rust_crate("flow-id-rs") {
+kernel_rust_crate("flow-id") {
   sources = [ "src/lib.rs" ]
 }

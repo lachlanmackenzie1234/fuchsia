@@ -11,6 +11,7 @@ source_set("ktrace") {
 
   sources = [ "ktrace.cc" ]
   deps = [
+    ":ktrace-rs",
     "//zircon/kernel/hypervisor:headers",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/init",
@@ -23,7 +24,7 @@ source_set("ktrace") {
 }
 
 kernel_rust_crate("ktrace-rs") {
-  crate_name = "ktrace_rs"
+  visibility = [ ":*" ]
   sources = [ "src/lib.rs" ]
   deps = [
     "macro:ktrace-macro",

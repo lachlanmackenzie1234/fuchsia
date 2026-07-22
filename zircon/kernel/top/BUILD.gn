@@ -8,46 +8,73 @@ import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
-source_set("top") {
-  sources = [
-    "debug.cc",
-    "handoff.cc",
-    "init.cc",
-    "main.cc",
-  ]
+group("top") {
   deps = [
+    ":debug",
+    ":handoff",
+    ":init",
+    ":main",
     ":rust_panic",
     ":version",
-    "//src/lib/elfldltl",
-    "//src/lib/zbitl",
     "//zircon/kernel/arch/$zircon_cpu",
-    "//zircon/kernel/dev:init",
-    "//zircon/kernel/dev/hw_rng",
     "//zircon/kernel/kernel",
-    "//zircon/kernel/lib/backtrace",
+    "//zircon/kernel/lib/flow-id",  # Used by <kernel/thread.h>.
+  ]
+}
+
+source_set("debug") {
+  sources = [ "debug.cc" ]
+  deps = [
+    "//zircon/kernel/dev/hw_rng",
+    "//zircon/kernel/lib/crashlog",
+    "//zircon/kernel/platform",
+  ]
+}
+
+source_set("handoff") {
+  sources = [ "handoff.cc" ]
+  deps = [
+    "//src/lib/zbitl",
+    "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/code-patching:self-test",
+    "//zircon/kernel/lib/counters",
+    "//zircon/kernel/lib/init",
+    "//zircon/kernel/lib/thread-stack",
+    "//zircon/kernel/object",
+    "//zircon/kernel/phys:boot-constants",
+    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys:zircon-abi-spec",
+    "//zircon/kernel/platform",
+    "//zircon/kernel/vm",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
+source_set("init") {
+  sources = [ "init.cc" ]
+  deps = [ "//zircon/kernel/lib/init" ]
+}
+
+source_set("main") {
+  sources = [ "main.cc" ]
+  deps = [
+    "//zircon/kernel/dev:init",
+    "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
-    "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/cxxabi-dynamic-init:headers",
-    "//zircon/kernel/lib/debuglog",
-    "//zircon/kernel/lib/flow-id:flow-id-rs",
     "//zircon/kernel/lib/heap",
     "//zircon/kernel/lib/init",
-    "//zircon/kernel/lib/io",
-    "//zircon/kernel/lib/jtrace:headers",
-    "//zircon/kernel/lib/ktrace:ktrace-rs",
+    "//zircon/kernel/lib/jtrace",
     "//zircon/kernel/lib/lockup_detector",
-    "//zircon/kernel/lib/page",
-    "//zircon/kernel/lib/thread-stack",
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/userabi",
     "//zircon/kernel/phys:boot-constants",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys:zircon-abi-spec",
     "//zircon/kernel/platform",
-    "//zircon/kernel/vm:vm-rs",
+    "//zircon/kernel/vm",
   ]
 }
 
