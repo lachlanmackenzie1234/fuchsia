@@ -65,7 +65,7 @@ TEST_F(DeviceEnumerationTest, AstroTest) {
 
       // Thermal
       "aml-thermal-ddr.aml_thermal_ddr.thermal",
-      "05_03_a.aml_thermal_pll.thermal",
+      "aml-thermal-pll.aml_thermal_pll.thermal",
       "aml-thermal-ddr.aml_thermal_ddr.thermal",
 
       // Thermistor.ADC
@@ -77,8 +77,6 @@ TEST_F(DeviceEnumerationTest, AstroTest) {
       "thermistor.thermistor-device.therm-wifi",
       "thermistor.thermistor-device.therm-dsp",
       "thermistor.thermistor-device.therm-ambient",
-      "05_03_a.aml_thermal_pll.thermal",
-      "aml-thermal-ddr.aml_thermal_ddr.thermal",
 
       // Registers Device.
       "registers",

@@ -19,7 +19,7 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       "i2c-1.aml-i2c",
       "i2c-2.aml-i2c",
       "canvas.aml_canvas",
-      "05_04_a.aml_thermal_pll.thermal",
+      "aml-thermal-pll.aml_thermal_pll.thermal",
       "display.amlogic-display.display-coordinator",
       "aml-usb-phy",
 
@@ -52,11 +52,11 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
 
       // CPU Devices.
       "aml-cpu",
-      "05_04_a.aml_thermal_pll.thermal.aml_cpu_legacy.big-cluster",
-      "05_04_a.aml_thermal_pll.thermal.aml_cpu_legacy.little-cluster",
+      "aml-thermal-pll.aml_thermal_pll.thermal.aml_cpu_legacy.big-cluster",
+      "aml-thermal-pll.aml_thermal_pll.thermal.aml_cpu_legacy.little-cluster",
 
       // Thermal devices.
-      "05_04_a",
+      "aml-thermal-pll",
       "aml-thermal-ddr",
       "aml-thermal-ddr.aml_thermal_ddr.thermal",
 

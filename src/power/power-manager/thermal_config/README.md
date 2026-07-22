@@ -24,7 +24,7 @@ in a single location aims to provide a few benefits:
                 state: 1,
                 trip_points: [
                     {
-                        sensor_name: '/dev/sys/platform/05:03:a/thermal',
+                        sensor_name: '/dev/sys/platform/aml-thermal-pll/thermal',
                         activate_at: 75,
                         deactivate_below: 71,
                     },
@@ -34,7 +34,7 @@ in a single location aims to provide a few benefits:
                 state: 2,
                 trip_points: [
                     {
-                        sensor_name: '/dev/sys/platform/05:03:a/thermal',
+                        sensor_name: '/dev/sys/platform/aml-thermal-pll/thermal',
                         activate_at: 86,
                         deactivate_below: 82,
                     },

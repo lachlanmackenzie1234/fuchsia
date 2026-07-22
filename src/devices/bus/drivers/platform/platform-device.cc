@@ -328,7 +328,6 @@ PlatformDevice::BoardInfo PlatformDevice::GetBoardInfo() const {
 zx::result<> PlatformDevice::CreateNode() {
   // TODO(b/340283894): Remove.
   static const std::unordered_set<std::string> kLegacyNameAllowlist{
-      "aml-thermal-pll",  // 05:05:a,05:03:a,05:04:a
       "pll-temp-sensor",  // 05:06:39
   };
 
