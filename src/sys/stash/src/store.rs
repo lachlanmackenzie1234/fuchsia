@@ -9,14 +9,13 @@
 //! serialization, but this implementation is much less likely to cause security concerns due to the
 //! reduced functionality of the code.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use fidl_fuchsia_stash::{KeyValue, ListItem, Value, ValueType};
 use log::info;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, ErrorKind, Read, Write};
-use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 
 pub type ClientName = String;
@@ -220,7 +219,7 @@ impl StoreManager {
             f.write_all(&store_contents)?;
             // This fsync is required because the storage stack doesn't guarantee data is flushed
             // before the rename.
-            fuchsia_nix::unistd::fsync(f.as_raw_fd())?;
+            fuchsia_nix::unistd::fsync(&f)?;
         }
         fs::rename(temp_file_path, &self.backing_file)?;
         Ok(())

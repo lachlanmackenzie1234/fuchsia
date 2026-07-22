@@ -17,8 +17,15 @@ use fidl::endpoints::{
     ClientEnd, ControlHandle, Proxy, RequestStream, ServerEnd, create_proxy, create_request_stream,
 };
 use fidl_connector::Connect;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_element as felement;
+use fidl_fuchsia_element_manager_persistence as persistence;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_ui_app as fuiapp;
 use fuchsia_async::{self as fasync, DurationExt};
 use fuchsia_fs::directory as ffs_dir;
+use fuchsia_scenic as scenic;
 use futures::channel::oneshot;
 use futures::future::Fuse;
 use futures::lock::Mutex;
@@ -28,14 +35,8 @@ use rand::distr::{Alphanumeric, SampleString};
 use rand::rng;
 use std::collections::HashMap;
 use std::io::Write;
-use std::os::fd::AsRawFd;
 use std::pin::pin;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_element as felement, fidl_fuchsia_element_manager_persistence as persistence,
-    fidl_fuchsia_io as fio, fidl_fuchsia_ui_app as fuiapp, fuchsia_scenic as scenic,
-};
 
 const DEFAULT_PERSISTENT_ELEMENTS_PATH: &str = "/data/persistent_elements";
 
@@ -666,7 +667,7 @@ impl ElementManager {
 
         // This fsync is required because the storage stack doesn't guarantee data is flushed before
         // the rename.
-        fuchsia_nix::unistd::fsync(temp_file.as_raw_fd())?;
+        fuchsia_nix::unistd::fsync(&temp_file)?;
 
         std::mem::drop(temp_file);
 
@@ -831,14 +832,14 @@ mod tests {
     use super::{CollectionConfig, ElementManager, ElementManagerError};
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_component as fcomponent;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_element as felement;
+    use fidl_fuchsia_io as fio;
     use fidl_test_util::spawn_stream_handler;
     use futures::FutureExt;
     use maplit::hashmap;
     use session_testing::spawn_directory_server;
-    use {
-        fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-        fidl_fuchsia_element as felement, fidl_fuchsia_io as fio,
-    };
 
     fn example_collection_config() -> CollectionConfig {
         CollectionConfig {

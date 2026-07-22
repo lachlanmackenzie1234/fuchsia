@@ -201,7 +201,7 @@ impl AsyncRead for AsyncVsockSocket {
     ) -> Poll<std::io::Result<()>> {
         let mut r = ready!(self.0.poll_read_ready(cx))?;
 
-        match read(r.get_inner().as_raw_fd(), buf.initialize_unfilled()) {
+        match read(r.get_inner(), buf.initialize_unfilled()) {
             Ok(n) => {
                 buf.advance(n);
                 Poll::Ready(Ok(()))

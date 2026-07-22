@@ -159,7 +159,7 @@ memoffset = "0.9.1"
 mock-omaha-server = { version = "0.3.8", default-features = false }
 mockall = "0.14"
 munge = "0.4.4"
-nix = { version = "0.29.0", features = ["feature", "fs", "hostname", "net", "process", "signal", "user"] }
+nix = { version = "0.31.3", features = ["feature", "fs", "hostname", "net", "process", "signal", "user"] }
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
 nom-language = "0.1.0"
 nom_locate = "5.0.0"

@@ -1591,6 +1591,18 @@ alias(
 )
 
 alias(
+    name = "nix-0.31.3",
+    actual = "//third_party/rust_crates/vendor/nix-0.31.3:nix",
+    tags = ["manual"],
+)
+
+alias(
+    name = "nix",
+    actual = "//third_party/rust_crates/vendor/nix-0.31.3:nix",
+    tags = ["manual"],
+)
+
+alias(
     name = "nom-8.0.0",
     actual = "//third_party/rust_crates/vendor/nom-8.0.0:nom",
     tags = ["manual"],

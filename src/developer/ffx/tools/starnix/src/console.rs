@@ -6,18 +6,16 @@ use crate::common::*;
 use argh::{ArgsInfo, FromArgs};
 use blocking::Unblock;
 use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_developer_remotecontrol as rc;
+use fdomain_fuchsia_starnix_container as fstarcontainer;
 use fho::{FfxContext, Result};
+use fuchsia_async as fasync;
 use futures::future::FutureExt;
 use futures::join;
 use nix::unistd::dup;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::os::unix::io::FromRawFd;
 use termion::raw::IntoRawMode;
-use {
-    fdomain_fuchsia_developer_remotecontrol as rc,
-    fdomain_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync,
-};
 
 fn forward_stdin(console_in: fdomain_client::Socket) -> Result<()> {
     let mut tx = console_in;
@@ -46,11 +44,8 @@ async fn forward_stdout(console_out: fdomain_client::Socket) -> Result<()> {
         let mut executor = fasync::LocalExecutor::default();
         executor.run_singlethreaded(async move {
             // We make a duplicate of stdout so that fs::File can take ownership of the FD.
-            const STDOUT_FILENO: std::os::fd::RawFd = 1;
-            let duplicate_stdout = dup(STDOUT_FILENO).expect("failed to duplicate stdout");
-            // SAFETY: We have just created a new file descriptor, which means its safe to give
-            // ownership of the file descriptor to this fs::File;
-            let sink = unsafe { std::fs::File::from_raw_fd(duplicate_stdout) };
+            let duplicate_stdout = dup(std::io::stdout()).expect("failed to duplicate stdout");
+            let sink = std::fs::File::from(duplicate_stdout);
 
             // Actually copy the data.
             let _ = futures::io::copy(rx, &mut Unblock::new(sink)).await;

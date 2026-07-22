@@ -6,7 +6,6 @@ use anyhow::{Error, format_err};
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::io::Write;
-use std::os::fd::AsRawFd;
 use wlan_storage_constants::{FileContent, PersistentStorageData};
 
 type FileContents = HashMap<String, FileContent>;
@@ -52,7 +51,7 @@ impl StorageStore {
             file.write_all(&serialized_data)?;
             // This fsync is required because the storage stack doesn't guarantee data is flushed
             // before the rename.
-            fuchsia_nix::unistd::fsync(file.as_raw_fd())?;
+            fuchsia_nix::unistd::fsync(&file)?;
         }
         std::fs::rename(&tmp_path, &self.path)?;
         Ok(())

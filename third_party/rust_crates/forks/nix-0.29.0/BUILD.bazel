@@ -50,27 +50,14 @@ rust_library(
         ],
     ),
     crate_features = [
-        "default",
         "feature",
         "fs",
-        "hostname",
         "memoffset",
-        "net",
-        "process",
-        "signal",
+        "mount",
         "socket",
+        "uio",
         "user",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "mount",  # aarch64-unknown-linux-gnu
-            "uio",  # aarch64-unknown-linux-gnu
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "mount",  # x86_64-unknown-linux-gnu
-            "uio",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [

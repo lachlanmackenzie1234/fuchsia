@@ -402,7 +402,7 @@ _NORMAL_DEPENDENCIES = {
             "mock-omaha-server": Label("//third_party/rust_crates/vendor/mock-omaha-server-0.3.8:mock_omaha_server"),
             "mockall": Label("//third_party/rust_crates/vendor/mockall-0.14.0:mockall"),
             "munge": Label("//third_party/rust_crates/vendor/munge-0.4.4:munge"),
-            "nix": Label("//third_party/rust_crates/vendor/nix-0.29.0:nix"),
+            "nix": Label("//third_party/rust_crates/vendor/nix-0.31.3:nix"),
             "nom": Label("//third_party/rust_crates/vendor/nom-8.0.0:nom"),
             "nom-language": Label("//third_party/rust_crates/vendor/nom-language-0.1.0:nom_language"),
             "nom_locate": Label("//third_party/rust_crates/vendor/nom_locate-5.0.0:nom_locate"),

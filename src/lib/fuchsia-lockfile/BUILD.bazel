@@ -25,8 +25,8 @@ rustc_library(
     with_host_unit_tests = True,
     deps = [
         "//src/lib/fuchsia-async",
-        "//third_party/rust_crates/forks/nix-0.29.0:nix",
         "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:nix",
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",
     ],

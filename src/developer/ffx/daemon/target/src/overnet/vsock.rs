@@ -111,8 +111,8 @@ pub async fn spawn_vsock(cid: u32, node: Arc<overnet_core::Router>) {
                     }
                 };
 
-                if let Err(error) = in_writer.write(BUFFER_SIZE, |buf| {
-                    match read(socket.get_inner().as_raw_fd(), buf) {
+                if let Err(error) =
+                    in_writer.write(BUFFER_SIZE, |buf| match read(socket.get_inner(), buf) {
                         Ok(0) => Err(circuit::Error::ConnectionClosed(Some(
                             "VSOCK connection closed".to_owned(),
                         ))),
@@ -122,8 +122,8 @@ pub async fn spawn_vsock(cid: u32, node: Arc<overnet_core::Router>) {
                             Ok(0)
                         }
                         Err(e) => Err(circuit::Error::IO(e.into())),
-                    }
-                }) {
+                    })
+                {
                     if let circuit::Error::ConnectionClosed(reason) = error {
                         log::debug!(cid, reason:?; "VSOCK connection closed");
                     } else {

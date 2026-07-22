@@ -36,12 +36,12 @@ rustc_library(
     deps = [
         "//src/lib/agents:lib",
         "//src/lib/fuchsia-hyper",
-        "//third_party/rust_crates/forks/nix-0.29.0:nix",
         "//third_party/rust_crates/vendor:cfg-if",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:home",
         "//third_party/rust_crates/vendor:hyper",
         "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:nix",
         "//third_party/rust_crates/vendor:regex",
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",

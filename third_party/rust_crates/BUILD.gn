@@ -1152,13 +1152,13 @@ group("munge-0.4.4") {
 import("//src/lib/fuchsia_nix/nix_visibility.gni")
 
 group("nix") {
-  public_deps = [ ":nix-v0_29_0" ]
+  public_deps = [ ":nix-v0_31_3" ]
 
   visibility = nix_visibility
 }
 
-group("nix-0.29.0") {
-  public_deps = [ ":nix-v0_29_0" ]
+group("nix-0.31.3") {
+  public_deps = [ ":nix-v0_31_3" ]
 
   visibility = nix_visibility
 }
@@ -13259,15 +13259,10 @@ rustc_library("nix-v0_29_0") {
     "--cap-lints=allow",
     "-Cmetadata=667a724b6458b815",
     "-Cextra-filename=-667a724b6458b815",
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"feature\"",
     "--cfg=feature=\"fs\"",
-    "--cfg=feature=\"hostname\"",
     "--cfg=feature=\"memoffset\"",
     "--cfg=feature=\"mount\"",
-    "--cfg=feature=\"net\"",
-    "--cfg=feature=\"process\"",
-    "--cfg=feature=\"signal\"",
     "--cfg=feature=\"socket\"",
     "--cfg=feature=\"uio\"",
     "--cfg=feature=\"user\"",
@@ -13318,6 +13313,7 @@ rustc_library("nix-v0_31_3") {
   deps += [ ":bitflags-v2_13_0" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":libc-v0_2_186" ]
+  deps += [ ":memoffset-v0_9_1" ]
 
   rustenv = []
 
@@ -13325,12 +13321,19 @@ rustc_library("nix-v0_31_3") {
     "--cap-lints=allow",
     "-Cmetadata=448b3969d319d363",
     "-Cextra-filename=-448b3969d319d363",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"feature\"",
     "--cfg=feature=\"fs\"",
+    "--cfg=feature=\"hostname\"",
     "--cfg=feature=\"ioctl\"",
+    "--cfg=feature=\"memoffset\"",
+    "--cfg=feature=\"net\"",
     "--cfg=feature=\"poll\"",
     "--cfg=feature=\"process\"",
     "--cfg=feature=\"signal\"",
+    "--cfg=feature=\"socket\"",
     "--cfg=feature=\"term\"",
+    "--cfg=feature=\"user\"",
   ]
   if (false) {
     rustflags += [

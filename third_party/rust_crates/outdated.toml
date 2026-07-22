@@ -208,7 +208,6 @@ skip_updating = [
     "mockall",
     "mockall_derive",
     "multimap",
-    "nix",
     "nom",
     "nom_locate",
     "nonzero_ext",

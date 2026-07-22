@@ -1930,7 +1930,7 @@ dependencies = [
  "mock-omaha-server",
  "mockall",
  "munge",
- "nix 0.29.0",
+ "nix 0.31.3",
  "nom",
  "nom-language",
  "nom_locate",
@@ -3104,6 +3104,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset",
 ]
 
 [[package]]
