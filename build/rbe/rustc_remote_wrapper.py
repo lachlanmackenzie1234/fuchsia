@@ -788,7 +788,9 @@ class RustRemoteAction(object):
             )
             yield from self.yield_verbose(
                 "dependencies",
-                self._rust_compilation_deps_inputs(),
+                expand_deps_for_rlib_compile(
+                    self._rust_compilation_deps_inputs()
+                ),
             )
             yield from self.yield_verbose(
                 "stdlib inputs",

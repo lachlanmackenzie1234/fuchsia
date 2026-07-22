@@ -342,7 +342,7 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
         rlib = Path("obj/foo.rlib")
         rmeta_dep = Path("obj/bar.rmeta")
         implied_rlib_dep = Path("obj/bar.rlib")
-        compilation_deps = [rlib, rmeta_dep, implied_rlib_dep]
+        provided_compilation_deps = [rlib, rmeta_dep]
 
         with tempfile.TemporaryDirectory() as td:
             command = _strs([compiler, source, "-o", rlib])
@@ -355,22 +355,31 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
 
         mocks = self.generate_prepare_mocks(
             source_files_path_contents=[source],
-            compilation_deps_path_contents=compilation_deps,
+            compilation_deps_path_contents=provided_compilation_deps,
             compiler_shlibs=[shlib_rel],
         )
         with contextlib.ExitStack() as stack:
             for m in mocks:
                 stack.enter_context(m)
-            prepare_status = r.prepare()
+            with mock.patch.object(
+                Path, "exists", return_value=True
+            ) as mock_rlib_exists:
+                prepare_status = r.prepare()
+
+            mock_rlib_exists.assert_called()
 
         self.assertEqual(prepare_status, 0)  # success
         a = r.remote_action
         remote_inputs = set(a.inputs_relative_to_working_dir)
         remote_output_files = set(a.output_files_relative_to_working_dir)
-        # The corresponding .rlib from the .rmeta dep is considered a remote input.
+        # The corresponding .rlib from the .rmeta dep is expanded and considered a remote input.
         self.assertEqual(
             remote_inputs,
-            set([compiler, shlib_rel] + sources + compilation_deps),
+            set(
+                [compiler, shlib_rel, implied_rlib_dep]
+                + sources
+                + provided_compilation_deps
+            ),
         )
         self.assertEqual(remote_output_files, {rlib})
 
