@@ -969,7 +969,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -2225,6 +2225,14 @@ From //build/config/compiler.gni:82
   ninja = "testparser"
 }]
   ninja_name = "testparser"
+}, {
+  bazel_label = "//sdk/ctf/plasa/clang_doc_filter:clang_doc_filter"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/clang_doc_filter_/clang_doc_filter"
+  ninja = "clang_doc_filter"
+}]
+  install_host_tool = true
+  ninja_name = "clang_doc_filter"
 }, {
   bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
   copy_outputs = [{
