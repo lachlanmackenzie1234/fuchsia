@@ -326,11 +326,6 @@ PlatformDevice::BoardInfo PlatformDevice::GetBoardInfo() const {
 }
 
 zx::result<> PlatformDevice::CreateNode() {
-  // TODO(b/340283894): Remove.
-  static const std::unordered_set<std::string> kLegacyNameAllowlist{
-      "pll-temp-sensor",  // 05:06:39
-  };
-
   std::optional<fdf::DeviceAddress> address;
   auto bus_type = fdf::BusType::kPlatform;
 
@@ -343,23 +338,8 @@ zx::result<> PlatformDevice::CreateNode() {
     bus_type = fdf::BusType::kDeviceTree;
     address = fdf::DeviceAddress::WithStringValue(name_);
   } else {
-    // TODO(b/340283894): Remove legacy name format once `kLegacyNameAllowlist` is removed.
-    if (kLegacyNameAllowlist.find(name_) != kLegacyNameAllowlist.end()) {
-      if (instance_id_ == 0) {
-        // For backwards compatibility, we elide instance id when it is 0.
-        name = std::format("{:02x}_{:02x}_{:01x}", vid_, pid_, did_);
-        address = fdf::DeviceAddress::WithArrayIntValue(
-            {static_cast<uint8_t>(vid_), static_cast<uint8_t>(pid_), static_cast<uint8_t>(did_)});
-      } else {
-        name = std::format("{:02x}_{:02x}_{:01x}_{:01x}", vid_, pid_, did_, instance_id_);
-        address = fdf::DeviceAddress::WithArrayIntValue(
-            {static_cast<uint8_t>(vid_), static_cast<uint8_t>(pid_), static_cast<uint8_t>(did_),
-             static_cast<uint8_t>(instance_id_)});
-      }
-    } else {
-      name = name_;
-      address = fdf::DeviceAddress::WithStringValue(name_);
-    }
+    name = name_;
+    address = fdf::DeviceAddress::WithStringValue(name_);
   }
 
   auto bus_info = fdf::BusInfo{{
