@@ -292,7 +292,6 @@ pub enum FlashError {
 
 #[async_trait(?Send)]
 impl FfxMain for FlashTool {
-    // TODO(https://fxbug.dev/380444711): Add tests for schema
     type Writer = VerifiedMachineWriter<FlashMessage>;
     type Error = FlashError;
 
@@ -1356,5 +1355,36 @@ mod test {
             &[],
             &["Flash", "partition", "file", "Upload", "byte"],
         ));
+    }
+
+    #[fuchsia::test]
+    async fn test_flash_schema() {
+        let messages = vec![
+            FlashMessage::Preflight { message: "Starting preflight checks".to_string() },
+            FlashMessage::Progress(FlashProgress::FlashPartitionStarted {
+                partition_name: "boot".to_string(),
+            }),
+            FlashMessage::Progress(FlashProgress::FlashPartitionFinished {
+                partition_name: "boot".to_string(),
+            }),
+            FlashMessage::Progress(FlashProgress::Unlock),
+            FlashMessage::Progress(FlashProgress::RebootToBootloaderStarted),
+            FlashMessage::Progress(FlashProgress::RebootToBootloaderFinished),
+            FlashMessage::Progress(FlashProgress::GotVariable),
+            FlashMessage::Progress(FlashProgress::OemCommand {
+                oem_command: "oem-cmd".to_string(),
+            }),
+            FlashMessage::Progress(FlashProgress::UploadStarted),
+            FlashMessage::Progress(FlashProgress::UploadFinished),
+            FlashMessage::Progress(FlashProgress::UploadError),
+            FlashMessage::Finished { success: true, error_message: "".to_string() },
+            FlashMessage::Finished { success: false, error_message: "Flashing failed".to_string() },
+        ];
+
+        for msg in messages {
+            let json = serde_json::to_value(&msg).expect("serialize FlashMessage");
+            <FlashTool as FfxMain>::Writer::verify_schema(&json)
+                .unwrap_or_else(|e| panic!("Schema verification failed for {json:?}: {e}"));
+        }
     }
 }
