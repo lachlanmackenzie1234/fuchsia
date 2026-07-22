@@ -101,6 +101,16 @@ impl<K, V> FlatMap<K, V> {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+
+    /// Returns the entries sorted by key.
+    pub fn sorted_entries(&self) -> Vec<(&K, &V)>
+    where
+        K: Ord,
+    {
+        let mut entries: Vec<(&K, &V)> = self.0.iter().map(|(k, v)| (k, v)).collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        entries
+    }
 }
 
 impl<K: Serialize, V: Serialize> Serialize for FlatMap<K, V> {
@@ -199,6 +209,16 @@ impl<T> FlatSet<T> {
     /// Clears the set, removing all values.
     pub fn clear(&mut self) {
         self.0.clear();
+    }
+
+    /// Returns the elements sorted.
+    pub fn sorted(&self) -> Vec<&T>
+    where
+        T: Ord,
+    {
+        let mut items: Vec<&T> = self.0.iter().collect();
+        items.sort();
+        items
     }
 }
 

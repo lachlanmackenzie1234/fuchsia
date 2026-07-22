@@ -278,7 +278,7 @@ fn evaluate_assignment(
             };
             let right_val = evaluate_assignment(tokens, pos, state, ctx, visited)?;
             let current_val = {
-                let val_str = state.get_var(var_name.as_ref()).unwrap_or_default();
+                let val_str = state.get_var(&var_name).unwrap_or_default();
                 parse_arith_int(val_str.as_bytes()).unwrap_or(0)
             };
             let new_val = match op {
@@ -306,7 +306,7 @@ fn evaluate_assignment(
                 _ => unreachable!(),
             };
             let new_val_str = new_val.to_string();
-            state.set_var(var_name.as_ref(), BStr::new(new_val_str.as_bytes()));
+            state.set_var(&var_name, new_val_str.as_bytes());
             return Ok(new_val);
         }
     }

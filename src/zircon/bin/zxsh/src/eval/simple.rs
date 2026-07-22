@@ -52,12 +52,12 @@ pub fn apply_assignments<'a>(
         let (name, val_start, remaining) = split_assignment_flat(assoc, builder);
         let expanded_val =
             expand_assignment_value(val_start, remaining, &mut *guard.state, ctx, builder)?;
-        if guard.state.is_readonly(name.as_ref()) {
+        if guard.state.is_readonly(name) {
             return Err(format!("{}: readonly variable", name));
         }
-        let old_val = guard.state.get_var(name.as_ref());
+        let old_val = guard.state.get_var(name);
         guard.backups.push((BString::from(name), old_val));
-        guard.state.set_var(name.as_ref(), expanded_val.as_ref());
+        guard.state.set_var(name, &expanded_val);
     }
     Ok(guard)
 }
@@ -150,10 +150,10 @@ pub fn eval_simple(
             let assoc = builder.get_slice(arg_slice);
             let (name, val_start, remaining) = split_assignment_flat(assoc, builder);
             let expanded_val = expand_assignment_value(val_start, remaining, state, ctx, builder)?;
-            if state.is_readonly(name.as_ref()) {
+            if state.is_readonly(name) {
                 return Err(format!("{}: readonly variable", name));
             }
-            state.set_var(name.as_ref(), expanded_val.as_ref());
+            state.set_var(name, &expanded_val);
         }
         return Ok(EvalOutcome::Code(0));
     }
@@ -185,9 +185,9 @@ pub fn eval_simple(
     }
 
     let cmd_name = &expanded_args[0];
-    if is_builtin(cmd_name.as_ref()) {
+    if is_builtin(cmd_name.as_bstr()) {
         let res = crate::builtins::run_builtin(
-            cmd_name.as_ref(),
+            cmd_name.as_bstr(),
             &expanded_args[1..],
             &mut *guard.state,
             ctx,
@@ -202,7 +202,7 @@ pub fn eval_simple(
         return res.map(|outcome| guard.state.handle_outcome(outcome));
     }
 
-    if let Some(func_bytes) = guard.state.get_function(cmd_name.as_ref()).cloned() {
+    if let Some(func_bytes) = guard.state.get_function(cmd_name).cloned() {
         return eval_function_call(&func_bytes, cmd_name, &expanded_args[1..], guard, ctx);
     }
 

@@ -4,6 +4,8 @@
 
 use std::fs::File;
 
+use bstr::ByteSlice;
+
 use super::EvalOutcome;
 use super::execution_context::ExecutionContext;
 use super::expand::{
@@ -108,7 +110,7 @@ pub fn spawn_command_with_redirection(
             }
 
             let name = &expanded_args[0];
-            if is_builtin(name.as_ref()) {
+            if is_builtin(name.as_bstr()) {
                 return Err(format!(
                     "Internal error: builtin {} reached spawn_command_with_redirection",
                     name

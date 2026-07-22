@@ -11,6 +11,7 @@ rustc_binary("bin") {
   with_unit_tests = true
   sources = [
     "src/args.rs",
+    "src/builtins/essential.rs",
     "src/builtins/mod.rs",
     "src/collections.rs",
     "src/errors.rs",
@@ -43,6 +44,7 @@ rustc_binary("bin") {
     "src/tests/args.rs",
     "src/tests/arithmetic.rs",
     "src/tests/ast.rs",
+    "src/tests/builtins.rs",
     "src/tests/collections.rs",
     "src/tests/control_flow.rs",
     "src/tests/errors.rs",
@@ -59,6 +61,7 @@ rustc_binary("bin") {
     "src/tests/sort.rs",
     "src/tests/spawn.rs",
     "src/tests/state.rs",
+    "src/tests/string.rs",
     "src/tests/tokenizer.rs",
     "src/tty.rs",
   ]

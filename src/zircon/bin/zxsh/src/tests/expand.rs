@@ -204,16 +204,16 @@ fn test_parameter_modifiers() {
     let ctx = ExecutionContext::initial().unwrap();
 
     // 1. Length
-    state.set_var(BStr::new(b"VAR"), BStr::new(b"hello"));
+    state.set_var(b"VAR", b"hello");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"#VAR"), &mut state, &ctx).unwrap(), "5");
 
     // 2. Default value (unset / null)
-    state.unset_var(BStr::new(b"VAR"));
+    state.unset_var(b"VAR");
     assert_eq!(
         expand_var_with_modifiers(BStr::new(b"VAR:-default"), &mut state, &ctx).unwrap(),
         "default"
     );
-    state.set_var(BStr::new(b"VAR"), BStr::new(b""));
+    state.set_var(b"VAR", b"");
     assert_eq!(
         expand_var_with_modifiers(BStr::new(b"VAR:-default"), &mut state, &ctx).unwrap(),
         "default"
@@ -222,40 +222,40 @@ fn test_parameter_modifiers() {
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR-default"), &mut state, &ctx).unwrap(), "");
 
     // 3. Assign default
-    state.unset_var(BStr::new(b"VAR"));
+    state.unset_var(b"VAR");
     assert_eq!(
         expand_var_with_modifiers(BStr::new(b"VAR:=assigned"), &mut state, &ctx).unwrap(),
         "assigned"
     );
-    assert_eq!(state.get_var(BStr::new(b"VAR")).unwrap(), "assigned");
+    assert_eq!(state.get_var(b"VAR").unwrap(), "assigned");
 
     // 4. Alternative value
-    state.set_var(BStr::new(b"VAR"), BStr::new(b"hello"));
+    state.set_var(b"VAR", b"hello");
     assert_eq!(
         expand_var_with_modifiers(BStr::new(b"VAR:+alternative"), &mut state, &ctx).unwrap(),
         "alternative"
     );
-    state.unset_var(BStr::new(b"VAR"));
+    state.unset_var(b"VAR");
     assert_eq!(
         expand_var_with_modifiers(BStr::new(b"VAR:+alternative"), &mut state, &ctx).unwrap(),
         ""
     );
 
     // 5. Remove prefix
-    state.set_var(BStr::new(b"VAR"), BStr::new(b"foobar"));
+    state.set_var(b"VAR", b"foobar");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR#foo"), &mut state, &ctx).unwrap(), "bar");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR#f*o"), &mut state, &ctx).unwrap(), "obar");
     // longest vs shortest prefix
-    state.set_var(BStr::new(b"VAR"), BStr::new(b"a/b/c"));
+    state.set_var(b"VAR", b"a/b/c");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR#*/"), &mut state, &ctx).unwrap(), "b/c");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR##*/"), &mut state, &ctx).unwrap(), "c");
 
     // 6. Remove suffix
-    state.set_var(BStr::new(b"VAR"), BStr::new(b"foobar"));
+    state.set_var(b"VAR", b"foobar");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR%bar"), &mut state, &ctx).unwrap(), "foo");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR%b*r"), &mut state, &ctx).unwrap(), "foo");
     // longest vs shortest suffix
-    state.set_var(BStr::new(b"VAR"), BStr::new(b"a/b/c"));
+    state.set_var(b"VAR", b"a/b/c");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR%/*"), &mut state, &ctx).unwrap(), "a/b");
     assert_eq!(expand_var_with_modifiers(BStr::new(b"VAR%%/*"), &mut state, &ctx).unwrap(), "a");
 }
@@ -264,7 +264,7 @@ fn test_parameter_modifiers() {
 fn test_expand_string_and_heredoc() {
     let mut state = ShellState::new();
     let ctx = ExecutionContext::initial().unwrap();
-    state.set_var(BStr::new("FOO"), BStr::new("bar"));
+    state.set_var("FOO", "bar");
 
     let res = expand_string(BStr::new("hello $FOO $((1+2))"), &mut state, &ctx).unwrap();
     assert_eq!(res, "hello bar 3");

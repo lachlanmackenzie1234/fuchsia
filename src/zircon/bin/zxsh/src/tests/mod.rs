@@ -5,6 +5,7 @@
 pub mod args;
 pub mod arithmetic;
 pub mod ast;
+pub mod builtins;
 pub mod collections;
 pub mod control_flow;
 pub mod errors;
@@ -20,4 +21,5 @@ pub mod simple;
 pub mod sort;
 pub mod spawn;
 pub mod state;
+pub mod string;
 pub mod tokenizer;

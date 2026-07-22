@@ -131,10 +131,10 @@ pub fn eval_for(
         if let Some(code) = ctx.signal_state.pending_exit_code() {
             return Ok(EvalOutcome::Code(code));
         }
-        if state.is_readonly(var_name.as_ref()) {
+        if state.is_readonly(&var_name) {
             return Err(format!("{}: readonly variable", var_name));
         }
-        state.set_var(var_name.as_ref(), item.as_ref());
+        state.set_var(&var_name, &item);
         let then_ptr = builder.get_ref(cmd_ptr).then_branch;
         let outcome = eval_command(builder, then_ptr, state, ctx)?;
         match handle_loop_body_outcome(outcome) {

@@ -100,26 +100,26 @@ fn test_conditional_operator() {
 fn test_variables_and_assignment() {
     let mut state = ShellState::new();
 
-    state.set_var(BStr::new(b"A"), BStr::new(b"5"));
+    state.set_var(b"A", b"5");
     assert_eq!(eval(b"A + 1", &mut state), 6);
     assert_eq!(eval(b"B + 1", &mut state), 1); // Unset is 0
 
     assert_eq!(eval(b"C = 10", &mut state), 10);
-    assert_eq!(state.get_var(BStr::new(b"C")).unwrap(), "10");
+    assert_eq!(state.get_var(b"C").unwrap(), "10");
 
     assert_eq!(eval(b"C += 5", &mut state), 15);
-    assert_eq!(state.get_var(BStr::new(b"C")).unwrap(), "15");
+    assert_eq!(state.get_var(b"C").unwrap(), "15");
 
     assert_eq!(eval(b"C -= 3", &mut state), 12);
     assert_eq!(eval(b"C *= 2", &mut state), 24);
     assert_eq!(eval(b"C /= 4", &mut state), 6);
     assert_eq!(eval(b"C %= 4", &mut state), 2);
 
-    state.set_var(BStr::new(b"D"), BStr::new(b"2"));
+    state.set_var(b"D", b"2");
     assert_eq!(eval(b"D <<= 2", &mut state), 8);
     assert_eq!(eval(b"D >>= 1", &mut state), 4);
 
-    state.set_var(BStr::new(b"E"), BStr::new(b"5"));
+    state.set_var(b"E", b"5");
     assert_eq!(eval(b"E &= 3", &mut state), 1);
     assert_eq!(eval(b"E |= 6", &mut state), 7);
     assert_eq!(eval(b"E ^= 3", &mut state), 4);
@@ -129,8 +129,8 @@ fn test_variables_and_assignment() {
 fn test_nested_variables() {
     let mut state = ShellState::new();
 
-    state.set_var(BStr::new(b"A"), BStr::new(b"B + 1"));
-    state.set_var(BStr::new(b"B"), BStr::new(b"5"));
+    state.set_var(b"A", b"B + 1");
+    state.set_var(b"B", b"5");
     assert_eq!(eval(b"A + 1", &mut state), 7);
 }
 
@@ -144,8 +144,8 @@ fn test_errors() {
     assert!(eval_res(b"C %= 0", &mut state).is_err());
 
     // Loop detection
-    state.set_var(BStr::new(b"A"), BStr::new(b"B"));
-    state.set_var(BStr::new(b"B"), BStr::new(b"A"));
+    state.set_var(b"A", b"B");
+    state.set_var(b"B", b"A");
     assert!(eval_res(b"A", &mut state).is_err());
 
     // Bad assignment LHS

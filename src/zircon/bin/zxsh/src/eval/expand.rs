@@ -288,7 +288,7 @@ pub fn expand_var_with_modifiers(
     let (var_name, modifier) = parse_modifier(name);
 
     if state.opt_nounset {
-        let is_unbound = state.get_var(var_name.as_ref()).is_none();
+        let is_unbound = state.get_var(var_name).is_none();
         if is_unbound {
             let needs_fail = match &modifier {
                 None => true,
@@ -353,14 +353,14 @@ pub fn expand_var_with_modifiers(
     if let Some(mod_type) = modifier {
         match mod_type {
             Modifier::Length => {
-                let val = state.get_var(var_name.as_ref()).unwrap_or_default();
+                let val = state.get_var(var_name).unwrap_or_default();
                 Ok(BString::from(val.len().to_string()))
             }
             Modifier::Default(_, null_too)
             | Modifier::Assign(_, null_too)
             | Modifier::Error(_, null_too)
             | Modifier::Alternative(_, null_too) => {
-                let val = state.get_var(var_name.as_ref());
+                let val = state.get_var(var_name);
                 let null_or_unset = val.as_ref().map_or(true, |v| null_too && v.is_empty());
                 match mod_type {
                     Modifier::Alternative(word, _) => {
@@ -374,13 +374,13 @@ pub fn expand_var_with_modifiers(
                     Modifier::Default(word, _) => parse_and_expand_modifier(word, state, ctx),
                     Modifier::Assign(word, _) => {
                         let expanded_word = parse_and_expand_modifier(word, state, ctx)?;
-                        if state.is_readonly(var_name.as_ref()) {
+                        if state.is_readonly(var_name) {
                             return Err(format!(
                                 "{}: readonly variable",
                                 String::from_utf8_lossy(var_name.as_bytes())
                             ));
                         }
-                        state.set_var(var_name.as_ref(), expanded_word.as_ref());
+                        state.set_var(var_name, &expanded_word);
                         Ok(expanded_word)
                     }
                     Modifier::Error(opt_msg, _) => {
@@ -401,20 +401,20 @@ pub fn expand_var_with_modifiers(
                 }
             }
             Modifier::RemovePrefix(pattern_word, longest) => {
-                let val = state.get_var(var_name.as_ref()).unwrap_or_default();
+                let val = state.get_var(var_name).unwrap_or_default();
                 let pattern = parse_and_expand_modifier(pattern_word, state, ctx)?;
                 Ok(strip_pattern(val.as_bstr(), pattern.as_bstr(), StripKind::Prefix, longest)
                     .to_owned())
             }
             Modifier::RemoveSuffix(pattern_word, longest) => {
-                let val = state.get_var(var_name.as_ref()).unwrap_or_default();
+                let val = state.get_var(var_name).unwrap_or_default();
                 let pattern = parse_and_expand_modifier(pattern_word, state, ctx)?;
                 Ok(strip_pattern(val.as_bstr(), pattern.as_bstr(), StripKind::Suffix, longest)
                     .to_owned())
             }
         }
     } else {
-        Ok(state.get_var(var_name.as_ref()).unwrap_or_default())
+        Ok(state.get_var(var_name).unwrap_or_default())
     }
 }
 
@@ -426,7 +426,7 @@ enum TildeExpansionMode {
 }
 
 fn expand_tilde(word_part_string: &BStr, state: &ShellState, mode: TildeExpansionMode) -> BString {
-    let home_directory = state.get_var(BStr::new(b"HOME")).unwrap_or_default();
+    let home_directory = state.get_var(b"HOME").unwrap_or_default();
 
     match mode {
         TildeExpansionMode::Assignment => {
@@ -560,8 +560,7 @@ pub fn expand_argument_to_word_chars(
         return Ok(vec![Vec::new()]);
     }
 
-    let internal_field_separator =
-        state.get_var(BStr::new(b"IFS")).unwrap_or_else(|| BString::from(" \t\n"));
+    let internal_field_separator = state.get_var(b"IFS").unwrap_or_else(|| BString::from(" \t\n"));
 
     let mut fields: Vec<Vec<WordChar>> = Vec::new();
     let mut current_field: Vec<WordChar> = Vec::new();

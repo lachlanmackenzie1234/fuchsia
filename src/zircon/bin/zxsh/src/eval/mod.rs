@@ -42,7 +42,8 @@ pub use format::command_to_bstring;
 pub use redirect::eval_redirect;
 pub use signals::{run_exit_trap, run_pending_traps};
 pub use state::{
-    RLIM_INFINITY, RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellEnv, ShellPath, ShellState,
+    EXIT_CANNOT_EXEC, EXIT_FAILURE, EXIT_NOT_FOUND, EXIT_SUCCESS, EXIT_SYNTAX_ERROR, RLIM_INFINITY,
+    RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellEnv, ShellPath, ShellState, VarName,
 };
 
 #[cfg(test)]
@@ -130,8 +131,7 @@ pub fn eval_command(
     }
     let outcome = eval_command_inner(builder, cmd_ptr, state, ctx);
     if let Ok(EvalOutcome::Code(exit_code)) = &outcome {
-        let c_str = exit_code.to_string();
-        let _ = state.set_var(BStr::new(b"?"), BStr::new(c_str.as_bytes()));
+        state.set_last_status(*exit_code);
     }
     outcome
 }

@@ -39,9 +39,9 @@ impl<'a> Drop for StateBackupGuard<'a> {
     fn drop(&mut self) {
         for (var_name, old_val) in &self.backups {
             if let Some(val) = old_val {
-                let _ = self.state.set_var(var_name.as_ref(), val.as_ref());
+                let _ = self.state.set_var(var_name.as_bstr(), val.as_bstr());
             } else {
-                let _ = self.state.unset_var(var_name.as_ref());
+                let _ = self.state.unset_var(var_name.as_bstr());
             }
         }
     }
@@ -106,6 +106,58 @@ pub const RLIMIT_CORE: i32 = 3;
 /// Represents an unlimited resource limit threshold.
 pub const RLIM_INFINITY: u64 = u64::MAX;
 
+/// POSIX exit status code for success (0).
+pub const EXIT_SUCCESS: i32 = 0;
+/// POSIX exit status code for general command failure (1).
+pub const EXIT_FAILURE: i32 = 1;
+/// POSIX exit status code for shell syntax or builtin usage errors (2).
+pub const EXIT_SYNTAX_ERROR: i32 = 2;
+/// POSIX exit status code when a command is found but is not executable (126).
+pub const EXIT_CANNOT_EXEC: i32 = 126;
+/// POSIX exit status code when a command or script is not found (127).
+pub const EXIT_NOT_FOUND: i32 = 127;
+
+/// Trait for types that can be converted to a `&BStr` slice for variable names and values.
+pub trait VarName {
+    fn to_bstr(&self) -> &BStr;
+}
+
+impl VarName for BStr {
+    fn to_bstr(&self) -> &BStr {
+        self
+    }
+}
+
+impl VarName for BString {
+    fn to_bstr(&self) -> &BStr {
+        self.as_bstr()
+    }
+}
+
+impl VarName for [u8] {
+    fn to_bstr(&self) -> &BStr {
+        BStr::new(self)
+    }
+}
+
+impl<const N: usize> VarName for [u8; N] {
+    fn to_bstr(&self) -> &BStr {
+        BStr::new(self.as_slice())
+    }
+}
+
+impl VarName for str {
+    fn to_bstr(&self) -> &BStr {
+        BStr::new(self.as_bytes())
+    }
+}
+
+impl<T: VarName + ?Sized> VarName for &T {
+    fn to_bstr(&self) -> &BStr {
+        (*self).to_bstr()
+    }
+}
+
 /// Maintains the global runtime state of the shell session.
 pub struct ShellState {
     /// Table of global shell variables (`name -> value`).
@@ -130,6 +182,8 @@ pub struct ShellState {
     pub script_name: BString,
     /// Global positional parameters (`$1`, `$2`, etc.).
     pub args: Vec<BString>,
+    /// Active current working directory of the shell environment.
+    cwd: BString,
     /// Exit immediately if a command exits with a non-zero status (`set -e`).
     pub opt_errexit: bool,
     /// Print commands and arguments when they are executed (`set -x`).
@@ -158,6 +212,8 @@ pub struct ShellState {
     pub bg_jobs: Vec<BgJob>,
     /// Process ID of the most recently executed background command (`$!`).
     pub last_bg_pid: Option<u64>,
+    /// Sub-option character index within a clustered option argument for `getopts`.
+    pub optopt_offset: usize,
 }
 
 impl ShellState {
@@ -208,19 +264,7 @@ impl ShellState {
         self.opt_verbose = false;
         self.opt_ignoreeof = false;
         for &c in s.as_bytes() {
-            match c {
-                b'e' => self.opt_errexit = true,
-                b'x' => self.opt_xtrace = true,
-                b'u' => self.opt_nounset = true,
-                b'f' => self.opt_noglob = true,
-                b'a' => self.opt_allexport = true,
-                b'i' => self.opt_interactive = true,
-                b'C' => self.opt_noclobber = true,
-                b'n' => self.opt_noexec = true,
-                b'v' => self.opt_verbose = true,
-                b'I' => self.opt_ignoreeof = true,
-                _ => {}
-            }
+            let _ = self.set_option_by_flag(c, true);
         }
     }
 }
@@ -238,6 +282,8 @@ impl Serialize for ShellState {
         self.args.serialize_into(buf);
         self.options_string().serialize_into(buf);
         self.traps.serialize_into(buf);
+        self.cwd.serialize_into(buf);
+        (self.optopt_offset as u32).serialize_into(buf);
     }
 }
 
@@ -254,6 +300,8 @@ impl Deserialize for ShellState {
         let args = Vec::<BString>::deserialize(bytes, offset)?;
         let options_str = BString::deserialize(bytes, offset)?;
         let traps = FlatMap::deserialize(bytes, offset)?;
+        let cwd = BString::deserialize(bytes, offset)?;
+        let optopt_offset = u32::deserialize(bytes, offset)? as usize;
 
         let mut state = ShellState {
             vars,
@@ -267,6 +315,7 @@ impl Deserialize for ShellState {
             rlimits,
             script_name,
             args,
+            cwd,
             opt_errexit: false,
             opt_xtrace: false,
             opt_nounset: false,
@@ -281,6 +330,7 @@ impl Deserialize for ShellState {
             traps,
             bg_jobs: Vec::new(),
             last_bg_pid: None,
+            optopt_offset,
         };
         state.set_options_from_string(options_str.as_ref());
 
@@ -319,6 +369,16 @@ impl ShellState {
         }
         vars.insert(BString::from("?"), BString::from("0"));
 
+        let cwd = std::env::current_dir()
+            .ok()
+            .and_then(|p| <[u8]>::from_path(&p).map(BString::from))
+            .unwrap_or_else(|| BString::from("/"));
+
+        if !vars.contains_key(BStr::new(b"PWD")) {
+            vars.insert(BString::from("PWD"), cwd.clone());
+            exported.insert(BString::from("PWD"));
+        }
+
         let script_name = args.script_name.unwrap_or_else(|| BString::from(DEFAULT_SHELL_NAME));
 
         let mut state = Self {
@@ -337,6 +397,7 @@ impl ShellState {
             ]),
             script_name,
             args: args.positional_args,
+            cwd,
             opt_errexit: args.opt_errexit.unwrap_or(false),
             opt_xtrace: args.opt_xtrace.unwrap_or(false),
             opt_nounset: args.opt_nounset.unwrap_or(false),
@@ -351,6 +412,7 @@ impl ShellState {
             traps: FlatMap::new(),
             bg_jobs: Vec::new(),
             last_bg_pid: None,
+            optopt_offset: 1,
         };
 
         for opt in &args.options_to_set {
@@ -369,6 +431,7 @@ impl ShellState {
 
     /// Replaces positional parameters (`$1`, `$2`, etc.) in the active call frame or global scope.
     pub fn set_args(&mut self, new_args: Vec<BString>) {
+        self.optopt_offset = 1;
         if let Some(frame) = self.frames.last_mut() {
             frame.args = new_args;
         } else {
@@ -394,9 +457,22 @@ impl ShellState {
         }
     }
 
+    /// Returns the current working directory of the shell environment.
+    pub fn cwd(&self) -> &BStr {
+        self.cwd.as_bstr()
+    }
+
+    /// Sets the current working directory of the shell environment and updates `PWD`.
+    pub fn set_cwd(&mut self, new_cwd: impl Into<BString>) {
+        let new_cwd = new_cwd.into();
+        self.set_var(b"PWD", new_cwd.to_bstr());
+        self.cwd = new_cwd;
+    }
+
     /// Looks up a variable or special parameter value by name (e.g. `$?`, `$#`, `$1`, `$-`,
     /// `$VAR`).
-    pub fn get_var(&self, name: &BStr) -> Option<BString> {
+    pub fn get_var(&self, name: impl VarName) -> Option<BString> {
+        let name = name.to_bstr();
         if let Some(idx) = parse_int::<usize>(name) {
             if idx == 0 {
                 return Some(self.script_name.clone());
@@ -481,8 +557,8 @@ impl ShellState {
     }
 
     /// Returns `true` if the specified variable is marked read-only.
-    pub fn is_readonly(&self, name: &BStr) -> bool {
-        self.readonly.contains(name)
+    pub fn is_readonly(&self, name: impl VarName) -> bool {
+        self.readonly.contains(name.to_bstr())
     }
 
     /// Returns a reference to the set of read-only variable names.
@@ -491,16 +567,31 @@ impl ShellState {
     }
 
     /// Marks the specified variable as read-only.
-    pub fn make_readonly(&mut self, name: &BStr) {
+    pub fn make_readonly(&mut self, name: impl VarName) {
+        let name = name.to_bstr();
         assert_valid_name(name);
         self.readonly.insert(name.to_owned());
     }
 
-    /// Sets the value of a variable in the innermost active local frame or global scope.
-    pub fn set_var(&mut self, name: &BStr, val: &BStr) {
+    fn prepare_var_mutation(&mut self, name: &BStr) -> bool {
         assert_valid_name(name);
         if self.is_readonly(name) {
             let _ = writeln!(std::io::stderr(), "zxsh: {}: readonly variable", name);
+            return false;
+        }
+        if name == b"OPTIND" {
+            self.optopt_offset = 1;
+        } else if name == b"PATH" {
+            self.clear_command_cache();
+        }
+        true
+    }
+
+    /// Sets the value of a variable in the innermost active local frame or global scope.
+    pub fn set_var(&mut self, name: impl VarName, val: impl VarName) {
+        let name = name.to_bstr();
+        let val = val.to_bstr();
+        if !self.prepare_var_mutation(name) {
             return;
         }
         for frame in self.frames.iter_mut().rev() {
@@ -515,17 +606,22 @@ impl ShellState {
         }
     }
 
+    /// Sets the special status variable `?` to the given numerical exit code.
+    pub fn set_last_status(&mut self, status: i32) {
+        self.vars.insert(BString::from("?"), BString::from(status.to_string()));
+    }
+
     /// Marks the specified variable for export to child environment processes.
-    pub fn export_var(&mut self, name: &BStr) {
+    pub fn export_var(&mut self, name: impl VarName) {
+        let name = name.to_bstr();
         assert_valid_name(name);
         self.exported.insert(name.to_owned());
     }
 
     /// Removes a variable from the innermost active local frame or global scope.
-    pub fn unset_var(&mut self, name: &BStr) {
-        assert_valid_name(name);
-        if self.is_readonly(name) {
-            let _ = writeln!(std::io::stderr(), "zxsh: {}: readonly variable", name);
+    pub fn unset_var(&mut self, name: impl VarName) {
+        let name = name.to_bstr();
+        if !self.prepare_var_mutation(name) {
             return;
         }
         for frame in self.frames.iter_mut().rev() {
@@ -545,13 +641,13 @@ impl ShellState {
     }
 
     /// Removes a shell function definition by name, returning its serialized AST body if present.
-    pub fn remove_function(&mut self, name: &BStr) -> Option<Vec<u8>> {
-        self.functions.remove(name)
+    pub fn remove_function(&mut self, name: impl VarName) -> Option<Vec<u8>> {
+        self.functions.remove(name.to_bstr())
     }
 
     /// Retrieves a reference to the serialized AST body bytes of a registered shell function.
-    pub fn get_function(&self, name: &BStr) -> Option<&Vec<u8>> {
-        self.functions.get(name)
+    pub fn get_function(&self, name: impl VarName) -> Option<&Vec<u8>> {
+        self.functions.get(name.to_bstr())
     }
 
     /// Returns the current file creation permission mask (`umask`).
@@ -579,6 +675,24 @@ impl ShellState {
             b"ignoreeof" => self.opt_ignoreeof = enable,
             b"monitor" | b"notify" | b"nolog" | b"debug" | b"vi" | b"emacs" => {}
             _ => return Err(format!("unknown option: {}", name)),
+        }
+        Ok(())
+    }
+
+    /// Enables or disables a shell option by its single-character flag (e.g. `e`, `x`, `u`).
+    pub fn set_option_by_flag(&mut self, flag: u8, enable: bool) -> Result<(), ()> {
+        match flag {
+            b'a' => self.opt_allexport = enable,
+            b'C' => self.opt_noclobber = enable,
+            b'e' => self.opt_errexit = enable,
+            b'f' => self.opt_noglob = enable,
+            b'i' => self.opt_interactive = enable,
+            b'n' => self.opt_noexec = enable,
+            b'u' => self.opt_nounset = enable,
+            b'v' => self.opt_verbose = enable,
+            b'x' => self.opt_xtrace = enable,
+            b'I' => self.opt_ignoreeof = enable,
+            _ => return Err(()),
         }
         Ok(())
     }
@@ -666,7 +780,7 @@ impl ShellState {
 
     /// Parses and returns the current `$PATH` environment variable as a `ShellPath` wrapper.
     pub fn path(&self) -> ShellPath {
-        self.get_var(BStr::new(b"PATH")).map(ShellPath::new).unwrap_or_default()
+        self.get_var(b"PATH").map(ShellPath::new).unwrap_or_default()
     }
 }
 
@@ -738,6 +852,13 @@ impl ShellEnv {
             assert_valid_name(k.as_bstr());
         }
         Self { vars }
+    }
+
+    /// Returns a sorted copy of the environment variables.
+    pub fn sorted(&self) -> Self {
+        let mut copy = self.clone();
+        crate::sort::quick_sort(&mut copy.vars, &|a, b| a.0.cmp(&b.0));
+        copy
     }
 
     /// Returns a slice of the key-value pairs in this environment.
@@ -820,5 +941,83 @@ impl From<Vec<(BString, BString)>> for ShellEnv {
 impl FromIterator<(BString, BString)> for ShellEnv {
     fn from_iter<T: IntoIterator<Item = (BString, BString)>>(iter: T) -> Self {
         Self::new(iter.into_iter().collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::serialization::{Deserialize, Serialize};
+
+    #[test]
+    fn test_shell_state_cwd_and_serialization() {
+        let mut state = ShellState::new();
+        assert!(!state.cwd().is_empty());
+        assert_eq!(state.get_var(b"PWD").as_ref().map(|s| s.as_bstr()), Some(state.cwd()));
+
+        state.set_cwd(b"/custom/working/dir");
+        assert_eq!(state.cwd(), b"/custom/working/dir");
+        assert_eq!(
+            state.get_var(b"PWD").as_ref().map(|s| s.as_bstr()),
+            Some(b"/custom/working/dir".as_bstr())
+        );
+
+        // Test byte literal variable accessors
+        state.set_var(b"FOO", b"BAR");
+        assert_eq!(state.get_var(b"FOO").as_ref().map(|s| s.as_bstr()), Some(b"BAR".as_bstr()));
+        state.unset_var(b"FOO");
+        assert_eq!(state.get_var(b"FOO"), None);
+
+        // Test serialization and deserialization
+        state.optopt_offset = 3;
+        let mut buf = Vec::new();
+        state.serialize_into(&mut buf);
+
+        let mut offset = 0;
+        let deserialized = ShellState::deserialize(&buf, &mut offset).unwrap();
+        assert_eq!(deserialized.cwd(), b"/custom/working/dir");
+        assert_eq!(deserialized.optopt_offset, 3);
+        assert_eq!(
+            deserialized.get_var(b"PWD").as_ref().map(|s| s.as_bstr()),
+            Some(b"/custom/working/dir".as_bstr())
+        );
+    }
+
+    #[test]
+    fn test_optopt_offset_lifecycle() {
+        let mut state = ShellState::new();
+        state.optopt_offset = 3;
+
+        // Setting OPTIND resets optopt_offset
+        state.set_var(b"OPTIND", b"1");
+        assert_eq!(state.optopt_offset, 1);
+
+        state.optopt_offset = 4;
+        // Unsetting OPTIND resets optopt_offset
+        state.unset_var(b"OPTIND");
+        assert_eq!(state.optopt_offset, 1);
+
+        state.optopt_offset = 2;
+        // Setting positional arguments resets optopt_offset
+        state.set_args(vec![BString::from("a"), BString::from("b")]);
+        assert_eq!(state.optopt_offset, 1);
+    }
+
+    #[test]
+    fn test_path_cache_invalidation() {
+        let mut state = ShellState::new();
+        state.insert_command_cache(BString::from("ls"), BString::from("/bin/ls"), 1);
+        assert!(!state.command_cache().is_empty());
+
+        // Modifying PATH clears command cache
+        state.set_var(b"PATH", b"/usr/bin");
+        assert!(state.command_cache().is_empty());
+
+        state.insert_command_cache(BString::from("ls"), BString::from("/bin/ls"), 1);
+        assert!(!state.command_cache().is_empty());
+
+        // Unsetting PATH clears command cache
+        state.unset_var(b"PATH");
+        assert!(state.command_cache().is_empty());
     }
 }

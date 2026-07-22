@@ -30,7 +30,7 @@ use crate::parser::ast::{ASTBuilder, Command};
 use crate::process::spawn_command;
 use crate::relative;
 use crate::serialization::{Deserialize, Serialize};
-use bstr::BString;
+use bstr::{BString, ByteSlice};
 use zerocopy::{FromZeros, IntoBytes};
 
 /// Path to the zxsh binary in the package filesystem.
@@ -71,6 +71,10 @@ pub fn deserialize_subshell_payload(
     let mut state = ShellState::deserialize(environment_bytes, &mut environment_offset)?;
     // Reset signal traps inherited from parent shell per POSIX subshell execution requirements.
     state.traps.clear();
+
+    if let Ok(path) = state.cwd().to_path() {
+        let _ = std::env::set_current_dir(path);
+    }
 
     let mut builder = ASTBuilder::new();
     let root_command_pointer = builder.import_serialized_ast(command_bytes);
