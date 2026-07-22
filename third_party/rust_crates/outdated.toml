@@ -212,7 +212,7 @@ skip_updating = [
     "nom_locate",
     "nonzero_ext",
     "normalize-line-endings",
-    "notify",
+    
     "ntapi",
     "num",
     "num-bigint",

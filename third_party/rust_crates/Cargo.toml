@@ -326,7 +326,7 @@ loom = { version = "0.7.2", features = ["checkpoint", "futures"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit mio dependency when it can be
 # pulled in automatically by tokio
 mio = { version = "=1.2.1", features = ["net", "os-ext", "os-poll"] }
-notify = { version = "5.1.0", default-features = false, features = ["macos_fsevent"] }
+notify = { version = "8.2.0", default-features = false, features = ["macos_fsevent"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit num_cpus dependency when it can be
 # pulled in automatically by tokio
 num_cpus = "1.17.0"
@@ -767,6 +767,9 @@ deps = [
 deps = [
   "//third_party/rust_crates:tokio",
 ]
+
+[gn.package.inotify-sys."0.1.8"]
+# Has build script but no config needed.
 
 [gn.package.mockall."0.14.0"]
 deps = ["//build/validate:non_production_tag"]

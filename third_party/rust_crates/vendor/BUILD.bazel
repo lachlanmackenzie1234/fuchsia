@@ -1639,7 +1639,7 @@ alias(
 )
 
 alias(
-    name = "notify-5.2.0",
+    name = "notify-8.2.0",
     actual = "//third_party/rust_crates/forks/notify:notify",
     tags = ["manual"],
 )

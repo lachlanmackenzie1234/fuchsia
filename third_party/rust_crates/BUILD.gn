@@ -1189,13 +1189,13 @@ group("nom_locate-5.0.0") {
 
 if (!(current_os == "fuchsia")) {
   group("notify") {
-    public_deps = [ ":notify-v5_2_0" ]
+    public_deps = [ ":notify-v8_2_0" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("notify-5.2.0") {
-    public_deps = [ ":notify-v5_2_0" ]
+  group("notify-8.2.0") {
+    public_deps = [ ":notify-v8_2_0" ]
   }
 }
 
@@ -11634,48 +11634,48 @@ rustc_macro("indoc-v2_0_7") {
   applicable_licenses = [ ":indoc-v2_0_7.license" ]
 }
 
-license("inotify-v0_9_6.license") {
+license("inotify-v0_11_4.license") {
   public_package_name = "inotify"
-  license_files = [ "//third_party/rust_crates/vendor/inotify-0.9.6/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/inotify-0.11.4/LICENSE" ]
 }
 
-rustc_library("inotify-v0_9_6") {
+rustc_library("inotify-v0_11_4") {
   crate_name = "inotify"
-  source_root = "//third_party/rust_crates/vendor/inotify-0.9.6/src/lib.rs"
-  output_name = "inotify-b31c4030423e5809"
+  source_root = "//third_party/rust_crates/vendor/inotify-0.11.4/src/lib.rs"
+  output_name = "inotify-e539c2cbf7364fbc"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":inotify-sys-v0_1_5" ]
+  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":inotify-sys-v0_1_8" ]
   deps += [ ":libc-v0_2_186" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b31c4030423e5809",
-    "-Cextra-filename=-b31c4030423e5809",
+    "-Cmetadata=e539c2cbf7364fbc",
+    "-Cextra-filename=-e539c2cbf7364fbc",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":inotify-v0_9_6.license" ]
+  applicable_licenses = [ ":inotify-v0_11_4.license" ]
 }
 
-license("inotify-sys-v0_1_5.license") {
+license("inotify-sys-v0_1_8.license") {
   public_package_name = "inotify_sys"
   license_files =
-      [ "//third_party/rust_crates/vendor/inotify-sys-0.1.5/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/inotify-sys-0.1.8/LICENSE" ]
 }
 
-rustc_library("inotify-sys-v0_1_5") {
+rustc_library("inotify-sys-v0_1_8") {
   crate_name = "inotify_sys"
-  source_root = "//third_party/rust_crates/vendor/inotify-sys-0.1.5/src/lib.rs"
-  output_name = "inotify_sys-5a7221e0cdb60ab6"
+  source_root = "//third_party/rust_crates/vendor/inotify-sys-0.1.8/src/lib.rs"
+  output_name = "inotify_sys-f6fe8c44e31bf7d4"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -11688,13 +11688,13 @@ rustc_library("inotify-sys-v0_1_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5a7221e0cdb60ab6",
-    "-Cextra-filename=-5a7221e0cdb60ab6",
+    "-Cmetadata=f6fe8c44e31bf7d4",
+    "-Cextra-filename=-f6fe8c44e31bf7d4",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":inotify-sys-v0_1_5.license" ]
+  applicable_licenses = [ ":inotify-sys-v0_1_8.license" ]
 }
 
 license("inout-v0_2_2.license") {
@@ -12864,50 +12864,6 @@ rustc_library("mio-v0_7_14") {
   applicable_licenses = [ ":mio-v0_7_14.license" ]
 }
 
-license("mio-v0_8_11.license") {
-  public_package_name = "mio"
-  license_files = [ "//third_party/rust_crates/vendor/mio-0.8.11/LICENSE" ]
-}
-
-rustc_library("mio-v0_8_11") {
-  crate_name = "mio"
-  source_root = "//third_party/rust_crates/vendor/mio-0.8.11/src/lib.rs"
-  output_name = "mio-2c7aabe9f39d57fd"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":log-v0_4_29" ]
-  if (false) {
-    deps += [ ":wasi-v0_11_0+wasi-snapshot-preview1" ]
-    deps += [ ":libc-v0_2_186" ]
-  }
-  if (true) {
-    deps += [ ":libc-v0_2_186" ]
-  }
-  if (false) {
-    deps += [ ":windows-sys-v0_48_0" ]
-  }
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=2c7aabe9f39d57fd",
-    "-Cextra-filename=-2c7aabe9f39d57fd",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"log\"",
-    "--cfg=feature=\"os-ext\"",
-    "--cfg=feature=\"os-poll\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":mio-v0_8_11.license" ]
-}
-
 license("mio-v1_2_1.license") {
   public_package_name = "mio"
   license_files = [ "//third_party/rust_crates/vendor/mio-1.2.1/LICENSE" ]
@@ -13463,15 +13419,15 @@ rustc_library("nom_locate-v5_0_0") {
   applicable_licenses = [ ":nom_locate-v5_0_0.license" ]
 }
 
-license("notify-v5_2_0.license") {
+license("notify-v8_2_0.license") {
   public_package_name = "notify"
-  license_files = [ "//third_party/rust_crates/forks/notify/LICENSE.ARTISTIC" ]
+  license_files = [ "//third_party/rust_crates/forks/notify/LICENSE-CC0" ]
 }
 
-rustc_library("notify-v5_2_0") {
+rustc_library("notify-v8_2_0") {
   crate_name = "notify"
   source_root = "//third_party/rust_crates/forks/notify/src/lib.rs"
-  output_name = "notify-fabf86cf74fe990b"
+  output_name = "notify-106b33d93fb0e9b7"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13479,37 +13435,71 @@ rustc_library("notify-v5_2_0") {
 
   deps = []
   deps += [ ":walkdir-v2_5_0" ]
-  deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":filetime-v0_2_29" ]
   deps += [ ":libc-v0_2_186" ]
-  if (false || false || false || false) {
+  deps += [ ":log-v0_4_29" ]
+  deps += [ ":notify-types-v2_1_0" ]
+  if (false || false || false || false || false) {
     deps += [ ":kqueue-v1_2_0" ]
-    deps += [ ":mio-v0_8_11" ]
+    deps += [ ":mio-v1_2_1" ]
   }
   if (current_os == "linux" || false) {
-    deps += [ ":inotify-v0_9_6" ]
-    deps += [ ":mio-v0_8_11" ]
+    deps += [ ":inotify-v0_11_4" ]
+    deps += [ ":mio-v1_2_1" ]
   }
   if (current_os == "mac") {
+    deps += [ ":bitflags-v2_13_0" ]
     deps += [ ":fsevent-sys-v4_1_0" ]
   }
   if (false) {
-    deps += [ ":windows-sys-v0_45_0" ]
+    deps += [ ":windows-sys-v0_60_2" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fabf86cf74fe990b",
-    "-Cextra-filename=-fabf86cf74fe990b",
+    "-Cmetadata=106b33d93fb0e9b7",
+    "-Cextra-filename=-106b33d93fb0e9b7",
     "--cfg=feature=\"fsevent-sys\"",
     "--cfg=feature=\"macos_fsevent\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":notify-v5_2_0.license" ]
+  applicable_licenses = [ ":notify-v8_2_0.license" ]
+}
+
+license("notify-types-v2_1_0.license") {
+  public_package_name = "notify_types"
+  license_files = [
+    "//third_party/rust_crates/vendor/notify-types-2.1.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/notify-types-2.1.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("notify-types-v2_1_0") {
+  crate_name = "notify_types"
+  source_root = "//third_party/rust_crates/vendor/notify-types-2.1.0/src/lib.rs"
+  output_name = "notify_types-a0247920a049faef"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bitflags-v2_13_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a0247920a049faef",
+    "-Cextra-filename=-a0247920a049faef",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":notify-types-v2_1_0.license" ]
 }
 
 license("ntapi-v0_3_4.license") {
@@ -24630,67 +24620,6 @@ rustc_library("windows-link-v0_2_1") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("windows-sys-v0_45_0") {
-  crate_name = "windows_sys"
-  source_root = "//third_party/rust_crates/empty/windows-sys-0.45.0/src/lib.rs"
-  output_name = "windows_sys-30ea8465d1683669"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=30ea8465d1683669",
-    "-Cextra-filename=-30ea8465d1683669",
-    "--cfg=feature=\"Win32_Foundation\"",
-    "--cfg=feature=\"Win32_Security\"",
-    "--cfg=feature=\"Win32_Storage_FileSystem\"",
-    "--cfg=feature=\"Win32_System_IO\"",
-    "--cfg=feature=\"Win32_System_Threading\"",
-    "--cfg=feature=\"Win32_System_WindowsProgramming\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-rustc_library("windows-sys-v0_48_0") {
-  crate_name = "windows_sys"
-  source_root = "//third_party/rust_crates/empty/windows-sys-0.48.0/src/lib.rs"
-  output_name = "windows_sys-4f3c5392f0473e4"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=4f3c5392f0473e4",
-    "-Cextra-filename=-4f3c5392f0473e4",
-    "--cfg=feature=\"Win32_Foundation\"",
-    "--cfg=feature=\"Win32_Networking_WinSock\"",
-    "--cfg=feature=\"Win32_Security\"",
-    "--cfg=feature=\"Win32_Storage_FileSystem\"",
-    "--cfg=feature=\"Win32_System_IO\"",
-    "--cfg=feature=\"Win32_System_Pipes\"",
-    "--cfg=feature=\"Win32_System_WindowsProgramming\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
 rustc_library("windows-sys-v0_52_0") {
   crate_name = "windows_sys"
   source_root = "//third_party/rust_crates/empty/windows-sys-0.52.0/src/lib.rs"
@@ -24735,7 +24664,11 @@ rustc_library("windows-sys-v0_60_2") {
     "-Cmetadata=d52d8ffb6acbef0d",
     "-Cextra-filename=-d52d8ffb6acbef0d",
     "--cfg=feature=\"Win32_Foundation\"",
+    "--cfg=feature=\"Win32_Security\"",
+    "--cfg=feature=\"Win32_Storage_FileSystem\"",
+    "--cfg=feature=\"Win32_System_IO\"",
     "--cfg=feature=\"Win32_System_Threading\"",
+    "--cfg=feature=\"Win32_System_WindowsProgramming\"",
   ]
 
   visibility = [ ":*" ]

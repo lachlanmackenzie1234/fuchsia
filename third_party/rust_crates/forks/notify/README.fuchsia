@@ -1,5 +1,5 @@
 Name: Notify
-License File: LICENSE.ARTISTIC
+License File: LICENSE-CC0
 Description:
 
 # What is this crate used for?
@@ -12,9 +12,8 @@ No.
 
 # What differs from upstream?
 
-The file LICENSE.ARTISTIC was fetched from
-https://github.com/notify-rs/notify/blob/main/LICENSE.ARTISTIC. No other
-changes were made.
+Upstream notify 8.2.0 includes LICENSE-CC0 directly. No other changes
+were made.
 
 # Are there any restrictions to how it should be rolled?
 
