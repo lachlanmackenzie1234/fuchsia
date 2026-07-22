@@ -10,9 +10,9 @@ mod global_init;
 
 use bitflags::bitflags;
 use ffx_config::EnvironmentContext;
+use fuchsia_sync::Mutex;
 use std::os::raw::{c_char, c_void};
 use std::ptr::NonNull;
-use std::sync::Mutex;
 
 /// A symbolizer for program counters.
 #[derive(Debug)]
@@ -36,7 +36,7 @@ impl Symbolizer {
 
         let _global_init = global_init::GlobalInitHandle::new();
 
-        let _guard = SYMBOLIZER_LOCK.lock().unwrap();
+        let _guard = SYMBOLIZER_LOCK.lock();
 
         // SAFETY: basic FFI call without invariants.
         let inner = NonNull::new(unsafe { symbolizer_sys::symbolizer_new() })

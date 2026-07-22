@@ -30,6 +30,7 @@ rustc_library("lib") {
     "//src/lib/analytics/rust:lib",
     "//src/lib/async-utils",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
     "//src/lib/network/netsvc-proto",
     "//src/lib/network/packet",
     "//src/lib/versioning/version-history/rust/data",

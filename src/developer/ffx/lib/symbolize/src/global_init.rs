@@ -4,7 +4,7 @@
 
 //! Module for managing the global initialization state of zxdb and curl.
 
-use std::sync::Mutex;
+use fuchsia_sync::Mutex;
 
 /// A type responsible for managing global initialization state. As long as one of these is live,
 /// curl and other globally initialized C++ state will be live. When the last one goes out of scope
@@ -21,7 +21,7 @@ impl GlobalInitHandle {
     pub(crate) fn new() -> Self {
         // Ensure the lock is held for the entire function to avoid racing with any other
         // initialization or cleanup.
-        let mut state = GLOBAL_INIT.lock().unwrap();
+        let mut state = GLOBAL_INIT.lock();
         if *state == 0 {
             // SAFETY: Basic FFI call. This won't be called unless either no GlobalInitHandle has
             // been previously constructed or the cleanup routine has already been called.
@@ -36,7 +36,7 @@ impl Drop for GlobalInitHandle {
     fn drop(&mut self) {
         // Ensure the lock is held for the entire function to avoid racing with any other
         // initialization or cleanup.
-        let mut state = GLOBAL_INIT.lock().unwrap();
+        let mut state = GLOBAL_INIT.lock();
         if *state == 1 {
             // This is the last handle live and the global state needs to be cleaned up.
 

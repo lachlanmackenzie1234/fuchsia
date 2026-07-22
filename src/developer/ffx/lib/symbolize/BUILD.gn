@@ -19,6 +19,7 @@ rustc_library("symbolize") {
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/symbol-index",
     "//src/developer/ffx/lib/symbolize/sys",
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:hex",

@@ -19,9 +19,10 @@ use ffx_target::{get_remote_proxy, open_target_with_fut};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_developer_ffx::{DaemonError, DaemonProxy, TargetInfo, TargetProxy};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use target_errors::FfxTargetError;
 use timeout::timeout;
@@ -198,15 +199,15 @@ impl Injection {
         toolbox: fidl_fuchsia_io::DirectoryProxy,
     ) -> anyhow::Result<FRemoteControlProxy> {
         let fdomain = {
-            let mut fdomain = self.fdomain.lock().unwrap();
+            let mut fdomain = self.fdomain.lock();
             if let Some((fdomain, proxy)) = &*fdomain {
-                *proxy.lock().unwrap() = toolbox;
+                *proxy.lock() = toolbox;
                 fdomain.clone()
             } else {
                 let toolbox = Arc::new(Mutex::new(toolbox));
                 let client_toolbox = Arc::clone(&toolbox);
                 let client = fdomain_local::local_client(move || {
-                    let toolbox = Clone::clone(&*client_toolbox.lock().unwrap());
+                    let toolbox = Clone::clone(&*client_toolbox.lock());
 
                     let (client, server) = fidl::endpoints::create_endpoints();
                     if let Err(error) = toolbox.open(

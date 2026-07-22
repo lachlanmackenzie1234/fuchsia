@@ -7,11 +7,12 @@ use compat_info::{ConnectionInfo, DeviceConnectionInfo};
 use ffx_config::EnvironmentContext;
 use ffx_config::logging::LogDirHandling;
 use fuchsia_async::TimeoutExt;
+use fuchsia_sync::Mutex;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdout};
@@ -383,7 +384,7 @@ pub fn write_ssh_log(prefix: &str, line: &String, file: &Mutex<File>) {
     if line.contains("keepalive") {
         return;
     }
-    let mut f = file.lock().expect("poisoned ssh log mutex");
+    let mut f = file.lock();
     const TIME_FORMAT: &str = "%b %d %H:%M:%S%.3f";
     let timestamp = chrono::Local::now().format(TIME_FORMAT);
     let log_id: u64 = *ffx_config::logging::LOGGING_ID;

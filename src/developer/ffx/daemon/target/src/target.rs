@@ -27,6 +27,7 @@ use fidl_fuchsia_developer_ffx::TargetState;
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address};
 use fuchsia_async::Task;
+use fuchsia_sync::Mutex;
 use futures::channel;
 use netext::IsLocalAddr;
 use rand::random;
@@ -41,7 +42,7 @@ use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use usb_fastboot_discovery::{Interface, open_interface_with_serial};
 
@@ -487,14 +488,14 @@ impl Target {
                 }
             };
 
-            if USB_DRIVER_CONNECTION.lock().unwrap().replace(Arc::new(driver)).is_some() {
+            if USB_DRIVER_CONNECTION.lock().replace(Arc::new(driver)).is_some() {
                 log::warn!("Re-connecting to USB driver daemon");
             }
         }
     }
 
     pub fn get_usb_driver_connection() -> Option<Arc<usb_driver_api::Driver>> {
-        (*USB_DRIVER_CONNECTION.lock().unwrap()).clone()
+        (*USB_DRIVER_CONNECTION.lock()).clone()
     }
 
     pub fn new(context: &EnvironmentContext) -> Rc<Self> {
