@@ -19,7 +19,7 @@ use anyhow::{Context, Error, format_err};
 use capability_source::{
     CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
 };
-use cm_rust::{CapabilityDecl, CapabilityTypeName, StorageDecl, StorageDirectorySource, UseDecl};
+use cm_rust::{CapabilityDecl, CapabilityTypeName, StorageDecl, StorageDirectorySource};
 use cm_types::RelativePath;
 use component_id_index::InstanceId;
 use fidl::endpoints::{ServerEnd, create_proxy};
@@ -672,7 +672,7 @@ impl StorageAdmin {
         // subtree that has access to the storage is found, rather than checking every single
         // instance's storage uses as done here.
         while let Some(component) = components_to_visit.pop() {
-            let (namespace, storage_uses) = {
+            let (namespace, storage_paths) = {
                 let component_state = match component.lock_resolved_state().await {
                     Ok(state) => state,
                     // A component will not have resolved state if it has already been destroyed. In
@@ -688,23 +688,15 @@ impl StorageAdmin {
 
                 let namespace = component_state.sandbox.program_input.namespace().clone();
 
-                let storage_uses: Vec<_> = component_state
-                    .decl()
-                    .uses
-                    .iter()
-                    .filter_map(|use_decl| match use_decl {
-                        UseDecl::Storage(use_storage) => Some(use_storage.clone()),
-                        _ => None,
-                    })
-                    .collect();
+                let storage_paths = component_state.storage_paths.clone();
 
                 components_to_visit.extend(component_state.children().map(|(_, v)| v.clone()));
-                (namespace, storage_uses)
+                (namespace, storage_paths)
             };
 
-            for use_storage in storage_uses {
+            for storage_path in storage_paths {
                 let component_weak = component.as_weak().into();
-                let capability = namespace.get_capability(&use_storage.target_path);
+                let capability = namespace.get_capability(&storage_path);
                 let router = match capability {
                     Some(Capability::DirConnectorRouter(router)) => router,
                     _ => continue,
