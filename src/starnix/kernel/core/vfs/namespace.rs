@@ -65,7 +65,8 @@ impl Namespace {
         let kernel = fs.kernel.upgrade().expect("can't create namespace without a kernel");
         let mounts_guard = kernel.mounts_lock();
 
-        let root_mount = Mount::new(&mounts_guard, WhatToMount::Fs(fs), flags);
+        let root_mount = Mount::new(&mounts_guard, WhatToMount::Fs(fs), flags)
+            .expect("creating root mount for new filesystem");
         Arc::new(Self { root_mount, id: kernel.get_next_namespace_id() })
     }
 
@@ -368,16 +369,18 @@ impl Mount {
         mounts_guard: &MountsWriteToken,
         what: WhatToMount,
         mut flags: MountpointFlags,
-    ) -> MountHandle {
+    ) -> Result<MountHandle, Errno> {
         match what {
             WhatToMount::Fs(fs) => {
                 // If `flags` does not explicitly specify an access-time flag then default to `RELATIME`.
                 flags.default_atime_from(MountpointFlags::RELATIME);
-                Self::new_with_root(fs.root().clone(), flags)
+                Ok(Self::new_with_root(fs.root().clone(), flags))
             }
             WhatToMount::Bind(node) => {
-                let mount = node.mount.as_ref().expect("can't bind mount from an anonymous node");
-                mount.clone_mount(mounts_guard, &node.entry, flags.into())
+                // A target node may not have a mount point if it's an anonymous node. Modern Linux (6.15+)
+                // returns ENOENT in this case, rather than the more intuitive EINVAL.
+                let mount = node.mount.as_ref().ok_or_else(|| errno!(ENOENT))?;
+                Ok(mount.clone_mount(mounts_guard, &node.entry, flags.into()))
             }
         }
     }
@@ -411,7 +414,7 @@ impl Mount {
         mounts_guard: &MountsWriteToken,
         dir: &DirEntryHandle,
         what: WhatSubmount,
-    ) {
+    ) -> Result<(), Errno> {
         // Necessary to make a copy to prevent excess replication, see the comment on the
         // following Mount::new call.
         let peers = self.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default();
@@ -423,7 +426,7 @@ impl Mount {
         // MountTest.QuizBRecursion.
         let mount = match what {
             WhatSubmount::Existing(mount) => mount,
-            WhatSubmount::New(what, flags) => Mount::new(mounts_guard, what, flags),
+            WhatSubmount::New(what, flags) => Mount::new(mounts_guard, what, flags)?,
         };
 
         if self.is_shared() {
@@ -439,6 +442,7 @@ impl Mount {
         }
 
         self.add_submount_internal(mounts_guard, dir, mount);
+        Ok(())
     }
 
     fn remove_submount(
@@ -500,7 +504,7 @@ impl Mount {
             &mounts_guard,
             target_dir,
             WhatSubmount::Existing(Arc::clone(source_mount)),
-        );
+        )?;
         Ok(())
     }
 
@@ -1740,6 +1744,14 @@ impl NamespaceNode {
     }
 
     pub fn mount(&self, what: WhatToMount, flags: MountpointFlags) -> Result<(), Errno> {
+        let target = self.enter_mount();
+
+        // A target node may not have a mount point if it's an anonymous node. Modern Linux (6.15+)
+        // returns ENOENT in this case, rather than the more intuitive EINVAL.
+        if target.mount.is_none() {
+            return error!(ENOENT);
+        }
+
         let source_is_dir = match &what {
             WhatToMount::Fs(fs) => fs.root().node.is_dir(),
             WhatToMount::Bind(node) => node.entry.node.is_dir(),
@@ -1747,20 +1759,22 @@ impl NamespaceNode {
 
         // The source and target need to both be identical types. In other words, if attempting to
         // mount a source file onto a target directory (or vice versa), we should err.
-        if source_is_dir != self.entry.node.is_dir() {
+        if source_is_dir != target.entry.node.is_dir() {
             return error!(ENOTDIR);
         }
 
         let kernel = self.entry.node.fs().kernel.upgrade().expect("can't mount without a kernel");
         let mounts_guard = kernel.mounts_lock();
-
         let mountpoint = self.enter_mount_locked(&mounts_guard);
 
-        let mount = mounts_guard
-            .retain(mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount"));
-        let entry = mounts_guard.retain(&mountpoint.entry);
-        mount.create_submount(&mounts_guard, &entry, WhatSubmount::New(what, flags));
-        Ok(())
+        let mount = mountpoint.mount.as_ref().ok_or_else(|| errno!(ENOENT))?;
+        let writeable_mount = mounts_guard.retain(mount);
+        let writeable_entry = mounts_guard.retain(&mountpoint.entry);
+        writeable_mount.create_submount(
+            &mounts_guard,
+            &writeable_entry,
+            WhatSubmount::New(what, flags),
+        )
     }
 
     /// If this is the root of a filesystem, unmount. Otherwise return EINVAL.
