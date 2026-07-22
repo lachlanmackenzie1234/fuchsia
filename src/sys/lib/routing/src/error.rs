@@ -864,6 +864,7 @@ pub trait ErrorReporter: Clone + Send + Sync + 'static {
 }
 
 /// What to print in an error if a route request fails.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RouteRequestErrorInfo {
     capability_type: cm_rust::CapabilityTypeName,
     name: cm_types::Name,
@@ -885,6 +886,26 @@ impl RouteRequestErrorInfo {
 
     pub fn for_builtin(capability_type: CapabilityTypeName, name: &Name) -> Self {
         Self { capability_type, name: name.clone(), availability: Availability::Required }
+    }
+}
+
+impl From<&RouteRequestErrorInfo> for runtime_capabilities::RouterErrorInfo {
+    fn from(value: &RouteRequestErrorInfo) -> Self {
+        Self {
+            capability_type: value.capability_type,
+            name: value.name.clone(),
+            availability: value.availability,
+        }
+    }
+}
+
+impl From<runtime_capabilities::RouterErrorInfo> for RouteRequestErrorInfo {
+    fn from(value: runtime_capabilities::RouterErrorInfo) -> Self {
+        Self {
+            capability_type: value.capability_type,
+            name: value.name,
+            availability: value.availability,
+        }
     }
 }
 

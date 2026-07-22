@@ -50,7 +50,7 @@ use cm_graph::DependencyNode;
 use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
     Availability, CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl,
-    DeliveryType, ExposeDeclCommon, FidlIntoNative, NativeIntoFidl, UseDecl,
+    DeliveryType, FidlIntoNative, NativeIntoFidl, UseDecl,
 };
 use cm_types::{Name, Path, RelativePath};
 use config_encoder::ConfigFields;
@@ -840,17 +840,12 @@ impl ResolvedInstanceState {
     /// `exposed_dir`.
     pub async fn get_exposed_dict(&self, self_target: Arc<WeakInstanceToken>) -> &Arc<Dictionary> {
         let create_exposed_dict = async || {
-            let decl = self.decl();
             let dict = Dictionary::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
-                let expose_decl = decl
-                    .exposes
-                    .iter()
-                    .find(|e| e.target_name() == &key)
-                    .expect("output contains entry not in exposes");
+                let error_info = value.error_info().expect("router missing error info");
                 let error_logging_router = ErrorLoggingRouter::new(
                     value,
-                    expose_decl,
+                    error_info,
                     RoutingFailureErrorReporter::new(),
                     self_target.clone(),
                 );

@@ -123,6 +123,10 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 
         result
     }
+
+    fn error_info(&self) -> Option<runtime_capabilities::RouterErrorInfo> {
+        Some((&self.route_request).into())
+    }
 }
 
 impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>

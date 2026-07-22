@@ -75,6 +75,17 @@ impl Capability {
             Self::Instance(_) => "Instance",
         }
     }
+
+    /// Returns information about the capability which is useful to an [`ErrorLoggingRouter`].
+    pub fn error_info(&self) -> Option<crate::RouterErrorInfo> {
+        match self {
+            Self::ConnectorRouter(r) => r.error_info(),
+            Self::DictionaryRouter(r) => r.error_info(),
+            Self::DirConnectorRouter(r) => r.error_info(),
+            Self::DataRouter(r) => r.error_info(),
+            _ => None,
+        }
+    }
 }
 
 impl TryFrom<Capability> for Arc<crate::Connector> {

@@ -5,6 +5,8 @@
 use crate::{CapabilityBound, WeakInstanceToken};
 use async_trait::async_trait;
 use capability_source::CapabilitySource;
+use cm_rust::{Availability, CapabilityTypeName};
+use cm_types::Name;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use router_error::RouterError;
 use std::fmt;
@@ -32,6 +34,25 @@ where
         // A reference to the requesting component.
         target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError>;
+
+    /// Returns diagnostic data about the capability being routed.
+    fn error_info(&self) -> Option<RouterErrorInfo> {
+        None
+    }
+}
+
+/// Diagnostic data derived from the capability decl used to instantiate the router.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouterErrorInfo {
+    pub capability_type: CapabilityTypeName,
+    /// The capability name. The semantics of this name depends on the type of the
+    /// decl:
+    ///   - Expose -> `target_name`
+    ///   - Offer -> `target_name`
+    ///   - Capability -> `name`
+    ///   - Use -> `source_name`
+    pub name: Name,
+    pub availability: Availability,
 }
 
 /// A [`Router`] is a capability that lets the holder obtain other capabilities
@@ -127,6 +148,10 @@ impl<T: CapabilityBound> Routable<T> for Router<T> {
     ) -> Result<CapabilitySource, RouterError> {
         Router::route_debug(self, request, target).await
     }
+
+    fn error_info(&self) -> Option<RouterErrorInfo> {
+        self.routable.error_info()
+    }
 }
 
 impl<T: CapabilityBound> Router<T> {
@@ -162,6 +187,11 @@ impl<T: CapabilityBound> Router<T> {
         target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         self.routable.route_debug(request, target).await
+    }
+
+    /// Returns diagnostic data about the capability being routed.
+    pub fn error_info(&self) -> Option<RouterErrorInfo> {
+        self.routable.error_info()
     }
 }
 

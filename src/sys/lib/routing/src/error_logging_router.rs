@@ -101,4 +101,8 @@ where
             }
         }
     }
+
+    fn error_info(&self) -> Option<runtime_capabilities::RouterErrorInfo> {
+        Some((&self.route_request).into())
+    }
 }
