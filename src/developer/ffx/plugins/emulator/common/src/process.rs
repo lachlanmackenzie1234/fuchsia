@@ -34,30 +34,18 @@ pub fn monitored_child_process(child_arc: &Arc<SharedChild>) -> Result<()> {
 
 /// Returns true if the process identified by the pid is running.
 pub fn is_running(pid: u32) -> bool {
-    if pid == 0 {
-        return false;
+    if pid != 0 {
+        // First do a no-hang wait to collect the process if it's defunct.
+        let _ = nix::sys::wait::waitpid(
+            nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
+            Some(nix::sys::wait::WaitPidFlag::WNOHANG),
+        );
+        // Check to see if it is running by sending signal 0. If there is no error,
+        // the process is running.
+        return nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.try_into().unwrap()), None)
+            .is_ok();
     }
-    // In strict sandboxed environments (such as public CQ LUCI builders), the `kill`
-    // syscall is blocked by seccomp filters even for the process's own PID. This causes
-    // `kill(pid, 0)` to fail with EPERM or ENOSYS. Checking `/proc/<pid>` existence is a
-    // sandbox-safe alternative on Linux.
-    #[cfg(target_os = "linux")]
-    {
-        if std::path::Path::new(&format!("/proc/{}", pid)).exists() {
-            return true;
-        }
-        if std::path::Path::new("/proc/self").exists() {
-            return false;
-        }
-    }
-    // First do a no-hang wait to collect the process if it's defunct.
-    let _ = nix::sys::wait::waitpid(
-        nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
-        Some(nix::sys::wait::WaitPidFlag::WNOHANG),
-    );
-    // Check to see if it is running by sending signal 0. If there is no error,
-    // the process is running.
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.try_into().unwrap()), None).is_ok()
+    return false;
 }
 
 /// Terminates the process.
