@@ -293,14 +293,43 @@ needs an enclosing duration event to serve as an anchor point for
 visualization in trace viewers (like Perfetto). If they are not enclosed,
 they will not be rendered.
 
-Perfetto requires flow event IDs to be global within a trace.
+Important: Flow IDs are globally scoped in Perfetto.
+
+Unlike some tracing systems where flow IDs are scoped to a flow name or
+category, Perfetto tracks flow lines globally by their ID alone. If two
+different active flows (even with different names or categories) share the
+same ID concurrently, Perfetto will draw incorrect or ambiguous flow lines
+connecting them.
+
+To ensure correct flow visualization:
+- **Use unique IDs**: In C/C++, use `TRACE_NONCE()` (unique within a
+  process) or `TRACE_RANDOM_ID()` (globally unique across
+  processes/components). In Rust, use `fuchsia_trace::Id::new()`.
+  Avoid using static numbers like `555`.
+- **Do not reuse IDs concurrently**: If you must reuse an ID, ensure that
+  the previous flow using that ID has been completely ended (via
+  `TRACE_FLOW_END` or `flow_end!`) before beginning a new flow with that ID.
+
+Note: Perfetto drops flow names and arguments.
+
+Due to semantic differences in the way Perfetto represents flows natively,
+the Perfetto trace processor and UI currently drop the flow names and any
+arguments attached to flow events (such as those passed to
+`TRACE_FLOW_BEGIN` or `TRACE_FLOW_STEP`). These names and arguments are
+preserved in the FXT file but will not be visible in the Perfetto viewer.
+
+**Best Practice**: If you need to associate diagnostic data with a flow step,
+attach the arguments to the *enclosing duration event* instead of the flow
+event itself. Enclosing duration events and their arguments are fully
+rendered in Perfetto.
 
 For example:
 
 * {C }
 
   ```c
-  trace_flow_id_t flow_id = 555;
+  // Generate a unique flow ID
+  trace_flow_id_t flow_id = TRACE_NONCE();
 
   // First duration where the flow begins
   {
@@ -324,7 +353,8 @@ For example:
 * {C++}
 
   ```cpp
-  trace_flow_id_t flow_id = 555;
+  // Generate a unique flow ID
+  trace_flow_id_t flow_id = TRACE_NONCE();
 
   // First duration where the flow begins
   {
@@ -348,7 +378,8 @@ For example:
 * {Rust}
 
   ```rust
-  let flow_id = 555;
+  // Generate a unique flow ID
+  let flow_id = fuchsia_trace::Id::new();
 
   // First duration where the flow begins
   {

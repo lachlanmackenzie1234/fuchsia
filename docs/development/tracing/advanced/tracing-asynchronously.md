@@ -87,8 +87,16 @@ There's a higher-level tracing mechanism, called "flow" tracing, that's
 intended for use between processes or abstraction layers.
 
 You call `TRACE_FLOW_BEGIN()` to mark the start of a "flow".
-Just like `TRACE_ASYNC_BEGIN()`, you pass in a nonce to identify this
-particular flow. The flow ID is an unsigned 64-bit integer.
+To identify the flow, you must pass in a globally unique flow ID.
+
+Important: Flow IDs are global across the entire trace and are not scoped by
+flow name or category. Using duplicate IDs will cause visual bugs in trace
+viewers like Perfetto. Always use unique IDs (e.g., generated via
+`TRACE_NONCE` or `TRACE_RANDOM_ID` in C/C++ or `fuchsia_trace::Id::new()`
+in Rust).
+
+Also note that Perfetto currently drops flow names and arguments. If you
+need to track arguments, attach them to the enclosing duration events.
 
 Then, you (optionally) call `TRACE_FLOW_STEP()` to indicate
 trace operations within that flow.
