@@ -328,6 +328,12 @@ pub struct ResolvedInstanceState {
         Vec<Name>,
         (Arc<HookObserver>, Arc<Mutex<mpsc::UnboundedReceiver<fcomponent::Event>>>),
     >,
+
+    /// The namespace paths of storage capabilities routed to this component. We
+    /// store them here as a memory optimization so that we can teardown storage
+    /// component shutdown without needing to retain the complete component
+    /// decl.
+    pub storage_paths: Vec<Path>,
 }
 
 /// Abbreviated equivalent to [ComponentAddress] that omits the actual url string.
@@ -417,6 +423,15 @@ impl ResolvedInstanceState {
         let capability_requested_receivers =
             Self::initialize_capability_requested_hooks(&component, decl, &component_input).await;
 
+        let storage_paths = decl
+            .uses
+            .iter()
+            .filter_map(|use_| match use_ {
+                UseDecl::Storage(storage_use) => Some(storage_use.target_path.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
         let mut state = Self {
             weak_component,
             execution_scope: component.execution_scope.clone(),
@@ -431,6 +446,7 @@ impl ResolvedInstanceState {
             sandbox: Default::default(),
             program_escrow,
             capability_requested_receivers,
+            storage_paths,
         };
         state.add_static_children(component).await?;
 

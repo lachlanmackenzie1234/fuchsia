@@ -11,8 +11,7 @@ use ::routing::bedrock::dict_ext::DictExt;
 use ::routing::error::{ErrorReporter, RouteRequestErrorInfo};
 use async_trait::async_trait;
 use capability_source::CapabilitySource;
-use cm_rust::UseStorageDecl;
-use cm_types::Availability;
+use cm_types::{Availability, Path};
 use errors::ModelError;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use log::error;
@@ -27,7 +26,7 @@ pub struct RoutedStorage {
 }
 
 pub(super) async fn route_storage(
-    use_storage_decl: UseStorageDecl,
+    storage_path: &Path,
     target: &Arc<ComponentInstance>,
 ) -> Result<RoutedStorage, ModelError> {
     let storage_router_capability = target
@@ -36,7 +35,7 @@ pub(super) async fn route_storage(
         .sandbox
         .program_input
         .namespace()
-        .get_capability(&use_storage_decl.target_path)
+        .get_capability(storage_path)
         .expect("namespace is missing used storage capability");
     let Capability::DirConnectorRouter(router) = storage_router_capability else {
         panic!("wrong type for used storage capability");

@@ -34,10 +34,7 @@ use async_trait::async_trait;
 use capability_source::CapabilitySource;
 use clonable_error::ClonableError;
 use cm_graph::DependencyNode;
-use cm_rust::{
-    CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl, NativeIntoFidl, UseDecl,
-    UseStorageDecl,
-};
+use cm_rust::{CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl, NativeIntoFidl};
 use cm_types::{Name, Url};
 use component_id_index::InstanceId;
 use config_encoder::ConfigFields;
@@ -822,33 +819,20 @@ impl ComponentInstance {
     /// the `Started` state, the `StartedInstanceState` is returned.
     async fn move_state_to_shutdown(self: &Arc<Self>) -> Result<(), StopActionError> {
         loop {
-            fn get_storage_uses(resolved_state: &ResolvedInstanceState) -> Vec<UseStorageDecl> {
-                resolved_state
-                    .resolved_component
-                    .decl
-                    .uses
-                    .iter()
-                    .filter_map(|use_| match use_ {
-                        UseDecl::Storage(storage_use) => Some(storage_use.clone()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-            }
-
             // If the component is in a resolved state, then we have to route its storage
             // capabilities. We shouldn't do this while holding the state lock, so let's do this in
             // advance before grabbing the state lock below.
-            let storage_uses = {
+            let storage_paths = {
                 let state = self.lock_state().await;
                 match &*state {
-                    InstanceState::Resolved(resolved_state) => get_storage_uses(&resolved_state),
-                    _ => vec![],
+                    InstanceState::Resolved(resolved_state) => resolved_state.storage_paths.clone(),
+                    _ => Vec::new(),
                 }
             };
 
-            let mut routed_storage = Vec::with_capacity(storage_uses.len());
-            for storage_use in &storage_uses {
-                if let Ok(info) = routing::route_storage(storage_use.clone(), &self).await {
+            let mut routed_storage = Vec::with_capacity(storage_paths.len());
+            for storage_path in &storage_paths {
+                if let Ok(info) = routing::route_storage(storage_path, &self).await {
                     routed_storage.push(info);
                 }
             }
@@ -863,15 +847,10 @@ impl ComponentInstance {
                 )),
                 InstanceState::Resolved(resolved_state) => {
                     let children = resolved_state.children.clone();
-                    let current_storage_iter =
-                        resolved_state.resolved_component.decl.uses.iter().filter_map(|use_| {
-                            match use_ {
-                                UseDecl::Storage(storage_use) => Some(storage_use),
-                                _ => None,
-                            }
-                        });
+                    // don't necessarily need the complete decl, just need some to test equality
+                    let current_storage_iter = resolved_state.storage_paths.iter();
 
-                    if current_storage_iter.ne(storage_uses.iter()) {
+                    if current_storage_iter.ne(storage_paths.iter()) {
                         continue;
                     }
 
