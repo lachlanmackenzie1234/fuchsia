@@ -1592,8 +1592,10 @@ macro_rules! flow_end {
 /// They are typically represented as arrows in a visualizer.  Flow arrows are
 /// from the end of the duration event which encloses the beginning of the flow
 /// to the beginning of the duration event which encloses the next step or the
-/// end of the flow.  The id serves to correlate flows which share the same
-/// category and name across processes.
+/// end of the flow.  The id serves to correlate flows across processes. Note
+/// that flow IDs are global in Perfetto and not scoped to the category and
+/// name; using non-unique IDs concurrently for different flows will lead to
+/// ambiguous lines in the trace viewer.
 ///
 /// This event must be enclosed in a duration event which represents where
 /// the flow handoff occurs.
@@ -1621,8 +1623,10 @@ pub fn flow_begin<S: AsTraceStrRef>(
 /// They are typically represented as arrows in a visualizer.  Flow arrows are
 /// from the end of the duration event which encloses the beginning of the flow
 /// to the beginning of the duration event which encloses the next step or the
-/// end of the flow.  The id serves to correlate flows which share the same
-/// category and name across processes.
+/// end of the flow.  The id serves to correlate flows across processes. Note
+/// that flow IDs are global in Perfetto and not scoped to the category and
+/// name; using non-unique IDs concurrently for different flows will lead to
+/// ambiguous lines in the trace viewer.
 ///
 /// This event must be enclosed in a duration event which represents where
 /// the flow handoff occurs.
@@ -1650,8 +1654,10 @@ pub fn flow_end<S: AsTraceStrRef>(
 /// They are typically represented as arrows in a visualizer.  Flow arrows are
 /// from the end of the duration event which encloses the beginning of the flow
 /// to the beginning of the duration event which encloses the next step or the
-/// end of the flow.  The id serves to correlate flows which share the same
-/// category and name across processes.
+/// end of the flow.  The id serves to correlate flows across processes. Note
+/// that flow IDs are global in Perfetto and not scoped to the category and
+/// name; using non-unique IDs concurrently for different flows will lead to
+/// ambiguous lines in the trace viewer.
 ///
 /// This event must be enclosed in a duration event which represents where
 /// the flow handoff occurs.
@@ -1792,8 +1798,10 @@ macro_rules! instaflow_step {
 /// Flow events describe control flow handoffs between threads or across processes. They are
 /// typically represented as arrows in a visualizer. Flow arrows are from the end of the duration
 /// event which encloses the beginning of the flow to the beginning of the duration event which
-/// encloses the next step or the end of the flow. The id serves to correlate flows which share the
-/// same category and name across processes.
+/// encloses the next step or the end of the flow. The id serves to correlate flows across
+/// processes. Note that flow IDs are global in Perfetto and not scoped to the category and
+/// name; using non-unique IDs concurrently for different flows will lead to ambiguous lines
+/// in the trace viewer.
 ///
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the flow
 /// with additional information. The arguments provided to matching flow begin, flow step, and flow
@@ -1821,8 +1829,10 @@ pub fn instaflow_begin<S1: AsTraceStrRef, S2: AsTraceStrRef>(
 /// Flow events describe control flow handoffs between threads or across processes. They are
 /// typically represented as arrows in a visualizer. Flow arrows are from the end of the duration
 /// event which encloses the beginning of the flow to the beginning of the duration event which
-/// encloses the next step or the end of the flow. The id serves to correlate flows which share the
-/// same category and name across processes.
+/// encloses the next step or the end of the flow. The id serves to correlate flows across
+/// processes. Note that flow IDs are global in Perfetto and not scoped to the category and
+/// name; using non-unique IDs concurrently for different flows will lead to ambiguous lines
+/// in the trace viewer.
 ///
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the flow
 /// with additional information. The arguments provided to matching flow begin, flow step, and flow
@@ -1850,8 +1860,10 @@ pub fn instaflow_end<S1: AsTraceStrRef, S2: AsTraceStrRef>(
 /// Flow events describe control flow handoffs between threads or across processes. They are
 /// typically represented as arrows in a visualizer. Flow arrows are from the end of the duration
 /// event which encloses the beginning of the flow to the beginning of the duration event which
-/// encloses the next step or the end of the flow. The id serves to correlate flows which share the
-/// same category and name across processes.
+/// encloses the next step or the end of the flow. The id serves to correlate flows across
+/// processes. Note that flow IDs are global in Perfetto and not scoped to the category and
+/// name; using non-unique IDs concurrently for different flows will lead to ambiguous lines
+/// in the trace viewer.
 ///
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the flow
 /// with additional information. The arguments provided to matching flow begin, flow step, and flow

@@ -255,8 +255,9 @@
 // They are typically represented as arrows in a visualizer.  Flow arrows are
 // from the end of the duration event which encloses the beginning of the flow
 // to the beginning of the duration event which encloses the next step or the
-// end of the flow.  The id serves to correlate flows which share the same
-// category and name across processes.
+// end of the flow.  The id serves to correlate flows across processes. Note
+// that flow IDs are global within a trace (not scoped to the category or name);
+// using non-unique IDs concurrently can lead to ambiguous flow lines.
 //
 // This event must be enclosed in a duration event which represents where
 // the flow handoff occurs.
@@ -268,7 +269,9 @@
 //
 // |category_literal| and |name_literal| must be null-terminated static string constants.
 // |flow_id| is the correlation id of the flow.
-//           Must be unique for a given category and name combination.
+//           Must be globally unique (e.g. TRACE_NONCE() or TRACE_RANDOM_ID())
+//           to avoid conflict with other active flows. Flow IDs are global
+//           within a trace and not scoped by category or name.
 // |args| is the list of argument key/value pairs.
 //
 // Usage:
@@ -296,8 +299,9 @@
 // They are typically represented as arrows in a visualizer.  Flow arrows are
 // from the end of the duration event which encloses the beginning of the flow
 // to the beginning of the duration event which encloses the next step or the
-// end of the flow.  The id serves to correlate flows which share the same
-// category and name across processes.
+// end of the flow.  The id serves to correlate flows across processes. Note
+// that flow IDs are global within a trace (not scoped to the category or name);
+// using non-unique IDs concurrently can lead to ambiguous flow lines.
 //
 // This event must be enclosed in a duration event which represents where
 // the flow handoff occurs.
@@ -309,7 +313,9 @@
 //
 // |category_literal| and |name_literal| must be null-terminated static string constants.
 // |flow_id| is the correlation id of the flow.
-//           Must be unique for a given category and name combination.
+//           Must be globally unique (e.g. TRACE_NONCE() or TRACE_RANDOM_ID())
+//           to avoid conflict with other active flows. Flow IDs are global
+//           within a trace and not scoped by category or name.
 // |args| is the list of argument key/value pairs.
 //
 // Usage:
@@ -337,8 +343,9 @@
 // They are typically represented as arrows in a visualizer.  Flow arrows are
 // from the end of the duration event which encloses the beginning of the flow
 // to the beginning of the duration event which encloses the next step or the
-// end of the flow.  The id serves to correlate flows which share the same
-// category and name across processes.
+// end of the flow.  The id serves to correlate flows across processes. Note
+// that flow IDs are global within a trace (not scoped to the category or name);
+// using non-unique IDs concurrently can lead to ambiguous flow lines.
 //
 // This event must be enclosed in a duration event which represents where
 // the flow handoff occurs.
@@ -350,7 +357,9 @@
 //
 // |category_literal| and |name_literal| must be null-terminated static string constants.
 // |flow_id| is the correlation id of the flow.
-//           Must be unique for a given category and name combination.
+//           Must be globally unique (e.g. TRACE_NONCE() or TRACE_RANDOM_ID())
+//           to avoid conflict with other active flows. Flow IDs are global
+//           within a trace and not scoped by category or name.
 // |args| is the list of argument key/value pairs.
 //
 // Usage:
