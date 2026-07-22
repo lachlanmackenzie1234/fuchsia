@@ -15,6 +15,18 @@
 // the returned strings in error_string.h.
 
 namespace zbitl {
+namespace internal {
+
+constexpr auto StdioPrinter(FILE* f) {
+  return [f] [[gnu::format(printf, 2, 0)]] (const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    va_end(args);
+  };
+}
+
+}  // namespace internal
 
 // Prints an error message from a View `Error` value, where Printer is a
 // callable type with a printf-like signature.
@@ -32,12 +44,7 @@ inline void PrintViewError(const ViewError& error, Printer&& printer) {
 
 template <typename ViewError>
 inline void PrintViewError(const ViewError& error, FILE* f = stdout) {
-  PrintViewError(error, [f](const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(f, fmt, args);
-    va_end(args);
-  });
+  PrintViewError(error, internal::StdioPrinter(f));
 }
 
 // Prints an error message from a View `CopyError` value, where Printer is a
@@ -61,12 +68,7 @@ inline void PrintViewCopyError(const ViewCopyError& error, Printer&& printer) {
 
 template <typename ViewCopyError>
 inline void PrintViewCopyError(const ViewCopyError& error, FILE* f = stdout) {
-  PrintViewCopyError(error, [f](const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(f, fmt, args);
-    va_end(args);
-  });
+  PrintViewCopyError(error, internal::StdioPrinter(f));
 }
 
 // Prints an error message from a BootfsView `Error` value, where Printer is a
@@ -91,12 +93,7 @@ inline void PrintBootfsError(const BootfsError& error, Printer&& printer) {
 
 template <typename BootfsError>
 inline void PrintBootfsError(const BootfsError& error, FILE* f = stdout) {
-  PrintBootfsError(error, [f](const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(f, fmt, args);
-    va_end(args);
-  });
+  PrintBootfsError(error, internal::StdioPrinter(f));
 }
 
 }  // namespace zbitl
