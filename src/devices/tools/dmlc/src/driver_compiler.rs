@@ -57,9 +57,9 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     let mut bind_config = DmlBind::default();
     let mut has_explicit_bind_block = false;
     if let Some(obj) = driver_dml.program.as_object() {
-        if let Some(bind_val) = obj.get("bind") {
+        if let Some(bind_val) = obj.get("requirements").or_else(|| obj.get("bind")) {
             bind_config = serde_json::from_value(bind_val.clone())
-                .context("Failed to parse structured 'bind' block in DML program")?;
+                .context("Failed to parse structured 'requirements' block in DML program")?;
             has_explicit_bind_block = true;
         }
     }
@@ -78,7 +78,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                 .unwrap_or(false);
             let primary = obj.remove("primary").and_then(|v| v.as_bool()).unwrap_or(false);
             let transport_val = obj.remove("transport");
-            let bind_val = obj.remove("bind");
+            let bind_val = obj.remove("requirements").or_else(|| obj.remove("bind"));
             let parent_val = obj
                 .remove("name")
                 .or_else(|| obj.remove("instance_name"))
@@ -108,7 +108,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                     if primary {
                         if has_explicit_bind_block {
                             return Err(anyhow::anyhow!(
-                                "Cannot specify 'primary: true' in 'use' entry when 'program.bind' is also present"
+                                "Cannot specify 'primary: true' in 'use' entry when 'program.requirements' is also present"
                             ));
                         }
                         if primary_use_entry.is_some() {
@@ -188,7 +188,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     let is_composite = bind_config.primary.is_some() || !additional_parents.is_empty();
     if is_composite && has_explicit_bind_block {
         return Err(anyhow::anyhow!(
-            "Composite drivers cannot use 'program.bind'. Move bind rules to the corresponding 'use' entry."
+            "Composite drivers cannot use 'program.requirements'. Move bind rules to the corresponding 'use' entry."
         ));
     }
 
@@ -198,6 +198,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     if let Some(cml_output) = &args.cml_output {
         let mut program_val = driver_dml.program.clone();
         if let Some(obj) = program_val.as_object_mut() {
+            obj.remove("requirements");
             obj.remove("bind");
             obj.remove("bind_rules");
             if !obj.contains_key("runner") {

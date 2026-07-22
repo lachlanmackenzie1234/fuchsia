@@ -14,9 +14,24 @@ rustc_library("dml-config") {
   edition = "2024"
   name = "dml_config"
   source_root = "src/lib.rs"
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/parser.rs",
+  ]
   deps = [
     ":fuchsia.board.dml.config_rust",
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
   ]
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
+      "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust_next",
+      "//sdk/lib/driver/runtime/rust/fidl",
+      "//sdk/rust/zx",
+      "//src/lib/fidl/rust_next/fidl_next",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:log",
+      "//third_party/rust_crates:phf",
+    ]
+  }
 }

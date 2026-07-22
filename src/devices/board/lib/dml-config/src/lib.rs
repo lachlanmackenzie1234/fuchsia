@@ -175,3 +175,6 @@ pub fn pdev_constraints<'a>(
                 .and_then(|res| res.constraint.as_ref())
         })
 }
+
+#[cfg(target_os = "fuchsia")]
+pub mod parser;

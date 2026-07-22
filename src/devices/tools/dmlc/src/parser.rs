@@ -62,6 +62,7 @@ pub struct DmlBind {
 #[derive(Deserialize, Debug, Default, Clone)]
 pub struct DmlProgram {
     pub driver_name: Option<String>,
+    #[serde(alias = "requirements")]
     pub bind: Option<DmlBind>,
 }
 

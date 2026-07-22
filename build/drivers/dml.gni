@@ -88,7 +88,10 @@ template("fuchsia_driver_dml") {
 
   golden_files("${_action_target}_golden") {
     forward_variables_from(invoker, [ "testonly" ])
-    visibility = [ ":${_action_target}_manifest" ]
+    visibility = [
+      ":${_action_target}_manifest",
+      ":${_action_target}_manifest_merge",
+    ]
     comparisons = [
       {
         golden = _golden_bind
@@ -255,7 +258,10 @@ template("fuchsia_board_dml") {
 
   golden_files("${_action_target}_golden") {
     forward_variables_from(invoker, [ "testonly" ])
-    visibility = [ ":${_action_target}_manifest" ]
+    visibility = [
+      ":${_action_target}_manifest",
+      ":${_action_target}_manifest_merge",
+    ]
     comparisons = [
       {
         golden = _golden_bind

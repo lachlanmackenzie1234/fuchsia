@@ -19,7 +19,8 @@ fn format_bind_val(val: &Value) -> Result<String, anyhow::Error> {
     match val {
         Value::Number(n) => Ok(n.to_string()),
         Value::String(s) => Ok(s.clone()),
-        _ => Err(anyhow!("Invalid bind value type: {} (expected string or number)", val)),
+        Value::Bool(b) => Ok(b.to_string()),
+        _ => Err(anyhow!("Invalid bind value type: {} (expected string, number or bool)", val)),
     }
 }
 
@@ -200,12 +201,19 @@ fn generate_simple_bind_rules(bind: &DmlBind) -> Result<String, anyhow::Error> {
                 let mut exclude_pid = false;
                 let mut exclude_did = false;
 
-                if alt.protocol.is_some() { exclude_protocol = true; }
-                else if alt.service.is_some() { exclude_service = true; }
-                else if alt.compat.is_some() && !alt.compat.as_ref().unwrap().is_array() { exclude_compat = true; }
-                else if alt.vid.is_some() && !alt.vid.as_ref().unwrap().is_array() { exclude_vid = true; }
-                else if alt.pid.is_some() && !alt.pid.as_ref().unwrap().is_array() { exclude_pid = true; }
-                else if alt.did.is_some() && !alt.did.as_ref().unwrap().is_array() { exclude_did = true; }
+                if alt.protocol.is_some() {
+                    exclude_protocol = true;
+                } else if alt.service.is_some() {
+                    exclude_service = true;
+                } else if alt.compat.is_some() && !alt.compat.as_ref().unwrap().is_array() {
+                    exclude_compat = true;
+                } else if alt.vid.is_some() && !alt.vid.as_ref().unwrap().is_array() {
+                    exclude_vid = true;
+                } else if alt.pid.is_some() && !alt.pid.as_ref().unwrap().is_array() {
+                    exclude_pid = true;
+                } else if alt.did.is_some() && !alt.did.as_ref().unwrap().is_array() {
+                    exclude_did = true;
+                }
 
                 generate_simple_bind_statements_excluding(
                     alt,
@@ -591,7 +599,9 @@ mod tests {
             one_of: Some(vec![
                 DmlBind { vid: Some(Value::Number(125.into())), ..Default::default() },
                 DmlBind {
-                    compat: Some(Value::Array(vec![Value::String("fuchsia,my-compat".to_string())])),
+                    compat: Some(Value::Array(vec![Value::String(
+                        "fuchsia,my-compat".to_string(),
+                    )])),
                     ..Default::default()
                 },
             ]),
