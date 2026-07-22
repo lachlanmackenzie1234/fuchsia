@@ -288,6 +288,11 @@ handoff occurs. Each flow event may also attach arguments. A flow begin
 (`TRACE_FLOW_BEGIN` or `flow_begin`) event may be followed by a flow step
 (`TRACE_FLOW_STEP` or `flow_step`) event.
 
+Note: Flow events must be enclosed in a duration event. A flow event
+needs an enclosing duration event to serve as an anchor point for
+visualization in trace viewers (like Perfetto). If they are not enclosed,
+they will not be rendered.
+
 Perfetto requires flow event IDs to be global within a trace.
 
 For example:
@@ -296,27 +301,72 @@ For example:
 
   ```c
   trace_flow_id_t flow_id = 555;
-  TRACE_FLOW_BEGIN("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}", {{ '<var>argument_1_value</var>' }});
-  TRACE_FLOW_STEP("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_step_name</var>' }}", flow_id);
-  TRACE_FLOW_END("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id);
+
+  // First duration where the flow begins
+  {
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "enclosing_duration_1");
+    TRACE_FLOW_BEGIN("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}", {{ '<var>argument_1_value</var>' }});
+  }
+
+  // Optional intermediate duration where the flow steps
+  {
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "enclosing_duration_2");
+    TRACE_FLOW_STEP("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_step_name</var>' }}", flow_id);
+  }
+
+  // Final duration where the flow ends
+  {
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "enclosing_duration_3");
+    TRACE_FLOW_END("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id);
+  }
   ```
 
 * {C++}
 
   ```cpp
   trace_flow_id_t flow_id = 555;
-  TRACE_FLOW_BEGIN("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}", {{ '<var>argument_1_value</var>' }});
-  TRACE_FLOW_STEP("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_step_name</var>' }}", flow_id);
-  TRACE_FLOW_END("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id);
+
+  // First duration where the flow begins
+  {
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "enclosing_duration_1");
+    TRACE_FLOW_BEGIN("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}", {{ '<var>argument_1_value</var>' }});
+  }
+
+  // Optional intermediate duration where the flow steps
+  {
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "enclosing_duration_2");
+    TRACE_FLOW_STEP("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_step_name</var>' }}", flow_id);
+  }
+
+  // Final duration where the flow ends
+  {
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "enclosing_duration_3");
+    TRACE_FLOW_END("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id);
+  }
   ```
 
 * {Rust}
 
   ```rust
   let flow_id = 555;
-  flow_begin!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}" => {{ '<var>argument_1_value</var>' }});
-  flow_step!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_step_name</var>' }}", flow_id);
-  flow_end!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id);
+
+  // First duration where the flow begins
+  {
+      duration!("{{ '<var>trace_category</var>' }}", "enclosing_duration_1");
+      flow_begin!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}" => {{ '<var>argument_1_value</var>' }});
+  }
+
+  // Optional intermediate duration where the flow steps
+  {
+      duration!("{{ '<var>trace_category</var>' }}", "enclosing_duration_2");
+      flow_step!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_step_name</var>' }}", flow_id);
+  }
+
+  // Final duration where the flow ends
+  {
+      duration!("{{ '<var>trace_category</var>' }}", "enclosing_duration_3");
+      flow_end!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id);
+  }
   ```
 
 A flow event is represented as arrows in Perfetto, for example:
