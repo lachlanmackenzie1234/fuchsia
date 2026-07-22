@@ -131,11 +131,11 @@ impl PidTable {
             assert!(entry.process.is_none());
             entry.process = ProcessEntry::ThreadGroup(Arc::downgrade(task.thread_group()));
 
-            let scope = RcuReadScope::new();
             // Notify thread group changes.
-            if let Some(notifier) = self.thread_group_notifier.as_ref(&scope) {
-                task.thread_group.write().notifier = Some(notifier.clone());
+            if let Some(notifier) = self.thread_group_notifier.cloned() {
+                let mut tg_state = task.thread_group.write();
                 let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(task.tid));
+                tg_state.notifier = Some(notifier);
             }
         }
     }
