@@ -4,7 +4,11 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
-use fidl::endpoints::{ClientEnd, create_endpoints, create_proxy};
+use fidl::endpoints::{ClientEnd, ServerEnd, create_endpoints, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component_test::{
     Capability, ChildOptions, DEFAULT_COLLECTION_NAME, LocalComponentHandles, RealmBuilder, Ref,
@@ -16,7 +20,8 @@ use futures::sink::SinkExt;
 use futures::{Future, FutureExt, StreamExt, TryStreamExt};
 use maplit::hashset;
 use std::collections::HashSet;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
+
+const CM_URL: &'static str = "#meta/component_manager.cm";
 
 /// Returns a new mock that writes a file and terminates. The future indicates when writing the file has completed.
 fn new_data_user_mock<T: Into<String>, U: Into<String>>(
@@ -213,4 +218,146 @@ async fn destroyed_storage_user() {
 
     let storage_users = collect_storage_user_monikers(&storage_admin, ".").await;
     assert!(!storage_users.contains(&instance_moniker));
+}
+
+/// Tests that the storage admin protocol can open and write a file to the storage for a given
+/// component and that the `delete_all_storage_contents` function then successfully deletes that
+/// file.
+#[fuchsia::test]
+async fn storage_admin_with_subdir() {
+    let builder = RealmBuilder::new().await.unwrap();
+    let provider_child = builder
+        .add_local_child(
+            "storage_provider",
+            |handles| {
+                async move {
+                    let data_dir = handles.clone_from_namespace("tmp_storage").unwrap();
+                    let _ = fuchsia_fs::directory::create_directory_recursive(
+                        &data_dir,
+                        "data/subdir",
+                        fio::PERM_WRITABLE,
+                    )
+                    .await
+                    .unwrap();
+                    fuchsia_fs::directory::clone_onto(&data_dir, handles.outgoing_dir).unwrap();
+                    futures::future::pending().await
+                }
+                .boxed()
+            },
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
+    builder.add_storage("tmp_storage", vec![&provider_child], None).await.unwrap();
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Storage(cm_rust::StorageDecl {
+            name: cm_types::Name::new("data").unwrap(),
+            source: cm_rust::StorageDirectorySource::Child("storage_provider".to_string()),
+            backing_dir: cm_types::Name::new("data_dir").unwrap(),
+            subdir: cm_types::RelativePath::new("subdir").unwrap(),
+            storage_id: fdecl::StorageId::StaticInstanceIdOrMoniker,
+        }))
+        .await
+        .unwrap();
+    builder
+        .add_route(
+            Route::new()
+                .capability(
+                    Capability::directory("data_dir").rights(fio::RW_STAR_DIR).path("/data"),
+                )
+                .from(&provider_child)
+                .to(Ref::parent()),
+        )
+        .await
+        .unwrap();
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fcomponent::StorageAdminMarker>())
+                .from(Ref::capability("data"))
+                .to(Ref::parent()),
+        )
+        .await
+        .unwrap();
+    let user_parent = builder.add_child_realm("storage_parent", ChildOptions::new()).await.unwrap();
+    let user_child = user_parent
+        .add_local_child(
+            "storage_user",
+            |_handles| futures::future::pending().boxed(),
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::storage("data"))
+                .from(Ref::self_())
+                .to(&user_parent),
+        )
+        .await
+        .unwrap();
+    user_parent
+        .add_route(
+            Route::new()
+                .capability(Capability::storage("data").path("/data"))
+                .from(Ref::parent())
+                .to(&user_child),
+        )
+        .await
+        .unwrap();
+
+    let instance = builder.build_in_nested_component_manager(CM_URL).await.unwrap();
+
+    let storage_admin_proxy = instance
+        .root
+        .connect_to_protocol_at_exposed_dir::<fcomponent::StorageAdminProxy>()
+        .unwrap();
+    let (dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
+    storage_admin_proxy
+        .open_storage("storage_parent/storage_user", ServerEnd::new(server_end.into_channel()))
+        .await
+        .unwrap()
+        .unwrap();
+    let file_proxy = fuchsia_fs::directory::open_file(
+        &dir_proxy,
+        "example_file",
+        fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FLAG_MUST_CREATE,
+    )
+    .await
+    .unwrap();
+    fuchsia_fs::file::write(&file_proxy, "example file contents").await.unwrap();
+
+    let exposed_dir = instance.root.get_exposed_dir();
+    let data_dir = fuchsia_fs::directory::open_directory(
+        exposed_dir,
+        "data_dir",
+        fio::PERM_READABLE | fio::PERM_WRITABLE,
+    )
+    .await
+    .unwrap();
+
+    async fn readdir_for_files(proxy: &fio::DirectoryProxy) -> Vec<String> {
+        let mut readdir = fuchsia_fs::directory::readdir_recursive(proxy, None);
+        let mut file_names = vec![];
+        while let Some(res) = readdir.next().await {
+            match res {
+                Ok(e) if e.kind == fuchsia_fs::directory::DirentKind::File => {
+                    file_names.push(e.name);
+                }
+                Ok(_) => (),
+                Err(e) => panic!("failed to readdir: {e:?}"),
+            }
+        }
+        file_names
+    }
+
+    assert_eq!(
+        readdir_for_files(&data_dir).await,
+        vec!["subdir/storage_parent:0/children/storage_user:0/data/example_file".to_string()],
+    );
+
+    storage_admin_proxy.delete_all_storage_contents().await.unwrap().unwrap();
+
+    assert_eq!(readdir_for_files(&data_dir).await, Vec::<String>::new(),);
 }

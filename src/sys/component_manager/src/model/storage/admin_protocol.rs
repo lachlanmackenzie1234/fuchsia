@@ -225,7 +225,7 @@ impl StorageAdmin {
             .availability(cm_rust::Availability::Transitional)
             .target(&target)
             .rights(Some(fidl_fuchsia_io::RW_STAR_DIR.into()))
-            .subdir(cm_types::RelativePath::dot().into())
+            .subdir(self.storage_decl.subdir.clone().into())
             .inherit_rights(false)
             .build();
         let router_res = backing_dir_router

@@ -1570,8 +1570,27 @@ impl RealmNode2 {
                 .map(|c| c.native_into_fidl())
                 .collect();
         capabilities.push(capability.clone());
-        cm_fidl_validator::validate_namespace_capabilities(&capabilities)
-            .map_err(|e| RealmBuilderError::CapabilityInvalid(anyhow::anyhow!(e)))?;
+        let res = cm_fidl_validator::validate_namespace_capabilities(&capabilities);
+        // Because we are only validating the capability declarations in isolation, if this is a
+        // capability for storage that's backed by a child then we're guaranteed to get an invalid
+        // child error. Let's ignore those errors specifically, this component's manifest will be
+        // validated again when the realm is built so if the child is truly missing then it'll be
+        // caught later.
+        if let Err(e) = res {
+            let errs = e
+                .errs
+                .into_iter()
+                .filter(|e| match e {
+                    cm_fidl_validator::error::Error::InvalidChild(_, _) => false,
+                    _ => true,
+                })
+                .collect::<Vec<_>>();
+            if !errs.is_empty() {
+                return Err(RealmBuilderError::CapabilityInvalid(anyhow::anyhow!(
+                    cm_fidl_validator::error::ErrorList { errs }
+                )));
+            }
+        }
         push_if_not_present_box(&mut state_guard.decl.capabilities, capability.fidl_into_native());
         Ok(())
     }
