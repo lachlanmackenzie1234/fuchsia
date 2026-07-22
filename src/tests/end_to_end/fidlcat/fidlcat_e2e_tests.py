@@ -165,7 +165,7 @@ class Fidlcat:
 
     @classmethod
     def setup(cls: Any) -> None:
-        cls._ffx_bridge = Ffx("debug", "connect", "--agent-only")
+        cls._ffx_bridge = Ffx("debug", "connect", "--agent-only", "--new-agent")
         cls._ffx_bridge.start()
         cls._debug_agent_socket_path = (
             cls._ffx_bridge.process.stdout.readline().strip()

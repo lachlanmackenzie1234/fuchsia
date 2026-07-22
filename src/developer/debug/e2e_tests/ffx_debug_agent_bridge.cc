@@ -90,7 +90,7 @@ std::vector<char*> GetFfxArgV(const std::filesystem::path& ffx_test_data_path,
       device_addr.push_back(':');
       device_addr.append(port);
     }
-    ffx_args.push_back(strdup(device_addr.data()));
+    ffx_args.push_back(strdup(device_addr.c_str()));
   }
   ffx_args.push_back(const_cast<char*>("--config"));
   std::string ffx_config_arg(kFfxCommonConfig);
@@ -101,13 +101,14 @@ std::vector<char*> GetFfxArgV(const std::filesystem::path& ffx_test_data_path,
     ffx_config_arg.append(const_cast<char*>(",log.dir="));
     ffx_config_arg.append(test_outdir);
   }
-  ffx_args.push_back(const_cast<char*>(strdup(ffx_config_arg.data())));
+  ffx_args.push_back(strdup(ffx_config_arg.c_str()));
 
   ffx_args.push_back(const_cast<char*>("--isolate-dir"));
-  ffx_args.push_back(const_cast<char*>(isolate_dir.data()));
+  ffx_args.push_back(strdup(isolate_dir.c_str()));
   ffx_args.push_back(const_cast<char*>("debug"));
   ffx_args.push_back(const_cast<char*>("connect"));
   ffx_args.push_back(const_cast<char*>("--agent-only"));
+  ffx_args.push_back(const_cast<char*>("--new-agent"));
   ffx_args.push_back(nullptr);  // argv must be null-terminated
 
   return ffx_args;
