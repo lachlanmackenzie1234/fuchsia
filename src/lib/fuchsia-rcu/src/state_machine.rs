@@ -397,15 +397,21 @@ pub fn rcu_synchronize() {
 
 /// If any callbacks have been scheduled from this thread, call `rcu_synchronize`.
 ///
-/// If any callbacks have been scheduled from this thread, this function will block until the
+/// If any callbacks have been scheduled from this thread, this function blocks until the
 /// callbacks are unblocked and ready to be run (but have not yet necessarily finished, or even
-/// started).  If no callbacks have been scheduled from this thread, this function will return
+/// started). If no callbacks have been scheduled from this thread, this function returns
 /// immediately.
-pub fn rcu_run_callbacks() {
+///
+/// Returns `true` if callbacks were run, which indicates that new callbacks might have been
+/// scheduled as a result of executing the existing callbacks. Returns `false` otherwise.
+pub fn rcu_run_callbacks() -> bool {
     RCU_THREAD_BLOCK.with(|block| {
         assert!(!block.holding_read_lock());
         if block.has_pending_callbacks.get() {
             rcu_synchronize();
+            true
+        } else {
+            false
         }
     })
 }

@@ -77,7 +77,7 @@ impl DelayedReleaser {
     pub fn apply(&self, current_task: &CurrentTask) {
         let mut counter = 0u32;
         loop {
-            rcu_run_callbacks();
+            let ran_rcu = rcu_run_callbacks();
             let releasers = RELEASERS.with(|cell| {
                 std::mem::take(
                     cell.borrow_mut()
@@ -86,7 +86,7 @@ impl DelayedReleaser {
                         .deref_mut(),
                 )
             });
-            if releasers.is_empty() {
+            if releasers.is_empty() && !ran_rcu {
                 return;
             }
             releasers.release(current_task);
