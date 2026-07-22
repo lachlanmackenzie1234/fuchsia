@@ -279,7 +279,6 @@
                 "hackbench02",
                 "linker01",
                 "mtest06",
-                "nanosleep01",
 
                 // Test sometimes timeout instead of failing
                 "starvation",
