@@ -121,6 +121,8 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         with mock.patch.object(
             pathlib.Path, "read_text", return_value=content
         ), mock.patch.object(
+            pathlib.Path, "exists", return_value=True
+        ), mock.patch.object(
             discover_migration_candidates.ComplexityCalculator,
             "complexity_for_label",
         ) as mock_complexity_for_label:
@@ -311,7 +313,9 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             deps = [":lib"]
         }
         """
-        with mock.patch.object(pathlib.Path, "read_text", return_value=content):
+        with mock.patch.object(
+            pathlib.Path, "read_text", return_value=content
+        ), mock.patch.object(pathlib.Path, "exists", return_value=True):
             path = pathlib.Path("BUILD.gn")
             targets = discover_migration_candidates.targets_from_gn_file(
                 path, ["source_set", "executable"]
@@ -341,7 +345,9 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         gn_file = pathlib.Path("src/BUILD.gn")
         content = 'executable("foo") { }'
 
-        with mock.patch.object(pathlib.Path, "read_text", return_value=content):
+        with mock.patch.object(
+            pathlib.Path, "read_text", return_value=content
+        ), mock.patch.object(pathlib.Path, "exists", return_value=True):
             calc = discover_migration_candidates.ComplexityCalculator(
                 root, [gn_file], ["executable"]
             )

@@ -280,7 +280,16 @@ def targets_from_gn_file(
     Returns:
         List of dictionaries, each one describing a target found in the file.
     """
-    content = filepath.read_text()
+    full_path = _FUCHSIA_DIR / filepath
+    if not full_path.exists():
+        secondary_path = _FUCHSIA_DIR / "build" / "secondary" / filepath
+        if secondary_path.exists():
+            full_path = secondary_path
+        else:
+            print(f"WARNING: File not found: {filepath}", file=sys.stderr)
+            return []
+
+    content = full_path.read_text()
 
     # This regex looks for any of the input target_types followed by a name
     # and an opening brace.
