@@ -479,6 +479,7 @@ impl TopologyInspect {
         self.maybe_record_event(element, CREATE_LEASE_EVENT, |node| {
             node.record_uint(ELEMENT_ID, *element.id as u64);
             node.record_uint(LEASE_ID, *lease_id);
+            node.record_uint(LEVEL, level as u64);
         });
     }
 

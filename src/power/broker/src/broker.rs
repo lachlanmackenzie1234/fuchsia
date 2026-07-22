@@ -2996,6 +2996,7 @@ mod tests {
                     create_lease: {
                         element_id: *child,
                         lease_id: *lease.id,
+                        level: 1u64,
                     },
                 },
                 {
@@ -3070,6 +3071,7 @@ mod tests {
                     create_lease: {
                         element_id: *child,
                         lease_id: *lease.id,
+                        level: 1u64,
                     },
                 },
                 {
@@ -3146,6 +3148,7 @@ mod tests {
                     rm_lease: {
                         element_id: *child,
                         lease_id: *lease.id,
+                        level: 1u64,
                     },
                 },
             ]
