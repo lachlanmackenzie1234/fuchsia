@@ -9,7 +9,9 @@
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
+#include <lib/async/default.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
+#include <lib/fdio/directory.h>
 #include <lib/fit/defer.h>
 #include <lib/image-format/image_format.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
@@ -17,12 +19,14 @@
 #include <zircon/types.h>
 
 #include <cstdint>
+#include <span>
 
 #include <fbl/algorithm.h>
 
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
 #include "src/ui/lib/escher/flatland/rectangle_compositor.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
@@ -35,31 +39,20 @@
 #include "src/ui/scenic/lib/display/display_manager.h"
 #include "src/ui/scenic/lib/display/util.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
-#include "src/ui/scenic/lib/flatland/engine/tests/common.h"
+#include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
+#include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/tests/utils/promise.h"
 
-using ::testing::_;
-using ::testing::Return;
-
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
-using flatland::LinkSystem;
-using flatland::Renderer;
-using flatland::TransformGraph;
-using flatland::TransformHandle;
-using flatland::UberStruct;
-using flatland::UberStructSystem;
-using fuchsia::ui::composition::ChildViewStatus;
-using fuchsia::ui::composition::ChildViewWatcher;
-using fuchsia::ui::composition::LayoutInfo;
-using fuchsia::ui::composition::ParentViewportWatcher;
-using fuchsia::ui::composition::ViewportProperties;
-using fuchsia::ui::views::ViewCreationToken;
-using fuchsia::ui::views::ViewportCreationToken;
+
+#define EXPECT_HEX_EQ(expected, actual)                 \
+  EXPECT_EQ((expected), (actual)) << fxl::StringPrintf( \
+      "hexified: 0x%08X, 0x%08X", static_cast<uint32_t>(expected), static_cast<uint32_t>(actual));
 
 namespace flatland {
 namespace test {
@@ -290,10 +283,11 @@ static std::vector<uint8_t> FillVmoWithColor(
 
 }  // namespace
 
-class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
+class DisplayCompositorPixelTest : public gtest::RealLoopFixture {
  public:
   void SetUp() override {
-    DisplayCompositorTestBase::SetUp();
+    gtest::RealLoopFixture::SetUp();
+    async_set_default_dispatcher(dispatcher());
 
 #ifdef FAKE_DISPLAY
     realm_root_ = testing::BuildFakeDisplayRealm(dispatcher(), testing::DisplayRealmConfig{});
@@ -347,7 +341,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     RunLoopUntilIdle();
     executor_.reset();
     display_manager_.reset();
-    DisplayCompositorTestBase::TearDown();
+    gtest::RealLoopFixture::TearDown();
   }
 
   bool IsDisplaySupported(DisplayCompositor* display_compositor,
@@ -896,23 +890,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
         ReleaseClientTextureBufferCollection(display_compositor, kTextureCollectionId);
       });
 
-  // Setup the values we will compare the display capture against.
-  const uint32_t color = [pixel_format = GetParam()] {
-    switch (pixel_format) {
-      case fuchsia::images2::PixelFormat::R8G8B8A8:
-        return /*A*/ (255U << 24) | /*B*/ (255U << 16);
-      case fuchsia::images2::PixelFormat::B8G8R8A8:
-        return /*A*/ (255U << 24) | /*B*/ (255U << 0);
-      default:
-        FX_NOTREACHED();
-        return 0u;
-    }
-  }();
-
   // Get a raw pointer for the texture's vmo and make it blue.
   // We use blue instead of other colors, since it's easy to distinguish
   // incorrect byte ordering of RGBA / BGRA.
-  const size_t num_bytes = texture_bytes_per_row * kTextureHeight;
   std::vector<uint8_t> write_bytes =
       FillVmoWithColor(texture_collection_info, /*vmo_index=*/0, /*pixel_format=*/GetParam(),
                        kTextureWidth, kTextureHeight, /*rgba=*/{0U, 0U, 255U, 255U});
@@ -931,11 +911,6 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
     GTEST_SKIP();
   }
 
-  // Create a flatland session with a root and image handle. Import to the engine as display root.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle image_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
@@ -944,21 +919,18 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
                                                 /*out_buffer_collection*/ nullptr);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  // Setup the uberstruct data.
-  auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-  uberstruct->images[image_handle] = image_metadata;
-  uberstruct->local_matrices[image_handle] = glm::scale(
-      glm::translate(glm::mat3(1.0), glm::vec2(0, 0)), glm::vec2(kRectWidth, kRectHeight));
-  uberstruct->local_image_sample_regions[image_handle] =
-      ImageSampleRegion({.x = 0.f,
-                         .y = 0.f,
-                         .width = static_cast<float>(kRectWidth),
-                         .height = static_cast<float>(kRectHeight)});
-  session.PushUberStruct(std::move(uberstruct));
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
+                                             .width = image_metadata.width,
+                                             .height = image_metadata.height},
+  };
+  RenderData render_data = {.display_id = display->display_id(),
+                            .layers = std::span<const ResolvedLayer>(&layer, 1)};
+  std::span<const RenderData> render_data_list(&render_data, 1);
 
-  // Now we can finally render.
-  auto render_data_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
                                   [](const scheduling::Timestamps&) {});
 
@@ -1007,7 +979,6 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
-  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1050,22 +1021,11 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
       FillVmoWithColor(compare_collection_info, /*vmo_index=*/0, /*pixel_format=*/GetParam(),
                        kTextureWidth, kTextureHeight, /*rgba=*/{0U, 51U, 0U, 255U});
 
-  // Import the texture to the engine. Set green to 0.2, which when converted to an
-  // unnormalized uint8 value in the range [0,255] will be 51U.
-  auto image_metadata = ImageMetadata{.identifier = allocation::kInvalidImageId,
-                                      .multiply_color = {0, 1.0f, 0, 1},
-                                      .blend_mode = BlendMode::kReplace()};
-
   // We cannot send to display because it is not supported in allocations.
   if (!IsDisplaySupported(display_compositor.get(), kCompareCollectionId)) {
     GTEST_SKIP();
   }
 
-  // Create a flatland session with a root and image handle. Import to the engine as display root.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle image_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
@@ -1074,25 +1034,21 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
                                                 /*out_buffer_collection*/ nullptr);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  // Setup the uberstruct data.
-  auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-  uberstruct->images[image_handle] = image_metadata;
-  uberstruct->local_matrices[image_handle] = glm::scale(
-      glm::translate(glm::mat3(1.0), glm::vec2(0, 0)), glm::vec2(kRectWidth, kRectHeight));
-  uberstruct->local_image_sample_regions[image_handle] =
-      ImageSampleRegion({.x = 0.f,
-                         .y = 0.f,
-                         .width = static_cast<float>(kRectWidth),
-                         .height = static_cast<float>(kRectHeight)});
-  session.PushUberStruct(std::move(uberstruct));
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .multiply_color = {0.f, 1.f, 0.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::SolidColorContent{.color = {0.f, 1.f, 0.f, 1.f}},
+  };
+  RenderData render_data = {.display_id = display->display_id(),
+                            .layers = std::span<const ResolvedLayer>(&layer, 1)};
+  std::span<const RenderData> render_data_list(&render_data, 1);
 
   display_compositor->SetColorConversionValues({0.2f, 0, 0, 0, 0.2f, 0, 0, 0, 0.2f}, {0, 0, 0},
                                                {0, 0, 0});
 
   // Now we can finally render. Do it a few times to make sure the color correction persists.
   for (uint32_t i = 0; i < 3; i++) {
-    auto render_data_list = GenerateDisplayListForTest(
-        {{display->display_id(), std::make_pair(display_info, root_handle)}});
     display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
                                     [](const scheduling::Timestamps&) {});
 
@@ -1112,6 +1068,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
 // Renders a fullscreen blue rectangle to the provided display using a solid color rect
 // instead of an image. Use the NullRenderer to confirm this is being rendered through
 // the display hardware.
+//
+// TODO(https://fxbug.dev/42076344): Currently this test is skipped on all of the
+// display platforms Fuchsia supports, because none of the display drivers
+// fully supports the features required by the test.
 VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangleTest) {
   auto renderer = NewNullRenderer();
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
@@ -1120,7 +1080,6 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
-  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1160,22 +1119,11 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
       FillVmoWithColor(compare_collection_info, /*vmo_index=*/0, /*pixel_format=*/GetParam(),
                        kTextureWidth, kTextureHeight, /*rgba=*/{0U, 0U, 51U, 255U});
 
-  // Import the texture to the engine. Set green to 0.2, which when converted to an
-  // unnormalized uint8 value in the range [0,255] will be 51U.
-  auto image_metadata = ImageMetadata{.identifier = allocation::kInvalidImageId,
-                                      .multiply_color = {0, 0.2f, 0, 1},
-                                      .blend_mode = BlendMode::kReplace()};
-
   // We cannot send to display because it is not supported in allocations.
   if (!IsDisplaySupported(display_compositor.get(), kCompareCollectionId)) {
     GTEST_SKIP();
   }
 
-  // Create a flatland session with a root and image handle. Import to the engine as display root.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle image_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
@@ -1184,21 +1132,16 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
                                                 /*out_buffer_collection*/ nullptr);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  // Setup the uberstruct data.
-  auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-  uberstruct->images[image_handle] = image_metadata;
-  uberstruct->local_matrices[image_handle] = glm::scale(
-      glm::translate(glm::mat3(1.0), glm::vec2(0, 0)), glm::vec2(kRectWidth, kRectHeight));
-  uberstruct->local_image_sample_regions[image_handle] =
-      ImageSampleRegion({.x = 0.f,
-                         .y = 0.f,
-                         .width = static_cast<float>(kRectWidth),
-                         .height = static_cast<float>(kRectHeight)});
-  session.PushUberStruct(std::move(uberstruct));
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.2f, 0.f, 1.f}},
+  };
+  RenderData render_data = {.display_id = display->display_id(),
+                            .layers = std::span<const ResolvedLayer>(&layer, 1)};
+  std::span<const RenderData> render_data_list(&render_data, 1);
 
-  // Now we can finally render.
-  auto render_data_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
                                   [](const scheduling::Timestamps&) {});
 
@@ -1224,7 +1167,6 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
       flatland::DisplayCompositorConfig{});
 
   auto display = display_manager_->default_display();
-  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1281,23 +1223,11 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
       FX_NOTREACHED();
   }
 
-  /// The metadata for the rectangle we shall be rendering below. There is no image -- so it is
-  /// a solid-fill rectangle, with a pure black color (0,0,0,0). The goal here is to see if this
-  /// black rectangle will be clamped to the minimum allowed value.
-  auto image_metadata = ImageMetadata{.identifier = allocation::kInvalidImageId,
-                                      .multiply_color = {0, 0, 0, 0},
-                                      .blend_mode = BlendMode::kReplace()};
-
   // We cannot send to display because it is not supported in allocations.
   if (!IsDisplaySupported(display_compositor.get(), kCompareCollectionId)) {
     GTEST_SKIP();
   }
 
-  // Create a flatland session with a root and image handle. Import to the engine as display root.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle image_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
@@ -1306,23 +1236,18 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
                                                 /*out_buffer_collection*/ nullptr);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  // Setup the uberstruct data.
-  auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-  uberstruct->images[image_handle] = image_metadata;
-  uberstruct->local_matrices[image_handle] = glm::scale(
-      glm::translate(glm::mat3(1.0), glm::vec2(0, 0)), glm::vec2(kRectWidth, kRectHeight));
-  uberstruct->local_image_sample_regions[image_handle] =
-      ImageSampleRegion({.x = 0.f,
-                         .y = 0.f,
-                         .width = static_cast<float>(kRectWidth),
-                         .height = static_cast<float>(kRectHeight)});
-  session.PushUberStruct(std::move(uberstruct));
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.f, 0.f, 0.f}},
+  };
+  RenderData render_data = {.display_id = display->display_id(),
+                            .layers = std::span<const ResolvedLayer>(&layer, 1)};
+  std::span<const RenderData> render_data_list(&render_data, 1);
 
   display_compositor->SetMinimumRgb(kMinimum);
 
-  // Now we can finally render.
-  auto render_data_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
                                   [](const scheduling::Timestamps&) {});
 
@@ -1358,7 +1283,6 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   }
 
   auto display = display_manager_->default_display();
-  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1481,8 +1405,12 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   const uint32_t width = display->width_in_px() / 2;
   const uint32_t height = display->height_in_px();
 
+  std::array<glm::ivec2, 4> uvs = {glm::ivec2(0, 0), glm::ivec2(kTextureWidth, 0),
+                                   glm::ivec2(kTextureWidth, kTextureHeight),
+                                   glm::ivec2(0, kTextureHeight)};
   ResolvedLayer layer1 = {
-      .rect = {glm::vec2(0), glm::vec2(width, height)},
+      .rect = {glm::vec2(0), glm::vec2(width, height), uvs,
+               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image_metadatas[0].identifier,
@@ -1491,7 +1419,8 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
           },
   };
   ResolvedLayer layer2 = {
-      .rect = {glm::vec2(width, 0), glm::vec2(width, height)},
+      .rect = {glm::vec2(width, 0), glm::vec2(width, height), uvs,
+               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image_metadatas[1].identifier,
@@ -1499,7 +1428,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
               .height = image_metadatas[1].height,
           },
   };
-  ResolvedLayer layers[] = {layer1, layer2};
+  std::array layers{layer1, layer2};
   RenderData render_data = {
       .display_id = display->display_id(),
       .layers = layers,
@@ -1562,7 +1491,6 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto blend_mode_param = GetParam();
   auto display = display_manager_->default_display();
-  auto& display_coordinator = raw_display_coordinator();
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1679,7 +1607,7 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
               .height = image_metadatas[1].height,
           },
   };
-  ResolvedLayer layers[] = {layer1, layer2};
+  std::array layers{layer1, layer2};
   RenderData render_data = {
       .display_id = display->display_id(),
       .layers = layers,
@@ -1781,6 +1709,9 @@ INSTANTIATE_TEST_SUITE_P(PixelFormats, DisplayCompositorParameterizedTest,
 // NOTE: the magnified square uses a linear magnification filter, so not all of the pixels are
 //       100% blue or white.
 //
+// NOTE: the name is a misnomer, after the test was rewritten to use a flat display list instead
+//       of an UberStruct scene.
+//
 // - - - - - - - - - -     where i: rgba(137, 137, 255, 255)
 // - B W - - B i j W -           j: rgba(225, 225, 255, 255)
 // - W W - - i k l W -           k: rgba(177, 177, 255, 255)
@@ -1862,18 +1793,6 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   EXPECT_TRUE(RunPromise(
       display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
-  // Create a flatland session to represent a graph that has magnification applied.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle parent_1_handle = session.graph().CreateTransform();
-  const TransformHandle parent_2_handle = session.graph().CreateTransform();
-  const TransformHandle child_handle = session.graph().CreateTransform();
-
-  session.graph().AddChild(root_handle, parent_1_handle);
-  session.graph().AddChild(root_handle, parent_2_handle);
-  session.graph().AddChild(parent_1_handle, child_handle);
-  session.graph().AddChild(parent_2_handle, child_handle);
-
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
@@ -1883,33 +1802,30 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
       display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  // Setup the uberstruct data.
-  auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-  {
-    uberstruct->images[child_handle] = image_metadata;
+  const std::array uvs = {glm::ivec2(0, 0), glm::ivec2(kTextureWidth, 0),
+                          glm::ivec2(kTextureWidth, kTextureHeight), glm::ivec2(0, kTextureHeight)};
+  ResolvedLayer layer1 = {
+      .rect = {glm::vec2(0, 0), glm::vec2(2, 2), uvs,
+               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
+                                             .width = image_metadata.width,
+                                             .height = image_metadata.height},
+  };
+  ResolvedLayer layer2 = {
+      .rect = {glm::vec2(10, 0), glm::vec2(4, 4), uvs,
+               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
+                                             .width = image_metadata.width,
+                                             .height = image_metadata.height},
+  };
+  std::array layers{layer1, layer2};
+  RenderData render_data = {.display_id = display->display_id(), .layers = layers};
+  std::span<const RenderData> render_data_list(&render_data, 1);
 
-    // The first parent will have (1,1) scale and no translation.
-    uberstruct->local_matrices[parent_1_handle] =
-        glm::scale(glm::translate(glm::mat3(1.0), glm::vec2(0, 0)), glm::vec2(1, 1));
-
-    // The second parent will have a(2, 2) scale and a translation applied to it to
-    // shift it to the right.  The scale is applied first (i.e. the translation is not scaled).
-    uberstruct->local_matrices[parent_2_handle] =
-        glm::scale(glm::translate(glm::mat3(1.0), glm::vec2(10, 0)), glm::vec2(2, 2));
-
-    // The child has a built in scale of 2x2.
-    uberstruct->local_matrices[child_handle] = glm::scale(glm::mat3(1.0), glm::vec2(2, 2));
-    uberstruct->local_image_sample_regions[child_handle] =
-        ImageSampleRegion({.x = 0.f,
-                           .y = 0.f,
-                           .width = static_cast<float>(kTextureWidth),
-                           .height = static_cast<float>(kTextureHeight)});
-    session.PushUberStruct(std::move(uberstruct));
-  }
-
-  // Now we can finally render.
-  auto render_data_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   auto render_frame_result = display_compositor->RenderFrame(
       1, zx::time(1), render_data_list, {}, {}, {}, [](const scheduling::Timestamps&) {},
       // NOTE: this is somewhat redundant, since we also pass enable_direct_to_display=false into
@@ -1983,32 +1899,32 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
         const uint32_t kBlueColor = 0xFF0000FF;
 
         // Verify the colors of the 4 pixels in the unmagnified rect.
-        EXPECT_EQ(kBlueColor, get_pixel(vmo_host, 0, 0));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 1, 0));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 0, 1));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 1, 1));
+        EXPECT_HEX_EQ(kBlueColor, get_pixel(vmo_host, 0, 0));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 1, 0));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 0, 1));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 1, 1));
 
         // Verify the colors of the 16 pixels in the magnified rect.
         // (top row)
-        EXPECT_EQ(kBlueColor, get_pixel(vmo_host, 10, 0));
-        EXPECT_EQ(make_bgra_pixel(137, 137, 255, 255), get_pixel(vmo_host, 11, 0));
-        EXPECT_EQ(make_bgra_pixel(225, 225, 255, 255), get_pixel(vmo_host, 12, 0));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 13, 0));
+        EXPECT_HEX_EQ(kBlueColor, get_pixel(vmo_host, 10, 0));
+        EXPECT_HEX_EQ(make_bgra_pixel(137, 137, 255, 255), get_pixel(vmo_host, 11, 0));
+        EXPECT_HEX_EQ(make_bgra_pixel(225, 225, 255, 255), get_pixel(vmo_host, 12, 0));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 13, 0));
         // (2nd row)
-        EXPECT_EQ(make_bgra_pixel(137, 137, 255, 255), get_pixel(vmo_host, 10, 1));
-        EXPECT_EQ(make_bgra_pixel(177, 177, 255, 255), get_pixel(vmo_host, 11, 1));
-        EXPECT_EQ(make_bgra_pixel(233, 233, 255, 255), get_pixel(vmo_host, 12, 1));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 13, 1));
+        EXPECT_HEX_EQ(make_bgra_pixel(137, 137, 255, 255), get_pixel(vmo_host, 10, 1));
+        EXPECT_HEX_EQ(make_bgra_pixel(177, 177, 255, 255), get_pixel(vmo_host, 11, 1));
+        EXPECT_HEX_EQ(make_bgra_pixel(233, 233, 255, 255), get_pixel(vmo_host, 12, 1));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 13, 1));
         // (3nd row)
-        EXPECT_EQ(make_bgra_pixel(225, 225, 255, 255), get_pixel(vmo_host, 10, 2));
-        EXPECT_EQ(make_bgra_pixel(233, 233, 255, 255), get_pixel(vmo_host, 11, 2));
-        EXPECT_EQ(make_bgra_pixel(248, 248, 255, 255), get_pixel(vmo_host, 12, 2));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 13, 2));
+        EXPECT_HEX_EQ(make_bgra_pixel(225, 225, 255, 255), get_pixel(vmo_host, 10, 2));
+        EXPECT_HEX_EQ(make_bgra_pixel(233, 233, 255, 255), get_pixel(vmo_host, 11, 2));
+        EXPECT_HEX_EQ(make_bgra_pixel(248, 248, 255, 255), get_pixel(vmo_host, 12, 2));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 13, 2));
         // (bottom row)
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 10, 3));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 11, 3));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 12, 3));
-        EXPECT_EQ(kWhiteColor, get_pixel(vmo_host, 13, 3));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 10, 3));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 11, 3));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 12, 3));
+        EXPECT_HEX_EQ(kWhiteColor, get_pixel(vmo_host, 13, 3));
 
         // Verify that all of the rest of the pixels (except for the 20 above) are black.
         uint32_t num_black = 0;
@@ -2053,7 +1969,6 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
 VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest) {
   SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
   auto display = display_manager_->default_display();
-  auto& display_coordinator = raw_display_coordinator();
 
   // Use the VK renderer here so we can make use of software rendering.
   auto [escher, renderer] = NewVkRenderer();
@@ -2090,8 +2005,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
                                   .identifier = allocation::GenerateUniqueImageId(),
                                   .vmo_index = 0,
                                   .width = kTextureWidth,
-                                  .height = kTextureHeight,
-                                  .flip = fuchsia_ui_composition::ImageFlip::kUpDown};
+                                  .height = kTextureHeight};
 
   auto texture_collection =
       SetupClientTextures(display_compositor.get(), kTextureCollectionId, GetParam(), 60, 40,
@@ -2124,12 +2038,6 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
   EXPECT_TRUE(RunPromise(
       display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle parent_handle = session.graph().CreateTransform();
-
-  session.graph().AddChild(root_handle, parent_handle);
-
   fuchsia::sysmem2::BufferCollectionInfo render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
@@ -2139,28 +2047,22 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
       display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  // Setup the uberstruct data.
-  auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-  {
-    uberstruct->images[parent_handle] = image_metadata;
+  std::array<glm::ivec2, 4> uvs = {glm::ivec2(0, 0), glm::ivec2(2, 0), glm::ivec2(2, 2),
+                                   glm::ivec2(0, 2)};
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(2, 2), uvs,
+               fuchsia::ui::composition::Orientation::CCW_180_DEGREES},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .flip = fuchsia_ui_composition::ImageFlip::kUpDown,
+      .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
+                                             .width = image_metadata.width,
+                                             .height = image_metadata.height},
+  };
+  RenderData render_data = {.display_id = display->display_id(),
+                            .layers = std::span<const ResolvedLayer>(&layer, 1)};
+  std::span<const RenderData> render_data_list(&render_data, 1);
 
-    // The first parent will have (1,1) scale and no translation.
-    glm::mat3 matrix = glm::mat3();
-    matrix = glm::translate(matrix, glm::vec2(2, 2));
-    matrix = glm::rotate(matrix, glm::pi<float>());
-    matrix = glm::scale(matrix, glm::vec2(2, 2));
-    uberstruct->local_matrices[parent_handle] = matrix;
-    uberstruct->local_image_sample_regions[parent_handle] =
-        ImageSampleRegion({.x = 0.f,
-                           .y = 0.f,
-                           .width = static_cast<float>(kTextureWidth),
-                           .height = static_cast<float>(kTextureHeight)});
-    session.PushUberStruct(std::move(uberstruct));
-  }
-
-  // Now we can finally render.
-  auto render_data_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   display_compositor->RenderFrame(1, zx::time(1), render_data_list, {}, {}, {},
                                   [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
@@ -2234,8 +2136,8 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
         };
 
         // Expect the top-right corner of the rect to be blue.
-        EXPECT_EQ(get_bgra_pixel(vmo_host, 0, 0), kWhiteColorBgra);
-        EXPECT_EQ(get_bgra_pixel(vmo_host, 1, 0), kBlueColorBgra);
+        EXPECT_HEX_EQ(get_bgra_pixel(vmo_host, 0, 0), kWhiteColorBgra);
+        EXPECT_HEX_EQ(get_bgra_pixel(vmo_host, 1, 0), kBlueColorBgra);
       });
 }
 
@@ -2287,9 +2189,6 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
         ReleaseClientTextureBufferCollection(display_compositor, kTextureCollectionId);
       });
 
-  const uint32_t texture_bytes_per_row =
-      utils::GetBytesPerRow(texture_collection_info.settings(), kTextureWidth);
-
   std::vector<uint8_t> blue_write_values =
       FillVmoWithColor(texture_collection_info, /*vmo_index=*/0, /*pixel_format=*/kPixelFormat,
                        kTextureWidth, kTextureHeight, /*rgba=*/{0U, 0U, 255U, 255U});
@@ -2319,12 +2218,6 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
         green_image_metadata, BufferCollectionUsage::kClientImage)));
   }
 
-  // Create a flatland session with a root and image handle. Import to the engine as display root.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle image_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, image_handle);
-
   // Set up display render targets.
   //
   // Other tests use the buffer collection info to obtain the pixel format when comparing the
@@ -2339,26 +2232,29 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
                                      /*out_buffer_collection*/ &unused_render_target_info);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  // We shouldn't even need UberStructs at all.  We're going to render several blue and green frames
-  // so generate one reusable display list for each of them.
-  auto push_uberstruct_for_image_into_session = [&](ImageMetadata& im) {
-    auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-    uberstruct->images[image_handle] = im;
-    uberstruct->local_matrices[image_handle] = glm::scale(
-        glm::translate(glm::mat3(1.0), glm::vec2(0, 0)), glm::vec2(kRectWidth, kRectHeight));
-    uberstruct->local_image_sample_regions[image_handle] =
-        ImageSampleRegion({.x = 0.f,
-                           .y = 0.f,
-                           .width = static_cast<float>(kRectWidth),
-                           .height = static_cast<float>(kRectHeight)});
-    session.PushUberStruct(std::move(uberstruct));
+  const ResolvedLayer blue_layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = blue_image_metadata.identifier,
+                                             .width = blue_image_metadata.width,
+                                             .height = blue_image_metadata.height},
   };
-  push_uberstruct_for_image_into_session(blue_image_metadata);
-  auto blue_display_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
-  push_uberstruct_for_image_into_session(green_image_metadata);
-  auto green_display_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
+  const RenderData blue_render_data = {.display_id = display->display_id(),
+                                       .layers = std::span<const ResolvedLayer>(&blue_layer, 1)};
+  std::span<const RenderData> blue_display_list(&blue_render_data, 1);
+
+  const ResolvedLayer green_layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = green_image_metadata.identifier,
+                                             .width = green_image_metadata.width,
+                                             .height = green_image_metadata.height},
+  };
+  const RenderData green_render_data = {.display_id = display->display_id(),
+                                        .layers = std::span<const ResolvedLayer>(&green_layer, 1)};
+  std::span<const RenderData> green_display_list(&green_render_data, 1);
 
   // FRAME 1, BLUE, GPU-COMPOSITED //////////////////////////////////////////////////////
 
@@ -2472,7 +2368,6 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
 
   auto display = display_manager_->default_display();
   const auto kPixelFormat = fuchsia::images2::PixelFormat::B8G8R8A8;
-  const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
 
   // Set up buffer collection and image for display_coordinator capture.
@@ -2489,11 +2384,6 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
   auto release_capture_collection = fit::defer(
       [this, kCaptureCollectionId] { ReleaseCaptureBufferCollection(kCaptureCollectionId); });
 
-  // Create a flatland session with a root and image handle. Import to the engine as display root.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle child_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, child_handle);
   fuchsia::sysmem2::BufferCollectionInfo unused_render_target_info;
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
@@ -2505,8 +2395,8 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Render an empty frame.
-  auto render_data_list = GenerateDisplayListForTest(
-      {{display->display_id(), std::make_pair(display_info, root_handle)}});
+  RenderData render_data = {.display_id = display->display_id(), .layers = {}};
+  std::span<const RenderData> render_data_list(&render_data, 1);
   auto render_frame_result = display_compositor->RenderFrame(
       1, zx::time(1), render_data_list, {}, {}, {}, [](const scheduling::Timestamps&) {},
       {.force_gpu_composition = false});

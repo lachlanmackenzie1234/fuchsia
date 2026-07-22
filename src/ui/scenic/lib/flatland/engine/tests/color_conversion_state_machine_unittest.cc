@@ -11,8 +11,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "src/ui/scenic/lib/flatland/engine/tests/common.h"
-
 namespace flatland {
 namespace test {
 

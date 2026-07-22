@@ -6,20 +6,26 @@
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <lib/async/default.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
+#include <lib/fdio/directory.h>
 #include <lib/fit/defer.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/zircon-internal/align.h>
 
+#include <span>
+
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/fsl/handles/object_info.h"
+#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/display/display_manager.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
-#include "src/ui/scenic/lib/flatland/engine/tests/common.h"
+#include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
+#include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
@@ -28,7 +34,6 @@
 
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
-using flatland::TransformHandle;
 
 namespace flatland {
 namespace test {
@@ -38,10 +43,11 @@ namespace test {
 // those that do not have a real display, and those where making sysmem buffer
 // collection vmos host-accessible (i.e. cpu accessible) is not allowed, precluding
 // the possibility of doing a pixel readback on the framebuffers.
-class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
- public:
+class DisplayCompositorSmokeTest : public gtest::RealLoopFixture {
+ protected:
   void SetUp() override {
-    DisplayCompositorTestBase::SetUp();
+    gtest::RealLoopFixture::SetUp();
+    async_set_default_dispatcher(dispatcher());
 
     realm_root_ = testing::BuildFakeDisplayRealm(dispatcher(), testing::DisplayRealmConfig{});
 
@@ -92,7 +98,7 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
     RunLoopUntilIdle();
     executor_.reset();
     display_manager_.reset();
-    DisplayCompositorTestBase::TearDown();
+    gtest::RealLoopFixture::TearDown();
   }
 
   bool IsDisplaySupported(DisplayCompositor* display_compositor,
@@ -220,35 +226,26 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
   // We cannot send to display because it is not supported in allocations.
   EXPECT_TRUE(IsDisplaySupported(display_compositor.get(), kTextureCollectionId));
 
-  // Create a flatland session with a root and image handle. Import to the engine as display root.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle image_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, image_handle);
   DisplayInfo display_info{
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kPixelFormat}};
   display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
                                  /*out_collection_info*/ nullptr);
 
-  // Setup the uberstruct data.
-  auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
-  uberstruct->images[image_handle] = image_metadata;
-  uberstruct->local_matrices[image_handle] = glm::scale(
-      glm::translate(glm::mat3(1.0), glm::vec2(0, 0)), glm::vec2(kRectWidth, kRectHeight));
-  uberstruct->local_image_sample_regions[image_handle] =
-      ImageSampleRegion({.x = 0,
-                         .y = 0,
-                         .width = static_cast<float>(kTextureWidth),
-                         .height = static_cast<float>(kTextureHeight)});
-  session.PushUberStruct(std::move(uberstruct));
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
+                                             .width = image_metadata.width,
+                                             .height = image_metadata.height},
+  };
+  RenderData render_data = {.display_id = display->display_id(),
+                            .layers = std::span<const ResolvedLayer>(&layer, 1)};
 
   // Now we can finally render.
-  display_compositor->RenderFrame(
-      1, zx::time(1),
-      GenerateDisplayListForTest(
-          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
-      {}, {}, {}, [](const scheduling::Timestamps&) {});
+  display_compositor->RenderFrame(1, zx::time(1), std::span<const RenderData>(&render_data, 1), {},
+                                  {}, {}, [](const scheduling::Timestamps&) {});
 }
 
 // TODO(https://fxbug.dev/42154038): Add YUV formats when they are supported by fake or real

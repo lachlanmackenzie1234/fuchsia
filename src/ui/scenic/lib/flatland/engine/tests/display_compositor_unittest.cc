@@ -2,13 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
+
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.math/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/math/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/executor.h>
+#include <lib/async/cpp/task.h>
+#include <lib/async/default.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/time.h>
@@ -18,11 +23,12 @@
 
 #include <gmock/gmock.h>
 
+#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/display/util.h"
-#include "src/ui/scenic/lib/flatland/engine/tests/common.h"
 #include "src/ui/scenic/lib/flatland/engine/tests/mock_display_coordinator.h"
+#include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/renderer/mock_renderer.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/tests/utils/promise.h"
@@ -34,7 +40,7 @@ using ::testing::Return;
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
 using flatland::MockDisplayCoordinator;
-using flatland::TransformHandle;
+
 using fuchsia_ui_composition::ImageFlip;
 using integration_tests::ReturnPromise;
 
@@ -126,10 +132,11 @@ bool RunWithTimeoutOrUntil(fit::function<bool()> condition, zx::duration timeout
 
 }  // namespace
 
-class DisplayCompositorTest : public DisplayCompositorTestBase {
+class DisplayCompositorTest : public gtest::RealLoopFixture {
  public:
   void SetUp() override {
-    DisplayCompositorTestBase::SetUp();
+    gtest::RealLoopFixture::SetUp();
+    async_set_default_dispatcher(dispatcher());
 
     sysmem_allocator_ = utils::CreateSysmemAllocatorClient(dispatcher(), "DisplayCompositorTest");
 
@@ -182,7 +189,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
     display_coordinator_loop_.Quit();
     display_coordinator_loop_.JoinThreads();
 
-    DisplayCompositorTestBase::TearDown();
+    gtest::RealLoopFixture::TearDown();
   }
 
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> CreateToken() {
@@ -249,7 +256,8 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 
   void HardwareFrameCorrectnessWithRotationTester(
-      glm::mat3 transform_matrix, ImageFlip image_flip, fuchsia_math::wire::RectU expected_dst,
+      fuchsia::ui::composition::Orientation orientation, ImageFlip image_flip,
+      fuchsia_math::wire::RectU expected_dst,
       display::WireCoordinateTransformation expected_transform);
 };
 
@@ -921,12 +929,6 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
 
 // This test checks that DisplayCompositor properly processes ConfigStamp from Vsync.
 TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  display::DisplayId display_id(1);
-  glm::uvec2 resolution(1024, 768);
-  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
-
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
       .Times(1)
@@ -967,30 +969,6 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
-  // Create a parent and child session.
-  auto parent_session = CreateSession();
-  auto child_session = CreateSession();
-
-  // Create a link between the two.
-  auto link_to_child = child_session.CreateView(parent_session);
-
-  // Create the root handle for the parent and a handle that will have an image attached.
-  const TransformHandle parent_root_handle = parent_session.graph().CreateTransform();
-  const TransformHandle parent_image_handle = parent_session.graph().CreateTransform();
-
-  // Add the two children to the parent root: link, then image.
-  parent_session.graph().AddChild(parent_root_handle, link_to_child.GetInternalLinkHandle());
-  parent_session.graph().AddChild(parent_root_handle, parent_image_handle);
-
-  // Create an image handle for the child.
-  const TransformHandle child_image_handle = child_session.graph().CreateTransform();
-
-  // Attach that image handle to the child link transform handle.
-  child_session.graph().AddChild(child_session.GetLinkChildTransformHandle(), child_image_handle);
-
-  // Get an UberStruct for the parent session.
-  auto parent_struct = parent_session.CreateUberStructWithCurrentTopology(parent_root_handle);
-
   // Add an image.
   ImageMetadata parent_image_metadata = ImageMetadata{
       .collection_id = kGlobalBufferCollectionId,
@@ -1000,19 +978,6 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
       .height = 256,
       .blend_mode = BlendMode::kReplace(),
   };
-  parent_struct->images[parent_image_handle] = parent_image_metadata;
-
-  parent_struct->local_matrices[parent_image_handle] =
-      glm::scale(glm::translate(glm::mat3(1.0), glm::vec2(9, 13)), glm::vec2(10, 20));
-  parent_struct->local_image_sample_regions[parent_image_handle] =
-      ImageSampleRegion({.x = 0, .y = 0, .width = 128, .height = 256});
-
-  // Submit the UberStruct.
-  parent_session.PushUberStruct(std::move(parent_struct));
-
-  // Get an UberStruct for the child session. Note that the argument will be ignored anyway.
-  auto child_struct = child_session.CreateUberStructWithCurrentTopology(
-      child_session.GetLinkChildTransformHandle());
 
   // Add an image.
   ImageMetadata child_image_metadata = ImageMetadata{
@@ -1023,28 +988,28 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
       .height = 1024,
       .blend_mode = BlendMode::kReplace(),
   };
-  child_struct->images[child_image_handle] = child_image_metadata;
-  child_struct->local_matrices[child_image_handle] =
-      glm::scale(glm::translate(glm::mat3(1), glm::vec2(5, 7)), glm::vec2(30, 40));
-  child_struct->local_image_sample_regions[child_image_handle] =
-      ImageSampleRegion({.x = 0, .y = 0, .width = 512, .height = 1024});
-
-  // Submit the UberStruct.
-  child_session.PushUberStruct(std::move(child_struct));
 
   const display::DisplayId kDisplayId(1);
   glm::uvec2 resolution(1024, 768);
 
   // We will end up with 2 source frames, 2 destination frames, and two layers being sent to the
   // display.
-  const fuchsia_math::wire::RectU sources[2] = {
+  const fuchsia_math::wire::RectU kExpectedSources[2] = {
       {.x = 0u, .y = 0u, .width = 512, .height = 1024u},
       {.x = 0u, .y = 0u, .width = 128u, .height = 256u},
   };
 
-  const fuchsia_math::wire::RectU destinations[2] = {
+  const fuchsia_math::wire::RectU kExpectedDestinations[2] = {
       {.x = 5u, .y = 7u, .width = 30, .height = 40u},
       {.x = 9u, .y = 13u, .width = 10u, .height = 20u},
+  };
+
+  auto MakeRect = [](const fuchsia_math::wire::RectU& src, const fuchsia_math::wire::RectU& dst) {
+    return ImageRect(
+        glm::vec2(dst.x, dst.y), glm::vec2(dst.width, dst.height),
+        {glm::ivec2(src.x, src.y), glm::ivec2(src.x + src.width, src.y),
+         glm::ivec2(src.x + src.width, src.y + src.height), glm::ivec2(src.x, src.y + src.height)},
+        fuchsia::ui::composition::Orientation::CCW_0_DEGREES);
   };
 
   EXPECT_CALL(*mock_display_coordinator_,
@@ -1167,11 +1132,11 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
             _))
         .Times(1)
         .WillOnce(testing::Invoke(
-            [sources, destinations, index = i](
+            [kExpectedSources, kExpectedDestinations, index = i](
                 fuchsia_hardware_display::wire::CoordinatorSetLayerPrimaryPositionRequest* request,
                 MockDisplayCoordinator::SetLayerPrimaryPositionCompleter::Sync& completer) {
-              EXPECT_EQ(request->image_source, sources[index]);
-              EXPECT_EQ(request->display_destination, destinations[index]);
+              EXPECT_EQ(request->image_source, kExpectedSources[index]);
+              EXPECT_EQ(request->display_destination, kExpectedDestinations[index]);
             }));
 
     EXPECT_CALL(
@@ -1210,8 +1175,26 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
-  auto render_data_list =
-      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}});
+  ResolvedLayer child_layer = {
+      .rect = MakeRect(kExpectedSources[0], kExpectedDestinations[0]),
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = child_image_metadata.identifier,
+                                             .width = child_image_metadata.width,
+                                             .height = child_image_metadata.height},
+  };
+  ResolvedLayer parent_layer = {
+      .rect = MakeRect(kExpectedSources[1], kExpectedDestinations[1]),
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .content = ResolvedLayer::ImageContent{.image_id = parent_image_metadata.identifier,
+                                             .width = parent_image_metadata.width,
+                                             .height = parent_image_metadata.height},
+  };
+  std::array resolved_layers = {child_layer, parent_layer};
+  RenderData render_data = {.display_id = kDisplayId, .layers = resolved_layers};
+  std::span<const RenderData> render_data_list(&render_data, 1);
+
   display_compositor_->RenderFrame(1, zx::time_monotonic(1), render_data_list, {}, {}, {},
                                    [](const scheduling::Timestamps&) {});
 
@@ -1226,25 +1209,16 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   }
 }
 
+// The rotation and flip tests below share the following setup:
+// the layer draws a 128×256 image (full sample region) into a 10×20 destination rect
+// at the origin; each test below varies only the rotation/flip.
 void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
-    glm::mat3 transform_matrix, ImageFlip image_flip, const fuchsia_math::wire::RectU expected_dst,
+    fuchsia::ui::composition::Orientation orientation, ImageFlip image_flip,
+    const fuchsia_math::wire::RectU expected_dst,
     display::WireCoordinateTransformation expected_transform) {
   const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
-
-  // Create a parent session.
-  auto parent_session = CreateSession();
-
-  // Create the root handle for the parent and a handle that will have an image attached.
-  const TransformHandle parent_root_handle = parent_session.graph().CreateTransform();
-  const TransformHandle parent_image_handle = parent_session.graph().CreateTransform();
-
-  // Add the image to the parent.
-  parent_session.graph().AddChild(parent_root_handle, parent_image_handle);
-
-  // Get an UberStruct for the parent session.
-  auto parent_struct = parent_session.CreateUberStructWithCurrentTopology(parent_root_handle);
 
   // Add an image.
   ImageMetadata parent_image_metadata = ImageMetadata{
@@ -1256,21 +1230,14 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
       .blend_mode = BlendMode::kReplace(),
       .flip = image_flip,
   };
-  parent_struct->images[parent_image_handle] = parent_image_metadata;
-
-  parent_struct->local_matrices[parent_image_handle] = std::move(transform_matrix);
-  parent_struct->local_image_sample_regions[parent_image_handle] =
-      ImageSampleRegion({.x = 0, .y = 0, .width = 128, .height = 256});
-
-  // Submit the UberStruct.
-  parent_session.PushUberStruct(std::move(parent_struct));
 
   const display::DisplayId kDisplayId(1);
   glm::uvec2 resolution(1024, 768);
 
   // We will end up with 1 source frame, 1 destination frame, and one layer being sent to the
   // display.
-  fuchsia_math::wire::RectU expected_source = {.x = 0u, .y = 0u, .width = 128u, .height = 256u};
+  const fuchsia_math::wire::RectU kExpectedSource = {
+      .x = 0u, .y = 0u, .width = 128u, .height = 256u};
 
   EXPECT_CALL(*mock_display_coordinator_,
               ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,
@@ -1371,10 +1338,10 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
           _))
       .Times(1)
       .WillOnce(testing::Invoke(
-          [expected_source, expected_dst](
+          [kExpectedSource, expected_dst](
               fuchsia_hardware_display::wire::CoordinatorSetLayerPrimaryPositionRequest* request,
               MockDisplayCoordinator::SetLayerPrimaryPositionCompleter::Sync& completer) {
-            EXPECT_EQ(request->image_source, expected_source);
+            EXPECT_EQ(request->image_source, kExpectedSource);
             EXPECT_EQ(request->display_destination, expected_dst);
           }));
   EXPECT_CALL(
@@ -1410,8 +1377,22 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
 
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
-  auto render_data_list =
-      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}});
+  std::array<glm::ivec2, 4> uvs = {glm::ivec2(0, 0), glm::ivec2(128, 0), glm::ivec2(128, 256),
+                                   glm::ivec2(0, 256)};
+  ResolvedLayer layer = {
+      .rect = {glm::vec2(expected_dst.x, expected_dst.y),
+               glm::vec2(expected_dst.width, expected_dst.height), uvs, orientation},
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .flip = image_flip,
+      .content = ResolvedLayer::ImageContent{.image_id = parent_image_metadata.identifier,
+                                             .width = parent_image_metadata.width,
+                                             .height = parent_image_metadata.height},
+  };
+  RenderData render_data = {.display_id = kDisplayId,
+                            .layers = std::span<const ResolvedLayer>(&layer, 1)};
+  std::span<const RenderData> render_data_list(&render_data, 1);
+
   display_compositor_->RenderFrame(1, zx::time_monotonic(1), render_data_list, {}, {}, {},
                                    [](const scheduling::Timestamps&) {});
 
@@ -1427,148 +1408,106 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1);
 }
 
+// With90DegreeRotationTest
+//   90° CCW rotation swaps the destination's W/H: 10×20 -> 20×10 at the origin.
+//   Display transform: rotate CCW 90°.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith90DegreeRotationTest) {
-  // After scale and 90 CCW rotation, the new top-left corner would be (0, -10). Translate
-  // back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(0, 10));
-  matrix = glm::rotate(matrix, -glm::half_pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-
-  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kNone, expected_dst,
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
+  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_90_DEGREES,
+                                             ImageFlip::kNone, kExpectedDest,
                                              display::WireCoordinateTransformation::kRotateCcw90);
 }
 
+// With180DegreeRotationTest
+//   180° rotation preserves W/H: destination stays 10×20 at the origin.
+//   Display transform: rotate CCW 180°.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith180DegreeRotationTest) {
-  // After scale and 180 CCW rotation, the new top-left corner would be (-10, -20).
-  // Translate back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(10, 20));
-  matrix = glm::rotate(matrix, -glm::pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-
-  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kNone, expected_dst,
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
+  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_180_DEGREES,
+                                             ImageFlip::kNone, kExpectedDest,
                                              display::WireCoordinateTransformation::kRotateCcw180);
 }
 
+// With270DegreeRotationTest
+//   270° CCW rotation swaps W/H: 10×20 -> 20×10 at the origin.
+//   Display transform: rotate CCW 270°.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith270DegreeRotationTest) {
-  // After scale and 270 CCW rotation, the new top-left corner would be (-20, 0). Translate
-  // back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(20, 0));
-  matrix = glm::rotate(matrix, -glm::three_over_two_pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-
-  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kNone, expected_dst,
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
+  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_270_DEGREES,
+                                             ImageFlip::kNone, kExpectedDest,
                                              display::WireCoordinateTransformation::kRotateCcw270);
 }
 
+// WithLeftRightFlipTest
+//   No rotation: destination stays 10×20.  A left-right (horizontal) mirror is a
+//   reflection across the Y axis (kReflectY); the flip rides ImageFlip.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlipTest) {
-  glm::mat3 matrix = glm::scale(glm::mat3(), glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-
-  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kLeftRight, expected_dst,
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
+  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_0_DEGREES,
+                                             ImageFlip::kLeftRight, kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectY);
 }
 
+// WithUpDownFlipTest
+//   No rotation: destination stays 10×20.  An up-down (vertical) mirror reflects
+//   across the X axis (kReflectX); the flip rides ImageFlip.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlipTest) {
-  glm::mat3 matrix = glm::scale(glm::mat3(), glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-
-  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kUpDown, expected_dst,
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
+  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_0_DEGREES,
+                                             ImageFlip::kUpDown, kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectX);
 }
 
+// WithLeftRightFlip90DegreeRotationTest
+//   Left-right flip combined with 90° CCW rotation; destination 10×20 -> 20×10.
+//   Display transform ROTATE_CCW_90_REFLECT_X: "ROTATE_CCW_90, followed by
+//   REFLECT_X" (coordinator.fidl / fuchsia.hardware.display.types.CoordinateTransformation :
+//   the combined enums rotate first, then reflect).  Note the reflection is
+//   REFLECT_X here, whereas a left-right flip *without* rotation is REFLECT_Y
+//   (kReflectY): the display reflects in the post-rotation frame.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip90DegreeRotationTest) {
-  // After scale and 90 CCW rotation, the new top-left corner would be (0, -10). Translate
-  // back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(0, 10));
-  matrix = glm::rotate(matrix, -glm::half_pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-
-  // The expected display coordinator transform performs rotation before reflection.
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kLeftRight, expected_dst,
+      fuchsia::ui::composition::Orientation::CCW_90_DEGREES, ImageFlip::kLeftRight, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectX);
 }
 
+// WithUpDownFlip90DegreeRotationTest
+//   Up-down flip combined with 90° CCW rotation; destination 10×20 -> 20×10.
+//   Display transform ROTATE_CCW_90_REFLECT_Y: "ROTATE_CCW_90, followed by
+//   REFLECT_Y" (same rotate-then-reflect order, coordinator.fidl).
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip90DegreeRotationTest) {
-  // After scale and 90 CCW rotation, the new top-left corner would be (0, -10). Translate
-  // back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(0, 10));
-  matrix = glm::rotate(matrix, -glm::half_pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-
-  // The expected display coordinator transform performs rotation before reflection.
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kUpDown, expected_dst,
+      fuchsia::ui::composition::Orientation::CCW_90_DEGREES, ImageFlip::kUpDown, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip180DegreeRotationTest) {
-  // After scale and 180 CCW rotation, the new top-left corner would be (-10, -20).
-  // Translate back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(10, 20));
-  matrix = glm::rotate(matrix, -glm::pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-
-  // The expected display coordinator transform performs rotation before reflection.
-  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kLeftRight, expected_dst,
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
+  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_180_DEGREES,
+                                             ImageFlip::kLeftRight, kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectX);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip180DegreeRotationTest) {
-  // After scale and 180 CCW rotation, the new top-left corner would be (-10, -20).
-  // Translate back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(10, 20));
-  matrix = glm::rotate(matrix, -glm::pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-
-  // The expected display coordinator transform performs rotation before reflection.
-  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kUpDown, expected_dst,
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
+  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_180_DEGREES,
+                                             ImageFlip::kUpDown, kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip270DegreeRotationTest) {
-  // After scale and 270 CCW rotation, the new top-left corner would be (-20, 0). Translate
-  // back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(20, 0));
-  matrix = glm::rotate(matrix, -glm::three_over_two_pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-
-  // The expected display coordinator transform performs rotation before reflection.
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kLeftRight, expected_dst,
+      fuchsia::ui::composition::Orientation::CCW_270_DEGREES, ImageFlip::kLeftRight, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip270DegreeRotationTest) {
-  // After scale and 270 CCW rotation, the new top-left corner would be (-20, 0). Translate
-  // back to position.
-  glm::mat3 matrix = glm::translate(glm::mat3(1.0), glm::vec2(20, 0));
-  matrix = glm::rotate(matrix, -glm::three_over_two_pi<float>());
-  matrix = glm::scale(matrix, glm::vec2(10, 20));
-
-  const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-
-  // The expected display coordinator transform performs rotation before reflection.
+  const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kUpDown, expected_dst,
+      fuchsia::ui::composition::Orientation::CCW_270_DEGREES, ImageFlip::kUpDown, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectX);
 }
 
@@ -1661,9 +1600,8 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
 
   // RenderFrame with empty render data list for the display.
   // This triggers SetRenderDataOnDisplay with 0 images.
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  auto render_data_list = GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}});
+  RenderData render_data = {.display_id = kDisplayId, .layers = {}};
+  std::span<const RenderData> render_data_list(&render_data, 1);
   display_compositor_->RenderFrame(1, zx::time_monotonic(1), render_data_list, {}, {}, {},
                                    [](const scheduling::Timestamps&) {});
 
@@ -1698,23 +1636,20 @@ TEST_F(DisplayCompositorTest, TryDirectToDisplayExceedsHardwareLayerLimitFallbac
   display_compositor_->AddDisplay(&display, display_info, /* num_vmos= */ 0,
                                   /* out_buffer_collection= */ nullptr);
 
-  auto session = CreateSession();
-  const TransformHandle root_handle = session.graph().CreateTransform();
-  const TransformHandle child_handle = session.graph().CreateTransform();
-  session.graph().AddChild(root_handle, child_handle);
-
   auto root_image_id = allocation::GenerateUniqueImageId();
   auto child_image_id = allocation::GenerateUniqueImageId();
 
-  auto root_struct = session.CreateUberStructWithCurrentTopology(root_handle);
-  root_struct->images[root_handle] = {.identifier = root_image_id};
-  root_struct->images[child_handle] = {.identifier = child_image_id};
-  session.PushUberStruct(std::move(root_struct));
+  ResolvedLayer layer1 = {
+      .content = ResolvedLayer::ImageContent{.image_id = root_image_id},
+  };
+  ResolvedLayer layer2 = {
+      .content = ResolvedLayer::ImageContent{.image_id = child_image_id},
+  };
+  std::array layers = {layer1, layer2};
+  RenderData render_data = {.display_id = kDisplayId, .layers = layers};
+  std::span<const RenderData> render_data_list(&render_data, 1);
 
   EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(0);
-
-  const auto render_data_list =
-      GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}});
 
   ASSERT_EQ(render_data_list[0].layers.size(), 2u);
   bool result = TryDirectToDisplay(render_data_list);
