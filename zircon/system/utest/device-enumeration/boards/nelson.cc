@@ -70,8 +70,8 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "aml-ram-ctl.aml_ram.ram",
 
       // Thermistor/ADC
-      "03_0a_27.thermistor.thermistor-device.therm-thread",
-      "03_0a_27.thermistor.thermistor-device.therm-audio",
+      "thermistor.thermistor-device.therm-thread",
+      "thermistor.thermistor-device.therm-audio",
       "adc.aml_saradc.aml-saradc.0",
       "adc.aml_saradc.aml-saradc.NELSON_THERMISTOR_THREAD",
       "adc.aml_saradc.aml-saradc.NELSON_THERMISTOR_AUDIO",

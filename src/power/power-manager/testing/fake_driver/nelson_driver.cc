@@ -39,9 +39,9 @@ zx::result<> Driver::Start(fdf::DriverContext context) {
     return result.take_error();
   }
 
-  auto thermistor_nodes_result = AddNodes(node(), {"03:0a:27", "thermistor", "thermistor-device"});
+  auto thermistor_nodes_result = AddNodes(node(), {"thermistor", "thermistor-device"});
   if (thermistor_nodes_result.is_error()) {
-    FDF_SLOG(ERROR, "Failed to add `03:0a:27/thermistor/thermistor-device`",
+    FDF_SLOG(ERROR, "Failed to add `thermistor/thermistor-device`",
              KV("status", thermistor_nodes_result.status_string()));
     return thermistor_nodes_result.take_error();
   }
