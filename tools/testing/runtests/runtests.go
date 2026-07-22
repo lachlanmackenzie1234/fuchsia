@@ -126,6 +126,8 @@ type TestDetails struct {
 
 	// The combined stdout and stderr from this test.
 	Stdio []byte `json:"-"`
+
+	IsMultipliedRun bool `json:"-"`
 }
 
 // Passed indicates whether the test completed successfully. This will be false

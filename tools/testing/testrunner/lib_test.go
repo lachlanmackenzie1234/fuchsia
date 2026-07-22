@@ -384,6 +384,11 @@ func TestFilterTests(t *testing.T) {
 	}
 }
 
+func multipliedRun(details runtests.TestDetails) runtests.TestDetails {
+	details.Tags = []build.TestTag{{Key: "is_multiplied_run", Value: "true"}}
+	return details
+}
+
 func TestRunAndOutputTests(t *testing.T) {
 	defaultDuration := time.Second
 	perTestTimeout := 3 * time.Minute
@@ -621,10 +626,10 @@ func TestRunAndOutputTests(t *testing.T) {
 			},
 			expectedResults: []runtests.TestDetails{
 				succeededTest("foo", 0, defaultDuration),
-				succeededTest("foo", 1, defaultDuration),
-				succeededTest("foo", 2, defaultDuration),
-				succeededTest("foo", 3, defaultDuration),
-				succeededTest("foo", 4, defaultDuration),
+				multipliedRun(succeededTest("foo", 1, defaultDuration)),
+				multipliedRun(succeededTest("foo", 2, defaultDuration)),
+				multipliedRun(succeededTest("foo", 3, defaultDuration)),
+				multipliedRun(succeededTest("foo", 4, defaultDuration)),
 				failedTest("foo", 5, defaultDuration),
 			},
 		},
@@ -665,10 +670,10 @@ func TestRunAndOutputTests(t *testing.T) {
 			},
 			expectedResults: []runtests.TestDetails{
 				succeededTest("foo", 0, defaultDuration),
-				succeededTest("foo", 1, defaultDuration),
-				succeededTest("foo", 2, defaultDuration),
-				succeededTest("foo", 3, defaultDuration),
-				succeededTest("foo", 4, defaultDuration),
+				multipliedRun(succeededTest("foo", 1, defaultDuration)),
+				multipliedRun(succeededTest("foo", 2, defaultDuration)),
+				multipliedRun(succeededTest("foo", 3, defaultDuration)),
+				multipliedRun(succeededTest("foo", 4, defaultDuration)),
 			},
 		},
 		{
@@ -687,9 +692,9 @@ func TestRunAndOutputTests(t *testing.T) {
 			expectedResults: []runtests.TestDetails{
 				failedTest("foo", 0, defaultDuration),
 				succeededTest("foo", 1, defaultDuration),
-				succeededTest("foo", 2, defaultDuration),
+				multipliedRun(succeededTest("foo", 2, defaultDuration)),
 				failedTest("foo", 3, defaultDuration),
-				succeededTest("foo", 4, defaultDuration),
+				multipliedRun(succeededTest("foo", 4, defaultDuration)),
 			},
 		},
 		{
@@ -810,10 +815,10 @@ func TestRunAndOutputTests(t *testing.T) {
 			},
 			expectedResults: []runtests.TestDetails{
 				succeededTest("foo", 0, defaultDuration),
-				succeededTest("foo", 1, defaultDuration),
-				succeededTest("foo", 2, defaultDuration),
-				succeededTest("foo", 3, defaultDuration),
-				succeededTest("foo", 4, defaultDuration),
+				multipliedRun(succeededTest("foo", 1, defaultDuration)),
+				multipliedRun(succeededTest("foo", 2, defaultDuration)),
+				multipliedRun(succeededTest("foo", 3, defaultDuration)),
+				multipliedRun(succeededTest("foo", 4, defaultDuration)),
 			},
 		},
 		{

@@ -487,7 +487,8 @@ type testToRun struct {
 	// The number of times the test has already been run.
 	previousRuns int
 	// The sum of the durations of all the test's previous runs.
-	totalDuration time.Duration
+	totalDuration        time.Duration
+	collectOutputsOnPass bool
 }
 
 // runAndOutputTests runs all the tests, possibly with retries, and records the
@@ -512,7 +513,7 @@ func runAndOutputTests(
 	testQueue := make(chan testToRun, 2*len(tests))
 
 	for _, test := range tests {
-		testQueue <- testToRun{Test: test}
+		testQueue <- testToRun{Test: test, collectOutputsOnPass: true}
 	}
 
 	// `for test := range testQueue` might seem simpler, but it would block
@@ -553,7 +554,7 @@ func runAndOutputTests(
 
 			outDir = filepath.Join(globalOutDir, url.PathEscape(strings.ReplaceAll(test.Name, ":", "")), strconv.Itoa(runIndex))
 			var testErr error
-			result, testErr = runTestOnce(ctx, test.Test, t, outDir, testIndex)
+			result, testErr = runTestOnce(ctx, test.Test, t, outDir, testIndex, test.collectOutputsOnPass)
 			if result == nil {
 				return testErr
 			}
@@ -571,7 +572,7 @@ func runAndOutputTests(
 		}
 
 		if err := outputs.Record(ctx, *result); err != nil {
-			return cleanup, err
+			return cleanup, fmt.Errorf("failed to record %v: %w", result, err)
 		}
 		testIndex++
 
@@ -580,6 +581,9 @@ func runAndOutputTests(
 		}
 		if shouldKeepGoing(test.Test, result, test.totalDuration) {
 			// Schedule the test to be run again.
+			if result.Passed() {
+				test.collectOutputsOnPass = false
+			}
 			testQueue <- test
 		}
 		// TODO(olivernewman): Add a unit test to make sure data sinks are
@@ -692,6 +696,7 @@ func runTestOnce(
 	t Tester,
 	outDir string,
 	testIndex int,
+	collectOutputsOnPass bool,
 ) (*runtests.TestDetails, error) {
 	// The test case parser specifically uses stdout, so we need to have a
 	// dedicated stdout buffer.
@@ -774,6 +779,7 @@ func runTestOnce(
 	var err error
 	select {
 	case res := <-ch:
+		res.result.IsMultipliedRun = !collectOutputsOnPass
 		result, err = t.ProcessResult(testCtx, test, outDir, res.result, res.err)
 		timeout = test.Timeout
 	case <-timeoutCh:
@@ -802,7 +808,28 @@ func runTestOnce(
 	}
 
 	endTime := clock.Now(ctx)
+	// The start time and end time should cover the entire duration to run the test
+	// and process the results.
+	result.StartTime = startTime
+	result.EndTime = endTime
+	result.Affected = test.Affected
 
+	if result.Passed() && !collectOutputsOnPass {
+		if err := os.RemoveAll(outDir); err != nil {
+			return nil, err
+		}
+		result.OutputFiles = []string{}
+		result.OutputDir = ""
+		multipliedTag := build.TestTag{Key: "is_multiplied_run", Value: "true"}
+		result.Tags = append(result.Tags, multipliedTag)
+		for i, tc := range result.Cases {
+			tc.OutputFiles = []string{}
+			tc.OutputDir = ""
+			tc.Tags = append(tc.Tags, multipliedTag)
+			result.Cases[i] = tc
+		}
+		return result, nil
+	}
 	// Record the test details in the summary.
 	result.Stdio = stdio.buf.Bytes()
 	// Only the FFXTester handles output files on its own. It also handles cases
@@ -868,10 +895,5 @@ func runTestOnce(
 		}
 	}
 
-	// The start time and end time should cover the entire duration to run the test
-	// and process the results.
-	result.StartTime = startTime
-	result.EndTime = endTime
-	result.Affected = test.Affected
 	return result, err
 }

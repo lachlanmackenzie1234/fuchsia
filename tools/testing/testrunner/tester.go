@@ -875,21 +875,23 @@ func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, ou
 		testOutDir := testRun.result.GetTestOutputDir()
 		t.testOutDirs = append(t.testOutDirs, testOutDir)
 		testResult, err = processTestResult(testRun.result, test, testRun.totalDuration, false)
-		t.wg.Add(1)
-		go func() {
-			defer t.wg.Done()
-			// Merge profiles in the background. Use a separate context so that it doesn't get
-			// canceled when the test's context gets canceled.
-			l := logger.LoggerFromContext(ctx)
-			mergeCtx := logger.WithLogger(context.Background(), l)
-			mergeCtx, cancel := context.WithCancel(mergeCtx)
-			defer cancel()
-			t.errsMu.Lock()
-			if err := t.getSinks(mergeCtx, testOutDir, t.sinksPerTest, true); err != nil {
-				t.errs = append(t.errs, err)
-			}
-			t.errsMu.Unlock()
-		}()
+		if !finalTestResult.IsMultipliedRun {
+			t.wg.Add(1)
+			go func() {
+				defer t.wg.Done()
+				// Merge profiles in the background. Use a separate context so that it doesn't get
+				// canceled when the test's context gets canceled.
+				l := logger.LoggerFromContext(ctx)
+				mergeCtx := logger.WithLogger(context.Background(), l)
+				mergeCtx, cancel := context.WithCancel(mergeCtx)
+				defer cancel()
+				t.errsMu.Lock()
+				if err := t.getSinks(mergeCtx, testOutDir, t.sinksPerTest, true); err != nil {
+					t.errs = append(t.errs, err)
+				}
+				t.errsMu.Unlock()
+			}()
+		}
 	}
 	if err != nil {
 		finalTestResult.FailureReason = err.Error()
