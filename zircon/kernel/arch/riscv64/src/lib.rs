@@ -6,6 +6,20 @@
 
 #![no_std]
 
+/// Architecture-specific saved normal mode state for riscv64.
+///
+/// Currently riscv64 does not need to save any normal mode state across restricted entry.
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ArchSavedNormalState {
+    _dummy: u8,
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<ArchSavedNormalState>() == 1);
+    assert!(core::mem::align_of::<ArchSavedNormalState>() == 1);
+};
+
 unsafe extern "C" {
     fn cpp_riscv64_curr_hart_id() -> u32;
     fn cpp_riscv64_boot_hart_id() -> u32;

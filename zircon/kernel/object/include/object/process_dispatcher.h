@@ -38,11 +38,6 @@ class JobDispatcher;
 class VmarMapsInfoWriter;
 class VmoInfoWriter;
 
-// To allow this function to be friended by ProcessDispatcher.
-template <typename T>
-[[noreturn]] extern void RestrictedLeave(const T* restricted_state_source,
-                                         zx_restricted_reason_t reason);
-
 namespace internal {
 // Tag for a ProcessDispatcher's parent JobDispatcher's raw job list.
 struct ProcessDispatcherRawJobListTag {};
@@ -288,10 +283,6 @@ class ProcessDispatcher final
   // space.
   VmAspace* restricted_aspace() { return restricted_aspace_.get(); }
 
-  // Dispatch a user exception to job debugger exception channels.
-  void OnUserExceptionForJobDebugger(ThreadDispatcher* t, const arch_exception_context_t* context);
-
- private:
   // Returns the normal address space for this process.
   //
   // All processes have a normal address space.  The normal aspace is the
@@ -317,13 +308,10 @@ class ProcessDispatcher final
     return shareable_state_->aspace();
   }
 
-  // Restricted mode is allowed to know about the internals of the aspaces.
-  friend zx_status_t RestrictedEnter(uintptr_t vector_table_ptr, uintptr_t context);
-  friend void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs,
-                                                      const zx_exception_report_t& report);
-  template <typename T>
-  friend void RestrictedLeave(const T* restricted_state_source, zx_restricted_reason_t reason);
+  // Dispatch a user exception to job debugger exception channels.
+  void OnUserExceptionForJobDebugger(ThreadDispatcher* t, const arch_exception_context_t* context);
 
+ private:
   // Exit the current Process. It is an error to call this on anything other than the current
   // process. Please use ExitCurrent() instead of calling this directly.
   void Exit(int64_t retcode) __NO_RETURN;

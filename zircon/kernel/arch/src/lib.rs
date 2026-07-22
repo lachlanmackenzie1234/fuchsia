@@ -5,13 +5,13 @@
 #![no_std]
 
 #[cfg(target_arch = "aarch64")]
-pub use arch_arm64 as arm64;
+pub use arch_arm64::{self as arm64, ArchSavedNormalState};
 
 #[cfg(target_arch = "riscv64")]
-pub use arch_riscv64 as riscv64;
+pub use arch_riscv64::{self as riscv64, ArchSavedNormalState};
 
 #[cfg(target_arch = "x86_64")]
-pub use arch_x86 as x86;
+pub use arch_x86::{self as x86, ArchSavedNormalState};
 
 use zx_status::Status;
 

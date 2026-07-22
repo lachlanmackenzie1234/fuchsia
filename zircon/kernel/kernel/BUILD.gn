@@ -24,7 +24,7 @@ source_set("kernel") {
     "owned_wait_queue_pool.cc",
     "percpu.cc",
     "restricted.cc",
-    "restricted_state.cc",
+    "restricted_ffi.cc",
     "scheduler.cc",
     "scheduler_pi.cc",
     "scheduler_state.cc",
@@ -121,6 +121,7 @@ rustc_library("kernel-rs") {
   sources = [
     "lib.rs",
     "relaxed_atomic.rs",
+    "restricted_state.rs",
     "stats.rs",
     "thread.rs",
     "timer.rs",
@@ -129,9 +130,12 @@ rustc_library("kernel-rs") {
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//src/lib/kalloc",
     "//src/lib/zr",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/arch:arch-rs",
+    "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/unittest:unittest-rs",
     "//zircon/kernel/platform:platform-rs",
   ]

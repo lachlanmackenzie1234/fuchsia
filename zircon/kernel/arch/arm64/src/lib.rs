@@ -5,3 +5,18 @@
 // https://opensource.org/licenses/MIT
 
 #![no_std]
+
+/// Architecture-specific saved normal mode state for aarch64.
+///
+/// Saves the normal mode `tpidr_el0` and `tpidrro_el0` system registers across restricted entry.
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ArchSavedNormalState {
+    pub tpidr_el0: u64,
+    pub tpidrro_el0: u64,
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
+    assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
+};
