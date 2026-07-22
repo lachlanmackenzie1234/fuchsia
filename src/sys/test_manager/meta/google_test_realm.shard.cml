@@ -101,6 +101,7 @@
             // These services replace the directory capabilities above.
             service: [
                 "fuchsia.gpu.magma.Service",
+                "fuchsia.gpu.magma.TrustedService",
                 "fuchsia.hardware.goldfish.AddressSpaceService",
                 "fuchsia.hardware.goldfish.ControllerService",
                 "fuchsia.hardware.goldfish.ControlService",
