@@ -1475,17 +1475,26 @@ pub fn blob_fn<S: AsTraceStrRef>(
 
 /// Convenience macro for the `flow_begin` function.
 ///
+/// Flow events must be enclosed in a duration event.
+///
 /// Example:
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// flow_begin!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
+/// {
+///     duration!("foo", "step_1");
+///     flow_begin!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
+/// }
 /// ```
 ///
 /// ```rust
 /// const FOO: &'static str = "foo";
 /// const BAR: &'static str = "bar";
-/// flow_begin!("foo", "bar", flow_id);
+/// let flow_id = 1234;
+/// {
+///     duration!("foo", "step_1");
+///     flow_begin!("foo", "bar", flow_id);
+/// }
 /// ```
 #[macro_export]
 macro_rules! flow_begin {
@@ -1503,17 +1512,26 @@ macro_rules! flow_begin {
 
 /// Convenience macro for the `flow_step` function.
 ///
+/// Flow events must be enclosed in a duration event.
+///
 /// Example:
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// flow_step!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
+/// {
+///     duration!("foo", "step_2");
+///     flow_step!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
+/// }
 /// ```
 ///
 /// ```rust
 /// const FOO: &'static str = "foo";
 /// const BAR: &'static str = "bar";
-/// flow_step!("foo", "bar", flow_id);
+/// let flow_id = 1234;
+/// {
+///     duration!("foo", "step_2");
+///     flow_step!("foo", "bar", flow_id);
+/// }
 /// ```
 #[macro_export]
 macro_rules! flow_step {
@@ -1531,17 +1549,26 @@ macro_rules! flow_step {
 
 /// Convenience macro for the `flow_end` function.
 ///
+/// Flow events must be enclosed in a duration event.
+///
 /// Example:
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// flow_end!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
+/// {
+///     duration!("foo", "step_3");
+///     flow_end!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
+/// }
 /// ```
 ///
 /// ```rust
 /// const FOO: &'static str = "foo";
 /// const BAR: &'static str = "bar";
-/// flow_end!("foo", "bar", flow_id);
+/// let flow_id = 1234;
+/// {
+///     duration!("foo", "step_3");
+///     flow_end!("foo", "bar", flow_id);
+/// }
 /// ```
 #[macro_export]
 macro_rules! flow_end {
