@@ -19,3 +19,6 @@
 **/third_party/** -tricium
 **/BUILD.gn tricium
 **/OWNERS tricium
+
+# Preserve line endings for vendored Bazel rules.
+third_party/bazel_vendor/** -text
