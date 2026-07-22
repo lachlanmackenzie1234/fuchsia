@@ -222,12 +222,19 @@ void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
   while (!done) {
     // Poll instead of wait.
     for (uint32_t timeout = 0;; timeout++) {
-      auto raw_reg = RawInterruptStatusReg::Get().ReadFrom(&mmio_.value());
-      if (raw_reg.reg_value() & kI2cInterruptDefaultMask) {
+      // Poll the masked interrupt status register (InterruptStatusReg) instead of the raw one.
+      // After all TX operations are queued, the TX_EMPTY interrupt mask is disabled in the
+      // InterruptMaskReg. If we poll RawInterruptStatusReg, the TX_EMPTY raw bit will remain
+      // set (because the TX FIFO is empty), causing the polling loop to exit immediately without
+      // sleeping, resulting in a CPU-spinning infinite loop. Polling the masked status register
+      // ensures we only exit when an unmasked (active) interrupt event occurs.
+      auto reg = InterruptStatusReg::Get().ReadFrom(&mmio_.value());
+      if (reg.reg_value()) {
         break;
       }
       if (timeout > 1000) {  // 1 second timeout
-        fdf::error("I2C polling timeout! Raw IRQ: 0x{:x}", raw_reg.reg_value());
+        fdf::error("I2C polling timeout! Raw IRQ: 0x{:x}",
+                   RawInterruptStatusReg::Get().ReadFrom(&mmio_.value()).reg_value());
         error_status = ZX_ERR_TIMED_OUT;
         done = true;
         break;
