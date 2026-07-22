@@ -11,9 +11,6 @@
                 "cve-2015-3290",
                 "epoll_create01",
                 "epoll_create02",
-                "epoll_pwait03",
-                "epoll_wait02",
-                "futex_wait05",
 
                 // This test only runs on x86_64.
                 "signal06",
