@@ -1051,6 +1051,54 @@ TEST(GlobalRenderListTest, SolidColorLayer_SurvivingReplace) {
   EXPECT_FLOAT_EQ(content.color[3], 0.8f);
 }
 
+// A hole punch: content alpha 0 under REPLACE. The layer is emitted
+// (invisibility keys on layer and inherited opacity, never on content
+// alpha), and premultiplication by content alpha zeroes the RGB
+// channels, so the authored color is irrelevant: {0,0,0,0} is written
+// verbatim, cutting a transparent hole for an underlay.
+TEST(GlobalRenderListTest, SolidColorLayer_AlphaZeroPunch) {
+  const TransformHandle kRoot = {1, 0};
+  GlobalTopologyData topology;
+  topology.topology_vector = {kRoot};
+  topology.parent_indices = {0};
+
+  UberStruct::InstanceMap snapshot;
+  auto uber_struct = std::make_unique<UberStruct>();
+  uber_struct->local_topology = {{kRoot, 0}};
+
+  const LayerHandle kLayer(1, 1);
+  uber_struct->layer_stacks[kRoot] = {kLayer};
+
+  UberStructLayer uber_layer{
+      .content =
+          UberStructLayer::SolidColorContent{
+              .color = {0.5f, 0.25f, 1.f, 0.f},
+          },
+      .display_rect = Rectangle({.x = 0, .y = 0, .width = 100, .height = 200}),
+      .opacity = 1.0f,
+      .blend_mode = BlendMode::kReplace(),
+  };
+  uber_struct->layers[kLayer] = uber_layer;
+  snapshot[1] = std::move(uber_struct);
+
+  std::vector<glm::mat3> global_matrices = {glm::mat3(1.f)};
+  std::vector<TransformClipRegion> clip_regions = {kUnclippedRegion};
+
+  auto result = ComputeGlobalResolvedLayers(topology, snapshot, global_matrices, clip_regions);
+  ASSERT_EQ(result.size(), 1u);
+
+  const auto& layer = result[0];
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  EXPECT_EQ(layer.blend_mode, BlendMode::kReplace());
+
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_FLOAT_EQ(content.color[0], 0.f);
+  EXPECT_FLOAT_EQ(content.color[1], 0.f);
+  EXPECT_FLOAT_EQ(content.color[2], 0.f);
+  EXPECT_FLOAT_EQ(content.color[3], 0.f);
+}
+
 TEST(GlobalRenderListDeathTest, StraightAlphaSolidChecks) {
   const TransformHandle kRoot = {1, 0};
   GlobalTopologyData topology;

@@ -6763,13 +6763,136 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
   }
 }
 
-// Flatland1FacadeTest.SetImageBlendModeOnFilledRectFails
-TEST_F(Flatland1FacadeTest, SetImageBlendModeOnFilledRectFails) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
-  auto flatland = CreateFlatland(config);
-  const ContentId kFilledRectId(1);
-  flatland->CreateFilledRect(kFilledRectId);
-  flatland->SetImageBlendMode(kFilledRectId, types::BlendMode::kReplace());
+// Clients are free to set the blend mode to STRAIGHT_ALPHA, but for solid fills this
+// will be losslessly translated to PREMULTIPLIED_ALPHA.
+TEST_P(FlatlandFacadeParameterizedTest, StraightAlphaSolidNormalized) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+  const TransformId kRootId{1};
+  const ContentId kRectId{2};
+  flatland->CreateTransform(kRootId);
+  flatland->SetRootTransform(kRootId);
+  flatland->CreateFilledRect(kRectId);
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         SizeU{100, 200});
+  flatland->SetImageBlendMode(kRectId, BlendMode::kStraightAlpha());
+  flatland->SetContent(kRootId, kRectId);
+  PRESENT(flatland, true);
+
+  auto snapshot = uber_struct_system_->Snapshot();
+  ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
+  auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
+  auto content_handle = flatland->GetContentHandle(kRectId).value();
+  if (GetParam()) {
+    auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
+    const auto& layer = uber_struct->layers.find(layer_handle)->second;
+    EXPECT_EQ(layer.blend_mode, types::BlendMode::kPremultipliedAlpha());
+  } else {
+    const auto& image = uber_struct->images.find(content_handle)->second;
+    EXPECT_EQ(image.blend_mode, BlendMode::kPremultipliedAlpha());
+  }
+}
+
+// When `SetSolidFill()` is called after `SetImageBlendMode()`, it replaces the explicitly-set
+// blend mode with whatever is derived from the solid fill color, in this case PREMULTIPLIED_ALPHA
+// because alpha < 1.
+TEST_P(FlatlandFacadeParameterizedTest, SolidFillRederivesBlendMode) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+  const TransformId kRootId{1};
+  const ContentId kRectId{2};
+  flatland->CreateTransform(kRootId);
+  flatland->SetRootTransform(kRootId);
+  flatland->CreateFilledRect(kRectId);
+  flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         SizeU{100, 200});
+  flatland->SetContent(kRootId, kRectId);
+  PRESENT(flatland, true);
+
+  auto snapshot = uber_struct_system_->Snapshot();
+  ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
+  auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
+  auto content_handle = flatland->GetContentHandle(kRectId).value();
+  if (GetParam()) {
+    auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
+    const auto& layer = uber_struct->layers.find(layer_handle)->second;
+    EXPECT_EQ(layer.blend_mode, types::BlendMode::kPremultipliedAlpha());
+  } else {
+    const auto& image = uber_struct->images.find(content_handle)->second;
+    EXPECT_EQ(image.blend_mode, BlendMode::kPremultipliedAlpha());
+  }
+}
+
+// `SetSolidFill()` derives PREMULTIPLIED_ALPHA blend mode due to content alpha < 1,
+// but this is overridden by the REPLACE specified by `SetImageBlendMode()`.
+TEST_P(FlatlandFacadeParameterizedTest, SolidFillThenBlendModeOverrides) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+  const TransformId kRootId{1};
+  const ContentId kRectId{2};
+  flatland->CreateTransform(kRootId);
+  flatland->SetRootTransform(kRootId);
+  flatland->CreateFilledRect(kRectId);
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         SizeU{100, 200});
+  flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
+  flatland->SetContent(kRootId, kRectId);
+  PRESENT(flatland, true);
+
+  auto snapshot = uber_struct_system_->Snapshot();
+  ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
+  auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
+  auto content_handle = flatland->GetContentHandle(kRectId).value();
+  if (GetParam()) {
+    auto layer_handle = uber_struct->layer_stacks.find(content_handle)->second[0];
+    const auto& layer = uber_struct->layers.find(layer_handle)->second;
+    EXPECT_EQ(layer.blend_mode, types::BlendMode::kReplace());
+  } else {
+    const auto& image = uber_struct->images.find(content_handle)->second;
+    EXPECT_EQ(image.blend_mode, BlendMode::kReplace());
+  }
+}
+
+TEST_P(FlatlandFacadeParameterizedTest, ImageMutatorsRejectSolidContent) {
+  const ContentId kRectId{1};
+
+  // SetImageFlip rejects solid content.
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetImageFlip(kRectId, fuchsia_ui_composition::ImageFlip::kUpDown);
+    PRESENT(flatland, false);
+  }
+
+  // SetImageSampleRegion rejects solid content.
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetImageSampleRegion(kRectId, types::RectangleF({0, 0, 10, 10}));
+    PRESENT(flatland, false);
+  }
+
+  // SetImageDestinationSize rejects solid content.
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetImageDestinationSize(kRectId, {10, 10});
+    PRESENT(flatland, false);
+  }
+}
+
+TEST_P(FlatlandFacadeParameterizedTest, SetSolidFillOnImageRejected) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+
+  const ContentId kImageId{1};
+  const uint32_t kImageWidth = 50;
+  const uint32_t kImageHeight = 100;
+  auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
+
+  CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
+              fuchsia_ui_composition::ImageProperties{{.size = SizeU{kImageWidth, kImageHeight}}});
+
+  flatland->SetSolidFill(kImageId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         SizeU{100, 200});
   PRESENT(flatland, false);
 }
 

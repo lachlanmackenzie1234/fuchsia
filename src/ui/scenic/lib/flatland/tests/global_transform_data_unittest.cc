@@ -942,13 +942,16 @@ TEST(GlobalImageDataTest, ImageMetadataColorTest) {
   std::array<float, 4> color_a = {0.5f, 0.2f, 0.75f, 0.8f};
   std::array<float, 4> color_b = {0.9f, 0.6f, 0.4f, 0.3f};
 
-  // Explicitly make sure identifier is invalid id to simulate SolidFill rects.
-  uber_struct->images[{1, 0}] = {.identifier = allocation::kInvalidImageId,
-                                 .multiply_color = color_a,
-                                 .blend_mode = BlendMode::kStraightAlpha()};
-  uber_struct->images[{1, 1}] = {.identifier = allocation::kInvalidImageId,
-                                 .multiply_color = color_b,
-                                 .blend_mode = BlendMode::kStraightAlpha()};
+  uber_struct->images[{1, 0}] = allocation::ImageMetadata{
+      .identifier = display::ImageId(1),
+      .multiply_color = color_a,
+      .blend_mode = BlendMode::kStraightAlpha(),
+  };
+  uber_struct->images[{1, 1}] = allocation::ImageMetadata{
+      .identifier = display::ImageId(2),
+      .multiply_color = color_b,
+      .blend_mode = BlendMode::kStraightAlpha(),
+  };
   uber_structs[1] = std::move(uber_struct);
 
   // These are the color values we expect to get back from |ComputeGlobalImageData|.

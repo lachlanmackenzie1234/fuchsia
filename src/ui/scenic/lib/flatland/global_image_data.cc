@@ -82,6 +82,17 @@ void ComputeGlobalImageData(GlobalIndexVector& output_indices, GlobalImageVector
     const auto image_kv = uber_struct_kv->second->images.find(handle);
     if (image_kv != uber_struct_kv->second->images.end()) {
       allocation::ImageMetadata image = image_kv->second;
+
+      if (image.identifier == allocation::kInvalidImageId) {
+        // For solid fills only, demote REPLACE under inherited opacity < 1.
+        // This matches the behavior of the Flatland1 facade walk
+        // (ResolveBlendAndOpacity with pin_replace=false).
+        if (image.blend_mode == BlendMode::kReplace() && opacity_values[index] < 1.0f) {
+          image.blend_mode = BlendMode::kPremultipliedAlpha();
+        }
+        FX_CHECK(image.blend_mode != BlendMode::kStraightAlpha());
+      }
+
       image.multiply_color[3] *= opacity_values[index];
 
       // Flatland session produces ImageMetadatas whose `blend_mode` and

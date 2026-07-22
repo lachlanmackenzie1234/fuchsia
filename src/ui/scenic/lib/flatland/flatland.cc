@@ -1612,7 +1612,7 @@ void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) 
     image_height = static_cast<float>(image_content->image_height);
   } else {
     const auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
+    if (!image || image->identifier == allocation::kInvalidImageId) {
       error_reporter_->ERROR() << "SetImageSampleRegion called on non-image content.";
       CloseConnection(FlatlandError::kBadOperation);
       return;
@@ -1663,7 +1663,7 @@ void Flatland::SetImageDestinationSize(SetImageDestinationSizeRequest& request,
 
 void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU size) {
   if (image_id == kInvalidContentId) {
-    error_reporter_->ERROR() << "SetImageSize called with image_id 0";
+    error_reporter_->ERROR() << "SetImageDestinationSize called with image_id 0";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
@@ -1671,7 +1671,7 @@ void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU s
   auto content_kv = content_handles_.find(image_id);
 
   if (content_kv == content_handles_.end()) {
-    error_reporter_->ERROR() << "SetImageSize called with non-existent image_id "
+    error_reporter_->ERROR() << "SetImageDestinationSize called with non-existent image_id "
                              << image_id.value();
     CloseConnection(FlatlandError::kBadOperation);
     return;
@@ -1680,7 +1680,8 @@ void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU s
   if (config_.use_flatland2_uberstruct_schema) {
     auto* layer = GetFacadeLayerObject(content_kv->second);
     if (!layer || !std::holds_alternative<LayerObject::ImageContent>(layer->content)) {
-      error_reporter_->ERROR() << "SetImageSize called on non-image content  " << image_id.value();
+      error_reporter_->ERROR() << "SetImageDestinationSize called on non-image content  "
+                               << image_id.value();
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
@@ -1690,8 +1691,9 @@ void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU s
                                             .height = static_cast<int32_t>(size.height())});
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
-      error_reporter_->ERROR() << "SetImageSize called on non-image content  " << image_id.value();
+    if (!image || image->identifier == allocation::kInvalidImageId) {
+      error_reporter_->ERROR() << "SetImageDestinationSize called on non-image content  "
+                               << image_id.value();
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
@@ -1727,10 +1729,23 @@ void Flatland::SetImageBlendMode(ContentId image_id, BlendMode blend_mode) {
 
   if (config_.use_flatland2_uberstruct_schema) {
     auto* layer = GetFacadeLayerObject(content_kv->second);
-    if (!layer || !std::holds_alternative<LayerObject::ImageContent>(layer->content)) {
-      error_reporter_->ERROR() << "SetImageBlendMode called on non-image content.";
+    if (!layer) {
+      error_reporter_->ERROR() << "SetImageBlendMode called on non-existent content.";
       CloseConnection(FlatlandError::kBadOperation);
       return;
+    }
+    FX_CHECK(!std::holds_alternative<std::monostate>(layer->content));
+    if (std::holds_alternative<LayerObject::SolidColorContent>(layer->content) &&
+        blend_mode == types::BlendMode::kStraightAlpha()) {
+      // Blend modes apply to solid-color content too: the FIDL doc comment names
+      // CreateFilledRect content as a valid target. STRAIGHT_ALPHA is stored as
+      // kPremultipliedAlpha, which is lossless for a constant color:
+      // STRAIGHT_ALPHA blending of (color, alpha) and PREMULTIPLIED_ALPHA
+      // blending of (color * alpha, alpha) produce identical pixels. The rewrite
+      // also preserves the invariant that a stored solid's blend mode is never
+      // kStraightAlpha (FX_CHECKed at resolved-layer emission in
+      // global_resolved_layers.cc).
+      blend_mode = types::BlendMode::kPremultipliedAlpha();
     }
     layer->blend_mode = blend_mode;
   } else {
@@ -1741,6 +1756,12 @@ void Flatland::SetImageBlendMode(ContentId image_id, BlendMode blend_mode) {
       return;
     }
 
+    if (image->identifier == allocation::kInvalidImageId &&
+        blend_mode == BlendMode::kStraightAlpha()) {
+      // Same STRAIGHT_ALPHA rewrite as the facade arm of this method, so that
+      // both schemas store identical blend modes for solid-color content.
+      blend_mode = BlendMode::kPremultipliedAlpha();
+    }
     image->blend_mode = blend_mode;
   }
 }
@@ -1770,11 +1791,13 @@ void Flatland::SetImageFlip(ContentId image_id, fuchsia_ui_composition::ImageFli
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
+    // In Flatland1 there is no per-image orientation,
+    // so we compose the flip with a 0-degree rotation.
     image_content->transform =
         types::RotateFlip::From(fuchsia_ui_composition::Orientation::kCcw0Degrees, flip);
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
+    if (!image || image->identifier == allocation::kInvalidImageId) {
       error_reporter_->ERROR() << "SetImageFlip called on non-image content.";
       CloseConnection(FlatlandError::kBadOperation);
       return;
@@ -1889,14 +1912,17 @@ void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba
         .width = static_cast<int32_t>(size.width()),
         .height = static_cast<int32_t>(size.height()),
     });
-    // Flatland1 clients cannot explicitly specify the blend mode for a solid fill; it is implicitly
-    // defined based on the alpha value.  This is a performance optimization; the visual results
-    // would be identical if `kPremultipliedAlpha` was used unconditionally.
+    // Derive the blend mode from the fill alpha: opaque fills get REPLACE,
+    // translucent fills get PREMULTIPLIED_ALPHA. The derivation runs on
+    // every SetSolidFill call, so it overwrites any blend mode set earlier;
+    // in the other order, a later SetImageBlendMode overwrites the derived
+    // value. Last call wins, matching classic Flatland1 (the CTF pixel tests
+    // rely on the fill-then-blend order).
     layer->blend_mode = color.alpha() < 1.f ? types::BlendMode::kPremultipliedAlpha()
                                             : types::BlendMode::kReplace();
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
-    if (!image) {
+    if (!image || image->identifier != allocation::kInvalidImageId) {
       error_reporter_->ERROR() << "Missing metadata for rect with id  " << rect_id;
       CloseConnection(FlatlandError::kBadOperation);
       return;
@@ -1986,7 +2012,7 @@ void Flatland::SetImageOpacity(ContentId image_id, float opacity) {
   if (config_.use_flatland2_uberstruct_schema) {
     auto* layer = GetFacadeLayerObject(content_kv->second);
     if (!layer || !std::holds_alternative<LayerObject::ImageContent>(layer->content)) {
-      error_reporter_->ERROR() << "SetImageOpacity called on non-rectangle content.";
+      error_reporter_->ERROR() << "SetImageOpacity called on non-image content.";
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
@@ -1994,7 +2020,7 @@ void Flatland::SetImageOpacity(ContentId image_id, float opacity) {
   } else {
     auto* image = flatland1_content_.FindImage(content_kv->second);
     if (!image) {
-      error_reporter_->ERROR() << "SetImageOpacity called on non-rectangle content.";
+      error_reporter_->ERROR() << "SetImageOpacity called on non-image content.";
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }

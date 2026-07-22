@@ -37,10 +37,8 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                                  : static_cast<int32_t>(image_indices[i]);
 
     if (meta.identifier == allocation::kInvalidImageId) {
-      // TODO(https://fxbug.dev/523371761): currently, the opacity is already pre-baked into
-      // meta.multiply_color.  Eventually, there will be no `ComputeGlobalImageData()` function,
-      // and opacity will be handled directly in this function (the signature will change to
-      // include opacity data).
+      // In this legacy/soon-deleted code path, opacity has already been baked into the content
+      // color by `ComputeGlobalImageData()`.
       layer.multiply_color = {1.f, 1.f, 1.f, 1.f};
       layer.content = ResolvedLayer::SolidColorContent{.color = meta.multiply_color};
     } else {
@@ -360,9 +358,10 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
           content_color = {solid.color[0] * a, solid.color[1] * a, solid.color[2] * a, a};
           break;
         }
-        // Flatland1/2 APIs guarantee that solid color layers never arrive with STRAIGHT_ALPHA.
-        // Flatland1 doesn't provide an explicitly way to specify the blend mode, and Flatland2
-        // explicitly disallows the use of STRAIGHT_ALPHA with solid color layers.
+        // Flatland1/2 APIs guarantee that solid color layers never arrive with
+        // STRAIGHT_ALPHA: Flatland1 rewrites it to PREMULTIPLIED_ALPHA at call
+        // time (visually lossless for a constant color; see `SetImageBlendMode()`
+        // in flatland.cc), and Flatland2 rejects it at the API.
         case types::BlendMode::Enum::kStraightAlpha:
           FX_CHECK(false) << "STRAIGHT_ALPHA is unreachable for solid color content";
           break;

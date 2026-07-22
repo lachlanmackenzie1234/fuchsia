@@ -18,13 +18,6 @@ namespace flatland {
 
 namespace test {
 
-// TODO(JJOSH): Flatland1 API has quirky behavior regarding how image content treats the
-// interaction between blend mode REPLACE and opacity < 1.  Is that behavior completely determined
-// by the "effective opacity" (i.e. inherited-transform-opacity * image_opacity), or does it behave
-// differently depending on whether `SetOpacity(< 1.0)` was set on a parent transform vs whether
-// `SetImageOpacity(< 1.0)` was set directly on the image?  If there is a difference, we should
-// ensure that we exercise it in the differential tests here.
-
 // A test fixture which supports direct comparison of the "legacy" and "Flatland2 schema" execution
 // paths, to guarantee that both paths produce an equivalent vector of `ResolvedLayer` (and will
 // therefore produce identical on-screen results).
@@ -148,18 +141,17 @@ class FlatlandDifferentialTest : public FlatlandTest {
       // Rect comparison uses ImageRect::operator== with 0.001f epsilon.
       EXPECT_EQ(layer1.rect, layer2.rect);
 
-      // Color comparison
-      EXPECT_FLOAT_EQ(layer1.multiply_color[0], layer2.multiply_color[0]);
-      EXPECT_FLOAT_EQ(layer1.multiply_color[1], layer2.multiply_color[1]);
-      EXPECT_FLOAT_EQ(layer1.multiply_color[2], layer2.multiply_color[2]);
-      EXPECT_FLOAT_EQ(layer1.multiply_color[3], layer2.multiply_color[3]);
-
       EXPECT_EQ(layer1.blend_mode, layer2.blend_mode);
       EXPECT_EQ(layer1.flip, layer2.flip);
       EXPECT_EQ(layer1.topology_index, layer2.topology_index);
 
       ASSERT_EQ(layer1.content.index(), layer2.content.index());
       if (std::holds_alternative<ResolvedLayer::ImageContent>(layer1.content)) {
+        EXPECT_FLOAT_EQ(layer1.multiply_color[0], layer2.multiply_color[0]);
+        EXPECT_FLOAT_EQ(layer1.multiply_color[1], layer2.multiply_color[1]);
+        EXPECT_FLOAT_EQ(layer1.multiply_color[2], layer2.multiply_color[2]);
+        EXPECT_FLOAT_EQ(layer1.multiply_color[3], layer2.multiply_color[3]);
+
         auto img1 = std::get<ResolvedLayer::ImageContent>(layer1.content);
         auto img2 = std::get<ResolvedLayer::ImageContent>(layer2.content);
 
@@ -180,12 +172,21 @@ class FlatlandDifferentialTest : public FlatlandTest {
         EXPECT_EQ(img1.width, img2.width);
         EXPECT_EQ(img1.height, img2.height);
       } else {
+        // The legacy implementation of opacity folds it into the content color, whereas the
+        // facade implementation stores it in `multiply_color`.  Thus, we can't check for
+        // field-by-field equality.  However, the `DisplayCompositor` multiplies these together
+        // for both the GPU composition and direct-to-display paths, so if the multiplied factors,
+        // the result would be identical on screen.
         auto col1 = std::get<ResolvedLayer::SolidColorContent>(layer1.content);
         auto col2 = std::get<ResolvedLayer::SolidColorContent>(layer2.content);
-        EXPECT_FLOAT_EQ(col1.color[0], col2.color[0]);
-        EXPECT_FLOAT_EQ(col1.color[1], col2.color[1]);
-        EXPECT_FLOAT_EQ(col1.color[2], col2.color[2]);
-        EXPECT_FLOAT_EQ(col1.color[3], col2.color[3]);
+        EXPECT_FLOAT_EQ(layer1.multiply_color[0] * col1.color[0],
+                        layer2.multiply_color[0] * col2.color[0]);
+        EXPECT_FLOAT_EQ(layer1.multiply_color[1] * col1.color[1],
+                        layer2.multiply_color[1] * col2.color[1]);
+        EXPECT_FLOAT_EQ(layer1.multiply_color[2] * col1.color[2],
+                        layer2.multiply_color[2] * col2.color[2]);
+        EXPECT_FLOAT_EQ(layer1.multiply_color[3] * col1.color[3],
+                        layer2.multiply_color[3] * col2.color[3]);
       }
     }
   }
@@ -1088,6 +1089,277 @@ TEST_F(FlatlandDifferentialTest, CullingOpaqueOccluder) {
   ASSERT_EQ(layers1.size(), 2U);
   EXPECT_EQ(layers1[0].size(), 2U);
   EXPECT_EQ(layers1[1].size(), 1U);
+}
+
+// 22. FilledRectExplicitReplace
+// The call order used by the CTF pixel tests: fill first, blend mode second.
+// For an opaque fill (i.e. alpha = 1.f) the value derived by `SetSolidFill()`
+// matches the subsequent REPLACE set by `SetImageBlendMode()`, so the blend mode
+// remains REPLACE.
+TEST_F(FlatlandDifferentialTest, FilledRectExplicitReplace) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const ContentId kRectId{2};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 1.0f},
+                           fuchsia_math::SizeU{120, 240});
+    flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
+
+    flatland->SetContent(kRootId, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kReplace());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.5f, 0.25f, 0.75f, 1.0f}));
+}
+
+// 23. FilledRectTranslucentReplace
+// Last call wins: SetSolidFill derives PREMULTIPLIED_ALPHA from the
+// translucent fill, then the explicit REPLACE overrides it. The layer
+// stays REPLACE because demotion depends on effective opacity (1 here),
+// never on content alpha. This is the hole-punch mechanism: REPLACE
+// writes the premultiplied color, sub-unity alpha included, verbatim.
+TEST_F(FlatlandDifferentialTest, FilledRectTranslucentReplace) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const ContentId kRectId{2};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 0.5f},
+                           fuchsia_math::SizeU{120, 240});
+    flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
+
+    flatland->SetContent(kRootId, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kReplace());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.25f, 0.125f, 0.375f, 0.5f}));
+}
+
+// 24. FilledRectFillClobbersBlend
+// The reverse order: SetSolidFill re-derives the blend mode from the
+// fill alpha on every call, silently clobbering the explicit REPLACE set
+// beforehand. Classic Flatland1 behavior: last call wins.
+TEST_F(FlatlandDifferentialTest, FilledRectFillClobbersBlend) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const ContentId kRectId{2};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 0.5f},
+                           fuchsia_math::SizeU{120, 240});
+
+    flatland->SetContent(kRootId, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.25f, 0.125f, 0.375f, 0.5f}));
+}
+
+// 25. FilledRectPunch
+// A hole punch: alpha 0 fill under REPLACE. Premultiplication by content
+// alpha zeroes the RGB channels, so the authored color is irrelevant and
+// both schemas emit {0,0,0,0} with REPLACE.
+TEST_F(FlatlandDifferentialTest, FilledRectPunch) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const ContentId kRectId{2};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 0.0f},
+                           fuchsia_math::SizeU{120, 240});
+    flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
+
+    flatland->SetContent(kRootId, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kReplace());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.f, 0.f, 0.f, 0.f}));
+}
+
+// 26. FilledRectUnderFade
+// An opaque fill derives REPLACE, but under a faded ancestor the blend
+// demotes to PREMULTIPLIED_ALPHA so the fade reveals the background
+// (continuously until it becomes invisible at opacity 0).
+TEST_F(FlatlandDifferentialTest, FilledRectUnderFade) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const TransformId kTransId{2};
+    const ContentId kRectId{3};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+    flatland->SetOpacity(kRootId, 0.5f);
+
+    flatland->CreateTransform(kTransId);
+    flatland->AddChild(kRootId, kTransId);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 1.0f},
+                           fuchsia_math::SizeU{120, 240});
+
+    flatland->SetContent(kTransId, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{0.5f, 0.5f, 0.5f, 0.5f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.5f, 0.25f, 0.75f, 1.0f}));
+}
+
+// 27. FilledRectTranslucentUnderFade
+// Verifies that results agree when there is both:
+//   - translucent color specified by fill content (implying PREMULTIPLIED_ALPHA blend mode)
+//   - inherited opacity < 1
+TEST_F(FlatlandDifferentialTest, FilledRectTranslucentUnderFade) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const TransformId kTransId{2};
+    const ContentId kRectId{3};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+    flatland->SetOpacity(kRootId, 0.5f);
+
+    flatland->CreateTransform(kTransId);
+    flatland->AddChild(kRootId, kTransId);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 0.5f},
+                           fuchsia_math::SizeU{120, 240});
+
+    flatland->SetContent(kTransId, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{0.5f, 0.5f, 0.5f, 0.5f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.25f, 0.125f, 0.375f, 0.5f}));
+}
+
+// 28. FilledRectUnderNestedFades
+// Nested fades compose multiplicatively: 0.5 * 0.5 = 0.25 arrives in
+// multiply_color as a single product, and the composed value (not either
+// factor alone) drives the REPLACE demotion.
+TEST_F(FlatlandDifferentialTest, FilledRectUnderNestedFades) {
+  auto script = [](Flatland* flatland, allocation::Allocator* allocator,
+                   std::function<void()> present_and_capture) {
+    const TransformId kRootId{1};
+    const TransformId kTrans1{2};
+    const TransformId kTrans2{3};
+    const ContentId kRectId{4};
+
+    flatland->CreateTransform(kRootId);
+    flatland->SetRootTransform(kRootId);
+
+    flatland->CreateTransform(kTrans1);
+    flatland->CreateTransform(kTrans2);
+    flatland->AddChild(kRootId, kTrans1);
+    flatland->AddChild(kTrans1, kTrans2);
+    flatland->SetOpacity(kTrans1, 0.5f);
+    flatland->SetOpacity(kTrans2, 0.5f);
+
+    flatland->CreateFilledRect(kRectId);
+    flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.25f, 0.75f, 1.0f},
+                           fuchsia_math::SizeU{120, 240});
+
+    flatland->SetContent(kTrans2, kRectId);
+    present_and_capture();
+  };
+
+  auto layers1 = RunScript(false, script);
+  auto layers2 = RunScript(true, script);
+  ExpectMultiPresentResolvedLayersEqual(layers1, layers2);
+
+  ASSERT_EQ(layers2.size(), 1U);
+  ASSERT_EQ(layers2[0].size(), 1U);
+  const auto& layer = layers2[0][0];
+  EXPECT_EQ(layer.blend_mode, BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{0.25f, 0.25f, 0.25f, 0.25f}));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(layer.content));
+  const auto& content = std::get<ResolvedLayer::SolidColorContent>(layer.content);
+  EXPECT_EQ(content.color, (std::array<float, 4>{0.5f, 0.25f, 0.75f, 1.0f}));
 }
 
 }  // namespace test

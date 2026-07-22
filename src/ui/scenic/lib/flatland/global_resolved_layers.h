@@ -29,7 +29,7 @@ namespace flatland {
 void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  const std::vector<ImageRect>& rectangles,
                                  const std::vector<allocation::ImageMetadata>& images,
-                                 const std::vector<size_t>& image_indices);
+                                 const std::vector<size_t>& image_indices = {});
 
 // [Deprecated: Migrating to Flatland2 schema overload below]
 inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
