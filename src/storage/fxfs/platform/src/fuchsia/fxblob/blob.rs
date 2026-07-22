@@ -20,7 +20,7 @@ use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer as MemBuffer;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_merkle::{Hash, MerkleVerifier, ReadSizedMerkleVerifier};
-use futures::try_join;
+use futures::{TryStreamExt, try_join};
 use fxfs::blob_metadata::{BlobFormat, BlobMetadata};
 use fxfs::errors::FxfsError;
 use fxfs::lock_keys;
@@ -30,6 +30,7 @@ use fxfs::object_store::transaction::LockKey;
 use fxfs::object_store::{AttributeId, DataObjectHandle, ObjectDescriptor, StoreObjectHandle};
 use fxfs::round::{round_down, round_up};
 use fxfs_macros::ToWeakNode;
+use mapping::Extent as MappingExtent;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -165,6 +166,39 @@ impl FxBlob {
 
     pub fn root(&self) -> Hash {
         self.merkle_root
+    }
+
+    /// Returns the extents mapping logical offsets to device offsets for both merkle and data
+    /// attributes. Returns `(merkle_extents, data_extents)`, where each `MappingExtent` maps a
+    /// logical byte range to a physical device offset. Extents are sorted by logical offset and
+    /// non-overlapping.
+    pub async fn get_mapping_extents(
+        &self,
+    ) -> Result<(Vec<MappingExtent>, Vec<MappingExtent>), Error> {
+        let tree = &self.handle.store().tree();
+        let layer_set = tree.layer_set();
+
+        // Query data extents
+        let mut merger = layer_set.merger();
+        let stream = self.handle.extent_stream(&mut merger, AttributeId::DATA).await?;
+        let data_extents = stream
+            .map_ok(|extent| {
+                MappingExtent::new(extent.logical_range(), Some(extent.device_range().start))
+            })
+            .try_collect()
+            .await?;
+
+        // Query Merkle extents
+        let mut merger = layer_set.merger();
+        let stream = self.handle.extent_stream(&mut merger, AttributeId::BLOB_METADATA).await?;
+        let merkle_extents = stream
+            .map_ok(|extent| {
+                MappingExtent::new(extent.logical_range(), Some(extent.device_range().start))
+            })
+            .try_collect()
+            .await?;
+
+        Ok((merkle_extents, data_extents))
     }
 
     fn record_page_fault_metric(&self, range: &Range<u64>) {
@@ -534,6 +568,63 @@ mod tests {
         let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
         assert_eq!(fixture.read_blob(hash).await, data);
+
+        fixture.close().await;
+    }
+
+    #[fasync::run(10, test)]
+    async fn test_get_multiple_mapping_extents() {
+        let fixture = new_blob_fixture().await;
+
+        {
+            let data = vec![0xff; 3_000_000];
+            let hash = fixture.write_blob(&data, CompressionMode::Never).await;
+            let name = format!("{}", hash);
+
+            let handle = fixture.get_blob_handle(&name).await;
+            let mut transaction =
+                handle.new_transaction().await.expect("failed to create transaction");
+            let mut buf = handle.allocate_buffer(8192).await;
+            buf.as_mut_slice().fill(0xaa);
+            handle
+                .txn_write(&mut transaction, 0, buf.as_ref())
+                .await
+                .expect("txn_write at offset 0 failed");
+            handle
+                .txn_write(&mut transaction, 16384, buf.as_ref())
+                .await
+                .expect("txn_write at offset 16384 failed");
+            transaction.commit().await.expect("failed to commit transaction");
+
+            let blob = fixture.get_blob(hash).await.expect("getting blob failed");
+            let (merkle_extents, data_extents) =
+                blob.get_mapping_extents().await.expect("get_mapping_extents failed");
+
+            assert!(!merkle_extents.is_empty(), "Expected at least one merkle extent");
+            assert!(
+                data_extents.len() > 1,
+                "Expected multiple data extents, got {}",
+                data_extents.len()
+            );
+
+            // The overwritten extents should each be exactly 8192 bytes.
+            let overwrite_extent = data_extents
+                .iter()
+                .find(|e| e.logical_range.start == 0)
+                .expect("extent at offset 0");
+            assert_eq!(
+                overwrite_extent.logical_range.end - overwrite_extent.logical_range.start,
+                8192
+            );
+            let overwrite_extent = data_extents
+                .iter()
+                .find(|e| e.logical_range.start == 16384)
+                .expect("extent at offset 16384");
+            assert_eq!(
+                overwrite_extent.logical_range.end - overwrite_extent.logical_range.start,
+                8192
+            );
+        }
 
         fixture.close().await;
     }

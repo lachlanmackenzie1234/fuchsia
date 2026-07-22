@@ -1715,37 +1715,11 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     ///
     /// *NOTE*: This operation is potentially expensive and should generally be avoided.
     pub async fn device_extents(&self) -> Result<Vec<FileExtent>, Error> {
-        let mut extents = Vec::new();
         let tree = &self.store().tree;
         let layer_set = tree.layer_set();
         let mut merger = layer_set.merger();
-        let mut iter = merger
-            .query(Query::FullRange(&ObjectKey::attribute(
-                self.object_id(),
-                self.attribute_id(),
-                AttributeKey::Extent(Extent::search_key_from_offset(0)),
-            )))
-            .await?;
-        loop {
-            match iter.get() {
-                Some(ItemRef {
-                    key:
-                        ObjectKey {
-                            object_id,
-                            data:
-                                ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
-                        },
-                    value: ObjectValue::Extent(ExtentValue::Some { device_offset, .. }),
-                    ..
-                }) if *object_id == self.object_id() && *attribute_id == self.attribute_id() => {
-                    let logical_offset = extent.start;
-                    let device_range = *device_offset..*device_offset + extent.length()?;
-                    extents.push(FileExtent::new(logical_offset, device_range)?);
-                }
-                _ => break,
-            }
-            iter.advance().await?;
-        }
+        let stream = self.handle.extent_stream(&mut merger, self.attribute_id()).await?;
+        let extents: Vec<FileExtent> = stream.try_collect().await?;
         Ok(extents)
     }
 }

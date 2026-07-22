@@ -9,7 +9,6 @@ use std::cmp::{Ordering, Reverse, max, min};
 use std::collections::BinaryHeap;
 use std::ops::Range;
 use std::sync::Arc;
-use storage_device::buffer_allocator::BufferAllocator;
 
 /// Maximum number of bytes to read per single storage buffer request (1 MiB).
 pub const MAX_READ_BUFFER_SIZE: usize = 1024 * 1024;
@@ -301,7 +300,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::thread;
     use std::time::Duration;
-    use storage_device::buffer_allocator::BufferSource;
+    use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 
     struct FakeBlockService {
         allocator: Arc<BufferAllocator>,

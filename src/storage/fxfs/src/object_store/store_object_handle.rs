@@ -6,7 +6,7 @@ use crate::checksum::{Checksum, Checksums, fletcher64};
 use crate::errors::FxfsError;
 use crate::log::*;
 use crate::lsm_tree::Query;
-use crate::lsm_tree::merge::MergerIterator;
+use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
 use crate::object_store::extent_record::{ExtentMode, ExtentValue};
@@ -20,7 +20,7 @@ use crate::object_store::transaction::{
     Transaction, lock_keys,
 };
 use crate::object_store::{
-    AttributeId, Extent, HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult,
+    AttributeId, Extent, FileExtent, HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult,
     VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
@@ -28,8 +28,8 @@ use crate::round::{round_down, round_up};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use assert_matches::assert_matches;
 use bit_vec::BitVec;
-use futures::stream::{FuturesOrdered, FuturesUnordered};
-use futures::{TryStreamExt, try_join};
+use futures::stream::{FuturesOrdered, FuturesUnordered, unfold};
+use futures::{Stream, TryStreamExt, try_join};
 use fxfs_crypto::{
     Cipher, CipherHolder, CipherSet, EncryptionKey, FindKeyResult, FxfsCipher, KeyPurpose,
 };
@@ -838,6 +838,75 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         }
 
         Ok(result)
+    }
+
+    /// Returns a stream of extents for the given attribute ID, mapping logical offsets to device
+    /// offsets. Extents are sorted by logical offset and non-overlapping. Extents with no physical
+    /// backing are skipped.
+    pub async fn extent_stream<'a, 'b>(
+        &'a self,
+        merger: &'b mut Merger<'a, ObjectKey, ObjectValue>,
+        attribute_id: AttributeId,
+    ) -> Result<impl Stream<Item = Result<FileExtent, Error>> + 'b, Error> {
+        let object_id = self.object_id();
+        let iter = merger
+            .query(Query::FullRange(&ObjectKey::attribute(
+                object_id,
+                attribute_id,
+                AttributeKey::Extent(Extent::search_key_from_offset(0)),
+            )))
+            .await?;
+        Ok(unfold(
+            (iter, object_id, attribute_id),
+            |(mut iter, object_id, attribute_id)| async move {
+                loop {
+                    match iter.get() {
+                        Some(ItemRef {
+                            key:
+                                ObjectKey {
+                                    object_id: id,
+                                    data:
+                                        ObjectKeyData::Attribute(
+                                            attr_id,
+                                            AttributeKey::Extent(extent_key),
+                                        ),
+                                },
+                            value: ObjectValue::Extent(extent_value),
+                            ..
+                        }) if *id == object_id && *attr_id == attribute_id => {
+                            let logical_range = extent_key.0.clone();
+                            let device_range = match extent_value {
+                                ExtentValue::Some { device_offset, .. } => {
+                                    let len = logical_range.end - logical_range.start;
+                                    Some(*device_offset..*device_offset + len)
+                                }
+                                // Extent with no physical backing (e.g. deleted extent).
+                                ExtentValue::None => None,
+                            };
+
+                            // Advance the iterator before returning so the next invocation sees the
+                            // following entry.
+                            if let Err(e) = iter.advance().await {
+                                return Some((Err(e.into()), (iter, object_id, attribute_id)));
+                            }
+
+                            if let Some(device_range) = device_range {
+                                return Some((
+                                    Ok(FileExtent::new(logical_range.start, device_range).unwrap()),
+                                    (iter, object_id, attribute_id),
+                                ));
+                            } else {
+                                // Skip extents with no physical backing; loop to check the next
+                                // entry.
+                                continue;
+                            }
+                        }
+                        // No more entries matching this object_id and attribute_id.
+                        _ => return None,
+                    }
+                }
+            },
+        ))
     }
 
     /// This will only work for a non-permanent volume data key. This is designed to be used with
@@ -2156,7 +2225,7 @@ mod tests {
     use super::{ChecksumRangeChunk, OverwriteBitmaps};
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, OpenFxFilesystem};
-    use crate::object_handle::ObjectHandle;
+    use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
     use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::{
@@ -2165,7 +2234,7 @@ mod tests {
     };
     use bit_vec::BitVec;
     use fuchsia_async as fasync;
-    use futures::join;
+    use futures::{TryStreamExt, join};
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -2214,6 +2283,43 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         (fs, object)
+    }
+
+    #[fuchsia::test]
+    async fn test_extent_stream() {
+        let (fs, object) = test_filesystem_and_empty_object().await;
+
+        // Write 8KiB at offset 0 and 8KiB at offset 16KiB, leaving a hole in between.
+        let mut buf = object.allocate_buffer(8192).await;
+        buf.as_mut_slice().fill(0xaa);
+        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+        object.write_or_append(Some(16384), buf.as_ref()).await.expect("write failed");
+
+        let basic = StoreObjectHandle::new(
+            object.owner().clone(),
+            object.object_id(),
+            /* permanent_keys: */ false,
+            HandleOptions::default(),
+            false,
+        );
+
+        let store = fs.root_store();
+        let layer_set = store.tree.layer_set();
+        let mut merger = layer_set.merger();
+
+        let stream = basic
+            .extent_stream(&mut merger, AttributeId::DATA)
+            .await
+            .expect("extent_stream failed");
+
+        let result: Vec<_> = stream.try_collect().await.expect("stream item error");
+
+        // Expect 2 physical mappings
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].logical_offset(), 0);
+        assert_eq!(result[0].length(), 8192);
+        assert_eq!(result[1].logical_offset(), 16384);
+        assert_eq!(result[1].length(), 8192);
     }
 
     #[fuchsia::test(threads = 3)]
