@@ -328,29 +328,37 @@ void UITestRealm::ConfigureScenic() {
 
   // Configure scenic's configuration.
   realm_builder_.AddChild("config", "#meta/config.cm", {});
+
+  std::vector<component_testing::Capability> config_capabilities = {
+      component_testing::Config{.name = "fuchsia.scenic.FrameCounterOverlay"},
+      component_testing::Config{.name =
+                                    "fuchsia.scenic.FrameSchedulerMinPredictedFrameDurationInUs"},
+      component_testing::Config{.name = "fuchsia.scenic.FramePredictionMarginInUs"},
+      component_testing::Config{.name = "fuchsia.scenic.ICanHazDisplayId"},
+      component_testing::Config{.name = "fuchsia.scenic.ICanHazDisplayMode"},
+      component_testing::Config{.name = "fuchsia.scenic.InputNoncritical"},
+      component_testing::Config{.name = "fuchsia.scenic.MaxDisplayHorizontalResolutionPx"},
+      component_testing::Config{.name = "fuchsia.scenic.MaxDisplayRefreshRateMillihertz"},
+      component_testing::Config{.name = "fuchsia.scenic.MaxDisplayVerticalResolutionPx"},
+      component_testing::Config{.name = "fuchsia.scenic.MinDisplayHorizontalResolutionPx"},
+      component_testing::Config{.name = "fuchsia.scenic.MinDisplayRefreshRateMillihertz"},
+      component_testing::Config{.name = "fuchsia.scenic.MinDisplayVerticalResolutionPx"},
+      component_testing::Config{.name = "fuchsia.scenic.PointerAutoFocus"},
+      component_testing::Config{.name = "fuchsia.scenic.Renderer"},
+      component_testing::Config{.name = "fuchsia.scenic.UseSeparateInputThread"},
+      component_testing::Config{.name = "fuchsia.ui.Prefetch"},
+      component_testing::Config{.name = "fuchsia.ui.VisualDebuggingLevel"},
+  };
+
+  // If the test did not specify a preference for the Flatland2 UberStruct schema,
+  // we route it from the config child so it falls back to the default in default_for_test.json5.
+  if (!config_.use_flatland2_uberstruct_schema.has_value()) {
+    config_capabilities.push_back(
+        component_testing::Config{.name = "fuchsia.scenic.UseFlatland2UberstructSchema"});
+  }
+
   realm_builder_.AddRoute({
-      .capabilities =
-          {
-              component_testing::Config{.name = "fuchsia.scenic.FrameCounterOverlay"},
-              component_testing::Config{
-                  .name = "fuchsia.scenic.FrameSchedulerMinPredictedFrameDurationInUs"},
-              component_testing::Config{.name = "fuchsia.scenic.FramePredictionMarginInUs"},
-              component_testing::Config{.name = "fuchsia.scenic.ICanHazDisplayId"},
-              component_testing::Config{.name = "fuchsia.scenic.ICanHazDisplayMode"},
-              component_testing::Config{.name = "fuchsia.scenic.InputNoncritical"},
-              component_testing::Config{.name = "fuchsia.scenic.MaxDisplayHorizontalResolutionPx"},
-              component_testing::Config{.name = "fuchsia.scenic.MaxDisplayRefreshRateMillihertz"},
-              component_testing::Config{.name = "fuchsia.scenic.MaxDisplayVerticalResolutionPx"},
-              component_testing::Config{.name = "fuchsia.scenic.MinDisplayHorizontalResolutionPx"},
-              component_testing::Config{.name = "fuchsia.scenic.MinDisplayRefreshRateMillihertz"},
-              component_testing::Config{.name = "fuchsia.scenic.MinDisplayVerticalResolutionPx"},
-              component_testing::Config{.name = "fuchsia.scenic.PointerAutoFocus"},
-              component_testing::Config{.name = "fuchsia.scenic.Renderer"},
-              component_testing::Config{.name = "fuchsia.scenic.UseFlatland2UberstructSchema"},
-              component_testing::Config{.name = "fuchsia.scenic.UseSeparateInputThread"},
-              component_testing::Config{.name = "fuchsia.ui.Prefetch"},
-              component_testing::Config{.name = "fuchsia.ui.VisualDebuggingLevel"},
-          },
+      .capabilities = std::move(config_capabilities),
       .source = component_testing::ChildRef{"config"},
       .targets = {component_testing::ChildRef{kScenicName}},
   });
@@ -364,13 +372,26 @@ void UITestRealm::ConfigureScenic() {
       .name = "fuchsia.scenic.DisplayRotation",
       .value = ConfigValue::Uint64(config_.display_rotation),
   });
+
+  std::vector<component_testing::Capability> self_capabilities = {
+      component_testing::Config{.name = "fuchsia.scenic.DisplayComposition"},
+      component_testing::Config{.name = "fuchsia.scenic.DisplayRotation"},
+  };
+
+  // If the test explicitly pinned the Flatland2 UberStruct schema, we route it from
+  // SelfRef to override the packaged default from default_for_test.json5.
+  if (config_.use_flatland2_uberstruct_schema.has_value()) {
+    configurations.push_back({
+        .name = "fuchsia.scenic.UseFlatland2UberstructSchema",
+        .value = ConfigValue::Bool(*config_.use_flatland2_uberstruct_schema),
+    });
+    self_capabilities.push_back(
+        component_testing::Config{.name = "fuchsia.scenic.UseFlatland2UberstructSchema"});
+  }
+
   realm_builder_.AddConfiguration(std::move(configurations));
   realm_builder_.AddRoute({
-      .capabilities =
-          {
-              component_testing::Config{.name = "fuchsia.scenic.DisplayComposition"},
-              component_testing::Config{.name = "fuchsia.scenic.DisplayRotation"},
-          },
+      .capabilities = std::move(self_capabilities),
       .source = component_testing::SelfRef{},
       .targets = {component_testing::ChildRef{kScenicName}},
   });

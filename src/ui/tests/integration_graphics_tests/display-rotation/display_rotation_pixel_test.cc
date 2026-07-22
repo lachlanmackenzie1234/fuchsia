@@ -38,6 +38,10 @@ class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
   explicit DisplayRotationPixelTestBase(int display_rotation)
       : display_rotation_(display_rotation) {}
 
+  void set_use_flatland2_schema(bool use_flatland2_schema) {
+    use_flatland2_schema_ = use_flatland2_schema;
+  }
+
   // |testing::Test|
   void SetUp() override {
     ui_testing::UITestRealm::Config config;
@@ -47,6 +51,7 @@ class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
     config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
                                     fuchsia::ui::composition::Allocator::Name_};
     config.display_rotation = display_rotation_;
+    config.use_flatland2_uberstruct_schema = use_flatland2_schema_;
     ui_test_manager_.emplace(config);
 
     // Build realm.
@@ -152,22 +157,27 @@ class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
 
  private:
   int display_rotation_;
+  bool use_flatland2_schema_ = false;
   std::optional<ui_testing::UITestManager> ui_test_manager_;
   std::unique_ptr<sys::ServiceDirectory> realm_exposed_services_;
   std::optional<Realm> realm_;
 };
 
 class LandscapeModeTest : public DisplayRotationPixelTestBase,
-                          public ::testing::WithParamInterface<int> {
+                          public ::testing::WithParamInterface<std::tuple<int, bool>> {
  protected:
-  LandscapeModeTest() : DisplayRotationPixelTestBase(GetParam()) {}
+  LandscapeModeTest() : DisplayRotationPixelTestBase(std::get<0>(GetParam())) {}
+  void SetUp() override {
+    set_use_flatland2_schema(std::get<1>(GetParam()));
+    DisplayRotationPixelTestBase::SetUp();
+  }
 };
 
 INSTANTIATE_TEST_SUITE_P(DisplayRotationPixelTestWithParams, LandscapeModeTest,
                          // The display is said to be in landscape mode when it
                          // is oriented horizontally i.e rotated by 0 or 180
                          // degrees.
-                         ::testing::Values(0, 180));
+                         ::testing::Combine(::testing::Values(0, 180), ::testing::Bool()));
 
 // This test leverage the coordinate test view to ensure that display rotation is working
 // properly.
@@ -203,16 +213,20 @@ TEST_P(LandscapeModeTest, ValidContentTest) {
 }
 
 class PortraitModeTest : public DisplayRotationPixelTestBase,
-                         public ::testing::WithParamInterface<int> {
+                         public ::testing::WithParamInterface<std::tuple<int, bool>> {
  protected:
-  PortraitModeTest() : DisplayRotationPixelTestBase(GetParam()) {}
+  PortraitModeTest() : DisplayRotationPixelTestBase(std::get<0>(GetParam())) {}
+  void SetUp() override {
+    set_use_flatland2_schema(std::get<1>(GetParam()));
+    DisplayRotationPixelTestBase::SetUp();
+  }
 };
 
 INSTANTIATE_TEST_SUITE_P(DisplayRotationPixelTestWithParams, PortraitModeTest,
                          // The display is said to be in portrait mode when it
                          // is oriented vertically i.e rotated by 90 or 270
                          // degrees.
-                         ::testing::Values(90, 270));
+                         ::testing::Combine(::testing::Values(90, 270), ::testing::Bool()));
 
 // This test leverage the coordinate test view to ensure that display rotation is working
 // properly.
