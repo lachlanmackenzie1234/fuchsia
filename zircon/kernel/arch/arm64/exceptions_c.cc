@@ -146,8 +146,8 @@ zx_status_t try_dispatch_user_exception(zx_excp_type_t type, iframe_t* iframe, u
 }
 
 // Prints exception details and then panics.
-[[noreturn]] void exception_die(iframe_t* iframe, uint32_t esr, uint64_t far, const char* format,
-                                ...) {
+[[noreturn, gnu::format(printf, 4, 5)]]
+void exception_die(iframe_t* iframe, uint32_t esr, uint64_t far, const char* format, ...) {
   platform_panic_start();
 
   va_list args;

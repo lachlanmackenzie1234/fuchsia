@@ -91,8 +91,8 @@ const char* cause_to_string(int64_t cause) {
 }
 
 // Prints exception details and then panics.
-__NO_RETURN __NO_INLINE void exception_die(iframe_t* iframe, int64_t cause, uint64_t tval,
-                                           const char* format, ...) {
+[[noreturn, gnu::noinline, gnu::format(printf, 4, 5)]]
+void exception_die(iframe_t* iframe, int64_t cause, uint64_t tval, const char* format, ...) {
   platform_panic_start();
 
   va_list args;
@@ -117,8 +117,8 @@ __NO_RETURN __NO_INLINE void exception_die(iframe_t* iframe, int64_t cause, uint
 __NO_RETURN __NO_INLINE void fatal_exception(int64_t cause, uint64_t tval, struct iframe_t* frame) {
   if (cause < 0) {
     exception_die(frame, cause, tval,
-                  "unhandled interrupt cause %#lx, epc %#lx, tval %#lx cpu %u\n", frame->regs.pc,
-                  riscv64_csr_read(RISCV64_CSR_STVAL), arch_curr_cpu_num());
+                  "unhandled interrupt cause %#lx, epc %#lx, tval %#lx cpu %u\n", cause,
+                  frame->regs.pc, riscv64_csr_read(RISCV64_CSR_STVAL), arch_curr_cpu_num());
   } else {
     exception_die(frame, cause, tval,
                   "unhandled exception cause %#lx (%s), epc %#lx, tval %#lx, cpu %u\n", cause,
