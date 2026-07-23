@@ -164,9 +164,8 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         )
 
         # Run an event handler in the background before starting the connect.
-        results: asyncio.Queue[f_wlan_sme.ConnectResult] = asyncio.Queue()
         event_handler = ConnectTransactionEventHandler(
-            connect_transaction_client, results
+            connect_transaction_client
         )
         event_handler_task = asyncio.create_task(event_handler.serve())
 
@@ -175,7 +174,14 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             sme.connect(req=req, txn=server.take())
 
             # Wait for the driver to finish connecting.
-            result = await asyncio.wait_for(results.get(), timeout=60)
+            on_connect_result_req = await asyncio.wait_for(
+                event_handler.txn_queue.get(), timeout=60
+            )
+            assert isinstance(
+                on_connect_result_req,
+                f_wlan_sme.ConnectTransactionOnConnectResultRequest,
+            )
+            result = on_connect_result_req.result
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientSme.Connect() error {status}"
@@ -866,18 +872,35 @@ class WlanCore(wlan_core.WlanCore):
         )
 
 
+@dataclass
+class ConnectTransactionContext:
+    txn_queue: asyncio.Queue[
+        f_wlan_sme.ConnectTransactionOnConnectResultRequest
+        | f_wlan_sme.ConnectTransactionOnDisconnectRequest
+        | f_wlan_sme.ConnectTransactionOnRoamResultRequest
+        | f_wlan_sme.ConnectTransactionOnSignalReportRequest
+        | f_wlan_sme.ConnectTransactionOnChannelSwitchedRequest
+    ]
+
+
 class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
     """Event handler for ClientSme.Connect()."""
 
     def __init__(
         self,
         client: FidlClient,
-        connect_results: asyncio.Queue[f_wlan_sme.ConnectResult],
     ) -> None:
         super().__init__(client)
-        self._connect_results = connect_results
+        self.txn_queue: asyncio.Queue[
+            f_wlan_sme.ConnectTransactionOnConnectResultRequest
+            | f_wlan_sme.ConnectTransactionOnDisconnectRequest
+            | f_wlan_sme.ConnectTransactionOnRoamResultRequest
+            | f_wlan_sme.ConnectTransactionOnSignalReportRequest
+            | f_wlan_sme.ConnectTransactionOnChannelSwitchedRequest
+        ] = asyncio.Queue()
+        self.server_task: asyncio.Task[None] | None = None
 
-    async def on_connect_result(
+    def on_connect_result(
         self, request: f_wlan_sme.ConnectTransactionOnConnectResultRequest
     ) -> None:
         """Return the result of the initial connection request or later
@@ -885,19 +908,16 @@ class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
         _LOGGER.debug(
             "ConnectTransaction.OnConnectResult() called with %s", request
         )
-        await self._connect_results.put(request.result)
+        self.txn_queue.put_nowait(request)
 
     def on_disconnect(
         self, request: f_wlan_sme.ConnectTransactionOnDisconnectRequest
     ) -> None:
-        """Notify that the client has disconnected.
-
-        If request.disconnect_info indicates that SME is attempting to reconnect by
-        itself, there's not need for caller to intervene for now.
-        """
+        """Notify that the client has disconnected."""
         _LOGGER.debug(
             "ConnectTransaction.OnDisconnect() called with %s", request
         )
+        self.txn_queue.put_nowait(request)
 
     def on_roam_result(
         self, request: f_wlan_sme.ConnectTransactionOnRoamResultRequest
@@ -906,6 +926,7 @@ class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
         _LOGGER.debug(
             "ConnectTransaction.OnRoamResult() called with %s", request
         )
+        self.txn_queue.put_nowait(request)
 
     def on_signal_report(
         self, request: f_wlan_sme.ConnectTransactionOnSignalReportRequest
@@ -914,6 +935,7 @@ class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
         _LOGGER.debug(
             "ConnectTransaction.OnSignalReport() called with %s", request
         )
+        self.txn_queue.put_nowait(request)
 
     def on_channel_switched(
         self, request: f_wlan_sme.ConnectTransactionOnChannelSwitchedRequest
@@ -922,6 +944,19 @@ class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
         _LOGGER.debug(
             "ConnectTransaction.OnChannelSwitched() called with %s", request
         )
+        self.txn_queue.put_nowait(request)
+
+    async def __aenter__(self) -> ConnectTransactionContext:
+        self.server_task = asyncio.create_task(self.serve())
+        return ConnectTransactionContext(txn_queue=self.txn_queue)
+
+    async def __aexit__(self, *args: object) -> None:
+        if self.server_task is not None:
+            self.server_task.cancel()
+            try:
+                await self.server_task
+            except asyncio.CancelledError:
+                pass
 
 
 @dataclass

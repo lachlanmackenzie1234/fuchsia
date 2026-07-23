@@ -24,8 +24,10 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from common.utils.ies import read_ssid
 from core_testing import base_test
-from core_testing.handlers import ConnectTransactionEventHandler
 from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
+from honeydew.affordances.connectivity.wlan.wlan_core.wlan_core_using_fc import (
+    ConnectTransactionEventHandler,
+)
 from mobly import signals, test_runner
 from mobly.asserts import (
     abort_class_if,
@@ -436,9 +438,9 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             proxy,
             server,
         ) = self.dut.fuchsia_controller.channel_create()
-        async with ConnectTransactionEventHandler(proxy, server) as ctx:
+        client = fidl_sme.ConnectTransactionClient(proxy.take())
+        async with ConnectTransactionEventHandler(client) as ctx:
             txn_queue = ctx.txn_queue
-            server = ctx.server
 
             match test_params.origin_security_mode:
                 case SecurityOpen():

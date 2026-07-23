@@ -27,7 +27,9 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from common.utils.ies import Ie, read_ssid
 from core_testing import base_test
-from core_testing.handlers import ConnectTransactionEventHandler
+from honeydew.affordances.connectivity.wlan.wlan_core.wlan_core_using_fc import (
+    ConnectTransactionEventHandler,
+)
 from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
 from openwrt_access_point import OpenWrtAP
@@ -131,12 +133,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
             proxy,
             server,
         ) = self.dut.fuchsia_controller.channel_create()
-        async with ConnectTransactionEventHandler(
-            proxy,
-            server,
-        ) as ctx:
+        client = fidl_sme.ConnectTransactionClient(proxy.take())
+        async with ConnectTransactionEventHandler(client) as ctx:
             txn_queue = ctx.txn_queue
-            server = ctx.server
 
             credentials = None
             protocol = fidl_security.Protocol.OPEN
