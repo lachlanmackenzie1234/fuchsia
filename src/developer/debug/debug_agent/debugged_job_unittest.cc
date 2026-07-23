@@ -103,4 +103,81 @@ TEST(DebuggedJob, Init_AttachConfig) {
   EXPECT_EQ(handle_strong_ptr->observer(), &job_strong);
   EXPECT_EQ(handle_strong_ptr->observer_type(), JobExceptionChannelType::kException);
 }
+
+namespace {
+class DestructorNotifierExceptionHandle : public MockExceptionHandle {
+ public:
+  DestructorNotifierExceptionHandle(uint64_t process_koid, uint64_t thread_koid, bool* destroyed)
+      : MockExceptionHandle(process_koid, thread_koid), destroyed_(destroyed) {}
+  ~DestructorNotifierExceptionHandle() override { *destroyed_ = true; }
+
+ private:
+  bool* destroyed_;
+};
+
+class LifetimeCheckingProcessHandle : public MockProcessHandle {
+ public:
+  LifetimeCheckingProcessHandle(zx_koid_t process_koid, const bool* exception_destroyed)
+      : MockProcessHandle(process_koid), exception_destroyed_(exception_destroyed) {}
+
+  zx_koid_t GetKoid() const override {
+    EXPECT_FALSE(*exception_destroyed_);
+    return MockProcessHandle::GetKoid();
+  }
+
+ private:
+  const bool* exception_destroyed_;
+};
+}  // namespace
+
+TEST(DebuggedJob, OnProcessStarting_ExceptionLifetime) {
+  MockDebugAgentHarness harness;
+  DebuggedJob job(harness.debug_agent());
+
+  constexpr zx_koid_t kJobKoid = 1234;
+  auto mock_job_handle = std::make_unique<MockJobHandle>(kJobKoid);
+  DebuggedJobCreateInfo create_info(std::move(mock_job_handle));
+  create_info.priority = debug_ipc::AttachConfig::Priority::kStrong;
+  ASSERT_TRUE(job.Init(std::move(create_info)).ok());
+
+  bool exception_destroyed = false;
+  constexpr zx_koid_t kProcessKoid = 5678;
+  constexpr zx_koid_t kThreadKoid = 5679;
+
+  auto process =
+      std::make_unique<LifetimeCheckingProcessHandle>(kProcessKoid, &exception_destroyed);
+  auto exception = std::make_unique<DestructorNotifierExceptionHandle>(kProcessKoid, kThreadKoid,
+                                                                       &exception_destroyed);
+
+  static_cast<JobExceptionObserver&>(job).OnProcessStarting(std::move(process),
+                                                            std::move(exception));
+
+  EXPECT_TRUE(exception_destroyed);
+}
+
+TEST(DebuggedJob, OnProcessNameChanged_ExceptionLifetime) {
+  MockDebugAgentHarness harness;
+  DebuggedJob job(harness.debug_agent());
+
+  constexpr zx_koid_t kJobKoid = 1234;
+  auto mock_job_handle = std::make_unique<MockJobHandle>(kJobKoid);
+  DebuggedJobCreateInfo create_info(std::move(mock_job_handle));
+  create_info.priority = debug_ipc::AttachConfig::Priority::kStrong;
+  ASSERT_TRUE(job.Init(std::move(create_info)).ok());
+
+  bool exception_destroyed = false;
+  constexpr zx_koid_t kProcessKoid = 5678;
+  constexpr zx_koid_t kThreadKoid = 5679;
+
+  auto process =
+      std::make_unique<LifetimeCheckingProcessHandle>(kProcessKoid, &exception_destroyed);
+  auto exception = std::make_unique<DestructorNotifierExceptionHandle>(kProcessKoid, kThreadKoid,
+                                                                       &exception_destroyed);
+
+  static_cast<JobExceptionObserver&>(job).OnProcessNameChanged(std::move(process),
+                                                               std::move(exception));
+
+  EXPECT_TRUE(exception_destroyed);
+}
+
 }  // namespace debug_agent

@@ -18,7 +18,7 @@
 
 namespace debug_agent {
 
-class MockProcessHandle final : public ProcessHandle {
+class MockProcessHandle : public ProcessHandle {
  public:
   static constexpr uint64_t kLoaderBreakpointAddress = 0x8000'0000;
 
