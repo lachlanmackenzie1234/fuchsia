@@ -18,7 +18,8 @@
 
 namespace {
 
-[[noreturn]] PHYS_SINGLETHREAD void vpanic(const char* format, va_list args) {
+[[noreturn, gnu::format(printf, 1, 0)]]
+PHYS_SINGLETHREAD void vpanic(const char* format, va_list args) {
   PreparePanic();
   // Print the message.
   vprintf(format, args);

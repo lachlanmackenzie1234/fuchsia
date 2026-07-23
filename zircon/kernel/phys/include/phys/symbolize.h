@@ -185,7 +185,7 @@ class Symbolize {
   void set_cfi_slowpath(CallCfiSlowpathFunction* cfi_slowpath, CfiCheckFunction* main_cfi_check);
 
  private:
-  void Printf(const char* fmt, ...);
+  [[gnu::format(printf, 2, 3)]] void Printf(const char* fmt, ...);
 
   void AddModule(const ElfImage* module);
 

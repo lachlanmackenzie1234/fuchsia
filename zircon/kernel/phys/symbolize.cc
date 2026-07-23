@@ -203,7 +203,8 @@ void Symbolize::PrintStack(uintptr_t sp, ktl::optional<size_t> max_size_bytes) {
     if (!stack.boot_stack.IsOnStack(sp)) {
       return false;
     }
-    Printf("%s: Partial dump of %V stack at [%p, %p):\n", name_, stack.name, &stack.boot_stack,
+    Printf("%s: Partial dump of %.*s stack at [%p, %p):\n", name_,
+           static_cast<int>(stack.name.size()), stack.name.data(), &stack.boot_stack,
            &stack.boot_stack + 1);
     ktl::span whole(reinterpret_cast<const uint64_t*>(stack.boot_stack.stack),
                     sizeof(stack.boot_stack.stack) / sizeof(uint64_t));
@@ -282,7 +283,7 @@ void Symbolize::PrintRegisters(const PhysExceptionState& exc) {
   Printf("  X30: 0x%016" PRIx64 "\n", exc.regs.lr);
   Printf("%s:    SP: 0x%016" PRIx64 "   PC: 0x%016" PRIx64 " SPSR: 0x%016" PRIx64 "\n", name_,
          exc.regs.sp, exc.regs.pc, exc.regs.cpsr);
-  Printf("%s:   ESR: 0x%016" PRIx64 "  FAR: 0x%016" PRIx64 "\n", name_, exc.exc.arch.u.arm_64.esr,
+  Printf("%s:   ESR: 0x%016" PRIx32 "  FAR: 0x%016" PRIx64 "\n", name_, exc.exc.arch.u.arm_64.esr,
          exc.exc.arch.u.arm_64.far);
 
 #elif defined(__riscv)

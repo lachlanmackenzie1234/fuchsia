@@ -61,8 +61,8 @@ struct Report {
 };
 
 // This must be defined to function that is called like vprintf.
-// It will be used by handlers
-inline void VPrintf(const char* fmt, va_list args);
+// It will be used by handlers.
+[[gnu::format(printf, 1, 0)]] inline void VPrintf(const char* fmt, va_list args);
 
 // This is is used by the handlers directly, and just calls VPrintf.
 // The Report method implementations can use this too if it's convenient.
