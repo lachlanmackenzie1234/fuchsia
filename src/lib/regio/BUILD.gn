@@ -13,6 +13,7 @@ regio_common = {
     "src/mmio.rs",
     "src/testing.rs",
     "src/traits.rs",
+    "src/x86/cpuid.rs",
     "src/x86/mod.rs",
     "src/x86/msr.rs",
   ]

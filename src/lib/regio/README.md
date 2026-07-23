@@ -133,6 +133,21 @@ unsafe { uart.at(TXDATA) }.write(data);
 let _: u8 = unsafe { uart.at(RXDATA) }.read().data();
 ```
 
+## x86 CPUID
+
+The core CPUID type is `Cpuid` for defining the layouts of a particular
+(sub)leaf.
+
+Example usage:
+
+```rust
+use regio::x86::Cpuid;
+
+const CPUID_MAX_LEAF_AND_VENDOR_STRING: Cpuid<0x0, 0x0, u32, u32, u32, u32> = Cpuid::new();
+
+println!("Maximum CPUID leaf number: {:#x}", CPUID_MAX_LEAF_AND_VENDOR_STRING.read().eax);
+```
+
 ## x86 MSRs
 
 `Msr` is an alias of `Register` used to model MSRs:
