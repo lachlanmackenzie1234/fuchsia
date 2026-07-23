@@ -31,11 +31,6 @@ unsafe extern "C" {
     pub fn thrd_get_zx_process() -> zx_handle_t;
     pub fn zx_vmar_root_self() -> zx_handle_t;
     pub fn zx_job_default() -> zx_handle_t;
-    pub fn zx_utc_reference_get() -> zx_handle_t;
-    pub fn zx_utc_reference_swap(
-        new_handle: zx_handle_t,
-        prev_handle: *mut zx_handle_t,
-    ) -> zx_status_t;
 }
 
 /// Handle types as defined by the processargs protocol.
@@ -409,11 +404,7 @@ pub type UtcClockTransform = ClockTransformation<BootTimeline, UtcTimeline>;
 pub type UtcClockUpdate = ClockUpdate<BootTimeline, UtcTimeline>;
 
 fn utc_clock() -> Unowned<'static, UtcClock> {
-    // SAFETY: basic FFI call which returns either a valid handle or ZX_HANDLE_INVALID.
-    unsafe {
-        let handle = zx_utc_reference_get();
-        Unowned::from_raw_handle(handle)
-    }
+    zx_libc::utc::reference_get()
 }
 
 /// Duplicate the UTC `Clock` registered with the runtime.
@@ -426,12 +417,7 @@ pub fn duplicate_utc_clock_handle(rights: Rights) -> Result<UtcClock, Status> {
 /// If `new_clock` is a valid handle but does not have the ZX_RIGHT_READ right,
 /// an error is returned and `new_clock` is dropped.
 pub fn swap_utc_clock_handle(new_clock: UtcClock) -> Result<UtcClock, Status> {
-    Ok(unsafe {
-        let mut prev_handle = ZX_HANDLE_INVALID;
-        Status::ok(zx_utc_reference_swap(new_clock.into_raw(), &mut prev_handle))?;
-        NullableHandle::from_raw(prev_handle)
-    }
-    .into())
+    zx_libc::utc::reference_swap(new_clock)
 }
 
 /// SUBTLE, read the detailed documentation before using this function.

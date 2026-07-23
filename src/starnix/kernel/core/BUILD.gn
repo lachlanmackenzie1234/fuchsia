@@ -263,6 +263,7 @@ _starnix_core_deps = [
   "//sdk/fidl/fuchsia.time.alarms:fuchsia.time.alarms_rust",
   "//sdk/fidl/fuchsia.time.external:fuchsia.time.external_rust",
   "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_rust",
+  "//sdk/lib/c/rust",
   "//sdk/lib/scheduler/rust",
   "//sdk/rust/zx",
   "//src/connectivity/lib/net-types",

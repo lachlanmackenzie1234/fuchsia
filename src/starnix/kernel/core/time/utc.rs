@@ -24,9 +24,7 @@
 
 use fidl_fuchsia_time as fftime;
 use fuchsia_component::client::connect_to_protocol_sync;
-use fuchsia_runtime::{
-    UtcClock as UtcClockHandle, UtcClockTransform, UtcInstant, UtcTimeline, zx_utc_reference_get,
-};
+use fuchsia_runtime::{UtcClock as UtcClockHandle, UtcClockTransform, UtcInstant, UtcTimeline};
 use mapped_clock::MappedClock;
 use starnix_logging::{log_info, log_warn};
 use std::sync::LazyLock;
@@ -85,13 +83,10 @@ static VENDORED_UTC_HANDLE_FOR_TESTS: LazyLock<Option<UtcClockHandle>> = LazyLoc
 });
 
 fn utc_clock() -> Unowned<'static, UtcClockHandle> {
-    VENDORED_UTC_HANDLE_FOR_TESTS.as_ref().map(|handle| Unowned::new(handle)).unwrap_or_else(|| {
-        // SAFETY: basic FFI call which returns either a valid handle or ZX_HANDLE_INVALID.
-        unsafe {
-            let handle = zx_utc_reference_get();
-            Unowned::from_raw_handle(handle)
-        }
-    })
+    VENDORED_UTC_HANDLE_FOR_TESTS
+        .as_ref()
+        .map(|handle| Unowned::new(handle))
+        .unwrap_or_else(zx_libc::utc::reference_get)
 }
 
 fn duplicate_utc_clock_handle(rights: zx::Rights) -> Result<UtcClockHandle, zx::Status> {
