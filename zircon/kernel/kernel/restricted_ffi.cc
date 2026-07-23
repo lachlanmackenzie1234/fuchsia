@@ -20,6 +20,22 @@ zx_status_t rust_restricted_state_create(zx_exception_report_t* exception_report
                                          RestrictedState** out_ptr);
 void rust_restricted_state_destroy(RestrictedState* ptr);
 
+#if defined(__riscv)
+void rust_arch_dump(const zx_restricted_state_t* state);
+zx_status_t rust_arch_validate_state_pre_restricted_entry(const zx_restricted_state_t* state);
+void rust_arch_save_state_pre_restricted_entry(ArchSavedNormalState* state);
+[[noreturn]] void rust_arch_enter_restricted(const zx_restricted_state_t* state);
+void rust_arch_save_restricted_syscall_state(zx_restricted_state_t* state,
+                                             const syscall_regs_t* regs);
+void rust_arch_save_restricted_iframe_state(zx_restricted_state_t* state, const iframe_t* frame);
+void rust_arch_save_restricted_exception_state(zx_restricted_state_t* state);
+void rust_arch_redirect_restricted_exception_to_normal(const ArchSavedNormalState* arch_state,
+                                                       uintptr_t vector_table, uintptr_t context,
+                                                       zx_restricted_reason_t reason);
+[[noreturn]] void rust_arch_enter_full(const ArchSavedNormalState* arch_state,
+                                       uintptr_t vector_table, uintptr_t context, uint64_t code);
+#endif
+
 // Helpers called from Rust
 zx_status_t cpp_restricted_state_create_vmo_mapping(void** out_vmo, void** out_mapping,
                                                     zx_restricted_state_t** out_base);
@@ -101,3 +117,46 @@ fbl::RefPtr<VmObjectPaged> RestrictedState::vmo() const {
   }
   return fbl::RefPtr<VmObjectPaged>(reinterpret_cast<VmObjectPaged*>(vmo_));
 }
+
+#if defined(__riscv)
+void RestrictedState::ArchDump(const zx_restricted_state_t& state) { rust_arch_dump(&state); }
+
+zx_status_t RestrictedState::ArchValidateStatePreRestrictedEntry(
+    const zx_restricted_state_t& state) {
+  return rust_arch_validate_state_pre_restricted_entry(&state);
+}
+
+void RestrictedState::ArchSaveStatePreRestrictedEntry(ArchSavedNormalState& arch_state) {
+  rust_arch_save_state_pre_restricted_entry(&arch_state);
+}
+
+[[noreturn]] void RestrictedState::ArchEnterRestricted(const zx_restricted_state_t& state) {
+  rust_arch_enter_restricted(&state);
+}
+
+void RestrictedState::ArchSaveRestrictedSyscallState(zx_restricted_state_t& state,
+                                                     const syscall_regs_t& regs) {
+  rust_arch_save_restricted_syscall_state(&state, &regs);
+}
+
+void RestrictedState::ArchSaveRestrictedIframeState(zx_restricted_state_t& state,
+                                                    const iframe_t& frame) {
+  rust_arch_save_restricted_iframe_state(&state, &frame);
+}
+
+void RestrictedState::ArchSaveRestrictedExceptionState(zx_restricted_state_t& state) {
+  rust_arch_save_restricted_exception_state(&state);
+}
+
+void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
+    const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context,
+    zx_restricted_reason_t reason) {
+  rust_arch_redirect_restricted_exception_to_normal(&arch_state, vector_table, context, reason);
+}
+
+[[noreturn]] void RestrictedState::ArchEnterFull(const ArchSavedNormalState& arch_state,
+                                                 uintptr_t vector_table, uintptr_t context,
+                                                 uint64_t code) {
+  rust_arch_enter_full(&arch_state, vector_table, context, code);
+}
+#endif

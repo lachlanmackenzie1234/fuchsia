@@ -120,7 +120,7 @@ class RestrictedState {
   uintptr_t context_;
   zx_exception_report_t* exception_report_ptr_;
   void* vmo_;
-  void* mapping_;
+  [[maybe_unused]] void* mapping_;
   zx_restricted_state_t* state_mapping_ptr_;
   ArchSavedNormalState arch_;
 
