@@ -144,8 +144,9 @@ TEST_F(LogSourceTest, WritesToSink) {
       {},
   });
 
-  stubs::DiagnosticsArchive archive(std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
-      dispatcher(), batches, kTimeWaitForLimitedLogs, kArchivePeriod));
+  stubs::DiagnosticsArchive archive(
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+                        dispatcher(), batches, kTimeWaitForLimitedLogs, kArchivePeriod));
 
   InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.feedback");
 
@@ -206,8 +207,9 @@ TEST_F(LogSourceTest, NotifyInterruptionOnStop) {
       {},
   });
 
-  stubs::DiagnosticsArchive archive(std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
-      dispatcher(), batches, kTimeWaitForLimitedLogs, kArchivePeriod));
+  stubs::DiagnosticsArchive archive(
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+                        dispatcher(), batches, kTimeWaitForLimitedLogs, kArchivePeriod));
 
   InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.feedback");
 
@@ -268,7 +270,7 @@ TEST_F(LogSourceTest, ReconnectsOnSafeAfterInterruption) {
   LogSource source(dispatcher(), services(), &sink, std::make_unique<MonotonicBackoff>());
 
   stubs::DiagnosticsArchiveClosesFirstIteratorConnection archive(
-      std::make_unique<stubs::DiagnosticsBatchIteratorNeverResponds>());
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorNeverResponds>());
 
   InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.feedback");
 
@@ -287,7 +289,7 @@ TEST_F(LogSourceTest, DoesNotReconnectsOnNotSafeAfterInterruption) {
   LogSource source(dispatcher(), services(), &sink, std::make_unique<MonotonicBackoff>());
 
   stubs::DiagnosticsArchiveClosesFirstIteratorConnection archive(
-      std::make_unique<stubs::DiagnosticsBatchIteratorNeverResponds>());
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorNeverResponds>());
 
   InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.feedback");
 

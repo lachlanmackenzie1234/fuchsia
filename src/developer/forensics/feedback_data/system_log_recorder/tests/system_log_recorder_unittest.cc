@@ -116,8 +116,9 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_SmokeTest) {
       {},
   });
 
-  stubs::DiagnosticsArchive archive(std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
-      dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod));
+  stubs::DiagnosticsArchive archive(
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+                        dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod));
 
   InjectServiceProvider(&archive, kArchiveAccessorName);
 
@@ -286,8 +287,10 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_StopAndDeleteLogs) {
       {},
   });
 
-  stubs::DiagnosticsArchive archive(std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
-      dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod, /*strict=*/false));
+  stubs::DiagnosticsArchive archive(
+      dispatcher(),
+      std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+          dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod, /*strict=*/false));
 
   InjectServiceProvider(&archive, kArchiveAccessorName);
 
@@ -410,8 +413,10 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_Flush) {
       {},
   });
 
-  stubs::DiagnosticsArchive archive(std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
-      dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod, /*strict=*/true));
+  stubs::DiagnosticsArchive archive(
+      dispatcher(),
+      std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+          dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod, /*strict=*/true));
 
   InjectServiceProvider(&archive, kArchiveAccessorName);
 

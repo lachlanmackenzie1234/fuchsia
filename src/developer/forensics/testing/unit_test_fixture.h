@@ -19,6 +19,7 @@
 #include <zircon/errors.h>
 
 #include <memory>
+#include <optional>
 
 #include <gtest/gtest.h>
 
@@ -56,6 +57,11 @@ class UnitTestFixture : public gtest::TestLoopFixture {
   void InjectServiceProvider(stubs::FidlServer<Protocol>* server) {
     InjectServiceProvider(server->GetService(dispatcher()),
                           fidl::DiscoverableProtocolName<Protocol>);
+  }
+
+  template <typename Protocol>
+  void InjectServiceProvider(stubs::FidlServer<Protocol>* server, std::string name) {
+    InjectServiceProvider(server->GetService(dispatcher()), std::move(name));
   }
 
   void InjectServiceProvider(std::unique_ptr<vfs::Service> service, std::string name) {

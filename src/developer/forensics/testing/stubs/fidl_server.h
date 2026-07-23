@@ -64,6 +64,12 @@ class FidlServer : public fidl::testing::TestBase<Protocol> {
 template <typename Protocol>
 class SingleBindingFidlServer : public FidlServer<Protocol> {
  public:
+  void Bind(fidl::ServerEnd<Protocol> server_end, async_dispatcher_t* dispatcher) {
+    binding_.emplace(dispatcher, std::move(server_end), this,
+                     [this](fidl::UnbindInfo info) { is_bound_ = false; });
+    is_bound_ = true;
+  }
+
   void CloseConnection(const zx_status_t status) {
     if (binding_.has_value()) {
       FX_CHECK(is_bound_);

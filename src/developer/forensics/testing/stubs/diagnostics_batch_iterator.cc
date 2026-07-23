@@ -5,7 +5,7 @@
 #include "src/developer/forensics/testing/stubs/diagnostics_batch_iterator.h"
 
 #include <lib/async/cpp/task.h>
-#include <lib/fpromise/result.h>
+#include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/lib/fsl/vmo/strings.h"
@@ -15,16 +15,15 @@ namespace forensics {
 namespace stubs {
 namespace {
 
-std::vector<fuchsia::diagnostics::FormattedContent> ToVmo(
+std::vector<fuchsia_diagnostics::FormattedContent> ToVmo(
     const std::vector<std::string>& json_batch) {
-  std::vector<fuchsia::diagnostics::FormattedContent> json_batch_vmo;
+  std::vector<fuchsia_diagnostics::FormattedContent> json_batch_vmo;
   json_batch_vmo.reserve(json_batch.size());
   for (const std::string& json_chunk : json_batch) {
     fsl::SizedVmo vmo;
     FX_CHECK(fsl::VmoFromString(json_chunk, &vmo));
-    fuchsia::diagnostics::FormattedContent content;
-    content.set_json(std::move(vmo).ToTransport());
-    json_batch_vmo.push_back(std::move(content));
+    fuchsia_mem::Buffer buffer(std::move(vmo.vmo()), vmo.size());
+    json_batch_vmo.push_back(fuchsia_diagnostics::FormattedContent::WithJson(std::move(buffer)));
   }
   return json_batch_vmo;
 }
@@ -40,41 +39,43 @@ DiagnosticsBatchIterator::~DiagnosticsBatchIterator() {
   }
 }
 
-void DiagnosticsBatchIterator::GetNext(GetNextCallback callback) {
+void DiagnosticsBatchIterator::GetNext(GetNextCompleter::Sync& completer) {
   FX_CHECK(ExpectCall()) << fxl::StringPrintf(
       "No more calls to GetNext() expected (%lu/%lu calls made)",
       std::distance(json_batches_.cbegin(), next_json_batch_), json_batches_.size());
 
-  callback(::fpromise::ok(ToVmo(*next_json_batch_++)));
+  completer.Reply(fit::ok(ToVmo(*next_json_batch_++)));
 }
 
-void DiagnosticsBatchIteratorNeverRespondsAfterOneBatch::GetNext(GetNextCallback callback) {
+void DiagnosticsBatchIteratorNeverRespondsAfterOneBatch::GetNext(
+    GetNextCompleter::Sync& completer) {
   if (has_returned_batch_) {
+    completers_.push_back(completer.ToAsync());
     return;
   }
 
-  callback(::fpromise::ok(ToVmo(json_batch_)));
+  completer.Reply(fit::ok(ToVmo(json_batch_)));
   has_returned_batch_ = true;
 }
 
-void DiagnosticsBatchIteratorReturnsError::GetNext(GetNextCallback callback) {
+void DiagnosticsBatchIteratorReturnsError::GetNext(GetNextCompleter::Sync& completer) {
   if (!returned_error_) {
-    callback(::fpromise::error(fuchsia::diagnostics::ReaderError::IO));
+    completer.Reply(fit::error(fuchsia_diagnostics::ReaderError::kIo));
     returned_error_ = true;
   } else {
-    callback(::fpromise::ok(ToVmo({})));
+    completer.Reply(fit::ok(ToVmo({})));
   }
 }
 
-void DiagnosticsBatchIteratorDelayedBatches::GetNext(GetNextCallback callback) {
+void DiagnosticsBatchIteratorDelayedBatches::GetNext(GetNextCompleter::Sync& completer) {
   async::PostDelayedTask(
       dispatcher_,
-      [this, callback = std::move(callback)]() {
+      [this, completer = completer.ToAsync()]() mutable {
         FX_CHECK(ExpectCall()) << fxl::StringPrintf(
             "No more calls to GetNext() expected (%lu/%lu calls made)",
             std::distance(json_batches_.cbegin(), next_json_batch_), json_batches_.size());
 
-        callback(::fpromise::ok(ToVmo(*next_json_batch_++)));
+        completer.Reply(fit::ok(ToVmo(*next_json_batch_++)));
       },
       is_initial_delay_ ? initial_delay_ : delay_between_batches_);
   is_initial_delay_ = false;

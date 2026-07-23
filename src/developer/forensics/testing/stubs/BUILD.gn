@@ -131,14 +131,17 @@ source_set("diagnostics") {
   ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_cpp",
   ]
 
   deps = [
+    "//sdk/lib/async",
+    "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",
+    "//src/lib/fxl",
   ]
 }
 

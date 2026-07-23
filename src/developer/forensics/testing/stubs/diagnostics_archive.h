@@ -5,79 +5,76 @@
 #ifndef SRC_DEVELOPER_FORENSICS_TESTING_STUBS_DIAGNOSTICS_ARCHIVE_H_
 #define SRC_DEVELOPER_FORENSICS_TESTING_STUBS_DIAGNOSTICS_ARCHIVE_H_
 
-#include <fuchsia/diagnostics/cpp/fidl.h>
-#include <fuchsia/diagnostics/cpp/fidl_test_base.h>
-
-#include <algorithm>
+#include <fidl/fuchsia.diagnostics/cpp/fidl.h>
+#include <fidl/fuchsia.diagnostics/cpp/test_base.h>
+#include <lib/async/dispatcher.h>
 
 #include "src/developer/forensics/testing/stubs/diagnostics_batch_iterator.h"
-#include "src/developer/forensics/testing/stubs/fidl_server_hlcpp.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
 
 namespace forensics {
 namespace stubs {
 
-using DiagnosticsArchiveBase = SINGLE_BINDING_STUB_FIDL_SERVER(fuchsia::diagnostics,
-                                                               ArchiveAccessor);
+using DiagnosticsArchiveBase = SingleBindingFidlServer<fuchsia_diagnostics::ArchiveAccessor>;
 
 class DiagnosticsArchive : public DiagnosticsArchiveBase {
  public:
-  DiagnosticsArchive() {}
-  DiagnosticsArchive(std::unique_ptr<DiagnosticsBatchIteratorBase> batch_iterator)
-      : batch_iterator_(std::move(batch_iterator)) {}
+  DiagnosticsArchive(async_dispatcher_t* dispatcher,
+                     std::unique_ptr<DiagnosticsBatchIteratorBase> batch_iterator)
+      : dispatcher_(dispatcher), batch_iterator_(std::move(batch_iterator)) {}
 
-  // |fuchsia::diagnostics::Archive|
-  void StreamDiagnostics(
-      fuchsia::diagnostics::StreamParameters stream_parameters,
-      ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator> request) override;
+  // |fuchsia_diagnostics::ArchiveAccessor|
+  void StreamDiagnostics(StreamDiagnosticsRequest& request,
+                         StreamDiagnosticsCompleter::Sync& completer) override;
 
  protected:
+  async_dispatcher_t* dispatcher() const { return dispatcher_; }
   std::unique_ptr<DiagnosticsBatchIteratorBase>& BatchIterator() { return batch_iterator_; }
 
  private:
+  async_dispatcher_t* dispatcher_;
   std::unique_ptr<DiagnosticsBatchIteratorBase> batch_iterator_;
 };
 
 class DiagnosticsArchiveCaptureParameters : public DiagnosticsArchiveBase {
  public:
-  DiagnosticsArchiveCaptureParameters() = default;
-  explicit DiagnosticsArchiveCaptureParameters(fuchsia::diagnostics::StreamParameters* parameters)
+  explicit DiagnosticsArchiveCaptureParameters(fuchsia_diagnostics::StreamParameters* parameters)
       : parameters_(parameters) {}
 
-  // |fuchsia::diagnostics::Archive|
-  void StreamDiagnostics(
-      fuchsia::diagnostics::StreamParameters stream_parameters,
-      ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator> request) override {
-    *parameters_ = std::move(stream_parameters);
+  // |fuchsia_diagnostics::ArchiveAccessor|
+  void StreamDiagnostics(StreamDiagnosticsRequest& request,
+                         StreamDiagnosticsCompleter::Sync& completer) override {
+    *parameters_ = std::move(request.stream_parameters());
   }
 
  private:
   // Not owned
-  fuchsia::diagnostics::StreamParameters* parameters_;
+  fuchsia_diagnostics::StreamParameters* parameters_;
 };
 
 class DiagnosticsArchiveClosesArchiveConnection : public DiagnosticsArchiveBase {
  public:
-  // |fuchsia::diagnostics::ArchiveAccessor|
-  STUB_METHOD_CLOSES_CONNECTION(StreamDiagnostics, fuchsia::diagnostics::StreamParameters,
-                                ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator>)
+  // |fuchsia_diagnostics::ArchiveAccessor|
+  void StreamDiagnostics(StreamDiagnosticsRequest& request,
+                         StreamDiagnosticsCompleter::Sync& completer) override {
+    CloseConnection(ZX_ERR_PEER_CLOSED);
+  }
 };
 
 class DiagnosticsArchiveClosesIteratorConnection : public DiagnosticsArchiveBase {
  public:
-  // |fuchsia::diagnostics::Archive|
-  void StreamDiagnostics(
-      fuchsia::diagnostics::StreamParameters stream_parameters,
-      ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator> request) override;
+  // |fuchsia_diagnostics::ArchiveAccessor|
+  void StreamDiagnostics(StreamDiagnosticsRequest& request,
+                         StreamDiagnosticsCompleter::Sync& completer) override;
 };
 
 class DiagnosticsArchiveClosesFirstIteratorConnection : public DiagnosticsArchive {
  public:
   using DiagnosticsArchive::DiagnosticsArchive;
 
-  // |fuchsia::diagnostics::Archive|
-  void StreamDiagnostics(
-      fuchsia::diagnostics::StreamParameters stream_parameters,
-      ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator> request) override;
+  // |fuchsia_diagnostics::ArchiveAccessor|
+  void StreamDiagnostics(StreamDiagnosticsRequest& request,
+                         StreamDiagnosticsCompleter::Sync& completer) override;
 
  private:
   bool is_first_{true};

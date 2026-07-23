@@ -7,28 +7,25 @@
 namespace forensics {
 namespace stubs {
 
-void DiagnosticsArchive::StreamDiagnostics(
-    fuchsia::diagnostics::StreamParameters stream_parameters,
-    ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator> request) {
-  batch_iterator_->GetHandler()(std::move(request));
+void DiagnosticsArchive::StreamDiagnostics(StreamDiagnosticsRequest& request,
+                                           StreamDiagnosticsCompleter::Sync& completer) {
+  batch_iterator_->Bind(std::move(request.result_stream()), dispatcher_);
 }
 
 void DiagnosticsArchiveClosesFirstIteratorConnection::StreamDiagnostics(
-    fuchsia::diagnostics::StreamParameters stream_parameters,
-    ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator> request) {
+    StreamDiagnosticsRequest& request, StreamDiagnosticsCompleter::Sync& completer) {
   if (is_first_) {
-    request.Close(ZX_ERR_PEER_CLOSED);
+    request.result_stream().Close(ZX_ERR_PEER_CLOSED);
     is_first_ = false;
     return;
   }
 
-  BatchIterator()->GetHandler()(std::move(request));
+  BatchIterator()->Bind(std::move(request.result_stream()), dispatcher());
 }
 
 void DiagnosticsArchiveClosesIteratorConnection::StreamDiagnostics(
-    fuchsia::diagnostics::StreamParameters stream_parameters,
-    ::fidl::InterfaceRequest<fuchsia::diagnostics::BatchIterator> request) {
-  request.Close(ZX_ERR_PEER_CLOSED);
+    StreamDiagnosticsRequest& request, StreamDiagnosticsCompleter::Sync& completer) {
+  request.result_stream().Close(ZX_ERR_PEER_CLOSED);
 }
 
 }  // namespace stubs

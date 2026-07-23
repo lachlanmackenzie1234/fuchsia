@@ -111,8 +111,8 @@ class SystemLogTest : public UnitTestFixture {
  protected:
   void SetUpLogServer(std::vector<std::string> messages) {
     log_server_ = std::make_unique<stubs::DiagnosticsArchive>(
-        std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(
-            std::move(messages)));
+        dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(
+                          std::move(messages)));
     InjectServiceProvider(log_server_.get(), feedback_data::kArchiveAccessorName);
   }
 

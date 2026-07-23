@@ -5,19 +5,18 @@
 #ifndef SRC_DEVELOPER_FORENSICS_TESTING_STUBS_DIAGNOSTICS_BATCH_ITERATOR_H_
 #define SRC_DEVELOPER_FORENSICS_TESTING_STUBS_DIAGNOSTICS_BATCH_ITERATOR_H_
 
-#include <fuchsia/diagnostics/cpp/fidl.h>
-#include <fuchsia/diagnostics/cpp/fidl_test_base.h>
+#include <fidl/fuchsia.diagnostics/cpp/fidl.h>
+#include <fidl/fuchsia.diagnostics/cpp/test_base.h>
 
 #include <string>
 #include <vector>
 
-#include "src/developer/forensics/testing/stubs/fidl_server_hlcpp.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
 
 namespace forensics {
 namespace stubs {
 
-using DiagnosticsBatchIteratorBase = SINGLE_BINDING_STUB_FIDL_SERVER(fuchsia::diagnostics,
-                                                                     BatchIterator);
+using DiagnosticsBatchIteratorBase = SingleBindingFidlServer<fuchsia_diagnostics::BatchIterator>;
 
 class DiagnosticsBatchIterator : public DiagnosticsBatchIteratorBase {
  public:
@@ -28,12 +27,12 @@ class DiagnosticsBatchIterator : public DiagnosticsBatchIteratorBase {
     next_json_batch_ = json_batches_.cbegin();
   }
 
-  ~DiagnosticsBatchIterator();
+  ~DiagnosticsBatchIterator() override;
 
   // Whether the batch iterator expects at least one more call to GetNext().
   bool ExpectCall() { return next_json_batch_ != json_batches_.cend(); }
 
-  void GetNext(GetNextCallback callback) override;
+  void GetNext(GetNextCompleter::Sync& completer) override;
 
  protected:
   const std::vector<std::vector<std::string>> json_batches_;
@@ -48,26 +47,32 @@ class DiagnosticsBatchIteratorNeverRespondsAfterOneBatch : public DiagnosticsBat
   DiagnosticsBatchIteratorNeverRespondsAfterOneBatch(const std::vector<std::string>& json_batch)
       : json_batch_(json_batch) {}
 
-  // |fuchsia::diagnostics::BatchIterator|
-  void GetNext(GetNextCallback callback) override;
+  // |fuchsia_diagnostics::BatchIterator|
+  void GetNext(GetNextCompleter::Sync& completer) override;
 
  private:
   const std::vector<std::string> json_batch_;
   bool has_returned_batch_ = false;
+  std::vector<GetNextCompleter::Async> completers_;
 };
 
 class DiagnosticsBatchIteratorNeverResponds : public DiagnosticsBatchIteratorBase {
  public:
-  // |fuchsia::diagnostics::BatchIterator|
-  STUB_METHOD_DOES_NOT_RETURN(GetNext, GetNextCallback)
+  // |fuchsia_diagnostics::BatchIterator|
+  void GetNext(GetNextCompleter::Sync& completer) override {
+    completers_.push_back(completer.ToAsync());
+  }
+
+ private:
+  std::vector<GetNextCompleter::Async> completers_;
 };
 
 class DiagnosticsBatchIteratorReturnsError : public DiagnosticsBatchIteratorBase {
  public:
   DiagnosticsBatchIteratorReturnsError() {}
 
-  // |fuchsia::diagnostics::BatchIterator|
-  void GetNext(GetNextCallback callback) override;
+  // |fuchsia_diagnostics::BatchIterator|
+  void GetNext(GetNextCompleter::Sync& completer) override;
 
  private:
   bool returned_error_{false};
@@ -84,7 +89,7 @@ class DiagnosticsBatchIteratorDelayedBatches : public DiagnosticsBatchIterator {
         initial_delay_(initial_delay),
         delay_between_batches_(delay_between_batches) {}
 
-  void GetNext(GetNextCallback callback) override;
+  void GetNext(GetNextCompleter::Sync& completer) override;
 
  private:
   async_dispatcher_t* dispatcher_;

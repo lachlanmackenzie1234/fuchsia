@@ -10,6 +10,7 @@
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/sys/cpp/service_directory.h>
 #include <lib/zx/time.h>
+#include <zircon/errors.h>
 
 #include <memory>
 #include <string>
@@ -91,7 +92,7 @@ class InspectTest : public UnitTestFixture {
 
 TEST_F(InspectTest, DataBudget) {
   const uint64_t kTicket = 1234;
-  fuchsia::diagnostics::StreamParameters parameters;
+  fuchsia_diagnostics::StreamParameters parameters;
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchiveCaptureParameters>(&parameters));
 
   const size_t kBudget = DataBudget()->SizeInBytes().value();
@@ -101,16 +102,16 @@ TEST_F(InspectTest, DataBudget) {
   inspect.Get(kTicket);
   RunLoopUntilIdle();
 
-  ASSERT_TRUE(parameters.has_performance_configuration());
-  const ::fuchsia::diagnostics::PerformanceConfiguration& performance =
-      parameters.performance_configuration();
-  ASSERT_TRUE(performance.has_max_aggregate_content_size_bytes());
-  ASSERT_EQ(performance.max_aggregate_content_size_bytes(), kBudget);
+  ASSERT_TRUE(parameters.performance_configuration().has_value());
+  const ::fuchsia_diagnostics::PerformanceConfiguration& performance =
+      *parameters.performance_configuration();
+  ASSERT_TRUE(performance.max_aggregate_content_size_bytes().has_value());
+  ASSERT_EQ(*performance.max_aggregate_content_size_bytes(), kBudget);
 }
 
 TEST_F(InspectTest, NoDataBudget) {
   const uint64_t kTicket = 1234;
-  fuchsia::diagnostics::StreamParameters parameters;
+  fuchsia_diagnostics::StreamParameters parameters;
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchiveCaptureParameters>(&parameters));
 
   DisableDataBudget();
@@ -120,11 +121,12 @@ TEST_F(InspectTest, NoDataBudget) {
   inspect.Get(kTicket);
   RunLoopUntilIdle();
 
-  EXPECT_FALSE(parameters.has_performance_configuration());
+  EXPECT_FALSE(parameters.performance_configuration().has_value());
 }
 
 TEST_F(InspectTest, Get) {
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchive>(
+      dispatcher(),
       std::make_unique<stubs::DiagnosticsBatchIterator>(std::vector<std::vector<std::string>>({
           {"foo1", "foo2"},
           {"bar1"},
@@ -145,8 +147,8 @@ bar1
 TEST_F(InspectTest, GetTerminatesDueToForceCompletion) {
   const uint64_t kTicket = 1234;
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchive>(
-      std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(
-          std::vector<std::string>({"foo1", "foo2"}))));
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(
+                        std::vector<std::string>({"foo1", "foo2"}))));
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
@@ -170,6 +172,7 @@ foo2
 TEST_F(InspectTest, ForceCompletionCalledAfterTermination) {
   const uint64_t kTicket = 1234;
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchive>(
+      dispatcher(),
       std::make_unique<stubs::DiagnosticsBatchIterator>(std::vector<std::vector<std::string>>({
           {"foo1", "foo2"},
           {"bar1"},
@@ -217,7 +220,7 @@ TEST_F(InspectTest, GetConnectionError) {
 TEST_F(InspectTest, GetIteratorReturnsError) {
   const uint64_t kTicket = 1234;
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchive>(
-      std::make_unique<stubs::DiagnosticsBatchIteratorReturnsError>()));
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorReturnsError>()));
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
@@ -227,7 +230,7 @@ TEST_F(InspectTest, GetIteratorReturnsError) {
 }
 
 TEST_F(InspectTest, Reconnects) {
-  fuchsia::diagnostics::StreamParameters parameters;
+  fuchsia_diagnostics::StreamParameters parameters;
   auto archive = std::make_unique<stubs::DiagnosticsArchiveCaptureParameters>(&parameters);
 
   InjectServiceProvider(archive.get(), feedback_data::kArchiveAccessorName);
@@ -238,7 +241,7 @@ TEST_F(InspectTest, Reconnects) {
 
   EXPECT_TRUE(archive->IsBound());
 
-  archive->CloseConnection();
+  archive->CloseConnection(ZX_ERR_PEER_CLOSED);
   RunLoopUntilIdle();
 
   EXPECT_FALSE(archive->IsBound());
@@ -259,6 +262,7 @@ TEST_F(InspectTest, RedactsWithJsonReplacers) {
       "1234567890abcdefABCDEF0123456789,\n"  // Long Hex numbers are not redacted
       "\"106986199446298680449\"]");         // Obfuscated Gaia IDs are not redacted
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchive>(
+      dispatcher(),
       std::make_unique<stubs::DiagnosticsBatchIterator>(std::vector<std::vector<std::string>>({
           {json},
           {},
