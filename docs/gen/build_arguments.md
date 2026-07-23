@@ -969,7 +969,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -5039,7 +5039,7 @@ To override the set of CPU architectures, see `idk_buildable_cpus`.
 Do not use the `platform_version` member directly.
 LINT.IfChange
 
-**Current value (from the default):** `[27, 28, 29, 30, 31, "NEXT"]`
+**Current value (from the default):** `[27, 28, 29, 30, 31, 32, "NEXT"]`
 
 From //build/config/fuchsia/platform_version.gni:44
 
