@@ -59,8 +59,6 @@ const char* ObjectTypeToString(zx_obj_type_t type) {
       return "port";
     case ZX_OBJ_TYPE_INTERRUPT:
       return "interrupt";
-    case ZX_OBJ_TYPE_PCI_DEVICE:
-      return "pci-device";
     case ZX_OBJ_TYPE_LOG:
       return "log";
     case ZX_OBJ_TYPE_SOCKET:

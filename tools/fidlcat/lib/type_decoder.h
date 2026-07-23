@@ -53,7 +53,6 @@ enum class SyscallType {
   kPacketGuestVcpuType,
   kPacketPageRequestCommand,
   kPaddr,
-  kPciBarType,
   kPolicyAction,
   kPolicyCondition,
   kPolicyTopic,
@@ -202,25 +201,6 @@ struct zx_packet_guest_mem_x86 {
   uint8_t reserved[7];
 };
 using zx_packet_guest_mem_x86_t = struct zx_packet_guest_mem_x86;
-
-// This this extracted from zx_pci_init_arg_t in the file
-// zircon/system/public/zircon/syscalls/pci.h
-struct zx_pci_init_arg_irq {
-  uint32_t global_irq;
-  bool level_triggered;
-  bool active_high;
-};
-using zx_pci_init_arg_irq_t = struct zx_pci_init_arg_irq;
-
-struct zx_pci_init_arg_addr_window {
-  uint64_t base;
-  size_t size;
-  uint8_t bus_start;
-  uint8_t bus_end;
-  uint8_t cfg_space_type;
-  bool has_ecam;
-};
-using zx_pci_init_arg_addr_window_t = struct zx_pci_init_arg_addr_window;
 
 // This is a copy of zx_thread_state_general_regs_t from
 // zircon/system/public/zircon/syscalls/debug.h for __aarch64__.

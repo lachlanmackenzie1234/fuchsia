@@ -17,7 +17,6 @@
 #include <zircon/errors.h>
 #include <zircon/rights.h>
 #include <zircon/syscalls/iommu.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/syscalls/smc.h>
 #include <zircon/types.h>
 

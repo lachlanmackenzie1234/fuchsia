@@ -8,7 +8,6 @@
 #include <zircon/compiler.h>
 #include <zircon/string_view.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/syscalls/profile.h>
 #include <zircon/syscalls/types.h>
 #include <zircon/types.h>

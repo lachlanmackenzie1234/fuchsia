@@ -1169,10 +1169,6 @@
         "source": "../../zircon/system/public/zircon/hw/gpt.h"
       },
       {
-        "dest": "arch/x64/sysroot/include/zircon/hw/pci.h",
-        "source": "../../zircon/system/public/zircon/hw/pci.h"
-      },
-      {
         "dest": "arch/x64/sysroot/include/zircon/limits.h",
         "source": "../../zircon/system/public/zircon/limits.h"
       },
@@ -1235,10 +1231,6 @@
       {
         "dest": "arch/x64/sysroot/include/zircon/syscalls/object.h",
         "source": "../../zircon/system/public/zircon/syscalls/object.h"
-      },
-      {
-        "dest": "arch/x64/sysroot/include/zircon/syscalls/pci.h",
-        "source": "../../zircon/system/public/zircon/syscalls/pci.h"
       },
       {
         "dest": "arch/x64/sysroot/include/zircon/syscalls/policy.h",
@@ -2027,7 +2019,6 @@
             "arch/x64/sysroot/include/zircon/hw/debug/arm64.h",
             "arch/x64/sysroot/include/zircon/hw/debug/x86.h",
             "arch/x64/sysroot/include/zircon/hw/gpt.h",
-            "arch/x64/sysroot/include/zircon/hw/pci.h",
             "arch/x64/sysroot/include/zircon/limits.h",
             "arch/x64/sysroot/include/zircon/listnode.h",
             "arch/x64/sysroot/include/zircon/process.h",
@@ -2044,7 +2035,6 @@
             "arch/x64/sysroot/include/zircon/syscalls/iommu.h",
             "arch/x64/sysroot/include/zircon/syscalls/log.h",
             "arch/x64/sysroot/include/zircon/syscalls/object.h",
-            "arch/x64/sysroot/include/zircon/syscalls/pci.h",
             "arch/x64/sysroot/include/zircon/syscalls/policy.h",
             "arch/x64/sysroot/include/zircon/syscalls/port.h",
             "arch/x64/sysroot/include/zircon/syscalls/profile.h",

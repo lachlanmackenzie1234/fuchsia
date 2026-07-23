@@ -450,62 +450,6 @@ bool test_iovec_foreach() {
   END_TEST;
 }
 
-// Test internal::MemberAccess.  Note this exists only to underlie flex_array.
-// That is used only by one legacy syscall API that is slated to be removed
-// (part of kernel PCI).  When that syscall is retired, then the support for
-// the flex_array case should all be removed.  No new syscall APIs should use
-// difficult struct shapes like this.
-struct FlexArrayTest {
-  int not_an_array;
-  int not_a_flex_array[3];
-  int flex_array[];
-};
-static_assert(!internal::MemberAccess<int>::kValid);  // Not a struct type.
-static_assert(internal::MemberAccess<FlexArrayTest>::kValid);
-static_assert(internal::MemberAccess<const FlexArrayTest>::kValid);
-static_assert(ktl::is_same_v<const int[], typename internal::MemberAccess<const FlexArrayTest>::
-                                              template AccessType<&FlexArrayTest::flex_array>>);
-static_assert(
-    ktl::is_same_v<int, typename internal::MemberAccess<FlexArrayTest>::template ElementAccessType<
-                            &FlexArrayTest::flex_array>>);
-
-bool test_copy_out_flex_array() {
-  BEGIN_TEST;
-
-  auto user = UserMemory::Create(kPageSize);
-  user_out_ptr<FlexArrayTest> struct_ptr = user->user_out<FlexArrayTest>();
-
-  constexpr size_t kFlexArrayTestSize = sizeof(FlexArrayTest) + sizeof(int[3]);
-  constexpr ktl::array<int, 3> kArrayElts = {1, 2, 3};
-
-  zx::result<user_out_ptr<int>> result =
-      struct_ptr.flex_array<&FlexArrayTest::flex_array>(3, kFlexArrayTestSize);
-  ASSERT_OK(result.status_value());
-  ASSERT_OK(result->copy_array_to_user(kArrayElts.data(), kArrayElts.size()));
-
-  ktl::array<int, kArrayElts.size()> read_back;
-  ASSERT_OK(
-      user->VmoRead(read_back.data(), offsetof(FlexArrayTest, flex_array), sizeof(read_back)));
-  for (size_t i = 0; i < read_back.size(); ++i) {
-    EXPECT_EQ(read_back[i], kArrayElts[i]);
-  }
-
-  // Overflow in count -> bytes.
-  result = struct_ptr.flex_array<&FlexArrayTest::flex_array>(ktl::numeric_limits<size_t>::max(),
-                                                             kFlexArrayTestSize);
-  EXPECT_EQ(result.status_value(), ZX_ERR_INVALID_ARGS);
-
-  // Count too big for byte length.
-  result = struct_ptr.flex_array<&FlexArrayTest::flex_array>(3, kFlexArrayTestSize + sizeof(int));
-  EXPECT_EQ(result.status_value(), ZX_ERR_INVALID_ARGS);
-
-  // Byte length too big for count.
-  result = struct_ptr.flex_array<&FlexArrayTest::flex_array>(4, kFlexArrayTestSize);
-  EXPECT_EQ(result.status_value(), ZX_ERR_INVALID_ARGS);
-
-  END_TEST;
-}
-
 }  // namespace
 
 #define USER_COPY_UNITTEST(fname) UNITTEST(#fname, fname)
@@ -522,5 +466,4 @@ USER_COPY_UNITTEST(capture_faults_test_capture)
 USER_COPY_UNITTEST(capture_faults_test_addresses_outside_user_range)
 USER_COPY_UNITTEST(test_get_total_capacity)
 USER_COPY_UNITTEST(test_iovec_foreach)
-USER_COPY_UNITTEST(test_copy_out_flex_array)
 UNITTEST_END_TESTCASE(user_copy_tests, "user_copy_tests", "User Copy test")

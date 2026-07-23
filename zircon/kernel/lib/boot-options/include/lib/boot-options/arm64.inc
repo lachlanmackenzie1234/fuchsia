@@ -107,11 +107,6 @@ ZBI.  Please note, setting force-pct on a target which has no defined PCT IRQ
 will result in a panic during early boot.
 )""")
 
-// TODO(https://fxbug.dev/42182308): Remove once user space support is complete
-DEFINE_OPTION("kernel.arm64.pci", bool, arm64_kernel_pci, {true}, R"""(
-Enables kernel mode PCI support and kernel PCI syscalls.
-)""")
-
 DEFINE_OPTION("kernel.arm64.smccc-qcom", bool, arm64_smccc_qcom, {false}, R"""(
 Enables kernel assisted Yielding SMCCC calls that conform to QCOM's protocol.
 

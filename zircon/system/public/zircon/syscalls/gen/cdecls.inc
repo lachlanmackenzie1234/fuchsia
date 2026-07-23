@@ -411,64 +411,6 @@ _ZX_SYSCALL_DECL(pager_supply_pages, zx_status_t, /* no attributes */, 6,
                   uint64_t length, _ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t aux_vmo,
                   uint64_t aux_offset))
 
-_ZX_SYSCALL_DECL(pci_add_subtract_io_range, zx_status_t, /* no attributes */, 5,
-                 (handle, mmio, base, len, add),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t mmio,
-                  uint64_t base, uint64_t len, uint32_t add))
-
-_ZX_SYSCALL_DECL(pci_cfg_pio_rw, zx_status_t, /* no attributes */, 8,
-                 (handle, bus, dev, func, offset, val, width, write),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint8_t bus,
-                  uint8_t dev, uint8_t func, uint8_t offset, uint32_t* val, size_t width,
-                  uint32_t write))
-
-_ZX_SYSCALL_DECL(pci_config_read, zx_status_t, /* no attributes */, 4,
-                 (handle, offset, width, out_val),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint16_t offset,
-                  size_t width, uint32_t* out_val))
-
-_ZX_SYSCALL_DECL(pci_config_write, zx_status_t, /* no attributes */, 4,
-                 (handle, offset, width, val),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint16_t offset,
-                  size_t width, uint32_t val))
-
-_ZX_SYSCALL_DECL(pci_enable_bus_master, zx_status_t, /* no attributes */, 2, (handle, enable),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t enable))
-
-_ZX_SYSCALL_DECL(pci_get_bar, zx_status_t, /* no attributes */, 4,
-                 (handle, bar_num, out_bar, out_handle),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t bar_num,
-                  zx_pci_bar_t* out_bar,
-                  _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out_handle))
-
-_ZX_SYSCALL_DECL(pci_get_nth_device, zx_status_t, /* no attributes */, 4,
-                 (handle, index, out_info, out_handle),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t index,
-                  zx_pcie_device_info_t* out_info,
-                  _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out_handle))
-
-_ZX_SYSCALL_DECL(pci_init, zx_status_t, /* no attributes */, 3, (handle, init_buf, len),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle,
-                  const zx_pci_init_arg_t* init_buf, uint32_t len))
-
-_ZX_SYSCALL_DECL(pci_map_interrupt, zx_status_t, /* no attributes */, 3,
-                 (handle, which_irq, out_handle),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, int32_t which_irq,
-                  _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out_handle))
-
-_ZX_SYSCALL_DECL(pci_query_irq_mode, zx_status_t, /* no attributes */, 3,
-                 (handle, mode, out_max_irqs),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t mode,
-                  uint32_t* out_max_irqs))
-
-_ZX_SYSCALL_DECL(pci_reset_device, zx_status_t, /* no attributes */, 1, (handle),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle))
-
-_ZX_SYSCALL_DECL(pci_set_irq_mode, zx_status_t, /* no attributes */, 3,
-                 (handle, mode, requested_irq_count),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t mode,
-                  uint32_t requested_irq_count))
-
 _ZX_SYSCALL_DECL(pmt_unpin, zx_status_t, /* no attributes */, 1, (handle),
                  (_ZX_SYSCALL_ANNO(release_handle("Fuchsia")) zx_handle_t handle))
 

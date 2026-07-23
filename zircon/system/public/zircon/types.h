@@ -384,9 +384,6 @@ typedef struct zx_iovec {
 // msi_create flags
 #define ZX_MSI_MODE_MSI_X                   ((uint32_t)0x1u)
 
-// PCI interrupt handles use interrupt slot 0 for the PCI hardware interrupt
-#define ZX_PCI_INTERRUPT_SLOT               ((uint32_t)0u)
-
 // Channel options and limits.
 #define ZX_CHANNEL_READ_MAY_DISCARD         ((uint32_t)1u)
 #define ZX_CHANNEL_WRITE_USE_IOVEC          ((uint32_t)2u)

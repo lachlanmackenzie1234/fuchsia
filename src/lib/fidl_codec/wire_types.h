@@ -265,7 +265,7 @@ class Uint32Type : public IntegralType<uint32_t> {
     kKtraceControlAction,
     kObjectInfoTopic,
     kObjType,
-    kPciBarType,
+
     kPolicyAction,
     kPolicyCondition,
     kPolicyTopic,

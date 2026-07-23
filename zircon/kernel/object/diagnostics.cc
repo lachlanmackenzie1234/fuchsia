@@ -109,8 +109,6 @@ const char* ObjectTypeToString(zx_obj_type_t type) {
       return "port";
     case ZX_OBJ_TYPE_INTERRUPT:
       return "interrupt";
-    case ZX_OBJ_TYPE_PCI_DEVICE:
-      return "pci-device";
     case ZX_OBJ_TYPE_DEBUGLOG:
       return "log";
     case ZX_OBJ_TYPE_SOCKET:
@@ -190,11 +188,11 @@ void FormatHandleTypeCount(const ProcessDispatcher& pd, char* buf, size_t buf_le
            types[ZX_OBJ_TYPE_VMO], types[ZX_OBJ_TYPE_VMAR], types[ZX_OBJ_TYPE_CHANNEL],
            types[ZX_OBJ_TYPE_EVENT] + types[ZX_OBJ_TYPE_EVENTPAIR], types[ZX_OBJ_TYPE_PORT],
            types[ZX_OBJ_TYPE_SOCKET], types[ZX_OBJ_TYPE_TIMER], types[ZX_OBJ_TYPE_FIFO],
-           types[ZX_OBJ_TYPE_INTERRUPT] + types[ZX_OBJ_TYPE_PCI_DEVICE] + types[ZX_OBJ_TYPE_LOG] +
-               types[ZX_OBJ_TYPE_RESOURCE] + types[ZX_OBJ_TYPE_GUEST] + types[ZX_OBJ_TYPE_VCPU] +
-               types[ZX_OBJ_TYPE_IOMMU] + types[ZX_OBJ_TYPE_BTI] + types[ZX_OBJ_TYPE_PROFILE] +
-               types[ZX_OBJ_TYPE_PMT] + types[ZX_OBJ_TYPE_SUSPEND_TOKEN] +
-               types[ZX_OBJ_TYPE_PAGER] + types[ZX_OBJ_TYPE_EXCEPTION]);
+           types[ZX_OBJ_TYPE_INTERRUPT] + types[ZX_OBJ_TYPE_LOG] + types[ZX_OBJ_TYPE_RESOURCE] +
+               types[ZX_OBJ_TYPE_GUEST] + types[ZX_OBJ_TYPE_VCPU] + types[ZX_OBJ_TYPE_IOMMU] +
+               types[ZX_OBJ_TYPE_BTI] + types[ZX_OBJ_TYPE_PROFILE] + types[ZX_OBJ_TYPE_PMT] +
+               types[ZX_OBJ_TYPE_SUSPEND_TOKEN] + types[ZX_OBJ_TYPE_PAGER] +
+               types[ZX_OBJ_TYPE_EXCEPTION]);
 }
 
 void DumpProcessList() {

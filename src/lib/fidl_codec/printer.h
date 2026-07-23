@@ -12,7 +12,6 @@
 #include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/hypervisor.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/profile.h>
 #include <zircon/syscalls/resource.h>
@@ -153,9 +152,6 @@ class PrettyPrinter {
 
   // Displays a paddr.
   void DisplayPaddr(zx_paddr_t addr);
-
-  // Displays PCI bar type.
-  void DisplayPciBarType(uint32_t type);
 
   // Displays a policy action.
   void DisplayPolicyAction(uint32_t action);

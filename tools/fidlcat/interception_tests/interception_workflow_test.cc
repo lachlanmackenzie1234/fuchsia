@@ -595,18 +595,6 @@ TEST_F(InterceptionWorkflowTestX64, SyscallsAutomated) {
       "zx_pager_create_vmo fully automated\n"
       "zx_pager_detach_vmo doesn't need automation\n"
       "zx_pager_supply_pages doesn't need automation\n"
-      "zx_pci_add_subtract_io_range doesn't need automation\n"
-      "zx_pci_cfg_pio_rw fully automated\n"
-      "zx_pci_config_read fully automated\n"
-      "zx_pci_config_write doesn't need automation\n"
-      "zx_pci_enable_bus_master doesn't need automation\n"
-      "zx_pci_get_bar partially automated\n"
-      "zx_pci_get_nth_device partially automated\n"
-      "zx_pci_init not automated\n"
-      "zx_pci_map_interrupt fully automated\n"
-      "zx_pci_query_irq_mode fully automated\n"
-      "zx_pci_reset_device doesn't need automation\n"
-      "zx_pci_set_irq_mode doesn't need automation\n"
       "zx_pmt_unpin doesn't need automation\n"
       "zx_port_cancel doesn't need automation\n"
       "zx_port_create fully automated\n"
@@ -669,10 +657,10 @@ TEST_F(InterceptionWorkflowTestX64, SyscallsAutomated) {
       "zx_vmo_set_cache_policy doesn't need automation\n"
       "zx_vmo_set_size doesn't need automation\n"
       "zx_vmo_write fully automated\n";
-  uint32_t expected_fully_automated = 63;
-  uint32_t expected_cant_be_automated = 57;
-  uint32_t expected_partially_automated = 17;
-  uint32_t expected_not_automated = 12;
+  uint32_t expected_fully_automated = 59;
+  uint32_t expected_cant_be_automated = 52;
+  uint32_t expected_partially_automated = 15;
+  uint32_t expected_not_automated = 11;
   EXPECT_EQ(actual_fully_automated, expected_fully_automated);
   EXPECT_EQ(actual_cant_be_automated, expected_cant_be_automated);
   EXPECT_EQ(actual_partially_automated, expected_partially_automated);

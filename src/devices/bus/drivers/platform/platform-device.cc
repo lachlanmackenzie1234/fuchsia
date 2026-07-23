@@ -330,10 +330,7 @@ zx::result<> PlatformDevice::CreateNode() {
   auto bus_type = fdf::BusType::kPlatform;
 
   std::string name;
-  if (vid_ == PDEV_VID_GENERIC && pid_ == PDEV_PID_GENERIC && did_ == PDEV_DID_KPCI) {
-    name = "pci";
-    address = fdf::DeviceAddress::WithStringValue("pci");
-  } else if (did_ == PDEV_DID_DEVICETREE_NODE) {
+  if (did_ == PDEV_DID_DEVICETREE_NODE) {
     name = name_;
     bus_type = fdf::BusType::kDeviceTree;
     address = fdf::DeviceAddress::WithStringValue(name_);

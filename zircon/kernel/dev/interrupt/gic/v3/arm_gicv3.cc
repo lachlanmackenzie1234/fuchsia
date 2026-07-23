@@ -30,7 +30,6 @@
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
 
-#include "arm_gicv3_pcie.h"
 #include "arm_gicv3_regs.h"
 
 #define LOCAL_TRACE 0
@@ -682,8 +681,6 @@ void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v3_driver_t& config) {
 
 void ArmGicInitLate(const zbi_dcfg_arm_gic_v3_driver_t& config) {
   ASSERT(gic_mmio_phys);
-
-  arm_gicv3_pcie_init();
 
   // Place the physical address of the GICv3 registers on the MMIO deny list.
   // Users will not be able to create MMIO resources which permit mapping of the

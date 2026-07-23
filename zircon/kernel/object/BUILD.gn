@@ -47,8 +47,6 @@ source_set("object") {
     "msi_interrupt_dispatcher.cc",
     "pager_dispatcher.cc",
     "pager_proxy.cc",
-    "pci_device_dispatcher.cc",
-    "pci_interrupt_dispatcher.cc",
     "pinned_memory_token_dispatcher.cc",
     "port_dispatcher.cc",
     "process_dispatcher.cc",
@@ -78,7 +76,6 @@ source_set("object") {
     "//sdk/lib/iob",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/iommu/stub",
-    "//zircon/kernel/dev/pcie",
     "//zircon/kernel/hypervisor",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
@@ -119,15 +116,15 @@ library_headers("headers") {
     # <object/buffer_chain.h> has <lib/page_cache.h>
     "//zircon/kernel/lib/page_cache:headers",
 
-    # <object/pci_device_dispatcher.h> has #include <dev/pci_common.h>
-    "//zircon/kernel/dev/pcie:headers",
-
     # <object/log_dispatcher.h> has #include <lib/debuglog.h>.
     "//zircon/kernel/lib/debuglog:headers",
 
     # <object/log_dispatcher.h> and <object/counter_dispatcher.h> have #include
     # <lib/object-constants.h>.
     "//zircon/kernel/lib/object-constants:headers",
+
+    # <object/msi_allocation.h> has #include <dev/interrupt.h>.
+    "//zircon/kernel/dev/interrupt:headers",
 
     # <object/clock_dispatcher.h> includes things from kconcurrent
     "//zircon/kernel/lib/kconcurrent:headers",

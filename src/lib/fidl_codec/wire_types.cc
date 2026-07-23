@@ -427,8 +427,7 @@ std::string Uint32Type::Name() const {
       return "zx.object_info_topic";
     case Kind::kObjType:
       return "zx.obj_type";
-    case Kind::kPciBarType:
-      return "zx.pci_bar_type";
+
     case Kind::kPolicyAction:
       return "zx.policy_action";
     case Kind::kPolicyCondition:
@@ -536,9 +535,7 @@ void Uint32Type::PrettyPrint(const Value* value, PrettyPrinter& printer) const {
       case Kind::kObjType:
         printer.DisplayObjType(static_cast<uint32_t>(absolute));
         break;
-      case Kind::kPciBarType:
-        printer.DisplayPciBarType(static_cast<uint32_t>(absolute));
-        break;
+
       case Kind::kPolicyAction:
         printer.DisplayPolicyAction(static_cast<uint32_t>(absolute));
         break;

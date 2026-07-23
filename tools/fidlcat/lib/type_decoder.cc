@@ -9,7 +9,6 @@
 #include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/iommu.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/syscalls/policy.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/profile.h>
@@ -95,8 +94,6 @@ std::string_view TypeName(SyscallType type) {
       return "zx_packet_page_request_t::command";
     case SyscallType::kPaddr:
       return "zx_paddr_t";
-    case SyscallType::kPciBarType:
-      return "zx_pci_bar_type_t";
     case SyscallType::kPolicyAction:
       return "zx_policy_action_t";
     case SyscallType::kPolicyCondition:

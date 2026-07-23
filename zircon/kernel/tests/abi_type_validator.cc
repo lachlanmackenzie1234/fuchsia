@@ -30,7 +30,6 @@
 #include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/hypervisor.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/syscalls/policy.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/profile.h>
@@ -364,37 +363,6 @@ VALIDATE_FIELD_OFFSET_SIZE(zx_info_vmo_v1_t, flags, 80, 4);
 VALIDATE_FIELD_OFFSET_SIZE(zx_info_vmo_v1_t, committed_bytes, 88, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zx_info_vmo_v1_t, handle_rights, 96, 4);
 VALIDATE_FIELD_OFFSET_SIZE(zx_info_vmo_v1_t, cache_policy, 100, 4);
-
-VALIDATE_TYPE_SIZE_ALIGNMENT(zx_pci_bar_t, 24, 8);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_bar_t, id, 0, 4);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_bar_t, type, 4, 4);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_bar_t, size, 8, 8);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_bar_t, addr, 16, 8);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_bar_t, handle, 16, 4);
-
-VALIDATE_TYPE_SIZE_ALIGNMENT(zx_pci_init_arg_t, 5896, 8);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, dev_pin_to_global_irq, 0, 4096);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, num_irqs, 4096, 4);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, irqs, 4100, 1792);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_window_count, 5892, 4);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_windows[0], 5896, 24);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_windows[0].base, 5896, 8);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_windows[0].size, 5904, 8);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_windows[0].bus_start, 5912, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_windows[0].bus_end, 5913, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_windows[0].cfg_space_type, 5914, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pci_init_arg_t, addr_windows[0].has_ecam, 5915, 1);
-
-VALIDATE_TYPE_SIZE_ALIGNMENT(zx_pcie_device_info_t, 12, 2);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, vendor_id, 0, 2);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, device_id, 2, 2);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, base_class, 4, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, sub_class, 5, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, program_interface, 6, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, revision_id, 7, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, bus_id, 8, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, dev_id, 9, 1);
-VALIDATE_FIELD_OFFSET_SIZE(zx_pcie_device_info_t, func_id, 10, 1);
 
 VALIDATE_TYPE_SIZE_ALIGNMENT(zx_policy_timer_slack_t, 16, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zx_policy_timer_slack_t, min_slack, 0, 8);

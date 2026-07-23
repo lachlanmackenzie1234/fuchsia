@@ -10,7 +10,6 @@
 #include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/iommu.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/syscalls/pci.h>
 #include <zircon/syscalls/policy.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/profile.h>
@@ -499,23 +498,6 @@ void PrettyPrinter::DisplayPacketPageRequestCommand(uint16_t command) {
     PacketPageRequestCommandCase(ZX_PAGER_VMO_COMPLETE);
     default:
       *this << static_cast<uint32_t>(command) << ResetColor;
-      return;
-  }
-}
-
-#define PciBarTypeCase(name)      \
-  case name:                      \
-    *this << #name << ResetColor; \
-    return
-
-void PrettyPrinter::DisplayPciBarType(uint32_t type) {
-  *this << Blue;
-  switch (type) {
-    PciBarTypeCase(ZX_PCI_BAR_TYPE_UNUSED);
-    PciBarTypeCase(ZX_PCI_BAR_TYPE_MMIO);
-    PciBarTypeCase(ZX_PCI_BAR_TYPE_PIO);
-    default:
-      *this << static_cast<uint32_t>(type) << ResetColor;
       return;
   }
 }

@@ -238,10 +238,6 @@ mexec syscall to place the ramdisk for the following kernel in high memory
 (64-bit address space, >= 4GiB offset).
 )""")
 
-DEFINE_OPTION("kernel.mexec-pci-shutdown", bool, mexec_pci_shutdown, {true}, R"""(
-If false, this option leaves PCI devices running when calling mexec.
-)""")
-
 DEFINE_OPTION("kernel.oom.enable", bool, oom_enabled, {true}, R"""(
 This option turns on out-of-memory (OOM) monitoring in the kernel, which takes action
 per `kernel.oom.behavior` when the PMM has less than `kernel.oom.outofmemory-mb` free memory,

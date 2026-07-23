@@ -1023,20 +1023,6 @@ pub struct zx_iovec_t {
     pub capacity: usize,
 }
 
-pub type zx_pci_irq_swizzle_lut_t = [[[u32; 4]; 8]; 32];
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct zx_pci_init_arg_t {
-    pub dev_pin_to_global_irq: zx_pci_irq_swizzle_lut_t,
-    pub num_irqs: u32,
-    pub irqs: [zx_irq_t; 32],
-    pub ecam_window_count: u32,
-    // Note: the ecam_windows field is actually a variable size array.
-    // We use a fixed size array to match the C repr.
-    pub ecam_windows: [zx_ecam_window_t; 1],
-}
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct zx_irq_t {
@@ -2613,39 +2599,6 @@ pub struct x86_power_limit {
     clamp: u8,        // PL1 clamping enable
     enable: u8,       // PL1 enable
     padding1: [PadByte; 2],
-}
-
-// source: zircon/system/public/zircon/syscalls/pci.h
-pub type zx_pci_bar_types_t = u32;
-
-multiconst!(zx_pci_bar_types_t, [
-            ZX_PCI_BAR_TYPE_UNUSED = 0;
-            ZX_PCI_BAR_TYPE_MMIO = 1;
-            ZX_PCI_BAR_TYPE_PIO = 2;
-]);
-
-#[repr(C)]
-pub struct zx_pci_bar_t {
-    pub id: u32,
-    pub ty: u32,
-    pub size: usize,
-    // rust can't express anonymous unions at this time
-    // https://github.com/rust-lang/rust/issues/49804
-    pub zx_pci_bar_union: zx_pci_bar_union,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub union zx_pci_bar_union {
-    addr: usize,
-    zx_pci_bar_union_struct: zx_pci_bar_union_struct,
-}
-
-#[repr(C)]
-#[derive(Default, Debug, PartialEq, Copy, Clone)]
-pub struct zx_pci_bar_union_struct {
-    handle: zx_handle_t,
-    padding1: [PadByte; 4],
 }
 
 // source: zircon/system/public/zircon/syscalls/smc.h

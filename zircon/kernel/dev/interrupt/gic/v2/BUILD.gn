@@ -21,17 +21,14 @@ source_set("v2") {
     "arm_gicv2.cc",
     "arm_gicv2m.cc",
     "arm_gicv2m_msi.cc",
-    "arm_gicv2m_pcie.cc",
   ]
   public_deps = [ ":headers" ]
   deps = [
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/interrupt/gic/common",
-    "//zircon/kernel/dev/pcie",
     "//zircon/kernel/dev/pdev/interrupt",
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/init",
-    "//zircon/kernel/lib/kpci",
     "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/pow2_range_allocator",
     "//zircon/kernel/lib/root_resource_filter",

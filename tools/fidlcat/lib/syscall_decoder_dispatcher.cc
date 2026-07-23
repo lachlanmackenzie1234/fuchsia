@@ -100,8 +100,6 @@ std::unique_ptr<fidl_codec::Type> SyscallTypeToFidlCodecType(fidlcat::SyscallTyp
           fidl_codec::Uint16Type::Kind::kPacketPageRequestCommand);
     case SyscallType::kPaddr:
       return std::make_unique<fidl_codec::Uint64Type>(fidl_codec::Uint64Type::Kind::kPaddr);
-    case SyscallType::kPciBarType:
-      return std::make_unique<fidl_codec::Uint32Type>(fidl_codec::Uint32Type::Kind::kPciBarType);
     case SyscallType::kPolicyAction:
       return std::make_unique<fidl_codec::Uint32Type>(fidl_codec::Uint32Type::Kind::kPolicyAction);
     case SyscallType::kPolicyCondition:

@@ -33,7 +33,6 @@ source_set("pc") {
     "//zircon/kernel/arch/x86:headers",
     "//zircon/kernel/dev/hw_rng/intel_rng",
     "//zircon/kernel/dev/interrupt",
-    "//zircon/kernel/dev/pcie",
     "//zircon/kernel/lib/acpi_lite",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",

@@ -304,7 +304,6 @@ static_assert(sizeof(fidl_envelope_v2_unknown_data_t) == 8, "");
 // port
 // interrupt
 // iomap
-// pci
 // log
 // socket
 // resource

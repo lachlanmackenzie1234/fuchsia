@@ -11,14 +11,14 @@
 #define PDEV_PID_GENERIC            0x00
 #define PDEV_DID_USB_DWC3           0x01   // DWC3 USB Controller
 #define PDEV_DID_USB_XHCI           0x02   // XHCI USB Controller
-#define PDEV_DID_KPCI               0x03   // Syscall based PCI driver
+// PDEV_DID_KPCI was 0x03   // Syscall based PCI driver
 // 0x04 unused
 #define PDEV_DID_USB_DWC2           0x05   // DWC2 USB Controller
 #define PDEV_DID_RTC_PL031          0x06   // ARM Primecell PL031 RTC
 #define PDEV_DID_DSI                0x07   // DSI
 #define PDEV_DID_GPIO_TEST          0x08   // Simple GPIO test driver
 #define PDEV_DID_DW_I2C             0x09   // Designware I2C
-#define PDEV_DID_DW_PCIE            0x0A  // Designware PCIe
+// 0x0A was PDEV_DID_DW_PCIE // Designware PCIe
 #define PDEV_DID_LED2472G           0x0B  // RPi Sense Hat LED2472G
 #define PDEV_DID_VSI_VIP            0x0C  // Verisilicon VIP
 // 0x0D unused

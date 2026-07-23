@@ -31,7 +31,6 @@
 #include <src/devices/board/drivers/qemu-arm64/qemu-virt.h>
 
 namespace board_qemu_arm64 {
-namespace fpbus = fuchsia_hardware_platform_bus;
 
 zx_status_t QemuArm64Pciroot::Create(PciRootHost* root_host, QemuArm64Pciroot::Context ctx,
                                      zx_device_t* parent, const char* name) {

@@ -58,7 +58,6 @@ fidl("zx") {
     "object.fidl",
     "overview.fidl",
     "pager.fidl",
-    "pci.fidl",
     "pmt.fidl",
     "port.fidl",
     "process.fidl",
