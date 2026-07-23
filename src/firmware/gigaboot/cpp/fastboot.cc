@@ -525,6 +525,7 @@ zx::result<> Fastboot::GptInit(std::string_view cmd, fastboot::Transport *transp
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
+[[gnu::format(printf, 1, 0)]]
 fbl::Vector<char> StringPrintf(const char *fmt, va_list va) {
   fbl::Vector<char> buf{'\0'};
   va_list va2;

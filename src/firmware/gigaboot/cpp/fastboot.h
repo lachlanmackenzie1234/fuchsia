@@ -22,6 +22,8 @@
 
 namespace gigaboot {
 
+[[gnu::format(printf, 2, 3)]] void hexdump_printer_printf(void *printf_arg, const char *fmt, ...);
+
 class Fastboot : public fastboot::FastbootBase {
  public:
   Fastboot(std::span<uint8_t> download_buffer, ZirconBootOps zb_ops,
@@ -137,10 +139,11 @@ class Fastboot : public fastboot::FastbootBase {
   // If set, this transport is used to send text from `vprinter_()` via kInfo channel.
   fastboot::Transport *print_transport_ = nullptr;
 
+  [[gnu::format(printf, 3, 0)]]
   void InfoSend(fastboot::Transport *transport, const char *fmt, va_list va);
 
   // Print function for testing and sending text via kInfo channel
-  VPrintFunction vprinter_ = [this](const char *fmt, va_list ap) {
+  VPrintFunction vprinter_ = [this] [[gnu::format(printf, 2, 0)]] (const char *fmt, va_list ap) {
     if (print_transport_) {
       va_list ap2;
       va_copy(ap2, ap);
@@ -149,7 +152,7 @@ class Fastboot : public fastboot::FastbootBase {
     }
     return vprintf(fmt, ap);
   };
-  int printer_(const char *fmt, ...);
+  [[gnu::format(printf, 2, 3)]] int printer_(const char *fmt, ...);
   friend void hexdump_printer_printf(void *printf_arg, const char *fmt, ...);
 
   std::span<uint8_t> download_buffer_;
