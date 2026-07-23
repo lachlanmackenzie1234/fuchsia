@@ -987,12 +987,14 @@ pub(crate) mod tests {
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use bt_avctp::{AvcCommand, AvcCommandStream, AvctpCommand, AvctpCommandStream};
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fuchsia_bluetooth::profile::avrcp::{
         AvrcpControllerFeatures, AvrcpProtocolVersion, AvrcpTargetFeatures,
     };
     use futures::task::Poll;
     use futures::{SinkExt, TryStreamExt};
     use std::pin::pin;
+    use test_case::test_case;
 
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::create_proxy_and_stream;
@@ -1014,12 +1016,18 @@ pub(crate) mod tests {
     }
 
     #[track_caller]
+    fn assert_write_initiated(res: std::task::Poll<Result<(), zx::Status>>) {
+        match res {
+            std::task::Poll::Ready(Err(e)) => panic!("Write failed: {:?}", e),
+            _ => {}
+        }
+    }
+
+    #[track_caller]
     fn expect_channel_writable(exec: &mut fasync::TestExecutor, channel: &mut Channel) {
         // Should be able to send data over the channel.
         let mut write_fut = channel.send(vec![0; 1]);
-        exec.run_until_stalled(&mut write_fut)
-            .expect("should be ready")
-            .expect("write should succeed");
+        assert_write_initiated(exec.run_until_stalled(&mut write_fut));
     }
 
     #[track_caller]
@@ -1030,8 +1038,11 @@ pub(crate) mod tests {
     }
 
     // Helper function to set incoming control connection.
-    fn set_incoming_control_connection(peer_handle: &RemotePeerHandle) -> Channel {
-        let (remote, local) = Channel::create();
+    fn set_incoming_control_connection(
+        peer_handle: &RemotePeerHandle,
+        transport: Transport,
+    ) -> Channel {
+        let (local, remote) = create_test_channels(transport);
         let control_channel = AvcPeer::new(local);
         peer_handle.set_control_connection(control_channel);
 
@@ -1039,8 +1050,11 @@ pub(crate) mod tests {
     }
 
     // Helper function to set incoming browse connection.
-    fn set_incoming_browse_connection(peer_handle: &RemotePeerHandle) -> Channel {
-        let (remote, local) = Channel::create();
+    fn set_incoming_browse_connection(
+        peer_handle: &RemotePeerHandle,
+        transport: Transport,
+    ) -> Channel {
+        let (local, remote) = create_test_channels(transport);
         let browse_channel = AvctpPeer::new(local);
         peer_handle.set_browse_connection(browse_channel);
 
@@ -1048,8 +1062,10 @@ pub(crate) mod tests {
     }
 
     // Check that the remote will attempt to connect to a peer if we have a profile.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn trigger_connection_test() {
+    fn trigger_connection_test(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1078,7 +1094,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for control.
-        let (_remote, channel) = Channel::create();
+        let (channel, _remote) = create_test_channels(transport);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, connection, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1113,8 +1129,10 @@ pub(crate) mod tests {
 
     // Check that the remote will attempt to connect to a peer for both control
     // and browsing.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn trigger_connections_test() {
+    fn trigger_connections_test(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1143,7 +1161,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for control.
-        let (_remote, channel) = Channel::create();
+        let (channel, _remote) = create_test_channels(transport);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1162,7 +1180,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for browse.
-        let (_remote2, channel2) = Channel::create();
+        let (channel2, _remote2) = create_test_channels(transport);
         let next_request_fut = profile_requests.next();
         let mut next_request_fut = pin!(next_request_fut);
         match exec.run_until_stalled(&mut next_request_fut) {
@@ -1196,8 +1214,10 @@ pub(crate) mod tests {
     /// Tests initial connection establishment to a peer.
     /// Tests peer reconnection correctly terminates the old processing task, including the
     /// underlying channel, and spawns a new task to handle incoming requests.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_peer_reconnection() {
+    fn test_peer_reconnection(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1225,7 +1245,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // Peer should have requested a connection.
-        let (mut remote, channel) = Channel::create();
+        let (channel, mut remote) = create_test_channels(transport);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, connection, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1253,7 +1273,7 @@ pub(crate) mod tests {
 
         // Peer reconnects with a new l2cap connection. Keep the old one alive to validate that it's
         // closed.
-        let mut remote2 = set_incoming_control_connection(&peer_handle);
+        let mut remote2 = set_incoming_control_connection(&peer_handle, transport);
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(peer_handle.is_control_connected());
 
@@ -1267,8 +1287,10 @@ pub(crate) mod tests {
     /// Tests that when inbound and outbound control connections are
     /// established at the same time, AVRCP drops both, and attempts to
     /// reconnect.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_simultaneous_control_connections() {
+    fn test_simultaneous_control_connections(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1294,7 +1316,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We expect to initiate an outbound connection through the profile server.
-        let (mut remote, channel) = Channel::create();
+        let (channel, mut remote) = create_test_channels(transport);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1316,7 +1338,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // Simulate inbound connection.
-        let mut remote2 = set_incoming_control_connection(&peer_handle);
+        let mut remote2 = set_incoming_control_connection(&peer_handle, transport);
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(!peer_handle.is_control_connected());
 
@@ -1331,7 +1353,7 @@ pub(crate) mod tests {
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
-        let (mut _remote3, channel3) = Channel::create();
+        let (channel3, mut _remote3) = create_test_channels(transport);
         let next_request_fut = profile_requests.next();
         let mut next_request_fut = pin!(next_request_fut);
         match exec.run_until_stalled(&mut next_request_fut) {
@@ -1351,8 +1373,10 @@ pub(crate) mod tests {
     }
 
     /// Tests that when connection fails, we don't infinitely retry.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_connection_no_retries() {
+    fn test_connection_no_retries(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1404,7 +1428,7 @@ pub(crate) mod tests {
         assert!(exec.run_until_stalled(&mut next_request_fut).is_pending());
 
         // Set control channel manually to test browse channel connection retry
-        let _remote = set_incoming_control_connection(&peer_handle);
+        let _remote = set_incoming_control_connection(&peer_handle, transport);
 
         // Browse is still not connected,
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
@@ -1460,8 +1484,10 @@ pub(crate) mod tests {
     /// Tests that when inbound and outbound browse connections are
     /// established at the same time, AVRCP drops both, and attempts to
     /// reconnect.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_simultaneous_browse_connections() {
+    fn test_simultaneous_browse_connections(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1488,7 +1514,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for control.
-        let (_remote, channel) = Channel::create();
+        let (channel, _remote) = create_test_channels(transport);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1507,7 +1533,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for browse.
-        let (mut remote2, channel2) = Channel::create();
+        let (channel2, mut remote2) = create_test_channels(transport);
         let mut next_request_fut = profile_requests.next();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
@@ -1530,7 +1556,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // Simulate inbound browse connection.
-        let mut remote3 = set_incoming_browse_connection(&peer_handle);
+        let mut remote3 = set_incoming_browse_connection(&peer_handle, transport);
 
         // Browse channel should be disconnected, but control channel should remain connected.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
@@ -1548,7 +1574,7 @@ pub(crate) mod tests {
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
-        let (mut remote4, channel4) = Channel::create();
+        let (channel4, mut remote4) = create_test_channels(transport);
         let mut next_request_fut = profile_requests.next();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
@@ -1568,8 +1594,10 @@ pub(crate) mod tests {
 
     /// Tests that when new inbound control connection comes in, previous
     /// control and browse connections are dropped.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn incoming_channel_resets_connections() {
+    fn incoming_channel_resets_connections(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1597,7 +1625,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for control.
-        let (mut remote, channel) = Channel::create();
+        let (channel, mut remote) = create_test_channels(transport);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1616,7 +1644,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for browse.
-        let (mut remote2, channel2) = Channel::create();
+        let (channel2, mut remote2) = create_test_channels(transport);
         let mut next_request_fut = profile_requests.next();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
@@ -1640,7 +1668,7 @@ pub(crate) mod tests {
 
         // After some time, remote peer sends incoming a new l2cap connection
         // for control channel. Keep the old one alive to validate that it's closed.
-        let mut remote3 = set_incoming_control_connection(&peer_handle);
+        let mut remote3 = set_incoming_control_connection(&peer_handle, transport);
 
         // Run to update watcher state. Control channel should be connected,
         // but browse channel that was previously set should have closed.
@@ -1656,8 +1684,10 @@ pub(crate) mod tests {
 
     /// Tests that when new inbound control connection comes in, previous
     /// control and browse connections are dropped.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn incoming_browse_channel_dropped() {
+    fn incoming_browse_channel_dropped(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1678,7 +1708,7 @@ pub(crate) mod tests {
         // Peer connects with a new l2cap connection for browse channel.
         // Since control channel was not already connected, verify that
         // browse channel was dropped.
-        let _remote = set_incoming_browse_connection(&peer_handle);
+        let _remote = set_incoming_browse_connection(&peer_handle, transport);
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(!peer_handle.is_browse_connected());
     }
@@ -1686,8 +1716,10 @@ pub(crate) mod tests {
     /// Tests that when control/browse channels are established by incoming connections,
     /// we handle the future state changes appropriately such as ensuring that the stream tasks
     /// are not started when they already exist.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_incoming_connections() {
+    fn test_incoming_connections(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -1696,7 +1728,7 @@ pub(crate) mod tests {
         assert!(!peer_handle.is_control_connected());
 
         // Simulate inbound control connection.
-        let mut remote1 = set_incoming_control_connection(&peer_handle);
+        let mut remote1 = set_incoming_control_connection(&peer_handle, transport);
 
         // Advance time by the maximum amount of time it would take to establish
         // a connection.
@@ -1709,7 +1741,7 @@ pub(crate) mod tests {
         expect_channel_writable(&mut exec, &mut remote1);
 
         // Simulate inbound browse connection.
-        let mut remote2 = set_incoming_browse_connection(&peer_handle);
+        let mut remote2 = set_incoming_browse_connection(&peer_handle, transport);
 
         // Advance time by the maximum amount of time it would take to establish
         // a connection.
@@ -1814,8 +1846,10 @@ pub(crate) mod tests {
         });
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn successful_inbound_connection_updates_inspect_metrics() {
+    fn successful_inbound_connection_updates_inspect_metrics(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let id = PeerId(842);
@@ -1830,7 +1864,7 @@ pub(crate) mod tests {
         });
         peer_handle.request_control_connection();
         // Peer initiates connection to us.
-        let remote1 = set_incoming_control_connection(&peer_handle);
+        let remote1 = set_incoming_control_connection(&peer_handle, transport);
 
         // Run to update watcher state.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
@@ -1848,7 +1882,7 @@ pub(crate) mod tests {
         });
 
         // Peer initiates a browse connection.
-        let _remote2 = set_incoming_browse_connection(&peer_handle);
+        let _remote2 = set_incoming_browse_connection(&peer_handle, transport);
 
         // Run to update watcher state.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
@@ -2029,8 +2063,10 @@ pub(crate) mod tests {
         assert!(peer_handle.peer.read().get_candidate_browse_player().is_none());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn successful_post_browse_connection_setup() {
+    fn successful_post_browse_connection_setup(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let id = PeerId(842);
@@ -2043,12 +2079,12 @@ pub(crate) mod tests {
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
         // Peer initiates control connection to us.
-        let _remote1 = set_incoming_control_connection(&peer_handle);
+        let _remote1 = set_incoming_control_connection(&peer_handle, transport);
         // Run to update watcher state.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Peer initiates a browse connection.
-        let remote2 = set_incoming_browse_connection(&peer_handle);
+        let remote2 = set_incoming_browse_connection(&peer_handle, transport);
         // Run to update watcher state.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
@@ -2110,8 +2146,10 @@ pub(crate) mod tests {
         assert_eq!(player.sub_folders.len(), 0);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn incoming_control_command_loop_exits_gracefully() {
+    fn incoming_control_command_loop_exits_gracefully(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -2119,12 +2157,12 @@ pub(crate) mod tests {
         let (peer_handle, _target_delegate, _profile_requests) = setup_remote_peer(id);
 
         // Simulate inbound control connection.
-        let mut remote_control = set_incoming_control_connection(&peer_handle);
+        let mut remote_control = set_incoming_control_connection(&peer_handle, transport);
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
         // Simulate inbound browse connection.
-        let _remote_browse = set_incoming_browse_connection(&peer_handle);
+        let _remote_browse = set_incoming_browse_connection(&peer_handle, transport);
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
@@ -2155,8 +2193,10 @@ pub(crate) mod tests {
         assert!(!peer_handle.is_browse_connected());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn incoming_browse_command_loop_exits_gracefully() {
+    fn incoming_browse_command_loop_exits_gracefully(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000000000));
 
@@ -2164,17 +2204,22 @@ pub(crate) mod tests {
         let (peer_handle, _target_delegate, _profile_requests) = setup_remote_peer(id);
 
         // Simulate inbound control connection.
-        let _remote_control = set_incoming_control_connection(&peer_handle);
+        let _remote_control = set_incoming_control_connection(&peer_handle, transport);
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
         // Simulate inbound browse connection.
-        let (remote_browse, local_browse) = zx::Socket::create_datagram();
-        assert!(local_browse.half_close().is_ok());
-        // Set write to not work to trigger error on socket read.
-        let local_browse = Channel::from_socket_infallible(local_browse, Channel::DEFAULT_MAX_TX);
-        let mut remote_browse =
-            Channel::from_socket_infallible(remote_browse, Channel::DEFAULT_MAX_TX);
+        let (local_browse, mut remote_browse) = match transport {
+            Transport::Socket => {
+                let (remote, local) = zx::Socket::create_datagram();
+                assert!(local.half_close().is_ok());
+                (
+                    Channel::from_socket_infallible(local, Channel::DEFAULT_MAX_TX),
+                    Channel::from_socket_infallible(remote, Channel::DEFAULT_MAX_TX),
+                )
+            }
+            Transport::Fidl => create_test_channels(transport),
+        };
 
         let browse_channel = AvctpPeer::new(local_browse);
         peer_handle.set_browse_connection(browse_channel);
@@ -2195,12 +2240,20 @@ pub(crate) mod tests {
         });
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
-        // Send data over the browse channel with socket that'll cause error on write.
-        let mut write_fut = remote_browse.send(vec![1, 1]);
-        let _ = exec
-            .run_until_stalled(&mut write_fut)
-            .expect("should be ready")
-            .expect_err("should have failed");
+        match transport {
+            Transport::Socket => {
+                // Send data over the browse channel with socket that'll cause error on write.
+                let mut write_fut = remote_browse.send(vec![1, 1]);
+                let _ = exec
+                    .run_until_stalled(&mut write_fut)
+                    .expect("should be ready")
+                    .expect_err("should have failed");
+            }
+            Transport::Fidl => {
+                // For FIDL, we just drop the remote side to trigger EOF.
+                drop(remote_browse);
+            }
+        }
 
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 

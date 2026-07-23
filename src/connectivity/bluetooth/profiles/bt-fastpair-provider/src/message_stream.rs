@@ -202,9 +202,11 @@ mod tests {
 
     use crate::types::ModelId;
     use assert_matches::assert_matches;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl_fuchsia_bluetooth_bredr::{DataElement, ProfileMarker};
     use fuchsia_bluetooth::types::Address;
     use futures::FutureExt;
+    use test_case::test_case;
 
     async fn expect_data(remote: &mut Channel, expected_data: Vec<u8>) {
         let read = match remote.next().await {
@@ -215,8 +217,10 @@ mod tests {
         assert_eq!(read, expected_data);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn message_stream_receives_data() {
+    async fn message_stream_receives_data(transport: Transport) {
         let (profile, mut profile_server) =
             fidl::endpoints::create_proxy_and_stream::<ProfileMarker>();
         let mut message_stream = MessageStream::new(profile);
@@ -228,7 +232,7 @@ mod tests {
 
         // Remote peer connection.
         let id = PeerId(123);
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let protocol = &[
             ProtocolDescriptor {
                 protocol: Some(ProtocolIdentifier::L2Cap),

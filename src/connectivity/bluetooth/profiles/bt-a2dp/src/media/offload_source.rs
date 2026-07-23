@@ -10,15 +10,16 @@ use fidl_fuchsia_audio_device::ProviderProxy;
 use fidl_fuchsia_bluetooth_bredr::{
     self as bredr, AudioOffloadControllerMarker, AudioOffloadControllerProxy, AudioOffloadExtProxy,
 };
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::{PeerId, peer_audio_stream_id};
 use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::{AttachError, Inspect};
+use fuchsia_trace as trace;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Shared, WeakShared};
 use futures::{FutureExt, TryFutureExt};
 use log::{info, warn};
 use std::time::Duration;
-use {fuchsia_async as fasync, fuchsia_trace as trace};
 
 use crate::media::AUDIO_SOURCE_UUID;
 
@@ -378,6 +379,7 @@ impl MediaTask for RunningTask {
 mod tests {
     use super::*;
 
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl_fuchsia_audio_device::{
         DeviceType, DriverClient, ProviderAddDeviceRequest, ProviderAddDeviceResponse,
         ProviderRequest,
@@ -390,6 +392,7 @@ mod tests {
     use fuchsia_sync::{Mutex, RwLock};
     use futures::StreamExt;
     use std::sync::Arc;
+    use test_case::test_case;
 
     #[fuchsia::test]
     async fn fails_without_offload() {
@@ -472,8 +475,10 @@ mod tests {
         assert!(supported_configs_fut.await.unwrap().is_empty());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test(allow_stalls = false)]
-    async fn starts_offload_on_codec() {
+    async fn starts_offload_on_codec(transport: Transport) {
         let (proxy, mut provider_stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_audio_device::ProviderMarker>();
         let builder = Builder::new(proxy).unwrap();
@@ -511,7 +516,7 @@ mod tests {
 
         assert!(configured_task.running.is_none());
 
-        let (_remote, local) = fuchsia_bluetooth::types::Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         let local = Arc::new(RwLock::new(local));
         let weak_local = Arc::downgrade(&local);
         let stream = MediaStream::new(Arc::new(Mutex::new(true)), weak_local);

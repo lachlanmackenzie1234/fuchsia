@@ -4,26 +4,29 @@
 
 use assert_matches::assert_matches;
 use async_utils::PollExt;
+use bt_channel_test_support::{Transport, create_test_channels};
 use fuchsia_async as fasync;
-use futures::executor::block_on;
-use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt, future};
+use futures::{SinkExt, StreamExt, TryStreamExt, future};
 use std::result;
-use zx::{self as zx, Status};
+use test_case::test_case;
+use zx::{self as zx};
 
 use crate::*;
 
 // Helper functions
 
-pub(crate) fn setup_peer() -> (Peer, Channel) {
-    let (remote, signaling) = Channel::create();
+pub(crate) fn setup_peer(transport_mode: Transport) -> (Peer, Channel) {
+    let (signaling, remote) = create_test_channels(transport_mode);
 
     let peer = Peer::new(signaling);
     (peer, remote)
 }
 
-fn setup_stream_test() -> (fasync::TestExecutor, RequestStream, Peer, Channel) {
+fn setup_stream_test(
+    transport_mode: Transport,
+) -> (fasync::TestExecutor, RequestStream, Peer, Channel) {
     let exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, remote) = setup_peer(transport_mode);
     let stream = peer.take_request_stream();
     (exec, stream, peer, remote)
 }
@@ -38,19 +41,31 @@ fn next_request(stream: &mut RequestStream, exec: &mut fasync::TestExecutor) -> 
     }
 }
 
-#[track_caller]
-pub(crate) fn recv_remote(remote: &mut Channel) -> result::Result<Vec<u8>, zx::Status> {
-    let fut = remote.next();
-    match fut.now_or_never() {
-        Some(Some(res)) => res,
-        Some(None) => Err(zx::Status::PEER_CLOSED),
-        None => Err(zx::Status::SHOULD_WAIT),
+pub(crate) fn recv_remote(
+    exec: &mut fasync::TestExecutor,
+    remote: &mut Channel,
+) -> result::Result<Vec<u8>, zx::Status> {
+    let mut fut = remote.next();
+    match exec.run_until_stalled(&mut fut) {
+        Poll::Ready(Some(res)) => res,
+        Poll::Ready(None) => Err(zx::Status::PEER_CLOSED),
+        Poll::Pending => Err(zx::Status::SHOULD_WAIT),
     }
 }
 
-pub(crate) fn expect_remote_recv(expected: &[u8], remote: &mut Channel) {
-    let r = remote.next().now_or_never().expect("poll is ready");
-    let response = r.expect("stream should not be ended").expect("successful read");
+pub(crate) fn expect_remote_recv(
+    exec: &mut fasync::TestExecutor,
+    expected: &[u8],
+    remote: &mut Channel,
+) {
+    let mut fut = remote.next();
+    let poll_res = exec.run_until_stalled(&mut fut);
+    let r = match poll_res {
+        Poll::Ready(Some(res)) => res,
+        Poll::Ready(None) => panic!("stream ended"),
+        Poll::Pending => panic!("poll not ready"),
+    };
+    let response = r.expect("successful read");
     assert_eq!(
         expected.len(),
         response.len(),
@@ -76,13 +91,15 @@ fn stream_request_response(
     assert!(complete.is_pending());
 
     // The peer should have responded with the expected data.
-    expect_remote_recv(expect, remote);
+    expect_remote_recv(exec, expect, remote);
 }
 
-#[test]
-fn closes_socket_when_dropped() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn closes_socket_when_dropped(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (mut peer_chan, signaling) = Channel::create();
+    let (signaling, mut peer_chan) = create_test_channels(transport_mode);
 
     {
         let peer = Peer::new(signaling);
@@ -92,26 +109,30 @@ fn closes_socket_when_dropped() {
     // Writing to the sock from the other end should fail.
     let mut write_fut = peer_chan.send(vec![0; 1]);
     match exec.run_until_stalled(&mut write_fut) {
-        Poll::Ready(Err(e)) => assert_eq!(Status::PEER_CLOSED, e.into()),
+        Poll::Ready(Err(e)) => assert_eq!(zx::Status::PEER_CLOSED, e),
         x => panic!("Expected Ready Err but got {:?}", x),
     }
 }
 
-#[test]
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
 #[should_panic]
-fn can_only_take_stream_once() {
+fn can_only_take_stream_once(transport_mode: Transport) {
     let _exec = fasync::TestExecutor::new();
-    let (_, signaling) = Channel::create();
+    let (signaling, _) = create_test_channels(transport_mode);
 
     let peer = Peer::new(signaling);
     let _stream = peer.take_request_stream();
     let _ = peer.take_request_stream();
 }
 
-#[test]
-fn terminates_on_peer_closed() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn terminates_on_peer_closed(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (remote, signaling) = Channel::create();
+    let (signaling, remote) = create_test_channels(transport_mode);
 
     let peer = Peer::new(signaling);
     let mut stream = peer.take_request_stream();
@@ -137,16 +158,26 @@ const CMD_DISCOVER: &'static [u8] = &[
     0x01, // RFA (0b00), Discover (0x01)
 ];
 
-#[test]
-fn closed_peer_ends_request_stream() {
-    let (_exec, stream, _, _) = setup_stream_test();
-    let collected = block_on(stream.collect::<Vec<Result<Request>>>());
-    assert_eq!(0, collected.len());
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn closed_peer_ends_request_stream(transport_mode: Transport) {
+    let (mut exec, stream, _, _remote) = setup_stream_test(transport_mode);
+    drop(_remote);
+    let mut collect_fut = Box::pin(stream.collect::<Vec<Result<Request>>>());
+    match exec.run_until_stalled(&mut collect_fut) {
+        Poll::Ready(collected) => {
+            assert_eq!(0, collected.len());
+        }
+        Poll::Pending => panic!("Expected stream to close"),
+    }
 }
 
-#[test]
-fn command_not_supported_response() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn command_not_supported_response(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     // TxLabel 4, SecurityControl, which is not implemented
     let mut write_fut = remote.send(vec![0x40, 0x0B, 0x40, 0x00, 0x00]);
@@ -160,12 +191,14 @@ fn command_not_supported_response() {
 
     // The peer should have responded with a Response Reject message with the
     // same TxLabel with NOT_SUPPORTED_COMMAND
-    expect_remote_recv(&[0x43, 0x0B, 0x19], &mut remote);
+    expect_remote_recv(&mut exec, &[0x43, 0x0B, 0x19], &mut remote);
 }
 
-#[test]
-fn requests_are_queued_if_they_arrive_early() {
-    let (mut exec, stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn requests_are_queued_if_they_arrive_early(transport_mode: Transport) {
+    let (mut exec, stream, _, mut remote) = setup_stream_test(transport_mode);
     let mut write_fut = remote.send(CMD_DISCOVER.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
     let mut collected = Vec::<Request>::new();
@@ -180,9 +213,11 @@ fn requests_are_queued_if_they_arrive_early() {
     assert_eq!(1, collected.len());
 }
 
-#[test]
-fn responds_with_same_tx_id() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn responds_with_same_tx_id(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_DISCOVER.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -210,12 +245,14 @@ fn responds_with_same_tx_id() {
         0x01 << 4 | 0x0 << 3, // Video (0x01), Source (0x00)
     ];
 
-    expect_remote_recv(response, &mut remote);
+    expect_remote_recv(&mut exec, response, &mut remote);
 }
 
-#[test]
-fn invalid_signal_id_responds_error() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn invalid_signal_id_responds_error(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     // This is TxLabel 4, Signal Id 0b110000, which is invalid.
     let mut write_fut = remote.send(vec![0x40, 0x30]);
@@ -229,13 +266,15 @@ fn invalid_signal_id_responds_error() {
 
     // The peer should have responded with a General Reject message with the
     // same TxLabel, and the same (invalid) signal identifier.
-    expect_remote_recv(&[0x41, 0x30], &mut remote);
+    expect_remote_recv(&mut exec, &[0x41, 0x30], &mut remote);
 }
 
-#[test]
-fn exhaust_request_ids() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn exhaust_request_ids(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let mut response_futures = Vec::new();
     // There are only 16 labels, so fill up the "outgoing requests pending" buffer
     for _ in 0..16 {
@@ -254,7 +293,7 @@ fn exhaust_request_ids() {
 
     // Finish some of them.
     for _ in 0..4 {
-        let received = recv_remote(&mut remote).unwrap();
+        let received = recv_remote(&mut exec, &mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -281,14 +320,16 @@ fn exhaust_request_ids() {
     assert!(exec.run_until_stalled(&mut another_fut).is_pending());
 }
 
-#[test]
-fn command_timeout() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn command_timeout(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let mut response_fut = Box::pin(peer.discover());
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -319,14 +360,16 @@ fn command_timeout() {
     assert!(exec.run_until_stalled(&mut another_fut).is_pending());
 }
 
-#[test]
-fn command_response_can_be_discarded() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn command_response_can_be_discarded(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let response_fut = peer.discover();
 
     // Command should be sent before we poll a response.
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -345,7 +388,7 @@ fn command_response_can_be_discarded() {
 
     // Make another discovery, and it should be sent.
     let mut another_fut = Box::pin(peer.discover());
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
 
     // Writing the response to the first discovery will get ignored.
     let mut write_fut = remote.send(response_first.to_vec());
@@ -373,7 +416,7 @@ macro_rules! incoming_cmd_length_fail_test {
     ($test_name:ident, $signal_value:expr, $length:expr) => {
         #[test]
         fn $test_name() {
-            let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+            let (mut exec, mut stream, _, mut remote) = setup_stream_test(Transport::Socket);
 
             // TxLabel 4, signal value, no params
             let mut incoming_cmd = vec![0x40, $signal_value];
@@ -395,7 +438,7 @@ macro_rules! incoming_cmd_length_fail_test {
 
             // The peer should have responded with a Response Reject message with the
             // same TxLabel with BAD_LENGTH
-            expect_remote_recv(&[0x43, $signal_value, 0x11], &mut remote);
+            expect_remote_recv(&mut exec, &[0x43, $signal_value, 0x11], &mut remote);
         }
     };
 }
@@ -406,9 +449,11 @@ const CMD_DISCOVER_VALUE: &'static u8 = &0x01;
 incoming_cmd_length_fail_test!(discover_invalid_length_one, *CMD_DISCOVER_VALUE, 1);
 incoming_cmd_length_fail_test!(discover_invalid_length_two, *CMD_DISCOVER_VALUE, 2);
 
-#[test]
-fn discover_event_responder_send_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn discover_event_responder_send_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_DISCOVER.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -428,12 +473,14 @@ fn discover_event_responder_send_works() {
 
     assert!(respond_res.is_ok());
 
-    expect_remote_recv(&[0x42, 0x01, 0x0A << 2, 0x01 << 4], &mut remote);
+    expect_remote_recv(&mut exec, &[0x42, 0x01, 0x0A << 2, 0x01 << 4], &mut remote);
 }
 
-#[test]
-fn discover_event_responder_reject_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn discover_event_responder_reject_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_DISCOVER.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -450,17 +497,19 @@ fn discover_event_responder_reject_works() {
         0x01, // Discover
         0x31, // BAD_STATE
     ];
-    expect_remote_recv(discover_rsp, &mut remote);
+    expect_remote_recv(&mut exec, discover_rsp, &mut remote);
 }
 
-#[test]
-fn discover_command_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn discover_command_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let mut response_fut = Box::pin(peer.discover());
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -507,14 +556,16 @@ fn discover_command_works() {
     assert_eq!(e3, endpoints[2]);
 }
 
-#[test]
-fn discover_command_rejected() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn discover_command_rejected(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let mut response_fut = Box::pin(peer.discover());
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -551,9 +602,11 @@ const CMD_GET_CAPABILITIES: &'static [u8] = &[
 incoming_cmd_length_fail_test!(get_capabilities_too_short, *CMD_GET_CAPABILITIES_VALUE, 0);
 incoming_cmd_length_fail_test!(get_capabilities_too_long, *CMD_GET_CAPABILITIES_VALUE, 2);
 
-#[test]
-fn get_capabilities_event_responder_send_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_capabilities_event_responder_send_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_GET_CAPABILITIES.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -606,12 +659,14 @@ fn get_capabilities_event_responder_send_works() {
         /* NOTE: DelayReporting should NOT be included here
          * (GetCapabilities response cannot return DelayReporting) */
     ];
-    expect_remote_recv(get_capabilities_rsp, &mut remote);
+    expect_remote_recv(&mut exec, get_capabilities_rsp, &mut remote);
 }
 
-#[test]
-fn get_capabilities_responder_reject_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_capabilities_responder_reject_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_GET_CAPABILITIES.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -631,18 +686,20 @@ fn get_capabilities_responder_reject_works() {
         0x02, // Get Capabilities
         0x12, // BAD_ACP_SEID
     ];
-    expect_remote_recv(get_capabilities_rsp, &mut remote);
+    expect_remote_recv(&mut exec, get_capabilities_rsp, &mut remote);
 }
 
-#[test]
-fn get_capabilities_command_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_capabilities_command_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -695,15 +752,17 @@ fn get_capabilities_command_works() {
     assert_eq!(c4, capabilities[3]);
 }
 
-#[test]
-fn get_capabilities_reject_command() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_capabilities_reject_command(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -741,9 +800,11 @@ const CMD_GET_ALL_CAPABILITIES: &'static [u8] = &[
 incoming_cmd_length_fail_test!(get_all_capabilities_too_short, *CMD_GET_ALL_CAPABILITIES_VALUE, 0);
 incoming_cmd_length_fail_test!(get_all_capabilities_too_long, *CMD_GET_ALL_CAPABILITIES_VALUE, 2);
 
-#[test]
-fn get_all_capabilities_event_responder_send_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_all_capabilities_event_responder_send_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_GET_ALL_CAPABILITIES.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -796,12 +857,14 @@ fn get_all_capabilities_event_responder_send_works() {
         // DelayReporting (LOSC = 0)
         0x08, 0x00,
     ];
-    expect_remote_recv(get_capabilities_rsp, &mut remote);
+    expect_remote_recv(&mut exec, get_capabilities_rsp, &mut remote);
 }
 
-#[test]
-fn get_all_capabilities_responder_reject_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_all_capabilities_responder_reject_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_GET_ALL_CAPABILITIES.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -821,18 +884,20 @@ fn get_all_capabilities_responder_reject_works() {
         0x0C, // Get All Capabilities
         0x12, // BAD_ACP_SEID
     ];
-    expect_remote_recv(get_all_capabilities_rsp, &mut remote);
+    expect_remote_recv(&mut exec, get_all_capabilities_rsp, &mut remote);
 }
 
-#[test]
-fn get_all_capabilities_command_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_all_capabilities_command_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_all_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0C, received[1]); // 0x0C = GetAllCapabilities
@@ -885,15 +950,17 @@ fn get_all_capabilities_command_works() {
     assert_eq!(c5, capabilities[4]);
 }
 
-#[test]
-fn get_all_capabilities_reject_command() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_all_capabilities_reject_command(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_all_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0C, received[1]); // 0x02 = GetAllCapabilities
@@ -923,15 +990,17 @@ fn get_all_capabilities_reject_command() {
     );
 }
 
-#[test]
-fn get_all_capabilites_general_reject() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_all_capabilites_general_reject(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_all_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0C, received[1]); // 0x0C = GetAllCapabilities
@@ -970,9 +1039,11 @@ const CMD_GET_CONFIGURATION: &'static [u8] = &[
 incoming_cmd_length_fail_test!(get_configuration_too_short, *CMD_GET_CONFIGURATION_VALUE, 0);
 incoming_cmd_length_fail_test!(get_configuration_too_long, *CMD_GET_CONFIGURATION_VALUE, 2);
 
-#[test]
-fn get_configuration_event_responder_send_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_configuration_event_responder_send_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_GET_CONFIGURATION.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -1025,12 +1096,14 @@ fn get_configuration_event_responder_send_works() {
         // DelayReporting (LOSC = 0)
         0x08, 0x00,
     ];
-    expect_remote_recv(get_configuration_rsp, &mut remote);
+    expect_remote_recv(&mut exec, get_configuration_rsp, &mut remote);
 }
 
-#[test]
-fn get_configuration_responder_reject_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_configuration_responder_reject_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_GET_CONFIGURATION.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -1050,18 +1123,20 @@ fn get_configuration_responder_reject_works() {
         0x04, // Get Configuration
         0x12, // BAD_ACP_SEID
     ];
-    expect_remote_recv(get_configuration_rsp, &mut remote);
+    expect_remote_recv(&mut exec, get_configuration_rsp, &mut remote);
 }
 
-#[test]
-fn get_configuration_command_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_configuration_command_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_configuration(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x04, received[1]); // 0x04 = GetConfiguration
@@ -1114,15 +1189,17 @@ fn get_configuration_command_works() {
     assert_eq!(c5, capabilities[4]);
 }
 
-#[test]
-fn get_configuration_reject_command() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_configuration_reject_command(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_configuration(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x04, received[1]); // 0x04 = GetConfiguration
@@ -1157,12 +1234,12 @@ macro_rules! seid_command_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, mut remote) = setup_peer();
+            let (peer, mut remote) = setup_peer(Transport::Socket);
             let seid = StreamEndpointId::try_from(1).unwrap();
             let mut response_fut = Box::pin(peer.$peer_function(&seid));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&mut remote).unwrap();
+            let received = recv_remote(&mut exec, &mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // $signal_value = $request_variant
@@ -1192,14 +1269,14 @@ macro_rules! seids_command_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, mut remote) = setup_peer();
+            let (peer, mut remote) = setup_peer(Transport::Socket);
             let seid1 = StreamEndpointId::try_from(1).unwrap();
             let seid2 = StreamEndpointId::try_from(16).unwrap();
             let seids = [seid1, seid2];
             let mut response_fut = Box::pin(peer.$peer_function(&seids));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&mut remote).unwrap();
+            let received = recv_remote(&mut exec, &mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // $signal_value = $request_variant
@@ -1230,12 +1307,12 @@ macro_rules! seid_command_reject_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, mut remote) = setup_peer();
+            let (peer, mut remote) = setup_peer(Transport::Socket);
             let seid = StreamEndpointId::try_from(1).unwrap();
             let mut response_fut = Box::pin(peer.$peer_function(&seid));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&mut remote).unwrap();
+            let received = recv_remote(&mut exec, &mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // 0x02 = GetAllCapabilities
@@ -1273,14 +1350,14 @@ macro_rules! seids_command_reject_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, mut remote) = setup_peer();
+            let (peer, mut remote) = setup_peer(Transport::Socket);
             let seid1 = StreamEndpointId::try_from(1).unwrap();
             let seid2 = StreamEndpointId::try_from(16).unwrap();
             let seids = [seid1, seid2];
             let mut response_fut = Box::pin(peer.$peer_function(&seids));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&mut remote).unwrap();
+            let received = recv_remote(&mut exec, &mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // 0x02 = GetAllCapabilities
@@ -1318,7 +1395,7 @@ macro_rules! seid_event_responder_send_test {
     ($test_name:ident, $variant:ident, $signal_value:expr, $command_var:ident) => {
         #[test]
         fn $test_name() {
-            let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+            let (mut exec, mut stream, _, mut remote) = setup_stream_test(Transport::Socket);
 
             let mut write_fut = remote.send($command_var.to_vec());
             exec.run_until_stalled(&mut write_fut)
@@ -1340,7 +1417,7 @@ macro_rules! seid_event_responder_send_test {
                 0x42,          // TxLabel (4) + ResponseAccept (0x02)
                 $signal_value, // $variant Signal
             ];
-            expect_remote_recv(ok_rsp, &mut remote);
+            expect_remote_recv(&mut exec, ok_rsp, &mut remote);
         }
     };
 }
@@ -1349,7 +1426,7 @@ macro_rules! seids_event_responder_send_test {
     ($test_name:ident, $variant:ident, $signal_value:expr, $command_var:ident) => {
         #[test]
         fn $test_name() {
-            let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+            let (mut exec, mut stream, _, mut remote) = setup_stream_test(Transport::Socket);
 
             let mut write_fut = remote.send($command_var.to_vec());
             exec.run_until_stalled(&mut write_fut)
@@ -1374,7 +1451,7 @@ macro_rules! seids_event_responder_send_test {
                 0x42,          // TxLabel (4) + ResponseAccept (0x02)
                 $signal_value, // $variant Signal
             ];
-            expect_remote_recv(ok_rsp, &mut remote);
+            expect_remote_recv(&mut exec, ok_rsp, &mut remote);
         }
     };
 }
@@ -1383,7 +1460,7 @@ macro_rules! seid_event_responder_reject_test {
     ($test_name:ident, $variant:ident, $signal_value:expr, $command_var:ident) => {
         #[test]
         fn $test_name() {
-            let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+            let (mut exec, mut stream, _, mut remote) = setup_stream_test(Transport::Socket);
 
             let mut write_fut = remote.send($command_var.to_vec());
             exec.run_until_stalled(&mut write_fut)
@@ -1405,7 +1482,7 @@ macro_rules! seid_event_responder_reject_test {
                 $signal_value, // $variant
                 0x12,          // BAD_ACP_SEID
             ];
-            expect_remote_recv(rejected_rsp, &mut remote);
+            expect_remote_recv(&mut exec, rejected_rsp, &mut remote);
         }
     };
 }
@@ -1414,7 +1491,7 @@ macro_rules! stream_event_responder_reject_test {
     ($test_name:ident, $variant:ident, $signal_value:expr, $command_var:ident) => {
         #[test]
         fn $test_name() {
-            let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+            let (mut exec, mut stream, _, mut remote) = setup_stream_test(Transport::Socket);
 
             let mut write_fut = remote.send($command_var.to_vec());
             exec.run_until_stalled(&mut write_fut)
@@ -1438,7 +1515,7 @@ macro_rules! stream_event_responder_reject_test {
                 12 << 2,       // Stream ID (12), RFA
                 0x12,          // BAD_ACP_SEID
             ];
-            expect_remote_recv(rejected_rsp, &mut remote);
+            expect_remote_recv(&mut exec, rejected_rsp, &mut remote);
         }
     };
 }
@@ -1533,15 +1610,17 @@ seid_event_responder_reject_test!(abort_responder_reject, Abort, *CMD_ABORT_VALU
 
 /// Abort requests with an invalid SEID are allowed to be dropped.
 /// We timeout after some amount of time.
-#[test]
-fn abort_sent_no_response() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn abort_sent_no_response(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.abort(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0A, received[1]); // $signal_value = $request_variant
@@ -1562,7 +1641,7 @@ fn expect_config_recv_cap_okay(
     remote_seid: StreamEndpointId,
     capability: ServiceCapability,
 ) {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(Transport::Socket);
 
     let txlabel_mask = cmd[0] & 0xF0;
 
@@ -1587,15 +1666,17 @@ fn expect_config_recv_cap_okay(
     assert!(respond_res.is_ok());
 
     // Expected response: Same TxLabel & ResponseAccept (0x2) , Signal.
-    expect_remote_recv(&[txlabel_mask | 0x02, 0x03], &mut remote);
+    expect_remote_recv(&mut exec, &[txlabel_mask | 0x02, 0x03], &mut remote);
 }
 
 // Set config must be at least 2 SEIDs and one configuration long.
 incoming_cmd_length_fail_test!(set_config_length_too_short, 0x03, 2);
 
-#[test]
-fn set_configuration_invalid_media_transport_format() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_configuration_invalid_media_transport_format(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     // TxLabel (4), ResponseReject, Signal, Relevant Cap (Media Transport),
     // BadMediaTransportFormat
@@ -1624,9 +1705,11 @@ fn set_config_event_responder_send_works() {
     );
 }
 
-#[test]
-fn set_config_event_responder_reject_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_event_responder_reject_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let set_config_cmd = &[
         0x40, 0x03, 0x04, 0x08, // TxLabel 4, Signal, ACP (1) and INT (2) SEID
@@ -1655,13 +1738,15 @@ fn set_config_event_responder_reject_works() {
 
     // Expected response: Same TxLabel (4) & ResponseReject, Signal,
     // Relevant capability, Error Code (Unsupported Configure)
-    expect_remote_recv(&[0x43, 0x03, 0x01, 0x29], &mut remote);
+    expect_remote_recv(&mut exec, &[0x43, 0x03, 0x01, 0x29], &mut remote);
 }
 
-#[test]
-fn set_config_command_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_command_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     // This should cover all the implemented capabilities to confirm they are
     // encoded correctly.
     let caps = vec![
@@ -1687,7 +1772,7 @@ fn set_config_command_works() {
         Box::pin(peer.set_configuration(&StreamEndpointId(1), &StreamEndpointId(2), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     #[rustfmt::skip]
     let set_capabilities_req = &[
         0x03,      // Set Configuration Signal
@@ -1728,10 +1813,12 @@ fn set_config_command_works() {
     assert_matches!(complete, Poll::Ready(Ok(())));
 }
 
-#[test]
-fn set_config_error_response() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_error_response(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let caps = vec![
         ServiceCapability::MediaTransport,
         ServiceCapability::MediaCodec {
@@ -1744,7 +1831,7 @@ fn set_config_error_response() {
         Box::pin(peer.set_configuration(&StreamEndpointId(1), &StreamEndpointId(2), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     #[rustfmt::skip]
     let set_capabilities_req = &[
         0x03,      // Set Configuration Signal
@@ -1788,9 +1875,11 @@ fn set_config_error_response() {
 
 // Set Config: Reporting
 
-#[test]
-fn set_config_bad_reporting_format() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_bad_reporting_format(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     // TxLabel (4), ResponseReject, Signal, Relevant Cap (Reporting), BadPayloadFormat
     let rsp = &[0x43, 0x03, 0x02, 0x18];
@@ -1819,9 +1908,11 @@ fn set_config_reporting_ok() {
 
 // Set Config: Content Protection
 
-#[test]
-fn set_config_bad_content_protection_format() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_bad_content_protection_format(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     // TxLabel (4), ResponseReject, Signal, Relevant Cap (CP), BadCpFormat
     let rsp = &[0x43, 0x03, 0x04, 0x27];
@@ -1872,9 +1963,11 @@ fn build_recovery_cmd(recovery_type: u8, mrws: u8, mnmp: u8) -> [u8; 9] {
     ]
 }
 
-#[test]
-fn set_config_bad_recovery_type() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_bad_recovery_type(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     // TxLabel (4), Signal, Relevant Cap (Recovery), BadRecoveryType
     let rsp = &[0x43, 0x03, 0x03, 0x22];
@@ -1890,9 +1983,11 @@ fn set_config_bad_recovery_type() {
     stream_request_response(&mut exec, &mut stream, &mut remote, cmd, rsp);
 }
 
-#[test]
-fn set_config_bad_recovery_format() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_bad_recovery_format(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let cmd = &[
         0x40, 0x03, 0x04, 0x08, // TxLabel 4, Signal, ACP (1) and INT (2) SEID
@@ -1934,9 +2029,11 @@ fn set_config_recovery_ok() {
 
 // Media Codec
 
-#[test]
-fn set_config_bad_media_codec_format() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn set_config_bad_media_codec_format(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let cmd = &[
         0x40, 0x03, 0x04, 0x08, // TxLabel 4, Signal, ACP (1) and INT (2) SEID
@@ -1986,9 +2083,11 @@ fn set_config_media_type_ok() {
 // Set config must be at least 1 SEID and one configuration long.
 incoming_cmd_length_fail_test!(reconfigure_length_too_short, 0x05, 1);
 
-#[test]
-fn reconfigure_invalid_capabilities() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn reconfigure_invalid_capabilities(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let cmd = &[
         0x40, 0x05, 0x04, // TxLabel 4, Signal, ACP (1) SEID
@@ -2001,9 +2100,11 @@ fn reconfigure_invalid_capabilities() {
     stream_request_response(&mut exec, &mut stream, &mut remote, cmd, rsp);
 }
 
-#[test]
-fn reconfig_event_responder_send_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn reconfig_event_responder_send_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let reconfigure_cmd = &[
         0x40, 0x05, 0x04, // TxLabel 4, Signal, ACP (1) SEID
@@ -2034,12 +2135,14 @@ fn reconfig_event_responder_send_works() {
     assert!(respond_res.is_ok());
 
     // Expected response: Same TxLabel (4) & ResponseAccept, Signal,
-    expect_remote_recv(&[0x42, 0x05], &mut remote);
+    expect_remote_recv(&mut exec, &[0x42, 0x05], &mut remote);
 }
 
-#[test]
-fn reconfig_event_responder_reject_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn reconfig_event_responder_reject_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let reconfigure_cmd = &[
         0x40, 0x05, 0x04, // TxLabel 4, Signal, ACP (1) SEID
@@ -2071,13 +2174,15 @@ fn reconfig_event_responder_reject_works() {
 
     // Expected response: Same TxLabel (4) & ResponseReject, Signal,
     // Relevant capability, Error Code (Unsupported Config)
-    expect_remote_recv(&[0x43, 0x05, 0x07, 0x29], &mut remote);
+    expect_remote_recv(&mut exec, &[0x43, 0x05, 0x07, 0x29], &mut remote);
 }
 
-#[test]
-fn reconfigure_command_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn reconfigure_command_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     // This should cover all the implemented capabilities to confirm they are
     // encoded correctly.
     let caps = vec![
@@ -2094,7 +2199,7 @@ fn reconfigure_command_works() {
     let mut response_fut = Box::pin(peer.reconfigure(&StreamEndpointId(1), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     #[rustfmt::skip]
     let reconfigure_req = &[
         0x05,      // Reconfigure Signal
@@ -2126,10 +2231,12 @@ fn reconfigure_command_works() {
     assert_matches!(complete, Poll::Ready(Ok(())));
 }
 
-#[test]
-fn reconfigure_error_response() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn reconfigure_error_response(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let caps = vec![
         ServiceCapability::MediaTransport,
         ServiceCapability::MediaCodec {
@@ -2150,7 +2257,7 @@ fn reconfigure_error_response() {
     let mut response_fut = Box::pin(peer.reconfigure(&StreamEndpointId(1), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     #[rustfmt::skip]
     let reconfigure_req = &[
         0x05,      // Reconfigure Signal
@@ -2190,15 +2297,17 @@ fn reconfigure_error_response() {
 }
 
 /// This test covers the valid decoding of all valid ServiceCapabilities.
-#[test]
-fn get_capabilities_command_with_all_service_capabilities_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_capabilities_command_with_all_service_capabilities_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -2262,15 +2371,17 @@ fn get_capabilities_command_with_all_service_capabilities_works() {
 
 /// This test covers ServiceCapabilities that are both valid and invalid.
 /// Decoding these invalid capabilities should be handled gracefully, and they should be ignored.
-#[test]
-fn get_capabilities_command_with_invalid_service_capabilities_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_capabilities_command_with_invalid_service_capabilities_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -2323,15 +2434,19 @@ fn get_capabilities_command_with_invalid_service_capabilities_works() {
 }
 
 /// This test covers ServiceCapabilities that are only invalid.
-#[test]
-fn get_capabilities_command_with_only_invalid_service_capabilities_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn get_capabilities_command_with_only_invalid_service_capabilities_works(
+    transport_mode: Transport,
+) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -2377,9 +2492,11 @@ const DELAY_VALUE: u16 = 0x1234;
 incoming_cmd_length_fail_test!(delay_report_too_short, *CMD_DELAY_REPORT_VALUE, 2);
 incoming_cmd_length_fail_test!(delay_report_too_long, *CMD_DELAY_REPORT_VALUE, 4);
 
-#[test]
-fn delay_report_event_responder_send_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn delay_report_event_responder_send_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_DELAY_REPORT.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -2401,12 +2518,14 @@ fn delay_report_event_responder_send_works() {
         0x42, // TxLabel (4) + ResponseAccept (0x02)
         0x0D, // DelayReport Signal
     ];
-    expect_remote_recv(delay_report_rsp, &mut remote);
+    expect_remote_recv(&mut exec, delay_report_rsp, &mut remote);
 }
 
-#[test]
-fn delay_report_responder_reject_works() {
-    let (mut exec, mut stream, _, mut remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn delay_report_responder_reject_works(transport_mode: Transport) {
+    let (mut exec, mut stream, _, mut remote) = setup_stream_test(transport_mode);
 
     let mut write_fut = remote.send(CMD_DELAY_REPORT.to_vec());
     exec.run_until_stalled(&mut write_fut).expect("should be ready").expect("write should succeed");
@@ -2427,18 +2546,20 @@ fn delay_report_responder_reject_works() {
         0x0D, // Delay Report
         0x12, // BAD_ACP_SEID
     ];
-    expect_remote_recv(delay_report_rsp, &mut remote);
+    expect_remote_recv(&mut exec, delay_report_rsp, &mut remote);
 }
 
-#[test]
-fn delay_report_command_works() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn delay_report_command_works(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.delay_report(&seid, 0xc0de));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0D, received[1]); // 0x0D = DelayReport
@@ -2464,15 +2585,17 @@ fn delay_report_command_works() {
     };
 }
 
-#[test]
-fn delay_report_reject_command() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn delay_report_reject_command(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, mut remote) = setup_peer();
+    let (peer, mut remote) = setup_peer(transport_mode);
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.delay_report(&seid, 0xc0de));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&mut remote).unwrap();
+    let received = recv_remote(&mut exec, &mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0D, received[1]); // 0x0D = DelayReport

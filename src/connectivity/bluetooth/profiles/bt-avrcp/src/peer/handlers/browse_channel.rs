@@ -224,8 +224,10 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_utils::PollExt;
-    use fuchsia_bluetooth::types::Channel;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use futures::{StreamExt, TryStreamExt, pin_mut};
+    use std::task::Poll;
+    use test_case::test_case;
 
     use fidl_fuchsia_bluetooth_avrcp::{
         MediaAttributes, TargetHandlerMarker, TargetHandlerRequest,
@@ -259,45 +261,65 @@ mod tests {
 
     /// Builds and returns the browse channel handler. Also returns a local and remote AVCTP peer
     /// which can be used to send/receive AVCTP commands.
-    fn setup_handler_with_remote_peer()
-    -> (BrowseChannelHandler, avctp::AvctpPeer, avctp::AvctpCommandStream, avctp::AvctpPeer) {
+    fn setup_handler_with_remote_peer(
+        transport: Transport,
+    ) -> (BrowseChannelHandler, avctp::AvctpPeer, avctp::AvctpCommandStream, avctp::AvctpPeer) {
         let handler = BrowseChannelHandler::new(Arc::new(TargetDelegate::new()));
 
-        let (left, right) = Channel::create();
-        let local_peer = avctp::AvctpPeer::new(left);
+        let (client, server) = create_test_channels(transport);
+        let (local, remote) = match transport {
+            Transport::Socket => (client, server),
+            Transport::Fidl => (server, client),
+        };
+        let local_peer = avctp::AvctpPeer::new(local);
         let local_stream = local_peer.take_command_stream();
 
-        let remote_peer = avctp::AvctpPeer::new(right);
+        let remote_peer = avctp::AvctpPeer::new(remote);
 
         (handler, local_peer, local_stream, remote_peer)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn handle_invalid_browse_command_sends_reject_but_no_error() {
+    fn handle_invalid_browse_command_sends_reject_but_no_error(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
         let (handler, _local_peer, mut local_stream, remote_peer) =
-            setup_handler_with_remote_peer();
+            setup_handler_with_remote_peer(transport);
 
         let invalid_command = [0x00, 0x01, 0x02];
         let mut remote_response_stream =
             remote_peer.send_command(&invalid_command).expect("can send command");
 
         // `bt-avrcp` (e.g local) should receive the command.
-        let received_command = local_stream.next().await.unwrap().expect("should receive command");
+        let received_command = exec
+            .run_until_stalled(&mut local_stream.next())
+            .expect("should be ready")
+            .unwrap()
+            .expect("should receive command");
         // Once handled, we expect the outgoing general reject. Even though it's an invalid command,
         // we don't expect to Error.
-        assert_matches!(handler.handle_command(received_command).await, Ok(_));
+        let handle_fut = handler.handle_command(received_command);
+        pin_mut!(handle_fut);
+        assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(_)));
 
         // The general reject should be received by the remote.
-        let response =
-            remote_response_stream.next().await.unwrap().expect("should receive response");
+        let response = exec
+            .run_until_stalled(&mut remote_response_stream.next())
+            .expect("should be ready")
+            .unwrap()
+            .expect("should receive response");
         let payload = BrowsePreamble::decode(response.body()).expect("valid response");
         assert_eq!(payload.pdu_id, u8::from(&PduId::GeneralReject));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn handle_unimplemented_browse_channel_sends_reject_but_no_error() {
+    fn handle_unimplemented_browse_channel_sends_reject_but_no_error(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
         let (handler, _local_peer, mut local_stream, remote_peer) =
-            setup_handler_with_remote_peer();
+            setup_handler_with_remote_peer(transport);
 
         // Valid PduId
         let unsupported_command = [u8::from(&PduId::PlayItem), 0, 1, 55];
@@ -305,21 +327,33 @@ mod tests {
             remote_peer.send_command(&unsupported_command).expect("can send command");
 
         // `bt-avrcp` (e.g local) should receive the command.
-        let received_command = local_stream.next().await.unwrap().expect("should receive command");
+        let received_command = exec
+            .run_until_stalled(&mut local_stream.next())
+            .expect("should be ready")
+            .unwrap()
+            .expect("should receive command");
         // Unimplemented command is OK - general reject to let peer know but no Error.
-        assert_matches!(handler.handle_command(received_command).await, Ok(_));
+        let handle_fut = handler.handle_command(received_command);
+        pin_mut!(handle_fut);
+        assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(_)));
 
         // The general reject should be received by the remote.
-        let response =
-            remote_response_stream.next().await.unwrap().expect("should receive response");
+        let response = exec
+            .run_until_stalled(&mut remote_response_stream.next())
+            .expect("should be ready")
+            .unwrap()
+            .expect("should receive response");
         let payload = BrowsePreamble::decode(response.body()).expect("valid response");
         assert_eq!(payload.pdu_id, u8::from(&PduId::GeneralReject));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn handle_get_total_number_of_items_command() {
+    fn handle_get_total_number_of_items_command(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
         let (handler, _local_peer, mut local_stream, remote_peer) =
-            setup_handler_with_remote_peer();
+            setup_handler_with_remote_peer(transport);
 
         // Remote peer sends us a GetTotalNumberOfItems command.
         let cmd = GetTotalNumberOfItemsCommand::new(Scope::MediaPlayerList);
@@ -332,23 +366,34 @@ mod tests {
             remote_peer.send_command(&total_buf).expect("can send command");
 
         // `bt-avrcp` (e.g local) should receive the command.
-        let received_command = local_stream.next().await.unwrap().expect("should receive command");
+        let received_command = exec
+            .run_until_stalled(&mut local_stream.next())
+            .expect("should be ready")
+            .unwrap()
+            .expect("should receive command");
         // Should handle okay.
-        assert_matches!(handler.handle_command(received_command).await, Ok(_));
+        let handle_fut = handler.handle_command(received_command);
+        pin_mut!(handle_fut);
+        assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(_)));
 
         // Response should be received by remote.
-        let response =
-            remote_response_stream.next().await.unwrap().expect("should receive response");
+        let response = exec
+            .run_until_stalled(&mut remote_response_stream.next())
+            .expect("should be ready")
+            .unwrap()
+            .expect("should receive response");
         let payload = BrowsePreamble::decode(response.body()).expect("valid response");
         assert_eq!(payload.pdu_id, u8::from(&PduId::GetTotalNumberOfItems));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn handle_get_item_attribues_command() {
+    fn handle_get_item_attribues_command(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let (handler, _local_peer, mut local_stream, remote_peer) =
-            setup_handler_with_remote_peer();
+            setup_handler_with_remote_peer(transport);
 
         let (target_proxy, mut target_stream) =
             fidl::endpoints::create_proxy_and_stream::<TargetHandlerMarker>();
@@ -399,12 +444,14 @@ mod tests {
         assert_eq!(payload.pdu_id, u8::from(&PduId::GetItemAttributes));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn handle_get_item_attribues_command_reject() {
+    fn handle_get_item_attribues_command_reject(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let (handler, _local_peer, mut local_stream, remote_peer) =
-            setup_handler_with_remote_peer();
+            setup_handler_with_remote_peer(transport);
 
         let (target_proxy, mut target_stream) =
             fidl::endpoints::create_proxy_and_stream::<TargetHandlerMarker>();
@@ -447,10 +494,13 @@ mod tests {
         assert_eq!(payload.pdu_id, u8::from(&PduId::GeneralReject));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn peer_disconnects_while_handling_command_returns_error() {
+    fn peer_disconnects_while_handling_command_returns_error(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
         let (handler, _local_peer, mut local_stream, remote_peer) =
-            setup_handler_with_remote_peer();
+            setup_handler_with_remote_peer(transport);
 
         // Remote peer sends us a GetTotalNumberOfItems command.
         let cmd = GetTotalNumberOfItemsCommand::new(Scope::MediaPlayerList);
@@ -463,13 +513,21 @@ mod tests {
             remote_peer.send_command(&total_buf).expect("can send command");
 
         // `bt-avrcp` (e.g local) should receive the command.
-        let received_command = local_stream.next().await.unwrap().expect("should receive command");
+        let received_command = exec
+            .run_until_stalled(&mut local_stream.next())
+            .expect("should be ready")
+            .unwrap()
+            .expect("should receive command");
 
         // Before we get to handle it, the peer disconnects.
         drop(remote_peer);
         drop(remote_response_stream);
 
+        // Yield to let background tasks run and see the closure.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
         // Handling should return Error.
-        assert_matches!(handler.handle_command(received_command).await, Err(_));
+        let handle_fut = handler.handle_command(received_command);
+        assert_matches!(exec.run_singlethreaded(handle_fut), Err(_));
     }
 }

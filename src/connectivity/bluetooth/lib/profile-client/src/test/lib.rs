@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use fuchsia_bluetooth::types::{self as bt, PeerId};
 use futures::{Stream, StreamExt};
 use profile_client::ProfileClient;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use {fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr};
 
 pub struct TestProfileServerEndpoints {
     pub proxy: bredr::ProfileProxy,
@@ -134,7 +135,7 @@ impl TestProfileServer {
                     }
                 }
 
-                let (near_bt_channel, far_bt_channel) = bt::Channel::create();
+                let (near_bt_channel, far_bt_channel) = bt::Channel::create_socket_pair();
                 let far_bredr_channel: bredr::Channel =
                     far_bt_channel.try_into().expect("BT Channel into FIDL BREDR Channel");
                 responder.send(Ok(far_bredr_channel)).expect("Send channel");
@@ -160,7 +161,9 @@ impl TestProfileServer {
                 payload: bredr::ProfileConnectScoRequest { initiator, .. },
                 ..
             })) => {
-                panic!("Got SCO connection request expected initatior: {expected_initiator:}, actual initiator: {initiator:?}");
+                panic!(
+                    "Got SCO connection request expected initatior: {expected_initiator:}, actual initiator: {initiator:?}"
+                );
             }
             _ => panic!(
                 "Unexpected result on profile request stream expecting SCO connection: {request:?}",
@@ -185,7 +188,7 @@ impl TestProfileServer {
         peer_id: PeerId,
         protocol_list: Vec<bredr::ProtocolDescriptor>,
     ) -> bt::Channel {
-        let (near_bt_channel, far_bt_channel) = bt::Channel::create();
+        let (near_bt_channel, far_bt_channel) = bt::Channel::create_socket_pair();
         let far_bredr_channel: bredr::Channel =
             far_bt_channel.try_into().expect("BT Channel into FIDL BREDR Channel");
 

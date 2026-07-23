@@ -473,11 +473,11 @@ impl Inspect for &mut Streams {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fuchsia_async as fasync;
-    use fuchsia_bluetooth::types::Channel;
     use std::pin::pin;
     use std::task::Poll;
+    use test_case::test_case;
 
     use crate::media_task::tests::TestMediaTaskBuilder;
     use crate::media_types::*;
@@ -611,8 +611,10 @@ pub(crate) mod tests {
         );
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn rejects_unsupported_configurations() {
+    fn rejects_unsupported_configurations(transport: Transport) {
         // Needed to make fasync::Tasks.
         let _exec = fasync::TestExecutor::new();
         let mut builder = TestMediaTaskBuilder::new_reconfigurable();
@@ -675,7 +677,7 @@ pub(crate) mod tests {
 
         // need to be in the open state for reconfigure
         assert!(stream.endpoint_mut().establish().is_ok());
-        let (_remote, transport) = Channel::create();
+        let (transport, _remote) = create_test_channels(transport);
         match stream.endpoint_mut().receive_channel(transport) {
             Ok(false) => {}
             Ok(true) => panic!("Only should be expecting one channel"),
@@ -701,8 +703,10 @@ pub(crate) mod tests {
         assert_eq!(task.codec_config, MediaCodecConfig::try_from(&new_codec_caps[0]).unwrap());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn reconfigure_runner_fails() {
+    fn reconfigure_runner_fails(transport: Transport) {
         // Needed to make fasync::Tasks.
         let _exec = fasync::TestExecutor::new();
         let mut builder = TestMediaTaskBuilder::new();
@@ -733,7 +737,7 @@ pub(crate) mod tests {
 
         // need to be in the open state for reconfigure
         assert!(stream.endpoint_mut().establish().is_ok());
-        let (_remote, transport) = Channel::create();
+        let (transport, _remote) = create_test_channels(transport);
         match stream.endpoint_mut().receive_channel(transport) {
             Ok(false) => {}
             Ok(true) => panic!("Only should be expecting one channel"),
@@ -777,8 +781,10 @@ pub(crate) mod tests {
         stream.suspend().expect("stream should suspend ok")
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn suspend_stops_media_task() {
+    fn suspend_stops_media_task(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut task_builder = TestMediaTaskBuilder::new();
@@ -797,7 +803,7 @@ pub(crate) mod tests {
         assert!(stream.configure(&PeerId(1), &remote_id, vec![sbc_codec_cap]).is_ok());
 
         stream.endpoint_mut().establish().expect("establishment should start okay");
-        let (_remote, transport) = Channel::create();
+        let (transport, _remote) = create_test_channels(transport);
         let _ = stream.endpoint_mut().receive_channel(transport).expect("ready for a channel");
 
         assert!(stream.start().is_ok());
@@ -832,8 +838,10 @@ pub(crate) mod tests {
         assert!(task.is_started());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn media_task_ending_ends_future() {
+    fn media_task_ending_ends_future(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut task_builder = TestMediaTaskBuilder::new();
@@ -853,7 +861,7 @@ pub(crate) mod tests {
         assert!(stream.configure(&peer_id, &remote_id, vec![sbc_codec_cap]).is_ok());
 
         stream.endpoint_mut().establish().expect("establishment should start okay");
-        let (_remote, transport) = Channel::create();
+        let (transport, _remote) = create_test_channels(transport);
         let _ = stream.endpoint_mut().receive_channel(transport).expect("ready for a channel");
 
         let stream_finish_fut = stream.start().expect("start to succeed with a future");
@@ -905,8 +913,10 @@ pub(crate) mod tests {
         assert!(task.is_started());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn set_delay_correct_results_transmits_to_task() {
+    fn set_delay_correct_results_transmits_to_task(transport: Transport) {
         let mut _exec = fasync::TestExecutor::new();
 
         let mut task_builder = TestMediaTaskBuilder::new_delayable();
@@ -932,7 +942,7 @@ pub(crate) mod tests {
         stream.set_delay(delay_set.clone()).expect("after configure, delay is fine");
 
         stream.endpoint_mut().establish().expect("establishment should start okay");
-        let (_remote, transport) = Channel::create();
+        let (transport, _remote) = create_test_channels(transport);
         let _ = stream.endpoint_mut().receive_channel(transport).expect("ready for a channel");
         let _stream_finish_fut = stream.start().expect("start to succeed with a future");
 

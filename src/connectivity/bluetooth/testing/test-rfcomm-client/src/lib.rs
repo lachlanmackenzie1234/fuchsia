@@ -404,12 +404,14 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_rfcomm::profile::build_rfcomm_protocol;
     use fidl::endpoints::Proxy;
     use fidl_fuchsia_bluetooth::ErrorCode;
     use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileRequestStream};
     use fidl_fuchsia_bluetooth_rfcomm_test::{RfcommTestMarker, RfcommTestRequestStream};
     use fixture::fixture;
+    use test_case::test_case;
 
     type TestFixture = (RfcommManager, ProfileRequestStream, RfcommTestRequestStream);
 
@@ -478,7 +480,7 @@ mod tests {
             let profile_fut = async {
                 match profile_server.next().await {
                     Some(Ok(bredr::ProfileRequest::Connect { responder, .. })) => {
-                        let (left, right) = Channel::create();
+                        let (left, right) = Channel::create_socket_pair();
                         let _ = responder
                             .send(left.try_into().map_err(|_e| ErrorCode::Failed))
                             .unwrap();
@@ -533,7 +535,7 @@ mod tests {
         // Peer connects to us.
         let remote_id = PeerId(8978);
         let random_channel_number = ServerChannel::try_from(7).unwrap();
-        let (_peer_channel, local_channel) = Channel::create();
+        let (_peer_channel, local_channel) = Channel::create_socket_pair();
         let protocol: Vec<bredr::ProtocolDescriptor> =
             build_rfcomm_protocol(random_channel_number).iter().map(Into::into).collect();
         assert_matches!(
@@ -614,13 +616,15 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn rfcomm_session_task() {
+    async fn rfcomm_session_task(transport: Transport) {
         let id = PeerId(999);
         let mut session = RfcommSession::new(id);
 
         let random_channel_number = ServerChannel::try_from(4).unwrap();
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         session.new_rfcomm_channel(random_channel_number, local);
 
         assert!(session.is_active(&random_channel_number));
@@ -651,18 +655,20 @@ mod tests {
         assert!(!session.close_rfcomm_channel(&random_channel_number));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn second_channel_overwrites_first_in_rfcomm_session() {
+    async fn second_channel_overwrites_first_in_rfcomm_session(transport: Transport) {
         let id = PeerId(78);
         let mut session = RfcommSession::new(id);
 
         let random_channel_number = ServerChannel::try_from(10).unwrap();
-        let (local1, remote1) = Channel::create();
+        let (local1, remote1) = create_test_channels(transport);
         session.new_rfcomm_channel(random_channel_number, local1);
         assert!(session.is_active(&random_channel_number));
 
         // Can create a new RFCOMM channel, this will overwrite the existing one.
-        let (local2, mut remote2) = Channel::create();
+        let (local2, mut remote2) = create_test_channels(transport);
         session.new_rfcomm_channel(random_channel_number, local2);
         assert!(session.is_active(&random_channel_number));
 
@@ -674,12 +680,14 @@ mod tests {
         expect_data(&mut remote2, data).await;
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn closing_sender_closes_rfcomm_channel_task() {
+    fn closing_sender_closes_rfcomm_channel_task(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let random_channel_number = ServerChannel::try_from(10).unwrap();
-        let (local, _remote) = Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         let (_sender, receiver) = mpsc::channel(0);
 
         let mut channel_task =
@@ -691,12 +699,14 @@ mod tests {
         let _ = exec.run_until_stalled(&mut channel_task).expect("task should complete");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn closing_channel_closes_rfcomm_channel_task() {
+    fn closing_channel_closes_rfcomm_channel_task(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let random_channel_number = ServerChannel::try_from(10).unwrap();
-        let (local, _remote) = Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         let (_sender, receiver) = mpsc::channel(0);
 
         let mut channel_task =

@@ -209,6 +209,8 @@ impl SrmOperation for PutOperation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bt_channel_test_support::Transport;
+    use test_case::test_case;
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;
@@ -230,10 +232,12 @@ mod tests {
         PutOperation::new(HeaderSet::from_headers(initial_headers).unwrap(), transport)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn put_operation_single_chunk_is_ok() {
+    fn put_operation_single_chunk_is_ok(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(transport, /* srm_supported */ false);
         let operation =
             setup_put_operation(&manager, vec![Header::ConnectionId(0x1u32.try_into().unwrap())]);
 
@@ -266,7 +270,7 @@ mod tests {
     #[fuchsia::test]
     fn put_operation_multiple_chunks_is_ok() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let mut operation = setup_put_operation(&manager, vec![]);
 
         let payload: Vec<u8> = (1..100).collect();
@@ -307,7 +311,7 @@ mod tests {
     #[fuchsia::test]
     fn put_operation_delete_is_ok() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let operation = setup_put_operation(&manager, vec![]);
 
         let headers = HeaderSet::from_headers(vec![
@@ -335,7 +339,7 @@ mod tests {
     #[fuchsia::test]
     fn put_operation_terminate_success() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let mut operation = setup_put_operation(&manager, vec![]);
 
         // Write the first chunk of data to "start" the operation.
@@ -365,7 +369,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn put_with_body_header_is_error() {
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let mut operation = setup_put_operation(&manager, vec![]);
 
         let payload = vec![1, 2, 3];
@@ -391,7 +395,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn delete_with_body_header_is_error() {
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
 
         let payload = vec![1, 2, 3];
         // Body shouldn't be included in delete.
@@ -417,7 +421,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn put_operation_terminate_before_start_error() {
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let operation = setup_put_operation(&manager, vec![]);
 
         // Trying to terminate early doesn't work as the operation has not started.
@@ -429,7 +433,7 @@ mod tests {
     #[fuchsia::test]
     fn put_operation_srm_enabled_is_ok() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ true);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let mut operation = setup_put_operation(&manager, vec![]);
 
         {
@@ -495,7 +499,7 @@ mod tests {
     #[fuchsia::test]
     fn client_disable_srm_mid_operation_is_ignored() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ true);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let mut operation = setup_put_operation(&manager, vec![]);
         // Pretend first write happened already by manually setting the operation as started.
         if let Status::NotStarted(_) = &mut operation.status {
@@ -527,7 +531,7 @@ mod tests {
     #[fuchsia::test]
     fn application_select_srm_success() {
         let _exec = fasync::TestExecutor::new();
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let mut operation = setup_put_operation(&manager, vec![]);
         assert_eq!(operation.srm, SingleResponseMode::Disable);
         // The application requesting to disable SRM when it isn't supported is OK.
@@ -536,7 +540,7 @@ mod tests {
         assert_eq!(operation.srm, SingleResponseMode::Disable);
 
         // The application requesting to disable SRM when it is supported is OK.
-        let (manager, _remote) = new_manager(/* srm_supported */ true);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let mut operation = setup_put_operation(&manager, vec![]);
         assert_eq!(operation.srm, SingleResponseMode::Enable);
         let mut headers = HeaderSet::from_header(SingleResponseMode::Disable.into());
@@ -544,7 +548,7 @@ mod tests {
         assert_eq!(operation.srm, SingleResponseMode::Disable);
 
         // The application requesting to enable SRM when it is supported is OK.
-        let (manager, _remote) = new_manager(/* srm_supported */ true);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let mut operation = setup_put_operation(&manager, vec![]);
         assert_eq!(operation.srm, SingleResponseMode::Enable);
         let mut headers = HeaderSet::from_header(SingleResponseMode::Enable.into());
@@ -555,7 +559,7 @@ mod tests {
     #[fuchsia::test]
     fn application_enable_srm_when_not_supported_is_error() {
         let _exec = fasync::TestExecutor::new();
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let mut operation = setup_put_operation(&manager, vec![]);
         assert_eq!(operation.srm, SingleResponseMode::Disable);
         let mut headers = HeaderSet::from_header(SingleResponseMode::Enable.into());
@@ -566,7 +570,7 @@ mod tests {
     #[fuchsia::test]
     fn peer_srm_response() {
         let _exec = fasync::TestExecutor::new();
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let mut operation = setup_put_operation(&manager, vec![]);
         // An enable response from the peer when SRM is disabled locally should not enable SRM.
         let headers = HeaderSet::from_header(SingleResponseMode::Enable.into());
@@ -577,7 +581,7 @@ mod tests {
         operation.check_response_for_srm(&headers);
         assert_eq!(operation.srm, SingleResponseMode::Disable);
 
-        let (manager, _remote) = new_manager(/* srm_supported */ true);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let mut operation = setup_put_operation(&manager, vec![]);
         // An enable response from the peer when SRM is enable is a no-op.
         let headers = HeaderSet::from_header(SingleResponseMode::Enable.into());
@@ -588,7 +592,7 @@ mod tests {
         operation.check_response_for_srm(&headers);
         assert_eq!(operation.srm, SingleResponseMode::Disable);
 
-        let (manager, _remote) = new_manager(/* srm_supported */ true);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let mut operation = setup_put_operation(&manager, vec![]);
         // A response with no SRM header should be treated like a disable request.
         operation.check_response_for_srm(&HeaderSet::new());
@@ -598,7 +602,7 @@ mod tests {
     #[fuchsia::test]
     fn put_with_connection_id_already_set_is_error() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         // The initial operation contains a ConnectionId header which was negotiated during CONNECT.
         let mut operation =
             setup_put_operation(&manager, vec![Header::ConnectionId(ConnectionIdentifier(5))]);

@@ -202,16 +202,26 @@ impl Channel {
         Self::from_socket(socket, max_tx_size).unwrap()
     }
 
-    pub fn create() -> (Self, Self) {
-        Self::create_with_max_tx(Self::DEFAULT_MAX_TX)
+    pub fn create_socket_pair() -> (Self, Self) {
+        Self::create_socket_pair_with_max_tx(Self::DEFAULT_MAX_TX)
     }
 
-    pub fn create_with_max_tx(max_tx_size: usize) -> (Self, Self) {
+    pub fn create_socket_pair_with_max_tx(max_tx_size: usize) -> (Self, Self) {
         let (remote, local) = zx::Socket::create_datagram();
         (
             Channel::from_socket(remote, max_tx_size).unwrap(),
             Channel::from_socket(local, max_tx_size).unwrap(),
         )
+    }
+
+    // TODO(https://fxbug.dev/362947192): Delete these old helper names once starnix bluetooth_aidl has been migrated.
+    pub fn create() -> (Self, Self) {
+        Self::create_socket_pair()
+    }
+
+    // TODO(https://fxbug.dev/362947192): Delete these old helper names once starnix bluetooth_aidl has been migrated.
+    pub fn create_with_max_tx(max_tx_size: usize) -> (Self, Self) {
+        Self::create_socket_pair_with_max_tx(max_tx_size)
     }
 
     pub fn max_tx_size(&self) -> usize {

@@ -26,9 +26,12 @@ rustc_library("bt-avdtp") {
 
   test_deps = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
     "//src/lib/async-utils",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [
@@ -44,6 +47,11 @@ rustc_library("bt-avdtp") {
 
 fuchsia_unittest_package("bt-avdtp-tests") {
   deps = [ ":bt-avdtp_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tests") {

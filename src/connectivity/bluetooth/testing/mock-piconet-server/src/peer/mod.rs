@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, format_err};
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_bredr_test as bredr_test;
 use fuchsia_bluetooth::detachable_map::DetachableMap;
 use fuchsia_bluetooth::profile::Psm;
 use fuchsia_bluetooth::types::{Channel, PeerId};
@@ -12,7 +14,6 @@ use futures::stream::StreamExt;
 use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use {fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_bredr_test as bredr_test};
 
 mod search;
 pub mod service;
@@ -199,7 +200,7 @@ impl MockPeer {
 
         // Build the L2CAP descriptor and notify the receiver.
         let protocol = build_l2cap_descriptor(psm);
-        let (local, remote) = Channel::create_with_max_tx(DEFAULT_TX_SDU_SIZE);
+        let (local, remote) = Channel::create_socket_pair_with_max_tx(DEFAULT_TX_SDU_SIZE);
         proxy.connected(&other.into(), remote.try_into()?, &protocol)?;
 
         // Notify observer relay of the connection.
@@ -246,10 +247,11 @@ mod tests {
     use bt_rfcomm::ServerChannel;
     use bt_rfcomm::profile::{is_rfcomm_protocol, server_channel_from_protocol};
     use fidl::endpoints::{RequestStream, create_proxy_and_stream};
+    use fidl_fuchsia_bluetooth as fidl_bt;
+    use fuchsia_async as fasync;
     use fuchsia_bluetooth::profile::ProtocolDescriptor;
     use futures::task::Poll;
     use std::pin::pin;
-    use {fidl_fuchsia_bluetooth as fidl_bt, fuchsia_async as fasync};
 
     use crate::profile::tests::{a2dp_service_definition, rfcomm_service_definition};
     use crate::types::RegisteredServiceId;

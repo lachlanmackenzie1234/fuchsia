@@ -537,11 +537,13 @@ impl PeerTask {
 mod tests {
     use super::*;
     use crate::peer::ag_indicators::AgIndicatorIndex;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl_fuchsia_bluetooth_bredr as bredr;
+    use test_case::test_case;
 
-    async fn create_test_peer_task() -> PeerTask {
+    async fn create_test_peer_task(transport: Transport) -> PeerTask {
         let hf_features = HandsFreeFeatureSupport::default();
-        let (rfcomm_local, _rfcomm_remote) = Channel::create();
+        let (rfcomm_local, _rfcomm_remote) = create_test_channels(transport);
 
         let (profile_proxy, _profile_stream) =
             fidl::endpoints::create_proxy_and_stream::<bredr::ProfileMarker>();
@@ -599,10 +601,12 @@ mod tests {
         peer_task
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
     // Test that the peer task does not err when starting with a call in progress.
-    async fn initial_indicator_with_in_progress_call() {
-        let mut peer_task = create_test_peer_task().await;
+    async fn initial_indicator_with_in_progress_call(transport: Transport) {
+        let mut peer_task = create_test_peer_task(transport).await;
 
         // Set initial indicator values
         let values = vec![
@@ -622,9 +626,11 @@ mod tests {
             .expect("Failed to handle call in progress");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn handle_bsir_response() {
-        let mut peer_task = create_test_peer_task().await;
+    async fn handle_bsir_response(transport: Transport) {
+        let mut peer_task = create_test_peer_task(transport).await;
 
         // Simulate receiving BSIR response
         let at_response =
@@ -633,10 +639,12 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn request_outgoing_call_dial_from_number_injection_rejected() {
+    async fn request_outgoing_call_dial_from_number_injection_rejected(transport: Transport) {
         use futures::stream::StreamExt;
-        let mut peer_task = create_test_peer_task().await;
+        let mut peer_task = create_test_peer_task(transport).await;
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_hfp::PeerHandlerMarker>();
 
@@ -658,10 +666,12 @@ mod tests {
         assert_eq!(result, Err(zx::Status::INVALID_ARGS.into_raw()));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn request_outgoing_call_dial_from_location_injection_rejected() {
+    async fn request_outgoing_call_dial_from_location_injection_rejected(transport: Transport) {
         use futures::stream::StreamExt;
-        let mut peer_task = create_test_peer_task().await;
+        let mut peer_task = create_test_peer_task(transport).await;
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_hfp::PeerHandlerMarker>();
 

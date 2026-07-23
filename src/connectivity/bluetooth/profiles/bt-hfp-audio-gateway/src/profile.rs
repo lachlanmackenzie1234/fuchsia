@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use profile_client::ProfileClient;
-use {fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr};
 
 use crate::config::AudioGatewayFeatureSupport;
 use crate::service_definitions;
@@ -53,6 +54,8 @@ pub(crate) mod test_server {
         (profile, proxy, stream.into())
     }
 
+    use fuchsia_bluetooth::types::Channel;
+
     /// Holds all the server side resources associated with a `Profile`'s connection to
     /// fuchsia.bluetooth.bredr.Profile. Provides helper methods for common test related tasks.
     /// Some fields are optional because they are not populated until the Profile has completed
@@ -61,7 +64,7 @@ pub(crate) mod test_server {
         pub stream: bredr::ProfileRequestStream,
         pub receiver: Option<bredr::ConnectionReceiverProxy>,
         pub results: Option<bredr::SearchResultsProxy>,
-        pub connections: Vec<zx::Socket>,
+        pub connections: Vec<Channel>,
     }
 
     impl From<bredr::ProfileRequestStream> for LocalProfileTestServer {

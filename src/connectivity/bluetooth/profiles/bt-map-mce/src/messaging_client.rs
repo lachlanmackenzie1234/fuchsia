@@ -515,6 +515,7 @@ mod tests {
 
     use async_test_helpers::{expect_stream_item, run_while};
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_map::{MapSupportedFeatures, MessageType};
     use bt_obex::header::{Header, HeaderSet};
     use bt_obex::operation::{OpCode, RequestPacket, ResponseCode, ResponsePacket};
@@ -529,6 +530,7 @@ mod tests {
     use futures::SinkExt;
     use packet_encoding::{Decodable, Encodable};
     use std::pin::pin;
+    use test_case::test_case;
 
     use crate::message_access_service::tests::send_ok_response;
     use crate::message_notification_service::tests::send_packet;
@@ -577,13 +579,14 @@ mod tests {
     fn test_messaging_client(
         exec: &mut fasync::TestExecutor,
         initial_obex_connect_success: bool,
+        transport: Transport,
     ) -> (ProfileRequestStream, MessagingClient, Channel, MessagingClientProxy) {
         let (profile_proxy, mut profile_requests) = create_proxy_and_stream::<ProfileMarker>();
 
         let mut messaging_client = MessagingClient::new(profile_proxy);
 
         // Can connect to MAS instance.
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         {
             let connect_fut = messaging_client.connect_new_mas(
                 PeerId(TEST_PEER_ID),
@@ -640,8 +643,9 @@ mod tests {
     fn fake_remote_msn_connection(
         exec: &mut fasync::TestExecutor,
         messaging_client: &mut MessagingClient,
+        transport: Transport,
     ) -> Channel {
-        let (local, mut remote_mns) = Channel::create();
+        let (local, mut remote_mns) = create_test_channels(transport);
         let connect_fut = messaging_client.new_mns_connection(
             PeerId(TEST_PEER_ID),
             vec![ProtocolDescriptor {
@@ -671,11 +675,13 @@ mod tests {
         remote_mns
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn accessor_stream() {
+    fn accessor_stream(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (_profile_requests, mut messaging_client, _remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec, true);
+            test_messaging_client(&mut exec, true, transport);
 
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
@@ -706,11 +712,13 @@ mod tests {
             .expect_err("should have returned error");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn accessor_terminatation() {
+    fn accessor_terminatation(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (_profile_requests, mut messaging_client, _remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec, true);
+            test_messaging_client(&mut exec, true, transport);
 
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
@@ -748,13 +756,15 @@ mod tests {
         exec.run_until_stalled(&mut accessor_fut).expect_pending("should be running");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn list_all_mas_instances() {
+    fn list_all_mas_instances(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         // Set up MessagingClient and run the Accessor FIDL.
         let (_profile_requests, mut messaging_client, _remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec, true);
+            test_messaging_client(&mut exec, true, transport);
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
@@ -783,13 +793,15 @@ mod tests {
         )
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn list_all_mas_instances_fail() {
+    fn list_all_mas_instances_fail(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         // Set up MessagingClient and run the Accessor FIDL.
         let (_profile_requests, mut messaging_client, remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec, true);
+            test_messaging_client(&mut exec, true, transport);
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
@@ -812,13 +824,15 @@ mod tests {
         let _ = request_res.expect("fidl ok").expect_err("should error");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn set_notification_registration() {
+    fn set_notification_registration(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         // Set up MessagingClient and run the Accessor FIDL.
         let (_profile_requests, mut messaging_client, mut remote_mas, messaging_client_proxy) =
-            test_messaging_client(&mut exec, false);
+            test_messaging_client(&mut exec, false, transport);
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
@@ -871,7 +885,7 @@ mod tests {
         exec.run_until_stalled(&mut request_fut).expect_pending("should not be ready");
 
         // Mimic an incoming MNS connection which should successfully set up a MNS server.
-        let remote_mns = fake_remote_msn_connection(&mut exec, &mut messaging_client);
+        let remote_mns = fake_remote_msn_connection(&mut exec, &mut messaging_client, transport);
 
         exec.run_until_stalled(&mut accessor_fut).expect_pending("accessor server still running");
 
@@ -936,7 +950,7 @@ mod tests {
         exec.run_until_stalled(&mut request_fut).expect_pending("should not be ready");
 
         // Mimic an incoming MNS connection which should successfully set up a MNS server.
-        let _remote_mns = fake_remote_msn_connection(&mut exec, &mut messaging_client);
+        let _remote_mns = fake_remote_msn_connection(&mut exec, &mut messaging_client, transport);
 
         exec.run_until_stalled(&mut accessor_fut).expect_pending("accessor server still running");
 

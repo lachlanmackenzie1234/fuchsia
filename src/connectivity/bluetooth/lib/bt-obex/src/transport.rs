@@ -149,6 +149,7 @@ impl ObexTransportManager {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use futures::SinkExt;
 
     use async_test_helpers::expect_stream_item;
@@ -156,11 +157,13 @@ pub(crate) mod test_utils {
     use packet_encoding::Decodable;
 
     use crate::operation::RequestPacket;
-    use async_utils::PollExt;
 
     /// Set `srm_supported` to true to build a transport that supports the OBEX SRM feature.
-    pub(crate) fn new_manager(srm_supported: bool) -> (ObexTransportManager, Channel) {
-        let (local, remote) = Channel::create();
+    pub(crate) fn new_manager(
+        transport: Transport,
+        srm_supported: bool,
+    ) -> (ObexTransportManager, Channel) {
+        let (local, remote) = create_test_channels(transport);
         let type_ = if srm_supported { TransportType::L2cap } else { TransportType::Rfcomm };
         let manager = ObexTransportManager::new(local, type_);
         (manager, remote)
@@ -188,11 +191,19 @@ pub(crate) mod test_utils {
     }
 
     #[track_caller]
+    fn assert_write_initiated(res: Poll<Result<(), zx::Status>>) {
+        match res {
+            Poll::Ready(Err(e)) => panic!("Write failed: {:?}", e),
+            _ => {}
+        }
+    }
+
+    #[track_caller]
     pub fn reply(exec: &mut fasync::TestExecutor, channel: &mut Channel, response: ResponsePacket) {
         let mut response_buf = vec![0; response.encoded_len()];
         response.encode(&mut response_buf[..]).expect("can encode response");
         let mut fut = channel.send(response_buf.to_vec());
-        exec.run_until_stalled(&mut fut).expect("write to channel success").expect("write success");
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
     }
 
     #[track_caller]
@@ -204,7 +215,7 @@ pub(crate) mod test_utils {
         let mut buf = vec![0; packet.encoded_len()];
         packet.encode(&mut buf[..]).expect("can encode packet");
         let mut fut = channel.send(buf.to_vec());
-        exec.run_until_stalled(&mut fut).expect("write to channel success").expect("write success");
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
     }
 
     #[track_caller]
@@ -257,7 +268,9 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bt_channel_test_support::Transport;
     use futures::SinkExt;
+    use test_case::test_case;
 
     use assert_matches::assert_matches;
 
@@ -271,10 +284,12 @@ mod tests {
         TestPacket, expect_code, expect_request_and_reply, new_manager,
     };
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn transport_manager_new_operation() {
+    fn transport_manager_new_operation(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(transport, /* srm_supported */ false);
 
         // Nothing should be in progress.
         assert_matches!(manager.new_permit(), Ok(_));
@@ -294,10 +309,12 @@ mod tests {
             .expect("can send request");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn send_and_receive() {
+    fn send_and_receive(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(transport, /* srm_supported */ false);
         let mut transport = manager.try_new_operation().expect("can start operation");
 
         // Local makes a request
@@ -327,9 +344,11 @@ mod tests {
         assert_eq!(*received_response.code(), ResponseCode::Ok);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn send_while_channel_closed_is_error() {
-        let (manager, remote) = new_manager(/* srm_supported */ false);
+    async fn send_while_channel_closed_is_error(transport: Transport) {
+        let (manager, remote) = new_manager(transport, /* srm_supported */ false);
         let mut transport = manager.try_new_operation().expect("can start operation");
         drop(remote);
 
@@ -341,9 +360,12 @@ mod tests {
         assert_matches!(send_result, Err(Error::IOError(_)));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn is_transport_closed() {
-        let (manager, remote) = new_manager(/* srm_supported */ false);
+    fn is_transport_closed(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
+        let (manager, remote) = new_manager(transport, /* srm_supported */ false);
         assert!(!manager.is_transport_closed());
 
         {
@@ -353,6 +375,7 @@ mod tests {
             // Even when the remote end is dropped, transport is deemed
             // as active since there is currently an ongoing operation.
             drop(remote);
+            let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
             assert!(!manager.is_transport_closed());
         }
 
@@ -361,9 +384,11 @@ mod tests {
         assert!(manager.is_transport_closed());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn receive_while_channel_closed_is_error() {
-        let (manager, remote) = new_manager(/* srm_supported */ false);
+    async fn receive_while_channel_closed_is_error(transport: Transport) {
+        let (manager, remote) = new_manager(transport, /* srm_supported */ false);
         let mut transport = manager.try_new_operation().expect("can start operation");
         drop(remote);
 

@@ -206,6 +206,8 @@ impl SrmOperation for GetOperation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bt_channel_test_support::Transport;
+    use test_case::test_case;
 
     use assert_matches::assert_matches;
     use async_test_helpers::expect_stream_pending;
@@ -225,10 +227,12 @@ mod tests {
         GetOperation::new(initial, transport)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_operation() {
+    fn get_operation(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(transport, /* srm_supported */ false);
         let mut operation = setup_get_operation(&manager, HeaderSet::new());
         assert!(!operation.is_started);
 
@@ -298,7 +302,7 @@ mod tests {
     #[fuchsia::test]
     fn get_operation_terminate_success() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let initial = HeaderSet::from_header(Header::name("foo"));
         let mut operation = setup_get_operation(&manager, initial);
 
@@ -318,7 +322,7 @@ mod tests {
     #[fuchsia::test]
     fn get_operation_srm() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ true);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let mut operation = setup_get_operation(&manager, HeaderSet::new());
 
         // Making the initial GET request should automatically try to include SRM. Peer responds
@@ -401,7 +405,7 @@ mod tests {
     #[fuchsia::test]
     fn client_disable_srm_mid_get_is_ignored() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ true);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let transport = manager.try_new_operation().expect("can start operation");
         let mut operation = GetOperation::new(HeaderSet::new(), transport);
         // Bypass start and enable SRM.
@@ -427,7 +431,7 @@ mod tests {
     #[fuchsia::test]
     fn get_operation_information_error() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let initial = HeaderSet::from_header(Header::name("foo"));
         let mut operation = setup_get_operation(&manager, initial);
 
@@ -445,7 +449,7 @@ mod tests {
     #[fuchsia::test]
     fn get_operation_data_before_start_is_ok() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ false);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let initial = HeaderSet::from_header(Header::name("foo"));
         let operation = setup_get_operation(&manager, initial);
 
@@ -471,7 +475,7 @@ mod tests {
     #[fuchsia::test]
     fn get_operation_data_before_start_with_srm_is_ok() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, mut remote) = new_manager(/* srm_supported */ true);
+        let (manager, mut remote) = new_manager(Transport::Socket, /* srm_supported */ true);
         let operation = setup_get_operation(&manager, HeaderSet::new());
 
         // Trying to get the user data directly is OK.
@@ -515,7 +519,7 @@ mod tests {
     #[fuchsia::test]
     fn get_operation_data_peer_disconnect_is_error() {
         let mut exec = fasync::TestExecutor::new();
-        let (manager, remote) = new_manager(/* srm_supported */ false);
+        let (manager, remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let initial = HeaderSet::from_header(Header::name("foo"));
         let mut operation = setup_get_operation(&manager, initial);
         // Bypass initial SRM setup by marking this operation as started.
@@ -532,7 +536,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn get_operation_terminate_before_start_error() {
-        let (manager, _remote) = new_manager(/* srm_supported */ false);
+        let (manager, _remote) = new_manager(Transport::Socket, /* srm_supported */ false);
         let initial = HeaderSet::from_header(Header::name("bar"));
         let operation = setup_get_operation(&manager, initial);
 

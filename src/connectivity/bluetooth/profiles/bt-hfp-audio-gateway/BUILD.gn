@@ -50,11 +50,13 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.bluetooth.internal.a2dp:fuchsia.bluetooth.internal.a2dp_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
     "//src/connectivity/bluetooth/testing/test-battery-manager",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/test_util",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:proptest",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [

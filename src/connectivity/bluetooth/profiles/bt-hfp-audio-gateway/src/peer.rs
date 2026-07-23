@@ -369,11 +369,13 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use std::collections::HashSet;
     use std::pin::pin;
+    use test_case::test_case;
 
     fn new_audio_control() -> Arc<Mutex<Box<dyn audio::Control>>> {
         Arc::new(Mutex::new(Box::new(audio::TestControl::default())))
@@ -436,8 +438,10 @@ mod tests {
         assert!(exec.run_until_stalled(&mut task).is_pending());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn profile_event_request_resets_call_manager_when_respawning_task() {
+    fn profile_event_request_resets_call_manager_when_respawning_task(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let id = PeerId(1);
@@ -448,7 +452,7 @@ mod tests {
         exec.run_singlethreaded(&mut peer.call_manager_connected(sent_manager_id))
             .expect("success");
 
-        let (local, remote) = fuchsia_bluetooth::types::Channel::create();
+        let (local, remote) = create_test_channels(transport);
         let event =
             ProfileEvent::PeerConnected { id: PeerId(1), protocol: vec![], channel: local.into() };
         exec.run_singlethreaded(peer.profile_event(event)).expect("success");
@@ -469,7 +473,7 @@ mod tests {
         let mut task = std::mem::replace(&mut peer.task, fasync::Task::local(async move {}));
         exec.run_singlethreaded(&mut task);
 
-        let (local, _remote) = fuchsia_bluetooth::types::Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         let event =
             ProfileEvent::PeerConnected { id: PeerId(1), protocol: vec![], channel: local.into() };
         exec.run_singlethreaded(peer.profile_event(event)).expect("success");

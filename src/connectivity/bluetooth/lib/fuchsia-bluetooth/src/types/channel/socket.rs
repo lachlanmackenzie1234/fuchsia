@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn channel_sync_write() {
         let mut exec = fasync::TestExecutor::new();
-        let (mut recv, send) = Channel::create();
+        let (mut recv, send) = Channel::create_socket_pair();
 
         let heart: &[u8] = &[0xF0, 0x9F, 0x92, 0x96];
         let size = send.write(heart).expect("write to succeed");
@@ -173,7 +173,7 @@ mod tests {
     fn channel_closed() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (recv, send) = Channel::create();
+        let (recv, send) = Channel::create_socket_pair();
 
         let closed_fut = recv.closed();
         let mut closed_fut = pin!(closed_fut);
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn channel_sink() {
         let mut exec = fasync::TestExecutor::new();
-        let (mut recv, mut send) = Channel::create();
+        let (mut recv, mut send) = Channel::create_socket_pair();
 
         let data = vec![0x01, 0x02, 0x03, 0x04];
         let mut send_fut = send.send(data.clone());

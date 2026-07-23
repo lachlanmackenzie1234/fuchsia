@@ -30,13 +30,14 @@
 
 use fidl::client::QueryResponseFut;
 use fidl::endpoints::create_request_stream;
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use fuchsia_bluetooth::types::{Channel, PeerId};
+use futures::FutureExt;
 use futures::stream::{FusedStream, Stream, StreamExt};
 use futures::task::{Context, Poll, Waker};
-use futures::FutureExt;
 use log::trace;
 use std::pin::Pin;
-use {fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr};
 
 /// Error type used by this library.
 mod error;
@@ -246,12 +247,14 @@ impl Stream for ProfileClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async as fasync;
     use fuchsia_bluetooth::types::Uuid;
     use futures::Future;
     use futures_test::task::new_count_waker;
     use std::pin::pin;
+    use test_case::test_case;
 
     fn make_profile_service_definition(service_uuid: Uuid) -> bredr::ServiceDefinition {
         bredr::ServiceDefinition {
@@ -321,8 +324,10 @@ mod tests {
         assert!(!profile.is_terminated());
     }
 
-    #[test]
-    fn connection_request_relayed_to_stream() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn connection_request_relayed_to_stream(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, mut profile_stream) = create_proxy_and_stream::<bredr::ProfileMarker>();
 
@@ -350,9 +355,9 @@ mod tests {
             let mut event_fut = pin!(event_fut);
             assert!(exec.run_until_stalled(&mut event_fut).is_pending());
 
-            let (_local, remote) = Channel::create();
+            let (remote_chan, _local) = create_test_channels(transport);
             connect_proxy
-                .connected(&remote_peer.into(), bredr::Channel::try_from(remote).unwrap(), &[])
+                .connected(&remote_peer.into(), bredr::Channel::try_from(remote_chan).unwrap(), &[])
                 .expect("connection should work");
 
             match exec.run_until_stalled(&mut event_fut) {

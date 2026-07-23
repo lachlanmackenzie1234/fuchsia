@@ -522,15 +522,17 @@ pub mod tests {
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use bt_avctp::{AvcPeer, AvctpCommandStream, AvctpPeer};
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_avrcp::AttributeRequestOption;
     use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
     use fuchsia_async as fasync;
     use fuchsia_bluetooth::profile::Psm;
-    use fuchsia_bluetooth::types::{Channel, PeerId};
+    use fuchsia_bluetooth::types::PeerId;
     use futures::TryStreamExt;
     use std::pin::pin;
     use std::sync::Arc;
+    use test_case::test_case;
 
     const PLAYER_ID: u16 = 1004;
     const UID_COUNTER: u16 = 1;
@@ -562,7 +564,7 @@ pub mod tests {
         );
     }
 
-    fn set_up() -> (Controller, AvcPeer, AvctpPeer) {
+    fn set_up(transport: Transport) -> (Controller, AvcPeer, AvctpPeer) {
         let (profile_proxy, mut _profile_requests) = create_proxy_and_stream::<ProfileMarker>();
         let peer = RemotePeerHandle::spawn_peer(
             PeerId(0x1),
@@ -575,8 +577,8 @@ pub mod tests {
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
 
-        let (local_avc, remote_avc) = Channel::create();
-        let (local_avctp, remote_avctp) = Channel::create();
+        let (local_avc, remote_avc) = create_test_channels(transport);
+        let (local_avctp, remote_avctp) = create_test_channels(transport);
 
         let remote_avc_peer = AvcPeer::new(remote_avc);
         let remote_avctp_peer = AvctpPeer::new(remote_avctp);
@@ -589,11 +591,13 @@ pub mod tests {
         (controller, remote_avc_peer, remote_avctp_peer)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_media_player_items() {
+    fn get_media_player_items(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (mut controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (mut controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
@@ -656,11 +660,13 @@ pub mod tests {
         assert!(controller.peer.peer.read().available_players.contains_key(&1));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_file_system_items() {
+    fn get_file_system_items(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
@@ -691,11 +697,13 @@ pub mod tests {
         let _ = exec.run_until_stalled(&mut get_file_system_fut).expect("should be ready");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_now_playing_items_failure() {
+    fn get_now_playing_items_failure(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
@@ -711,11 +719,13 @@ pub mod tests {
         );
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_change_directory() {
+    fn test_change_directory(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
@@ -743,11 +753,13 @@ pub mod tests {
         });
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_get_item_attributes() {
+    fn test_get_item_attributes(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
@@ -786,11 +798,13 @@ pub mod tests {
         );
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_play_item() {
+    fn test_play_item(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);

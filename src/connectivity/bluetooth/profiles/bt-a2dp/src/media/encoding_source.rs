@@ -402,11 +402,12 @@ mod tests {
 
         use bt_a2dp::media_types::*;
         use bt_avdtp::MediaCodecType;
-        use fuchsia_bluetooth::types::Channel;
+        use bt_channel_test_support::{Transport, create_test_channels};
         use fuchsia_inspect as inspect;
         use fuchsia_sync::{Mutex, RwLock};
         use futures::StreamExt;
         use std::sync::Arc;
+        use test_case::test_case;
         use test_util::assert_gt;
 
         #[fuchsia::test]
@@ -442,8 +443,10 @@ mod tests {
             assert_eq!(2, task.pcm_format.channel_map.len());
         }
 
+        #[test_case(Transport::Socket ; "socket")]
+        #[test_case(Transport::Fidl ; "fidl")]
         #[fuchsia::test]
-        async fn source_media_stream_stats() {
+        async fn source_media_stream_stats(transport: Transport) {
             let builder = Builder::new(AudioSourceType::BigBen, false).await.expect("can encode");
 
             let inspector = inspect::component::inspector();
@@ -455,7 +458,7 @@ mod tests {
                 builder.configure_task(&PeerId(1), &mono_config).expect("should build okay");
             MediaTaskRunner::iattach(&mut task, &root, "source_task").expect("should attach okay");
 
-            let (mut remote, local) = Channel::create();
+            let (local, mut remote) = create_test_channels(transport);
             let local = Arc::new(RwLock::new(local));
             let weak_local = Arc::downgrade(&local);
             let stream = MediaStream::new(Arc::new(Mutex::new(true)), weak_local);
@@ -463,6 +466,9 @@ mod tests {
             let _running_task = task.start(stream, None).expect("media should start");
 
             let _ = remote.next().await;
+
+            // Yield to let the sender task complete its continuation and update inspect.
+            fasync::Timer::new(std::time::Duration::from_millis(50)).await;
 
             let hierarchy = inspect::reader::read(inspector).await.expect("read the inspect");
 

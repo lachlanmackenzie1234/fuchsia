@@ -435,11 +435,12 @@ mod tests {
     use super::*;
 
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_a2dp as a2dp;
     use fidl_fuchsia_bluetooth_bredr::{ProfileRequest, ProfileRequestStream};
-    use fuchsia_bluetooth::types::Channel;
     use futures::task::Poll;
+    use test_case::test_case;
 
     use crate::config::DEFAULT_INITIATOR_DELAY;
     use crate::media::AudioSourceType;
@@ -526,10 +527,11 @@ mod tests {
         run_to_stalled(exec);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
     #[fuchsia::test]
     /// Tests that A2DP sink assumes the initiator role when a peer is found, but
     /// not connected, and the timeout completes.
-    fn wait_to_initiate_success_with_no_connected_peer() {
+    fn wait_to_initiate_success_with_no_connected_peer(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (peers, mut prof_stream) = setup_connected_peers();
         // Initialize context to a fixed point in time.
@@ -576,7 +578,7 @@ mod tests {
 
         // After fast forwarding time, expect and handle the `connect` request
         // because A2DP-sink should be initiating.
-        let (_test, transport) = Channel::create();
+        let (_test, local_channel) = create_test_channels(transport);
         let request = exec.run_until_stalled(&mut prof_stream.next());
         match request {
             Poll::Ready(Some(Ok(ProfileRequest::Connect {
@@ -593,7 +595,7 @@ mod tests {
                     ),
                     x => panic!("Expected L2cap connection, got {:?}", x),
                 };
-                let channel = transport.try_into().unwrap();
+                let channel = local_channel.try_into().unwrap();
                 responder.send(Ok(channel)).expect("responder sends");
             }
             x => panic!("Should have sent a connect request, but got {:?}", x),
@@ -605,10 +607,12 @@ mod tests {
         assert!(peers.is_connected(&peer_id));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
     /// Tests that A2DP sink does not assume the initiator role when a peer connects
     /// before `INITIATOR_DELAY` timeout completes.
-    fn wait_to_initiate_returns_early_with_connected_peer() {
+    fn wait_to_initiate_returns_early_with_connected_peer(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (peers, mut prof_stream) = setup_connected_peers();
         // Initialize context to a fixed point in time.
@@ -648,7 +652,7 @@ mod tests {
         );
 
         // A peer connects before the timeout.
-        let (_remote, signaling) = Channel::create();
+        let (_remote, signaling) = create_test_channels(transport);
         let mut connected_fut = std::pin::pin!(peers.connected(peer_id.clone(), signaling, None));
         let _detachable_peer =
             exec.run_until_stalled(&mut connected_fut).expect("ready").expect("okay");

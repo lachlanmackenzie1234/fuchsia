@@ -160,12 +160,14 @@ pub(crate) mod tests {
 
     use async_test_helpers::expect_stream_item;
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_map::MessageType;
     use bt_obex::header::HeaderIdentifier;
     use bt_obex::operation::{OpCode, RequestPacket, ResponseCode, ResponsePacket};
     use fuchsia_async as fasync;
     use futures::{SinkExt, StreamExt};
     use std::pin::pin;
+    use test_case::test_case;
 
     use packet_encoding::{Decodable, Encodable};
 
@@ -202,10 +204,12 @@ pub(crate) mod tests {
         )
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect() {
+    fn connect(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let test_config = test_mas_config(MapSupportedFeatures::NOTIFICATION_REGISTRATION);
 
         let mas_instance = MasInstance::create(local, test_config);
@@ -249,10 +253,12 @@ pub(crate) mod tests {
             .expect_pending("should not have received request");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_with_map_supported_features() {
+    fn connect_with_map_supported_features(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let test_config = test_mas_config(
             MapSupportedFeatures::NOTIFICATION_REGISTRATION
                 | MapSupportedFeatures::MAPSUPPORTEDFEATURES_IN_CONNECT_REQUEST,
@@ -298,8 +304,9 @@ pub(crate) mod tests {
     #[track_caller]
     fn mas_instance_with_obex_connection(
         exec: &mut fasync::TestExecutor,
+        transport: Transport,
     ) -> (MasInstance, Channel) {
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let mas_instance = MasInstance::create(
             local,
             test_mas_config(
@@ -331,10 +338,12 @@ pub(crate) mod tests {
         (mas_instance, remote)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn set_notifications() {
+    fn set_notifications(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mas_instance, mut remote) = mas_instance_with_obex_connection(&mut exec);
+        let (mas_instance, mut remote) = mas_instance_with_obex_connection(&mut exec, transport);
         assert!(!mas_instance.notification_registered());
 
         // Test turning on notifications.
@@ -395,11 +404,13 @@ pub(crate) mod tests {
         assert!(!mas_instance.notification_registered());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn set_notifications_connect_first() {
+    fn set_notifications_connect_first(transport: Transport) {
         // If obex was not connected, we should attempt to connect first.
         let mut exec = fasync::TestExecutor::new();
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let mas_instance = MasInstance::create(
             local,
             test_mas_config(

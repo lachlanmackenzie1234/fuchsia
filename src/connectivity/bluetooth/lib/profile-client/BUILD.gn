@@ -19,8 +19,11 @@ rustc_library("profile-client") {
   ]
 
   test_deps = [
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures-test",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [

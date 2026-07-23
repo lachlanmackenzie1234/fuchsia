@@ -445,6 +445,8 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bt_channel_test_support::{Transport, create_test_channels};
+    use test_case::test_case;
 
     use assert_matches::assert_matches;
     use async_test_helpers::expect_stream_pending;
@@ -458,18 +460,23 @@ mod tests {
 
     /// Returns an ObexServer, a test only object representing an upper layer profile, & the remote
     /// peer's side of the transport.
-    fn new_obex_server(srm: bool) -> (ObexServer, TestApplicationProfile, Channel) {
-        let (local, remote) = Channel::create();
+    fn new_obex_server(
+        transport: Transport,
+        srm: bool,
+    ) -> (ObexServer, TestApplicationProfile, Channel) {
+        let (local, remote) = create_test_channels(transport);
         let app = TestApplicationProfile::new();
         let type_ = if srm { TransportType::L2cap } else { TransportType::Rfcomm };
         let obex_server = ObexServer::new(local, type_, Box::new(app.clone()));
         (obex_server, app, remote)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn obex_server_terminates_when_channel_closes() {
+    fn obex_server_terminates_when_channel_closes(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, _test_app, remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, _test_app, remote) = new_obex_server(transport, /*srm=*/ false);
 
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
@@ -480,10 +487,12 @@ mod tests {
         assert_matches!(result, Ok(_));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_accepted_by_app_success() {
+    fn connect_accepted_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, test_app, mut remote) = new_obex_server(transport, /*srm=*/ false);
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
@@ -508,10 +517,12 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::Connect);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn directed_connect_accepted_by_app_success() {
+    fn directed_connect_accepted_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, test_app, mut remote) = new_obex_server(transport, /*srm=*/ false);
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
@@ -537,10 +548,12 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::Connect);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_rejected_by_app_is_ok() {
+    fn connect_rejected_by_app_is_ok(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, test_app, mut remote) = new_obex_server(transport, /*srm=*/ false);
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
@@ -562,10 +575,12 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::Connect);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn invalid_connect_request_is_error() {
+    fn invalid_connect_request_is_error(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, _test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, _test_app, mut remote) = new_obex_server(transport, /*srm=*/ false);
 
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
@@ -580,10 +595,12 @@ mod tests {
         assert_matches!(result, Err(Error::Packet(_)));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_disconnect_request_terminates_server() {
+    fn peer_disconnect_request_terminates_server(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, test_app, mut remote) = new_obex_server(transport, /*srm=*/ false);
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
@@ -610,10 +627,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::Disconnect);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn setpath_request_accepted_by_app_success() {
+    fn setpath_request_accepted_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (mut obex_server, test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ false);
         // Set to the Connected state to bypass CONNECT operation.
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         let server_fut = obex_server.run();
@@ -638,10 +658,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::SetPath);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn setpath_request_rejected_by_app_success() {
+    fn setpath_request_rejected_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (mut obex_server, test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ false);
         // Set to the Connected state to bypass CONNECT operation.
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         let server_fut = obex_server.run();
@@ -665,10 +688,12 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::SetPath);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn setpath_request_before_connect_is_error() {
+    fn setpath_request_before_connect_is_error(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, _test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, _test_app, mut remote) = new_obex_server(transport, /*srm=*/ false);
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
@@ -682,10 +707,13 @@ mod tests {
         assert_matches!(result, Err(Error::OperationError { operation: OpCode::SetPath, .. }));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_request_accepted_by_app_success() {
+    fn get_request_accepted_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (mut obex_server, test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ false);
         // Set to the Connected state to bypass CONNECT operation.
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         let server_fut = obex_server.run();
@@ -729,10 +757,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::GetFinal);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_request_rejected_by_app_success() {
+    fn get_request_rejected_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, _test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (mut obex_server, _test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ false);
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
@@ -754,10 +785,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::GetFinal);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_request_with_srm_enabled_success() {
+    fn get_request_with_srm_enabled_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ true);
+        let (mut obex_server, test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ true);
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         obex_server.set_max_packet_size(20); // Set max to something small.
         let server_fut = obex_server.run();
@@ -819,10 +853,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, final_expectation, OpCode::GetFinal);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn put_request_accepted_by_app_success() {
+    fn put_request_accepted_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (mut obex_server, test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ false);
         // Set to the Connected state to bypass CONNECT operation.
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         let server_fut = obex_server.run();
@@ -852,10 +889,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::PutFinal);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn put_request_with_srm_enabled_success() {
+    fn put_request_with_srm_enabled_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ true);
+        let (mut obex_server, test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ true);
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
@@ -910,10 +950,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::PutFinal);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn delete_request_accepted_by_app_success() {
+    fn delete_request_accepted_by_app_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (mut obex_server, test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ false);
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
@@ -934,10 +977,13 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::PutFinal);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn receive_packet_exceeds_max_packet_size_rejected() {
+    fn receive_packet_exceeds_max_packet_size_rejected(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut obex_server, _test_app, mut remote) = new_obex_server(/*srm=*/ false);
+        let (mut obex_server, _test_app, mut remote) =
+            new_obex_server(transport, /*srm=*/ false);
         obex_server.set_connection_status(ConnectionStatus::connected_no_id());
         // The default max_packet_size before CONNECT is clamped to
         // MIN_MAX_PACKET_SIZE (255) minimum. Set max_packet_size explicitly to
@@ -962,9 +1008,11 @@ mod tests {
         expect_response(&mut exec, &mut remote, expectation, OpCode::Put);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn send_exceeds_max_packet_size_is_error() {
-        let (mut obex_server, _test_app, _remote) = new_obex_server(/*srm=*/ false);
+    async fn send_exceeds_max_packet_size_is_error(transport: Transport) {
+        let (mut obex_server, _test_app, _remote) = new_obex_server(transport, /*srm=*/ false);
         obex_server.set_max_packet_size(255);
 
         // Attempt to send a response packet whose encoded length exceeds 255

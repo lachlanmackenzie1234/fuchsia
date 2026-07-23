@@ -742,6 +742,7 @@ mod tests {
     use assert_matches::assert_matches;
     use async_test_helpers::run_while;
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_rfcomm::frame::{FrameData, UIHData};
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async::DurationExt;
@@ -751,14 +752,18 @@ mod tests {
     use std::pin::{Pin, pin};
     use std::sync::Arc;
     use std::task::{Context, Waker};
+    use test_case::test_case;
 
     use crate::rfcomm::test_util::{
         assert_user_data_frame, expect_frame, expect_user_data_frame, poll_stream,
     };
 
-    fn establish_channel(session_channel: &mut SessionChannel) -> (Channel, mpsc::Receiver<Frame>) {
+    fn establish_channel(
+        session_channel: &mut SessionChannel,
+        transport: Transport,
+    ) -> (Channel, mpsc::Receiver<Frame>) {
         let (frame_sender, frame_receiver) = mpsc::channel(0);
-        let (local, remote) = Channel::create();
+        let (local, remote) = create_test_channels(transport);
         session_channel.establish(local, frame_sender).unwrap();
         (remote, frame_receiver)
     }
@@ -772,6 +777,7 @@ mod tests {
         role: Role,
         dlci: DLCI,
         flow_control: FlowControlMode,
+        transport: Transport,
     ) -> (inspect::Inspector, SessionChannel, Channel, mpsc::Receiver<Frame>) {
         let inspect = inspect::Inspector::default();
         let mut session_channel =
@@ -780,18 +786,20 @@ mod tests {
         // Arbitrary max packet size since tests don't do any size specific things.
         assert!(session_channel.set_parameters(1000, flow_control).is_ok());
 
-        let (remote, frame_receiver) = establish_channel(&mut session_channel);
+        let (remote, frame_receiver) = establish_channel(&mut session_channel, transport);
         assert!(session_channel.is_established());
 
         (inspect, session_channel, remote, frame_receiver)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn establish_fails_if_parameters_not_set() {
+    fn establish_fails_if_parameters_not_set(transport: Transport) {
         let _exec = fasync::TestExecutor::new();
         let dlci = DLCI::try_from(8).unwrap();
         let mut session_channel = SessionChannel::new(dlci, Role::Responder);
-        let (local, _remote) = Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         let (frame_sender, _frame_receiver) = mpsc::channel(0);
 
         // Should fail because parameters haven't been set.
@@ -801,15 +809,17 @@ mod tests {
         );
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn set_parameters_after_termination() {
+    fn set_parameters_after_termination(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let inspect = inspect::Inspector::default();
         let dlci = DLCI::try_from(8).unwrap();
         let mut session_channel = SessionChannel::new(dlci, Role::Responder)
             .with_inspect(inspect.root(), "channel_")
             .unwrap();
-        let (local, remote) = Channel::create();
+        let (local, remote) = create_test_channels(transport);
         let (frame_sender, mut frame_receiver) = mpsc::channel(0);
 
         // Set parameters and establish.
@@ -838,18 +848,20 @@ mod tests {
         assert!(session_channel.set_parameters(new_max_packet_size, new_flow_control).is_ok());
 
         // Establish again.
-        let (local2, _remote2) = Channel::create();
+        let (local2, _remote2) = create_test_channels(transport);
         let (frame_sender2, _frame_receiver2) = mpsc::channel(0);
         assert!(session_channel.establish(local2, frame_sender2).is_ok());
         assert!(session_channel.is_established());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn establish_succeeds_with_parameters() {
+    fn establish_succeeds_with_parameters(transport: Transport) {
         let _exec = fasync::TestExecutor::new();
         let dlci = DLCI::try_from(8).unwrap();
         let mut session_channel = SessionChannel::new(dlci, Role::Responder);
-        let (local, _remote) = Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         let (frame_sender, _frame_receiver) = mpsc::channel(0);
 
         assert!(session_channel.set_parameters(1024, FlowControlMode::None).is_ok());
@@ -857,14 +869,16 @@ mod tests {
         assert!(session_channel.is_established());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn establish_channel_and_send_data_with_no_flow_control() {
+    fn establish_channel_and_send_data_with_no_flow_control(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let role = Role::Responder;
         let dlci = DLCI::try_from(8).unwrap();
         let (_inspect, mut session_channel, mut client, mut outgoing_frames) =
-            create_and_establish(role, dlci, FlowControlMode::None);
+            create_and_establish(role, dlci, FlowControlMode::None, transport);
         // Trying to change the flow control mode after establishment should fail.
         assert!(
             session_channel
@@ -917,14 +931,20 @@ mod tests {
     }
 
     /// Tests the SessionChannel relay with default flow control parameters
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn session_channel_with_default_credit_flow_control() {
+    fn session_channel_with_default_credit_flow_control(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let role = Role::Responder;
         let dlci = DLCI::try_from(8).unwrap();
-        let (_inspect, mut session_channel, mut client, mut outgoing_frames) =
-            create_and_establish(role, dlci, FlowControlMode::CreditBased(Credits::default()));
+        let (_inspect, mut session_channel, mut client, mut outgoing_frames) = create_and_establish(
+            role,
+            dlci,
+            FlowControlMode::CreditBased(Credits::default()),
+            transport,
+        );
 
         exec.run_until_stalled(&mut client.next()).expect_pending("no application data");
         poll_stream(&mut exec, &mut outgoing_frames).expect_pending("no outgoing frames");
@@ -984,8 +1004,10 @@ mod tests {
         assert_eq!(received_data2, user_data2);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn session_channel_with_negotiated_credit_flow_control() {
+    fn session_channel_with_negotiated_credit_flow_control(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let role = Role::Responder;
@@ -997,6 +1019,7 @@ mod tests {
                 12, // Arbitrary
                 6,  // Arbitrary
             )),
+            transport,
         );
 
         exec.run_until_stalled(&mut client.next()).expect_pending("shouldn't have data");
@@ -1299,14 +1322,17 @@ mod tests {
         assert_matches!(send_result, Ok(_));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn finished_signal_resolves_when_session_channel_dropped() {
+    fn finished_signal_resolves_when_session_channel_dropped(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let (_inspect, session_channel, _client, _outgoing_frames) = create_and_establish(
             Role::Initiator,
             DLCI::try_from(8).unwrap(),
             FlowControlMode::None,
+            transport,
         );
 
         // Finished signal is pending while the channel is active.
@@ -1319,8 +1345,10 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut finished), Poll::Ready(_));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn finished_signal_resolves_when_client_disconnects() {
+    fn finished_signal_resolves_when_client_disconnects(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let dlci = DLCI::try_from(19).unwrap();
@@ -1328,6 +1356,7 @@ mod tests {
             Role::Responder,
             dlci,
             FlowControlMode::CreditBased(Credits::new(0, 0)),
+            transport,
         );
 
         // Finished signal is pending while the channel is active.
@@ -1358,8 +1387,10 @@ mod tests {
         assert!(!session_channel.is_established());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn finish_signal_resolves_with_multiple_establishments() {
+    fn finish_signal_resolves_with_multiple_establishments(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let dlci = DLCI::try_from(19).unwrap();
@@ -1367,13 +1398,14 @@ mod tests {
             Role::Responder,
             dlci,
             FlowControlMode::CreditBased(Credits::new(0, 0)),
+            transport,
         );
 
         let mut finished = session_channel.finished();
         assert_matches!(exec.run_until_stalled(&mut finished), Poll::Pending);
 
         // Establishment occurs again.
-        let (_remote, _frame_receiver) = establish_channel(&mut session_channel);
+        let (_remote, _frame_receiver) = establish_channel(&mut session_channel, transport);
 
         // Finished signal from previous establishment should resolve.
         assert_matches!(exec.run_until_stalled(&mut finished), Poll::Ready(_));
@@ -1382,13 +1414,15 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut finished2), Poll::Pending);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn simple_controller_send_and_receive() {
+    async fn simple_controller_send_and_receive(transport: Transport) {
         let dlci = DLCI::try_from(15).unwrap();
         let role = Role::Initiator;
         let controller = Box::new(SimpleController::new(role, dlci));
 
-        let (mut application, local) = Channel::create();
+        let (mut application, local) = create_test_channels(transport);
         let (data_to_peer_sender, mut data_to_peer_receiver) = mpsc::channel(0);
         let (mut data_from_peer_sender, data_from_peer_receiver) = mpsc::unbounded();
         let (termination_sender, termination_receiver) = oneshot::channel();
@@ -1804,8 +1838,10 @@ mod tests {
         });
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn session_channel_inspect_updates_when_established() {
+    fn session_channel_inspect_updates_when_established(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(7_000_000));
 
@@ -1815,8 +1851,12 @@ mod tests {
             12, // Arbitrary
             15, // Arbitrary
         ));
-        let (inspect, _channel, _client, mut outgoing_frames) =
-            create_and_establish(Role::Initiator, DLCI::try_from(8).unwrap(), flow_control);
+        let (inspect, _channel, _client, mut outgoing_frames) = create_and_establish(
+            Role::Initiator,
+            DLCI::try_from(8).unwrap(),
+            flow_control,
+            transport,
+        );
         // Upon establishment, the inspect tree should have a `flow_controller` node.
         assert_data_tree!(@executor exec, inspect, root: {
             channel_: contains {

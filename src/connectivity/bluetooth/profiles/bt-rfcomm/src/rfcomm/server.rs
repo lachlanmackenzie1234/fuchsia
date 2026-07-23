@@ -292,6 +292,9 @@ mod tests {
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;
+    use bt_channel_test_support::{
+        Transport, create_test_channels, create_test_channels_with_max_tx,
+    };
     use bt_rfcomm::frame::mux_commands::*;
     use bt_rfcomm::frame::*;
     use bt_rfcomm::{DLCI, Role};
@@ -303,6 +306,7 @@ mod tests {
     use futures::task::Poll;
     use futures::{SinkExt, StreamExt};
     use std::pin::pin;
+    use test_case::test_case;
 
     use crate::rfcomm::test_util::{expect_frame_received_by_peer, send_peer_frame};
 
@@ -344,12 +348,14 @@ mod tests {
         assert!(rfcomm.allocate_server_channel(c).await.is_some());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_new_l2cap_connection() {
+    fn test_new_l2cap_connection(transport: Transport) {
         let (mut exec, mut rfcomm) = setup_rfcomm_manager();
 
         let id = PeerId(123);
-        let (mut remote, channel) = Channel::create();
+        let (mut remote, channel) = create_test_channels(transport);
         assert!(rfcomm.new_l2cap_connection(id, channel).is_ok());
 
         // The Session should still be active.
@@ -372,8 +378,10 @@ mod tests {
         assert!(!rfcomm.is_active_session(&id));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_new_rfcomm_channel_is_relayed_to_client() {
+    fn test_new_rfcomm_channel_is_relayed_to_client(transport: Transport) {
         let (mut exec, mut rfcomm) = setup_rfcomm_manager();
 
         // Profile-client reserves a server channel.
@@ -394,7 +402,7 @@ mod tests {
 
         // Start up a session with remote peer.
         let id = PeerId(1);
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         assert!(rfcomm.new_l2cap_connection(id, local).is_ok());
         assert!(rfcomm.is_active_session(&id));
 
@@ -419,34 +427,41 @@ mod tests {
         };
     }
 
-    #[fasync::run_singlethreaded(test)]
-    async fn test_register_and_deliver_inbound_channel_to_clients() {
-        let clients = Clients::new();
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn test_register_and_deliver_inbound_channel_to_clients(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
+        exec.run_singlethreaded(async move {
+            let clients = Clients::new();
 
-        // Initial capacity is the range of all valid Server Channels (1..30).
-        let mut expected_space = 30;
-        assert_eq!(clients.available_space().await, expected_space);
+            // Initial capacity is the range of all valid Server Channels (1..30).
+            let mut expected_space = 30;
+            assert_eq!(clients.available_space().await, expected_space);
 
-        // Attempting to deliver an inbound channel for an unregistered ServerChannel should be
-        // an error.
-        let random_server_channel = ServerChannel::try_from(10).unwrap();
-        let (local, _remote) = Channel::create();
-        assert!(clients.deliver_channel(PeerId(1), random_server_channel, local).await.is_err());
+            // Attempting to deliver an inbound channel for an unregistered ServerChannel should be
+            // an error.
+            let random_server_channel = ServerChannel::try_from(10).unwrap();
+            let (local, _remote) = create_test_channels(transport);
+            assert!(
+                clients.deliver_channel(PeerId(1), random_server_channel, local).await.is_err()
+            );
 
-        // Registering a new client should be OK.
-        let (c, s) = create_proxy_and_stream::<ConnectionReceiverMarker>();
-        let server_channel = clients.new_client(c).await.unwrap();
-        expected_space -= 1;
-        assert_eq!(clients.available_space().await, expected_space);
+            // Registering a new client should be OK.
+            let (c, s) = create_proxy_and_stream::<ConnectionReceiverMarker>();
+            let server_channel = clients.new_client(c).await.unwrap();
+            expected_space -= 1;
+            assert_eq!(clients.available_space().await, expected_space);
 
-        // Delivering channel to registered client should be OK.
-        let (local, _remote) = Channel::create();
-        assert!(clients.deliver_channel(PeerId(1), server_channel, local).await.is_ok());
+            // Delivering channel to registered client should be OK.
+            let (local, _remote) = create_test_channels(transport);
+            assert!(clients.deliver_channel(PeerId(1), server_channel, local).await.is_ok());
 
-        // Client disconnects - delivering a new channel should fail.
-        drop(s);
-        let (local, _remote) = Channel::create();
-        assert!(clients.deliver_channel(PeerId(1), server_channel, local).await.is_err());
+            // Client disconnects - delivering a new channel should fail.
+            drop(s);
+            let (local, _remote) = create_test_channels(transport);
+            assert!(clients.deliver_channel(PeerId(1), server_channel, local).await.is_err());
+        })
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -515,14 +530,17 @@ mod tests {
         (responder, connect_request)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_request_outbound_connection_succeeds() {
+    fn test_request_outbound_connection_succeeds(transport: Transport) {
         let (mut exec, mut rfcomm) = setup_rfcomm_manager();
 
         // Start up a session with remote peer.
         let id = PeerId(1);
         let local_max_packet_size = 700;
-        let (local, mut remote) = Channel::create_with_max_tx(local_max_packet_size as usize);
+        let (local, mut remote) =
+            create_test_channels_with_max_tx(transport, local_max_packet_size as usize);
         assert!(rfcomm.new_l2cap_connection(id, local).is_ok());
 
         // Simulate a client connect request.
@@ -593,15 +611,17 @@ mod tests {
         // Responder should be notified of failure.
         assert_matches!(exec.run_until_stalled(&mut connect_request_fut), Poll::Ready(Ok(Err(_))));
     }
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_server_inspect_hierarchy() {
+    fn test_server_inspect_hierarchy(transport: Transport) {
         let (mut exec, mut rfcomm) = setup_rfcomm_manager();
         let inspect = inspect::Inspector::default();
         rfcomm.iattach(inspect.root(), "rfcomm_server").expect("should attach");
 
         // Start up a session with remote peer.
         let id = PeerId(1);
-        let (local, _remote) = Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         assert!(rfcomm.new_l2cap_connection(id, local).is_ok());
 
         assert_data_tree!(@executor exec, inspect, root: {

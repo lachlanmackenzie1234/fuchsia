@@ -415,6 +415,7 @@ pub(crate) mod tests {
 
     use async_test_helpers::expect_stream_item;
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_obex::operation::{RequestPacket, ResponsePacket};
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_bluetooth_bredr as bredr;
@@ -430,6 +431,7 @@ pub(crate) mod tests {
     use objects::Builder;
     use packet_encoding::Encodable;
     use std::pin::pin;
+    use test_case::test_case;
 
     // Version = 1.0, Flags = 0, Max packet = 0xffff.
     const CONNECTION_RESPONSE_DATA: [u8; 4] = [0x10, 0x00, 0xff, 0xff];
@@ -457,6 +459,7 @@ pub(crate) mod tests {
     // The MNS is registered for two MASes (MAS with ID 1 and MAS with ID 2).
     fn run_mns_session(
         exec: &mut fasync::TestExecutor,
+        transport: Transport,
     ) -> (Channel, NotificationRegistrationRequestStream, Session, Receiver<SessionSignal>) {
         // Set up fake client request for notifications.
         let (accessor_proxy, mut accessor_requests) = create_proxy_and_stream::<AccessorMarker>();
@@ -498,7 +501,7 @@ pub(crate) mod tests {
         let _ = exec.run_until_stalled(&mut register_fut).expect_pending("should be pending");
 
         // Test out Session start.
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         {
             let run_fut = session.run(
                 vec![ProtocolDescriptor {
@@ -570,11 +573,13 @@ pub(crate) mod tests {
         )
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn new_event_report() {
+    fn new_event_report(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (mut remote, mut relayer_stream, _session, mut signal_receiver) =
-            run_mns_session(&mut exec);
+            run_mns_session(&mut exec, transport);
 
         // Mimic incoming event report from remote MNS client.
         send_packet(&mut exec, &mut remote, new_msg_event_report_packet(TEST_MAS_ID_1, 1234));
@@ -637,11 +642,14 @@ pub(crate) mod tests {
         let _ = exec.run_until_stalled(&mut signal_fut).expect_pending("no outstanding signals");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn notification_registration_client_close() {
+    fn notification_registration_client_close(transport: Transport) {
         let mut exec: fuchsia_async::TestExecutor = fasync::TestExecutor::new();
 
-        let (_remote, notifier_stream, _session, mut signal_receiver) = run_mns_session(&mut exec);
+        let (_remote, notifier_stream, _session, mut signal_receiver) =
+            run_mns_session(&mut exec, transport);
 
         // Mimic client dropping the NotificationRegistration stream.
         drop(notifier_stream);
@@ -661,12 +669,14 @@ pub(crate) mod tests {
         let _ = exec.run_until_stalled(&mut signal_fut).expect_pending("no outstanding signals");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn obex_disconnect() {
+    fn obex_disconnect(transport: Transport) {
         let mut exec: fuchsia_async::TestExecutor = fasync::TestExecutor::new();
 
         let (mut remote, _notifier_stream, _session, mut signal_receiver) =
-            run_mns_session(&mut exec);
+            run_mns_session(&mut exec, transport);
 
         // Mimic a OBEX DISCONNECT request from remote MNS client.
         send_packet(

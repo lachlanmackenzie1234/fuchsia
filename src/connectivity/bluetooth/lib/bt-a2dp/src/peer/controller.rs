@@ -390,6 +390,7 @@ impl ControllerPool {
 mod tests {
     use super::*;
     use bt_avdtp::{EndpointType, ErrorCode, Peer as AvdtpPeer, Request, StreamInformation};
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl::endpoints::{create_endpoints, create_proxy_and_stream};
     use fidl_fuchsia_bluetooth_avdtp_test::*;
     use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
@@ -397,6 +398,7 @@ mod tests {
     use fuchsia_bluetooth::detachable_map::DetachableMap;
     use fuchsia_bluetooth::types::Channel;
     use futures::StreamExt;
+    use test_case::test_case;
 
     use crate::media_task::tests::TestMediaTaskBuilder;
     use crate::stream::tests::make_sbc_endpoint;
@@ -445,12 +447,14 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
     /// Tests when a client connects to the PeerManager, a listening task is spawned,
     /// and requests can be served.
     /// Note: This test does not test the correctness of the underlying AVDTP commands. The AVDTP
     /// commands should be well tested in `bluetooth/lib/avdtp`.
-    async fn test_client_connected_to_peer_manager() {
+    async fn test_client_connected_to_peer_manager(transport: Transport) {
         // Create the ControllerPool. This stores all active peers and handles listening
         // to PeerManager and PeerController requests.
         let (pm_proxy, pm_stream) = create_proxy_and_stream::<PeerManagerMarker>();
@@ -463,7 +467,7 @@ mod tests {
         // Create a fake peer, and simulate connection by sending the `peer_connected` signal.
         let fake_peer_id = PeerId(12345);
         let (profile_proxy, _requests) = create_proxy_and_stream::<ProfileMarker>();
-        let (remote, signaling) = Channel::create();
+        let (signaling, remote) = create_test_channels(transport);
         let avdtp_peer = AvdtpPeer::new(signaling);
         let mut streams = Streams::default();
         let test_builder = TestMediaTaskBuilder::new();

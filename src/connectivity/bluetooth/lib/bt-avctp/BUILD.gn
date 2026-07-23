@@ -21,7 +21,12 @@ rustc_library("bt-avctp") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  test_deps = [ "//src/lib/async-utils" ]
+  test_deps = [
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+    "//src/lib/async-utils",
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:test-case",
+  ]
 
   sources = [
     "src/avc/mod.rs",
@@ -38,6 +43,11 @@ rustc_library("bt-avctp") {
 
 fuchsia_unittest_package("bt-avctp-tests") {
   deps = [ ":bt-avctp_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tests") {

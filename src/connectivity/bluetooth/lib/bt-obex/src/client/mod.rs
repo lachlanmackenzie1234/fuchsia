@@ -283,6 +283,8 @@ impl ObexClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bt_channel_test_support::{Transport, create_test_channels};
+    use test_case::test_case;
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;
@@ -309,17 +311,19 @@ mod tests {
     /// Returns a new ObexClient and the remote end of the transport.
     /// If `connected` is set, returns an ObexClient in the connected state, indicating the
     /// completion of the OBEX CONNECT procedure.
-    fn new_obex_client(connected: ConnectionStatus) -> (ObexClient, Channel) {
-        let (local, remote) = Channel::create();
+    fn new_obex_client(connected: ConnectionStatus, transport: Transport) -> (ObexClient, Channel) {
+        let (local, remote) = create_test_channels(transport);
         let client = ObexClient::new(local, TransportType::Rfcomm);
         client.set_connection_status(connected);
         (client, remote)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn client_connect_success() {
+    fn client_connect_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (client, mut remote) = new_obex_client(ConnectionStatus::default());
+        let (client, mut remote) = new_obex_client(ConnectionStatus::default(), transport);
 
         assert!(!client.is_connected());
         assert_eq!(client.max_packet_size(), Channel::DEFAULT_MAX_TX as u16);
@@ -359,28 +363,34 @@ mod tests {
         assert_eq!(client.connection_id(), Some(ConnectionIdentifier(1)));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn multiple_connect_is_error() {
-        let (client, _remote) = new_obex_client(ConnectionStatus::connected_no_id());
+    async fn multiple_connect_is_error(transport: Transport) {
+        let (client, _remote) = new_obex_client(ConnectionStatus::connected_no_id(), transport);
 
         // Trying to connect again is an Error since it can only be done once.
         let result = client.connect(HeaderSet::new()).await;
         assert_matches!(result, Err(Error::OperationError { .. }));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_before_connect_is_error() {
+    fn get_before_connect_is_error(transport: Transport) {
         let _exec = fasync::TestExecutor::new();
-        let (client, _remote) = new_obex_client(ConnectionStatus::default());
+        let (client, _remote) = new_obex_client(ConnectionStatus::default(), transport);
 
         let get_result = client.get();
         assert_matches!(get_result, Err(Error::OperationError { .. }));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn sequential_get_operations_is_ok() {
+    fn sequential_get_operations_is_ok(transport: Transport) {
         let _exec = fasync::TestExecutor::new();
-        let (client, _remote) = new_obex_client(ConnectionStatus::connected_no_id());
+        let (client, _remote) = new_obex_client(ConnectionStatus::connected_no_id(), transport);
 
         // Creating the first GET operation should succeed.
         let _get_operation1 = client.get().expect("can initialize first get");
@@ -390,10 +400,12 @@ mod tests {
         let _get_operation2 = client.get().expect("can initialize second get");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn disconnect_success() {
+    fn disconnect_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id());
+        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id(), transport);
 
         let headers = HeaderSet::from_header(Header::Description("finished".into()));
         let disconnect_fut = client.disconnect(headers);
@@ -412,19 +424,23 @@ mod tests {
         assert_eq!(disconnect_result, response_headers);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn disconnect_before_connect_error() {
-        let (client, _remote) = new_obex_client(ConnectionStatus::default());
+    async fn disconnect_before_connect_error(transport: Transport) {
+        let (client, _remote) = new_obex_client(ConnectionStatus::default(), transport);
 
         let headers = HeaderSet::from_header(Header::Description("finished".into()));
         let disconnect_result = client.disconnect(headers).await;
         assert_matches!(disconnect_result, Err(Error::OperationError { .. }))
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn disconnect_error_response_error() {
+    fn disconnect_error_response_error(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id());
+        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id(), transport);
 
         let disconnect_fut = client.disconnect(HeaderSet::new());
         let mut disconnect_fut = pin!(disconnect_fut);
@@ -445,10 +461,12 @@ mod tests {
         assert_matches!(disconnect_result, Err(Error::PeerRejected { .. }));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn setpath_success() {
+    fn setpath_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id());
+        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id(), transport);
 
         let headers = HeaderSet::from_header(Header::name("myfolder"));
         let setpath_fut = client.set_path(SetPathFlags::empty(), headers);
@@ -472,10 +490,12 @@ mod tests {
         assert_eq!(setpath_result, response_headers);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn setpath_error_response_is_error() {
+    fn setpath_error_response_is_error(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id());
+        let (client, mut remote) = new_obex_client(ConnectionStatus::connected_no_id(), transport);
 
         // Peer doesn't support SetPath.
         {

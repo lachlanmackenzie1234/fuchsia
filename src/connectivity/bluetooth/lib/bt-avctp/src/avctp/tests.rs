@@ -3,40 +3,51 @@
 // found in the LICENSE file.
 
 use async_utils::PollExt;
+use bt_channel_test_support::{Transport, create_test_channels};
 use core::task::Poll;
 use fuchsia_async as fasync;
-use futures::{FutureExt, SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt};
 use std::result;
-use zx::{self as zx, Status};
+use test_case::test_case;
+use zx::{self as zx};
 
 use super::*;
 
-pub(crate) fn setup_peer() -> (Peer, Channel) {
-    let (remote, signaling) = Channel::create();
+pub(crate) fn setup_peer(transport_mode: Transport) -> (Peer, Channel) {
+    let (signaling, remote) = create_test_channels(transport_mode);
 
-    let peer = Peer::new(signaling);
-    (peer, remote)
+    let peer = Peer::new(remote);
+    (peer, signaling)
 }
 
-fn setup_stream_test() -> (fasync::TestExecutor, CommandStream, Peer, Channel) {
+fn setup_stream_test(
+    transport_mode: Transport,
+) -> (fasync::TestExecutor, CommandStream, Peer, Channel) {
     let exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, remote) = setup_peer(transport_mode);
     let stream = peer.take_command_stream();
     (exec, stream, peer, remote)
 }
 
 #[track_caller]
-pub(crate) fn recv_remote(remote: &mut Channel) -> result::Result<Vec<u8>, zx::Status> {
-    let fut = remote.next();
-    match fut.now_or_never() {
-        Some(Some(res)) => res,
-        Some(None) => Err(zx::Status::PEER_CLOSED),
-        None => Err(zx::Status::SHOULD_WAIT),
+pub(crate) fn recv_remote(
+    exec: &mut fasync::TestExecutor,
+    remote: &mut Channel,
+) -> result::Result<Vec<u8>, zx::Status> {
+    let mut fut = remote.next();
+    match exec.run_until_stalled(&mut fut) {
+        Poll::Ready(Some(res)) => res,
+        Poll::Ready(None) => Err(zx::Status::PEER_CLOSED),
+        Poll::Pending => Err(zx::Status::SHOULD_WAIT),
     }
 }
 
-pub(crate) fn expect_remote_recv(expected: &[u8], remote: &mut Channel) {
-    let r = recv_remote(remote);
+pub(crate) fn expect_remote_recv(
+    exec: &mut fasync::TestExecutor,
+    expected: &[u8],
+    remote: &mut Channel,
+) {
+    let r = recv_remote(exec, remote);
     assert!(r.is_ok());
     let response = r.unwrap();
     if expected.len() != response.len() {
@@ -55,26 +66,31 @@ fn next_request(stream: &mut CommandStream, exec: &mut fasync::TestExecutor) -> 
     }
 }
 
-#[test]
-fn closes_socket_when_dropped() {
-    let mut _exec = fasync::TestExecutor::new();
-    let (mut peer_chan, control) = Channel::create();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn closes_socket_when_dropped(transport_mode: Transport) {
+    let mut exec = fasync::TestExecutor::new();
+    let (control, mut peer_chan) = create_test_channels(transport_mode);
 
     {
         let peer = Peer::new(control);
         let mut _stream = peer.take_command_stream();
     }
 
-    // Writing to the sock from the other end should fail.
-    let write_res = peer_chan.send(vec![0; 1]).now_or_never().expect("poll is ready");
-    assert!(write_res.is_err());
-    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap().into());
+    let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+    let mut send_fut = peer_chan.send(vec![0; 1]);
+    let write_res = exec.run_until_stalled(&mut send_fut);
+    assert!(matches!(write_res, Poll::Ready(Err(_))));
 }
 
-#[test]
-fn socket_open_when_stream_open() {
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn socket_open_when_stream_open(transport_mode: Transport) {
     let mut exec = fasync::TestExecutor::new();
-    let (mut peer_chan, control) = Channel::create();
+    let (control, mut peer_chan) = create_test_channels(transport_mode);
 
     {
         let mut _stream;
@@ -89,34 +105,41 @@ fn socket_open_when_stream_open() {
             .expect("write successful");
     }
 
+    let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
     // Writing to the sock from the other end should fail.
-    let write_res =
-        exec.run_until_stalled(&mut peer_chan.send(vec![0; 1])).expect("signaling write");
-    assert!(write_res.is_err());
-    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap().into());
+    let mut send_fut = peer_chan.send(vec![0; 1]);
+    let write_res = exec.run_until_stalled(&mut send_fut);
+    assert!(matches!(write_res, Poll::Ready(Err(_))));
 }
 
-#[test]
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
 #[should_panic(expected = "Command stream has already been taken")]
-fn can_only_take_stream_once() {
+fn can_only_take_stream_once(transport_mode: Transport) {
     let mut _exec = fasync::TestExecutor::new();
-    let (_, control) = Channel::create();
+    let (control, _) = create_test_channels(transport_mode);
 
     let peer = Peer::new(control);
     let mut _stream = peer.take_command_stream();
     let mut _stream2 = peer.take_command_stream();
 }
 
-#[test]
-fn closed_peer_ends_request_stream() {
-    let (mut exec, mut stream, _peer, remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn closed_peer_ends_request_stream(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, remote) = setup_stream_test(transport_mode);
     drop(remote);
     assert!(exec.run_until_stalled(&mut stream.next()).expect("ready").is_none());
 }
 
-#[test]
-fn send_command_receive_response() {
-    let (mut exec, _stream, peer, mut socket) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn send_command_receive_response(transport_mode: Transport) {
+    let (mut exec, _stream, peer, mut socket) = setup_stream_test(transport_mode);
 
     // sending random payload.
     let mut command_stream =
@@ -125,6 +148,7 @@ fn send_command_receive_response() {
     // Assuming we got assigned TxLabel(0) here. This might be flaky.
     // Sending random payload.
     expect_remote_recv(
+        &mut exec,
         &[
             0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
             0x11, // AV PROFILE
@@ -159,9 +183,11 @@ fn send_command_receive_response() {
     }
 }
 
-#[test]
-fn receive_command_send_response() {
-    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn receive_command_send_response(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test(transport_mode);
     let notif_command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -210,6 +236,7 @@ fn receive_command_send_response() {
             .is_ok()
     );
     expect_remote_recv(
+        &mut exec,
         &[
             0x02, // TxLabel 0, Single 0, Response 1, Ipid 0,
             0x11, // AV PROFILE
@@ -223,9 +250,11 @@ fn receive_command_send_response() {
     );
 }
 
-#[test]
-fn receive_command_too_short_is_dropped() {
-    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn receive_command_too_short_is_dropped(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test(transport_mode);
     let notif_command_packet = &[
         // No payload. Only a command
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
@@ -241,9 +270,11 @@ fn receive_command_too_short_is_dropped() {
     assert!(complete.is_pending());
 }
 
-#[test]
-fn receive_invalid_is_dropped() {
-    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn receive_invalid_is_dropped(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test(transport_mode);
     let notif_command_packet = &[0];
     exec.run_until_stalled(&mut socket.send(notif_command_packet.to_vec()))
         .expect("signaling write")
@@ -254,9 +285,11 @@ fn receive_invalid_is_dropped() {
     assert!(complete.is_pending());
 }
 
-#[test]
-fn invalid_profile_id_response() {
-    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn invalid_profile_id_response(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test(transport_mode);
     let notif_command_packet = &[
         // command for wrong profile id
         0x03, // TxLabel 0, Single 0, Response 1, Ipid 1,
@@ -272,6 +305,7 @@ fn invalid_profile_id_response() {
     assert!(complete.is_pending());
 
     expect_remote_recv(
+        &mut exec,
         &[
             // Ipid bit should be set.
             0x03, // TxLabel 0, Single 0, Response 1, Ipid 1,

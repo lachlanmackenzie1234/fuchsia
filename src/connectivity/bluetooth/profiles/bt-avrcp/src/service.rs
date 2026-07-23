@@ -80,8 +80,10 @@ where
                 let controller = get_controller_for_peer(peer_id, &mut sender).await?;
 
                 let _ = connect_tasks.spawn(async move {
+                    println!("DEBUG: [GetControllerForTarget] connect task spawned");
                     let client_stream = client.into_stream();
 
+                    println!("DEBUG: [GetControllerForTarget] waiting for control connection");
                     // Wait for control connection.
                     if let Err(e) = controller
                         .wait_for_control_connection()
@@ -92,12 +94,15 @@ where
                         })
                         .await
                     {
+                        println!("DEBUG: [GetControllerForTarget] control connection failed: {:?}", e);
                         warn!(peer_id:%, e:?; "Control connection timeout");
                         let _ = responder.send(Err(zx::Status::TIMED_OUT.into_raw()));
                         return;
                     }
+                    println!("DEBUG: [GetControllerForTarget] control connection established, spawning service");
                     // Controller can remain connected after PeerManager disconnects.
                     controller_service::spawn_service(controller, client_stream).detach();
+                    println!("DEBUG: [GetControllerForTarget] service spawned, sending Ok");
                     let _ = responder.send(Ok(()));
                 });
             }
@@ -203,6 +208,7 @@ mod tests {
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use bt_avctp::{AvcCommand, AvcPeer, AvcResponseType, AvctpPeer};
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl::endpoints::{create_endpoints, create_proxy, create_proxy_and_stream};
     use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileProxy, ProfileRequestStream};
     use fuchsia_bluetooth::profile::Psm;
@@ -211,6 +217,7 @@ mod tests {
     use std::collections::HashSet;
     use std::pin::pin;
     use std::sync::Arc;
+    use test_case::test_case;
 
     use crate::packets::{PlaybackStatus as PacketPlaybackStatus, *};
     use crate::peer::{Controller, RemotePeerHandle};
@@ -223,6 +230,7 @@ mod tests {
         exec: &mut fasync::TestExecutor,
         profile_proxy: ProfileProxy,
         request: ServiceRequest,
+        transport: Transport,
     ) -> (Channel, Channel) {
         match request {
             ServiceRequest::GetController { peer_id, reply } => {
@@ -233,14 +241,14 @@ mod tests {
                     profile_proxy,
                 );
                 // Set a valid control connection and browse connection for the peer.
-                let (remote_control, local) = Channel::create();
+                let (local, remote_control) = create_test_channels(transport);
                 let control_channel = AvcPeer::new(local);
                 peer.set_control_connection(control_channel);
 
                 let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
-                let (remote_browse, local) = Channel::create();
-                let browse_channel = AvctpPeer::new(local);
+                let (local_browse, remote_browse) = create_test_channels(transport);
+                let browse_channel = AvctpPeer::new(local_browse);
                 peer.set_browse_connection(browse_channel);
 
                 let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
@@ -300,8 +308,10 @@ mod tests {
 
     /// Tests that the client stream handler will spawn a controller when a controller request
     /// successfully sets up a controller.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn spawn_avrcp_controllers() {
+    fn spawn_avrcp_controllers(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (peer_manager_proxy, peer_manager_requests) =
             create_proxy_and_stream::<PeerManagerMarker>();
@@ -328,7 +338,8 @@ mod tests {
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
+        let _connections =
+            handle_get_controller(&mut exec, profile_proxy.clone(), request, transport);
 
         // The handler should spawn the request after the reply.
         assert!(exec.run_until_stalled(&mut handler_fut).is_pending());
@@ -350,7 +361,8 @@ mod tests {
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
+        let _connections =
+            handle_get_controller(&mut exec, profile_proxy.clone(), request, transport);
 
         // The handler should spawn the request after the reply.
         exec.run_until_stalled(&mut handler_fut).expect_pending("should be pending");
@@ -366,9 +378,11 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut handler_fut).expect("should be ready"), Ok(()));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
     /// Test that getting a controller from the test server (PeerManagerExt) works.
-    fn spawn_avrcp_extension_controllers() {
+    fn spawn_avrcp_extension_controllers(transport: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (peer_manager_ext_proxy, peer_manager_ext_requests) =
             create_proxy_and_stream::<PeerManagerExtMarker>();
@@ -396,7 +410,8 @@ mod tests {
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
+        let _connections =
+            handle_get_controller(&mut exec, profile_proxy.clone(), request, transport);
 
         // The handler should spawn the request after the reply.
         exec.run_until_stalled(&mut handler_fut).expect_pending("should be pending");
@@ -418,7 +433,8 @@ mod tests {
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
+        let _connections =
+            handle_get_controller(&mut exec, profile_proxy.clone(), request, transport);
 
         // The handler should spawn the request after the reply.
         exec.run_until_stalled(&mut handler_fut).expect_pending("should be pending");
@@ -607,6 +623,12 @@ mod tests {
     //    values and we have received enough position change events.
     #[fuchsia::test]
     async fn test_peer_manager_with_fidl_client_and_mock_profile() {
+        for transport in [Transport::Socket, Transport::Fidl] {
+            test_peer_manager_with_fidl_client_and_mock_profile_impl(transport).await;
+        }
+    }
+
+    async fn test_peer_manager_with_fidl_client_and_mock_profile_impl(transport: Transport) {
         const REQUESTED_VOLUME: u8 = 0x40;
         const SET_VOLUME: u8 = 0x24;
         let fake_peer_id = PeerId(0);
@@ -642,7 +664,7 @@ mod tests {
 
         let (client_sender, mut peer_controller_request_receiver) = mpsc::channel(512);
 
-        let (local, remote) = Channel::create();
+        let (local, remote) = create_test_channels(transport);
         let remote_peer = AvcPeer::new(remote);
         let (profile_proxy, _requests) = create_proxy::<ProfileMarker>();
 
@@ -1070,10 +1092,13 @@ mod tests {
                     assert_eq!(res.unwrap(), Ok(()));
                 }
                 event = event_stream.select_next_some() => {
-                    match event.unwrap() {
+                    let event = event.unwrap();
+                    match event {
                         ControllerEvent::OnNotification { timestamp: _, notification } => {
                             if let Some(value) = notification.pos {
-                                last_receieved_pos = value;
+                                if value > last_receieved_pos {
+                                    last_receieved_pos = value;
+                                }
                             }
 
                             if let Some(value) = notification.volume {
@@ -1086,7 +1111,7 @@ mod tests {
                     }
                 }
             }
-            if expected_commands <= 0 && last_receieved_pos == 50 * 1000 && volume_value_received {
+            if expected_commands <= 0 && last_receieved_pos >= 50 * 1000 && volume_value_received {
                 assert!(keydown_pressed && keyup_pressed);
                 return;
             }

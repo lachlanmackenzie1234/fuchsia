@@ -152,13 +152,17 @@ mod test {
     use super::*;
 
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fuchsia_async as fasync;
     use futures::StreamExt;
+    use test_case::test_case;
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn at_response_received() {
+    fn at_response_received(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut near, far) = Channel::create();
+        let (mut near, far) = create_test_channels(transport);
 
         let mut conn = Connection::new(PeerId(1), far);
 
@@ -175,10 +179,12 @@ mod test {
         assert_eq!(response, expected_response);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn unparsed_response_received() {
+    fn unparsed_response_received(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut near, far) = Channel::create();
+        let (mut near, far) = create_test_channels(transport);
 
         let mut conn = Connection::new(PeerId(1), far);
 
@@ -195,10 +201,12 @@ mod test {
         assert_eq!(response, expected_response);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn at_responses_received() {
+    fn at_responses_received(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut near, far) = Channel::create();
+        let (mut near, far) = create_test_channels(transport);
 
         let mut conn = Connection::new(PeerId(1), far);
 
@@ -224,10 +232,12 @@ mod test {
         assert_eq!(response_2, expected_response_2);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn at_response_received_and_defragmented() {
+    fn at_response_received_and_defragmented(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut near, far) = Channel::create();
+        let (mut near, far) = create_test_channels(transport);
 
         let mut conn = Connection::new(PeerId(1), far);
 
@@ -250,10 +260,12 @@ mod test {
         assert_eq!(response, expected_response);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn at_commands_written() {
+    fn at_commands_written(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut near, far) = Channel::create();
+        let (mut near, far) = create_test_channels(transport);
 
         let mut conn = Connection::new(PeerId(1), far);
 
@@ -273,10 +285,12 @@ mod test {
         assert_eq!(commands_bytes, expected_commands_bytes);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn stream_terminates_when_responses_are_consumed() {
+    fn stream_terminates_when_responses_are_consumed(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut near, far) = Channel::create();
+        let (mut near, far) = create_test_channels(transport);
 
         let mut conn = Connection::new(PeerId(1), far);
 

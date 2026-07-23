@@ -3,68 +3,75 @@
 // found in the LICENSE file.
 
 use async_utils::PollExt;
+use bt_channel_test_support::{Transport, create_test_channels};
 use core::task::Poll;
 use fuchsia_async as fasync;
-use futures::{FutureExt, SinkExt, StreamExt};
-use std::result;
-use zx::{self as zx, Status};
+use futures::{SinkExt, StreamExt};
+use test_case::test_case;
+use zx::{self as zx};
 
 use super::*;
 use crate::avctp::MessageType as AvctpMessageType;
 
-#[test]
-fn closes_channel_when_dropped() {
-    let mut _exec = fasync::TestExecutor::new();
-    let (mut peer_chan, control) = Channel::create();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn closes_channel_when_dropped(transport_mode: Transport) {
+    let mut exec = fasync::TestExecutor::new();
+    let (peer_chan, mut control) = create_test_channels(transport_mode);
 
     {
-        let peer = Peer::new(control);
+        let peer = Peer::new(peer_chan);
         let mut _stream = peer.take_command_stream();
     }
 
-    // Writing to the sock from the other end should fail.
-    let write_res = peer_chan.send(vec![0; 1]).now_or_never().expect("poll is ready");
-    assert!(write_res.is_err());
-    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap().into());
+    let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+    let mut send_fut = control.send(vec![0; 1]);
+    let write_res = exec.run_until_stalled(&mut send_fut);
+    assert!(matches!(write_res, Poll::Ready(Err(_))));
 }
 
-#[test]
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
 #[should_panic(expected = "Command stream has already been taken")]
-fn can_only_take_stream_once() {
+fn can_only_take_stream_once(transport_mode: Transport) {
     let mut _exec = fasync::TestExecutor::new();
-    let (_, control) = Channel::create();
+    let (control, _) = create_test_channels(transport_mode);
 
     let peer = Peer::new(control);
     let mut _stream = peer.take_command_stream();
     let mut _stream2 = peer.take_command_stream();
 }
 
-pub(crate) fn setup_peer() -> (Peer, Channel) {
-    let (remote, control) = Channel::create();
+pub(crate) fn setup_peer(transport_mode: Transport) -> (Peer, Channel) {
+    let (control, remote) = create_test_channels(transport_mode);
 
-    let peer = Peer::new(control);
-    (peer, remote)
+    let peer = Peer::new(remote);
+    (peer, control)
 }
 
-fn setup_stream_test() -> (fasync::TestExecutor, CommandStream, Peer, Channel) {
+fn setup_stream_test(
+    transport_mode: Transport,
+) -> (fasync::TestExecutor, CommandStream, Peer, Channel) {
     let exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, remote) = setup_peer(transport_mode);
     let stream = peer.take_command_stream();
     (exec, stream, peer, remote)
 }
 
-#[track_caller]
-pub(crate) fn recv_remote(remote: &mut Channel) -> result::Result<Vec<u8>, zx::Status> {
-    let fut = remote.next();
-    match fut.now_or_never() {
-        Some(Some(res)) => res,
-        Some(None) => Err(zx::Status::PEER_CLOSED),
-        None => Err(zx::Status::SHOULD_WAIT),
-    }
-}
-
-pub(crate) fn expect_remote_recv(expected: &[u8], remote: &mut Channel) {
-    let r = recv_remote(remote);
+pub(crate) fn expect_remote_recv(
+    exec: &mut fasync::TestExecutor,
+    expected: &[u8],
+    remote: &mut Channel,
+) {
+    let mut fut = remote.next();
+    let r = match exec.run_until_stalled(&mut fut) {
+        Poll::Ready(Some(res)) => res,
+        Poll::Ready(None) => Err(zx::Status::PEER_CLOSED),
+        Poll::Pending => Err(zx::Status::SHOULD_WAIT),
+    };
     assert!(r.is_ok());
     let response = r.unwrap();
     if expected.len() != response.len() {
@@ -83,21 +90,26 @@ fn next_request(stream: &mut CommandStream, exec: &mut fasync::TestExecutor) -> 
     }
 }
 
-#[test]
-fn closed_peer_ends_request_stream() {
-    let (mut exec, mut stream, _peer, remote) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn closed_peer_ends_request_stream(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, remote) = setup_stream_test(transport_mode);
     drop(remote);
     assert!(exec.run_until_stalled(&mut stream.next()).expect("ready").is_none());
 }
 
-#[test]
-fn send_stop_avc_passthrough_command_timeout() {
-    let (mut exec, _stream, peer, mut channel) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn send_stop_avc_passthrough_command_timeout(transport_mode: Transport) {
+    let (mut exec, _stream, peer, mut channel) = setup_stream_test(transport_mode);
     let mut cmd_fut = Box::pin(peer.send_avc_passthrough_command(&[69, 0]));
     let poll_ret: Poll<Result<CommandResponse>> = exec.run_until_stalled(&mut cmd_fut);
     assert!(poll_ret.is_pending());
 
     expect_remote_recv(
+        &mut exec,
         &[
             0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
             0x11, // AV PROFILE
@@ -115,14 +127,17 @@ fn send_stop_avc_passthrough_command_timeout() {
     assert_eq!(Poll::Ready(Err(Error::Timeout)), exec.run_until_stalled(&mut cmd_fut));
 }
 
-#[test]
-fn send_stop_avc_passthrough_command() {
-    let (mut exec, _stream, peer, mut channel) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn send_stop_avc_passthrough_command(transport_mode: Transport) {
+    let (mut exec, _stream, peer, mut channel) = setup_stream_test(transport_mode);
     let mut cmd_fut = Box::pin(peer.send_avc_passthrough_command(&[69, 0]));
     let poll_ret: Poll<Result<CommandResponse>> = exec.run_until_stalled(&mut cmd_fut);
     assert!(poll_ret.is_pending());
 
     expect_remote_recv(
+        &mut exec,
         &[
             0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
             0x11, // AV PROFILE
@@ -158,9 +173,11 @@ fn send_stop_avc_passthrough_command() {
     assert_eq!(ResponseType::Accepted, command_response.0);
 }
 
-#[test]
-fn receive_register_notification_command() {
-    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn receive_register_notification_command(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test(transport_mode);
     let notif_command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -198,6 +215,7 @@ fn receive_register_notification_command() {
     );
     assert!(command.send_response(ResponseType::NotImplemented, &[]).is_ok());
     expect_remote_recv(
+        &mut exec,
         &[
             0x02, // TxLabel 0, Single 0, Response 1, Ipid 0,
             0x11, // AV PROFILE
@@ -211,9 +229,11 @@ fn receive_register_notification_command() {
     );
 }
 
-#[test]
-fn receive_unit_info() {
-    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn receive_unit_info(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test(transport_mode);
     let command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -232,6 +252,7 @@ fn receive_unit_info() {
     assert!(complete.is_pending());
 
     expect_remote_recv(
+        &mut exec,
         &[
             0x02, // TxLabel 0, Single 0, response 1, Ipid 0,
             0x11, // AV PROFILE
@@ -247,9 +268,11 @@ fn receive_unit_info() {
     );
 }
 
-#[test]
-fn receive_subunit_info() {
-    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test();
+#[test_case(Transport::Socket ; "socket")]
+#[test_case(Transport::Fidl ; "fidl")]
+#[fuchsia::test]
+fn receive_subunit_info(transport_mode: Transport) {
+    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test(transport_mode);
     let command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -269,6 +292,7 @@ fn receive_subunit_info() {
     assert!(complete.is_pending());
 
     expect_remote_recv(
+        &mut exec,
         &[
             0x02, // TxLabel 0, Single 0, response 1, Ipid 0,
             0x11, // AV PROFILE

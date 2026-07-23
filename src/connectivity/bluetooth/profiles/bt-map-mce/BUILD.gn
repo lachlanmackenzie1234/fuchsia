@@ -36,7 +36,9 @@ rustc_binary("bin") {
   test_deps = [
     "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
     "//src/connectivity/bluetooth/lib/packet-encoding",
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
     "//src/lib/async-utils",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [

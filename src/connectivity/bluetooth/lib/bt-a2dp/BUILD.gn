@@ -35,10 +35,12 @@ rustc_library("bt-a2dp") {
 
   test_deps = [
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
     "//src/lib/async-utils",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [
@@ -59,6 +61,11 @@ rustc_library("bt-a2dp") {
 
 fuchsia_unittest_package("bt-a2dp-lib-tests") {
   deps = [ ":bt-a2dp_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tests") {

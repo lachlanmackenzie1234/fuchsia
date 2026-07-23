@@ -302,7 +302,7 @@ impl SessionMultiplexer {
         // Create endpoints for the session channel. The local end is held by this component
         // and the remote end is returned to be held by a RFCOMM profile.
         let max_tx_size = channel.max_packet_size().expect("set in `set_parameters`");
-        let (local, remote) = Channel::create_with_max_tx(max_tx_size.into());
+        let (local, remote) = Channel::create_socket_pair_with_max_tx(max_tx_size.into());
         channel.establish(local, user_data_sender)?;
         Ok(remote)
     }

@@ -78,6 +78,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
     "//src/connectivity/bluetooth/testing/test-battery-manager",
     "//src/lib/async-utils",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
@@ -86,6 +87,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:futures-test",
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:sha2",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = shared_sources
@@ -164,7 +166,11 @@ rustc_test("encoding_integration_bin") {
            "//third_party/rust_crates:sha2",
          ]
 
-  test_deps = [ "//src/lib/fuchsia-sync" ]
+  test_deps = [
+    "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:test-case",
+  ]
 
   sources = shared_sources
 

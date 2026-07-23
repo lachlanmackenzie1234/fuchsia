@@ -1056,11 +1056,15 @@ mod tests {
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;
+    use bt_channel_test_support::{
+        Transport, create_test_channels, create_test_channels_with_max_tx,
+    };
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
     use futures::task::Poll;
     use futures::{Future, SinkExt};
     use std::pin::pin;
+    use test_case::test_case;
 
     use crate::rfcomm::session::channel::{Credits, FlowControlMode};
     use crate::rfcomm::session::multiplexer::ParameterNegotiationState;
@@ -1123,8 +1127,9 @@ mod tests {
     const PEER_MAX_PACKET_SIZE: u16 = 100;
     /// Creates and returns the SessionInner processing task. Uses a channel_opened_fn that
     /// indiscriminately accepts all opened RFCOMM channels.
-    fn setup_session_task() -> (impl Future<Output = ()>, Channel) {
-        let (local, remote) = Channel::create_with_max_tx(MAX_PACKET_SIZE_FOR_TEST.into());
+    fn setup_session_task(transport: Transport) -> (impl Future<Output = ()>, Channel) {
+        let (remote, local) =
+            create_test_channels_with_max_tx(transport, MAX_PACKET_SIZE_FOR_TEST.into());
         let channel_opened_fn = Box::new(|_server_channel, _channel| async { Ok(()) }.boxed());
         let (frame_sender, frame_receiver) = mpsc::channel(0);
         let session_inner = Arc::new(Mutex::new(SessionInner::create(
@@ -1333,11 +1338,13 @@ mod tests {
         });
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_register_l2cap_channel() {
+    fn test_register_l2cap_channel(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (processing_fut, remote) = setup_session_task();
+        let (processing_fut, remote) = setup_session_task(transport);
         let mut processing_fut = pin!(processing_fut);
         exec.run_until_stalled(&mut processing_fut)
             .expect_pending("shouldn't be done while remote is live");
@@ -1346,11 +1353,13 @@ mod tests {
         exec.run_until_stalled(&mut processing_fut).expect("should be done");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_receiving_data_is_ok() {
+    fn test_receiving_data_is_ok(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (processing_fut, mut remote) = setup_session_task();
+        let (processing_fut, mut remote) = setup_session_task(transport);
         let mut processing_fut = pin!(processing_fut);
         exec.run_until_stalled(&mut processing_fut)
             .expect_pending("shouldn't be done while remote is live");
@@ -1367,12 +1376,14 @@ mod tests {
             .expect_pending("shouldn't be done while remote is live");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_peer_disconnection_notifies_termination_future() {
+    fn test_peer_disconnection_notifies_termination_future(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let id = PeerId(992);
-        let (local, remote) = Channel::create();
+        let (remote, local) = create_test_channels(transport);
         let channel_opened_fn = Box::new(|_server_channel, _channel| async { Ok(()) }.boxed());
         let session = Session::create(id, local, channel_opened_fn);
 
@@ -1771,11 +1782,13 @@ mod tests {
         );
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_disconnect_over_mux_control_closes_session() {
+    fn test_disconnect_over_mux_control_closes_session(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (session_fut, mut remote) = setup_session_task();
+        let (session_fut, mut remote) = setup_session_task(transport);
         let mut session_fut = pin!(session_fut);
         exec.run_until_stalled(&mut session_fut)
             .expect_pending("shouldn't be done while remote is live");
@@ -2129,11 +2142,13 @@ mod tests {
         expect_channel_error(&mut exec, &mut outbound_channels, ErrorCode::Canceled);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_cancellation_during_open_channel_notifies_client() {
+    fn test_cancellation_during_open_channel_notifies_client(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (local, mut remote) = Channel::create();
+        let (mut remote, local) = create_test_channels(transport);
         let (channel_open_fn, _inbound_channels) = create_inbound_relay();
         let session = Session::create(PeerId(42), local, channel_open_fn);
         let (outbound_fn, mut outbound_channels) = create_outbound_relay();
@@ -2160,11 +2175,13 @@ mod tests {
         expect_channel_error(&mut exec, &mut outbound_channels, ErrorCode::Canceled);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn session_close_request_before_mux_startup_is_no_op() {
+    fn session_close_request_before_mux_startup_is_no_op(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (local, remote) = Channel::create();
+        let (remote, local) = create_test_channels(transport);
         let (channel_open_fn, _inbound_channels) = create_inbound_relay();
         let session = Session::create(PeerId(52), local, channel_open_fn);
 
@@ -2181,11 +2198,13 @@ mod tests {
             .expect_pending("shouldn't be done while session active");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn session_close_request_results_in_disconnect_frame_to_peer() {
+    fn session_close_request_results_in_disconnect_frame_to_peer(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (local, mut remote) = Channel::create();
+        let (mut remote, local) = create_test_channels(transport);
         let (channel_open_fn, _inbound_channels) = create_inbound_relay();
         let session = Session::create(PeerId(52), local, channel_open_fn);
 
@@ -2301,12 +2320,15 @@ mod tests {
         );
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn test_open_rfcomm_channel_relays_channel_to_callback() {
+    fn test_open_rfcomm_channel_relays_channel_to_callback(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let l2cap_max_packet_size = 500;
-        let (local, mut remote) = Channel::create_with_max_tx(l2cap_max_packet_size);
+        let (mut remote, local) =
+            create_test_channels_with_max_tx(transport, l2cap_max_packet_size);
         let (channel_open_fn, _inbound_channels) = create_inbound_relay();
         let session = Session::create(PeerId(321), local, channel_open_fn);
         let (outbound_fn, mut outbound_channels) = create_outbound_relay();

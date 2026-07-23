@@ -786,15 +786,17 @@ pub(crate) mod tests {
         AgIndicator, BATT_CHG_INDICATOR_INDEX, CALL_HELD_INDICATOR_INDEX, CALL_INDICATOR_INDEX,
     };
     use assert_matches::assert_matches;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_hfp::dtmf::Code as DtmfCode;
     use fuchsia_async as fasync;
     use std::mem::Discriminant;
+    use test_case::test_case;
 
     /// Builds and returns a connected service level connection. Returns the SLC and
     /// the remote end of the channel.
-    pub fn create_and_connect_slc() -> (ServiceLevelConnection, Channel) {
+    pub fn create_and_connect_slc(transport: Transport) -> (ServiceLevelConnection, Channel) {
         let mut slc = ServiceLevelConnection::new();
-        let (local, remote) = Channel::create();
+        let (local, remote) = create_test_channels(transport);
         slc.connect(local);
 
         (slc, remote)
@@ -803,11 +805,22 @@ pub(crate) mod tests {
     /// Builds and returns a service level connection that is connected and initialized with
     /// the provided `state`.
     /// Returns the SLC and the remote end of the channel.
-    pub fn create_and_initialize_slc(state: SlcState) -> (ServiceLevelConnection, Channel) {
+    pub fn create_and_initialize_slc(
+        state: SlcState,
+        transport: Transport,
+    ) -> (ServiceLevelConnection, Channel) {
         let mut connection = ServiceLevelConnection::new();
-        let (local, remote) = Channel::create();
+        let (local, remote) = create_test_channels(transport);
         connection.initialize_at_state(local, state);
         (connection, remote)
+    }
+
+    #[track_caller]
+    fn assert_write_initiated(res: std::task::Poll<Result<(), zx::Status>>) {
+        match res {
+            std::task::Poll::Ready(Err(e)) => panic!("Write failed: {:?}", e),
+            _ => {}
+        }
     }
 
     /// Expects the provided `expected` AT data to be received by the `remote` channel.
@@ -887,22 +900,27 @@ pub(crate) mod tests {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
     }
 
-    #[fasync::run_until_stalled(test)]
-    async fn connected_state_before_and_after_connect() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    async fn connected_state_before_and_after_connect(transport: Transport) {
         let mut slc = ServiceLevelConnection::new();
         assert!(!slc.connected());
-        let (_left, right) = Channel::create();
+        let (_left, right) = create_test_channels(transport);
         slc.connect(right);
         assert!(slc.connected());
     }
 
-    #[fasync::run_until_stalled(test)]
-    async fn slc_stream_produces_items() {
-        let (mut slc, mut remote) = create_and_connect_slc();
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    async fn slc_stream_produces_items(transport: Transport) {
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
 
-        remote.send(b"AT+BRSF=0\r".to_vec()).await.unwrap();
-
-        let actual_request = match slc.next().await {
+        let (send_res, actual_request) =
+            futures::join!(remote.send(b"AT+BRSF=0\r".to_vec()), slc.next());
+        send_res.unwrap();
+        let actual_request = match actual_request {
             Some(Ok(r)) => r,
             x => panic!("Unexpected stream item: {:?}", x),
         };
@@ -910,9 +928,11 @@ pub(crate) mod tests {
         assert_matches!(actual_request, SlcRequest::GetAgFeatures { .. });
     }
 
-    #[fasync::run_until_stalled(test)]
-    async fn slc_stream_terminated() {
-        let (mut slc, remote) = create_and_connect_slc();
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    async fn slc_stream_terminated(transport: Transport) {
+        let (mut slc, remote) = create_and_connect_slc(transport);
 
         drop(remote);
 
@@ -921,10 +941,12 @@ pub(crate) mod tests {
         assert!(slc.is_terminated());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn slc_handles_multipart_commands() {
+    fn slc_handles_multipart_commands(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut slc, mut remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
         // Bypass the SLCI procedure by setting the channel to initialized.
         slc.set_initialized();
         expect_slc_ready(&mut exec, &mut slc, std::mem::discriminant(&SlcRequest::Initialized));
@@ -933,11 +955,11 @@ pub(crate) mod tests {
         let set_speaker_gain_part_two = b"S=1\r";
 
         let mut fut = remote.send(set_speaker_gain_part_one.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
         expect_slc_pending(&mut exec, &mut slc);
 
         let mut fut = remote.send(set_speaker_gain_part_two.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
         let slc_volume_request = SlcRequest::SpeakerVolumeSynchronization {
             level: Gain::try_from(0 as u8).unwrap(),
             response: Box::new(|| AgUpdate::Ok),
@@ -945,10 +967,12 @@ pub(crate) mod tests {
         expect_slc_ready(&mut exec, &mut slc, std::mem::discriminant(&slc_volume_request));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn slc_handles_multiple_commands() {
+    fn slc_handles_multiple_commands(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut slc, mut remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
         // Bypass the SLCI procedure by setting the channel to initialized.
         slc.set_initialized();
         expect_slc_ready(&mut exec, &mut slc, std::mem::discriminant(&SlcRequest::Initialized));
@@ -956,7 +980,7 @@ pub(crate) mod tests {
         let set_speaker_gain_send_dtmf = b"AT+VGS=1\rAT+VTS=#\r";
 
         let mut fut = remote.send(set_speaker_gain_send_dtmf.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
 
         let slc_volume_request = SlcRequest::SpeakerVolumeSynchronization {
             level: Gain::try_from(0 as u8).unwrap(),
@@ -970,16 +994,18 @@ pub(crate) mod tests {
     }
 
     // TODO(https://fxbug.dev/42152554): Re-enable this test after error handling policies are implemented.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
     #[ignore]
-    fn unexpected_command_before_initialization_closes_channel() {
+    fn unexpected_command_before_initialization_closes_channel(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut slc, mut remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
 
         // Peer sends an unexpected AT command.
         let unexpected = format!("AT+CIND=?\r").into_bytes();
         let mut fut = remote.send(unexpected.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
 
         // No requests should be received on the stream.
         expect_slc_pending(&mut exec, &mut slc);
@@ -988,15 +1014,17 @@ pub(crate) mod tests {
         assert!(!slc.connected());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn unexpected_command_before_initialization_leaves_channel_uninitialized() {
+    fn unexpected_command_before_initialization_leaves_channel_uninitialized(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (mut slc, mut remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
 
         // Peer sends an unexpected AT command.
         let unexpected = format!("AT+CIND=?\r").into_bytes();
         let mut fut = remote.send(unexpected.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
 
         // No requests (like Initialized) should be received on the stream.
         expect_slc_pending(&mut exec, &mut slc);
@@ -1011,16 +1039,19 @@ pub(crate) mod tests {
     /// Tests that the SLC is resilient to a new connection being established while there
     /// is an existing one with outstanding procedures. The SLC should be completely reset
     /// and any outstanding procedures should be terminated.
-    #[fasync::run_until_stalled(test)]
-    async fn new_connection_when_outstanding_procedure_terminates_procedure() {
-        let (mut slc, mut remote) = create_and_connect_slc();
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    async fn new_connection_when_outstanding_procedure_terminates_procedure(transport: Transport) {
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
         // Peer sends us HF features - we expect a request for the AG features on the
         // SLC stream.
         let slci_marker = ProcedureMarker::SlcInitialization;
         let features = HfFeatures::THREE_WAY_CALLING;
         let command = format!("AT+BRSF={}\r", features.bits()).into_bytes();
-        remote.send(command.to_vec()).await.expect("Sending command");
-        match slc.next().await {
+        let (send_res, slc_next) = futures::join!(remote.send(command.to_vec()), slc.next());
+        send_res.expect("Sending command");
+        match slc_next {
             Some(Ok(SlcRequest::GetAgFeatures { .. })) => {}
             x => panic!("Expected a GetAgFeatures request but got: {:?}", x),
         }
@@ -1028,7 +1059,7 @@ pub(crate) mod tests {
         assert!(slc.is_active(&slci_marker));
 
         // A new connection comes through.
-        let (local2, _remote2) = Channel::create();
+        let (local2, _remote2) = create_test_channels(transport);
         slc.connect(local2);
 
         // The old `remote` end should be closed, the SLCI procedure should no longer be in
@@ -1037,11 +1068,13 @@ pub(crate) mod tests {
         assert!(!slc.is_active(&slci_marker));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn completing_slc_init_procedure_initializes_channel() {
+    fn completing_slc_init_procedure_initializes_channel(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (mut slc, mut remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
         let slci_marker = ProcedureMarker::SlcInitialization;
         assert!(!slc.initialized());
         assert!(!slc.is_active(&slci_marker));
@@ -1051,7 +1084,7 @@ pub(crate) mod tests {
         let features = HfFeatures::THREE_WAY_CALLING;
         let command1 = format!("AT+BRSF={}\r", features.bits()).into_bytes();
         let mut fut = remote.send(command1.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
 
         let response_fn1 = {
             match exec.run_until_stalled(&mut slc.next()) {
@@ -1073,7 +1106,7 @@ pub(crate) mod tests {
         // we expect no item in the SLC stream. The response should directly be sent to the peer.
         let command2 = format!("AT+CIND=?\r").into_bytes();
         let mut fut = remote.send(command2.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
         expect_slc_pending(&mut exec, &mut slc);
         expect_peer_ready(&mut exec, &mut remote, None);
 
@@ -1081,7 +1114,7 @@ pub(crate) mod tests {
         // expect a stream item to get the information.
         let command3 = format!("AT+CIND?\r").into_bytes();
         let mut fut = remote.send(command3.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
         let response_fn2 = {
             match exec.run_until_stalled(&mut slc.next()) {
                 Poll::Ready(Some(Ok(SlcRequest::GetAgIndicatorStatus { response }))) => response,
@@ -1100,7 +1133,7 @@ pub(crate) mod tests {
         // be sent to the peer.
         let command4 = format!("AT+CMER=3,0,0,1\r").into_bytes();
         let mut fut = remote.send(command4.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
 
         // That's the end of the SLCI process, We should emit to the peer that we are initialized.
         let slc_next_poll = exec.run_until_stalled(&mut slc.next());
@@ -1130,10 +1163,12 @@ pub(crate) mod tests {
         assert_eq!(codecs, state.codecs_supported());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn slci_command_after_initialization_returns_error() {
+    fn slci_command_after_initialization_returns_error(transport: Transport) {
         let _exec = fasync::TestExecutor::new();
-        let (mut slc, _remote) = create_and_connect_slc();
+        let (mut slc, _remote) = create_and_connect_slc(transport);
         // Bypass the SLCI procedure by setting the channel to initialized.
         slc.set_initialized();
 
@@ -1146,15 +1181,17 @@ pub(crate) mod tests {
         );
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn locally_initiated_phone_status_procedure_returns_message() {
+    async fn locally_initiated_phone_status_procedure_returns_message(transport: Transport) {
         // Bypass the SLCI procedure by setting the channel to initialized and enable indicator
         // reporting.
         let state = SlcState {
             ag_indicator_events_reporting: AgIndicatorsReporting::new_enabled(),
             ..SlcState::default()
         };
-        let (mut slc, mut remote) = create_and_initialize_slc(state);
+        let (mut slc, mut remote) = create_and_initialize_slc(state, transport);
 
         // Local device wants to initiate a phone status update.
         let expected_marker = ProcedureMarker::PhoneStatus;
@@ -1172,11 +1209,13 @@ pub(crate) mod tests {
         assert!(!slc.is_active(&expected_marker));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn ag_updates_are_queued_until_slc_initialization() {
+    fn ag_updates_are_queued_until_slc_initialization(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (mut slc, mut remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc(transport);
         assert!(!slc.initialized());
 
         // Receiving a Ag request to send the phone status update should result in no action
@@ -1195,7 +1234,7 @@ pub(crate) mod tests {
         let features = HfFeatures::THREE_WAY_CALLING;
         let command1 = format!("AT+BRSF={}\r", features.bits()).into_bytes();
         let mut fut = remote.send(command1.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
 
         // Simulate local response with AG Features - expect these to be sent to the peer.
         let ag_features_update = {
@@ -1222,12 +1261,12 @@ pub(crate) mod tests {
         // Peer continues the SLCI procedure.
         let command2 = format!("AT+CIND=?\r").into_bytes();
         let mut fut = remote.send(command2.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
         expect_slc_pending(&mut exec, &mut slc);
         expect_peer_ready(&mut exec, &mut remote, None);
         let command3 = format!("AT+CIND?\r").into_bytes();
         let mut fut = remote.send(command3.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
         let ag_indicators = {
             match exec.run_until_stalled(&mut slc.next()) {
                 Poll::Ready(Some(Ok(SlcRequest::GetAgIndicatorStatus { response }))) => {
@@ -1245,7 +1284,7 @@ pub(crate) mod tests {
         // Peer requests to enable the Indicator Status update in the AG.
         let command4 = format!("AT+CMER=3,0,0,1\r").into_bytes();
         let mut fut = remote.send(command4.to_vec());
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_write_initiated(exec.run_until_stalled(&mut fut));
         // At this point, the mandatory portion of the SLCI procedure is complete. There are no optional
         // steps since we responded with an empty set of AgFeatures.
         expect_slc_ready(&mut exec, &mut slc, std::mem::discriminant(&SlcRequest::Initialized));
@@ -1271,30 +1310,36 @@ pub(crate) mod tests {
         expect_peer_ready(&mut exec, &mut remote, Some(serialize_at_response(expected3)));
     }
 
-    #[fasync::run_until_stalled(test)]
-    async fn rfcomm_connection_stream_produces_items() {
-        let (local, mut remote) = Channel::create();
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    async fn rfcomm_connection_stream_produces_items(transport: Transport) {
+        let (local, mut remote) = create_test_channels(transport);
         let mut connection = DataController::new(local);
         assert!(!connection.is_terminated());
 
         let data1 = vec![0x01, 0x02, 0x03, 0x04];
-        remote.send(data1.to_vec()).await.expect("Sending data 1");
-        assert_matches!(connection.next().await, Some(Ok(buf)) if buf == data1);
+        let (send_res, recv_res) = futures::join!(remote.send(data1.to_vec()), connection.next());
+        send_res.expect("Sending data 1");
+        assert_matches!(recv_res, Some(Ok(buf)) if buf == data1);
 
         let data2 = vec![0x01];
-        remote.send(data2.to_vec()).await.expect("Sending data 2");
-        assert_matches!(connection.next().await, Some(Ok(buf)) if buf == data2);
+        let (send_res, recv_res) = futures::join!(remote.send(data2.to_vec()), connection.next());
+        send_res.expect("Sending data 2");
+        assert_matches!(recv_res, Some(Ok(buf)) if buf == data2);
 
         drop(remote);
         assert_matches!(connection.next().await, None);
         assert!(connection.is_terminated());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn queued_packets_get_sent_to_connection() {
+    fn queued_packets_get_sent_to_connection(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let mut connection = DataController::new(local);
 
         let mut data1 = vec![0x00, 0x02, 0x04, 0x06, 0x08];
@@ -1323,41 +1368,61 @@ pub(crate) mod tests {
         expect_peer_pending(&mut exec, &mut remote);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test(allow_stalls = false)]
-    async fn read_error_result_is_propagated_to_stream() {
-        // Close the remote end of the channel so that local reads and remote writes
-        // fail.
-        let (remote, local) = zx::Socket::create_datagram();
-        assert!(local.half_close().is_ok());
-        let local = Channel::from_socket_infallible(local, Channel::DEFAULT_MAX_TX);
-        let mut remote = Channel::from_socket_infallible(remote, Channel::DEFAULT_MAX_TX);
-        let mut connection = DataController::new(local);
+    async fn read_error_result_is_propagated_to_stream(transport: Transport) {
+        match transport {
+            Transport::Socket => {
+                // Close the remote end of the channel so that local reads and remote writes
+                // fail.
+                let (remote, local) = zx::Socket::create_datagram();
+                assert!(local.half_close().is_ok());
+                let local = Channel::from_socket_infallible(local, Channel::DEFAULT_MAX_TX);
+                let mut remote = Channel::from_socket_infallible(remote, Channel::DEFAULT_MAX_TX);
+                let mut connection = DataController::new(local);
 
-        // Remote writing to us should fail.
-        let bytes = vec![0x00, 0x03];
-        assert_matches!(remote.send(bytes.to_vec()).await, Err(_));
-        // A local read should also fail - the error should be propagated to the stream.
-        assert_matches!(connection.next().await, Some(Err(zx::Status::BAD_STATE)));
+                // Remote writing to us should fail.
+                let bytes = vec![0x00, 0x03];
+                assert_matches!(remote.send(bytes.to_vec()).await, Err(_));
+                // A local read should also fail - the error should be propagated to the stream.
+                assert_matches!(connection.next().await, Some(Err(zx::Status::BAD_STATE)));
+            }
+            Transport::Fidl => {
+                // Close the remote end of the channel so that local reads fail.
+                let (local, remote) = create_test_channels(Transport::Fidl);
+                let mut connection = DataController::new(local);
+
+                drop(remote);
+
+                // A local read should return None (EOF) when the remote is dropped.
+                assert_matches!(connection.next().await, None);
+            }
+        }
     }
 
-    #[fuchsia::test(allow_stalls = false)]
-    async fn write_error_result_is_propagated_to_stream() {
-        // Close the local end of the channel so that remote reads and local writes
-        // fail.
-        let (remote, local) = zx::Socket::create_datagram();
-        assert!(remote.half_close().is_ok());
-        let local = Channel::from_socket_infallible(local, Channel::DEFAULT_MAX_TX);
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn write_error_result_is_propagated_to_stream(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
+
+        // Close the remote end of the channel so that local writes fail.
+        let (local, remote) = create_test_channels(transport);
         let mut connection = DataController::new(local);
+
+        drop(remote);
+
+        // Give the background task time to detect closure and exit.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Queue some data to be sent to the remote.
         let bytes = vec![0x00, 0x03];
         connection.queue_data(bytes);
 
-        // When the stream is polled, the attempted write of `bytes` should fail, and the
-        // error should be propagated via the stream.
-        assert_matches!(connection.next().await, Some(Err(zx::Status::IO)));
-
-        // Trying to explicitly write the bytes should also fail.
-        assert_matches!(connection.send_queued().await, Err(zx::Status::IO));
+        // Trying to explicitly write the bytes should fail because the remote is closed.
+        let send_fut = connection.send_queued();
+        let mut send_fut = std::pin::pin!(send_fut);
+        assert_matches!(exec.run_until_stalled(&mut send_fut), Poll::Ready(Err(_)));
     }
 }

@@ -956,10 +956,18 @@ fn stream_item_map_or_log<T, E: fmt::Debug>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[track_caller]
+    fn assert_write_initiated(res: std::task::Poll<Result<(), zx::Status>>) {
+        match res {
+            std::task::Poll::Ready(Err(e)) => panic!("Write failed: {:?}", e),
+            _ => {}
+        }
+    }
     use assert_matches::assert_matches;
     use async_test_helpers::run_while;
     use async_utils::PollExt;
     use at_commands::{self as at, SerDe};
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_hfp::audio;
     use bt_hfp::call::Number;
     use bt_rfcomm::ServerChannel;
@@ -980,6 +988,7 @@ mod tests {
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::pin::pin;
+    use test_case::test_case;
 
     use crate::features::{AgFeatures, HfFeatures};
     use crate::peer::indicators::{AgIndicatorsReporting, HfIndicators};
@@ -1222,13 +1231,15 @@ mod tests {
         assert!(exec.run_until_stalled(&mut remote.next()).is_ready());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_task_drives_procedure() {
+    fn peer_task_drives_procedure(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (mut peer, _sender, receiver, _profile, _a2dp_requests) = setup_peer_task(None);
 
         // Set up the RFCOMM connection.
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         exec.run_singlethreaded(peer.on_connection_request(vec![], local))
             .expect("Connection request handling to succeed");
 
@@ -1239,14 +1250,16 @@ mod tests {
         let features = HfFeatures::empty();
         let command = format!("AT+BRSF={}\r", features.bits()).into_bytes();
         let mut write_fut = remote.send(command.to_vec());
-        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+        assert_write_initiated(exec.run_until_stalled(&mut write_fut));
         let _ = exec.run_until_stalled(&mut peer_task_fut);
         // We then expect an outgoing message to the peer.
         expect_message_received_by_peer(&mut exec, &mut remote);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn network_information_updates_are_relayed_to_peer() {
+    fn network_information_updates_are_relayed_to_peer(transport: Transport) {
         // This test produces the following two network updates. Each update is expected to
         // be sent to the remote peer.
         let network_update_1 = NetworkInformation {
@@ -1279,7 +1292,7 @@ mod tests {
             ag_indicator_events_reporting: AgIndicatorsReporting::new_enabled(),
             ..SlcState::default()
         };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, _profile, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1336,10 +1349,12 @@ mod tests {
         assert_eq!(task.network, expected_network);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn terminated_slc_ends_peer_task() {
+    fn terminated_slc_ends_peer_task(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (connection, remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, remote) = create_and_initialize_slc(SlcState::default(), transport);
         let (peer, _sender, receiver, _profile, _a2dp_requests) = setup_peer_task(Some(connection));
 
         let run_fut = peer.run(receiver);
@@ -1434,8 +1449,10 @@ mod tests {
         })
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn call_updates_update_ringer_state() {
+    fn call_updates_update_ringer_state(transport: Transport) {
         // Set up the executor, peer, and background call manager task
         let mut exec = fasync::TestExecutor::new();
 
@@ -1444,7 +1461,7 @@ mod tests {
             ag_indicator_events_reporting: AgIndicatorsReporting::new_enabled(),
             ..SlcState::default()
         };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, _profile, _a2dp_reqeusts) =
             setup_peer_task(Some(connection));
 
@@ -1482,13 +1499,15 @@ mod tests {
         assert!(task.ringer.ringing());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn transfers_change_sco_state() {
+    fn transfers_change_sco_state(transport: Transport) {
         // Set up the executor, peer, and background call manager task
         let mut exec = fasync::TestExecutor::new();
 
         // Setup the peer task.
-        let (connection, _remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, _remote) = create_and_initialize_slc(SlcState::default(), transport);
         let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1587,8 +1606,12 @@ mod tests {
         assert!(exec.run_until_stalled(&mut run_fut).is_ready());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn incoming_hf_indicator_battery_level_is_propagated_to_peer_handler_stream() {
+    fn incoming_hf_indicator_battery_level_is_propagated_to_peer_handler_stream(
+        transport: Transport,
+    ) {
         // Set up the executor, peer, and background call manager task
         let mut exec = fasync::TestExecutor::new();
 
@@ -1596,7 +1619,7 @@ mod tests {
         let mut hf_indicators = HfIndicators::default();
         hf_indicators.enable_indicators(vec![at::BluetoothHFIndicator::BatteryLevel]);
         let state = SlcState { hf_indicators, ..SlcState::default() };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, _profile, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1627,7 +1650,7 @@ mod tests {
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![battery_level_cmd]).expect("serialization is ok");
         let mut write_fut = remote.send(buf.to_vec());
-        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+        assert_write_initiated(exec.run_until_stalled(&mut write_fut));
 
         // Run the main future - the task should receive the HF indicator and report it.
         let (battery_level, _run_fut) = run_while(&mut exec, run_fut, stream.next());
@@ -1637,8 +1660,10 @@ mod tests {
         expect_peer_ready(&mut exec, &mut remote, Some(serialize_at_response(at::Response::Ok)));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn local_battery_level_change_initiates_phone_status_procedure() {
+    fn local_battery_level_change_initiates_phone_status_procedure(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         // Setup the peer task with the specified SlcState to enable the battery level indicator on
@@ -1648,7 +1673,7 @@ mod tests {
         let ag_indicator_events_reporting = AgIndicatorsReporting::new_enabled();
         let state =
             SlcState { hf_indicators, ag_indicator_events_reporting, ..SlcState::default() };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, _profile, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1668,8 +1693,10 @@ mod tests {
             run_while(&mut exec, run_fut, expect_data_received_by_peer(&mut remote, expected_ciev));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn call_updates_produce_call_waiting() {
+    fn call_updates_produce_call_waiting(transport: Transport) {
         // Set up the executor, peer, and background call manager task
         let mut exec = fasync::TestExecutor::new();
 
@@ -1687,7 +1714,7 @@ mod tests {
             ag_indicator_events_reporting: AgIndicatorsReporting::new_enabled(),
             ..SlcState::default()
         };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, _profile, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1724,8 +1751,10 @@ mod tests {
         let _ = exec.run_until_stalled(&mut run_fut).expect("run_fut to complete");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn outgoing_call_holds_active() {
+    fn outgoing_call_holds_active(transport: Transport) {
         // Set up the executor.
         let mut exec = fasync::TestExecutor::new();
 
@@ -1740,7 +1769,7 @@ mod tests {
             selected_codec: Some(CodecId::MSBC),
             ..SlcState::default()
         };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1786,7 +1815,7 @@ mod tests {
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![dial_cmd]).expect("serialization is ok");
         let mut write_fut = remote.send(buf.to_vec());
-        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+        assert_write_initiated(exec.run_until_stalled(&mut write_fut));
 
         let (watch_state_req, run_fut) = run_while(&mut exec, run_fut, &mut call_stream.next());
         let _watch_state_resp = match watch_state_req {
@@ -1802,8 +1831,10 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connection_behavior_request_updates_state() {
+    fn connection_behavior_request_updates_state(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (peer, mut sender, receiver, mut profile, _a2dp_requests) = setup_peer_task(None);
 
@@ -1833,7 +1864,7 @@ mod tests {
                 ..
             }))) => {
                 assert_eq!(sc, u8::from(random_channel_number));
-                let (local, remote) = Channel::create();
+                let (local, remote) = create_test_channels(transport);
                 let local = local.try_into().unwrap();
                 responder.send(Ok(local)).unwrap();
 
@@ -1883,11 +1914,13 @@ mod tests {
         assert!(exec.run_until_stalled(&mut profile.next()).is_pending());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_request_triggers_connection() {
+    fn connect_request_triggers_connection(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let connection = ServiceLevelConnection::new();
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let (peer, mut sender, receiver, _profile, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1914,11 +1947,13 @@ mod tests {
         assert!(exec.run_until_stalled(&mut remote.next()).is_pending());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_request_replaces_connection() {
+    fn connect_request_replaces_connection(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, mut old_remote) = create_and_connect_slc();
+        let (connection, mut old_remote) = create_and_connect_slc(transport);
         let (peer, mut sender, receiver, _profile, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1928,7 +1963,7 @@ mod tests {
         let mut run_fut = pin!(run_fut);
 
         // create a new connection for the SLC
-        let (local, mut new_remote) = Channel::create();
+        let (local, mut new_remote) = create_test_channels(transport);
         let event_fut = sender.send(
             ProfileEvent::PeerConnected { id: PeerId(0), protocol: vec![], channel: local }.into(),
         );
@@ -2093,11 +2128,13 @@ mod tests {
         suspend_request_stream
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn setup_audio_connection_connects_and_starts_audio() {
+    fn setup_audio_connection_connects_and_starts_audio(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, _old_remote) = create_and_connect_slc();
+        let (connection, _old_remote) = create_and_connect_slc(transport);
         let (peer, _sender, _receiver, mut profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
@@ -2112,8 +2149,10 @@ mod tests {
         assert!(test_audio_control.is_started(PeerId(1)));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn setup_audio_fails_then_succeeds_on_retry() {
+    fn setup_audio_fails_then_succeeds_on_retry(transport: Transport) {
         // Set up the executor.
         let mut exec = fasync::TestExecutor::new();
 
@@ -2128,7 +2167,7 @@ mod tests {
             hf_supported_codecs: Some(vec![CodecId::CVSD, CodecId::MSBC]),
             ..SlcState::default()
         };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -2171,7 +2210,7 @@ mod tests {
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
         let mut write_fut = remote.send(buf.to_vec());
-        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+        assert_write_initiated(exec.run_until_stalled(&mut write_fut));
 
         let (_token_requests, run_fut) =
             run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
@@ -2201,8 +2240,10 @@ mod tests {
         let _ = exec.run_until_stalled(&mut run_fut);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn renegotiaties_when_hq_sco_fails_to_connect() {
+    fn renegotiaties_when_hq_sco_fails_to_connect(transport: Transport) {
         // Set up the executor.
         let mut exec = fasync::TestExecutor::new();
 
@@ -2217,7 +2258,7 @@ mod tests {
             hf_supported_codecs: Some(vec![CodecId::CVSD, CodecId::MSBC]),
             ..SlcState::default()
         };
-        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state, transport);
         let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -2260,7 +2301,7 @@ mod tests {
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
         let mut write_fut = remote.send(buf.to_vec());
-        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+        assert_write_initiated(exec.run_until_stalled(&mut write_fut));
 
         let (_token_requests, run_fut) =
             run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
@@ -2295,7 +2336,7 @@ mod tests {
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
         let mut write_fut = remote.send(buf.to_vec());
-        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
+        assert_write_initiated(exec.run_until_stalled(&mut write_fut));
 
         let (_token_requests, run_fut) =
             run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
@@ -2314,11 +2355,13 @@ mod tests {
         let _ = exec.run_until_stalled(&mut run_fut);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn audio_is_stopped_when_sco_connection_closes() {
+    fn audio_is_stopped_when_sco_connection_closes(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, _old_remote) = create_and_connect_slc();
+        let (connection, _old_remote) = create_and_connect_slc(transport);
         let (mut peer, _sender, receiver, mut profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
@@ -2344,11 +2387,14 @@ mod tests {
         assert!(!test_audio_control.is_started(PeerId(1)));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn audio_control_connection_is_added_when_connected() {
+    fn audio_control_connection_is_added_when_connected(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, mut _old_remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, mut _old_remote) =
+            create_and_initialize_slc(SlcState::default(), transport);
         let (peer, _sender, _receiver, _profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
@@ -2359,11 +2405,13 @@ mod tests {
         assert!(peer.connection.connected());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn audio_control_disconnected_when_peer_disconnects() {
+    fn audio_control_disconnected_when_peer_disconnects(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, old_remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, old_remote) = create_and_initialize_slc(SlcState::default(), transport);
         let (peer, _sender, receiver, _profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
@@ -2380,11 +2428,13 @@ mod tests {
         assert!(!test_audio_control.is_connected(PeerId(1)));
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn sco_connection_closed_when_audio_stops_unexpectedly() {
+    fn sco_connection_closed_when_audio_stops_unexpectedly(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, _old_remote) = create_and_connect_slc();
+        let (connection, _old_remote) = create_and_connect_slc(transport);
         let (
             mut peer,
             mut sender,
@@ -2430,11 +2480,13 @@ mod tests {
         assert!(!peer.sco_state.is_active());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn sco_connection_closed_when_call_ends() {
+    fn sco_connection_closed_when_call_ends(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, _old_remote) = create_and_connect_slc();
+        let (connection, _old_remote) = create_and_connect_slc(transport);
         let (mut peer, _sender, _receiver, mut profile_requests, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -2500,10 +2552,12 @@ mod tests {
         assert!(!peer.sco_state.is_active());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn subscriber_number_information_success() {
+    fn subscriber_number_information_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (connection, mut remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, mut remote) = create_and_initialize_slc(SlcState::default(), transport);
         let (peer, mut sender, receiver, _profile_requests, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -2540,10 +2594,12 @@ mod tests {
         exec.run_singlethreaded(&mut expectation_fut);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn subscriber_number_information_validation_errors() {
+    fn subscriber_number_information_validation_errors(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
-        let (connection, mut remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, mut remote) = create_and_initialize_slc(SlcState::default(), transport);
         let (peer, mut sender, receiver, _profile_requests, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -2580,9 +2636,9 @@ mod tests {
         exec.run_singlethreaded(&mut expectation_fut);
     }
 
-    fn make_query_operator_request(operator_name: Option<String>) -> String {
+    fn make_query_operator_request(operator_name: Option<String>, transport: Transport) -> String {
         let mut exec = fasync::TestExecutor::new();
-        let (connection, mut remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, mut remote) = create_and_initialize_slc(SlcState::default(), transport);
         let (peer, mut sender, receiver, _profile_requests, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -2628,33 +2684,37 @@ mod tests {
         response
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn query_operator_success() {
+    fn query_operator_success(transport: Transport) {
         // Case 1: Valid operator name is accepted (quoted)
-        let response = make_query_operator_request(Some("T-Mobile".to_string()));
+        let response = make_query_operator_request(Some("T-Mobile".to_string()), transport);
         assert_eq!(response, "\r\n+COPS: 0,0,\"T-Mobile\"\r\n\r\nOK\r\n");
 
         // Case 2: Empty operator name is accepted and quoted
-        let response = make_query_operator_request(Some("".to_string()));
+        let response = make_query_operator_request(Some("".to_string()), transport);
         assert_eq!(response, "\r\n+COPS: 0,0,\"\"\r\n\r\nOK\r\n");
 
         // Case 3: None operator name is handled cleanly (unquoted empty)
-        let response = make_query_operator_request(None);
+        let response = make_query_operator_request(None, transport);
         assert_eq!(response, "\r\n+COPS: 0,0\r\n\r\nOK\r\n");
 
         // Case 4: Valid operator name with a comma is accepted and quoted
-        let response = make_query_operator_request(Some("T-Mobile, Inc.".to_string()));
+        let response = make_query_operator_request(Some("T-Mobile, Inc.".to_string()), transport);
         assert_eq!(response, "\r\n+COPS: 0,0,\"T-Mobile, Inc.\"\r\n\r\nOK\r\n");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn query_operator_validation_errors() {
+    fn query_operator_validation_errors(transport: Transport) {
         // Case 1: Invalid operator name (containing CRLF) is ignored (treated as None/empty)
-        let response = make_query_operator_request(Some("T-Mobile\r\n".to_string()));
+        let response = make_query_operator_request(Some("T-Mobile\r\n".to_string()), transport);
         assert_eq!(response, "\r\n+COPS: 0,0\r\n\r\nOK\r\n");
 
         // Case 2: Invalid operator name (containing quotes) is ignored (treated as None/empty)
-        let response = make_query_operator_request(Some("My\"Operator".to_string()));
+        let response = make_query_operator_request(Some("My\"Operator".to_string()), transport);
         assert_eq!(response, "\r\n+COPS: 0,0\r\n\r\nOK\r\n");
     }
 }

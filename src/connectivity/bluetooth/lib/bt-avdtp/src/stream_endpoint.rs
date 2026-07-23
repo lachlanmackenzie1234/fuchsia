@@ -550,6 +550,8 @@ mod tests {
     use super::*;
     use crate::Request;
     use crate::tests::{expect_remote_recv, setup_peer};
+    use bt_channel_test_support::{Transport, create_test_channels};
+    use test_case::test_case;
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;
@@ -587,9 +589,9 @@ mod tests {
         assert!(no.is_err());
     }
 
-    fn establish_stream(s: &mut StreamEndpoint) -> Channel {
+    fn establish_stream(s: &mut StreamEndpoint, transport: Transport) -> Channel {
         assert_matches!(s.establish(), Ok(()));
-        let (chan, remote) = Channel::create();
+        let (chan, remote) = create_test_channels(transport);
         assert_matches!(s.receive_channel(chan), Ok(false));
         remote
     }
@@ -655,8 +657,10 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn stream_configure_reconfigure() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn stream_configure_reconfigure(transport: Transport) {
         let _exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
 
@@ -686,7 +690,7 @@ mod tests {
         // are only configured, even though this is probably not allowed per the spec.
 
         // Can't configure while open
-        let _channel = establish_stream(&mut s);
+        let _channel = establish_stream(&mut s, transport);
 
         assert_matches!(
             s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]),
@@ -737,18 +741,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn stream_establishment() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn stream_establishment(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
 
-        let (mut remote, transport) = Channel::create();
+        let (transport_chan, mut remote) = create_test_channels(transport);
 
         // Can't establish before configuring
         assert_matches!(s.establish(), Err(ErrorCode::BadState));
 
         // Trying to receive a channel in the wrong state closes the channel
-        assert_matches!(s.receive_channel(transport), Err(Error::InvalidState));
+        assert_matches!(s.receive_channel(transport_chan), Err(Error::InvalidState));
 
         let mut read_fut = remote.next();
         let res = exec.run_until_stalled(&mut read_fut).expect("should be ready");
@@ -760,12 +766,15 @@ mod tests {
         assert_matches!(s.establish(), Ok(()));
 
         // And we should be able to give a channel now.
-        let (_remote, transport) = Channel::create();
-        assert_matches!(s.receive_channel(transport), Ok(false));
+        let (transport_chan, _remote) = create_test_channels(transport);
+        assert_matches!(s.receive_channel(transport_chan), Ok(false));
     }
 
-    fn setup_peer_for_release(exec: &mut fasync::TestExecutor) -> (Peer, Channel, SimpleResponder) {
-        let (peer, mut signaling) = setup_peer();
+    fn setup_peer_for_release(
+        exec: &mut fasync::TestExecutor,
+        transport: Transport,
+    ) -> (Peer, Channel, SimpleResponder) {
+        let (peer, mut signaling) = setup_peer(transport);
         // Send a close from the other side to produce an event we can respond to.
         exec.run_until_stalled(&mut signaling.send(vec![0x40, 0x08, 0x04]))
             .expect("signaling write")
@@ -780,21 +789,23 @@ mod tests {
         (peer, signaling, responder)
     }
 
-    #[test]
-    fn stream_release_without_abort() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn stream_release_without_abort(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
 
         assert_matches!(s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]), Ok(()));
 
-        let remote_transport = establish_stream(&mut s);
+        let remote_transport = establish_stream(&mut s, transport);
 
-        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec);
+        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec, transport);
 
         // We expect release to succeed in this state.
         s.release(responder, &peer).unwrap();
         // Expect a "yes" response.
-        expect_remote_recv(&[0x42, 0x08], &mut signaling);
+        expect_remote_recv(&mut exec, &[0x42, 0x08], &mut signaling);
 
         // Close the transport channel by dropping it.
         drop(remote_transport);
@@ -804,8 +815,10 @@ mod tests {
         assert_eq!(s.state(), StreamState::Idle);
     }
 
-    #[test]
-    fn test_mediastream() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn test_mediastream(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
 
@@ -814,7 +827,7 @@ mod tests {
         // Before the stream is opened, we shouldn't be able to take the transport.
         assert!(s.take_transport().is_none());
 
-        let mut remote_transport = establish_stream(&mut s);
+        let mut remote_transport = establish_stream(&mut s, transport);
 
         // Should be able to get the transport from the stream now.
         let temp_stream = s.take_transport();
@@ -839,7 +852,7 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut write_fut), Poll::Ready(Ok(())));
 
-        expect_remote_recv(&hearts, &mut remote_transport);
+        expect_remote_recv(&mut exec, &hearts, &mut remote_transport);
 
         // Closing the media stream should close the channel.
         let mut close_fut = media_stream.close();
@@ -869,19 +882,21 @@ mod tests {
         assert_matches!(media_stream.max_tx_size(), Err(_));
     }
 
-    #[test]
-    fn stream_release_with_abort() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn stream_release_with_abort(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
 
         assert_matches!(s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]), Ok(()));
-        let remote_transport = establish_stream(&mut s);
-        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec);
+        let remote_transport = establish_stream(&mut s, transport);
+        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec, transport);
 
         // We expect release to succeed in this state, then start the task to wait for the close.
         s.release(responder, &peer).unwrap();
         // Expect a "yes" response.
-        expect_remote_recv(&[0x42, 0x08], &mut signaling);
+        expect_remote_recv(&mut exec, &[0x42, 0x08], &mut signaling);
 
         // Should get an abort
         let next = std::pin::pin!(signaling.next());
@@ -902,8 +917,36 @@ mod tests {
         }
     }
 
-    #[test]
-    fn start_and_suspend() {
+    fn create_channel_for_start_test(
+        transport: Transport,
+    ) -> (Channel, Channel, Option<bredr::AudioDirectionExtRequestStream>) {
+        match transport {
+            Transport::Socket => {
+                let (remote, local) = zx::Socket::create_datagram();
+                let (client_end, direction_request_stream) =
+                    create_request_stream::<bredr::AudioDirectionExtMarker>();
+                let ext = bredr::Channel {
+                    socket: Some(local),
+                    channel_mode: Some(fidl_bt::ChannelMode::Basic),
+                    max_tx_sdu_size: Some(1004),
+                    ext_direction: Some(client_end),
+                    ..Default::default()
+                };
+                let channel = Channel::try_from(ext).unwrap();
+                let remote_chan = Channel::from_socket_infallible(remote, Channel::DEFAULT_MAX_TX);
+                (channel, remote_chan, Some(direction_request_stream))
+            }
+            Transport::Fidl => {
+                let (client, server) = create_test_channels(Transport::Fidl);
+                (client, server, None)
+            }
+        }
+    }
+
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn start_and_suspend(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
 
@@ -921,60 +964,55 @@ mod tests {
         assert_matches!(s.start(), Err(ErrorCode::BadState));
         assert_matches!(s.suspend(), Err(ErrorCode::BadState));
 
-        let (remote, local) = zx::Socket::create_datagram();
-        let (client_end, mut direction_request_stream) =
-            create_request_stream::<bredr::AudioDirectionExtMarker>();
-        let ext = bredr::Channel {
-            socket: Some(local),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            ext_direction: Some(client_end),
-            ..Default::default()
-        };
-        let transport = Channel::try_from(ext).unwrap();
-        assert_matches!(s.receive_channel(transport), Ok(false));
+        let (transport_chan, remote, mut direction_request_stream) =
+            create_channel_for_start_test(transport);
+        assert_matches!(s.receive_channel(transport_chan), Ok(false));
 
         // Should be able to start but not suspend now.
         assert_matches!(s.suspend(), Err(ErrorCode::BadState));
         assert_matches!(s.start(), Ok(()));
 
-        match exec.run_until_stalled(&mut direction_request_stream.next()) {
-            Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
-                priority,
-                responder,
-            }))) => {
-                assert_eq!(bredr::A2dpDirectionPriority::Sink, priority);
-                responder.send(Ok(())).expect("response to send cleanly");
+        if let Some(ref mut stream) = direction_request_stream {
+            match exec.run_until_stalled(&mut stream.next()) {
+                Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
+                    priority,
+                    responder,
+                }))) => {
+                    assert_eq!(bredr::A2dpDirectionPriority::Sink, priority);
+                    responder.send(Ok(())).expect("response to send cleanly");
+                }
+                x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
             }
-            x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
-        };
+        }
 
         // Are started, so we should be able to suspend but not start again here.
         assert_matches!(s.start(), Err(ErrorCode::BadState));
         assert_matches!(s.suspend(), Ok(()));
 
-        match exec.run_until_stalled(&mut direction_request_stream.next()) {
-            Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
-                priority,
-                responder,
-            }))) => {
-                assert_eq!(bredr::A2dpDirectionPriority::Normal, priority);
-                responder.send(Ok(())).expect("response to send cleanly");
+        if let Some(ref mut stream) = direction_request_stream {
+            match exec.run_until_stalled(&mut stream.next()) {
+                Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
+                    priority,
+                    responder,
+                }))) => {
+                    assert_eq!(bredr::A2dpDirectionPriority::Normal, priority);
+                    responder.send(Ok(())).expect("response to send cleanly");
+                }
+                x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
             }
-            x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
-        };
+        }
 
         // Now we're suspended, so we can start it again.
         assert_matches!(s.start(), Ok(()));
         assert_matches!(s.suspend(), Ok(()));
 
         // After we close, we are back at idle and can't start / stop
-        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec);
+        let (peer, mut signaling, responder) = setup_peer_for_release(&mut exec, transport);
 
         {
             s.release(responder, &peer).unwrap();
             // Expect a "yes" response.
-            expect_remote_recv(&[0x42, 0x08], &mut signaling);
+            expect_remote_recv(&mut exec, &[0x42, 0x08], &mut signaling);
             // Close the transport channel by dropping it.
             drop(remote);
             while s.state() != StreamState::Idle {
@@ -989,58 +1027,76 @@ mod tests {
 
     fn receive_l2cap_params_channel(
         s: &mut StreamEndpoint,
-    ) -> (zx::Socket, bredr::L2capParametersExtRequestStream) {
+        transport: Transport,
+    ) -> (Channel, Option<bredr::L2capParametersExtRequestStream>) {
         assert_matches!(s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]), Ok(()));
         assert_matches!(s.establish(), Ok(()));
 
-        let (remote, local) = zx::Socket::create_datagram();
-        let (client_end, l2cap_params_requests) =
-            create_request_stream::<bredr::L2capParametersExtMarker>();
-        let ext = bredr::Channel {
-            socket: Some(local),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            ext_l2cap: Some(client_end),
-            ..Default::default()
-        };
-        let transport = Channel::try_from(ext).unwrap();
-        assert_matches!(s.receive_channel(transport), Ok(false));
-        (remote, l2cap_params_requests)
+        match transport {
+            Transport::Socket => {
+                let (remote, local) = zx::Socket::create_datagram();
+                let (client_end, l2cap_params_requests) =
+                    create_request_stream::<bredr::L2capParametersExtMarker>();
+                let ext = bredr::Channel {
+                    socket: Some(local),
+                    channel_mode: Some(fidl_bt::ChannelMode::Basic),
+                    max_tx_sdu_size: Some(1004),
+                    ext_l2cap: Some(client_end),
+                    ..Default::default()
+                };
+                let transport_chan = Channel::try_from(ext).unwrap();
+                assert_matches!(s.receive_channel(transport_chan), Ok(false));
+                let remote_chan = Channel::from_socket_infallible(remote, Channel::DEFAULT_MAX_TX);
+                (remote_chan, Some(l2cap_params_requests))
+            }
+            Transport::Fidl => {
+                let (client, server) = create_test_channels(Transport::Fidl);
+                assert_matches!(s.receive_channel(client), Ok(false));
+                (server, None)
+            }
+        }
     }
 
-    #[test]
-    fn sets_flush_timeout_for_source_transports() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn sets_flush_timeout_for_source_transports(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Source);
-        let (_remote, mut l2cap_params_requests) = receive_l2cap_params_channel(&mut s);
+        let (_remote, mut l2cap_params_requests) = receive_l2cap_params_channel(&mut s, transport);
 
-        // Should request to set the flush timeout.
-        match exec.run_until_stalled(&mut l2cap_params_requests.next()) {
-            Poll::Ready(Some(Ok(bredr::L2capParametersExtRequest::RequestParameters {
-                request,
-                responder,
-            }))) => {
-                assert_eq!(
-                    Some(StreamEndpoint::SRC_FLUSH_TIMEOUT.into_nanos()),
-                    request.flush_timeout
-                );
-                responder.send(&request).expect("response to send cleanly");
-            }
-            x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
-        };
+        if let Some(ref mut stream) = l2cap_params_requests {
+            match exec.run_until_stalled(&mut stream.next()) {
+                Poll::Ready(Some(Ok(bredr::L2capParametersExtRequest::RequestParameters {
+                    request,
+                    responder,
+                }))) => {
+                    assert_eq!(
+                        Some(StreamEndpoint::SRC_FLUSH_TIMEOUT.into_nanos()),
+                        request.flush_timeout
+                    );
+                    responder.send(&request).expect("response to send cleanly");
+                }
+                x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
+            };
+        }
     }
 
-    #[test]
-    fn no_flush_timeout_for_sink_transports() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn no_flush_timeout_for_sink_transports(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
-        let (_remote, mut l2cap_params_requests) = receive_l2cap_params_channel(&mut s);
+        let (_remote, mut l2cap_params_requests) = receive_l2cap_params_channel(&mut s, transport);
 
-        // Should NOT request to set the flush timeout.
-        match exec.run_until_stalled(&mut l2cap_params_requests.next()) {
-            Poll::Pending => {}
-            x => panic!("Expected no request to set flush timeout, got {:?}", x),
-        };
+        if let Some(ref mut stream) = l2cap_params_requests {
+            // Should NOT request to set the flush timeout.
+            match exec.run_until_stalled(&mut stream.next()) {
+                Poll::Pending => {}
+                x => panic!("Expected no request to set flush timeout, got {:?}", x),
+            };
+        }
     }
 
     #[test]
@@ -1091,8 +1147,10 @@ mod tests {
     ///
     /// Note that the _results_ of calling these mutating methods on the state of StreamEndpoint are
     /// not validated here. They are validated in other tests.
-    #[test]
-    fn update_callback() {
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    #[fuchsia::test]
+    fn update_callback(transport: Transport) {
         // Need an executor to make a socket
         let _exec = fasync::TestExecutor::new();
         let mut s = test_endpoint(EndpointType::Sink);
@@ -1108,9 +1166,9 @@ mod tests {
         assert!(call_count.load(Ordering::SeqCst) > 0, "Update callback called at least once");
         call_count.store(0, Ordering::SeqCst); // clear call count
 
-        let (_, transport) = Channel::create();
+        let (transport_chan, _remote) = create_test_channels(transport);
         assert_eq!(
-            s.receive_channel(transport).expect("Receive channel to succeed in test"),
+            s.receive_channel(transport_chan).expect("Receive channel to succeed in test"),
             false
         );
         assert!(call_count.load(Ordering::SeqCst) > 0, "Update callback called at least once");

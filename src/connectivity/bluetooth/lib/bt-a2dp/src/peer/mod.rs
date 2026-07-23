@@ -1110,15 +1110,18 @@ mod tests {
     use super::*;
 
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_metrics::respond_to_metrics_req_for_test;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth::ErrorCode;
+
     use fidl_fuchsia_bluetooth_bredr::{
         ProfileMarker, ProfileRequest, ProfileRequestStream, ServiceClassProfileIdentifier,
     };
     use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
     use futures::{SinkExt, StreamExt};
     use std::pin::pin;
+    use test_case::test_case;
 
     use crate::media_task::tests::{TestMediaTask, TestMediaTaskBuilder};
     use crate::media_types::*;
@@ -1132,8 +1135,8 @@ mod tests {
         (bt_metrics::MetricsLogger::from_proxy(c), s)
     }
 
-    fn setup_avdtp_peer() -> (avdtp::Peer, Channel) {
-        let (remote, signaling) = Channel::create();
+    fn setup_avdtp_peer(transport: Transport) -> (avdtp::Peer, Channel) {
+        let (signaling, remote) = create_test_channels(transport);
         let peer = avdtp::Peer::new(signaling);
         (peer, remote)
     }
@@ -1182,18 +1185,22 @@ mod tests {
     }
 
     #[track_caller]
-    pub(crate) fn recv_remote(remote: &mut Channel) -> Result<Vec<u8>, zx::Status> {
-        let fut = remote.next();
-        match fut.now_or_never() {
-            Some(Some(res)) => res,
-            Some(None) => Err(zx::Status::PEER_CLOSED),
-            None => Err(zx::Status::SHOULD_WAIT),
+    pub(crate) fn recv_remote(
+        exec: &mut fasync::TestExecutor,
+        remote: &mut Channel,
+    ) -> Result<Vec<u8>, zx::Status> {
+        let mut fut = remote.next();
+        match exec.run_until_stalled(&mut fut) {
+            Poll::Ready(Some(res)) => res,
+            Poll::Ready(None) => Err(zx::Status::PEER_CLOSED),
+            Poll::Pending => Err(zx::Status::SHOULD_WAIT),
         }
     }
 
     /// Creates a Peer object, returning a channel connected ot the remote end, a
     /// ProfileRequestStream connected to the profile_proxy, and the Peer object.
     fn setup_test_peer(
+        transport: Transport,
         use_cobalt: bool,
         streams: Streams,
         permits: Option<Permits>,
@@ -1203,7 +1210,7 @@ mod tests {
         Option<fidl_fuchsia_metrics::MetricEventLoggerRequestStream>,
         Peer,
     ) {
-        let (avdtp, remote) = setup_avdtp_peer();
+        let (avdtp, remote) = setup_avdtp_peer(transport);
         let (metrics_logger, cobalt_receiver) = if use_cobalt {
             let (l, r) = fake_metrics();
             (l, Some(r))
@@ -1229,7 +1236,7 @@ mod tests {
         expected_seid: u8,
         response_capabilities: &[u8],
     ) {
-        let received = recv_remote(remote).unwrap();
+        let received = recv_remote(exec, remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x02, received[1]); // 0x02 = Get Capabilities
@@ -1255,7 +1262,7 @@ mod tests {
         expected_seid: u8,
         response_capabilities: &[u8],
     ) {
-        let received = recv_remote(remote).unwrap();
+        let received = recv_remote(exec, remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x0C, received[1]); // 0x0C = Get All Capabilities
@@ -1275,11 +1282,13 @@ mod tests {
         expect_send(exec, remote, get_capabilities_rsp);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn disconnected() {
+    fn disconnected(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, _stream) = create_proxy_and_stream::<ProfileMarker>();
-        let (remote, signaling) = Channel::create();
+        let (signaling, remote) = create_test_channels(transport);
 
         let id = PeerId(1);
 
@@ -1305,12 +1314,14 @@ mod tests {
         assert!(exec.run_until_stalled(&mut closed_fut).is_ready());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_collect_capabilities_success() {
+    fn peer_collect_capabilities_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let (mut remote, _, cobalt_receiver, peer) =
-            setup_test_peer(true, build_test_streams(), None);
+            setup_test_peer(transport, true, build_test_streams(), None);
 
         let p: ProfileDescriptor = ProfileDescriptor {
             profile_id: Some(ServiceClassProfileIdentifier::AdvancedAudioDistribution),
@@ -1326,7 +1337,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&mut remote).unwrap();
+        let received = recv_remote(&mut exec, &mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1436,12 +1447,14 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_collect_all_capabilities_success() {
+    fn peer_collect_all_capabilities_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let (mut remote, _, cobalt_receiver, peer) =
-            setup_test_peer(true, build_test_streams(), None);
+            setup_test_peer(transport, true, build_test_streams(), None);
         let p: ProfileDescriptor = ProfileDescriptor {
             profile_id: Some(ServiceClassProfileIdentifier::AdvancedAudioDistribution),
             major_version: Some(1),
@@ -1456,7 +1469,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&mut remote).unwrap();
+        let received = recv_remote(&mut exec, &mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1576,11 +1589,14 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_collect_capabilities_discovery_fails() {
+    fn peer_collect_capabilities_discovery_fails(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (mut remote, _, _, peer) = setup_test_peer(false, build_test_streams(), None);
+        let (mut remote, _, _, peer) =
+            setup_test_peer(transport, false, build_test_streams(), None);
 
         let collect_future = peer.collect_capabilities();
         let mut collect_future = pin!(collect_future);
@@ -1589,7 +1605,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&mut remote).unwrap();
+        let received = recv_remote(&mut exec, &mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1616,11 +1632,13 @@ mod tests {
         }
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_collect_capabilities_get_capability_fails() {
+    fn peer_collect_capabilities_get_capability_fails(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (mut remote, _, _, peer) = setup_test_peer(true, build_test_streams(), None);
+        let (mut remote, _, _, peer) = setup_test_peer(transport, true, build_test_streams(), None);
 
         let collect_future = peer.collect_capabilities();
         let mut collect_future = pin!(collect_future);
@@ -1629,7 +1647,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&mut remote).unwrap();
+        let received = recv_remote(&mut exec, &mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1651,7 +1669,7 @@ mod tests {
 
         // Expect a get capabilities request
         let expected_seid = 0x3E;
-        let received = recv_remote(&mut remote).unwrap();
+        let received = recv_remote(&mut exec, &mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x02, received[1]); // 0x02 = Get Capabilities
@@ -1670,7 +1688,7 @@ mod tests {
 
         // Expect a get capabilities request (skipped the last one)
         let expected_seid = 0x01;
-        let received = recv_remote(&mut remote).unwrap();
+        let received = recv_remote(&mut exec, &mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x02, received[1]); // 0x02 = Get Capabilities
@@ -1694,7 +1712,7 @@ mod tests {
     }
 
     fn receive_simple_accept(exec: &mut fasync::TestExecutor, remote: &mut Channel, signal_id: u8) {
-        let received = recv_remote(remote).expect("expected a packet");
+        let received = recv_remote(exec, remote).expect("expected a packet");
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(signal_id, received[1]);
@@ -1708,12 +1726,14 @@ mod tests {
         expect_send(exec, remote, response.to_vec());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_stream_start_success() {
+    fn peer_stream_start_success(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let (mut remote, mut profile_request_stream, _, peer) =
-            setup_test_peer(false, build_test_streams(), None);
+            setup_test_peer(transport, false, build_test_streams(), None);
 
         let remote_seid = 2_u8.try_into().unwrap();
 
@@ -1744,14 +1764,14 @@ mod tests {
         };
 
         // Should connect the media channel after open.
-        let (_, transport) = Channel::create();
+        let (transport_chan, _remote_chan) = create_test_channels(transport);
 
         let request = exec.run_until_stalled(&mut profile_request_stream.next());
         match request {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { peer_id, connection, responder }))) => {
                 assert_eq!(PeerId(1), peer_id.into());
                 assert_eq!(connection, ConnectParameters::L2cap(Peer::transport_channel_params()));
-                let channel = transport.try_into().unwrap();
+                let channel = transport_chan.try_into().unwrap();
                 responder.send(Ok(channel)).expect("responder sends");
             }
             x => panic!("Should have sent a open l2cap request, but got {:?}", x),
@@ -1777,11 +1797,13 @@ mod tests {
         }
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_stream_start_picks_correct_direction() {
+    fn peer_stream_start_picks_correct_direction(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, _, _, peer) = setup_test_peer(false, build_test_streams(), None);
+        let (remote, _, _, peer) = setup_test_peer(transport, false, build_test_streams(), None);
         let remote = avdtp::Peer::new(remote);
         let mut remote_events = remote.take_request_stream();
 
@@ -1866,11 +1888,13 @@ mod tests {
         remote_handle_request(request.expect("should have an open request").unwrap());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_stream_start_strips_unsupported_local_capabilities() {
+    fn peer_stream_start_strips_unsupported_local_capabilities(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, _, _, peer) = setup_test_peer(false, build_test_streams(), None);
+        let (remote, _, _, peer) = setup_test_peer(transport, false, build_test_streams(), None);
         let remote = avdtp::Peer::new(remote);
         let mut remote_events = remote.take_request_stream();
 
@@ -1961,11 +1985,14 @@ mod tests {
         remote_handle_request(request.expect("should have an open request").unwrap());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_stream_start_orders_local_capabilities() {
+    fn peer_stream_start_orders_local_capabilities(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, _, _, peer) = setup_test_peer(false, build_test_streams_delayable(), None);
+        let (remote, _, _, peer) =
+            setup_test_peer(transport, false, build_test_streams_delayable(), None);
         let remote = avdtp::Peer::new(remote);
         let mut remote_events = remote.take_request_stream();
 
@@ -2064,13 +2091,15 @@ mod tests {
 
     /// Tests that A2DP streaming does not start if the streaming permit is revoked during streaming
     /// setup.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_stream_start_permit_revoked() {
+    fn peer_stream_start_permit_revoked(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let test_permits = Permits::new(1);
         let (mut remote, mut profile_request_stream, _, peer) =
-            setup_test_peer(false, build_test_streams(), Some(test_permits.clone()));
+            setup_test_peer(transport, false, build_test_streams(), Some(test_permits.clone()));
 
         let remote_seid = 2_u8.try_into().unwrap();
 
@@ -2093,14 +2122,14 @@ mod tests {
         assert!(!peer.is_streaming_now());
 
         // Should connect the media channel after open.
-        let (_, transport) = Channel::create();
+        let (transport_chan, _remote_chan) = create_test_channels(transport);
 
         let request = exec.run_until_stalled(&mut profile_request_stream.next());
         match request {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { peer_id, connection, responder }))) => {
                 assert_eq!(PeerId(1), peer_id.into());
                 assert_eq!(connection, ConnectParameters::L2cap(Peer::transport_channel_params()));
-                let channel = transport.try_into().unwrap();
+                let channel = transport_chan.try_into().unwrap();
                 responder.send(Ok(channel)).expect("responder sends");
             }
             x => panic!("Should have sent a open l2cap request, but got {:?}", x),
@@ -2131,8 +2160,10 @@ mod tests {
         assert!(!peer.is_streaming_now());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_stream_start_fails_wrong_direction() {
+    fn peer_stream_start_fails_wrong_direction(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         // Setup peers with only one Source Stream.
@@ -2143,7 +2174,7 @@ mod tests {
         );
         streams.insert(source);
 
-        let (remote, _requests, _, peer) = setup_test_peer(false, streams, None);
+        let (remote, _requests, _, peer) = setup_test_peer(transport, false, streams, None);
         let remote = avdtp::Peer::new(remote);
         let mut remote_events = remote.take_request_stream();
 
@@ -2212,12 +2243,14 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_stream_start_fails_to_connect() {
+    fn peer_stream_start_fails_to_connect(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let (mut remote, mut profile_request_stream, _, peer) =
-            setup_test_peer(false, build_test_streams(), None);
+            setup_test_peer(transport, false, build_test_streams(), None);
 
         let remote_seid = 2_u8.try_into().unwrap();
 
@@ -2266,10 +2299,12 @@ mod tests {
     }
 
     /// Test that the delay reports get acknowledged and they are sent to cobalt.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn peer_delay_report() {
+    async fn peer_delay_report(transport: Transport) {
         let (remote, _profile_requests, cobalt_recv, peer) =
-            setup_test_peer(true, build_test_streams(), None);
+            setup_test_peer(transport, true, build_test_streams(), None);
         let remote_peer = avdtp::Peer::new(remote);
         let mut remote_events = remote_peer.take_request_stream();
 
@@ -2402,8 +2437,10 @@ mod tests {
     }
 
     /// Test that the remote end can configure and start a stream.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_as_acceptor() {
+    fn peer_as_acceptor(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut streams = Streams::default();
@@ -2413,7 +2450,7 @@ mod tests {
             test_builder.builder(),
         ));
 
-        let (remote, _requests, _, peer) = setup_test_peer(false, streams, None);
+        let (remote, _requests, _, peer) = setup_test_peer(transport, false, streams, None);
         let remote_peer = avdtp::Peer::new(remote);
 
         let discover_fut = remote_peer.discover();
@@ -2474,9 +2511,9 @@ mod tests {
         };
 
         // Establish a media transport stream
-        let (_remote_transport, transport) = Channel::create();
+        let (transport_chan, _remote_transport) = create_test_channels(transport);
 
-        assert_eq!(Some(()), peer.receive_channel(transport).ok());
+        assert_eq!(Some(()), peer.receive_channel(transport_chan).ok());
 
         let stream_ids = vec![sbc_endpoint_id.clone()];
         let start_fut = remote_peer.start(&stream_ids);
@@ -2501,8 +2538,10 @@ mod tests {
         assert!(!media_task.is_started());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_set_config_reject_first() {
+    fn peer_set_config_reject_first(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut streams = Streams::default();
@@ -2512,7 +2551,7 @@ mod tests {
             test_builder.builder(),
         ));
 
-        let (remote, _requests, _, _peer) = setup_test_peer(false, streams, None);
+        let (remote, _requests, _, _peer) = setup_test_peer(transport, false, streams, None);
         let remote_peer = avdtp::Peer::new(remote);
 
         let sbc_endpoint_id = 1_u8.try_into().expect("should be able to get sbc endpointid");
@@ -2551,8 +2590,10 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_starts_waiting_streams() {
+    fn peer_starts_waiting_streams(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
 
@@ -2563,7 +2604,7 @@ mod tests {
             test_builder.builder(),
         ));
 
-        let (remote, _requests, _, peer) = setup_test_peer(false, streams, None);
+        let (remote, _requests, _, peer) = setup_test_peer(transport_mode, false, streams, None);
         let remote_peer = avdtp::Peer::new(remote);
 
         let sbc_endpoint_id = 1_u8.try_into().expect("should be able to get sbc endpointid");
@@ -2586,7 +2627,7 @@ mod tests {
         };
 
         // Establish a media transport stream
-        let (_remote_transport, transport) = Channel::create();
+        let (transport, _remote_transport) = create_test_channels(transport_mode);
         assert_eq!(Some(()), peer.receive_channel(transport).ok());
 
         // The remote end should get a start request after the timeout.
@@ -2626,8 +2667,10 @@ mod tests {
         assert!(!media_task.is_started());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn needs_permit_to_start_streams() {
+    fn needs_permit_to_start_streams(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut streams = Streams::default();
@@ -2645,7 +2688,7 @@ mod tests {
         let permits = Permits::new(1);
         let taken_permit = permits.get().expect("permit taken");
         let (remote, _profile_request_stream, _, peer) =
-            setup_test_peer(false, streams, Some(permits.clone()));
+            setup_test_peer(transport_mode, false, streams, Some(permits.clone()));
         let remote_peer = avdtp::Peer::new(remote);
 
         let sbc_endpoint_id = 1_u8.try_into().unwrap();
@@ -2666,7 +2709,7 @@ mod tests {
         };
 
         // Establish a media transport stream
-        let (_remote_transport, transport) = Channel::create();
+        let (transport, _remote_transport) = create_test_channels(transport_mode);
         assert_eq!(Some(()), peer.receive_channel(transport).ok());
 
         // Do the same, but for the OTHER stream.
@@ -2687,7 +2730,7 @@ mod tests {
         };
 
         // Establish a media transport stream
-        let (_remote_transport_two, transport_two) = Channel::create();
+        let (transport_two, _remote_transport_two) = create_test_channels(transport_mode);
         assert_eq!(Some(()), peer.receive_channel(transport_two).ok());
 
         // Remote peer should still be able to try to start the stream, and we will say yes, but
@@ -2800,6 +2843,7 @@ mod tests {
         remote_peer: &avdtp::Peer,
         local_id: &StreamEndpointId,
         remote_id: &StreamEndpointId,
+        transport_mode: Transport,
     ) -> TestMediaTask {
         let sbc_caps = sbc_capabilities();
         let set_config_fut = remote_peer.set_configuration(&local_id, &remote_id, &sbc_caps);
@@ -2818,7 +2862,7 @@ mod tests {
         };
 
         // Establish a media transport stream
-        let (_remote_transport, transport) = Channel::create();
+        let (transport, _remote_transport) = create_test_channels(transport_mode);
         assert_eq!(Some(()), peer.receive_channel(transport).ok());
 
         // Remote peer should still be able to try to start the stream, and we will say yes.
@@ -2838,8 +2882,10 @@ mod tests {
         media_task
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn permits_can_be_revoked_and_reinstated_all() {
+    fn permits_can_be_revoked_and_reinstated_all(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut streams = Streams::default();
@@ -2860,7 +2906,8 @@ mod tests {
 
         let permits = Permits::new(2);
 
-        let (remote, _requests, _, peer) = setup_test_peer(false, streams, Some(permits.clone()));
+        let (remote, _requests, _, peer) =
+            setup_test_peer(transport_mode, false, streams, Some(permits.clone()));
         let remote_peer = avdtp::Peer::new(remote);
 
         let one_media_task = start_sbc_stream(
@@ -2870,6 +2917,7 @@ mod tests {
             &remote_peer,
             &sbc_endpoint_id,
             &remote_sbc_endpoint_id,
+            transport_mode,
         );
         let two_media_task = start_sbc_stream(
             &mut exec,
@@ -2878,6 +2926,7 @@ mod tests {
             &remote_peer,
             &sbc2_endpoint_id,
             &remote_sbc2_endpoint_id,
+            transport_mode,
         );
 
         // Someone comes along and revokes our permits.
@@ -2931,8 +2980,10 @@ mod tests {
         assert!(two_media_task.is_started());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn permits_can_be_revoked_one_at_a_time() {
+    fn permits_can_be_revoked_one_at_a_time(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut streams = Streams::default();
@@ -2953,7 +3004,8 @@ mod tests {
 
         let permits = Permits::new(2);
 
-        let (remote, _requests, _, peer) = setup_test_peer(false, streams, Some(permits.clone()));
+        let (remote, _requests, _, peer) =
+            setup_test_peer(transport_mode, false, streams, Some(permits.clone()));
         let remote_peer = avdtp::Peer::new(remote);
 
         let one_media_task = start_sbc_stream(
@@ -2963,6 +3015,7 @@ mod tests {
             &remote_peer,
             &sbc_endpoint_id,
             &remote_sbc_endpoint_id,
+            transport_mode,
         );
         let two_media_task = start_sbc_stream(
             &mut exec,
@@ -2971,6 +3024,7 @@ mod tests {
             &remote_peer,
             &sbc2_endpoint_id,
             &remote_sbc2_endpoint_id,
+            transport_mode,
         );
 
         // Someone comes along and revokes one of our permits.
@@ -3020,8 +3074,10 @@ mod tests {
 
     // Scenario: when we are waiting for a suspend response from the peer after a permit was not
     // available, we try to start the peer (because a dwell has expired)
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn permit_suspend_start_while_suspending() {
+    fn permit_suspend_start_while_suspending(transport_mode: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         let mut streams = Streams::default();
@@ -3038,7 +3094,7 @@ mod tests {
 
         let permits = Permits::new(1);
         let (remote, _profile_request_stream, _, peer) =
-            setup_test_peer(false, streams, Some(permits.clone()));
+            setup_test_peer(transport_mode, false, streams, Some(permits.clone()));
 
         let remote_peer = avdtp::Peer::new(remote);
         let mut remote_requests = remote_peer.take_request_stream();
@@ -3061,7 +3117,7 @@ mod tests {
         };
 
         // Establish a media transport stream
-        let (_remote_transport, transport) = Channel::create();
+        let (_remote_transport, transport) = Channel::create_socket_pair();
         assert_eq!(Some(()), peer.receive_channel(transport).ok());
 
         // At this point, we are dwelling, waiting for the peer to start the stream. Skip the timer.

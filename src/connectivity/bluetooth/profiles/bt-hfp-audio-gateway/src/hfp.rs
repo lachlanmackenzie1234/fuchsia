@@ -7,7 +7,9 @@ use async_utils::stream::FutureMap;
 use battery_client::{BatteryClient, BatteryClientError, BatteryInfo};
 use bt_hfp::{audio, sco};
 use fidl::endpoints::{Proxy, ServerEnd};
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_bluetooth_hfp::{CallManagerProxy, PeerHandlerMarker};
+use fidl_fuchsia_bluetooth_hfp_test as hfp_test;
 use fuchsia_bluetooth::profile::find_service_classes;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::{self as inspect, Property};
@@ -21,7 +23,6 @@ use profile_client::{ProfileClient, ProfileEvent};
 use std::collections::hash_map::Entry;
 use std::matches;
 use std::sync::Arc;
-use {fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_hfp_test as hfp_test};
 
 use crate::config::AudioGatewayFeatureSupport;
 use crate::error::Error;
@@ -352,22 +353,24 @@ mod tests {
     use assert_matches::assert_matches;
     use async_test_helpers::run_while;
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_rfcomm::ServerChannel;
     use bt_rfcomm::profile::build_rfcomm_protocol;
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::{ControlHandle, create_proxy, create_proxy_and_stream};
+    use fidl_fuchsia_bluetooth as bt;
+    use fidl_fuchsia_bluetooth_bredr as bredr;
     use fidl_fuchsia_bluetooth_hfp::{
         CallManagerMarker, CallManagerRequest, CallManagerRequestStream,
     };
+    use fidl_fuchsia_power_battery as fpower;
+    use fuchsia_async as fasync;
     use fuchsia_bluetooth::types::Uuid;
     use futures::{SinkExt, TryStreamExt};
     use std::collections::HashSet;
     use std::pin::pin;
     use test_battery_manager::TestBatteryManager;
-    use {
-        fidl_fuchsia_bluetooth as bt, fidl_fuchsia_bluetooth_bredr as bredr,
-        fidl_fuchsia_power_battery as fpower, fuchsia_async as fasync,
-    };
+    use test_case::test_case;
 
     use crate::peer::PeerRequest;
     use crate::peer::fake::PeerFake;
@@ -406,8 +409,12 @@ mod tests {
     /// Tests the HFP main run loop from a blackbox perspective by asserting on the FIDL messages
     /// sent and received by the services that Hfp interacts with: A bredr profile server and
     /// a call manager.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test(allow_stalls = false)]
-    async fn new_profile_event_initiates_connections_to_profile_and_call_manager() {
+    async fn new_profile_event_initiates_connections_to_profile_and_call_manager(
+        transport: Transport,
+    ) {
         let (profile, profile_svc, server) = setup_profile_and_test_server();
         let (battery_client, _test_battery_manager) =
             TestBatteryManager::make_battery_client_with_test_manager().await;
@@ -435,7 +442,7 @@ mod tests {
         let _hfp_task = fasync::Task::local(hfp.run());
 
         // Setup profile, then connect RFCOMM channel.
-        let _server = profile_server_init_and_peer_handling(server, true)
+        let _server = profile_server_init_and_peer_handling(server, true, transport)
             .await
             .expect("peer setup to complete");
 
@@ -446,11 +453,10 @@ mod tests {
         );
     }
 
-    /// Tests the HFP main run loop from a blackbox perspective by asserting on the FIDL messages
-    /// sent and received by the services that Hfp interacts with: A bredr profile server and
-    /// a call manager.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn peer_connected_only_after_connection_success() {
+    fn peer_connected_only_after_connection_success(transport: Transport) {
         let mut exec = fuchsia_async::TestExecutor::new();
         let (profile, profile_svc, server) = setup_profile_and_test_server();
         let setup_fut = TestBatteryManager::make_battery_client_with_test_manager();
@@ -480,22 +486,17 @@ mod tests {
         let _hfp_task = fasync::Task::local(hfp.run());
 
         // Setup profile, then connect RFCOMM channel.
-        let server =
-            exec.run_singlethreaded(profile_server_init_and_peer_handling(server, false)).unwrap();
+        let server = exec
+            .run_singlethreaded(profile_server_init_and_peer_handling(server, false, transport))
+            .unwrap();
 
         // Peer Connected notification occurs after channel is connected.
         let call_manager = call_manager_init_and_peer_handling(stream);
         let mut call_manager = pin!(call_manager);
         assert!(exec.run_until_stalled(&mut call_manager).is_pending());
 
-        let (remote, _local) = zx::Socket::create_datagram();
-        let chan = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            flush_timeout: None,
-            ..Default::default()
-        };
+        let (client_chan, _server_chan) = create_test_channels(transport);
+        let chan = bredr::Channel::try_from(client_chan).unwrap();
 
         // Random RFCOMM protocol.
         let proto: Vec<bredr::ProtocolDescriptor> =
@@ -512,8 +513,10 @@ mod tests {
         assert!(exec.run_until_stalled(&mut call_manager).is_ready());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    async fn peer_then_first_manager_connected_works() {
+    async fn peer_then_first_manager_connected_works(transport: Transport) {
         let (profile, profile_svc, server) = setup_profile_and_test_server();
         let (proxy, stream) = create_proxy_and_stream::<CallManagerMarker>();
         let (battery_client, _test_battery_manager) =
@@ -540,7 +543,7 @@ mod tests {
         let _hfp_task = fasync::Task::local(hfp.run());
 
         // Setup profile, then connect RFCOMM channel.
-        let _server = profile_server_init_and_peer_handling(server, true)
+        let _server = profile_server_init_and_peer_handling(server, true, transport)
             .await
             .expect("peer setup to complete");
 
@@ -555,9 +558,11 @@ mod tests {
     // TODO: This test can be enabled once the test synchronizes the call manager channels such that
     // the first call manager is seen as closed by both ends before the second call manager channel
     // is sent into the Hfp task.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
     #[ignore]
-    async fn manager_disconnect_and_new_connection_works() {
+    async fn manager_disconnect_and_new_connection_works(transport: Transport) {
         let (profile, profile_svc, server) = setup_profile_and_test_server();
         let (battery_client, _test_battery_manager) =
             TestBatteryManager::make_battery_client_with_test_manager().await;
@@ -585,7 +590,7 @@ mod tests {
         let _hfp_task = fasync::Task::local(hfp.run());
 
         // Setup profile, then connect RFCOMM channel.
-        let _server = profile_server_init_and_peer_handling(server, true)
+        let _server = profile_server_init_and_peer_handling(server, true, transport)
             .await
             .expect("peer setup to complete");
 
@@ -703,6 +708,7 @@ mod tests {
     async fn profile_server_init_and_peer_handling(
         mut server: LocalProfileTestServer,
         connect_from_search: bool,
+        transport: Transport,
     ) -> Result<LocalProfileTestServer, anyhow::Error> {
         server.complete_registration().await;
         // Random RFCOMM protocol.
@@ -724,15 +730,9 @@ mod tests {
             Some(Ok(bredr::ProfileRequest::Connect { peer_id, connection: _, responder })) => {
                 assert_eq!(peer_id, bt::PeerId { value: 1 });
                 if connect_from_search {
-                    let (remote, local) = zx::Socket::create_datagram();
-                    server.connections.push(local);
-                    let chan = bredr::Channel {
-                        socket: Some(remote),
-                        channel_mode: Some(bt::ChannelMode::Basic),
-                        max_tx_sdu_size: Some(1004),
-                        flush_timeout: None,
-                        ..Default::default()
-                    };
+                    let (client_chan, server_chan) = create_test_channels(transport);
+                    server.connections.push(server_chan);
+                    let chan = bredr::Channel::try_from(client_chan).unwrap();
 
                     responder.send(Ok(chan)).expect("successfully send connection response");
                 } else {

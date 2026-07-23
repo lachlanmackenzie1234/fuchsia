@@ -408,6 +408,7 @@ mod tests {
 
     use async_test_helpers::run_while;
     use async_utils::PollExt;
+    use bt_channel_test_support::{Transport, create_test_channels};
     use bt_metrics::respond_to_metrics_req_for_test;
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::create_proxy_and_stream;
@@ -417,7 +418,6 @@ mod tests {
     };
     use fidl_fuchsia_media_sessions2::{PublisherMarker, PublisherRequest};
     use fidl_fuchsia_metrics as cobalt;
-    use fuchsia_bluetooth::types::Channel;
     use fuchsia_inspect as inspect;
     use fuchsia_inspect_derive::WithInspect;
     use fuchsia_sync::{Mutex, RwLock};
@@ -426,14 +426,17 @@ mod tests {
     use futures::task::Poll;
     use std::pin::pin;
     use std::sync::Arc;
+    use test_case::test_case;
 
     fn fake_cobalt_sender() -> (bt_metrics::MetricsLogger, cobalt::MetricEventLoggerRequestStream) {
         let (c, s) = fidl::endpoints::create_proxy_and_stream::<cobalt::MetricEventLoggerMarker>();
         (bt_metrics::MetricsLogger::from_proxy(c), s)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn sink_task_works_without_session() {
+    fn sink_task_works_without_session(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, mut session_requests) =
             fidl::endpoints::create_proxy_and_stream::<PublisherMarker>();
@@ -453,7 +456,7 @@ mod tests {
         // Should't start session until we start a stream.
         assert!(exec.run_until_stalled(&mut session_requests.next()).is_pending());
 
-        let (local, mut remote) = Channel::create();
+        let (local, mut remote) = create_test_channels(transport);
         let local = Arc::new(RwLock::new(local));
         let stream =
             MediaStream::new(Arc::new(fuchsia_sync::Mutex::new(true)), Arc::downgrade(&local));
@@ -487,8 +490,10 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn dropped_task_reports_metrics() {
+    fn dropped_task_reports_metrics(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (metrics_logger, mut recv) = fake_cobalt_sender();
         let (proxy, mut session_requests) =
@@ -509,7 +514,7 @@ mod tests {
         // Should't start session until we start a stream.
         assert!(exec.run_until_stalled(&mut session_requests.next()).is_pending());
 
-        let (local, _remote) = Channel::create();
+        let (local, _remote) = create_test_channels(transport);
         let local = Arc::new(RwLock::new(local));
         let stream =
             MediaStream::new(Arc::new(fuchsia_sync::Mutex::new(true)), Arc::downgrade(&local));

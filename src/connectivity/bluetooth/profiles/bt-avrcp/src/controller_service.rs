@@ -345,10 +345,14 @@ impl ControllerExtService {
     async fn handle_fidl_request(&self, request: ControllerExtRequest) -> Result<(), Error> {
         match request {
             ControllerExtRequest::IsConnected { responder } => {
+                println!("DEBUG: handle_fidl_request: IsConnected");
                 responder.send(self.controller.is_control_connected())?;
             }
             ControllerExtRequest::GetEventsSupported { responder } => {
-                match self.controller.get_supported_events().await {
+                println!("DEBUG: handle_fidl_request: GetEventsSupported");
+                let res = self.controller.get_supported_events().await;
+                println!("DEBUG: handle_fidl_request: GetEventsSupported result: {:?}", res);
+                match res {
                     Ok(events) => responder.send(Ok(&events
                         .iter()
                         .filter_map(|e| NotificationEvent::from_primitive(u8::from(e)))
@@ -404,7 +408,10 @@ pub fn spawn_ext_service(
     fasync::Task::spawn(
         async move {
             let mut acc = ControllerExtService { controller, fidl_stream };
-            acc.run().await?;
+            println!("DEBUG: spawn_ext_service: calling acc.run()");
+            let res = acc.run().await;
+            println!("DEBUG: spawn_ext_service: acc.run() returned {:?}", res);
+            res?;
             Ok(())
         }
         .boxed()
@@ -423,19 +430,21 @@ mod tests {
     use async_test_helpers::run_while;
     use async_utils::PollExt;
     use bt_avctp::{AvcPeer, AvctpPeer};
+    use bt_channel_test_support::{Transport, create_test_channels};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
     use fuchsia_bluetooth::profile::Psm;
     use fuchsia_bluetooth::profile::avrcp::{
         AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures,
     };
-    use fuchsia_bluetooth::types::{Channel, PeerId};
+    use fuchsia_bluetooth::types::PeerId;
     use packet_encoding::Decodable;
     use std::pin::pin;
     use std::sync::Arc;
+    use test_case::test_case;
 
     /// Sets up control and browse connections for a peer acting as AVRCP Target role.
-    fn set_up() -> (Controller, AvcPeer, AvctpPeer) {
+    fn set_up(transport: Transport) -> (Controller, AvcPeer, AvctpPeer) {
         let (profile_proxy, mut _profile_requests) = create_proxy_and_stream::<ProfileMarker>();
         let peer = RemotePeerHandle::spawn_peer(
             PeerId(0x1),
@@ -448,8 +457,8 @@ mod tests {
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
 
-        let (local_avc, remote_avc) = Channel::create();
-        let (local_avctp, remote_avctp) = Channel::create();
+        let (local_avc, remote_avc) = create_test_channels(transport);
+        let (local_avctp, remote_avctp) = create_test_channels(transport);
 
         let remote_avc_peer = AvcPeer::new(remote_avc);
         let remote_avctp_peer = AvctpPeer::new(remote_avctp);
@@ -464,12 +473,14 @@ mod tests {
 
     /// Tests that the client stream handler will spawn a controller when a controller request
     /// successfully sets up a controller.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn run_client() {
+    fn run_client(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         // Set up for testing.
-        let controller = set_up().0;
+        let controller = set_up(transport).0;
 
         // Initialize client.
         let (proxy, server) = create_proxy_and_stream::<ControllerMarker>();
@@ -486,12 +497,14 @@ mod tests {
 
     /// Tests that the client stream handler will spawn a test controller when a
     /// controller request successfully sets up a controller.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn run_ext_client() {
+    fn run_ext_client(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
         // Set up testing.
-        let controller = set_up().0;
+        let controller = set_up(transport).0;
 
         // Initialize client.
         let (proxy, server) = create_proxy_and_stream::<ControllerExtMarker>();
@@ -535,11 +548,13 @@ mod tests {
 
     /// Tests that the notification object is updated based on the controller
     /// event value.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn handle_controller_event() {
+    fn handle_controller_event(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
 
@@ -597,12 +612,14 @@ mod tests {
 
     /// Tests that controller events are filtered based on the notification
     /// filter set on the server.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn filter_controller_event() {
+    fn filter_controller_event(transport: Transport) {
         let _exec = fasync::TestExecutor::new();
 
         // Set up for testing.
-        let controller = set_up().0;
+        let controller = set_up(transport).0;
 
         // Initialize client.
         let (_proxy, server) = create_proxy_and_stream::<ControllerMarker>();
@@ -627,11 +644,13 @@ mod tests {
 
     /// Tests getting media attributes through the control channel, which happens.
     /// when the browsed player is not set.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_media_attributes_control_channel() {
+    fn get_media_attributes_control_channel(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
 
@@ -658,11 +677,13 @@ mod tests {
 
     /// Tests getting media attributes through the browse channel, which happens.
     /// when the browsed player and track ID are set.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn get_media_attributes_browse_channel() {
+    fn get_media_attributes_browse_channel(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up(transport);
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
 

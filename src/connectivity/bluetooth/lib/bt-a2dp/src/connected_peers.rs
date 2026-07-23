@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, format_err};
+use bt_avdtp as avdtp;
 use fidl_fuchsia_bluetooth::ChannelParameters;
 use fidl_fuchsia_bluetooth_bredr::{self as bredr, ProfileDescriptor, ProfileProxy};
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::detachable_map::{DetachableMap, DetachableWeak};
 use fuchsia_bluetooth::inspect::DebugExt;
 use fuchsia_bluetooth::types::{Channel, PeerId};
@@ -20,7 +22,6 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
-use {bt_avdtp as avdtp, fuchsia_async as fasync};
 
 use crate::codec::CodecNegotiation;
 use crate::peer::Peer;
@@ -454,6 +455,7 @@ mod tests {
 
     use async_utils::PollExt;
     use bt_avdtp::{Request, ServiceCapability};
+    use bt_channel_test_support::{Transport, create_test_channels};
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_bredr::{
@@ -461,6 +463,7 @@ mod tests {
     };
     use futures::future::BoxFuture;
     use std::pin::pin;
+    use test_case::test_case;
 
     use crate::codec::MediaCodecConfig;
     use crate::media_task::{MediaTaskBuilder, MediaTaskError, MediaTaskRunner};
@@ -520,11 +523,13 @@ mod tests {
         (exec, id, peers, stream)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_creates_peer() {
+    fn connect_creates_peer(transport_mode: Transport) {
         let (mut exec, id, peers, _stream) = setup_connected_peer_test();
 
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
 
         let peer = exec
             .run_singlethreaded(peers.connected(id, channel, None))
@@ -534,11 +539,13 @@ mod tests {
         exercise_avdtp(&mut exec, remote, &peer);
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_notifies_streams() {
+    fn connect_notifies_streams(transport_mode: Transport) {
         let (mut exec, id, peers, _stream) = setup_connected_peer_test();
 
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
 
         let mut peer_stream = peers.connected_stream();
         let mut peer_stream_two = peers.connected_stream();
@@ -560,7 +567,7 @@ mod tests {
         drop(peer_stream);
 
         let id2 = PeerId(2);
-        let (remote2, channel2) = Channel::create();
+        let (channel2, remote2) = create_test_channels(transport_mode);
         let peer2 = exec
             .run_singlethreaded(peers.connected(id2, channel2, None))
             .expect("peer should connect");
@@ -721,11 +728,13 @@ mod tests {
         (exec, peers, stream, sbc_sink_codec, aac_sink_codec)
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn streaming_start_with_streaming_peer_is_noop() {
+    fn streaming_start_with_streaming_peer_is_noop(transport_mode: Transport) {
         let (mut exec, peers, _stream, sbc_codec, _aac_codec) = setup_negotiation_test();
         let id = PeerId(1);
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
         let remote = avdtp::Peer::new(remote);
 
         let delay = zx::MonotonicDuration::from_seconds(1);
@@ -810,11 +819,13 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn streaming_start_configure_while_discovery() {
+    fn streaming_start_configure_while_discovery(transport_mode: Transport) {
         let (mut exec, peers, _stream, sbc_codec, _aac_codec) = setup_negotiation_test();
         let id = PeerId(1);
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
         let remote = avdtp::Peer::new(remote);
 
         let delay = zx::MonotonicDuration::from_seconds(1);
@@ -863,11 +874,13 @@ mod tests {
 
     /// Tests connection initiation selects the appropriate stream endpoint based
     /// on a biased codec negotiation that is set from the peer's discovered services.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_initiation_uses_biased_codec_negotiation_by_peer() {
+    fn connect_initiation_uses_biased_codec_negotiation_by_peer(transport_mode: Transport) {
         let (mut exec, peers, _stream, sbc_codec, _aac_codec) = setup_negotiation_test();
         let id = PeerId(1);
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
 
         // System biases towards the Source direction (called when the AudioMode FIDL changes).
         peers.set_preferred_peer_direction(avdtp::EndpointType::Source);
@@ -937,7 +950,7 @@ mod tests {
                 responder,
             }))) => {
                 // We expect the set configuration to apply to the remote peer's Sink SEID and the
-                // local Source SEID.
+                // channel Source SEID.
                 assert_eq!(peer_sbc_sink_seid, local_stream_id);
                 let local_sbc_source_seid: avdtp::StreamEndpointId =
                     SBC_SOURCE_SEID.try_into().unwrap();
@@ -952,11 +965,13 @@ mod tests {
     /// on a biased codec negotiation that is set from by the system (in practice, the AudioMode
     /// FIDL). This case typically occurs when a peer advertises both sink and source, and therefore
     /// has no preference for the endpoint direction.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_initiation_uses_biased_codec_negotiation_by_system() {
+    fn connect_initiation_uses_biased_codec_negotiation_by_system(transport_mode: Transport) {
         let (mut exec, peers, _stream, sbc_codec, _aac_codec) = setup_negotiation_test();
         let id = PeerId(1);
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
 
         // System biases towards the Source direction (called when the AudioMode FIDL changes).
         peers.set_preferred_peer_direction(avdtp::EndpointType::Source);
@@ -1027,7 +1042,7 @@ mod tests {
                 responder,
             }))) => {
                 // We expect the set configuration to apply to the remote peer's Source SEID and the
-                // local Sink SEID.
+                // channel Sink SEID.
                 assert_eq!(peer_sbc_source_seid, local_stream_id);
                 let local_sbc_sink_seid: avdtp::StreamEndpointId =
                     SBC_SINK_SEID.try_into().unwrap();
@@ -1038,11 +1053,13 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connect_initiation_uses_negotiation() {
+    fn connect_initiation_uses_negotiation(transport_mode: Transport) {
         let (mut exec, peers, _stream, sbc_codec, aac_codec) = setup_negotiation_test();
         let id = PeerId(1);
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
         let remote = avdtp::Peer::new(remote);
 
         let delay = zx::MonotonicDuration::from_seconds(1);
@@ -1099,7 +1116,7 @@ mod tests {
                 capabilities: _,
                 responder,
             }))) => {
-                // Should set the aac stream, matched with local AAC seid.
+                // Should set the aac stream, matched with channel AAC seid.
                 assert_eq!(peer_aac_seid, local_stream_id);
                 let local_aac_seid: avdtp::StreamEndpointId = AAC_SEID.try_into().unwrap();
                 assert_eq!(local_aac_seid, remote_stream_id);
@@ -1109,8 +1126,10 @@ mod tests {
         };
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connected_peers_inspect() {
+    fn connected_peers_inspect(transport_mode: Transport) {
         let (mut exec, id, mut peers, _stream) = setup_connected_peer_test();
 
         let inspect = inspect::Inspector::default();
@@ -1125,7 +1144,7 @@ mod tests {
             peers: { streams_builder: contains {}, discovered: contains {}, preferred_peer_direction: "Source" }});
 
         // Connect a peer, it should show up in the tree.
-        let (_remote, channel) = Channel::create();
+        let (channel, _remote) = create_test_channels(transport_mode);
         assert!(exec.run_singlethreaded(peers.connected(id, channel, None)).is_ok());
 
         assert_data_tree!(@executor exec, inspect, root: {
@@ -1138,8 +1157,10 @@ mod tests {
         });
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn try_connect_cancels_previous_attempt() {
+    fn try_connect_cancels_previous_attempt(transport_mode: Transport) {
         let (mut exec, id, peers, mut profile_stream) = setup_connected_peer_test();
 
         let mut connect_fut = peers.try_connect(id, ChannelParameters::default());
@@ -1165,18 +1186,20 @@ mod tests {
 
         exec.run_until_stalled(&mut connect_again_fut).expect_pending("shouldn't finish");
 
-        let (_remote, local) = Channel::create();
+        let (local, _remote) = create_test_channels(transport_mode);
         responder_two.send(Ok(local.try_into().unwrap())).unwrap();
 
         let second_result = exec.run_singlethreaded(&mut connect_again_fut);
         let _ = second_result.expect("should receive the channel");
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connected_peers_peer_disconnect_removes_peer() {
+    fn connected_peers_peer_disconnect_removes_peer(transport_mode: Transport) {
         let (mut exec, id, peers, _stream) = setup_connected_peer_test();
 
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
 
         assert!(exec.run_singlethreaded(peers.connected(id, channel, None)).is_ok());
         run_to_stalled(&mut exec);
@@ -1189,11 +1212,13 @@ mod tests {
         assert!(peers.get(&id).is_none());
     }
 
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     #[fuchsia::test]
-    fn connected_peers_reconnect_works() {
+    fn connected_peers_reconnect_works(transport_mode: Transport) {
         let (mut exec, id, peers, _stream) = setup_connected_peer_test();
 
-        let (remote, channel) = Channel::create();
+        let (channel, remote) = create_test_channels(transport_mode);
         assert!(exec.run_singlethreaded(peers.connected(id, channel, None)).is_ok());
         run_to_stalled(&mut exec);
 
@@ -1205,7 +1230,7 @@ mod tests {
         assert!(peers.get(&id).is_none());
 
         // Connect another peer with the same ID
-        let (_remote, channel) = Channel::create();
+        let (channel, _remote) = create_test_channels(transport_mode);
 
         assert!(exec.run_singlethreaded(peers.connected(id, channel, None)).is_ok());
         run_to_stalled(&mut exec);
