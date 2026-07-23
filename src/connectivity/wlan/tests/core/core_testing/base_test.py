@@ -2,20 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 
 from antlion.controllers.access_point import AccessPoint
 
 logger = logging.getLogger(__name__)
 
-from datetime import timedelta
 
 import fidl_fuchsia_wlan_common as fw_common
 import fidl_fuchsia_wlan_device_service as fw_device_service
 import fidl_fuchsia_wlan_sme as fw_sme
-from core_testing.handlers import DeviceWatcherEventHandler
 from fuchsia_controller_py import ZxStatus
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
@@ -52,52 +50,7 @@ class CoreBaseTestClass(FuchsiaWlanBaseTest):
             )
         )
 
-        (
-            proxy,
-            server,
-        ) = self.dut.fuchsia_controller.channel_create()
-
-        # Wait for first phy device to appear, and assert no additional
-        # phy devices are added after a brief pause.
-        phy_id = None
-        device_monitor.watch_devices(watcher=server.take())
-        async with DeviceWatcherEventHandler(
-            client=fw_device_service.DeviceWatcherClient(proxy.take()),
-            verbose=True,
-        ) as ctx:
-            try:
-                while next_txn := await asyncio.wait_for(
-                    ctx.txn_queue.get(),
-                    timeout=self._PAUSE_FOR_ADDITIONAL_PHY_DEVICES.total_seconds(),
-                ):
-                    if isinstance(
-                        next_txn,
-                        fw_device_service.DeviceWatcherOnPhyAddedRequest,
-                    ):
-                        if phy_id is not None:
-                            raise signals.TestAbortClass(
-                                "Detected second phy device."
-                            )
-                        phy_id = next_txn.phy_id
-                    elif isinstance(
-                        next_txn,
-                        fw_device_service.DeviceWatcherOnIfaceAddedRequest,
-                    ):
-                        logger.info(
-                            f"Ignoring notification of existing iface {next_txn.iface_id}"
-                        )
-                    else:
-                        raise signals.TestFailure(
-                            f"Expected OnPhyAdded, but received: {next_txn}"
-                        )
-            except asyncio.TimeoutError:
-                logger.info(
-                    f"Assuming all DeviceWatcher events observed. No new events "
-                    f"after waiting "
-                    f"{self._PAUSE_FOR_ADDITIONAL_PHY_DEVICES.total_seconds()} second(s)."
-                )
-
-        assert phy_id is not None, "DeviceWatcher failed to report a phy."
+        phy_id = await self.dut.wlan_core.ensure_single_phy()
 
         self._core_test_kit = CoreTestKit(
             device_monitor=device_monitor, phy_id=phy_id

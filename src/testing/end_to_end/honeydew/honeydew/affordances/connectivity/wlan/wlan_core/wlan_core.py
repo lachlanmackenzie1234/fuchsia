@@ -189,6 +189,17 @@ class AsyncWlanCore(abc.ABC):
             TypeError: If any of the return values are not of the expected type.
         """
 
+    @abc.abstractmethod
+    async def ensure_single_phy(self) -> int:
+        """Wait for the first PHY device to appear, asserting no additional PHY devices are added.
+
+        Returns:
+            The phy_id of the single detected PHY.
+
+        Raises:
+            HoneydewWlanError: DeviceWatcher failed to report a phy or detected second phy.
+        """
+
 
 class WlanCore(affordance.Affordance):
     """Abstract base class for Wlan driver affordance."""

@@ -6,6 +6,8 @@
 import asyncio
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import timedelta
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
@@ -39,6 +41,8 @@ _REQUIRED_CAPABILITIES = [
 ]
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+_PAUSE_FOR_ADDITIONAL_PHY_DEVICES = timedelta(seconds=1)
 
 # Fuchsia Controller proxies
 _DEVICE_MONITOR_PROXY = FidlEndpoint(
@@ -572,6 +576,61 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
 
         return ClientStatusResponse.from_fidl(resp.resp)
 
+    @ensure_ready
+    async def ensure_single_phy(self) -> int:
+        """Asserts there is only one PHY device and returns its ID.
+
+        Returns:
+            The phy_id of the single detected PHY.
+
+        Raises:
+            HoneydewWlanError: DeviceWatcher failed to report a phy or detected second phy.
+        """
+        proxy, server = self._fc_transport.channel_create()
+        device_watcher_client = f_wlan_device_service.DeviceWatcherClient(
+            proxy.take()
+        )
+        self._device_monitor_proxy.watch_devices(watcher=server.take())
+
+        phy_id = None
+        async with DeviceWatcherEventHandler(device_watcher_client) as ctx:
+            while True:
+                try:
+                    next_txn = await asyncio.wait_for(
+                        ctx.txn_queue.get(),
+                        timeout=_PAUSE_FOR_ADDITIONAL_PHY_DEVICES.total_seconds(),
+                    )
+                    if isinstance(
+                        next_txn,
+                        f_wlan_device_service.DeviceWatcherOnPhyAddedRequest,
+                    ):
+                        if phy_id is not None:
+                            raise wlan_errors.HoneydewWlanError(
+                                "Detected second phy device."
+                            )
+                        phy_id = next_txn.phy_id
+                    elif isinstance(
+                        next_txn,
+                        f_wlan_device_service.DeviceWatcherOnIfaceAddedRequest,
+                    ):
+                        _LOGGER.info(
+                            "Ignoring notification of existing iface %s",
+                            next_txn.iface_id,
+                        )
+                    else:
+                        raise wlan_errors.HoneydewWlanError(
+                            f"Expected OnPhyAdded or OnIfaceAdded, but received: {next_txn}"
+                        )
+                except TimeoutError:
+                    _LOGGER.debug("Assuming all DeviceWatcher events observed.")
+                    break
+
+        if phy_id is None:
+            raise wlan_errors.HoneydewWlanError(
+                "DeviceWatcher failed to report a phy."
+            )
+        return phy_id
+
 
 class WlanCore(wlan_core.WlanCore):
     """WLAN Core affordance implemented with Fuchsia Controller."""
@@ -863,3 +922,69 @@ class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
         _LOGGER.debug(
             "ConnectTransaction.OnChannelSwitched() called with %s", request
         )
+
+
+@dataclass
+class DeviceWatcherContext:
+    txn_queue: asyncio.Queue[
+        f_wlan_device_service.DeviceWatcherOnPhyAddedRequest
+        | f_wlan_device_service.DeviceWatcherOnPhyRemovedRequest
+        | f_wlan_device_service.DeviceWatcherOnIfaceAddedRequest
+        | f_wlan_device_service.DeviceWatcherOnIfaceRemovedRequest
+    ]
+
+
+class DeviceWatcherEventHandler(
+    f_wlan_device_service.DeviceWatcherEventHandler
+):
+    """Event handler for DeviceWatcher."""
+
+    def __init__(
+        self,
+        client: FidlClient,
+    ) -> None:
+        self.client = client
+        self.server_task: asyncio.Task[None] | None = None
+
+    def on_phy_added(
+        self, request: f_wlan_device_service.DeviceWatcherOnPhyAddedRequest
+    ) -> None:
+        _LOGGER.debug("DeviceWatcher.OnPhyAdded() called with %s", request)
+        self.txn_queue.put_nowait(request)
+
+    def on_phy_removed(
+        self, request: f_wlan_device_service.DeviceWatcherOnPhyRemovedRequest
+    ) -> None:
+        _LOGGER.debug("DeviceWatcher.OnPhyRemoved() called with %s", request)
+        self.txn_queue.put_nowait(request)
+
+    def on_iface_added(
+        self, request: f_wlan_device_service.DeviceWatcherOnIfaceAddedRequest
+    ) -> None:
+        _LOGGER.debug("DeviceWatcher.OnPhyAdded() called with %s", request)
+        self.txn_queue.put_nowait(request)
+
+    def on_iface_removed(
+        self, request: f_wlan_device_service.DeviceWatcherOnIfaceRemovedRequest
+    ) -> None:
+        _LOGGER.debug("DeviceWatcher.OnIfaceRemoved() called with %s", request)
+        self.txn_queue.put_nowait(request)
+
+    async def __aenter__(self) -> DeviceWatcherContext:
+        super().__init__(client=self.client)
+        self.txn_queue: asyncio.Queue[
+            f_wlan_device_service.DeviceWatcherOnPhyAddedRequest
+            | f_wlan_device_service.DeviceWatcherOnPhyRemovedRequest
+            | f_wlan_device_service.DeviceWatcherOnIfaceAddedRequest
+            | f_wlan_device_service.DeviceWatcherOnIfaceRemovedRequest
+        ] = asyncio.Queue()
+        self.server_task = asyncio.create_task(self.serve())
+        return DeviceWatcherContext(txn_queue=self.txn_queue)
+
+    async def __aexit__(self, *args: object) -> None:
+        if self.server_task is not None:
+            self.server_task.cancel()
+            try:
+                await self.server_task
+            except asyncio.CancelledError:
+                pass
