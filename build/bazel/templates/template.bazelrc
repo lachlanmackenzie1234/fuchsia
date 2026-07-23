@@ -164,3 +164,12 @@ common --@rules_fuchsia//fuchsia/flags:dynamic_cpp_standard_library_for_drivers=
 # Without this, host_py_test targets would fail with `No such file or directory` when invoking the
 # interpreter. See https://fxbug.dev/527829442 for details.
 build --@rules_python//python/config_settings:venvs_use_declare_symlink=no
+
+# Suppress deprecation warnings when compiling re2, as we are unable to patch it
+# using single_version_override, which deletes older versions from local BCR,
+# without breaking bzlmod module resolution.
+#
+# TODO(https://fxbug.dev/537560103): Uprev third_party/re2 past upstream
+# absl-related fixes and remove these copts.
+build --per_file_copt=external/re2.*/.*@-Wno-deprecated-declarations
+build --host_per_file_copt=external/re2.*/.*@-Wno-deprecated-declarations
