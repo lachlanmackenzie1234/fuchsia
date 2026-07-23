@@ -9,7 +9,7 @@ use ffx_e2e_emu::IsolatedEmulator;
 async fn taking_lease_adds_lease_to_broker_inspect() {
     let emu = IsolatedEmulator::start("application-activity-test").await.unwrap();
 
-    emu.ffx(&["power", "system-activity", "application-activity", "start"]).await.unwrap();
+    emu.ffx(&["power", "suspend", "prevent"]).await.unwrap();
 
     // Wait until application_activity level changing to active.
     let mut retries = 30;

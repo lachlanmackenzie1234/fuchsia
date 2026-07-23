@@ -41,10 +41,8 @@ template("power_cli_lib") {
       "src/debugcmd/args.rs",
       "src/debugcmd/mod.rs",
       "src/lib.rs",
-      "src/system_activity/application_activity/args.rs",
-      "src/system_activity/application_activity/mod.rs",
-      "src/system_activity/args.rs",
-      "src/system_activity/mod.rs",
+      "src/suspend/args.rs",
+      "src/suspend/mod.rs",
     ]
   }
 }

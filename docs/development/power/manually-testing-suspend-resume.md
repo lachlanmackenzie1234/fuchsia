@@ -12,7 +12,7 @@ device running a suitable [Workbench][workbench-guide] image.
     1.  Take an Application Activity lease via `ffx power`'s helper component:
 
         ```posix-terminal
-        ffx power system-activity application-activity start
+        ffx power suspend prevent
         ```
 
     1.  Drop the session wake lease:
@@ -28,7 +28,7 @@ device running a suitable [Workbench][workbench-guide] image.
         a delay:
 
         ```posix-terminal
-        powerutil system-activity application-activity restart --wait-time 5s
+        powerutil suspend prevent --restart --wait-time 5s
         ```
 
         This will allow the system to suspend as long as no other wake leases
@@ -50,7 +50,7 @@ device running a suitable [Workbench][workbench-guide] image.
     1.  Take an Application Activity lease via `ffx power`'s helper component:
 
         ```posix-terminal
-        ffx power system-activity application-activity start
+        ffx power suspend prevent
         ```
 
     1.  Drop the session wake lease:
@@ -62,7 +62,7 @@ device running a suitable [Workbench][workbench-guide] image.
     1.  Drop the Application Activity lease and reacquire it after a delay:
 
         ```posix-terminal
-        ffx power system-activity application-activity restart --wait-time 5s
+        ffx power suspend prevent --restart --wait-time 5s
         ```
 
     1.  Disconnect USB to eliminate the persistent wake lease caused by the USB
@@ -103,7 +103,7 @@ To give the system longer to suspend, increase the delay using the `--wait-time`
 option:
 
 ```posix-terminal
-powerutil system-activity application-activity restart --wait-time 10s
+powerutil suspend prevent --restart --wait-time 10s
 ```
 
 <!-- Reference links -->

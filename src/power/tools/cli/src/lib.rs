@@ -6,7 +6,7 @@ pub mod args;
 mod collaborative_reboot;
 pub mod connector;
 mod debugcmd;
-mod system_activity;
+mod suspend;
 
 use anyhow::{Context, Result};
 use args::{PowerCommand, PowerSubCommand};
@@ -19,14 +19,14 @@ pub async fn power(
     writer: &mut dyn Write,
 ) -> Result<()> {
     match cmd.subcommand {
-        PowerSubCommand::SystemActivity(subcmd) => {
+        PowerSubCommand::Suspend(subcmd) => {
             let system_activity_control = connector
                 .get_system_activity_control()
                 .await
                 .context("Failed to get system_activity_control")?;
-            system_activity::system_activity(subcmd, writer, system_activity_control)
+            suspend::suspend(subcmd, writer, system_activity_control)
                 .await
-                .context("system-activity subcommand failed")?;
+                .context("suspend subcommand failed")?;
         }
         PowerSubCommand::Debugcmd(subcmd) => {
             let debug_proxy =

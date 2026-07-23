@@ -4,7 +4,7 @@
 
 use super::collaborative_reboot::args::CollaborativeRebootCommand;
 use super::debugcmd::args::DebugCommand;
-use super::system_activity::args::SystemActivityCommand;
+use super::suspend::args::SuspendCommand;
 use argh::{ArgsInfo, FromArgs, TopLevelCommand};
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -21,5 +21,5 @@ impl TopLevelCommand for PowerCommand {}
 pub enum PowerSubCommand {
     CollaborativeReboot(CollaborativeRebootCommand),
     Debugcmd(DebugCommand),
-    SystemActivity(SystemActivityCommand),
+    Suspend(SuspendCommand),
 }
