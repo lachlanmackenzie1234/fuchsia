@@ -24,6 +24,7 @@
 #include "src/developer/forensics/testing/scoped_memfs_manager.h"
 #include "src/developer/forensics/utils/log_format.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
+#include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
 
@@ -423,6 +424,26 @@ TEST(WriterTest, DirectoryDisappears) {
   EXPECT_EQ(contents, R"([15604.000][07559][07687][] INFO: line 3
 [15604.000][07559][07687][] INFO: line 4
 )");
+}
+
+TEST(WriterTest, IgnoreNonNumericFiles) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+  ASSERT_TRUE(files::CreateDirectory(kWriteDirectory));
+
+  ASSERT_TRUE(files::WriteFile(files::JoinPath(kWriteDirectory, "0"), "data"));
+  ASSERT_TRUE(files::WriteFile(files::JoinPath(kWriteDirectory, "invalid_file.log"), "data"));
+  ASSERT_TRUE(files::WriteFile(files::JoinPath(kWriteDirectory, "1"), "data"));
+
+  LogMessageStore store(kMaxLogLineSize * 5, kMaxLogLineSize * 5, MakeIdentityRedactor(),
+                        MakeIdentityEncoder());
+  SystemLogWriter writer(kWriteDirectory, 5u, &store);
+
+  // Additional writes should continue from file 2, ignoring invalid files.
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
+  writer.Write();
+
+  EXPECT_TRUE(files::IsFile(files::JoinPath(kWriteDirectory, "2")));
 }
 
 }  // namespace

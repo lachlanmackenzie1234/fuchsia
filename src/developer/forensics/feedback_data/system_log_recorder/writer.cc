@@ -14,6 +14,7 @@
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/path.h"
+#include "src/lib/fxl/strings/string_number_conversions.h"
 
 namespace forensics {
 namespace feedback_data {
@@ -32,14 +33,13 @@ SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_fil
   std::vector<std::string> current_log_files;
   files::ReadDirContents(logs_dir_, &current_log_files);
 
-  // Remove the current directory from the files.
-  current_log_files.erase(std::remove(current_log_files.begin(), current_log_files.end(), "."),
-                          current_log_files.end());
-
   // Get the numbers the previous writer assigned to the files – there should only be previous
   // files in case of a component restart.
   for (const std::string& fname : current_log_files) {
-    file_queue_.push_back(std::strtoull(fname.c_str(), nullptr, /*base=*/10));
+    size_t file_num = 0;
+    if (fxl::StringToNumberWithError(fname, &file_num)) {
+      file_queue_.push_back(file_num);
+    }
   }
 
   // Sort the files such that the oldest files will be deleted first.
