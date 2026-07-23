@@ -64,7 +64,6 @@ README_SECTIONS = [
     ("Tracing", "tracing"),
     ("Memory Barriers", "membarrier"),
     ("Restricted Mode (Work in progress)", "restricted"),
-    ("Others/Work in progress", "others"),
 ]
 
 
@@ -133,13 +132,12 @@ def get_topic(filename: str) -> str:
         "cache",
         "interrupt",
         "iommu",
+        "ioports",
         "pmt",
         "resource",
         "smc",
     ]:
         topic = "driver"
-    elif topic in ["pci", "pc", "ioports"]:
-        topic = "others"
     elif topic in ["clock", "deadline", "nanosleep.md", "ticks"]:
         topic = "time"
     elif topic in ["ktrace"]:
