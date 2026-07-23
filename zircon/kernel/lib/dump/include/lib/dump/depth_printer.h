@@ -32,7 +32,7 @@ class DepthPrinter {
 
   // Emit a single item it. It will have spaces prefixed based on the depth and a newline added to
   // the end.
-  void Emit(const char* fmt, ...) __PRINTFLIKE(2, 3) {
+  [[gnu::format(printf, 2, 3)]] void Emit(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     VEmit(fmt, args);
@@ -40,7 +40,7 @@ class DepthPrinter {
   }
 
   // Same as emit, but takes a va_list.
-  void VEmit(const char* fmt, va_list args) {
+  [[gnu::format(printf, 2, 0)]] void VEmit(const char* fmt, va_list args) {
     if (in_list_) {
       list_emitted_++;
       if (list_emitted_ > list_max_) {
