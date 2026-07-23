@@ -39,51 +39,6 @@ enum DriveStrength {
   DRV_4000UA,
 };
 
-template <typename FidlType>
-fpromise::promise<void, zx_status_t> InitMetadataServer(
-    fdf_metadata::MetadataServer<FidlType>& metadata_server,
-    fidl::WireClient<fuchsia_hardware_platform_device::Device>& pdev,
-    fdf::OutgoingDirectory& outgoing) {
-  fpromise::bridge<void, zx_status_t> bridge;
-
-  pdev->GetMetadata(FidlType::kSerializableName)
-      .Then([&metadata_server, &outgoing,
-             completer = std::move(bridge.completer)](auto& persisted_metadata) mutable {
-        if (!persisted_metadata.ok()) {
-          fdf::error("Failed to send GetMetadata request: {}", persisted_metadata.status_string());
-          return completer.complete_error(persisted_metadata.status());
-        }
-        if (persisted_metadata->is_error()) {
-          if (persisted_metadata->error_value() == ZX_ERR_NOT_FOUND) {
-            fdf::debug("Not forwarding metadata: Metadata not found");
-            return completer.complete_ok();
-          }
-          fdf::error("Failed to get metadata: {}",
-                     zx_status_get_string(persisted_metadata->error_value()));
-          return completer.complete_error(persisted_metadata->error_value());
-        }
-
-        fit::result metadata =
-            fidl::Unpersist<FidlType>(persisted_metadata.value()->metadata.get());
-        if (metadata.is_error()) {
-          fdf::error("Failed to unpersist metadata: {}",
-                     zx_status_get_string(metadata.error_value().status()));
-          return completer.complete_error(metadata.error_value().status());
-        }
-
-        if (zx::result result = metadata_server.Serve(
-                outgoing, fdf::Dispatcher::GetCurrent()->async_dispatcher(), metadata.value());
-            result.is_error()) {
-          fdf::error("Failed to serve metadata: {}", result);
-          return completer.complete_error(result.status_value());
-        }
-
-        completer.complete_ok();
-      });
-
-  return bridge.consumer.promise_or(fpromise::error(ZX_ERR_INTERNAL));
-}
-
 }  // namespace
 
 namespace gpio {
@@ -108,55 +63,38 @@ void AmlGpioDriver::Start(fdf::DriverContext context, fdf::StartCompleter comple
       completer(result.take_error());
       return;
     }
-    pdev_.Bind(std::move(result.value()), dispatcher());
+
+    auto pdev_client = std::move(result.value());
+
+    auto res1 =
+        pin_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev_client.borrow());
+    if (res1.is_error()) {
+      fdf::error("Failed to forward pin metadata: {}", res1.status_string());
+      completer(res1.take_error());
+      return;
+    }
+
+    auto res2 = scheduler_role_name_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(),
+                                                                     pdev_client.borrow());
+    if (res2.is_error()) {
+      fdf::error("Failed to forward scheduler metadata: {}", res2.status_string());
+      completer(res2.take_error());
+      return;
+    }
+
+    pdev_.Bind(std::move(pdev_client), dispatcher());
   }
 
-  auto task =
-      fpromise::join_promises(
-          InitResources(), InitMetadataServer(pin_metadata_server_, pdev_, *outgoing()),
-          InitMetadataServer(scheduler_role_name_metadata_server_, pdev_, *outgoing()))
-          .then([this, completer = std::move(completer)](
-                    fpromise::result<std::tuple<
-                        fpromise::result<void, zx_status_t>, fpromise::result<void, zx_status_t>,
-                        fpromise::result<void, zx_status_t>>>& results) mutable {
-            if (results.is_error()) {
-              fdf::error("One of the promises abandoned its completer");
-              completer(zx::error(ZX_ERR_INTERNAL));
-              return;
-            }
+  auto task = InitResources().then([this, completer = std::move(completer)](
+                                       fpromise::result<void, zx_status_t>& result) mutable {
+    if (result.is_error()) {
+      fdf::error("Failed to initialize resources: {}", zx_status_get_string(result.error()));
+      completer(zx::error(result.error()));
+      return;
+    }
 
-            {
-              fpromise::result result = std::get<0>(results.value());
-              if (result.is_error()) {
-                fdf::error("Failed to initialize resources: {}",
-                           zx_status_get_string(result.error()));
-                completer(zx::error(result.error()));
-                return;
-              }
-            }
-
-            {
-              fpromise::result result = std::get<1>(results.value());
-              if (result.is_error()) {
-                fdf::error("Failed to initialize pin metadata server: {}",
-                           zx_status_get_string(result.error()));
-                completer(zx::error(result.error()));
-                return;
-              }
-            }
-
-            {
-              fpromise::result result = std::get<2>(results.value());
-              if (result.is_error()) {
-                fdf::error("Failed to initialize scheduler role name metadata server: {}",
-                           zx_status_get_string(result.error()));
-                completer(zx::error(result.error()));
-                return;
-              }
-            }
-
-            completer(AddNode());
-          });
+    completer(AddNode());
+  });
   executor_->schedule_task(std::move(task));
 }
 
