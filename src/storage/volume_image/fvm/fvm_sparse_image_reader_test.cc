@@ -4,25 +4,37 @@
 
 #include "src/storage/volume_image/fvm/fvm_sparse_image_reader.h"
 
-#include <fidl/fuchsia.device/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/markers.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/fdio/fdio.h>
-#include <lib/fzl/resizeable-vmo-mapper.h>
-#include <zircon/hw/gpt.h>
+#include <lib/fpromise/result.h>
+#include <lib/zx/result.h>
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <optional>
 #include <span>
+#include <string>
+#include <string_view>
+#include <utility>
 
-#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 #include <ramdevice-client/ramdisk.h>
 
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/fvm/format.h"
 #include "src/storage/fvm/fvm_sparse.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/block_protocol/types.h"
+#include "src/storage/lib/buffer/resizeable_vmo_buffer.h"
 #include "src/storage/lib/fs_management/cpp/admin.h"
-#include "src/storage/lib/fs_management/cpp/fvm.h"
+#include "src/storage/lib/fs_management/cpp/component.h"
+#include "src/storage/lib/fs_management/cpp/format.h"
+#include "src/storage/lib/fs_management/cpp/options.h"
 #include "src/storage/testing/fvm.h"
+#include "src/storage/volume_image/address_descriptor.h"
 #include "src/storage/volume_image/ftl/ftl_image.h"
 #include "src/storage/volume_image/ftl/options.h"
 #include "src/storage/volume_image/utils/fd_reader.h"
@@ -46,36 +58,32 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
   const uint64_t disk_size = sparse_image_or.value().volume().size;
   auto ram_disk_or =
       ramdevice_client::Ramdisk::Create(kDeviceBlockSize, disk_size / kDeviceBlockSize);
-  ASSERT_TRUE(ram_disk_or.is_ok()) << ram_disk_or.status_string();
+  ASSERT_OK(ram_disk_or);
 
   // Open the ram disk
   zx::result channel = component::Connect<fuchsia_storage_block::Block>(ram_disk_or.value().path());
-  ASSERT_TRUE(channel.is_ok()) << channel.status_string();
+  ASSERT_OK(channel);
 
   zx::result device = block_client::RemoteBlockDevice::Create(std::move(channel.value()));
-  ASSERT_TRUE(device.is_ok()) << device.status_string();
+  ASSERT_OK(device);
   std::unique_ptr<block_client::RemoteBlockDevice> client = std::move(device.value());
 
   constexpr uint64_t kInitialVmoSize = 1048576;
-  auto vmo = fzl::ResizeableVmoMapper::Create(kInitialVmoSize, "test");
-  ASSERT_TRUE(vmo);
+  storage::ResizeableVmoBuffer vmo(kDeviceBlockSize);
+  ASSERT_OK(vmo.Attach("test", *client));
+  ASSERT_OK(vmo.Grow(kInitialVmoSize / kDeviceBlockSize));
 
-  storage::Vmoid vmoid;
-  ASSERT_EQ(client->BlockAttachVmo(vmo->vmo(), &vmoid), ZX_OK);
-  // This is a test, so we don't need to worry about cleaning it up.
-  vmoid_t vmo_id = vmoid.TakeId();
-
-  memset(vmo->start(), 0xaf, kInitialVmoSize);
+  memset(vmo.Data(0), 0xaf, kInitialVmoSize);
 
   // Initialize the entire ramdisk with a filler (that isn't zero).
   for (uint64_t offset = 0; offset < disk_size; offset += kInitialVmoSize) {
     BlockFifoRequest request = {
         .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
-        .vmoid = vmo_id,
+        .vmoid = vmo.vmoid(),
         .length =
             static_cast<uint32_t>(std::min(disk_size - offset, kInitialVmoSize) / kDeviceBlockSize),
         .dev_offset = offset / kDeviceBlockSize};
-    ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_OK);
+    ASSERT_OK(client->FifoTransaction(&request, 1));
   }
 
   for (const AddressMap& map : sparse_image_or.value().address().mappings) {
@@ -85,32 +93,32 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
     ASSERT_LE(map.target + map.count, disk_size);
     EXPECT_TRUE(map.options.empty());
 
-    if (vmo->size() < map.count) {
-      ASSERT_EQ(vmo->Grow(map.count), ZX_OK);
+    if (vmo.capacity() * kDeviceBlockSize < map.count) {
+      ASSERT_OK(vmo.Grow(map.count / kDeviceBlockSize));
     }
     auto result = sparse_image_or.value().reader()->Read(
-        map.source, std::span<uint8_t>(reinterpret_cast<uint8_t*>(vmo->start()), map.count));
+        map.source, std::span<uint8_t>(reinterpret_cast<uint8_t*>(vmo.Data(0)), map.count));
     ASSERT_TRUE(result.is_ok()) << result.error();
 
     // Write the mapping to the ram disk.
     BlockFifoRequest request = {
         .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
-        .vmoid = vmo_id,
+        .vmoid = vmo.vmoid(),
         .length = static_cast<uint32_t>(map.count / kDeviceBlockSize),
         .dev_offset = map.target / kDeviceBlockSize,
     };
 
-    ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_OK)
+    ASSERT_OK(client->FifoTransaction(&request, 1))
         << "length=" << request.length << ", dev_offset=" << request.dev_offset;
   }
 
+  ASSERT_OK(vmo.Detach(*client));
   client.reset();
 
   // Attempt to fsck minfs.
   {
     zx::result instance = storage::OpenFvmPartition(ram_disk_or.value().path(), "data");
-    instance.is_error();
-    ASSERT_EQ(instance.status_value(), ZX_OK) << instance.status_string();
+    ASSERT_OK(instance);
 
     // And finally run fsck on the volume.
     fs_management::FsckOptions options{
@@ -120,14 +128,13 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
         .force = true,
     };
     auto component = fs_management::FsComponent::FromDiskFormat(fs_management::kDiskFormatMinfs);
-    EXPECT_EQ(fs_management::Fsck(instance->path(), component, options), ZX_OK);
+    EXPECT_OK(fs_management::Fsck(instance->path(), component, options));
   }
 
   // Attempt to fsck blobfs.
   {
     zx::result instance = storage::OpenFvmPartition(ram_disk_or.value().path(), "blobfs");
-    instance.is_error();
-    ASSERT_EQ(instance.status_value(), ZX_OK) << instance.status_string();
+    ASSERT_OK(instance);
 
     // And finally run fsck on the volume.
     fs_management::FsckOptions options{
@@ -137,7 +144,7 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
         .force = true,
     };
     auto component = fs_management::FsComponent::FromDiskFormat(fs_management::kDiskFormatBlobfs);
-    EXPECT_EQ(fs_management::Fsck(instance->path(), component, options), ZX_OK);
+    EXPECT_OK(fs_management::Fsck(instance->path(), component, options));
   }
 }
 

@@ -188,6 +188,7 @@ test("fvm_sparse_image_reader_test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/lib/block_client/cpp",
     "//src/storage/lib/fs_management",
     "//src/storage/testing:storage_driver_test_support",
