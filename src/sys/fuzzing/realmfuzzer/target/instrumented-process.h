@@ -22,8 +22,8 @@ class InstrumentedProcess final {
   ~InstrumentedProcess() = default;
 
  private:
-  std::unique_ptr<ComponentContext> context_;
   std::unique_ptr<Process> process_;
+  std::unique_ptr<ComponentContext> context_;
 
   FXL_DISALLOW_COPY_ASSIGN_AND_MOVE(InstrumentedProcess);
 };

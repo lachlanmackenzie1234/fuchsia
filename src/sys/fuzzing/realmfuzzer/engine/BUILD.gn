@@ -61,7 +61,7 @@ source_set("engine-lib") {
   ]
   deps = [
     "//sdk/lib/syslog/cpp",
-    "//third_party/modp_b64",
+    "//third_party/github.com/simdutf/simdutf",
     "//zircon/system/ulib/inspector",
   ]
 }

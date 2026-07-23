@@ -37,7 +37,7 @@ source_set("no_hooks") {
     "//build/validate:non_production_tag",
     "//sdk/lib/syslog/cpp",
     "//src/lib/debug:backtrace-request",
-    "//third_party/modp_b64",
+    "//third_party/github.com/simdutf/simdutf",
   ]
 }
 

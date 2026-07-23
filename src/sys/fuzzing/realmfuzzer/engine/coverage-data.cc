@@ -5,16 +5,15 @@
 #include "src/sys/fuzzing/realmfuzzer/engine/coverage-data.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <simdutf.h>
 #include <zircon/status.h>
-
-#include <third_party/modp_b64/modp_b64.h>
 
 namespace fuzzing {
 namespace {
 
 // Number of characters needed to encode a target ID. The padding character and null terminator are
 // not counted.
-constexpr auto kTargetIdLen = modp_b64_encode_len(sizeof(uint64_t)) - 2;
+constexpr size_t kTargetIdLen = 11;  // simdutf::base64_length_from_binary(sizeof(uint64_t)) - 1
 
 std::string GetName(const zx::vmo& vmo) {
   char name[ZX_MAX_NAME_LEN];
@@ -48,9 +47,11 @@ uint64_t GetTargetId(const std::string& name) {
   }
   // See target/module.cc. The last character should be the omitted padding.
   auto encoded = name.substr(0, kTargetIdLen) + "=";
-  uint64_t target_id;
-  auto len = modp_b64_decode(reinterpret_cast<char*>(&target_id), encoded.data(), encoded.size());
-  if (len == size_t(-1)) {
+  uint64_t target_id = 0;
+  size_t output_length = sizeof(target_id);
+  auto result = simdutf::base64_to_binary_safe(encoded.data(), encoded.size(),
+                                               reinterpret_cast<char*>(&target_id), output_length);
+  if (!result.is_ok() || output_length != sizeof(uint64_t)) {
     FX_LOGS(WARNING) << "Failed to decode target id: " << name;
     return kInvalidTargetId;
   }

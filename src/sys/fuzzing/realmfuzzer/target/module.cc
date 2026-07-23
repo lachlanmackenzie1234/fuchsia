@@ -5,9 +5,8 @@
 #include "src/sys/fuzzing/realmfuzzer/target/module.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <simdutf.h>
 #include <zircon/status.h>
-
-#include <third_party/modp_b64/modp_b64.h>
 
 #include "src/sys/fuzzing/common/module.h"
 #include "src/sys/fuzzing/common/sancov.h"
@@ -44,8 +43,8 @@ zx_status_t Module::Import(uint8_t* counters, const uintptr_t* pcs, size_t num_p
   // Encode using base-64.
   uint64_t hex[2] = {fnv1a, djb2a};
   char id[ZX_MAX_NAME_LEN];
-  FX_DCHECK(modp_b64_encode_len(sizeof(hex)) < sizeof(id));
-  auto len = modp_b64_encode(id, reinterpret_cast<char*>(hex), sizeof(hex));
+  FX_DCHECK(simdutf::base64_length_from_binary(sizeof(hex)) < sizeof(id));
+  auto len = simdutf::binary_to_base64(reinterpret_cast<const char*>(hex), sizeof(hex), id);
   id_ = std::string(id, len);
   return ZX_OK;
 }
