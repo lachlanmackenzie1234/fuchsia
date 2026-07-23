@@ -25,7 +25,8 @@
 #include <new>
 
 #include <sanitizer/allocator_interface.h>
-#include <zxtest/zxtest.h>
+
+#include "test-utils.h"
 
 // All sanitizers that replace the default allocator eventually call
 // __sanitizer_malloc/free_hook on allocs/frees, so we can check that we go
@@ -41,7 +42,7 @@ extern "C" __EXPORT void __sanitizer_free_hook(const volatile void *ptr) { gFree
 
 namespace {
 
-class SanitizerAllocatorTest : public zxtest::Test {
+class SanitizerAllocatorTest : public ::testing::Test {
  public:
   void SetUp() override {
     gMallocHookCounter = 0;
@@ -55,16 +56,16 @@ TEST_F(SanitizerAllocatorTest, Malloc) {
   void *alloc = malloc(kAllocSize);
   EXPECT_NE(alloc, nullptr);
   free(alloc);
-  EXPECT_EQ(gMallocHookCounter, 1);
-  EXPECT_EQ(gFreeHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
+  EXPECT_EQ(gFreeHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, Calloc) {
   void *alloc = calloc(1, kAllocSize);
   EXPECT_NE(alloc, nullptr);
   free(alloc);
-  EXPECT_EQ(gMallocHookCounter, 1);
-  EXPECT_EQ(gFreeHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
+  EXPECT_EQ(gFreeHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, Realloc) {
@@ -73,24 +74,24 @@ TEST_F(SanitizerAllocatorTest, Realloc) {
   alloc = realloc(alloc, kAllocSize * 2);
   EXPECT_NE(alloc, nullptr);
   free(alloc);
-  EXPECT_EQ(gMallocHookCounter, 2);
-  EXPECT_GE(gFreeHookCounter, 1);  // Realloc may call free.
+  EXPECT_EQ(gMallocHookCounter, 2u);
+  EXPECT_GE(gFreeHookCounter, 1u);  // Realloc may call free.
 }
 
 TEST_F(SanitizerAllocatorTest, Memalign) {
   void *alloc = memalign(kAllocSize, kAllocSize);
   EXPECT_NE(alloc, nullptr);
   free(alloc);
-  EXPECT_EQ(gMallocHookCounter, 1);
-  EXPECT_EQ(gFreeHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
+  EXPECT_EQ(gFreeHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, AlignedAlloc) {
   void *alloc = aligned_alloc(kAllocSize, kAllocSize);
   EXPECT_NE(alloc, nullptr);
   free(alloc);
-  EXPECT_EQ(gMallocHookCounter, 1);
-  EXPECT_EQ(gFreeHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
+  EXPECT_EQ(gFreeHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, PosixMemalign) {
@@ -98,8 +99,8 @@ TEST_F(SanitizerAllocatorTest, PosixMemalign) {
   ASSERT_EQ(posix_memalign(&alloc, kAllocSize, kAllocSize), 0);
   EXPECT_NE(alloc, nullptr);
   free(alloc);
-  EXPECT_EQ(gMallocHookCounter, 1);
-  EXPECT_EQ(gFreeHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
+  EXPECT_EQ(gFreeHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, MallocUsableSize) {
@@ -113,42 +114,42 @@ TEST_F(SanitizerAllocatorTest, OperatorNewDelete) {
   void *alloc = operator new(kAllocSize);
   EXPECT_NE(alloc, nullptr);
   operator delete(alloc);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteSize) {
   void *alloc = operator new(kAllocSize);
   EXPECT_NE(alloc, nullptr);
   operator delete(alloc, kAllocSize);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteArray) {
   void *alloc = operator new[](kAllocSize);
   EXPECT_NE(alloc, nullptr);
   operator delete[](alloc);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteArraySize) {
   void *alloc = operator new[](kAllocSize);
   EXPECT_NE(alloc, nullptr);
   operator delete[](alloc, kAllocSize);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteNoThrow) {
   void *alloc = operator new(kAllocSize, std::nothrow);
   EXPECT_NE(alloc, nullptr);
   operator delete(alloc, std::nothrow);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteArrayNoThrow) {
   void *alloc = operator new[](kAllocSize, std::nothrow);
   EXPECT_NE(alloc, nullptr);
   operator delete[](alloc, std::nothrow);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 #ifdef __cpp_aligned_new
@@ -159,42 +160,42 @@ TEST_F(SanitizerAllocatorTest, OperatorNewDeleteAlign) {
   void *alloc = operator new(kAllocSize, kAllocAlign);
   EXPECT_NE(alloc, nullptr);
   operator delete(alloc, kAllocAlign);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteAlignSize) {
   void *alloc = operator new(kAllocSize, kAllocAlign);
   EXPECT_NE(alloc, nullptr);
   operator delete(alloc, kAllocSize, kAllocAlign);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteAlignArray) {
   void *alloc = operator new[](kAllocSize, kAllocAlign);
   EXPECT_NE(alloc, nullptr);
   operator delete[](alloc, kAllocAlign);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteAlignArraySize) {
   void *alloc = operator new[](kAllocSize, kAllocAlign);
   EXPECT_NE(alloc, nullptr);
   operator delete[](alloc, kAllocSize, kAllocAlign);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteAlignNoThrow) {
   void *alloc = operator new(kAllocSize, kAllocAlign, std::nothrow);
   EXPECT_NE(alloc, nullptr);
   operator delete(alloc, kAllocAlign, std::nothrow);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 TEST_F(SanitizerAllocatorTest, OperatorNewDeleteAlignArraySizeNoThrow) {
   void *alloc = operator new[](kAllocSize, kAllocAlign, std::nothrow);
   EXPECT_NE(alloc, nullptr);
   operator delete[](alloc, kAllocAlign, std::nothrow);
-  EXPECT_EQ(gMallocHookCounter, 1);
+  EXPECT_EQ(gMallocHookCounter, 1u);
 }
 
 #endif  // __cpp_aligned_new

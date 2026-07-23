@@ -6,7 +6,7 @@
 #include <lib/fit/defer.h>
 #include <lib/zx/process.h>
 #include <lib/zx/suspend_token.h>
-#include <lib/zx/task.h>
+#include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 #include <pthread.h>
@@ -16,15 +16,15 @@
 
 #include <array>
 #include <condition_variable>
+#include <memory>
 #include <span>
 #include <sstream>
 #include <thread>
 #include <vector>
 
-#include <zxtest/zxtest.h>
-
 #include "asan_impl.h"
 #include "sanitizer-memory-snapshot-test-dso.h"
+#include "test-utils.h"
 
 // Use the GNU global register variable extension to steal an available
 // (i.e. usually call-saved and not otherwise special) register to hold a
@@ -288,7 +288,7 @@ TEST(SanitizerUtilsTest, MemorySnapshotNoReportsWithThreads) {
   // At the end, wake the threads up and wait for them to die.
   auto cleanup = fit::defer([&]() {
     {
-      std::lock_guard<std::mutex> locked(mutex);
+      std::lock_guard locked{mutex};
       time_to_die = true;
       cond.notify_all();
     }
@@ -307,7 +307,7 @@ TEST(SanitizerUtilsTest, MemorySnapshotNoReportsWithThreads) {
 // This tests the enumeration of globals without anything using thread state.
 TEST(SanitizerUtilsTest, MemorySnapshotGlobalsOnly) {
   DlopenAuto loaded;
-  ASSERT_TRUE(loaded.Ok(), "dlopen: %s", dlerror());
+  ASSERT_TRUE(loaded.Ok()) << "dlopen: " << dlerror();
 
   SnapshotResult result;
 
@@ -361,7 +361,7 @@ class ScopedTlsKey {
 // leak-checking or conservative GC.
 TEST(SanitizerUtilsTest, MemorySnapshotFull) {
   DlopenAuto loaded;
-  ASSERT_TRUE(loaded.Ok(), "dlopen: %s", dlerror());
+  ASSERT_TRUE(loaded.Ok()) << "dlopen: " << dlerror();
 
   // Check how many threads exist now (probably just one).
   size_t nthreads;
@@ -390,10 +390,10 @@ TEST(SanitizerUtilsTest, MemorySnapshotFull) {
   // implementation handles the lazy DTV update case by not reporting the
   // not-yet-used thread DTV entries, but it's not an API requirement that
   // they *not* be reported so we don't separately test for that.
-  ASSERT_NOT_NULL(NeededDsoThreadLocalDataPointer());
-  ASSERT_NOT_NULL(NeededDsoThreadLocalBssPointer());
-  ASSERT_NOT_NULL(loaded("DlopenDsoThreadLocalDataPointer"));
-  ASSERT_NOT_NULL(loaded("DlopenDsoThreadLocalBssPointer"));
+  ASSERT_TRUE(NeededDsoThreadLocalDataPointer());
+  ASSERT_TRUE(NeededDsoThreadLocalBssPointer());
+  ASSERT_TRUE(loaded("DlopenDsoThreadLocalDataPointer"));
+  ASSERT_TRUE(loaded("DlopenDsoThreadLocalBssPointer"));
 
   // Use a raw futex rather than std::condition_variable here so that the test
   // threads can use only code in this translation unit and the vDSO.  It's so
@@ -478,20 +478,20 @@ TEST(SanitizerUtilsTest, MemorySnapshotFull) {
     zx_status_t status = zx_futex_wait(reinterpret_cast<zx_futex_t*>(&ready), count,
                                        ZX_HANDLE_INVALID, ZX_TIME_INFINITE);
     if (status != ZX_ERR_BAD_STATE) {  // Normal race condition case: retry.
-      ASSERT_OK(status, "zx_futex_wait failed");
+      ASSERT_OK(status) << "zx_futex_wait failed";
     }
   }
 
   // Sanity-check the setup work.
   for (auto& t : threads) {
-    EXPECT_NOT_NULL(t.safe_stack);
-    EXPECT_NOT_NULL(t.unsafe_stack);
-    EXPECT_NOT_NULL(t.tdata);
-    EXPECT_NOT_NULL(t.tbss);
-    EXPECT_NOT_NULL(t.needed_dso_tdata);
-    EXPECT_NOT_NULL(t.needed_dso_tbss);
-    EXPECT_NOT_NULL(t.dlopen_dso_tdata);
-    EXPECT_NOT_NULL(t.dlopen_dso_tbss);
+    EXPECT_TRUE(t.safe_stack);
+    EXPECT_TRUE(t.unsafe_stack);
+    EXPECT_TRUE(t.tdata);
+    EXPECT_TRUE(t.tbss);
+    EXPECT_TRUE(t.needed_dso_tdata);
+    EXPECT_TRUE(t.needed_dso_tbss);
+    EXPECT_TRUE(t.dlopen_dso_tdata);
+    EXPECT_TRUE(t.dlopen_dso_tbss);
   }
 
   // Now do the actual thing.
@@ -549,23 +549,23 @@ TEST(SanitizerUtilsTest, MemorySnapshotFull) {
 
   EXPECT_TRUE(result.saw_main_tss);
   for (bool& seen : result.saw_thread_tss) {
-    EXPECT_TRUE(seen, "saw_thread_tss[%zu]", &seen - result.saw_thread_tss.data());
+    EXPECT_TRUE(seen) << "saw_thread_tss[" << &seen - result.saw_thread_tss.data() << "]";
   }
 
   EXPECT_TRUE(result.saw_main_specific);
   for (bool& seen : result.saw_thread_specific) {
-    EXPECT_TRUE(seen, "saw_thread_specific[%zu]", &seen - result.saw_thread_specific.data());
+    EXPECT_TRUE(seen) << "saw_thread_specific[" << &seen - result.saw_thread_specific.data() << "]";
   }
 
   if constexpr (kHaveSpecialRegister) {
     for (bool& seen : result.saw_thread_special_registers) {
-      EXPECT_TRUE(seen, "saw_thread_special_registers[%zu]",
-                  &seen - result.saw_thread_special_registers.data());
+      EXPECT_TRUE(seen) << "saw_thread_special_registers["
+                        << &seen - result.saw_thread_special_registers.data() << "]";
     }
   }
 
   for (const auto& t : result.dead_threads) {
-    EXPECT_TRUE(t.seen(), "dead thread %tu not seen", &t - result.dead_threads.data());
+    EXPECT_TRUE(t.seen()) << "dead thread " << &t - result.dead_threads.data() << " not seen";
   }
 }
 
@@ -636,7 +636,7 @@ void StartArgClearedTlsCallback(void* mem, size_t len, void* arg) {
   // `mem` happens to point to 4-byte aligned data, then it might not.
   if (reinterpret_cast<uintptr_t>(mem) % alignof(uintptr_t) == 0) {
     for (const uintptr_t& val :
-         cpp20::span{reinterpret_cast<const uintptr_t*>(mem), len / sizeof(uintptr_t)}) {
+         std::span{reinterpret_cast<const uintptr_t*>(mem), len / sizeof(uintptr_t)}) {
       if (val == reinterpret_cast<uintptr_t>(args->data_ptr)) {
         args->found_in_tls = true;
         return;
@@ -653,10 +653,10 @@ void StartArgClearedRegsCallback(void* mem, size_t len, void* arg) {
   // The regs callback is passed a pointer to an array of registers (specifically
   // `zx_thread_state_general_regs_t`), so we'll be iterating over an array of pointers. Check if
   // any of them match the thread argument.
-  ZX_ASSERT_MSG(reinterpret_cast<uintptr_t>(mem) % alignof(uintptr_t) == 0,
-                "`mem` does not point to an array of register values.");
+  ASSERT_EQ(reinterpret_cast<uintptr_t>(mem) % alignof(uintptr_t), 0u)
+      << "`mem` does not point to an array of register values.";
   for (const uintptr_t& reg :
-       cpp20::span{reinterpret_cast<const uintptr_t*>(mem), len / sizeof(uintptr_t)}) {
+       std::span{reinterpret_cast<const uintptr_t*>(mem), len / sizeof(uintptr_t)}) {
     if (reg == reinterpret_cast<uintptr_t>(args->data_ptr)) {
       args->found_in_regs = true;
       return;
@@ -740,7 +740,7 @@ TEST(SanitizerUtilsTest, StartArgCleared) {
 // builds.
 #if !USES_SANITIZER_HOOKS
 
-class SuspendedThreadTest : public ::zxtest::Test {
+class SuspendedThreadTest : public ::testing::Test {
  public:
   // We only want to run the before_thread_create hook if this is the thread we see.
   // This way, we don't mix in what we want to happen for the
@@ -784,12 +784,13 @@ TEST_F(SuspendedThreadTest, MemorySnapshotStartArgOnSuspendedThread) {
   // want the pthread machinery for the thread to be setup, but we do not want to execute any code
   // in the new thread. We can do this via the before_thread_create hook which runs after the thread
   // is created, but before the thread actually starts.
-  constexpr int kTransferData = 42;
-  std::unique_ptr<int> transfer_ptr(new int(kTransferData));
+  static constexpr int kTransferData = 42;
+  auto transfer_ptr = std::make_unique<int>(kTransferData);
   auto thread_entry = [](void* arg) -> int {
-    std::unique_ptr<int> transfer_ptr(reinterpret_cast<int*>(arg));
-    ZX_ASSERT(*transfer_ptr == kTransferData && "Failed to get the expected data");
-    return 0;
+    std::unique_ptr<int> transfer_ptr{reinterpret_cast<int*>(arg)};
+    const int transfer_data = *transfer_ptr;
+    EXPECT_EQ(transfer_data, kTransferData) << "Failed to get the expected data";
+    return transfer_data != kTransferData;
   };
   ASSERT_EQ(thrd_create(&thread_, thread_entry, transfer_ptr.get()), thrd_success);
 
@@ -816,7 +817,7 @@ TEST_F(SuspendedThreadTest, MemorySnapshotStartArgOnSuspendedThread) {
     if (result->found_data)
       return;
 
-    for (const void* ptr : cpp20::span{reinterpret_cast<void* const*>(mem), len / sizeof(void*)}) {
+    for (const void* ptr : std::span{reinterpret_cast<void* const*>(mem), len / sizeof(void*)}) {
       if (ptr == result->data_ptr) {
         result->found_data = true;
         return;
@@ -852,10 +853,8 @@ void* __sanitizer_before_thread_create_hook(thrd_t thread, bool /*detached*/, co
 
   // Use a plain handle here rather than initializing a zx::task so we don't close the initialized
   // task on its destructor.
-  zx_handle_t task = thrd_get_zx_handle(thread);
-  zx_status_t status =
-      zx_task_suspend(task, SuspendedThreadTest::gSuspendToken->reset_and_get_address());
-  ZX_ASSERT(status == ZX_OK && "Failed to suspend new thread.");
+  zx::unowned_thread task{thrd_get_zx_handle(thread)};
+  EXPECT_OK(task->suspend(SuspendedThreadTest::gSuspendToken));
   return SuspendedThreadTest::gSuspendToken;
 }
 
@@ -863,8 +862,8 @@ void __sanitizer_thread_create_hook(void* hook, thrd_t th, int error) {
   // Either `hook` and `gSuspendHook` are both nullptr because we are not running the
   // MemorySnapshotStartArgOnSuspendedThread test, or they are both the same non-zero value since we
   // are running the MemorySnapshotStartArgOnSuspendedThread test.
-  ZX_ASSERT(hook == SuspendedThreadTest::gSuspendToken && "Thread was not suspended correctly");
-  ZX_ASSERT(error == thrd_success && "Thread was not created correctly");
+  ASSERT_EQ(hook, SuspendedThreadTest::gSuspendToken) << "Thread was not suspended correctly";
+  ASSERT_EQ(error, thrd_success) << "Thread was not created correctly";
 }
 
 // Override this definition because the default one will check that `hook` is `null`, which it won't

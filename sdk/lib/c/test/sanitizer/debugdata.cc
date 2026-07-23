@@ -16,17 +16,14 @@
 
 #include <string>
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
-#include "../sanitizers/fuchsia-io-constants.h"
+#include "test-utils.h"
 
 namespace {
 
 using ::testing::AllOf;
 using ::testing::Ne;
 
-constexpr char kTestHelper[] = "/pkg/bin/debugdata-test-helper";
+constexpr std::string_view kTestHelper = "debugdata-test-helper";
 
 constexpr const char* kHelperPublishCommand = "publish_data";
 constexpr const char* kHelperPublishFailCommand = "publish_data_fail";
@@ -34,25 +31,22 @@ constexpr const char* kHelperPublishFailCommand = "publish_data_fail";
 void RunHelper(const char* mode, const size_t action_count, const fdio_spawn_action_t* fdio_actions,
                int expected_return_code) {
   zx::job test_job;
-  zx_status_t status = zx::job::create(*zx::job::default_job(), 0, &test_job);
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  ASSERT_OK(zx::job::create(*zx::job::default_job(), 0, &test_job));
   auto auto_call_kill_job = fit::defer([&test_job]() { test_job.kill(); });
 
-  const char* args[] = {kTestHelper, mode, nullptr};
+  const auto path = HelperPath(kTestHelper);
+  const char* args[] = {path.c_str(), mode, nullptr};
 
   zx::process process;
   char err_msg[FDIO_SPAWN_ERR_MSG_MAX_LENGTH];
-  status = fdio_spawn_etc(test_job.get(), FDIO_SPAWN_CLONE_ALL & ~FDIO_SPAWN_CLONE_NAMESPACE,
-                          args[0], args, nullptr, action_count, fdio_actions,
-                          process.reset_and_get_address(), err_msg);
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  ASSERT_OK(fdio_spawn_etc(test_job.get(), FDIO_SPAWN_CLONE_ALL & ~FDIO_SPAWN_CLONE_NAMESPACE,
+                           args[0], args, nullptr, action_count, fdio_actions,
+                           process.reset_and_get_address(), err_msg));
 
-  status = process.wait_one(ZX_PROCESS_TERMINATED, zx::time::infinite(), nullptr);
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  ASSERT_OK(process.wait_one(ZX_PROCESS_TERMINATED, zx::time::infinite(), nullptr));
 
   zx_info_process_t proc_info;
-  status = process.get_info(ZX_INFO_PROCESS, &proc_info, sizeof(proc_info), nullptr, nullptr);
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  ASSERT_OK(process.get_info(ZX_INFO_PROCESS, &proc_info, sizeof(proc_info), nullptr, nullptr));
   ASSERT_EQ(expected_return_code, proc_info.return_code);
 }
 
@@ -93,8 +87,7 @@ TEST(DebugDataTests, PublishData) {
 
   ASSERT_NO_FATAL_FAILURE(RunHelperWithSvc(kHelperPublishCommand, std::move(svc_client_end), 0));
 
-  zx_status_t status = svc_dir.loop().RunUntilIdle();
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  ASSERT_OK(svc_dir.loop().RunUntilIdle());
 }
 
 TEST(DebugDataTests, PublishDataWithoutSvc) {
@@ -103,21 +96,12 @@ TEST(DebugDataTests, PublishDataWithoutSvc) {
 
 TEST(DebugDataTests, PublishDataWithBadSvc) {
   zx::channel client_channel_end, server_channel_end;
-  zx_status_t status = zx::channel::create(0, &client_channel_end, &server_channel_end);
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  ASSERT_OK(zx::channel::create(0, &client_channel_end, &server_channel_end));
   fidl::ClientEnd<fuchsia_io::Directory> client_end{
       std::move(client_channel_end),
   };
   server_channel_end.reset();
   ASSERT_NO_FATAL_FAILURE(RunHelperWithSvc(kHelperPublishFailCommand, std::move(client_end), 0));
 }
-
-// debugdata.cc cannot use LLCPP (because it allocates with new/delete) so
-// instead defines a local set of a few constants and structure definition in
-// fuchsia-io-constants.h to call fuchsia.io.Directory/Open(). Confirm that the
-// local copy matches the canonical definition here.
-static_assert(fuchsia_io_DirectoryOpenOrdinal == fuchsia_io::Directory::Open::kOrdinal);
-static_assert(fidl::TypeTraits<fidl::internal::TransactionalRequest<fuchsia_io::Directory::Open>>::
-                  kPrimarySize == sizeof(fuchsia_io_DirectoryOpenRequest));
 
 }  // anonymous namespace

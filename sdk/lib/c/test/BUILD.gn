@@ -214,35 +214,6 @@ test("custom-startup-test") {
   deps += [ ":static-pie-custom-startup-test" ]
 }
 
-executable("debugdata-test-helper") {
-  testonly = true
-
-  sources = [ "debugdata-test-helper.cc" ]
-  deps = [ "//zircon/system/ulib/zx" ]
-
-  # Don't use instrumentation that emits debugdata, so only the expected test
-  # data is published.
-  exclude_toolchain_tags = [ "debugdata" ]
-
-  if (is_fuchsia) {
-    configs += fdio_config
-    configs -= fdio_config
-  }
-}
-
-libc_component_tests += [ ":cdebugdata-test" ]
-libc_test_manifests += [ "cdebugdata-test" ]
-test("cdebugdata-test") {
-  sources = [ "debugdata.cc" ]
-  data_deps = [ ":debugdata-test-helper" ]
-  deps = [
-    "//sdk/lib/fdio",
-    "//sdk/lib/ld/testing",
-    "//src/lib/fxl/test:gtest_main",
-    "//zircon/system/ulib/zx",
-  ]
-}
-
 libc_component_tests += [ ":posix-clocks-test" ]
 test("posix-clocks-test") {
   if (is_fuchsia) {

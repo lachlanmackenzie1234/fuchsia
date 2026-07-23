@@ -5,7 +5,7 @@
 #include <dlfcn.h>
 #include <lib/fit/defer.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "ctor-order-test.h"
 
@@ -22,9 +22,9 @@ TEST(HwasanCtorOrderTest, TestNoDeps) {
   // symbols accessed by other loaded libs.
   void* dl = dlopen("libctor-order-test-no-deps-dso.so", RTLD_NOW);
   auto cleanup = fit::defer([dl]() { dlclose(dl); });
-  ASSERT_NOT_NULL(dl, "%s", dlerror());
+  ASSERT_TRUE(dl) << dlerror();
   void* unique_sym = dlsym(dl, "gNoDeps");
-  EXPECT_NOT_NULL(unique_sym, "%s", dlerror());
+  EXPECT_TRUE(unique_sym) << dlerror();
 }
 
 TEST(HwasanCtorOrderTest, TestNoInterposedSymbol) {
@@ -38,9 +38,9 @@ TEST(HwasanCtorOrderTest, TestNoInterposedSymbol) {
   //
   void* dl = dlopen("libctor-order-test-no-interposing-dso.so", RTLD_NOW);
   auto cleanup = fit::defer([dl]() { dlclose(dl); });
-  ASSERT_NOT_NULL(dl, "%s", dlerror());
+  ASSERT_TRUE(dl) << dlerror();
   void* unique_sym = dlsym(dl, "gNoInterposing");
-  EXPECT_NOT_NULL(unique_sym, "%s", dlerror());
+  EXPECT_TRUE(unique_sym) << dlerror();
 }
 
 TEST(HwasanCtorOrderTest, TestInterposingSymbol) {
@@ -62,11 +62,11 @@ TEST(HwasanCtorOrderTest, TestInterposingSymbol) {
   //
   void* dl = dlopen("libctor-order-test-interposing-dso.so", RTLD_NOW);
   auto cleanup = fit::defer([dl]() { dlclose(dl); });
-  ASSERT_NOT_NULL(dl, "%s", dlerror());
+  ASSERT_TRUE(dl) << dlerror();
   void* unique_sym = dlsym(dl, "gInterposing");
-  EXPECT_NOT_NULL(unique_sym, "%s", dlerror());
+  EXPECT_TRUE(unique_sym) << dlerror();
   void* interposed = dlsym(dl, "gInterposedPtr");
-  EXPECT_NOT_NULL(interposed, "%s", dlerror());
+  EXPECT_TRUE(interposed) << dlerror();
   EXPECT_EQ(**reinterpret_cast<InterposeStatus**>(interposed), SuccessfullyInterposed);
 }
 

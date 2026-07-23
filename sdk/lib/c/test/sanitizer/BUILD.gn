@@ -7,20 +7,64 @@ import("//build/components/fuchsia_unittest_component.gni")
 import("//build/test.gni")
 import("//build/testing/bootfs_test.gni")
 
+fdio_config = [ "//build/config/fuchsia:fdio_config" ]
+
 sanitizer_tests = []
 
 sanitizer_tests += [ "sanitizer-utils-test" ]
 test("sanitizer-utils-test") {
-  sources = [ "sanitizer-utils.cc" ]
   deps = [
+    ":debugdata",
     ":memory-snapshot-test",
+    ":sanitizer-utils",
+  ]
+}
+
+source_set("debugdata") {
+  visibility = [ ":*" ]
+  testonly = true
+
+  sources = [ "debugdata.cc" ]
+  deps = [
+    ":test-utils",
+    ":uses-spawn",
     "//sdk/lib/async",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fdio",
+    "//sdk/lib/ld/testing",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/ldmsg",
-    "//zircon/system/ulib/zxtest:zxtest-streams",
+    "//zircon/system/ulib/zx",
+  ]
+  data_deps = [ ":debugdata-test-helper" ]
+}
+
+source_set("test-utils") {
+  visibility = [ ":*" ]
+  testonly = true
+
+  public = [ "test-utils.h" ]
+  public_deps = [
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gmock",
+  ]
+  sources = [ "test-utils.cc" ]
+}
+
+source_set("sanitizer-utils") {
+  visibility = [ ":*" ]
+  testonly = true
+
+  sources = [ "sanitizer-utils.cc" ]
+  deps = [
+    ":test-utils",
+    ":uses-spawn",
+    "//sdk/lib/fdio",
+    "//sdk/lib/fit",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
   ]
   data_deps = [
     ":sanitizer-exit-hook-test-helper",
@@ -85,8 +129,8 @@ source_set("memory-snapshot-test") {
   sources = [ "memory-snapshot-test.cc" ]
   deps = [
     ":sanitizer-memory-snapshot-test-needed-dso",
+    ":test-utils",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest:zxtest-streams",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
   data_deps = [ ":sanitizer-memory-snapshot-test-dlopen-dso" ]
@@ -128,7 +172,7 @@ test("hwasan-ctor-order-test") {
     ":ctor-order-test-no-deps-dso",
     ":ctor-order-test-no-interposing-dso",
   ]
-  deps = [ "//zircon/system/ulib/zxtest:zxtest-streams" ]
+  deps = [ "//src/lib/fxl/test:gtest_main" ]
 }
 
 shared_library("ctor-order-test-no-deps-dso") {
@@ -168,12 +212,26 @@ shared_library("ctor-order-test-interposing-dso") {
   deps = [ ":ctor-order-test-interposable-dso" ]
 }
 
+executable("debugdata-test-helper") {
+  testonly = true
+
+  sources = [ "debugdata-test-helper.cc" ]
+  deps = [ "//zircon/system/ulib/zx" ]
+
+  configs += fdio_config
+  configs -= fdio_config
+
+  # Don't use instrumentation that emits debugdata, so only the expected test
+  # data is published.
+  exclude_toolchain_tags = [ "debugdata" ]
+}
+
 sanitizer_tests += [ "sanitizer-allocator-test" ]
 test("sanitizer-allocator-test") {
   sources = [ "sanitizer-allocator-test.cc" ]
   deps = [
+    ":test-utils",
     "//sdk/lib/tbi",
-    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
 }
 
@@ -207,8 +265,9 @@ if (lsan_configs != false) {
 
     sources = [ "lsan-test.cc" ]
     deps = [
+      ":test-utils",
+      ":uses-spawn",
       "//zircon/system/ulib/explicit-memory",
-      "//zircon/system/ulib/zxtest:zxtest-streams",
     ]
 
     data_deps = [ ":lsan-thread-race-test" ]
@@ -225,34 +284,18 @@ if (lsan_configs != false) {
   }
 }
 
-foreach(test, sanitizer_tests) {
-  generated_file("libc-$test.cml") {
-    visibility = [ ":*" ]
-    testonly = true
-    outputs = [ "$target_gen_dir/$target_name" ]
-    output_conversion = "json"
-    contents = {
-      include = [
-        "//src/sys/test_runners/gtest/zxtest.shard.cml",
-        "syslog/client.shard.cml",
-      ]
-      program = {
-        binary = "test/$test"
-      }
-      use = [
-        {
-          protocol = [ "fuchsia.process.Launcher" ]
-        },
-      ]
-    }
-  }
+group("uses-spawn") {
+  visibility = [ ":*" ]
+  testonly = true
 
+  # There aren't really any gtest death tests here, but they also use
+  # fdio_spawn, so this is enough to get the right manifest plumbing.
+  deps = [ "//src/sys/test_runners/gtest:death_test" ]
+}
+
+foreach(test, sanitizer_tests) {
   fuchsia_unittest_component("libc-$test") {
-    manifest = "$target_gen_dir/$target_name.cml"
-    deps = [
-      ":$test",
-      ":libc-$test.cml",
-    ]
+    deps = [ ":$test" ]
   }
 
   bootfs_test("$test.bootfs") {

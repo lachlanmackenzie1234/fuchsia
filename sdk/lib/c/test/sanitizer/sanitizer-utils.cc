@@ -11,22 +11,21 @@
 #include <limits.h>
 #include <pthread.h>
 #include <zircon/sanitizer.h>
+#include <zircon/status.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <array>
-#include <atomic>
-#include <filesystem>
 
 #include <fbl/algorithm.h>
-#include <zxtest/zxtest.h>
 
 #if __has_feature(address_sanitizer)
 #include <sanitizer/asan_interface.h>
 #endif
 
 #include "exit-hook-test-helper.h"
+#include "test-utils.h"
 
 namespace {
 
@@ -99,7 +98,7 @@ zx_status_t GetCommitChangeEvents(zx_koid_t vmo_koid, uint64_t* committed_change
 const size_t kPageSize = zx_system_get_page_size();
 
 // Touch every page in the region to make sure it's been COW'd.
-__attribute__((no_sanitize("all"))) static void PrefaultPages(uintptr_t start, uintptr_t end) {
+[[gnu::no_sanitize("all")]] void PrefaultPages(uintptr_t start, uintptr_t end) {
   while (start < end) {
     auto ptr = reinterpret_cast<volatile uintptr_t*>(start);
     *ptr = *ptr;
@@ -108,7 +107,7 @@ __attribute__((no_sanitize("all"))) static void PrefaultPages(uintptr_t start, u
 }
 
 // Calls PrefaultPages on every page in the current thread's stack.
-static void PrefaultStackPages() {
+void PrefaultStackPages() {
   pthread_attr_t attr;
   ASSERT_EQ(pthread_getattr_np(pthread_self(), &attr), 0);
 
@@ -171,7 +170,7 @@ TEST(SanitizerUtilsTest, FillShadow) {
     ASSERT_OK(GetMemoryUsage(shadow_koid, &alloc_mem_use));
 
     // ..and poison it.
-    ASAN_POISON_MEMORY_REGION((void*)addr, len);
+    ASAN_POISON_MEMORY_REGION(reinterpret_cast<void*>(addr), len);
 
     // Snapshot the memory use after the allocation.
     ASSERT_OK(GetMemoryUsage(shadow_koid, &memset_mem_use));
@@ -186,9 +185,9 @@ TEST(SanitizerUtilsTest, FillShadow) {
     ASSERT_OK(vmar.unmap(addr, len));
     __sanitizer_fill_shadow(vmar_addr, len, /* value */ 0, /* threshold */ 0);
   } while (end_events != start_events);
-  EXPECT_GE(alloc_mem_use, init_mem_use, "");
-  EXPECT_GT(memset_mem_use, alloc_mem_use, "");
-  EXPECT_LT(fill_shadow_mem_use, memset_mem_use, "");
+  EXPECT_GE(alloc_mem_use, init_mem_use);
+  EXPECT_GT(memset_mem_use, alloc_mem_use);
+  EXPECT_LT(fill_shadow_mem_use, memset_mem_use);
 }
 
 TEST(SanitizerUtilsTest, FillShadowSmall) {
@@ -219,13 +218,17 @@ TEST(SanitizerUtilsTest, FillShadowSmall) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(0, 0, &vmo));
 
-  std::array<size_t, 4> sizes = {kPageSize << shadow_scale, (kPageSize / 2) << shadow_scale,
-                                 (kPageSize + 1) << shadow_scale, kPageSize};
-
-  std::array<ssize_t, 3> offsets = {-(1 << shadow_scale), 0, (1 << shadow_scale)};
-
-  for (const auto size : sizes) {
-    for (const auto offset : offsets) {
+  for (const auto size : std::to_array<size_t>({
+           kPageSize << shadow_scale,
+           (kPageSize / 2) << shadow_scale,
+           (kPageSize + 1) << shadow_scale,
+           kPageSize,
+       })) {
+    for (const auto offset : std::to_array<ssize_t>({
+             -(1 << shadow_scale),
+             0,
+             (1 << shadow_scale),
+         })) {
       uint64_t start_events, end_events;
       uint64_t init_mem_use;
       uint64_t final_mem_use;
@@ -243,7 +246,7 @@ TEST(SanitizerUtilsTest, FillShadowSmall) {
         ASSERT_OK(GetMemoryUsage(shadow_koid, &init_mem_use));
 
         // Poison the shadow.
-        ASAN_POISON_MEMORY_REGION((void*)(base + offset), size);
+        ASAN_POISON_MEMORY_REGION(reinterpret_cast<void*>(base + offset), size);
 
         // Unpoison it.
         __sanitizer_fill_shadow(base + offset, size, 0 /* val */, 0 /* threshold */);
@@ -258,8 +261,8 @@ TEST(SanitizerUtilsTest, FillShadowSmall) {
       } while (start_events != end_events);
 
       // At most we are leaving 2 ASAN shadow pages committed.
-      EXPECT_LE(init_mem_use, final_mem_use, "");
-      EXPECT_LE(final_mem_use - init_mem_use, kPageSize * 2, "");
+      EXPECT_LE(init_mem_use, final_mem_use);
+      EXPECT_LE(final_mem_use - init_mem_use, kPageSize * 2);
     }
   }
 }
@@ -286,9 +289,12 @@ TEST(SanitizerUtilsTest, FillShadowPartialPages) {
 
   __sanitizer_fill_shadow(vmar_addr, len, /* value */ 0, /* threshold */ 0);
 
-  std::array<size_t, 4> paddings = {1, kPageSize, 127, (kPageSize) + 16};
-
-  for (size_t padding : paddings) {
+  for (size_t padding : std::to_array<size_t>({
+           1,
+           kPageSize,
+           127,
+           kPageSize + 16,
+       })) {
     // __sanitizer_fill_shadow works with sizes aligned to shadow_granule.
     padding = fbl::round_up(padding, shadow_granule);
     uint64_t start_events, end_events;
@@ -307,7 +313,7 @@ TEST(SanitizerUtilsTest, FillShadowPartialPages) {
 
       // Leave the first and last shadow pages unpoisoned.
       uintptr_t poison_base = addr + (kPageSize << shadow_scale);
-      size_t poison_len = len - (kPageSize << shadow_scale) * 2;
+      size_t poison_len = len - ((kPageSize << shadow_scale) * 2);
 
       // Partially poison some of the memory.
       poison_base += padding;
@@ -315,7 +321,7 @@ TEST(SanitizerUtilsTest, FillShadowPartialPages) {
 
       ASSERT_OK(GetMemoryUsage(shadow_koid, &init_mem_use));
 
-      ASAN_POISON_MEMORY_REGION((void*)poison_base, poison_len);
+      ASAN_POISON_MEMORY_REGION(reinterpret_cast<void*>(poison_base), poison_len);
 
       // Unpoison the shadow.
       __sanitizer_fill_shadow(poison_base, poison_len, /* value */ 0, /* threshold */ 0);
@@ -330,21 +336,14 @@ TEST(SanitizerUtilsTest, FillShadowPartialPages) {
     } while (end_events != start_events);
 
     // We expect the memory use to stay the same.
-    EXPECT_EQ(init_mem_use, final_mem_use, "");
+    EXPECT_EQ(init_mem_use, final_mem_use);
   }
 }
 
 #endif
 
-void RunExe(std::string_view path, uint32_t expected_ret) {
-  const char* root_dir = getenv("TEST_ROOT_DIR");
-  if (!root_dir) {
-    root_dir = "/pkg";
-  }
-  std::filesystem::path file(root_dir);
-  file /= path;
-  ASSERT_TRUE(std::filesystem::exists(file), "\"%s\" from TEST_ROOT_DIR=\"%s\"", file.c_str(),
-              root_dir);
+void RunExe(std::string_view name, int64_t expected_ret) {
+  std::filesystem::path file = HelperPath(name);
 
   zx::process child;
   const char* argv[] = {file.c_str(), nullptr};
@@ -362,11 +361,9 @@ void RunExe(std::string_view path, uint32_t expected_ret) {
 }
 
 TEST(SanitizerUtilsTest, ProcessExitHook) {
-  RunExe("bin/sanitizer-exit-hook-test-helper", kHookStatus);
+  RunExe("sanitizer-exit-hook-test-helper", kHookStatus);
 }
 
-TEST(SanitizerUtilsTest, ModuleLoadedStartup) {
-  RunExe("bin/sanitizer-module-loaded-test-helper", 0);
-}
+TEST(SanitizerUtilsTest, ModuleLoadedStartup) { RunExe("sanitizer-module-loaded-test-helper", 0); }
 
 }  // namespace

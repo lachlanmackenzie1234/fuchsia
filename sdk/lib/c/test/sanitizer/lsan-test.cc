@@ -21,7 +21,8 @@
 
 #include <explicit-memory/bytes.h>
 #include <sanitizer/lsan_interface.h>
-#include <zxtest/zxtest.h>
+
+#include "test-utils.h"
 
 namespace {
 
@@ -215,7 +216,7 @@ bool HasLeaks() {
   return leaks_detected;
 }
 
-class LeakSanitizerTest : public zxtest::Test {
+class LeakSanitizerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // The test is meaningless if there are leaks on entry.
@@ -228,7 +229,7 @@ class LeakSanitizerTest : public zxtest::Test {
   }
 };
 
-TEST(LeakSanitizerTest, NoLeaks) {
+TEST_F(LeakSanitizerTest, NoLeaks) {
   // The default state should be no leaks detected.
   EXPECT_FALSE(LsanDetectsLeaks());
 }
@@ -430,7 +431,7 @@ TEST_F(LeakSanitizerTest, TlsReference) {
     ASSERT_NO_FATAL_FAILURE(threads.Allocate());
 
     ASSERT_NO_FATAL_FAILURE(threads.Launch([](const auto& leak, void* volatile*) {
-      EXPECT_NULL(tls_reference);
+      EXPECT_EQ(tls_reference, nullptr);
       leak.CallWith([](int* ptr) { tls_reference = ptr; });
     }));
 
@@ -478,7 +479,7 @@ TEST_F(LeakSanitizerTest, DISABLED_LeakedThreadFix) {
     zx_info_process_t info;
     ASSERT_OK(child.get_info(ZX_INFO_PROCESS, &info, sizeof(info), nullptr, nullptr));
 
-    EXPECT_EQ(info.return_code, 0, "Expected the thread race test to exit successfully");
+    EXPECT_EQ(info.return_code, 0) << "Expected the thread race test to exit successfully";
   }
 }
 
