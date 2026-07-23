@@ -11,8 +11,13 @@ group("testing") {
 
 library_headers("headers") {
   testonly = true
-  headers = [ "lib/userboot/testing/launcher.h" ]
+  headers = [
+    "lib/userboot/testing/fixture.h",
+    "lib/userboot/testing/launcher.h",
+  ]
   public_deps = [
+    "//src/lib/elfldltl/testing",
+    "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
@@ -22,6 +27,7 @@ static_library("userboot-testing") {
   testonly = true
   public_deps = [ ":headers" ]
   sources = [
+    "fixture.cc",
     "get-executable.cc",
     "launcher.cc",
     "wait-for-termination.cc",
