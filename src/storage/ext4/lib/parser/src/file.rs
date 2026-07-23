@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use ext4_lib::parser::XattrMap;
+use ext4_lib::parser::{VmoWriter, XattrMap};
+use ext4_lib::processor::Ext4Processor;
 use ext4_lib::structs::ParsingError;
 use fidl_fuchsia_io as fio;
-use std::sync::Arc;
+use fuchsia_sync::Mutex;
+use std::sync::{Arc, Weak};
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::{
@@ -16,17 +18,15 @@ use vfs::{ObjectRequestRef, immutable_attributes};
 use zx::{Status, Vmo};
 
 use crate::types::ExtAttributes;
-use ext4_lib::processor::Ext4Processor;
 
 /// An ext4 filesystem file node.
 pub struct ExtFile {
     inode: u64,
     attributes: ExtAttributes,
     xattrs: XattrMap,
-    vmo: Vmo,
-    // ExtFile is implied to be read-only if processor is None. This is because the processor is
-    // only used to persist data to the underlying device. It is not required for reading data.
-    processor: Option<Arc<Ext4Processor>>,
+    processor: Arc<Ext4Processor>,
+    read_only: bool,
+    connection: Mutex<Option<Weak<OpenExtFile>>>,
 }
 
 impl std::fmt::Debug for ExtFile {
@@ -35,36 +35,27 @@ impl std::fmt::Debug for ExtFile {
             .field("inode", &self.inode)
             .field("attributes", &self.attributes)
             .field("xattrs", &self.xattrs)
-            .field("vmo", &self.vmo)
+            .field("read_only", &self.read_only)
             .finish_non_exhaustive()
     }
 }
 
 impl ExtFile {
-    /// Creates a new [`ExtFile`] with the given `inode`, `attributes`, and `vmo`.
-    pub fn new(
+    fn new(
+        processor: Arc<Ext4Processor>,
         inode: u64,
         attributes: ExtAttributes,
         xattrs: XattrMap,
-        vmo: Vmo,
-        processor: Option<Arc<Ext4Processor>>,
+        read_only: bool,
     ) -> Arc<Self> {
-        Arc::new(Self { inode, attributes, xattrs, vmo, processor })
-    }
-
-    /// Creates a new read-only [`ExtFile`] with the given `inode`, `attributes`, and `data`.
-    pub fn readonly_from_data(
-        inode: u64,
-        attributes: ExtAttributes,
-        xattrs: XattrMap,
-        data: impl AsRef<[u8]>,
-    ) -> Result<Arc<Self>, Status> {
-        let bytes = data.as_ref();
-        let vmo = Vmo::create(bytes.len().try_into().map_err(|_| Status::OUT_OF_RANGE)?)?;
-        if !bytes.is_empty() {
-            vmo.write(bytes, 0)?;
-        }
-        Ok(Self::new(inode, attributes, xattrs, vmo, None))
+        Arc::new(Self {
+            inode,
+            attributes,
+            xattrs,
+            processor,
+            read_only,
+            connection: Default::default(),
+        })
     }
 
     /// Creates a new [`ExtFile`] from the processor with the given inode number.
@@ -76,27 +67,46 @@ impl ExtFile {
         let inode = processor.inode(ino).map_err(|_| Status::INTERNAL)?;
         let attributes = ExtAttributes::from_inode(inode);
         let xattrs = processor.inode_xattrs(ino).map_err(|_| Status::INTERNAL)?;
-        let data = processor.read_data(ino).map_err(|_| Status::INTERNAL)?;
-        let vmo = Vmo::create(data.len().try_into().map_err(|_| Status::OUT_OF_RANGE)?)?;
-        if !data.is_empty() {
-            vmo.write(data.as_ref(), 0)?;
-        }
         if !read_only && processor.read_only() {
             return Err(Status::INTERNAL);
         }
+        Ok(Self::new(processor, ino.into(), attributes, xattrs, read_only))
+    }
 
-        Ok(Self::new(
-            ino as u64,
-            attributes,
-            xattrs,
-            vmo,
-            // Store the Ext4 processor for write functionalities
-            if read_only { None } else { Some(processor) },
-        ))
+    fn get_or_create_connection(self: &Arc<Self>) -> Result<Arc<OpenExtFile>, Status> {
+        let mut connection = self.connection.lock();
+        if let Some(weak_conn) = &*connection {
+            if let Some(conn) = weak_conn.upgrade() {
+                return Ok(conn);
+            }
+        }
+
+        let file_size =
+            self.processor.file_size(self.inode as u32).map_err(|_| Status::INTERNAL)?;
+        let mut writer = VmoWriter::new(file_size)?;
+        self.processor.read_data_into(self.inode as u32, &mut writer).map_err(|err| {
+            log::error!("failed to read file data: {err}");
+            Status::IO
+        })?;
+        let vmo = writer.into_vmo();
+
+        let conn = Arc::new(OpenExtFile { file: self.clone(), vmo: Arc::new(vmo) });
+        *connection = Some(Arc::downgrade(&conn));
+        Ok(conn)
     }
 
     fn read_only(&self) -> bool {
-        self.processor.is_none()
+        self.read_only
+    }
+
+    #[cfg(test)]
+    fn is_vmo_loaded(&self) -> bool {
+        let conn = self.connection.lock();
+        if let Some(weak) = &*conn { weak.upgrade().is_some() } else { false }
+    }
+
+    fn get_size(&self) -> Result<u64, Status> {
+        self.processor.file_size(self.inode as u32).map_err(|_| Status::INTERNAL)
     }
 }
 
@@ -120,7 +130,7 @@ impl Node for ExtFile {
         let content_size = if requested_attributes.intersects(
             fio::NodeAttributesQuery::CONTENT_SIZE | fio::NodeAttributesQuery::STORAGE_SIZE,
         ) {
-            Some(self.vmo.get_content_size()?)
+            Some(self.get_size()?)
         } else {
             None
         };
@@ -156,25 +166,54 @@ impl FileLike for ExtFile {
         options: FileOptions,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
+        let connection = self.get_or_create_connection()?;
         if !self.read_only() {
             // Use a FidlIoConnection to manage writes. Note that reads will be slower because they
             // won't be using a stream.
-            self.processor.as_ref().unwrap().record_open_metrics();
-            FidlIoConnection::create_sync(scope, self, options, object_request.take());
+            self.processor.record_open_metrics();
+            FidlIoConnection::create_sync(scope, connection, options, object_request.take());
         } else {
-            StreamIoConnection::create_sync(scope, self, options, object_request.take());
+            StreamIoConnection::create_sync(scope, connection, options, object_request.take());
         }
         Ok(())
     }
 }
 
-impl File for ExtFile {
+pub struct OpenExtFile {
+    file: Arc<ExtFile>,
+    vmo: Arc<Vmo>,
+}
+
+impl GetEntryInfo for OpenExtFile {
+    fn entry_info(&self) -> EntryInfo {
+        self.file.entry_info()
+    }
+}
+
+impl Node for OpenExtFile {
+    async fn get_attributes(
+        &self,
+        requested_attributes: fio::NodeAttributesQuery,
+    ) -> Result<fio::NodeAttributes2, Status> {
+        self.file.get_attributes(requested_attributes).await
+    }
+
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
+        self.file.list_extended_attributes().await
+    }
+
+    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, Status> {
+        self.file.get_extended_attribute(name).await
+    }
+}
+
+impl File for OpenExtFile {
     fn readable(&self) -> bool {
         true
     }
 
     fn writable(&self) -> bool {
-        !self.read_only()
+        !self.file.read_only()
     }
 
     fn executable(&self) -> bool {
@@ -187,13 +226,15 @@ impl File for ExtFile {
 
     async fn truncate(&self, length: u64) -> Result<(), Status> {
         // We only support truncating to 0.
-        if let Some(processor) = &self.processor
-            && length == 0
-        {
-            processor.truncate_to_zero(self.inode as u32).map_err(|e| {
+        if length == 0 {
+            self.file.processor.truncate_to_zero(self.file.inode as u32).map_err(|e| {
                 log::warn!("Error truncating: {:?}", e);
                 Status::INTERNAL
-            })
+            })?;
+            let size = self.vmo.get_size()?;
+            self.vmo.set_stream_size(0)?;
+            self.vmo.op_range(zx::VmoOp::DECOMMIT, 0, size)?;
+            Ok(())
         } else {
             Err(Status::NOT_SUPPORTED)
         }
@@ -216,12 +257,7 @@ impl File for ExtFile {
     }
 
     async fn get_size(&self) -> Result<u64, Status> {
-        let size = if let Some(processor) = &self.processor {
-            processor.file_size(self.inode as u32).map_err(|_| Status::INTERNAL)?
-        } else {
-            self.vmo.get_content_size()?
-        };
-        Ok(size)
+        self.file.get_size()
     }
 
     async fn update_attributes(
@@ -232,25 +268,21 @@ impl File for ExtFile {
     }
 
     async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {
-        if let Some(ref processor) = self.processor {
-            processor.sync().map_err(|e| {
-                log::warn!("Error syncing: {:?}", e);
-                Status::INTERNAL
-            })?;
-        }
+        self.file.processor.sync().map_err(|e| {
+            log::warn!("Error syncing: {:?}", e);
+            Status::INTERNAL
+        })?;
         Ok(())
     }
 }
 
 // Trait required for `FidlIoConnection` to support write operations.
-impl FileIo for ExtFile {
+impl FileIo for OpenExtFile {
     async fn read_at(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
         // TODO(https://fxbug.dev/479943428): When full write support is implemented, ensure read_at
         // handles potential race conditions with concurrent writes.
         let file_size = self.get_size().await?;
-        if let Some(processor) = &self.processor {
-            processor.record_read_metrics();
-        }
+        self.file.processor.record_read_metrics();
 
         if offset >= file_size {
             return Ok(0);
@@ -270,19 +302,17 @@ impl FileIo for ExtFile {
         // and journalling.
 
         // We can only write to the pre-allocated file contents.
-        if let Some(ref processor) = self.processor {
-            match processor.overwrite_file_contents(self.inode as u32, content, offset) {
-                Ok(_) => {
-                    self.vmo.write(content, offset)?;
-                }
-                Err(ParsingError::NotSupported(msg)) => {
-                    log::warn!("Failed to overwrite ({} not supported)", msg);
-                    return Err(Status::NOT_SUPPORTED);
-                }
-                Err(error) => {
-                    log::warn!(error:?; "Failed to overwrite");
-                    return Err(Status::INTERNAL);
-                }
+        match self.file.processor.overwrite_file_contents(self.file.inode as u32, content, offset) {
+            Ok(_) => {
+                self.vmo.write(content, offset)?;
+            }
+            Err(ParsingError::NotSupported(msg)) => {
+                log::warn!("Failed to overwrite ({} not supported)", msg);
+                return Err(Status::NOT_SUPPORTED);
+            }
+            Err(error) => {
+                log::warn!(error:?; "Failed to overwrite");
+                return Err(Status::INTERNAL);
             }
         }
         Ok(content.len() as u64)
@@ -295,7 +325,7 @@ impl FileIo for ExtFile {
 }
 
 // Required by `StreamIoConnection`.
-impl GetVmo for ExtFile {
+impl GetVmo for OpenExtFile {
     fn get_vmo(&self) -> &Vmo {
         &self.vmo
     }
@@ -351,16 +381,35 @@ mod tests {
 
     const BLOCK_SIZE: u32 = 512;
 
+    fn create_test_processor(read_only: bool) -> Arc<Ext4Processor> {
+        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
+        let (block_client_end, block_server_end) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task = executor.run_singlethreaded(server.serve(block_server_end.into_stream()));
+        });
+        Arc::new(Ext4Processor::new(
+            Arc::new(
+                BlockDeviceReader::from_client_end(block_client_end)
+                    .expect("failed to create block device reader"),
+            ),
+            read_only,
+        ))
+    }
+
+    fn get_test_file_ino(processor: &Ext4Processor) -> u32 {
+        processor.entry_at_path(Path::new("file1")).expect("failed entry at path").e2d_ino.get()
+    }
+
+    #[test_case(true; "ro")]
+    #[test_case(false; "rw")]
     #[fuchsia::test]
-    async fn test_read() {
-        let expected_content = b"Read only test";
-        let file = ExtFile::readonly_from_data(
-            fio::INO_UNKNOWN,
-            ExtAttributes::default(),
-            XattrMap::default(),
-            expected_content,
-        )
-        .expect("from_data error");
+    async fn test_read(read_only: bool) {
+        let expected_content = b"file1 contents.\n";
+        let processor = create_test_processor(read_only);
+        let file_ino = get_test_file_ino(&processor);
+        let file = ExtFile::from_processor(processor, file_ino as u32, read_only).unwrap();
         let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         let content = proxy
@@ -379,15 +428,19 @@ mod tests {
             .expect("close error");
     }
 
+    #[test_case(true; "ro")]
+    #[test_case(false; "rw")]
     #[fuchsia::test]
-    async fn test_get_dac_attributes() {
-        let file = ExtFile::readonly_from_data(
-            123,
+    async fn test_get_dac_attributes(read_only: bool) {
+        let processor = create_test_processor(read_only);
+        let file_ino = get_test_file_ino(&processor);
+        let file = ExtFile::new(
+            processor,
+            file_ino.into(),
             ExtAttributes { mode: 0x8124, uid: 456, gid: 789 },
             XattrMap::default(),
-            b"Read only test",
-        )
-        .expect("from_data error");
+            read_only,
+        );
         let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         let attributes_query = fio::NodeAttributesQuery::ID
@@ -400,7 +453,7 @@ mod tests {
             .expect("get_attributes FIDL error")
             .map_err(zx::Status::from_raw)
             .expect("get_attributes error");
-        assert_eq!(immutable_attributes.id.expect("missing id attribute"), 123);
+        assert_eq!(immutable_attributes.id.expect("missing id attribute"), u64::from(file_ino));
         assert_eq!(mutable_attributes.mode.expect("missing mode attribute"), 0x8124);
         assert_eq!(mutable_attributes.uid.expect("missing uid attribute"), 456);
         assert_eq!(mutable_attributes.gid.expect("missing gid attribute"), 789);
@@ -413,13 +466,16 @@ mod tests {
             .expect("close error");
     }
 
+    #[test_case(true; "ro")]
+    #[test_case(false; "rw")]
     #[fuchsia::test]
-    async fn test_get_extended_attributes() {
+    async fn test_get_extended_attributes(read_only: bool) {
         let xattrs =
             [(b"attr".into(), b"value".into()), (b"attr2".into(), b"value2".into())].into();
+        let processor = create_test_processor(read_only);
+        let file_ino = get_test_file_ino(&processor);
         let file =
-            ExtFile::readonly_from_data(123, ExtAttributes::default(), xattrs, b"Read only test")
-                .expect("from_data error");
+            ExtFile::new(processor, file_ino.into(), ExtAttributes::default(), xattrs, read_only);
         let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         let value = proxy
@@ -440,14 +496,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_backing_memory() {
-        let expected_content = b"Read only test";
-        let file = ExtFile::readonly_from_data(
-            fio::INO_UNKNOWN,
-            ExtAttributes::default(),
-            XattrMap::default(),
-            expected_content,
-        )
-        .expect("from_data error");
+        let expected_content = b"file1 contents.\n";
+        let processor = create_test_processor(true);
+        let file_ino = get_test_file_ino(&processor);
+        let file = ExtFile::from_processor(processor, file_ino as u32, true).unwrap();
         let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         async fn assert_get_vmo(
@@ -516,29 +568,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_rw_file() {
         // Create a device that is Ext4 formatted.
-        // This image only contains 1 file "file1".
-        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
-
-        let (block_client_end1, block_server_end1) =
-            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
-        std::thread::spawn(move || {
-            let mut executor = fasync::TestExecutor::new();
-            let _task = executor.run_singlethreaded(server.serve(block_server_end1.into_stream()));
-        });
-        let processor = Arc::new(Ext4Processor::new(
-            Arc::new(
-                BlockDeviceReader::from_client_end(block_client_end1)
-                    .expect("failed to create block device reader"),
-            ),
-            /* read_only=*/ false,
-        ));
-
-        // Verify that we can't write to a Ext4 RO file.
-        let file_ino = processor
-            .entry_at_path(Path::new("file1"))
-            .expect("failed entry at path")
-            .e2d_ino
-            .get();
+        let processor = create_test_processor(/* read_only=*/ false);
+        let file_ino = get_test_file_ino(&processor);
         let ro_file =
             ExtFile::from_processor(processor.clone(), file_ino, /* read_only=*/ true)
                 .expect("from_data error");
@@ -570,27 +601,8 @@ mod tests {
     #[test_case(false; "read write file")]
     #[fuchsia::test]
     async fn test_read_past_end_of_file(read_only: bool) {
-        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
-
-        let (block_client_end1, block_server_end1) =
-            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
-        std::thread::spawn(move || {
-            let mut executor = fasync::TestExecutor::new();
-            let _task = executor.run_singlethreaded(server.serve(block_server_end1.into_stream()));
-        });
-        let processor = Arc::new(Ext4Processor::new(
-            Arc::new(
-                BlockDeviceReader::from_client_end(block_client_end1)
-                    .expect("failed to create block device reader"),
-            ),
-            /* read_only=*/ false,
-        ));
-
-        let file_ino = processor
-            .entry_at_path(Path::new("file1"))
-            .expect("failed entry at path")
-            .e2d_ino
-            .get();
+        let processor = create_test_processor(read_only);
+        let file_ino = get_test_file_ino(&processor);
         let file =
             ExtFile::from_processor(processor, file_ino, read_only).expect("from_data error");
         let proxy = serve_proxy(file, fio::PERM_READABLE);
@@ -644,31 +656,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_writing_past_eof_fails() {
-        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
+        let read_only = false;
+        let processor = create_test_processor(read_only);
+        let file_ino = get_test_file_ino(&processor);
 
-        let (block_client_end1, block_server_end1) =
-            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
-        std::thread::spawn(move || {
-            let mut executor = fasync::TestExecutor::new();
-            let _task = executor.run_singlethreaded(server.serve(block_server_end1.into_stream()));
-        });
-        let processor = Arc::new(Ext4Processor::new(
-            Arc::new(
-                BlockDeviceReader::from_client_end(block_client_end1)
-                    .expect("failed to create block device reader"),
-            ),
-            /* read_only=*/ false,
-        ));
-
-        let file_ino = processor
-            .entry_at_path(Path::new("file1"))
-            .expect("failed entry at path")
-            .e2d_ino
-            .get();
-
-        let rw_file =
-            ExtFile::from_processor(processor.clone(), file_ino, /* read_only=*/ false)
-                .expect("from_data error");
+        let rw_file = ExtFile::from_processor(processor.clone(), file_ino, read_only)
+            .expect("from_data error");
         let proxy = serve_proxy(rw_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
         let original_content = proxy
             .read(1024)
@@ -712,5 +705,71 @@ mod tests {
             .map_err(zx::Status::from_raw)
             .expect("read error");
         assert_eq!(verify_content, original_content);
+    }
+
+    #[test_case(true; "ro")]
+    #[test_case(false; "rw")]
+    #[fuchsia::test]
+    async fn test_lazy_loading_vmo_not_created_at_init(read_only: bool) {
+        let processor = create_test_processor(read_only);
+        let file_ino = get_test_file_ino(&processor);
+
+        let file =
+            ExtFile::from_processor(processor, file_ino, read_only).expect("from_processor failed");
+
+        // Verify VMO is not loaded upon initial creation.
+        assert!(!file.is_vmo_loaded(), "VMO should not be created at initialization");
+
+        let proxy = serve_proxy(file.clone(), fio::PERM_READABLE);
+
+        // Accessing file content triggers VMO loading.
+        let _ = proxy
+            .read(1024)
+            .await
+            .expect("read FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read error");
+
+        assert!(file.is_vmo_loaded(), "VMO should be loaded on demand after read");
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
+    }
+
+    #[test_case(true; "ro")]
+    #[test_case(false; "rw")]
+    #[fuchsia::test]
+    async fn test_vmo_discard(read_only: bool) {
+        let processor = create_test_processor(read_only);
+        let file_ino = get_test_file_ino(&processor);
+
+        let file =
+            ExtFile::from_processor(processor, file_ino, read_only).expect("from_processor failed");
+
+        let proxy = serve_proxy(file.clone(), fio::PERM_READABLE);
+        let _ = proxy
+            .read(1024)
+            .await
+            .expect("read FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read error");
+
+        assert!(file.is_vmo_loaded(), "VMO should be loaded while proxy is active");
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
+
+        assert!(
+            !file.is_vmo_loaded(),
+            "VMO should be discarded when all connections to an unmodified file close"
+        );
     }
 }

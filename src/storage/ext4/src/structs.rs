@@ -558,6 +558,10 @@ pub enum ParsingError {
 
     #[error("Writer failed to flush")]
     WriterFlushError,
+
+    #[cfg(target_os = "fuchsia")]
+    #[error("vmo error {}", _0)]
+    VmoError(zx::Status),
 }
 
 impl From<ReaderError> for ParsingError {

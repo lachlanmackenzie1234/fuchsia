@@ -57,6 +57,120 @@ pub struct Parser {
 
 pub type XattrMap = BTreeMap<Vec<u8>, Vec<u8>>;
 
+/// An abstraction over an appendable buffer for reading out files.
+pub trait DataWriter {
+    /// Reserves `size` in the underlying buffer.
+    ///
+    /// Does not affect the write offset within the buffer.
+    fn reserve(&mut self, size: u64) -> Result<(), ParsingError>;
+
+    /// Appends `bytes` to the buffer.
+    ///
+    /// The internal write offset is incremented by `bytes.len()`. Partial
+    /// writes must return an error.
+    fn append(&mut self, bytes: &[u8]) -> Result<(), ParsingError>;
+
+    /// Pads the buffer to `target_size`.
+    ///
+    /// Moves the buffer's write offset _forward_ to `target_size` filling with
+    /// zeroes.
+    /// Returns an error if the write offset is larger than `target_size`.
+    fn pad_to(&mut self, target_size: u64) -> Result<(), ParsingError>;
+}
+
+impl DataWriter for Vec<u8> {
+    fn reserve(&mut self, size: u64) -> Result<(), ParsingError> {
+        let size: usize = size
+            .try_into()
+            .map_err(|_| ParsingError::Incompatible("Target size out of bounds".to_string()))?;
+        self.reserve(size);
+        Ok(())
+    }
+
+    fn append(&mut self, bytes: &[u8]) -> Result<(), ParsingError> {
+        self.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    fn pad_to(&mut self, target_size: u64) -> Result<(), ParsingError> {
+        let target_size: usize = target_size
+            .try_into()
+            .map_err(|_| ParsingError::Incompatible("Target size out of bounds".to_string()))?;
+        let len = self.len();
+        if len > target_size {
+            return Err(ParsingError::NotSupported(format!(
+                "invalid target size {target_size} for {len}"
+            )));
+        }
+        self.resize(target_size, 0);
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+pub struct VmoWriter {
+    vmo: zx::Vmo,
+    stream: zx::Stream,
+}
+
+#[cfg(target_os = "fuchsia")]
+impl VmoWriter {
+    /// Creates a new `VmoWriter` backed by a VMO of `size` bytes.
+    pub fn new(size: u64) -> Result<Self, zx::Status> {
+        let vmo = zx::Vmo::create(size)?;
+        vmo.set_stream_size(0)?;
+        let stream = zx::Stream::create(
+            zx::StreamOptions::MODE_APPEND | zx::StreamOptions::MODE_WRITE,
+            &vmo,
+            0,
+        )?;
+        Ok(Self { vmo, stream })
+    }
+
+    /// Consumes the writer, returning the underlying VMO.
+    ///
+    /// The inner VMO is guaranteed to be the size given to [`VmoWriter::new`],
+    /// but its stream size is set to the amount of bytes written to it via the
+    /// [`DataWriter`] implementation.
+    pub fn into_vmo(self) -> zx::Vmo {
+        self.vmo
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+impl DataWriter for VmoWriter {
+    fn reserve(&mut self, size: u64) -> Result<(), ParsingError> {
+        if size > self.vmo.get_size().map_err(ParsingError::VmoError)? {
+            return Err(ParsingError::VmoError(zx::Status::NOT_SUPPORTED));
+        }
+        Ok(())
+    }
+
+    fn append(&mut self, bytes: &[u8]) -> Result<(), ParsingError> {
+        let written = self
+            .stream
+            .write(zx::StreamWriteOptions::empty(), bytes)
+            .map_err(ParsingError::VmoError)?;
+        if written != bytes.len() {
+            return Err(ParsingError::VmoError(zx::Status::IO_REFUSED));
+        }
+        Ok(())
+    }
+
+    fn pad_to(&mut self, target_size: u64) -> Result<(), ParsingError> {
+        let cur = self.vmo.get_stream_size().map_err(ParsingError::VmoError)?;
+        if cur > target_size {
+            return Err(ParsingError::NotSupported(format!(
+                "invalid target size {target_size} for {cur}"
+            )));
+        }
+        // Note: Given we created the VMO ourselves and we're ensuring we can
+        // only seek forward, we're guaranteed this is filled with 0s.
+        self.vmo.set_stream_size(target_size).map_err(ParsingError::VmoError)?;
+        Ok(())
+    }
+}
+
 /// Abstracts over block group descriptors of different size
 enum BlockGroupDescriptor {
     BGD32(BlockGroupDesc32),
@@ -190,14 +304,20 @@ impl Parser {
         self.inode(ROOT_INODE_NUM)
     }
 
-    /// Reads all raw data from a given extent leaf node.
-    fn extent_data(&self, extent: &Extent, mut allowance: u64) -> Result<Vec<u8>, ParsingError> {
+    /// Reads extent data from a leaf node into `writer`.
+    fn extent_data<W: DataWriter>(
+        &self,
+        extent: &Extent,
+        writer: &mut W,
+        mut allowance: u64,
+    ) -> Result<u64, ParsingError> {
         let block_number = extent.target_block_num();
         let block_count = extent.e_len.get() as u64;
         let block_size = self.block_size()?;
         let mut read_len;
 
-        let mut data = Vec::with_capacity((block_size * block_count).try_into().unwrap());
+        writer.reserve(block_size * block_count)?;
+        let mut total_written = 0u64;
 
         for i in 0..block_count {
             let block_data = self.block(block_number + i as u64)?;
@@ -206,12 +326,13 @@ impl Parser {
             } else {
                 read_len = allowance;
             }
-            let block_data = &block_data[0..read_len.try_into().unwrap()];
-            data.append(&mut block_data.to_vec());
+            let slice = &block_data[0..read_len.try_into().unwrap()];
+            writer.append(slice)?;
+            total_written += read_len;
             allowance -= read_len;
         }
 
-        Ok(data)
+        Ok(total_written)
     }
 
     /// Reads the inode size and raw extent data for a regular file.  Fails if the provided inode is
@@ -237,27 +358,25 @@ impl Parser {
         Ok((inode.size(), extents))
     }
 
-    /// Reads extent data from a leaf node.
+    /// Reads extent data from a leaf node into `writer`.
     ///
     /// # Arguments
     /// * `extent`: Extent from which to read data from.
-    /// * `data`: Vec where data that is read is added.
+    /// * `writer`: `DataWriter` where data that is read is added.
     /// * `allowance`: The maximum number of bytes to read from the extent. The
     ///    given file allowance is updated on each call to track sizing for an
     ///    entire extent tree.
-    fn read_extent_data(
+    fn read_extent_data<W: DataWriter>(
         &self,
         extent: &Extent,
-        data: &mut Vec<u8>,
+        writer: &mut W,
         allowance: &mut u64,
     ) -> Result<(), ParsingError> {
-        let mut extent_data = self.extent_data(&extent, *allowance)?;
-        let extent_len = extent_data.len() as u64;
+        let extent_len = self.extent_data(extent, writer, *allowance)?;
         if extent_len > *allowance {
             return Err(ParsingError::ExtentUnexpectedLength(extent_len, *allowance));
         }
         *allowance -= extent_len;
-        data.append(&mut extent_data);
         Ok(())
     }
 
@@ -437,19 +556,24 @@ impl Parser {
         }
     }
 
-    /// Reads all raw data for a given inode.
+    /// Reads all raw data for a given inode into the given writer.
     ///
-    /// For a file, this will be the file data. For a symlink,
-    /// this will be the symlink target.
-    pub fn read_data(&self, inode_num: u32) -> Result<Vec<u8>, ParsingError> {
+    /// For a file, this will write the file data. For a symlink,
+    /// this will write the symlink target.
+    pub fn read_data_into<W: DataWriter>(
+        &self,
+        inode_num: u32,
+        writer: &mut W,
+    ) -> Result<(), ParsingError> {
         let inode = self.inode(inode_num)?;
         let mut size_remaining = inode.size();
-        let mut data = Vec::with_capacity(size_remaining.try_into().unwrap());
+        writer.reserve(size_remaining.try_into().unwrap())?;
 
         // Check for symlink with inline data.
         if u16::from(inode.e2di_mode) & 0xa000 != 0 && u32::from(inode.e2di_nblock) == 0 {
-            data.extend_from_slice(&inode.e2di_blocks[..inode.size().try_into().unwrap()]);
-            return Ok(data);
+            let inline_data = &inode.e2di_blocks[..inode.size().try_into().unwrap()];
+            writer.append(inline_data)?;
+            return Ok(());
         }
 
         let root_extent_tree_node = inode.extent_tree_node()?;
@@ -461,6 +585,7 @@ impl Parser {
         })?;
 
         let block_size = self.block_size()?;
+        let mut current_offset = 0u64;
 
         // Summarized from https://www.kernel.org/doc/ols/2007/ols2007v2-pages-21-34.pdf,
         // Section 2.2: Extent and ExtentHeader entries must be sorted by logical block number. This
@@ -472,18 +597,31 @@ impl Parser {
 
             // File may be sparse. Sparse files will have gaps
             // between logical blocks. Fill in any gaps with zeros.
-            if buffer_offset > data.len() as u64 {
-                size_remaining -= buffer_offset - data.len() as u64;
-                data.resize(buffer_offset.try_into().unwrap(), 0);
+            if buffer_offset > current_offset {
+                let gap = buffer_offset - current_offset;
+                size_remaining -= gap;
+                writer.pad_to(buffer_offset)?;
+                current_offset = buffer_offset;
             }
 
-            self.read_extent_data(&extent, &mut data, &mut size_remaining)?;
+            let size_before = size_remaining;
+            self.read_extent_data(&extent, writer, &mut size_remaining)?;
+            let written = size_before - size_remaining;
+            current_offset += written;
         }
 
         // If there are zero pages at the end of the file, they won't appear in the extents list.
         // Pad the data with zeroes to the full file length.
         // TODO(https://fxbug.dev/42073237): Add a test for this behavior, once better test infra exists.
-        data.resize(inode.size().try_into().unwrap(), 0);
+        writer.pad_to(inode.size())?;
+
+        Ok(())
+    }
+
+    /// Reads all raw data for a given inode into a vector.
+    pub fn read_data(&self, inode_num: u32) -> Result<Vec<u8>, ParsingError> {
+        let mut data = Vec::new();
+        self.read_data_into(inode_num, &mut data)?;
         Ok(data)
     }
 
@@ -670,10 +808,14 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use crate::parser::Parser;
+    #[cfg(target_os = "fuchsia")]
+    use crate::parser::{DataWriter, VmoWriter};
     use crate::readers::VecReader;
     use crate::structs::{EntryType, ParsingError};
     use maplit::hashmap;
     use sha2::{Digest, Sha256};
+    #[cfg(target_os = "fuchsia")]
+    use std::assert_matches;
     use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use std::{fs, str};
@@ -927,5 +1069,118 @@ mod tests {
             })
             .expect("Index");
         assert!(file_hashes.is_empty(), "Expected files were not found {:?}", file_hashes);
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[test_case(true; "pad")]
+    #[test_case(true; "no_pad")]
+    #[fuchsia::test]
+    fn vmo_writer_size_and_stream_size(pad: bool) {
+        let size = zx::system_get_page_size() as u64;
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        writer.reserve(100).expect("reserve failed");
+        let contents = b"hello world";
+        writer.append(contents).expect("append failed");
+        let expect_stream_size = if pad {
+            let pad = 500;
+            writer.pad_to(pad).expect("pad_to failed");
+            pad
+        } else {
+            contents.len() as u64
+        };
+
+        let vmo = writer.into_vmo();
+        assert_eq!(vmo.get_size().expect("get_size failed"), size);
+        assert_eq!(vmo.get_stream_size().expect("get_stream_size failed"), expect_stream_size);
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::test]
+    fn vmo_writer_write_or_reserve_past_size_fails() {
+        let size = zx::system_get_page_size() as u64;
+
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        assert_eq!(
+            writer.reserve(size + 1),
+            Err(ParsingError::VmoError(zx::Status::NOT_SUPPORTED))
+        );
+
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        let large_buffer = vec![0u8; (size + 1) as usize];
+        assert_eq!(
+            writer.append(&large_buffer),
+            Err(ParsingError::VmoError(zx::Status::IO_REFUSED))
+        );
+
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        assert_eq!(writer.pad_to(size + 1), Err(ParsingError::VmoError(zx::Status::OUT_OF_RANGE)));
+
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        writer.append(&vec![0u8; size as usize]).expect("append failed");
+        assert_eq!(writer.append(b"a"), Err(ParsingError::VmoError(zx::Status::OUT_OF_RANGE)));
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::test]
+    fn vmo_writer_pad_to_lower_than_offset_fails() {
+        let size = zx::system_get_page_size() as u64;
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        writer.append(b"hello world").expect("append failed");
+        assert_matches!(writer.pad_to(5), Err(ParsingError::NotSupported(_)));
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::test]
+    fn vmo_writer_pad_to_sets_stream_size_and_zeroes() {
+        let size = zx::system_get_page_size() as u64;
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        let contents = b"hello";
+        writer.append(contents).expect("append failed");
+        let pad: usize = 100;
+        writer.pad_to(pad as u64).expect("pad_to failed");
+
+        let vmo = writer.into_vmo();
+        assert_eq!(vmo.get_stream_size().expect("get_stream_size failed"), pad as u64);
+
+        let mut buf = vec![0u8; pad];
+        vmo.read(&mut buf, 0).expect("vmo read failed");
+        assert_eq!(&buf[0..contents.len()], b"hello");
+        assert_eq!(&buf[contents.len()..pad], &vec![0u8; pad - contents.len()]);
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::test]
+    fn vmo_writer_with_no_writes_has_zero_stream_size() {
+        let size = zx::system_get_page_size() as u64;
+        let writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        let vmo = writer.into_vmo();
+        assert_eq!(vmo.get_size().expect("get_size"), size);
+        assert_eq!(vmo.get_stream_size().expect("get_stream_size"), 0);
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[test_case(true; "pad")]
+    #[test_case(true; "no_pad")]
+    #[fuchsia::test]
+    fn vmo_writer_multiple_appends(pad: bool) {
+        let size = zx::system_get_page_size() as u64;
+        let mut writer = VmoWriter::new(size).expect("failed to create VmoWriter");
+        let mut expect = vec![];
+        for i in 0..5 {
+            let b = format!("hello payload {i}");
+            expect.extend_from_slice(b.as_bytes());
+            writer.append(b.as_bytes()).expect("append");
+            if pad {
+                let pad = [0u8; 10];
+                expect.extend_from_slice(&pad);
+                writer.pad_to(expect.len() as u64).expect("pad");
+            }
+        }
+
+        let vmo = writer.into_vmo();
+        let mut buf = vec![0u8; expect.len()];
+        assert_eq!(vmo.get_stream_size().expect("get_stream_size"), expect.len() as u64);
+        vmo.read(&mut buf, 0).expect("read");
+        assert_eq!(buf, expect);
     }
 }
