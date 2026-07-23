@@ -15,6 +15,8 @@
 #include <fbl/alloc_checker.h>
 #include <sdk/lib/driver/metadata/cpp/metadata.h>
 
+#include "src/devices/adc/drivers/adc/adc_parser.h"
+
 namespace adc {
 
 AdcDevice::AdcDevice(fdf::ClientEnd<fuchsia_hardware_adcimpl::Device> adc_impl, uint32_t channel,
@@ -134,13 +136,48 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
   return zx::ok(std::move(dev));
 }
 
+namespace {
+fuchsia_hardware_adcimpl::Metadata ConvertMetadata(const adc_metadata::AdcMetadata& generic) {
+  std::vector<fuchsia_hardware_adcimpl::AdcChannel> channels;
+  for (const auto& c : generic.channels) {
+    fuchsia_hardware_adcimpl::AdcChannel channel;
+    channel.idx(c.channel);
+    if (c.name) {
+      channel.name(*c.name);
+    }
+    channels.push_back(std::move(channel));
+  }
+  return fuchsia_hardware_adcimpl::Metadata{{.channels = std::move(channels)}};
+}
+}  // namespace
+
 zx::result<> Adc::Start(fdf::DriverContext context) {
   // Get metadata.
-  zx::result metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_adcimpl::Metadata>(context.incoming());
-  if (metadata.is_error()) {
-    FDF_SLOG(ERROR, "Failed to get metadata.", KV("status", metadata.status_string()));
-    return metadata.take_error();
+  std::optional<fuchsia_hardware_adcimpl::Metadata> metadata;
+  {
+    // Try to get generic metadata first
+    zx::result generic_res =
+        fdf_metadata::GetMetadataFromFidlServiceIfExists<fuchsia_driver_metadata::Dictionary>(
+            context.svc(), "fuchsia.hardware.adcimpl.Metadata");
+    if (generic_res.is_ok() && generic_res.value().has_value()) {
+      auto parsed = adc_metadata::AdcMetadata::Parse(*generic_res.value());
+      if (parsed) {
+        metadata = ConvertMetadata(*parsed);
+      } else {
+        fdf::error("Failed to parse generic ADC metadata");
+      }
+    }
+
+    if (!metadata.has_value()) {
+      // Fall back to old metadata
+      zx::result metadata_res =
+          fdf_metadata::GetMetadata<fuchsia_hardware_adcimpl::Metadata>(context.incoming());
+      if (metadata_res.is_error()) {
+        fdf::error("Failed to get metadata: {}", metadata_res.status_string());
+        return metadata_res.take_error();
+      }
+      metadata = std::move(*metadata_res);
+    }
   }
   if (!metadata->channels().has_value()) {
     fdf::error("Metadata is missing its channels property");

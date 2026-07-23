@@ -7,8 +7,17 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("adc-dml") {
+  dml = "meta/adc.dml"
+  driver_name = "adc"
+}
+
+fuchsia_driver_dml_parser("adc-metadata") {
+  dml_label = ":adc-dml"
+}
+
 driver_bind_rules("adc_bind") {
-  rules = "meta/adc.bind"
+  dml_label = ":adc-dml"
   bind_output = "adc.bindbc"
   tests = "meta/test_bind.json"
   deps =
@@ -16,13 +25,18 @@ driver_bind_rules("adc_bind") {
 }
 
 source_set("common") {
-  sources = [ "adc.cc" ]
-  deps = [ "//sdk/lib/driver/metadata/cpp" ]
+  sources = [
+    "adc.cc",
+    "adc.h",
+  ]
+  deps = [ ":adc-metadata" ]
   public_deps = [
     ":adc_bind",
+    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_cpp",
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
@@ -45,8 +59,8 @@ fuchsia_cc_driver("adc-driver") {
 fuchsia_driver_component("adc") {
   info = "meta/adc-info.json"
   component_name = "adc"
+  dml_label = ":adc-dml"
   deps = [ ":adc-driver" ]
-  manifest = "meta/adc.cml"
 }
 
 fuchsia_driver_package("package") {

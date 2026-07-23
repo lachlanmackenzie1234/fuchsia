@@ -4,6 +4,7 @@
 
 #include "src/devices/adc/drivers/adc/adc.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.adcimpl/cpp/driver/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -17,6 +18,36 @@
 #include "src/devices/lib/fidl-metadata/adc.h"
 
 namespace adc {
+
+class GenericMetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Metadata> {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+                     std::string service_name,
+                     const fuchsia_driver_metadata::Dictionary& metadata) {
+    fit::result persisted_metadata = fidl::Persist(metadata);
+    if (persisted_metadata.is_error()) {
+      return zx::error(persisted_metadata.error_value().status());
+    }
+    persisted_metadata_ = std::move(persisted_metadata.value());
+
+    fuchsia_driver_metadata::Service::InstanceHandler handler(
+        {.metadata = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure)});
+
+    return outgoing.component().AddService(std::move(handler), std::move(service_name));
+  }
+
+  void GetPersistedMetadata(GetPersistedMetadataCompleter::Sync& completer) override {
+    if (!persisted_metadata_.has_value()) {
+      completer.ReplyError(ZX_ERR_NOT_FOUND);
+      return;
+    }
+    completer.ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(persisted_metadata_.value()));
+  }
+
+ private:
+  fidl::ServerBindingGroup<fuchsia_driver_metadata::Metadata> bindings_;
+  std::optional<std::vector<uint8_t>> persisted_metadata_;
+};
 
 class FakeAdcImplServer : public fdf::Server<fuchsia_hardware_adcimpl::Device> {
  public:
@@ -73,6 +104,15 @@ class AdcTestEnvironment : fdf_testing::Environment {
       }
     }
 
+    if (generic_metadata_.has_value()) {
+      if (zx::result result = generic_metadata_server_.Serve(
+              to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+              "fuchsia.hardware.adcimpl.Metadata", generic_metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
+    }
+
     return zx::ok();
   }
 
@@ -84,12 +124,31 @@ class AdcTestEnvironment : fdf_testing::Environment {
     metadata_ = fuchsia_hardware_adcimpl::Metadata({.channels = std::move(channels)});
   }
 
+  void InitGeneric(const std::vector<fidl_metadata::adc::Channel>& kAdcChannels) {
+    std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
+    entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+        "channels._count", fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                               static_cast<int64_t>(kAdcChannels.size()))));
+    for (size_t i = 0; i < kAdcChannels.size(); ++i) {
+      std::string base_key = "channels." + std::to_string(i) + ".";
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+          base_key + "channel", fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                                    static_cast<int64_t>(kAdcChannels[i].idx))));
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+          base_key + "name",
+          fuchsia_driver_metadata::DictionaryValue::WithStr(std::string(kAdcChannels[i].name))));
+    }
+    generic_metadata_ = fuchsia_driver_metadata::Dictionary({.entries = std::move(entries)});
+  }
+
   FakeAdcImplServer& fake_adc_impl_server() { return fake_adc_impl_server_; }
 
  private:
   FakeAdcImplServer fake_adc_impl_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_adcimpl::Metadata> metadata_server_;
   std::optional<fuchsia_hardware_adcimpl::Metadata> metadata_;
+  GenericMetadataServer generic_metadata_server_;
+  std::optional<fuchsia_driver_metadata::Dictionary> generic_metadata_;
 };
 
 class AdcTestConfig final {
@@ -108,6 +167,12 @@ class AdcTest : public ::testing::Test {
   zx::result<> Init(const std::vector<fidl_metadata::adc::Channel>& kAdcChannels) {
     driver_test().RunInEnvironmentTypeContext(
         [kAdcChannels](AdcTestEnvironment& env) { env.Init(kAdcChannels); });
+    return driver_test().StartDriver();
+  }
+
+  zx::result<> InitGeneric(const std::vector<fidl_metadata::adc::Channel>& kAdcChannels) {
+    driver_test().RunInEnvironmentTypeContext(
+        [kAdcChannels](AdcTestEnvironment& env) { env.InitGeneric(kAdcChannels); });
     return driver_test().StartDriver();
   }
   fidl::ClientEnd<fuchsia_hardware_adc::Device> GetClient(uint32_t channel) {
@@ -188,6 +253,17 @@ TEST_F(AdcTest, ChannelOutOfBoundsTest) {
       [](AdcTestEnvironment& env) { env.fake_adc_impl_server().set_resolution(12); });
   auto resolution = fidl::WireCall(GetClient(3))->GetResolution();
   ASSERT_FALSE(resolution.ok());
+}
+
+TEST_F(AdcTest, GenericMetadataTest) {
+  auto result = InitGeneric({DECL_ADC_CHANNEL(1), DECL_ADC_CHANNEL(4)});
+  ASSERT_TRUE(result.is_ok());
+
+  driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
+    ASSERT_EQ(node.children().size(), 2ul);
+    EXPECT_NE(node.children().find("1"), node.children().end());
+    EXPECT_NE(node.children().find("4"), node.children().end());
+  });
 }
 
 }  // namespace adc
