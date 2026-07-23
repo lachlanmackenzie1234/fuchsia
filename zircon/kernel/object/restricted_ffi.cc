@@ -1,48 +1,27 @@
-// Copyright 2021 The Fuchsia Authors
+// Copyright 2026 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <inttypes.h>
-#include <lib/syscalls/forward.h>
 #include <lib/user_copy/user_ptr.h>
-#include <platform.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <trace.h>
-#include <zircon/errors.h>
-#include <zircon/syscalls/policy.h>
 #include <zircon/types.h>
 
-#include <kernel/restricted.h>
+#include <kernel/restricted_state.h>
+#include <kernel/thread.h>
+#include <object/process_dispatcher.h>
+#include <object/thread_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
-#include <vm/vm_object.h>
-#include <vm/vm_object_paged.h>
 
-#define LOCAL_TRACE 0
+extern "C" {
 
-zx_status_t sys_restricted_enter(uint32_t options, uintptr_t vector_table_ptr, uintptr_t context) {
-  LTRACEF("options %#x vector %#" PRIx64 " context %#" PRIx64 "\n", options, vector_table_ptr,
-          context);
+zx_status_t cpp_restricted_bind_state(zx_exception_report_t* out_exception_ptr,
+                                      zx_handle_t* out_handle);
+zx_status_t cpp_restricted_unbind_state();
+zx_status_t cpp_restricted_kick(zx_handle_t handle);
 
-  // Reject invalid option bits.
-  if (options != 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  return RestrictedEnter(vector_table_ptr, context);
-}
-
-zx_status_t sys_restricted_bind_state(uint32_t options, zx_handle_t* out,
-                                      user_out_ptr<zx_exception_report_t> out_exception) {
-  LTRACEF("options 0x%x\n", options);
-
-  // No options allowed.
-  if (options != 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
+zx_status_t cpp_restricted_bind_state(zx_exception_report_t* out_exception_ptr,
+                                      zx_handle_t* out_handle) {
   // Are we allowed to create a VMO?
   auto up = ProcessDispatcher::GetCurrent();
   zx_status_t status = up->EnforceBasicPolicy(ZX_POL_NEW_VMO);
@@ -51,7 +30,8 @@ zx_status_t sys_restricted_bind_state(uint32_t options, zx_handle_t* out,
   }
 
   // Create it.
-  zx::result<ktl::unique_ptr<RestrictedState>> result = RestrictedState::Create(out_exception);
+  user_out_ptr<zx_exception_report_t> uptr = make_user_out_ptr(out_exception_ptr);
+  zx::result<ktl::unique_ptr<RestrictedState>> result = RestrictedState::Create(uptr);
   if (result.is_error()) {
     return result.error_value();
   }
@@ -70,9 +50,9 @@ zx_status_t sys_restricted_bind_state(uint32_t options, zx_handle_t* out,
   }
 
   // Wrap the VmObjectDispatcher in a Handle.
-  status = up->MakeAndAddHandle(ktl::move(kernel_handle), rights, out);
+  status = up->MakeAndAddHandle(ktl::move(kernel_handle), rights, out_handle);
   if (status != ZX_OK) {
-    return ZX_OK;
+    return status;
   }
 
   // Finally, set this thread's restricted state. Note, it's possible the copy-out of the new
@@ -84,27 +64,12 @@ zx_status_t sys_restricted_bind_state(uint32_t options, zx_handle_t* out,
   return ZX_OK;
 }
 
-zx_status_t sys_restricted_unbind_state(uint32_t options) {
-  LTRACEF("options 0x%x\n", options);
-
-  // No options allowed.
-  if (options != 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
+zx_status_t cpp_restricted_unbind_state() {
   Thread::Current::Get()->set_restricted_state(nullptr);
-
   return ZX_OK;
 }
 
-// zx_restricted_kick
-zx_status_t sys_restricted_kick(zx_handle_t handle, uint32_t options) {
-  LTRACEF("options 0x%x\n", options);
-
-  if (options != 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
+zx_status_t cpp_restricted_kick(zx_handle_t handle) {
   auto up = ProcessDispatcher::GetCurrent();
   fbl::RefPtr<ThreadDispatcher> thread;
   // TODO(https://fxbug.dev/42077353): Decide if this is the correct right for this operation.
@@ -116,3 +81,5 @@ zx_status_t sys_restricted_kick(zx_handle_t handle, uint32_t options) {
 
   return thread->RestrictedKick();
 }
+
+}  // extern "C"

@@ -33,19 +33,19 @@ _ZX_SYSCALL_DECL(process_create_shared, zx_status_t, /* no attributes */, 6,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* proc_handle,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* restricted_vmar_handle))
 
-_ZX_SYSCALL_DECL(restricted_bind_state, zx_status_t, /* no attributes */, 3,
+_ZX_SYSCALL_DECL(restricted_bind_state, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
                  (options, out, out_exception),
                  (uint32_t options, _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out,
                   zx_exception_report_t* out_exception))
 
-_ZX_SYSCALL_DECL(restricted_enter, zx_status_t, /* no attributes */, 3,
+_ZX_SYSCALL_DECL(restricted_enter, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
                  (options, vector_table_ptr, context),
                  (uint32_t options, uintptr_t vector_table_ptr, uintptr_t context))
 
-_ZX_SYSCALL_DECL(restricted_kick, zx_status_t, /* no attributes */, 2, (thread, options),
+_ZX_SYSCALL_DECL(restricted_kick, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (thread, options),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t thread, uint32_t options))
 
-_ZX_SYSCALL_DECL(restricted_unbind_state, zx_status_t, /* no attributes */, 1, (options),
+_ZX_SYSCALL_DECL(restricted_unbind_state, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (options),
                  (uint32_t options))
 
 _ZX_SYSCALL_DECL(sampler_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,

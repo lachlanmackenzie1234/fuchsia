@@ -33,6 +33,7 @@ unsafe extern "C" {
     fn cpp_thread_preempt_disable();
     fn cpp_thread_preempt_enable();
     fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
+    fn cpp_restricted_enter(vector_table_ptr: usize, context: usize) -> zx_status_t;
 }
 
 // LINT.IfChange(FxtRef)
@@ -44,6 +45,14 @@ pub struct FxtRef {
     pub tid: u64,
 }
 // LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:FxtRef)
+
+/// Enters restricted mode using the given vector table pointer and context.
+pub fn restricted_enter(vector_table_ptr: usize, context: usize) -> Result<(), Status> {
+    // SAFETY: `cpp_restricted_enter` performs validation of vector_table_ptr and context
+    // in architecture-specific restricted mode entry routines.
+    let status = unsafe { cpp_restricted_enter(vector_table_ptr, context) };
+    Status::ok(status)
+}
 
 /// Type-safe wrapper around a raw pointer to a Zircon kernel Thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

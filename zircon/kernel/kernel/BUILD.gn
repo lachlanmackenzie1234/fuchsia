@@ -111,6 +111,8 @@ source_set("ffi") {
   deps = [
     "//zircon/kernel/lib/kconcurrent",
     "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/user_copy:headers",
+    "//zircon/kernel/vm:headers",
   ]
 }
 

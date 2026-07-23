@@ -8,6 +8,7 @@
 
 mod counter;
 mod debuglog;
+mod restricted;
 mod sampler;
 mod task;
 mod test;
