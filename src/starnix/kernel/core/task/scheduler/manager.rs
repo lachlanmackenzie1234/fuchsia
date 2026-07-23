@@ -83,12 +83,24 @@ impl SchedulerManager {
         // via `fork` only inherit standard scheduling policies (SCHED_NORMAL/SCHED_FIFO) with
         // default profiles to maintain basic parity with Linux and prevent demand amplification.
         if thread_group_state.did_exec {
-            let process_name = thread_group_state
-                .get_task(thread_group.leader)
-                .ok_or_else(|| errno!(EINVAL))?
-                .command();
+            let process_name = if task.tid == thread_group.leader {
+                task.command()
+            } else {
+                thread_group_state
+                    .get_task(thread_group.leader)
+                    .ok_or_else(|| errno!(EINVAL))?
+                    .command()
+            };
             let thread_name = task.command();
-            return Ok(self.resolve_role_name(&process_name, &thread_name, scheduler_state));
+
+            let cpuset_path = task.read().cpuset_path.clone();
+
+            return Ok(self.resolve_role_name(
+                &process_name,
+                &thread_name,
+                &cpuset_path,
+                scheduler_state,
+            ));
         }
         Ok(scheduler_state.role_name())
     }
@@ -97,9 +109,12 @@ impl SchedulerManager {
         &self,
         process_name: &TaskCommand,
         thread_name: &TaskCommand,
+        cgroup_path: &str,
         scheduler_state: SchedulerState,
     ) -> &str {
-        if let Some(name) = self.role_overrides.get_role_name(process_name, thread_name) {
+        if let Some(name) =
+            self.role_overrides.get_role_name(process_name, thread_name, cgroup_path)
+        {
             return name;
         }
         scheduler_state.role_name()
@@ -489,7 +504,7 @@ impl SchedulerState {
     ///    default for Fuchsia processes.
     /// 4. 17-26 (inclusive) is used for higher-than-default-priority SCHED_OTHER/SCHED_BATCH tasks.
     /// 5. Realtime tasks receive their own profile name.
-    fn role_name(&self) -> &'static str {
+    pub(crate) fn role_name(&self) -> &'static str {
         match self.policy {
             // Mapped to 0; see "the [...] nice value has no influence for [the SCHED_IDLE] policy"
             // at sched(7).
@@ -847,7 +862,7 @@ mod tests {
     async fn role_overrides_non_realtime() {
         crate::testing::spawn_kernel_and_run_sync(|current_task| {
             let mut builder = RoleOverrides::new();
-            builder.add("my_task", "my_task", "overridden_role");
+            builder.add("my_task", "my_task", None, "overridden_role");
             let overrides = builder.build().unwrap();
             let manager = SchedulerManager {
                 role_manager: None,

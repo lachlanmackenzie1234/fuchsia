@@ -309,11 +309,17 @@ struct TaskSchedulerMapping {
     process: String,
     /// A regular expression that will be matched against the thread's command.
     thread: String,
+    /// An optional regular expression that will be matched against the task's cgroup path.
+    cgroup: Option<String>,
 }
 
 impl std::fmt::Debug for TaskSchedulerMapping {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "process `{}` thread `{}` role `{}`", self.process, self.thread, self.role)
+        write!(
+            f,
+            "process `{}` thread `{}` cgroup `{:?}` role `{}`",
+            self.process, self.thread, self.cgroup, self.role
+        )
     }
 }
 
@@ -683,7 +689,7 @@ async fn create_container(
     // thread's role.
     let mut task_mappings = RoleOverrides::new();
     for m in &start_info.program.task_role_overrides {
-        task_mappings.add(m.process.clone(), m.thread.clone(), m.role.clone());
+        task_mappings.add(m.process.clone(), m.thread.clone(), m.cgroup.clone(), m.role.clone());
     }
     let task_mappings = task_mappings.build().context("adding custom task role")?;
     let scheduler_manager = SchedulerManager::new(task_mappings);

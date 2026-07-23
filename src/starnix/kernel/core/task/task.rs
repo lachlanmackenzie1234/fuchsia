@@ -269,6 +269,9 @@ pub struct TaskMutableState {
 
     /// The last applied scheduler role name.
     last_applied_role: Option<String>,
+
+    /// The cpuset cgroup path of this task.
+    pub cpuset_path: String,
 }
 
 impl TaskMutableState {
@@ -1139,6 +1142,7 @@ impl Task {
                     ptrace: None,
                     captured_thread_state: None,
                     last_applied_role: None,
+                    cpuset_path: "/".to_string(),
                 }
                 .into(),
                 persistent_info: TaskPersistentInfoState::new(
@@ -1285,18 +1289,28 @@ impl Task {
             .command();
         let thread_name = self.command();
 
-        let mut state = self.write();
-        updater(&mut state.scheduler_state);
-        let new_scheduler_state = state.scheduler_state;
+        let (new_scheduler_state, cpuset_path, last_applied_role) = {
+            let mut state = self.write();
+            updater(&mut state.scheduler_state);
+            (state.scheduler_state, state.cpuset_path.clone(), state.last_applied_role.clone())
+        };
 
         let scheduler = &self.thread_group().kernel.scheduler;
-        let role_name =
-            scheduler.resolve_role_name(&process_name, &thread_name, new_scheduler_state);
-        if state.last_applied_role.as_deref() == Some(role_name) {
+        let role_name = scheduler.resolve_role_name(
+            &process_name,
+            &thread_name,
+            &cpuset_path,
+            new_scheduler_state,
+        );
+        if last_applied_role.as_deref() == Some(role_name) {
             return Ok(());
         }
         scheduler.set_thread_role(self, role_name)?;
-        state.last_applied_role = Some(role_name.to_string());
+        // Note: Re-acquiring the lock here to update `last_applied_role` has a minor race if
+        // concurrent state updates execute `set_thread_role` out of order relative to cache writes.
+        // Dropping the lock across `set_thread_role` avoids holding `Task` write lock over FIDL RPCs,
+        // and any cache mismatch will self-correct on the next scheduler state or cgroup change.
+        self.write().last_applied_role = Some(role_name.to_string());
         Ok(())
     }
 
@@ -1766,7 +1780,7 @@ mod test {
         use crate::task::{RoleOverrides, SchedulerManager};
 
         let mut builder = RoleOverrides::new();
-        builder.add("renamed-thread", "renamed-thread", "test-role");
+        builder.add("renamed-thread", "renamed-thread", None, "test-role");
         let overrides = builder.build().unwrap();
 
         let scheduler_manager = SchedulerManager::new_for_tests(None, overrides);
@@ -1796,7 +1810,7 @@ mod test {
         use crate::task::{RoleOverrides, SchedulerManager};
 
         let mut builder = RoleOverrides::new();
-        builder.add("renamed-thread", "renamed-thread", "test-role");
+        builder.add("renamed-thread", "renamed-thread", None, "test-role");
         let overrides = builder.build().unwrap();
 
         let scheduler_manager = SchedulerManager::new_for_tests(None, overrides);

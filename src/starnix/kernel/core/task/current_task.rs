@@ -1619,6 +1619,8 @@ impl CurrentTask {
             robust_list_head,
             timerslack_ns,
         ));
+        let parent_cpuset_path = self.read().cpuset_path.clone();
+        child.task.write().cpuset_path = parent_cpuset_path;
 
         release_on_error!(child, {
             // Drop the pids lock as soon as possible after creating the child. Destroying the child

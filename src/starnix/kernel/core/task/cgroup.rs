@@ -169,7 +169,7 @@ impl KernelCgroups {
 impl Default for KernelCgroups {
     fn default() -> Self {
         Self {
-            cgroup2: CgroupRoot::new(0, ControllerType::ALL.iter().cloned().collect()),
+            cgroup2: CgroupRoot::new(0, ControllerType::ALL.iter().copied().collect()),
             cgroup1: Default::default(),
         }
     }
@@ -388,6 +388,10 @@ impl CgroupRoot {
         })
     }
 
+    pub fn has_controller(&self, controller: ControllerType) -> bool {
+        self.controllers.contains(&controller)
+    }
+
     fn get_next_id(&self) -> u64 {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
@@ -418,6 +422,20 @@ impl CgroupOps for CgroupRoot {
         if let Some(entry) = pid_table.remove(&thread_group.into()) {
             if let Some(cgroup) = entry.upgrade() {
                 cgroup.state.lock().remove_process(thread_group)?;
+            }
+        }
+
+        let tasks = thread_group.read().tasks();
+        if self.has_controller(ControllerType::Cpuset) {
+            for task in &tasks {
+                task.write().cpuset_path = "/".to_string();
+            }
+        }
+
+        // Re-evaluate roles for all threads in the thread group.
+        for task in tasks {
+            if let Err(e) = task.sync_scheduler_state_to_role() {
+                log_warn!("Failed to set thread role for task {}: {:?}", task.tid, e);
             }
         }
 
@@ -823,6 +841,14 @@ impl Cgroup {
     fn is_controller_supported(&self, controller: ControllerType) -> bool {
         self.root().map(|r| r.controllers.contains(&controller)).unwrap_or(false)
     }
+
+    fn cpuset_path(&self, root: &CgroupRoot) -> Option<String> {
+        if !root.has_controller(ControllerType::Cpuset) {
+            return None;
+        }
+        let bytes = path_from_root(Some(self.weak_self.clone())).ok()?;
+        std::str::from_utf8(&bytes).ok().map(|s| s.to_string())
+    }
 }
 
 impl CgroupOps for Cgroup {
@@ -853,6 +879,20 @@ impl CgroupOps for Cgroup {
             hash_map::Entry::Vacant(entry) => {
                 self.state.lock().add_process(thread_group)?;
                 entry.insert(self.weak_self.clone());
+            }
+        }
+
+        let tasks = thread_group.read().tasks();
+        if let Some(cpuset_path) = self.cpuset_path(&root) {
+            for task in &tasks {
+                task.write().cpuset_path = cpuset_path.clone();
+            }
+        }
+
+        // Re-evaluate roles for all threads in the thread group.
+        for task in tasks {
+            if let Err(e) = task.sync_scheduler_state_to_role() {
+                log_warn!("Failed to set thread role for task {}: {:?}", task.tid, e);
             }
         }
 

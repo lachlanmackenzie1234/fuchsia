@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -95,6 +96,30 @@ int main(int argc, const char** argv) {
     child_fence << "done!";
     return 0;
   }
+
+  wait_for_expected_control_message("cpuset");
+  std::error_code ec;
+  std::filesystem::create_directories("/tmp/cpuset", ec);
+  if (ec) {
+    std::cerr << "failed to create /tmp/cpuset: " << ec.message() << std::endl;
+    abort();
+  }
+  if (mount("none", "/tmp/cpuset", "cpuset", 0, nullptr)) {
+    std::cerr << "failed to mount cpuset: " << std::strerror(errno) << std::endl;
+    abort();
+  }
+  std::filesystem::create_directory("/tmp/cpuset/bg_tasks", ec);
+  if (ec) {
+    std::cerr << "failed to create bg_tasks: " << ec.message() << std::endl;
+    abort();
+  }
+  std::ofstream procs_file("/tmp/cpuset/bg_tasks/cgroup.procs");
+  if (!procs_file.is_open()) {
+    std::cerr << "failed to open cgroup.procs" << std::endl;
+    abort();
+  }
+  procs_file << getpid() << std::endl;
+  procs_file.close();
 
   wait_for_expected_control_message(kFifoThreadMessage);
 

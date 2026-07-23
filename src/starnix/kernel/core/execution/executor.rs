@@ -153,6 +153,11 @@ where
             }
         }
     };
+    // Drop the VMAR manager lock immediately after thread creation completes to avoid holding
+    // the mutex across post-spawn operations (like setting thread roles and handle duplication).
+    // Local ownership of `task_builder` guarantees that the task and its VMAR remain valid
+    // and safe from destruction or concurrent mutation throughout post-spawn setup.
+    std::mem::drop(create_vmars);
 
     // The process thread spawned successfully. Mark the task as having spawned.
     task_builder.task.write().set_spawned();

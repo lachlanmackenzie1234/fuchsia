@@ -36,6 +36,9 @@ async fn main() {
     profiles_config
         .profiles
         .insert("second_custom_role".to_string(), ProfileConfig::Flexible { priority: 16 });
+    profiles_config
+        .profiles
+        .insert("cpuset_custom_role".to_string(), ProfileConfig::Flexible { priority: 16 });
 
     let (fake_manager, mut requests) = FakeRoleManager::new(profiles_config);
 
@@ -195,16 +198,17 @@ async fn main() {
         })
         .await;
 
-    stdin_send.write(b"thread-fifo\n").unwrap();
-    info!("waiting for child process' first FIFO thread update");
+    stdin_send.write(b"cpuset\n").unwrap();
+    info!("waiting for cpuset role update");
     requests
         .with_next(|koid, role| {
             assert_eq!(koid, puppet_thread_one_koid);
-            assert_eq!(role, "fuchsia.starnix.realtime");
+            assert_eq!(role, "cpuset_custom_role");
         })
         .await;
 
-    info!("waiting for child process' second FIFO thread update");
+    stdin_send.write(b"thread-fifo\n").unwrap();
+    info!("waiting for child process' first FIFO thread update");
     requests
         .with_next(|koid, role| {
             assert_eq!(koid, puppet_thread_one_koid);
@@ -212,7 +216,7 @@ async fn main() {
         })
         .await;
 
-    info!("waiting for child process' third FIFO thread update");
+    info!("waiting for child process' second FIFO thread update");
     requests
         .with_next(|koid, role| {
             assert_eq!(koid, puppet_thread_one_koid);

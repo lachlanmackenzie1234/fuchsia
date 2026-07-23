@@ -7,6 +7,7 @@
         runner: "starnix",
         name: "role_manager_test",
         init: [],
+        default_uid: "0",
         mounts: [
             "/:remote_bundle:data/system:nosuid,nodev,relatime",
             "/tmp:tmpfs",
@@ -21,6 +22,12 @@
                 process: "renamed_again",
                 thread: "renamed_again",
                 role: "second_custom_role",
+            },
+            {
+                role: "cpuset_custom_role",
+                process: "puppet",
+                thread: "puppet",
+                cgroup: "/bg_tasks",
             },
         ],
         features: [ "container" ],
