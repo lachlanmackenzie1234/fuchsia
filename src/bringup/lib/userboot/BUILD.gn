@@ -4,6 +4,7 @@
 
 import("//build/components/fuchsia_unittest_package.gni")
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_binary.gni")
 import("//build/test.gni")
 import("//build/testing/boot_tests/boot_test.gni")
 import("//build/testing/boot_tests/kernel_zbi_test.gni")
@@ -79,7 +80,10 @@ test("userboot-lib-unittests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
-  data_deps = [ ":userboot-lib-static-pie-test" ]
+  data_deps = [
+    ":userboot-lib-rust-static-pie-test",
+    ":userboot-lib-static-pie-test",
+  ]
 }
 
 group("boot_tests") {
@@ -87,7 +91,10 @@ group("boot_tests") {
   deps = [ ":userboot-lib-boot-test" ]
 }
 
-static_remove_configs = [ "//build/config/fuchsia:fdio_config" ]
+static_remove_configs = [
+  "//build/config/fuchsia:fdio_config",
+  "//build/config/fuchsia:dynamic_rust_standard_library",
+]
 
 test("userboot-lib-static-pie-test") {
   configs += static_remove_configs
@@ -99,6 +106,21 @@ test("userboot-lib-static-pie-test") {
     ".",
     "//zircon/system/ulib/zx",
   ]
+  exclude_toolchain_tags = [ "uses-shadow" ]
+}
+
+rustc_binary("userboot-lib-rust-static-pie-test") {
+  testonly = true
+
+  configs += static_remove_configs
+  configs -= static_remove_configs
+  rustenv = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
+
+  edition = "2024"
+  source_root = "userboot-lib-rust-static-pie-test.rs"
+  sources = [ source_root ]
+  deps = [ "rust" ]
+
   exclude_toolchain_tags = [ "uses-shadow" ]
 }
 

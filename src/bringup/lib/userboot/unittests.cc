@@ -68,4 +68,16 @@ TEST_F(UserbootTests, BasicLaunch) {
   EXPECT_THAT(log, ::testing::HasSubstr("Hello from userland!")) << log;
 }
 
+TEST_F(UserbootTests, BasicRustLaunch) {
+  auto process = Launch("/pkg/bin/userboot-lib-rust-static-pie-test", {});
+  ASSERT_TRUE(process.is_ok());
+
+  auto result = userboot::testing::WaitForTermination(process->borrow());
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_EQ(*result, 0);
+
+  std::string log = FinishLog();
+  EXPECT_THAT(log, ::testing::HasSubstr("Hello from Rust userland!")) << log;
+}
+
 }  // namespace
