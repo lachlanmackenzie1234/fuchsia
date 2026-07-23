@@ -2572,6 +2572,8 @@ float Flatland::MatrixData::GetOrientationAngle(fuchsia_ui_composition::Orientat
     case Orientation::kCcw270Degrees:
       return -glm::three_over_two_pi<float>();
   }
+  __UNREACHABLE;
+  return 0.f;
 }
 
 void Flatland::MatrixData::SetTranslation(Vec translation) {

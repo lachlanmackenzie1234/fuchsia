@@ -302,7 +302,8 @@ GeometryProvider::ProviderEndpoint::ProviderEndpoint(ProviderEndpoint&& original
       pending_callback_(std::move(original.pending_callback_)),
       context_view_(original.context_view_),
       id_(original.id_),
-      destroy_instance_function_(std::move(original.destroy_instance_function_)) {}
+      destroy_instance_function_(std::move(original.destroy_instance_function_)),
+      error_(original.error_) {}
 
 void GeometryProvider::ProviderEndpoint::AddViewTreeSnapshot(
     fuog_ViewTreeSnapshotPtr view_tree_snapshot) {
