@@ -71,23 +71,6 @@ static_assert(ktl::is_standard_layout_v<FILE>);
 extern FILE gStdout;
 #define stdout (&gStdout)
 
-inline int fputc(int c, FILE* f) {
-  const unsigned char uc = static_cast<unsigned char>(c);
-  return f->Write({reinterpret_cast<const char*>(&uc), 1}) == 1 ? uc : -1;
-}
-
-inline int putc(int c, FILE* f) { return fputc(c, f); }
-
-inline int putchar(int c) { return fputc(c, stdout); }
-
-inline int fputs(const char* s, FILE* f) {
-  ktl::string_view str(s);
-  return f->Write(str) == static_cast<int>(str.size()) ? 0 : -1;
-}
-
-inline int puts(const char* s) { return fputs(s, stdout) == 0 ? putchar('\n') : -1; }
-
-
 // Shorthands for printing ktl::string_view via printf family functions.
 // Note FMT_ARG_SV evaluates its argument twice!
 #define FMT_SV ".*s"
@@ -101,6 +84,14 @@ typedef struct _FILE_is_opaque FILE;
 #endif  // __cplusplus
 
 __BEGIN_CDECLS
+
+int fputc(int c, FILE* f);
+int putc(int c, FILE* f);
+int putchar(int c);
+
+int fputs(const char* s, FILE* f);
+int puts(const char* s);
+size_t fwrite(const void* buf, size_t size, size_t n, FILE * f);
 
 int printf(const char*, ...) __PRINTFLIKE(1, 2);
 int fprintf(FILE*, const char*, ...) __PRINTFLIKE(2, 3);
