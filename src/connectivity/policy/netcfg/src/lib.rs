@@ -54,7 +54,7 @@ use fidl_fuchsia_net_stack as fnet_stack;
 use fidl_fuchsia_net_virtualization as fnet_virtualization;
 use fuchsia_async as fasync;
 
-use anyhow::{Context as _, anyhow};
+use anyhow::{Context as _, anyhow, format_err};
 use assert_matches::assert_matches;
 use async_trait::async_trait;
 use async_utils::stream::WithTag as _;
@@ -187,7 +187,14 @@ const WLAN_AP_DHCP_LEASE_TIME_SECONDS: u32 = 24 * 60 * 60;
 /// are started or stopped.
 type DnsServerWatchers<'a> = async_utils::stream::StreamMap<
     DnsServersUpdateSource,
-    BoxStream<'a, (DnsServersUpdateSource, Result<Vec<fnet_name::DnsServer_>, fidl::Error>)>,
+    BoxStream<
+        'a,
+        (
+            DnsServersUpdateSource,
+            DnsWatcherResultPayload,
+            Result<Vec<fnet_name::DnsServer_>, fidl::Error>,
+        ),
+    >,
 >;
 
 type DelegatedNetworksStream = futures::future::Either<
@@ -729,6 +736,10 @@ pub struct NetCfg<'a> {
     // NetworkProperty Watchers
     netpol_networks_service: network::NetpolNetworksService,
 
+    // Stores DNS servers learned from NDP Router Advertisements, keyed by
+    // (InterfaceId, router address).
+    ndp_dns_servers: HashMap<(InterfaceId, net_types::ip::Ipv6Addr), Vec<fnet_name::DnsServer_>>,
+
     inspector: fuchsia_inspect::Inspector,
 }
 
@@ -862,8 +873,12 @@ fn start_dhcpv6_client(
                 pd_config,
             )
         })?;
-    if let Some(o) = watchers.insert(source, dns_servers_stream.tagged(source).boxed()) {
-        let _: Pin<Box<BoxStream<'_, _>>> = o;
+    let stream = dns_servers_stream
+        .tagged(source)
+        .map(|(src, res)| (src, DnsWatcherResultPayload::Generic, res))
+        .boxed();
+    if let Some(o) = watchers.insert(source, stream) {
+        let _: BoxStream<'_, _> = o;
         unreachable!("DNS server watchers must not contain key {:?}", source);
     }
     if let Some(o) = dhcpv6_prefixes_streams.insert(id, prefixes_stream.tagged(id)) {
@@ -919,6 +934,12 @@ enum Dhcpv4ConfigurationHandlerResult {
     ClientStopped(AllowClientRestart),
 }
 
+#[derive(Debug, PartialEq)]
+enum DnsWatcherResultPayload {
+    Generic,
+    Ndp { router_address: net_types::ip::Ipv6Addr },
+}
+
 // Events associated with provisioning a device.
 #[derive(Debug)]
 enum ProvisioningEvent {
@@ -931,6 +952,7 @@ enum ProvisioningEvent {
     DnsWatcherResult(
         Option<(
             dns_server_watcher::DnsServersUpdateSource,
+            DnsWatcherResultPayload,
             Result<Vec<fnet_name::DnsServer_>, fidl::Error>,
         )>,
     ),
@@ -1062,6 +1084,7 @@ impl<'a> NetCfg<'a> {
             allowed_upstream_device_classes,
             interface_provisioning_policy,
             netpol_networks_service,
+            ndp_dns_servers: Default::default(),
             inspector,
         })
     }
@@ -1179,7 +1202,7 @@ impl<'a> NetCfg<'a> {
 
                 match config {
                     InterfaceConfigState::Host(HostInterfaceState { .. }) => {
-                        Ok(dns::remove_rdnss_watcher(
+                        dns::remove_rdnss_watcher(
                             &self.lookup_admin,
                             &mut self.dns_servers,
                             &mut self.dns_server_watch_responders,
@@ -1187,7 +1210,9 @@ impl<'a> NetCfg<'a> {
                             interface_id,
                             dns_watchers,
                         )
-                        .await)
+                        .await;
+                        self.ndp_dns_servers.retain(|(iface_id, _), _| *iface_id != interface_id);
+                        Ok(())
                     }
                     InterfaceConfigState::WlanAp(WlanApInterfaceState { .. }) => {
                         panic!(
@@ -1239,6 +1264,7 @@ impl<'a> NetCfg<'a> {
             DnsServersUpdateSource::Netstack,
             dns_server_watcher,
         )
+        .map(|(source, res)| (source, DnsWatcherResultPayload::Generic, res))
         .boxed();
 
         let dns_watchers = DnsServerWatchers::empty();
@@ -1579,7 +1605,7 @@ impl<'a> NetCfg<'a> {
                 }
             }
             ProvisioningEvent::DnsWatcherResult(dns_watchers_res) => {
-                let (source, res) = dns_watchers_res.ok_or_else(|| {
+                let (source, payload, res) = dns_watchers_res.ok_or_else(|| {
                     anyhow::anyhow!("dns watchers stream should never be exhausted")
                 })?;
                 let servers = match res {
@@ -1604,7 +1630,43 @@ impl<'a> NetCfg<'a> {
                     }
                 };
 
-                self.update_dns_servers(source, servers).await;
+                match source {
+                    DnsServersUpdateSource::Ndp { interface_id } => {
+                        let interface_id_typed =
+                            InterfaceId::new(interface_id).ok_or_else(|| {
+                                anyhow::anyhow!("NDP update with invalid zero interface ID")
+                            })?;
+                        if let DnsWatcherResultPayload::Ndp { router_address } = payload {
+                            let key = (interface_id_typed, router_address);
+                            if servers.is_empty() {
+                                let _: Option<Vec<fnet_name::DnsServer_>> =
+                                    self.ndp_dns_servers.remove(&key);
+                            } else {
+                                let _: Option<Vec<fnet_name::DnsServer_>> =
+                                    self.ndp_dns_servers.insert(key, servers);
+                            }
+                        } else {
+                            return Err(format_err!(
+                                "Unexpected NDP DNS update payload: {:?}",
+                                payload
+                            ));
+                        }
+                        let flattened_servers = self
+                            .ndp_dns_servers
+                            .iter()
+                            .filter(|((iface_id, _), _)| *iface_id == interface_id_typed)
+                            .flat_map(|(_, servers)| servers.iter().cloned())
+                            .collect::<Vec<_>>();
+                        self.update_dns_servers(source, flattened_servers).await;
+                    }
+                    DnsServersUpdateSource::Default
+                    | DnsServersUpdateSource::Netstack
+                    | DnsServersUpdateSource::Dhcpv4 { .. }
+                    | DnsServersUpdateSource::Dhcpv6 { .. }
+                    | DnsServersUpdateSource::SocketProxy => {
+                        self.update_dns_servers(source, servers).await
+                    }
+                };
             }
             // TODO(https://fxbug.dev/42080722): Add tests to ensure we do not offer
             // these services when interface has ProvisioningType::Delegated
@@ -1996,6 +2058,7 @@ impl<'a> NetCfg<'a> {
             allowed_upstream_device_classes,
             dhcpv6_prefix_provider_handler,
             filter_enabled_state,
+            ndp_dns_servers,
             ..
         } = self;
         let update_result = interface_properties
@@ -2050,6 +2113,7 @@ impl<'a> NetCfg<'a> {
             route_set_v4_provider,
             socket_proxy_state,
             filter_enabled_state,
+            ndp_dns_servers,
         )
         .await
         .context("handle interface update");
@@ -2105,6 +2169,10 @@ impl<'a> NetCfg<'a> {
         route_set_v4_provider: &fnet_routes_admin::RouteTableV4Proxy,
         socket_proxy_state: &mut Option<SocketProxyState>,
         filter_enabled_state: &mut FilterEnabledState,
+        ndp_dns_servers: &mut HashMap<
+            (InterfaceId, net_types::ip::Ipv6Addr),
+            Vec<fnet_name::DnsServer_>,
+        >,
     ) -> Result<Option<InterfaceId>, errors::Error> {
         match update_result {
             fnet_interfaces_ext::UpdateResult::Added { properties, state: _ } => {
@@ -2487,6 +2555,8 @@ impl<'a> NetCfg<'a> {
                                     watchers,
                                 )
                                 .await;
+                                ndp_dns_servers
+                                    .retain(|(iface_id, _), _| *iface_id != interface_id);
 
                                 if let Some(dhcpv6::ClientState { sockaddr, prefixes: _ }) =
                                     dhcpv6_client_state.take()
@@ -4171,6 +4241,7 @@ mod tests {
                 ),
                 interface_provisioning_policy: Default::default(),
                 netpol_networks_service: Default::default(),
+                ndp_dns_servers: Default::default(),
                 inspector: fuchsia_inspect::Inspector::default(),
             },
             ServerEnds {
@@ -7102,5 +7173,206 @@ mod tests {
             "allowed_upstream_device_classes": []
         }"#;
         let _ = Config::load_str(config_str).unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_ndp_dns_servers_removed_per_interface_id() {
+        let (
+            mut netcfg,
+            ServerEnds {
+                lookup_admin: _,
+                dhcpv4_client_provider: _,
+                dhcpv6_client_provider: _,
+                route_set_v4_provider: _,
+                dhcpv4_server: _,
+                fuchsia_networks: _,
+            },
+        ) = test_netcfg(NetcfgTestArgs {
+            with_dhcpv4_client_provider: false,
+            with_fuchsia_networks: false,
+        })
+        .expect("error creating test netcfg");
+        let mut dns_watchers = DnsServerWatchers::empty();
+
+        const IFACE_1: InterfaceId = InterfaceId::new(1).unwrap();
+        const IFACE_2: InterfaceId = InterfaceId::new(2).unwrap();
+        let router_addr_1: [u8; 16] = [1; 16];
+        let router_addr_2: [u8; 16] = [2; 16];
+
+        add_test_host_interface(&mut netcfg, &mut dns_watchers, IFACE_1, "testif01").await;
+        add_test_host_interface(&mut netcfg, &mut dns_watchers, IFACE_2, "testif02").await;
+
+        let dns_server1 = test_ndp_dns_server(IFACE_1, fidl_ip_v6!("2001:db8::1"));
+        let dns_server2 = test_ndp_dns_server(IFACE_2, fidl_ip_v6!("2001:db8::2"));
+
+        // Directly insert entries into ndp_dns_servers at the beginning of the test.
+        assert!(
+            netcfg
+                .ndp_dns_servers
+                .insert((IFACE_1, router_addr_1.into()), vec![dns_server1])
+                .is_none()
+        );
+        assert!(
+            netcfg
+                .ndp_dns_servers
+                .insert((IFACE_2, router_addr_2.into()), vec![dns_server2])
+                .is_none()
+        );
+        assert_eq!(netcfg.ndp_dns_servers.len(), 2);
+
+        // Show that a removal event for IFACE_2 does not affect the IFACE_1 entry in the hashmap.
+        assert_matches!(netcfg
+            .handle_interface_watcher_event(
+                fnet_interfaces::Event::Removed(IFACE_2.get()).into(),
+                &mut dns_watchers,
+                &mut virtualization::Stub,
+            )
+            .await,
+            Ok(Some(id)) => assert_eq!(id, IFACE_2)
+        );
+
+        assert_eq!(netcfg.ndp_dns_servers.len(), 1);
+        assert!(netcfg.ndp_dns_servers.contains_key(&(IFACE_1, router_addr_1.into())));
+        assert!(!netcfg.ndp_dns_servers.contains_key(&(IFACE_2, router_addr_2.into())));
+
+        // Finally show that the removal event for IFACE_1 causes the removal of the IFACE_1 entry.
+        assert_matches!(
+            netcfg
+                .handle_interface_watcher_event(
+                    fnet_interfaces::Event::Removed(IFACE_1.get()).into(),
+                    &mut dns_watchers,
+                    &mut virtualization::Stub,
+                )
+                .await,
+            Ok(Some(IFACE_1))
+        );
+
+        assert!(netcfg.ndp_dns_servers.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_ndp_dns_servers_interface_removal_purges() {
+        let (
+            mut netcfg,
+            ServerEnds {
+                lookup_admin: _,
+                dhcpv4_client_provider: _,
+                dhcpv6_client_provider: _,
+                route_set_v4_provider: _,
+                dhcpv4_server: _,
+                fuchsia_networks: _,
+            },
+        ) = test_netcfg(NetcfgTestArgs {
+            with_dhcpv4_client_provider: false,
+            with_fuchsia_networks: false,
+        })
+        .expect("error creating test netcfg");
+        let mut dns_watchers = DnsServerWatchers::empty();
+
+        const IFACE_ID: InterfaceId = InterfaceId::new(1).unwrap();
+        let router_a: [u8; 16] = [10; 16];
+        let router_b: [u8; 16] = [20; 16];
+
+        add_test_host_interface(&mut netcfg, &mut dns_watchers, IFACE_ID, "testif01").await;
+
+        let dns_server_a = test_ndp_dns_server(IFACE_ID, fidl_ip_v6!("2001:db8::1"));
+        let dns_server_b = test_ndp_dns_server(IFACE_ID, fidl_ip_v6!("2001:db8::2"));
+
+        // Populate multiple router entries for IFACE_ID in ndp_dns_servers.
+        let _: Option<Vec<fnet_name::DnsServer_>> =
+            netcfg.ndp_dns_servers.insert((IFACE_ID, router_a.into()), vec![dns_server_a]);
+        let _: Option<Vec<fnet_name::DnsServer_>> =
+            netcfg.ndp_dns_servers.insert((IFACE_ID, router_b.into()), vec![dns_server_b]);
+        assert_eq!(netcfg.ndp_dns_servers.len(), 2);
+
+        // Remove IFACE_ID.
+        assert_matches!(
+            netcfg
+                .handle_interface_watcher_event(
+                    fnet_interfaces::Event::Removed(IFACE_ID.get()).into(),
+                    &mut dns_watchers,
+                    &mut virtualization::Stub,
+                )
+                .await,
+            Ok(Some(IFACE_ID))
+        );
+
+        // Verify all per-router entries for IFACE_ID are purged from ndp_dns_servers.
+        assert!(netcfg.ndp_dns_servers.is_empty());
+    }
+
+    async fn add_test_host_interface(
+        netcfg: &mut NetCfg<'_>,
+        dns_watchers: &mut DnsServerWatchers<'_>,
+        interface_id: InterfaceId,
+        name: &str,
+    ) {
+        let (control, _control_server_end) =
+            fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints()
+                .expect("create endpoints");
+        let auth_grant = fnet_resources::GrantForInterfaceAuthorization {
+            interface_id: interface_id.get(),
+            token: zx::Event::create(),
+        };
+
+        assert_matches!(
+            netcfg.interface_states.insert(
+                interface_id,
+                InterfaceState {
+                    control,
+                    device_class: DeviceClass::Virtual,
+                    config: InterfaceConfigState::Host(HostInterfaceState {
+                        dhcpv4_client: Dhcpv4ClientState::NotRunning,
+                        dhcpv6_client_state: None,
+                        dhcpv6_pd_config: None,
+                        interface_admin_auth: auth_grant,
+                        interface_naming_id: test_interface_naming_id(),
+                    }),
+                    provisioning: interface::ProvisioningType::Local,
+                },
+            ),
+            None
+        );
+
+        assert_matches!(
+            netcfg
+                .handle_interface_watcher_event(
+                    fnet_interfaces::Event::Added(fnet_interfaces::Properties {
+                        id: Some(interface_id.get()),
+                        name: Some(name.to_string()),
+                        port_class: Some(fnet_interfaces::PortClass::Device(
+                            fidl_fuchsia_hardware_network::PortClass::Virtual,
+                        )),
+                        online: Some(true),
+                        addresses: Some(Vec::new()),
+                        has_default_ipv4_route: Some(false),
+                        has_default_ipv6_route: Some(false),
+                        ..Default::default()
+                    })
+                    .into(),
+                    dns_watchers,
+                    &mut virtualization::Stub,
+                )
+                .await,
+            Ok(None)
+        );
+    }
+
+    fn test_ndp_dns_server(
+        interface_id: InterfaceId,
+        address: fnet::Ipv6Address,
+    ) -> fnet_name::DnsServer_ {
+        fnet_name::DnsServer_ {
+            address: Some(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+                address,
+                port: dns::DNS_PORT,
+                zone_index: interface_id.get(),
+            })),
+            source: Some(fnet_name::DnsServerSource::Ndp(fnet_name::NdpDnsServerSource {
+                source_interface: Some(interface_id.get()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
     }
 }

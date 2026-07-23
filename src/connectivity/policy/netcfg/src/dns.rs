@@ -23,7 +23,7 @@ use packet_formats::icmp::ndp as packet_formats_ndp;
 /// RFC-1035§4.2 specifies port 53 (decimal) as the default port for DNS requests.
 pub const DNS_PORT: u16 = 53;
 
-use crate::network;
+use crate::{DnsWatcherResultPayload, network};
 
 /// Updates the DNS servers used by the DNS resolver.
 pub(super) async fn update_servers(
@@ -56,16 +56,14 @@ pub(super) async fn update_servers(
     networks_service.update(network::PropertyUpdate::dns(dns_servers)).await;
 }
 
-/// Creates a stream of RDNSS DNS updates to conform to the output of
-/// `dns_server_watcher::new_dns_server_stream`. Returns None if the protocol
+/// Creates a stream of RDNSS DNS updates. Returns None if the protocol
 /// is not available on the system, indicating the protocol should not be used.
 pub(super) async fn create_rdnss_stream(
     watcher_provider: &fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
-    source: DnsServersUpdateSource,
     interface_id: u64,
 ) -> Option<
     Result<
-        impl Stream<Item = (DnsServersUpdateSource, Result<Vec<fnet_name::DnsServer_>, fidl::Error>)>
+        impl Stream<Item = Result<(DnsWatcherResultPayload, Vec<fnet_name::DnsServer_>), fidl::Error>>
         + use<>,
         fidl::Error,
     >,
@@ -89,24 +87,26 @@ pub(super) async fn create_rdnss_stream(
         Err(e) => return Some(Err(e)),
     };
 
-    Some(Ok(watcher
-        .filter_map(move |entry_res| async move {
-            let entry = match entry_res {
-                Ok(entry) => entry,
-                Err(fnet_ndp_ext::OptionWatchStreamError::Fidl(e)) => {
-                    return Some(Err(e));
-                }
-                Err(fnet_ndp_ext::OptionWatchStreamError::Conversion(e)) => {
-                    // Netstack didn't uphold the invariant to populate the
-                    // fields for `OptionWatchEntry`.
-                    error!("Failed to convert OptionWatchStream item: {e:?}");
-                    return None;
-                }
-            };
-            match entry {
-                fnet_ndp_ext::OptionWatchStreamItem::Entry(entry) => {
-                    match entry.try_parse_as_rdnss() {
-                        fnet_ndp_ext::TryParseAsOptionResult::Parsed(option) => Some(Ok(option
+    Some(Ok(watcher.filter_map(move |entry_res| async move {
+        let entry = match entry_res {
+            Ok(entry) => entry,
+            Err(fnet_ndp_ext::OptionWatchStreamError::Fidl(e)) => {
+                return Some(Err(e));
+            }
+            Err(fnet_ndp_ext::OptionWatchStreamError::Conversion(e)) => {
+                // Netstack didn't uphold the invariant to populate the
+                // fields for `OptionWatchEntry`.
+                error!("Failed to convert OptionWatchStream item: {e:?}");
+                return None;
+            }
+        };
+        match entry {
+            fnet_ndp_ext::OptionWatchStreamItem::Entry(entry) => {
+                let router_address = entry.source_address;
+                match entry.try_parse_as_rdnss() {
+                    fnet_ndp_ext::TryParseAsOptionResult::Parsed(option) => Some(Ok((
+                        DnsWatcherResultPayload::Ndp { router_address },
+                        option
                             .iter_addresses()
                             .iter()
                             .map(|addr| fnet_name::DnsServer_ {
@@ -129,29 +129,29 @@ pub(super) async fn create_rdnss_stream(
                                 )),
                                 ..Default::default()
                             })
-                            .collect::<Vec<_>>())),
-                        fnet_ndp_ext::TryParseAsOptionResult::OptionTypeMismatch => {
-                            // Netstack didn't respect our interest configuration.
-                            error!("Option type provided did not match RDNSS option type");
-                            None
-                        }
-                        fnet_ndp_ext::TryParseAsOptionResult::ParseErr(err) => {
-                            // A network peer could have included an invalid RDNSS option.
-                            warn!("Error while parsing as OptionResult: {err:?}");
-                            None
-                        }
+                            .collect::<Vec<_>>(),
+                    ))),
+                    fnet_ndp_ext::TryParseAsOptionResult::OptionTypeMismatch => {
+                        // Netstack didn't respect our interest configuration.
+                        error!("Option type provided did not match RDNSS option type");
+                        None
+                    }
+                    fnet_ndp_ext::TryParseAsOptionResult::ParseErr(err) => {
+                        // A network peer could have included an invalid RDNSS option.
+                        warn!("Error while parsing as OptionResult: {err:?}");
+                        None
                     }
                 }
-                fnet_ndp_ext::OptionWatchStreamItem::Dropped(num) => {
-                    warn!(
-                        "The server dropped ({num}) NDP options \
-                    due to the HangingGet falling behind"
-                    );
-                    None
-                }
             }
-        })
-        .tagged(source)))
+            fnet_ndp_ext::OptionWatchStreamItem::Dropped(num) => {
+                warn!(
+                    "The server dropped ({num}) NDP options \
+                    due to the HangingGet falling behind"
+                );
+                None
+            }
+        }
+    })))
 }
 
 pub(super) async fn add_rdnss_watcher(
@@ -162,13 +162,19 @@ pub(super) async fn add_rdnss_watcher(
     let source = DnsServersUpdateSource::Ndp { interface_id: interface_id.get() };
 
     // Returns None when RouterAdvertisementOptionWatcherProvider isn't available on the system.
-    let stream = create_rdnss_stream(watcher_provider, source, interface_id.get()).await;
+    let stream = create_rdnss_stream(watcher_provider, interface_id.get()).await;
 
     match stream {
         Some(result) => {
-            if let Some(o) =
-                watchers.insert(source, result.context("failed to create watcher stream")?.boxed())
-            {
+            let tagged_stream = result
+                .context("failed to create watcher stream")?
+                .tagged(source)
+                .map(|(source, res)| match res {
+                    Ok((payload, servers)) => (source, payload, Ok(servers)),
+                    Err(e) => (source, DnsWatcherResultPayload::Generic, Err(e)),
+                })
+                .boxed();
+            if let Some(o) = watchers.insert(source, tagged_stream) {
                 let _: Pin<Box<BoxStream<'_, _>>> = o;
                 unreachable!("DNS server watchers must not contain key {:?}", source);
             }
@@ -212,7 +218,7 @@ pub(super) async fn remove_rdnss_watcher(
         source,
         vec![],
     )
-    .await
+    .await;
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -338,7 +344,7 @@ mod tests {
     };
     use futures::channel::mpsc;
     use futures::{FutureExt as _, SinkExt as _, TryFutureExt as _, TryStreamExt as _};
-    use net_declare::fidl_socket_addr;
+    use net_declare::{fidl_socket_addr, net_ip_v6};
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -591,5 +597,89 @@ mod tests {
         assert_eq!(watch2, expectation);
 
         Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_create_rdnss_stream_router_address_extraction() {
+        use futures::StreamExt as _;
+        use net_declare::fidl_ip_v6;
+
+        let (provider_proxy, mut provider_stream) = fidl::endpoints::create_proxy_and_stream::<
+            fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker,
+        >();
+
+        const IFACE_ID: u64 = 1;
+        let expected_router_address = net_ip_v6!("fe80::1");
+
+        let stream_fut = async {
+            let stream = create_rdnss_stream(&provider_proxy, IFACE_ID)
+                .await
+                .expect("provider available")
+                .expect("stream creation succeeded");
+            futures::pin_mut!(stream);
+            stream.next().await.expect("stream item available").expect("item ok")
+        };
+
+        let server_fut = async {
+            let (watcher_server_end, params, _control_handle) = provider_stream
+                .next()
+                .await
+                .expect("provider request")
+                .expect("request ok")
+                .into_new_router_advertisement_option_watcher()
+                .expect("new watcher request");
+
+            assert_eq!(params.interest_interface_id, Some(IFACE_ID));
+
+            let mut watcher_stream = watcher_server_end.into_stream();
+
+            match watcher_stream.next().await.expect("watcher request").expect("request ok") {
+                fnet_ndp::OptionWatcherRequest::Probe { responder } => {
+                    responder.send().expect("send probe response succeeded");
+                }
+                req => panic!("expected Probe request, got {req:?}"),
+            }
+
+            let responder =
+                match watcher_stream.next().await.expect("watcher request").expect("request ok") {
+                    fnet_ndp::OptionWatcherRequest::WatchOptions { responder } => responder,
+                    req => panic!("expected WatchOptions request, got {req:?}"),
+                };
+
+            let mut rdnss_body = vec![
+                0, 0, // Reserved (2 bytes)
+                0, 0, 0, 120, // Lifetime 120 (4 bytes)
+            ];
+            rdnss_body
+                .extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+
+            let entry = fnet_ndp::OptionWatchEntry {
+                interface_id: Some(IFACE_ID),
+                source_address: Some(fnet::Ipv6Address {
+                    addr: expected_router_address.ipv6_bytes(),
+                }),
+                option_type: Some(25),
+                body: Some(rdnss_body),
+                ..Default::default()
+            };
+
+            responder.send(&[entry], 0).expect("send response succeeded");
+        };
+
+        let ((payload, servers), ()) = futures::join!(stream_fut, server_fut);
+
+        assert_eq!(
+            payload,
+            DnsWatcherResultPayload::Ndp { router_address: expected_router_address }
+        );
+        assert_eq!(servers.len(), 1);
+        assert_eq!(
+            servers[0].address,
+            Some(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+                address: fidl_ip_v6!("2001:db8::1"),
+                port: DNS_PORT,
+                zone_index: 0,
+            }))
+        );
     }
 }
