@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/fdio/spawn.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/process.h>
@@ -10,6 +9,7 @@
 #include <lib/zx/vmo.h>
 #include <limits.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <zircon/sanitizer.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
@@ -342,28 +342,17 @@ TEST(SanitizerUtilsTest, FillShadowPartialPages) {
 
 #endif
 
-void RunExe(std::string_view name, int64_t expected_ret) {
-  std::filesystem::path file = HelperPath(name);
-
-  zx::process child;
-  const char* argv[] = {file.c_str(), nullptr};
-  ASSERT_OK(fdio_spawn(ZX_HANDLE_INVALID, FDIO_SPAWN_CLONE_ALL, argv[0], argv,
-                       child.reset_and_get_address()));
-
-  zx_signals_t signals;
-  ASSERT_OK(child.wait_one(ZX_PROCESS_TERMINATED, zx::time::infinite(), &signals));
-  ASSERT_TRUE(signals & ZX_PROCESS_TERMINATED);
-
-  zx_info_process_t info;
-  ASSERT_OK(child.get_info(ZX_INFO_PROCESS, &info, sizeof(info), nullptr, nullptr));
-
-  EXPECT_EQ(info.return_code, expected_ret);
-}
-
 TEST(SanitizerUtilsTest, ProcessExitHook) {
-  RunExe("sanitizer-exit-hook-test-helper", kHookStatus);
+  EXPECT_THAT(RunHelper("sanitizer-exit-hook-test-helper"), ExitsWith(kHookStatus, "", ""));
 }
 
-TEST(SanitizerUtilsTest, ModuleLoadedStartup) { RunExe("sanitizer-module-loaded-test-helper", 0); }
+TEST(SanitizerUtilsTest, ModuleLoadedStartup) {
+  EXPECT_THAT(RunHelper("sanitizer-module-loaded-test-helper"), ExitsWith(0, "", ""));
+}
+
+TEST(SanitizerUtilsTest, Log) {
+  EXPECT_THAT(RunHelper("sanitizer-log-test-helper"),
+              ExitsWith(0, "", ::testing::HasSubstr("Hello sanitizer logging!")));
+}
 
 }  // namespace

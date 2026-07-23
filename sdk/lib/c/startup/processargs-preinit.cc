@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/ld/processargs.h>
 #include <lib/zx/clock.h>
 #include <zircon/assert.h>
 #include <zircon/startup.h>
@@ -10,6 +11,7 @@
 #include <string_view>
 #include <utility>
 
+#include "../ld/log.h"
 #include "../weak.h"
 #include "processargs.h"
 #include "zircon_impl.h"
@@ -35,6 +37,23 @@ void TakeLegacy(zx::handle handle, zx_handle_t& legacy) {
 void TakeUtcClock(zx::clock clock) {
   zx::clock old_clock;
   _zx_utc_reference_swap(clock.release(), old_clock.reset_and_get_address());
+}
+
+// When nothing like fdio is present, steal the stderr fd for
+// __sanitizer_log_write to use.
+void NoExtensionsInit(uint32_t handle_count, zx_handle_t handle[], uint32_t handle_info[],
+                      uint32_t name_count, char** names) {
+  if (gLog) {  // Don't bother looking if it's already set up.
+    return;
+  }
+  const std::span handles{handle, handle_count};
+  const std::span info{handle_info, handle_count};
+  for (auto [info, take] : Processargs::HandleTakers(info, handles)) {
+    if (ld::IsProcessargsLogHandle(info)) {
+      gLog.TakeLogHandle(take());
+      break;
+    }
+  }
 }
 
 void Preinit(Processargs& saved) {
@@ -68,8 +87,8 @@ void Preinit(Processargs& saved) {
   // corresponding entries in the two parallel arrays that form that table.
   const uint32_t nhandles = static_cast<uint32_t>(saved.handles().size());
   const uint32_t namec = static_cast<uint32_t>(saved.names().size());
-  Weak<__libc_extensions_init>::Call(nhandles, saved.handles().data(), saved.handle_info().data(),
-                                     namec, saved.names().data());
+  Weak<__libc_extensions_init>::Fallback<NoExtensionsInit>(
+      nhandles, saved.handles().data(), saved.handle_info().data(), namec, saved.names().data());
 
   // Give any unclaimed handles to zx_take_startup_handle().  This function
   // takes ownership of the data, but not the memory: it assumes that the

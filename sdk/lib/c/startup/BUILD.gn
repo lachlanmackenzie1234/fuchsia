@@ -376,6 +376,7 @@ libc_source_set("processargs-preinit") {
   deps = [
     "..:weak",
     "../ld:log.headers",
+    "//sdk/lib/ld:headers",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 }

@@ -27,7 +27,6 @@ source_set("debugdata") {
   sources = [ "debugdata.cc" ]
   deps = [
     ":test-utils",
-    ":uses-spawn",
     "//sdk/lib/async",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop",
@@ -47,10 +46,19 @@ source_set("test-utils") {
 
   public = [ "test-utils.h" ]
   public_deps = [
+    "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
+
   sources = [ "test-utils.cc" ]
+  deps = [
+    ":uses-spawn",
+    "//sdk/lib/fdio",
+    "//sdk/lib/fit",
+    "//src/lib/elfldltl/testing",
+    "//zircon/system/ulib/zx",
+  ]
 }
 
 source_set("sanitizer-utils") {
@@ -68,6 +76,7 @@ source_set("sanitizer-utils") {
   ]
   data_deps = [
     ":sanitizer-exit-hook-test-helper",
+    ":sanitizer-log-test-helper",
     ":sanitizer-module-loaded-test-helper",
   ]
 }
@@ -224,6 +233,24 @@ executable("debugdata-test-helper") {
   # Don't use instrumentation that emits debugdata, so only the expected test
   # data is published.
   exclude_toolchain_tags = [ "debugdata" ]
+}
+
+executable("sanitizer-log-test-helper") {
+  visibility = [ ":*" ]
+  testonly = true
+
+  sources = [ "log-test-helper.cc" ]
+
+  # Avoid anything that would do its own sanitizer logging.
+  exclude_toolchain_tags = [ "instrumentation-runtime" ]
+
+  # Making this a static PIE is the easiest way to get the test plumbing
+  # for a captured log socket to work right.
+  deps = [ "../..:static" ]
+  configs += fdio_config
+  configs -= fdio_config
+  configs += [ "//build/config:standalone" ]
+  ldflags = [ "-Wl,-z,stack-size=0x40000" ]
 }
 
 sanitizer_tests += [ "sanitizer-allocator-test" ]
