@@ -447,7 +447,7 @@ struct StorageTraits<std::basic_string_view<T>> {
 
   using payload_type = Storage;
 
-  static std::string_view error_string(error_type error) { return {}; }
+  static constexpr std::string_view error_string(error_type error) { return "no errors possible"; }
 
   static fit::result<error_type, uint32_t> Capacity(Storage& zbi) {
     return fit::ok(static_cast<uint32_t>(
@@ -478,7 +478,7 @@ struct StorageTraits<std::span<T, Extent>> {
 
   using payload_type = Storage;
 
-  static std::string_view error_string(error_type error) { return {}; }
+  static constexpr std::string_view error_string(error_type error) { return "no errors possible"; }
 
   static fit::result<error_type, uint32_t> Capacity(Storage& zbi) {
     return fit::ok(static_cast<uint32_t>(

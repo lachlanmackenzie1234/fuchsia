@@ -18,7 +18,7 @@ namespace zbitl {
 namespace internal {
 
 constexpr auto StdioPrinter(FILE* f) {
-  return [f] [[gnu::format(printf, 2, 0)]] (const char* fmt, ...) {
+  return [f] [[gnu::format(printf, 2, 3)]] (const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     vfprintf(f, fmt, args);
