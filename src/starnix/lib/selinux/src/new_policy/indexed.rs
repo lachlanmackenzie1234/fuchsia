@@ -43,6 +43,8 @@ where
     T: HasPolicyId + HasName,
 {
     /// Constructs a new [`IdAndNameIndexed`] wrapping the supplied `container`.
+    ///
+    /// Returns an error if `container` contains more than `U24Index::MAX` items.
     pub fn new(container: C) -> Result<Self, ParseError> {
         let mut id_to_index = Vec::with_capacity(container.len() + 1);
         let hasher = rapidhash::RapidBuildHasher::default();

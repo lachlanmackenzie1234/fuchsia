@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![warn(variant_size_differences)]
+
 pub mod local_cache;
 pub mod permission_check;
 pub mod policy;

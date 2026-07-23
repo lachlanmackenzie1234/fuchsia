@@ -25,6 +25,18 @@ impl<T, Tag> IdType<T, Tag> {
     }
 }
 
+impl<Tag> IdType<NonZeroU16, Tag> {
+    /// Constructs an [`IdType`] directly from a 16-bit identifier value.
+    pub fn from_u16(value: u16) -> Option<Self> {
+        NonZeroU16::new(value).map(Self::new)
+    }
+
+    /// Returns the underlying 16-bit integer value.
+    pub fn as_u16(&self) -> u16 {
+        self.value.get()
+    }
+}
+
 #[cfg(test)]
 impl<T, Tag> IdType<T, Tag>
 where

@@ -121,6 +121,4 @@ pub enum ValidateError {
     UnknownId { kind: &'static str, id: String },
     #[error("invalid MLS range: {low}-{high}")]
     InvalidMlsRange { low: BString, high: BString },
-    #[error("invalid extended permissions type: {type_}")]
-    InvalidExtendedPermissionsType { type_: u8 },
 }

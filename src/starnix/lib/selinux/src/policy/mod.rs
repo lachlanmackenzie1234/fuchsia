@@ -14,7 +14,10 @@ mod constraints;
 mod extensible_bitmap;
 mod security_context;
 
-pub use arrays::{FsUseType, XpermsBitmap};
+pub use crate::new_policy::{
+    AccessDecision, AccessVectorRules, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap,
+};
+pub use arrays::FsUseType;
 pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
@@ -67,42 +70,6 @@ where
 
 /// Encapsulates the result of a permissions calculation, between
 /// source & target domains, for a specific class. Decisions describe
-/// which permissions are allowed, and whether permissions should be
-/// audit-logged when allowed, and when denied.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AccessDecision {
-    pub allow: AccessVector,
-    pub auditallow: AccessVector,
-    pub auditdeny: AccessVector,
-    pub flags: u32,
-
-    /// If this field is set then denials should be audit-logged with "todo_deny" as the reason, with
-    /// the `bug` number included in the audit message.
-    pub todo_bug: Option<NonZeroU32>,
-}
-
-impl Default for AccessDecision {
-    fn default() -> Self {
-        Self::allow(AccessVector::NONE)
-    }
-}
-
-impl AccessDecision {
-    /// Returns an [`AccessDecision`] with the specified permissions to `allow`, and default audit
-    /// behaviour.
-    pub(super) const fn allow(allow: AccessVector) -> Self {
-        Self {
-            allow,
-            auditallow: AccessVector::NONE,
-            auditdeny: AccessVector::ALL,
-            flags: 0,
-            todo_bug: None,
-        }
-    }
-}
-
-/// [`AccessDecision::flags`] value indicating that the policy marks the source domain permissive.
-pub(super) const SELINUX_AVD_FLAGS_PERMISSIVE: u32 = 1;
 
 /// A kind of extended permission, corresponding to the base permission that should trigger a check
 /// of an extended permission.
@@ -667,19 +634,17 @@ pub(super) mod testing {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use super::arrays::XpermsBitmap;
     use super::security_context::SecurityContext;
     use super::{
-        AccessVector, ClassId, HandleUnknown, Policy, TypeId, XpermsAccessDecision, XpermsKind,
-        parse_policy_by_value,
+        AccessVector, ClassId, HandleUnknown, Policy, TypeId, XpermsAccessDecision, XpermsBitmap,
+        XpermsKind, parse_policy_by_value,
     };
     use crate::new_policy::traits::HasPolicyId;
     use crate::{FileClass, InitialSid, KernelClass};
 
     use anyhow::Context as _;
     use serde::Deserialize;
-    use std::ops::{Deref, Shl};
-    use zerocopy::little_endian as le;
+    use std::ops::Deref;
 
     /// Returns whether the input types are explicitly granted `permission` via an `allow [...];`
     /// policy statement.
@@ -736,12 +701,11 @@ pub(super) mod tests {
     /// Given a vector of integer (u8) values, returns a bitmap in which the set bits correspond to
     /// the indices of the provided values.
     fn xperms_bitmap_from_elements(elements: &[u8]) -> XpermsBitmap {
-        let mut bitmap = [le::U32::ZERO; 8];
+        let mut bitmap = [0u64; 4];
         for element in elements {
-            let block_index = (*element as usize) / 32;
-            let bit_index = ((*element as usize) % 32) as u32;
-            let bitmask = le::U32::new(1).shl(bit_index);
-            bitmap[block_index] = bitmap[block_index] | bitmask;
+            let block_index = (*element as usize) / 64;
+            let bit_index = (*element as usize) % 64;
+            bitmap[block_index] |= 1u64 << bit_index;
         }
         XpermsBitmap::new(bitmap)
     }
@@ -989,7 +953,7 @@ pub(super) mod tests {
 
         let mut expected_auditdeny =
             xperms_bitmap_from_elements((0x0..=0xff).collect::<Vec<_>>().as_slice());
-        expected_auditdeny -= &xperms_bitmap_from_elements(&[0xcd, 0xef]);
+        expected_auditdeny -= xperms_bitmap_from_elements(&[0xcd, 0xef]);
 
         let expected_decision_single = XpermsAccessDecision {
             allow: xperms_bitmap_from_elements(&[0xcd, 0xef]),
@@ -1572,7 +1536,7 @@ pub(super) mod tests {
 
         let mut expected_auditdeny =
             xperms_bitmap_from_elements((0x0..=0xff).collect::<Vec<_>>().as_slice());
-        expected_auditdeny -= &xperms_bitmap_from_elements(&[0xcd, 0xef]);
+        expected_auditdeny -= xperms_bitmap_from_elements(&[0xcd, 0xef]);
 
         let expected_decision_single = XpermsAccessDecision {
             allow: xperms_bitmap_from_elements(&[0xcd, 0xef]),

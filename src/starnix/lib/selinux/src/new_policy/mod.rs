@@ -16,6 +16,7 @@ pub(super) mod mls;
 pub(super) mod parser;
 pub(super) mod permissions;
 pub(super) mod roles;
+pub(super) mod rules;
 pub(super) mod traits;
 pub(super) mod u24_index;
 
@@ -47,6 +48,7 @@ pub use mls::{Category, Sensitivity};
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
 pub use roles::{Role, RoleId, RoleSet};
+pub use rules::{AccessDecision, AccessVectorRules, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap};
 pub use types::*;
 pub use users::User;
 
@@ -96,6 +98,7 @@ pub struct NewPolicy {
     conditional_booleans: IdAndNameIndexed<SymbolArray<ConditionalBoolean>>,
     sensitivities: IdAndNameIndexed<SymbolArray<Sensitivity>>,
     categories: IdAndNameIndexed<SymbolArray<Category>>,
+    access_vector_rules: AccessVectorRules,
     rest: RemainingBytes,
 }
 
@@ -169,6 +172,11 @@ impl NewPolicy {
     /// Returns the categories table.
     pub fn categories(&self) -> &IdAndNameIndexed<SymbolArray<Category>> {
         &self.categories
+    }
+
+    /// Returns the access vector rules table.
+    pub fn access_vector_rules(&self) -> &AccessVectorRules {
+        &self.access_vector_rules
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.

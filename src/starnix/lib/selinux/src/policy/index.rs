@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::arrays::{ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION, FsContext, FsUseType};
+use super::arrays::{FsContext, FsUseType};
 use super::security_context::SecurityContext;
 use super::{AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId};
 use crate::new_policy::traits::{HasName, HasPolicyId};
@@ -253,13 +253,12 @@ impl PolicyIndex {
         };
 
         let type_ = override_type.unwrap_or_else(|| {
-            match self.parsed_policy.access_vector_rules_find(
+            match self.parsed_policy.access_vector_rules().find_type_transition(
                 source.type_(),
                 target.type_(),
-                policy_class.id().into(),
-                ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION,
+                policy_class.id(),
             ) {
-                Some(new_type_rule) => new_type_rule.new_type().unwrap(),
+                Some(new_type) => new_type,
                 None => match class_defaults.type_() {
                     ClassDefault::Source => source.type_(),
                     ClassDefault::Target => target.type_(),

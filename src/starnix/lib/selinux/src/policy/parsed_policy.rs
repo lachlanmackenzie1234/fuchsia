@@ -3,16 +3,11 @@
 // found in the LICENSE file.
 
 use super::arrays::{
-    ACCESS_VECTOR_RULE_TYPE_ALLOW, ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM,
-    ACCESS_VECTOR_RULE_TYPE_AUDITALLOW, ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
-    ACCESS_VECTOR_RULE_TYPE_DONTAUDIT, ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM, AccessVectorRule,
-    AccessVectorRuleMetadata, ConditionalNode, Context, DeprecatedFilenameTransition,
-    ExtendedPermissions, FilenameTransition, FilenameTransitionList, FsUse, GenericFsContext,
-    IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey, InitialSid,
-    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
-    RangeTransition, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
-    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
-    XpermsBitmap,
+    ConditionalNode, Context, DeprecatedFilenameTransition, FilenameTransition,
+    FilenameTransitionList, FsUse, GenericFsContext, IPv6Node, InfinitiBandEndPort,
+    InfinitiBandPartitionKey, InitialSid, MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY,
+    NamedContextPair, Node, Port, RangeTransition, RoleAllow, RoleAllows, RoleTransition,
+    RoleTransitions, SimpleArray,
 };
 use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::ExtensibleBitmap;
@@ -20,13 +15,17 @@ use super::extensible_bitmap::ExtensibleBitmap;
 use super::constraints::evaluate_constraint;
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::SecurityContext;
-use super::view::{Hashable, HashedArrayView};
+use super::view::Hashable;
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, MlsLevel, Parse, PolicyValidationContext,
     RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate,
     XpermsAccessDecision, XpermsKind,
 };
 
+use crate::new_policy::rules::{
+    ExtendedPermissions, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES,
+    XPERMS_TYPE_NLMSG, XpermsBitmap,
+};
 use crate::new_policy::traits::{HasPolicyId, PolicyId};
 use crate::new_policy::{Class, NewPolicy};
 use crate::policy::arrays::FsContext;
@@ -55,8 +54,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    /// The set of access vector rules referenced by this policy.
-    access_vector_rules: HashedArrayView<AccessVectorRule>,
     conditional_lists: SimpleArray<ConditionalNode>,
     /// The set of role transitions to apply when instantiating new objects.
     role_transitions: RoleTransitions,
@@ -148,32 +145,20 @@ impl ParsedPolicy {
             let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
             let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
 
-            if let Some(allow_rule) = self.access_vector_rules_find(
+            let decisions = self.new_policy.access_vector_rules().find_av_decisions(
                 source_id,
                 target_id,
                 target_class_id,
-                ACCESS_VECTOR_RULE_TYPE_ALLOW,
-            ) {
-                // `access_vector` has bits set for each permission allowed by this rule.
-                computed_access_vector |= allow_rule.access_vector().unwrap();
+            );
+
+            if let Some(allow) = decisions.allow {
+                computed_access_vector |= allow;
             }
-            if let Some(auditallow_rule) = self.access_vector_rules_find(
-                source_id,
-                target_id,
-                target_class_id,
-                ACCESS_VECTOR_RULE_TYPE_AUDITALLOW,
-            ) {
-                // `access_vector` has bits set for each permission to audit when allowed.
-                computed_audit_allow |= auditallow_rule.access_vector().unwrap();
+            if let Some(auditallow) = decisions.auditallow {
+                computed_audit_allow |= auditallow;
             }
-            if let Some(dontaudit_rule) = self.access_vector_rules_find(
-                source_id,
-                target_id,
-                target_class_id,
-                ACCESS_VECTOR_RULE_TYPE_DONTAUDIT,
-            ) {
-                // `access_vector` has bits cleared for each permission not to audit on denial.
-                computed_audit_deny &= dontaudit_rule.access_vector().unwrap();
+            if let Some(dontaudit) = decisions.dontaudit {
+                computed_audit_deny &= dontaudit;
             }
         }
 
@@ -244,18 +229,18 @@ impl ParsedPolicy {
         };
         let bitmap_if_prefix_matches =
             |xperms_prefix: u8, xperms: &ExtendedPermissions| match xperms_kind {
-                XpermsKind::Ioctl => match xperms.xperms_type {
-                    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => (xperms.xperms_optional_prefix
+                XpermsKind::Ioctl => match xperms.xperms_type() {
+                    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => (xperms.xperms_optional_prefix()
                         == xperms_prefix)
-                        .then_some(xperms.xperms_bitmap),
+                        .then_some(*xperms.xperms_bitmap()),
                     XPERMS_TYPE_IOCTL_PREFIXES => {
-                        xperms.xperms_bitmap.contains(xperms_prefix).then_some(XpermsBitmap::ALL)
+                        xperms.xperms_bitmap().contains(xperms_prefix).then_some(XpermsBitmap::ALL)
                     }
                     _ => None,
                 },
-                XpermsKind::Nlmsg => match xperms.xperms_type {
-                    XPERMS_TYPE_NLMSG => (xperms.xperms_optional_prefix == xperms_prefix)
-                        .then_some(xperms.xperms_bitmap),
+                XpermsKind::Nlmsg => match xperms.xperms_type() {
+                    XPERMS_TYPE_NLMSG => (xperms.xperms_optional_prefix() == xperms_prefix)
+                        .then_some(*xperms.xperms_bitmap()),
                     _ => None,
                 },
             };
@@ -272,46 +257,29 @@ impl ParsedPolicy {
             let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
             let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
 
-            for xperms_allow_rule in self.access_vector_rules_find_all(
+            let decisions = self.new_policy.access_vector_rules().find_xperms_decisions(
                 source_id,
                 target_id,
                 target_class_id,
-                ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM,
-            ) {
-                let xperms = xperms_allow_rule.extended_permissions().unwrap();
+            );
 
-                // Only filter xperms if there is at least one `allowxperm` rule for the relevant
-                // kind of extended permission. If this condition is not satisfied by any
-                // access vector rule, then all xperms of the relevant type are allowed.
-                if xperms_types.contains(&xperms.xperms_type) {
+            for xperms in decisions.allow {
+                if xperms_types.contains(&xperms.xperms_type()) {
                     explicit_allow.get_or_insert(XpermsBitmap::NONE);
                 }
-
-                if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+                if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
                     (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
                 }
             }
 
-            for xperms_auditallow_rule in self.access_vector_rules_find_all(
-                source_id,
-                target_id,
-                target_class_id,
-                ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
-            ) {
-                let xperms = xperms_auditallow_rule.extended_permissions().unwrap();
-                if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+            for xperms in decisions.auditallow {
+                if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
                     auditallow |= xperms_bitmap;
                 }
             }
 
-            for xperms_dontaudit_rule in self.access_vector_rules_find_all(
-                source_id,
-                target_id,
-                target_class_id,
-                ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM,
-            ) {
-                let xperms = xperms_dontaudit_rule.extended_permissions().unwrap();
-                if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+            for xperms in decisions.dontaudit {
+                if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
                     auditdeny -= xperms_bitmap;
                 }
             }
@@ -352,41 +320,6 @@ impl ParsedPolicy {
 
     pub(super) fn range_transitions(&self) -> &[RangeTransition] {
         &self.range_transitions.data
-    }
-
-    pub(super) fn access_vector_rules_find(
-        &self,
-        source: TypeId,
-        target: TypeId,
-        class: ClassId,
-        rule_type: u16,
-    ) -> Option<AccessVectorRule> {
-        let query = AccessVectorRuleMetadata::for_query(source, target, class, rule_type);
-        self.access_vector_rules.find(query, &self.data)
-    }
-
-    pub(super) fn access_vector_rules_find_all(
-        &self,
-        source: TypeId,
-        target: TypeId,
-        class: ClassId,
-        rule_type: u16,
-    ) -> impl Iterator<Item = AccessVectorRule> {
-        let query = AccessVectorRuleMetadata::for_query(source, target, class, rule_type);
-        self.access_vector_rules.find_all(query, &self.data)
-    }
-
-    #[cfg(test)]
-    pub(super) fn access_vector_rules_for_test(
-        &self,
-    ) -> impl Iterator<Item = AccessVectorRule> + use<'_> {
-        use super::arrays::testing::access_vector_rule_ordering;
-        use itertools::Itertools;
-
-        self.access_vector_rules
-            .iter(&self.data)
-            .map(|view| view.parse(&self.data))
-            .sorted_by(access_vector_rule_ordering)
     }
 
     pub(super) fn compute_filename_transition(
@@ -517,10 +450,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (access_vector_rules, tail) = HashedArrayView::<AccessVectorRule>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing access vector rules")?;
-
     let (conditional_lists, tail) = SimpleArray::<ConditionalNode>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing conditional lists")?;
@@ -617,7 +546,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            access_vector_rules,
             conditional_lists,
             role_transitions,
             role_allowlist,
@@ -648,10 +576,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.access_vector_rules
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating access_vector_rules")?;
         self.conditional_lists
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -783,14 +707,6 @@ impl ParsedPolicy {
         for allow in &self.role_allowlist.data {
             validate_id(&role_ids, allow.source_role(), "source_role")?;
             validate_id(&role_ids, allow.new_role(), "new_role")?;
-        }
-
-        // Validate that types output by access vector rules are defined.
-        for access_vector_rule_view in self.access_vector_rules.iter(&self.data) {
-            let access_vector_rule = access_vector_rule_view.parse(&self.data);
-            if let Some(type_id) = access_vector_rule.new_type() {
-                validate_id(&type_ids, type_id, "new_type")?;
-            }
         }
 
         // To-do comments for cross-policy validations yet to be implemented go here.

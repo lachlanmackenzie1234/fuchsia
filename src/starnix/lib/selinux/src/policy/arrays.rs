@@ -7,92 +7,18 @@ use crate::policy::view::Hashable;
 use super::error::ValidateError;
 use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
-use super::view::{ArrayView, HasMetadata, Walk};
+use super::view::{ArrayView, Walk};
 use super::{
-    AccessVector, Array, ClassId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext,
-    RoleId, TypeId, UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
+    Array, ClassId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, RoleId, TypeId,
+    UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
 
 use crate::new_policy::traits::PolicyId;
 use anyhow::Context as _;
 use std::hash::{Hash, Hasher};
-use std::ops::Shl;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
 pub(super) const MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY: u32 = 31;
-
-/// Mask for [`AccessVectorRuleMetadata`]'s `access_vector_rule_type` that
-/// indicates that the access vector rule's associated data is a type ID.
-pub(super) const ACCESS_VECTOR_RULE_DATA_IS_TYPE_ID_MASK: u16 = 0x070;
-/// Mask for [`AccessVectorRuleMetadata`]'s `access_vector_rule_type` that
-/// indicates that the access vector rule's associated data is an extended
-/// permission.
-pub(super) const ACCESS_VECTOR_RULE_DATA_IS_XPERM_MASK: u16 = 0x0700;
-
-/// ** Access vector rule types ***
-///
-/// Although these values each have a single bit set, they appear to be
-/// used as enum values rather than as bit masks: i.e., the policy compiler
-/// does not produce access vector rule structures that have more than
-/// one of these types.
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type` that
-/// indicates that the access vector rule comes from an `allow [source]
-/// [target]:[class] { [permissions] };` policy statement.
-pub(super) const ACCESS_VECTOR_RULE_TYPE_ALLOW: u16 = 0x1;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type` that
-/// indicates that the access vector rule comes from an `auditallow [source]
-/// [target]:[class] { [permissions] };` policy statement.
-pub(super) const ACCESS_VECTOR_RULE_TYPE_AUDITALLOW: u16 = 0x2;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type` that
-/// indicates that the access vector rule comes from a `dontaudit [source]
-/// [target]:[class] { [permissions] };` policy statement.
-pub(super) const ACCESS_VECTOR_RULE_TYPE_DONTAUDIT: u16 = 0x4;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type` that
-/// indicates that the access vector rule comes from a `type_transition
-/// [source] [target]:[class] [new_type];` policy statement.
-pub(super) const ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION: u16 = 0x10;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type` that
-/// indicates that the access vector rule comes from a `type_member
-/// [source] [target]:[class] [member_type];` policy statement.
-#[allow(dead_code)]
-pub(super) const ACCESS_VECTOR_RULE_TYPE_TYPE_MEMBER: u16 = 0x20;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type` that
-/// indicates that the access vector rule comes from a `type_change
-/// [source] [target]:[class] [change_type];` policy statement.
-#[allow(dead_code)]
-pub(super) const ACCESS_VECTOR_RULE_TYPE_TYPE_CHANGE: u16 = 0x40;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type`
-/// that indicates that the access vector rule comes from an
-/// `allowxperm [source] [target]:[class] [permission] {
-/// [extended_permissions] };` policy statement.
-pub(super) const ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM: u16 = 0x100;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type`
-/// that indicates that the access vector rule comes from an
-/// `auditallowxperm [source] [target]:[class] [permission] {
-/// [extended_permissions] };` policy statement.
-pub(super) const ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM: u16 = 0x200;
-/// Value for [`AccessVectorRuleMetadata`] `access_vector_rule_type`
-/// that indicates that the access vector rule comes from an
-/// `dontauditxperm [source] [target]:[class] [permission] {
-/// [extended_permissions] };` policy statement.
-pub(super) const ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM: u16 = 0x400;
-
-/// ** Extended permissions types ***
-///
-/// Value for [`ExtendedPermissions`] `xperms_type` that indicates
-/// that the xperms set is a proper subset of the 16-bit ioctl
-/// xperms with a given high byte value.
-pub(super) const XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES: u8 = 1;
-/// Value for [`ExtendedPermissions`] `xperms_type` that indicates
-/// that the xperms set consists of all 16-bit ioctl xperms with a
-/// given high byte, for one or more high byte values.
-pub(super) const XPERMS_TYPE_IOCTL_PREFIXES: u8 = 2;
-/// Value for [`ExtendedPermissions`] `xperms_type` that indicates
-/// that the xperms set consists of 16-bit `nlmsg` xperms with a given
-/// high byte value in common. The xperms set may be the full set of
-/// xperms with that high byte value (unlike a set of type
-/// `XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES`).
-pub(super) const XPERMS_TYPE_NLMSG: u8 = 3;
 
 #[allow(type_alias_bounds)]
 pub(super) type SimpleArray<T> = Array<le::U32, T>;
@@ -155,36 +81,48 @@ impl ValidateArray<ConditionalNodeMetadata, ConditionalNodeDatum> for Conditiona
     }
 }
 
+#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
+#[repr(C, packed)]
+struct BinaryAccessVectorRuleHeader {
+    source_type: le::U16,
+    target_type: le::U16,
+    class: le::U16,
+    rule_flags: le::U16,
+}
+
+const AV_DATA_IS_XPERM_MASK: u16 = 0x0700;
+
+fn skip_rules<'a>(cursor: PolicyCursor<'a>) -> Result<PolicyCursor<'a>, anyhow::Error> {
+    let (count, mut tail) = le::U32::parse(cursor).context("parsing rule count")?;
+    for _ in 0..count.get() {
+        let (header, t) =
+            BinaryAccessVectorRuleHeader::parse(tail).context("parsing rule header")?;
+        let len = if header.rule_flags.get() & AV_DATA_IS_XPERM_MASK != 0 { 34 } else { 4 };
+        tail = PolicyCursor::new_at(t.data(), t.offset() + len);
+    }
+    Ok(tail)
+}
+
 #[derive(Debug, PartialEq)]
 pub(super) struct ConditionalNode {
     items: ConditionalNodeItems,
-    true_list: SimpleArray<AccessVectorRule>,
-    false_list: SimpleArray<AccessVectorRule>,
 }
 
 impl Parse for ConditionalNode
 where
     ConditionalNodeItems: Parse,
-    SimpleArray<AccessVectorRule>: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (items, tail) = ConditionalNodeItems::parse(tail)
+        let (items, tail) = ConditionalNodeItems::parse(bytes)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing conditional node items")?;
 
-        let (true_list, tail) = SimpleArray::<AccessVectorRule>::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing conditional node true list")?;
+        let tail = skip_rules(tail).context("skipping conditional node true list")?;
+        let tail = skip_rules(tail).context("skipping conditional node false list")?;
 
-        let (false_list, tail) = SimpleArray::<AccessVectorRule>::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing conditional node false list")?;
-
-        Ok((Self { items, true_list, false_list }, tail))
+        Ok((Self { items }, tail))
     }
 }
 
@@ -223,288 +161,6 @@ impl Validate for ConditionalNodeDatum {
     /// TODO: Validate sequence of [`ConditionalNodeDatum`].
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
-    }
-}
-
-/// An access control rule defined by a policy statement of one of the
-/// following kinds:
-/// - `allow`, `dontaudit`, `auditallow`, and `neverallow`, which specify
-///   an access vector describing a permission set.
-/// - `allowxperm`, `auditallowxperm`, `dontaudit`, which specify a set
-///   of extended permissions.
-/// - `type_transition`, `type_change`, and `type_member`, which include
-///   a type id describing a permitted new type.
-#[derive(Debug, PartialEq)]
-pub(super) struct AccessVectorRule {
-    metadata: AccessVectorRuleMetadata,
-    permission_data: PermissionData,
-}
-
-impl AccessVectorRule {
-    /// An access vector that corresponds to the `[access_vector]` in an
-    /// `allow [source] [target]:[class] [access_vector]` policy statement,
-    /// or similarly for an `auditallow` or `dontaudit` policy statement.
-    /// Return value is `None` if this access vector rule corresponds to a
-    /// different kind of policy statement.
-    pub fn access_vector(&self) -> Option<AccessVector> {
-        match &self.permission_data {
-            PermissionData::AccessVector(access_vector_raw) => {
-                Some(AccessVector::from(access_vector_raw.get()))
-            }
-            _ => None,
-        }
-    }
-
-    /// A numeric type id that corresponds to the `[new_type]` in a
-    /// `type_transition [source] [target]:[class] [new_type];` policy statement,
-    /// or similarly for a `type_member` or `type_change` policy statement.
-    /// Return value is `None` if this access vector rule corresponds to a
-    /// different kind of policy statement.
-    pub fn new_type(&self) -> Option<TypeId> {
-        match &self.permission_data {
-            PermissionData::NewType(new_type) => {
-                Some(TypeId::from_u32(new_type.get().into()).unwrap())
-            }
-            _ => None,
-        }
-    }
-
-    /// A set of extended permissions that corresponds to the `[xperms]` in an
-    /// `allowxperm [source][target]:[class] [permission] [xperms]` policy
-    /// statement, or similarly for an `auditallowxperm` or `dontauditxperm`
-    /// policy statement. Return value is `None` if this access vector rule
-    /// corresponds to a different kind of policy statement.
-    pub fn extended_permissions(&self) -> Option<&ExtendedPermissions> {
-        match &self.permission_data {
-            PermissionData::ExtendedPermissions(xperms) => Some(xperms),
-            _ => None,
-        }
-    }
-}
-
-impl Walk for AccessVectorRule {
-    fn walk(policy_data: &PolicyData, offset: PolicyOffset) -> PolicyOffset {
-        const METADATA_SIZE: u32 = std::mem::size_of::<AccessVectorRuleMetadata>() as u32;
-        let bytes = &policy_data[offset as usize..(offset + METADATA_SIZE) as usize];
-        let metadata = AccessVectorRuleMetadata::read_from_bytes(bytes).unwrap();
-        let permission_data_size = metadata.permission_data_size() as u32;
-        offset + METADATA_SIZE + permission_data_size
-    }
-}
-
-impl HasMetadata for AccessVectorRule {
-    type Metadata = AccessVectorRuleMetadata;
-}
-
-impl Parse for AccessVectorRule {
-    type Error = anyhow::Error;
-
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (metadata, tail) = PolicyCursor::parse::<AccessVectorRuleMetadata>(tail)?;
-        let access_vector_rule_type = metadata.access_vector_rule_type;
-        let (permission_data, tail) =
-            if (access_vector_rule_type & ACCESS_VECTOR_RULE_DATA_IS_XPERM_MASK) != 0 {
-                let (xperms, tail) = ExtendedPermissions::parse(tail)
-                    .map_err(Into::<anyhow::Error>::into)
-                    .context("parsing extended permissions")?;
-                (PermissionData::ExtendedPermissions(xperms), tail)
-            } else if (access_vector_rule_type & ACCESS_VECTOR_RULE_DATA_IS_TYPE_ID_MASK) != 0 {
-                let (new_type, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-                (PermissionData::NewType(new_type), tail)
-            } else {
-                let (access_vector, tail) = PolicyCursor::parse::<le::U32>(tail)?;
-                (PermissionData::AccessVector(access_vector), tail)
-            };
-        Ok((Self { metadata, permission_data }, tail))
-    }
-}
-
-impl Validate for AccessVectorRule {
-    type Error = anyhow::Error;
-
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        if self.metadata.class.get() == 0 {
-            return Err(ValidateError::NonOptionalIdIsZero.into());
-        }
-        if let PermissionData::ExtendedPermissions(xperms) = &self.permission_data {
-            let xperms_type = xperms.xperms_type;
-            if !(xperms_type == XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES
-                || xperms_type == XPERMS_TYPE_IOCTL_PREFIXES
-                || xperms_type == XPERMS_TYPE_NLMSG)
-            {
-                return Err(
-                    ValidateError::InvalidExtendedPermissionsType { type_: xperms_type }.into()
-                );
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, Eq, PartialEq, Unaligned, Hash)]
-#[repr(C, packed)]
-pub(super) struct AccessVectorRuleMetadata {
-    source_type: le::U16,
-    target_type: le::U16,
-    class: le::U16,
-    access_vector_rule_type: le::U16,
-}
-
-impl AccessVectorRuleMetadata {
-    pub fn for_query(source: TypeId, target: TypeId, class: ClassId, rule_type: u16) -> Self {
-        let source_type = le::U16::new(source.as_u32() as u16);
-        let target_type = le::U16::new(target.as_u32() as u16);
-        let class = le::U16::new(u32::from(class) as u16);
-        let access_vector_rule_type = le::U16::new(rule_type);
-        Self { source_type, target_type, class, access_vector_rule_type }
-    }
-
-    fn permission_data_size(&self) -> usize {
-        if (self.access_vector_rule_type & ACCESS_VECTOR_RULE_DATA_IS_XPERM_MASK) != 0 {
-            std::mem::size_of::<ExtendedPermissions>()
-        } else if (self.access_vector_rule_type & ACCESS_VECTOR_RULE_DATA_IS_TYPE_ID_MASK) != 0 {
-            std::mem::size_of::<le::U32>()
-        } else {
-            std::mem::size_of::<le::U32>()
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) enum PermissionData {
-    AccessVector(le::U32),
-    NewType(le::U32),
-    ExtendedPermissions(ExtendedPermissions),
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct ExtendedPermissions {
-    pub(super) xperms_type: u8,
-    // xperms_optional_prefix is meaningful when xperms_type is
-    // XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES or XPERMS_TYPE_NLMSG and
-    // meaningless when xperms_type is XPERMS_TYPE_IOCTL_PREFIXES.
-    pub(super) xperms_optional_prefix: u8,
-    pub(super) xperms_bitmap: XpermsBitmap,
-}
-
-impl ExtendedPermissions {
-    #[cfg(test)]
-    fn count(&self) -> u64 {
-        let count = self
-            .xperms_bitmap
-            .0
-            .iter()
-            .fold(0, |count, block| (count as u64) + (block.get().count_ones() as u64));
-        match self.xperms_type {
-            XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES | XPERMS_TYPE_NLMSG => count,
-            XPERMS_TYPE_IOCTL_PREFIXES => count * 0x100,
-            _ => unreachable!("invalid xperms_type in validated ExtendedPermissions"),
-        }
-    }
-
-    #[cfg(test)]
-    fn contains(&self, xperm: u16) -> bool {
-        let [postfix, prefix] = xperm.to_le_bytes();
-        if (self.xperms_type == XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES
-            || self.xperms_type == XPERMS_TYPE_NLMSG)
-            && self.xperms_optional_prefix != prefix
-        {
-            return false;
-        }
-        let value = match self.xperms_type {
-            XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES | XPERMS_TYPE_NLMSG => postfix,
-            XPERMS_TYPE_IOCTL_PREFIXES => prefix,
-            _ => unreachable!("invalid xperms_type in validated ExtendedPermissions"),
-        };
-        self.xperms_bitmap.contains(value)
-    }
-}
-
-// A bitmap representing a subset of `{0x0,...,0xff}`.
-#[derive(Clone, Copy, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub struct XpermsBitmap([le::U32; 8]);
-
-impl XpermsBitmap {
-    const BITMAP_BLOCKS: usize = 8;
-    pub const ALL: Self = Self([le::U32::MAX_VALUE; Self::BITMAP_BLOCKS]);
-    pub const NONE: Self = Self([le::U32::ZERO; Self::BITMAP_BLOCKS]);
-
-    #[cfg(test)]
-    pub fn new(elements: [le::U32; 8]) -> Self {
-        Self(elements)
-    }
-
-    pub fn contains(&self, value: u8) -> bool {
-        let block_index = (value as usize) / 32;
-        let bit_index = ((value as usize) % 32) as u32;
-        self.0[block_index] & le::U32::new(1).shl(bit_index) != 0
-    }
-}
-
-/// The xperms cache uses a u64-based representation.
-impl From<[u64; 4]> for XpermsBitmap {
-    fn from(v: [u64; 4]) -> Self {
-        let mut elements = [le::U32::ZERO; 8];
-        for (i, &val) in v.iter().enumerate() {
-            elements[i * 2] = le::U32::new(val as u32);
-            elements[i * 2 + 1] = le::U32::new((val >> 32) as u32);
-        }
-        XpermsBitmap(elements)
-    }
-}
-
-impl From<XpermsBitmap> for [u64; 4] {
-    fn from(v: XpermsBitmap) -> Self {
-        let mut result = [0u64; 4];
-        for i in 0..4 {
-            let low = v.0[i * 2].get() as u64;
-            let high = v.0[i * 2 + 1].get() as u64;
-            result[i] = low | (high << 32);
-        }
-        result
-    }
-}
-
-impl std::ops::BitAnd for XpermsBitmap {
-    type Output = Self;
-    fn bitand(self, rhs: Self) -> Self {
-        let mut result = self;
-        (0..Self::BITMAP_BLOCKS).for_each(|i| result.0[i] &= rhs.0[i]);
-        result
-    }
-}
-
-impl std::ops::BitOr for XpermsBitmap {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        let mut result = self;
-        (0..Self::BITMAP_BLOCKS).for_each(|i| result.0[i] |= rhs.0[i]);
-        result
-    }
-}
-
-impl std::ops::Not for XpermsBitmap {
-    type Output = Self;
-    fn not(self) -> Self {
-        let mut result = self;
-        (0..Self::BITMAP_BLOCKS).for_each(|i| result.0[i] = !result.0[i]);
-        result
-    }
-}
-
-impl std::ops::BitOrAssign<&Self> for XpermsBitmap {
-    fn bitor_assign(&mut self, rhs: &Self) {
-        (0..Self::BITMAP_BLOCKS).for_each(|i| self.0[i] |= rhs.0[i])
-    }
-}
-
-impl std::ops::SubAssign<&Self> for XpermsBitmap {
-    fn sub_assign(&mut self, rhs: &Self) {
-        (0..Self::BITMAP_BLOCKS).for_each(|i| self.0[i] = self.0[i] ^ (self.0[i] & rhs.0[i]))
     }
 }
 
@@ -1450,69 +1106,12 @@ pub(super) struct RangeTransitionMetadata {
 }
 
 #[cfg(test)]
-pub(super) mod testing {
-    use super::AccessVectorRule;
-    use std::cmp::Ordering;
-
-    pub(in super::super) fn access_vector_rule_ordering(
-        left: &AccessVectorRule,
-        right: &AccessVectorRule,
-    ) -> Ordering {
-        (
-            left.metadata.source_type,
-            left.metadata.target_type,
-            left.metadata.class,
-            left.metadata.access_vector_rule_type,
-        )
-            .cmp(&(
-                right.metadata.source_type,
-                right.metadata.target_type,
-                right.metadata.class,
-                right.metadata.access_vector_rule_type,
-            ))
-    }
-}
-
-#[cfg(test)]
 mod tests {
-    use super::super::{ClassId, parse_policy_by_value};
-    use super::{
-        ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM, ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
-        ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
-        XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
+    use super::super::parse_policy_by_value;
+    use crate::new_policy::rules::{
+        XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
     };
     use crate::new_policy::traits::HasPolicyId;
-
-    impl super::AccessVectorRuleMetadata {
-        /// Returns whether this access vector rule comes from an
-        /// `allowxperm [source] [target]:[class] [permission] {
-        /// [extended_permissions] };` policy statement.
-        pub fn is_allowxperm(&self) -> bool {
-            (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM) != 0
-        }
-
-        /// Returns whether this access vector rule comes from an
-        /// `auditallowxperm [source] [target]:[class] [permission] {
-        /// [extended_permissions] };` policy statement.
-        pub fn is_auditallowxperm(&self) -> bool {
-            (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM) != 0
-        }
-
-        /// Returns whether this access vector rule comes from a
-        /// `dontauditxperm [source] [target]:[class] [permission] {
-        /// [extended_permissions] };` policy statement.
-        pub fn is_dontauditxperm(&self) -> bool {
-            (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM) != 0
-        }
-
-        /// Returns the target class id in this access vector rule. This id
-        /// corresponds to the [`super::symbols::Class`] `id()` of some class in the
-        /// same policy. Although the index is returned as a 32-bit value, the field
-        /// itself is 16-bit
-        pub fn target_class(&self) -> ClassId {
-            ClassId::try_from(self.class.get() as u32).unwrap()
-        }
-    }
 
     #[test]
     fn parse_allowxperm_one_ioctl() {
@@ -1523,19 +1122,16 @@ mod tests {
         let class_id =
             policy.classes().get_by_name(b"class_one_ioctl").expect("look up class_one_ioctl").id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0xabcd));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0xabcd));
     }
 
     // `ioctl` extended permissions that are declared in the same rule, and have the same
@@ -1552,22 +1148,19 @@ mod tests {
             .expect("look up class_two_ioctls_same_range")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x12);
-            assert_eq!(xperms.count(), 2);
-            assert!(xperms.contains(0x1234));
-            assert!(xperms.contains(0x1256));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x12);
+        assert_eq!(rules[0].count(), 2);
+        assert!(rules[0].contains(0x1234));
+        assert!(rules[0].contains(0x1256));
     }
 
     // `ioctl` extended permissions that are declared in different rules, but that have the same
@@ -1584,24 +1177,21 @@ mod tests {
             .expect("look up class_four_ioctls_same_range_diff_rules")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x30);
-            assert_eq!(xperms.count(), 4);
-            assert!(xperms.contains(0x3008));
-            assert!(xperms.contains(0x3009));
-            assert!(xperms.contains(0x3011));
-            assert!(xperms.contains(0x3013));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x30);
+        assert_eq!(rules[0].count(), 4);
+        assert!(rules[0].contains(0x3008));
+        assert!(rules[0].contains(0x3009));
+        assert!(rules[0].contains(0x3011));
+        assert!(rules[0].contains(0x3013));
     }
 
     // `ioctl` extended permissions that are declared in the same rule, and have different
@@ -1618,30 +1208,22 @@ mod tests {
             .expect("look up class_two_ioctls_diff_range")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x56);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x5678));
-        } else {
-            panic!("unexpected permission data type")
-        }
-        assert!(rules[1].metadata.is_allowxperm());
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x12);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x1234));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x56);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x5678));
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x12);
+        assert_eq!(rules[1].count(), 1);
+        assert!(rules[1].contains(0x1234));
     }
 
     // If a set of `ioctl` extended permissions consists of all xperms with a given high byte,
@@ -1658,21 +1240,18 @@ mod tests {
             .expect("look up class_one_driver_range")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIXES);
-            assert_eq!(xperms.count(), 0x100);
-            assert!(xperms.contains(0x1000));
-            assert!(xperms.contains(0x10ab));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIXES);
+        assert_eq!(rules[0].count(), 0x100);
+        assert!(rules[0].contains(0x1000));
+        assert!(rules[0].contains(0x10ab));
     }
 
     // If a rule grants `ioctl` extended permissions to a wide range that does not fall cleanly on
@@ -1690,41 +1269,30 @@ mod tests {
             .expect("look up class_most_ioctls")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 3);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0xff);
-            assert_eq!(xperms.count(), 0xfe);
-            for xperm in 0xff00..0xfffd {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0xff);
+        assert_eq!(rules[0].count(), 0xfe);
+        for xperm in 0xff00..0xfffd {
+            assert!(rules[0].contains(xperm));
         }
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 0xfe);
-            for xperm in 0x0002..0x0100 {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[1].count(), 0xfe);
+        for xperm in 0x0002..0x0100 {
+            assert!(rules[1].contains(xperm));
         }
-        if let Some(xperms) = rules[2].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIXES);
-            assert_eq!(xperms.count(), 0xfe00);
-            for xperm in 0x0100..0xff00 {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[2].xperms_type(), XPERMS_TYPE_IOCTL_PREFIXES);
+        assert_eq!(rules[2].count(), 0xfe00);
+        for xperm in 0x0100..0xff00 {
+            assert!(rules[2].contains(xperm));
         }
     }
 
@@ -1743,65 +1311,45 @@ mod tests {
             .expect("look up class_most_ioctls_with_hole")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 5);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0xff);
-            assert_eq!(xperms.count(), 0xfe);
-            for xperm in 0xff00..0xfffd {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0xff);
+        assert_eq!(rules[0].count(), 0xfe);
+        for xperm in 0xff00..0xfffd {
+            assert!(rules[0].contains(xperm));
         }
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x40);
-            assert_eq!(xperms.count(), 0xfe);
-            for xperm in 0x4002..0x4100 {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x40);
+        assert_eq!(rules[1].count(), 0xfe);
+        for xperm in 0x4002..0x4100 {
+            assert!(rules[1].contains(xperm));
         }
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[2].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x2f);
-            assert_eq!(xperms.count(), 0xfe);
-            for xperm in 0x2f00..0x2ffd {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[2].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[2].xperms_optional_prefix(), 0x2f);
+        assert_eq!(rules[2].count(), 0xfe);
+        for xperm in 0x2f00..0x2ffd {
+            assert!(rules[2].contains(xperm));
         }
-        if let Some(xperms) = rules[3].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 0xfe);
-            for xperm in 0x0002..0x0100 {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[3].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[3].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[3].count(), 0xfe);
+        for xperm in 0x0002..0x0100 {
+            assert!(rules[3].contains(xperm));
         }
-        if let Some(xperms) = rules[4].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIXES);
-            assert_eq!(xperms.count(), 0xec00);
-            for xperm in 0x0100..0x2f00 {
-                assert!(xperms.contains(xperm));
-            }
-            for xperm in 0x4100..0xff00 {
-                assert!(xperms.contains(xperm));
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[4].xperms_type(), XPERMS_TYPE_IOCTL_PREFIXES);
+        assert_eq!(rules[4].count(), 0xec00);
+        for xperm in 0x0100..0x2f00 {
+            assert!(rules[4].contains(xperm));
+        }
+        for xperm in 0x4100..0xff00 {
+            assert!(rules[4].contains(xperm));
         }
     }
 
@@ -1821,19 +1369,16 @@ mod tests {
             .expect("look up class_all_ioctls")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIXES);
-            assert_eq!(xperms.count(), 0x10000);
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIXES);
+        assert_eq!(rules[0].count(), 0x10000);
     }
 
     #[test]
@@ -1845,21 +1390,18 @@ mod tests {
         let class_id =
             policy.classes().get_by_name(b"class_one_nlmsg").expect("look up class_one_nlmsg").id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x12));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x12));
     }
 
     // `nlmsg` extended permissions that are declared in the same rule, and have the same
@@ -1876,22 +1418,19 @@ mod tests {
             .expect("look up class_two_nlmsg_same_range")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 2);
-            assert!(xperms.contains(0x12));
-            assert!(xperms.contains(0x24));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[0].count(), 2);
+        assert!(rules[0].contains(0x12));
+        assert!(rules[0].contains(0x24));
     }
 
     // `nlmsg` extended permissions that are declared in the same rule, and have different
@@ -1908,30 +1447,22 @@ mod tests {
             .expect("look up class_two_nlmsg_diff_range")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x10);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x1024));
-        } else {
-            panic!("unexpected permission data type")
-        }
-        assert!(rules[1].metadata.is_allowxperm());
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x12));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x10);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x1024));
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[1].count(), 1);
+        assert!(rules[1].contains(0x12));
     }
 
     // The set of `nlmsg` extended permissions with a given high byte is represented by
@@ -1948,22 +1479,19 @@ mod tests {
             .expect("look up class_one_nlmsg_range")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 1);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x0..0xff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[0].count(), 0x100);
+        for i in 0x0..0xff {
+            assert!(rules[0].contains(i), "{i}");
         }
     }
 
@@ -1984,32 +1512,25 @@ mod tests {
             .expect("look up class_two_nlmsg_ranges")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x01);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x0100..0x01ff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x01);
+        assert_eq!(rules[0].count(), 0x100);
+        for i in 0x0100..0x01ff {
+            assert!(rules[0].contains(i), "{i}");
         }
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x0..0xff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[1].count(), 0x100);
+        for i in 0x0..0xff {
+            assert!(rules[1].contains(i), "{i}");
         }
     }
 
@@ -2031,42 +1552,31 @@ mod tests {
             .expect("look up class_three_separate_nlmsg_ranges")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 3);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x20);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x2000..0x20ff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x20);
+        assert_eq!(rules[0].count(), 0x100);
+        for i in 0x2000..0x20ff {
+            assert!(rules[0].contains(i), "{i}");
         }
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x10);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x1000..0x10ff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x10);
+        assert_eq!(rules[1].count(), 0x100);
+        for i in 0x1000..0x10ff {
+            assert!(rules[1].contains(i), "{i}");
         }
-        if let Some(xperms) = rules[2].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x0..0xff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[2].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[2].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[2].count(), 0x100);
+        for i in 0x0..0xff {
+            assert!(rules[2].contains(i), "{i}");
         }
     }
 
@@ -2088,32 +1598,25 @@ mod tests {
             .expect("look up class_three_contiguous_nlmsg_ranges")
             .id();
 
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
+            .access_vector_rules()
+            .find_xperms_decisions(type0, type0, class_id)
+            .allow
             .collect();
 
         assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x02);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x0200..0x02ff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x02);
+        assert_eq!(rules[0].count(), 0x100);
+        for i in 0x0200..0x02ff {
+            assert!(rules[0].contains(i), "{i}");
         }
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 0x100);
-            for i in 0x0..0xff {
-                assert!(xperms.contains(i), "{i}");
-            }
-        } else {
-            panic!("unexpected permission data type")
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[1].count(), 0x100);
+        for i in 0x0..0xff {
+            assert!(rules[1].contains(i), "{i}");
         }
     }
 
@@ -2131,29 +1634,19 @@ mod tests {
             .expect("look up class_auditallowxperm")
             .id();
 
-        let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
-            .collect();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let decisions = policy.access_vector_rules().find_xperms_decisions(type0, type0, class_id);
+        let rules: Vec<_> = decisions.auditallow.collect();
 
         assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_auditallowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x10));
-        } else {
-            panic!("unexpected permission data type")
-        }
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x10);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x1000));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x10));
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x10);
+        assert_eq!(rules[1].count(), 1);
+        assert!(rules[1].contains(0x1000));
     }
 
     // The representation of extended permissions for `dontauditxperm` rules is
@@ -2175,29 +1668,19 @@ mod tests {
             .expect("look up class_dontauditxperm")
             .id();
 
-        let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
-            .collect();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let decisions = policy.access_vector_rules().find_xperms_decisions(type0, type0, class_id);
+        let rules: Vec<_> = decisions.dontaudit.collect();
 
         assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_dontauditxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
-            assert_eq!(xperms.xperms_optional_prefix, 0x00);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x11));
-        } else {
-            panic!("unexpected permission data type")
-        }
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x10);
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0x1000));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x11));
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x10);
+        assert_eq!(rules[1].count(), 1);
+        assert!(rules[1].contains(0x1000));
     }
 
     // If an allowxperm rule and an auditallowxperm rule specify exactly the same permissions, they
@@ -2215,27 +1698,16 @@ mod tests {
             .expect("class_auditallowxperm_not_coalesced")
             .id();
 
-        let rules: Vec<_> = policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
-            .collect();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let decisions = policy.access_vector_rules().find_xperms_decisions(type0, type0, class_id);
+        let allow_rules: Vec<_> = decisions.allow.collect();
+        let auditallow_rules: Vec<_> = decisions.auditallow.collect();
 
-        assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_allowxperm());
-        assert!(!rules[0].metadata.is_auditallowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0xabcd));
-        } else {
-            panic!("unexpected permission data type")
-        }
-        assert!(!rules[1].metadata.is_allowxperm());
-        assert!(rules[1].metadata.is_auditallowxperm());
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.count(), 1);
-            assert!(xperms.contains(0xabcd));
-        } else {
-            panic!("unexpected permission data type")
-        }
+        assert_eq!(allow_rules.len(), 1);
+        assert_eq!(allow_rules[0].count(), 1);
+        assert!(allow_rules[0].contains(0xabcd));
+        assert_eq!(auditallow_rules.len(), 1);
+        assert_eq!(auditallow_rules[0].count(), 1);
+        assert!(auditallow_rules[0].contains(0xabcd));
     }
 }

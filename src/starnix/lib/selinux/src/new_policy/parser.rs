@@ -77,6 +77,46 @@ impl<'a> PolicyCursor<'a> {
     }
 }
 
+impl Parse for u8 {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        cursor.read::<u8>()
+    }
+}
+
+impl Serialize for u8 {
+    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+        writer.push(*self);
+        Ok(())
+    }
+}
+
+impl Validate for u8 {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}
+
+impl Parse for u16 {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let val: le::U16 = cursor.read::<le::U16>()?;
+        Ok(val.get())
+    }
+}
+
+impl Serialize for u16 {
+    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+        let val = le::U16::new(*self);
+        writer.extend_from_slice(zerocopy::IntoBytes::as_bytes(&val));
+        Ok(())
+    }
+}
+
+impl Validate for u16 {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}
+
 impl Parse for u32 {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let val: le::U32 = cursor.read::<le::U32>()?;

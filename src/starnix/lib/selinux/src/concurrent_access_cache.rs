@@ -8,7 +8,7 @@ use crate::access_vector_cache::{
 };
 use crate::concurrent_cache::{LockFreeQueryCache, StorageStrategy};
 use crate::kernel_permissions::ClassPermission;
-use crate::policy::{KernelAccessDecision, XpermsKind};
+use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use zerocopy::IntoBytes;
@@ -229,16 +229,9 @@ impl
         let permissive = (u8_0 & (1u8 << Self::PERMISSIVE_BIT_INDEX)) != 0;
         let has_todo = (u8_0 & (1u8 << Self::HAS_TODO_BIT_INDEX)) != 0;
 
-        let mut allow_u64s = [0u64; 4];
-        let mut audit_u64s = [0u64; 4];
-
-        for i in 0..4 {
-            allow_u64s[i] = out_of_line_u64s[i].load(Ordering::Relaxed);
-            audit_u64s[i] = out_of_line_u64s[i + 4].load(Ordering::Relaxed);
-        }
-
-        let allow = allow_u64s.into();
-        let audit = audit_u64s.into();
+        let (chunks, _) = out_of_line_u64s.as_chunks::<{ XpermsBitmap::BITMAP_BLOCKS }>();
+        let allow = XpermsBitmap::from_atomics(&chunks[0]);
+        let audit = XpermsBitmap::from_atomics(&chunks[1]);
 
         KernelXpermsAccessDecision { allow, audit, permissive, has_todo }
     }
@@ -275,13 +268,9 @@ impl
         inline_u16s[0].store(u16_0, Ordering::Relaxed);
         inline_u8s[0].store(u8_0, Ordering::Relaxed);
 
-        let allow_u64s: [u64; 4] = value.allow.into();
-        let audit_u64s: [u64; 4] = value.audit.into();
-
-        for i in 0..4 {
-            out_of_line_u64s[i].store(allow_u64s[i], Ordering::Relaxed);
-            out_of_line_u64s[i + 4].store(audit_u64s[i], Ordering::Relaxed);
-        }
+        let (chunks, _) = out_of_line_u64s.as_chunks::<{ XpermsBitmap::BITMAP_BLOCKS }>();
+        value.allow.to_atomics(&chunks[0]);
+        value.audit.to_atomics(&chunks[1]);
     }
 }
 
