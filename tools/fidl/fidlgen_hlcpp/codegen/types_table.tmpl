@@ -223,50 +223,44 @@ void {{ .Name }}::Decode(::fidl::Decoder* _decoder, {{ .Name }}* _value, size_t 
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    {{- range .Members }}
+    _value->{{ .MethodClearName }}();
+    {{- end }}
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
 
-  {{- range .Members }}
-  if (count >= {{ .Ordinal }}) {
-    size_t envelope_base = base + ({{ .Ordinal }} - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_{{ .Name }}(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->{{ .MethodClearName }}();
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      {{- range .Members }}
+      case {{ .Ordinal }}:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_{{ .Name }}(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->{{ .MethodClearName }}();
+        }
+        break;
+      {{- end }}
+      default:
+        {{- if .IsResourceType }}
+        _decoder->CloseUnknownHandlesInEnvelope(envelope);
+        {{- end }}
+        break;
     }
-  } else {
-    goto done_{{ .Ordinal }};
+  }
+
+  {{- range .Members }}
+  if (count < {{ .Ordinal }}) {
+    _value->{{ .MethodClearName }}();
   }
   {{- end }}
 
-  {{/* Handle unknown data separately to avoid affecting the common case */}}
-  {{- if .IsResourceType }}
-  if (count > {{ len .Members }}) {
-    for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
-      if (IsOrdinalKnown(ordinal)) {
-        continue;
-      }
-
-      size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
-      fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-      _decoder->CloseUnknownHandlesInEnvelope(envelope);
-    }
-  }
-  {{- end }}
-
-  return;
-
-  // Clear unset values.
-clear_all:
-  {{- range .Members }}
-done_{{ .Ordinal }}:
-  _value->{{ .MethodClearName }}();
-  {{- end }}
   return;
 }
 

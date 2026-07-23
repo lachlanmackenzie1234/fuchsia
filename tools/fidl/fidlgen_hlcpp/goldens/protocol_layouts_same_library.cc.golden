@@ -97,30 +97,34 @@ void TablePayload::Decode(::fidl::Decoder* _decoder, TablePayload* _value, size_
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_a();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_a(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_a();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_a(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_a();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_a();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_a();
   return;
 }
 
@@ -368,30 +372,34 @@ void ComposedProtocolOneWayAnonComposedRequest::Decode(::fidl::Decoder* _decoder
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_a();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_a(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_a();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_a(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_a();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_a();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_a();
   return;
 }
 
@@ -639,30 +647,34 @@ void ComposedProtocolTwoWayAnonComposedResponse::Decode(::fidl::Decoder* _decode
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_a();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_a(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_a();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_a(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_a();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_a();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_a();
   return;
 }
 
@@ -762,30 +774,34 @@ void ComposedProtocolTwoWayAnonComposedWithErrorRequest::Decode(::fidl::Decoder*
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_a();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_a(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_a();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_a(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_a();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_a();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_a();
   return;
 }
 
@@ -1796,30 +1812,34 @@ void MainProtocolOneWayAnonRequest::Decode(::fidl::Decoder* _decoder, MainProtoc
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_a();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_a(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_a();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_a(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_a();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_a();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_a();
   return;
 }
 
@@ -2095,30 +2115,34 @@ void MainProtocolTwoWayAnonResponse::Decode(::fidl::Decoder* _decoder, MainProto
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_a();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_a(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_a();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_a(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_a();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_a();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_a();
   return;
 }
 
@@ -2218,30 +2242,34 @@ void MainProtocolTwoWayAnonWithErrorRequest::Decode(::fidl::Decoder* _decoder, M
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_a();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_a(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_a();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_a(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_a();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_a();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_a();
   return;
 }
 

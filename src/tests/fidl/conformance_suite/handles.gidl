@@ -1260,3 +1260,57 @@ decode_failure("DecodeArrayOfVectorOfEventInUnionType") {
     },
     err = INCORRECT_HANDLE_TYPE,
 }
+
+// The HLCPP bindings dropped handles in unknown envelopes before handles in
+// known envelopes. Envelopes should always be processed from first to last,
+// regardless of whether they are for known or unknown variants. This is a
+// regression test to ensure that behavior in our bindings.
+decode_success("DecodeUnknownEnvelopesBeforeKnownEnvelopes") {
+    handle_defs = {
+        #0 = event(),
+        #1 = event(),
+    },
+    value = TableWithUnknownEnvelopesBeforeKnownEnvelopesStruct{
+        t: TableWithUnknownEnvelopesBeforeKnownEnvelopes{
+            b: #1,
+        },
+    },
+    bytes = {
+        v2 = [
+            num(2):8, // max ordinal
+            repeat(0xff):8, // alloc present
+            repeat(0xff):4, num(1):2, num(1):2, // envelope 0 (unknown, 1 handle)
+            repeat(0xff):4, num(1):2, num(1):2, // envelope 1 (known, 1 handle)
+        ],
+    },
+    handles = {
+        v2 = [
+            #0, #1,
+        ],
+    },
+}
+
+decode_success("DecodeUnknownEnvelopesAfterKnownEnvelopes") {
+    handle_defs = {
+        #0 = event(),
+        #1 = event(),
+    },
+    value = TableWithUnknownEnveloepsAfterKnownEnvelopesStruct{
+        t: TableWithUnknownEnvelopesAfterKnownEnvelopes{
+            a: #0,
+        },
+    },
+    bytes = {
+        v2 = [
+            num(2):8, // max ordinal
+            repeat(0xff):8, // alloc present
+            repeat(0xff):4, num(1):2, num(1):2, // envelope 0 (known, 1 handle)
+            repeat(0xff):4, num(1):2, num(1):2, // envelope 1 (unknown, 1 handle)
+        ],
+    },
+    handles = {
+        v2 = [
+            #0, #1,
+        ],
+    },
+}

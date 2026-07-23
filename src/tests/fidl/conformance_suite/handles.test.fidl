@@ -1,6 +1,7 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+@available(added=1)
 library test.conformance;
 
 type SingleHandle = resource struct {
@@ -169,4 +170,24 @@ type ArrayOfVectorOfEventInUnionWithDefaultRights = strict resource union {
 
 type ArrayOfVectorOfEventInUnionWithDefaultRightsStruct = resource struct {
     u ArrayOfVectorOfEventInUnionWithDefaultRights;
+};
+
+type TableWithUnknownEnvelopesBeforeKnownEnvelopes = resource table {
+    @available(removed=2)
+    1: a handle:<EVENT, DEFAULT_EVENT_RIGHTS>;
+    2: b handle:<EVENT, DEFAULT_EVENT_RIGHTS>;
+};
+
+type TableWithUnknownEnvelopesBeforeKnownEnvelopesStruct = resource struct {
+    t TableWithUnknownEnvelopesBeforeKnownEnvelopes;
+};
+
+type TableWithUnknownEnvelopesAfterKnownEnvelopes = resource table {
+    1: a handle:<EVENT, DEFAULT_EVENT_RIGHTS>;
+    @available(removed=2)
+    2: b handle:<EVENT, DEFAULT_EVENT_RIGHTS>;
+};
+
+type TableWithUnknownEnveloepsAfterKnownEnvelopesStruct = resource struct {
+    t TableWithUnknownEnvelopesAfterKnownEnvelopes;
 };

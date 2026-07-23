@@ -291,72 +291,70 @@ void ComplexInstants::Decode(::fidl::Decoder* _decoder, ComplexInstants* _value,
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_monotonic();
+    _value->clear_boot();
+    _value->clear_monotonic_ticks();
+    _value->clear_boot_ticks();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_monotonic(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_monotonic();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_monotonic(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_monotonic();
+        }
+        break;
+      case 2:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_boot(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_boot();
+        }
+        break;
+      case 3:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_monotonic_ticks(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_monotonic_ticks();
+        }
+        break;
+      case 4:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_boot_ticks(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_boot_ticks();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
   }
-  if (count >= 2) {
-    size_t envelope_base = base + (2 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_boot(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_boot();
-    }
-  } else {
-    goto done_2;
+  if (count < 1) {
+    _value->clear_monotonic();
   }
-  if (count >= 3) {
-    size_t envelope_base = base + (3 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_monotonic_ticks(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_monotonic_ticks();
-    }
-  } else {
-    goto done_3;
+  if (count < 2) {
+    _value->clear_boot();
   }
-  if (count >= 4) {
-    size_t envelope_base = base + (4 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_boot_ticks(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_boot_ticks();
-    }
-  } else {
-    goto done_4;
+  if (count < 3) {
+    _value->clear_monotonic_ticks();
+  }
+  if (count < 4) {
+    _value->clear_boot_ticks();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_monotonic();
-done_2:
-  _value->clear_boot();
-done_3:
-  _value->clear_monotonic_ticks();
-done_4:
-  _value->clear_boot_ticks();
   return;
 }
 

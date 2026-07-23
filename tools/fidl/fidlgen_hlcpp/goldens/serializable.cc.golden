@@ -76,16 +76,22 @@ void SerializableTable::Decode(::fidl::Decoder* _decoder, SerializableTable* _va
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
 
-  return;
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
 
-  // Clear unset values.
-clear_all:
+    switch (ordinal) {
+      default:
+        break;
+    }
+  }
+
   return;
 }
 

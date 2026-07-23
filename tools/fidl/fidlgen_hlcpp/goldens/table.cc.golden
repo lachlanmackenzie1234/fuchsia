@@ -47,16 +47,22 @@ void EmptyTable::Decode(::fidl::Decoder* _decoder, EmptyTable* _value, size_t _o
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
 
-  return;
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
 
-  // Clear unset values.
-clear_all:
+    switch (ordinal) {
+      default:
+        break;
+    }
+  }
+
   return;
 }
 
@@ -199,44 +205,46 @@ void SimpleTable::Decode(::fidl::Decoder* _decoder, SimpleTable* _value, size_t 
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_x();
+    _value->clear_y();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_x(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_x();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_x(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_x();
+        }
+        break;
+      case 5:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_y(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_y();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
   }
-  if (count >= 5) {
-    size_t envelope_base = base + (5 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_y(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_y();
-    }
-  } else {
-    goto done_5;
+  if (count < 1) {
+    _value->clear_x();
+  }
+  if (count < 5) {
+    _value->clear_y();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_x();
-done_5:
-  _value->clear_y();
   return;
 }
 
@@ -343,30 +351,34 @@ void OlderSimpleTable::Decode(::fidl::Decoder* _decoder, OlderSimpleTable* _valu
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_x();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_x(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_x();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_x(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_x();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_x();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_x();
   return;
 }
 
@@ -566,58 +578,58 @@ void NewerSimpleTable::Decode(::fidl::Decoder* _decoder, NewerSimpleTable* _valu
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_x();
+    _value->clear_y();
+    _value->clear_z();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_x(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_x();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_x(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_x();
+        }
+        break;
+      case 5:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_y(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_y();
+        }
+        break;
+      case 6:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_z(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_z();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
   }
-  if (count >= 5) {
-    size_t envelope_base = base + (5 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_y(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_y();
-    }
-  } else {
-    goto done_5;
+  if (count < 1) {
+    _value->clear_x();
   }
-  if (count >= 6) {
-    size_t envelope_base = base + (6 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_z(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_z();
-    }
-  } else {
-    goto done_6;
+  if (count < 5) {
+    _value->clear_y();
+  }
+  if (count < 6) {
+    _value->clear_z();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_x();
-done_5:
-  _value->clear_y();
-done_6:
-  _value->clear_z();
   return;
 }
 
@@ -831,58 +843,58 @@ void ReverseOrdinalTable::Decode(::fidl::Decoder* _decoder, ReverseOrdinalTable*
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_z();
+    _value->clear_y();
+    _value->clear_x();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_z(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_z();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_z(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_z();
+        }
+        break;
+      case 2:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_y(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_y();
+        }
+        break;
+      case 3:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_x(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_x();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
   }
-  if (count >= 2) {
-    size_t envelope_base = base + (2 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_y(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_y();
-    }
-  } else {
-    goto done_2;
+  if (count < 1) {
+    _value->clear_z();
   }
-  if (count >= 3) {
-    size_t envelope_base = base + (3 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_x(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_x();
-    }
-  } else {
-    goto done_3;
+  if (count < 2) {
+    _value->clear_y();
+  }
+  if (count < 3) {
+    _value->clear_x();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_z();
-done_2:
-  _value->clear_y();
-done_3:
-  _value->clear_x();
   return;
 }
 
@@ -996,30 +1008,34 @@ void TableWithAttributes::Decode(::fidl::Decoder* _decoder, TableWithAttributes*
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_x();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_x(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_x();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_x(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_x();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_x();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_x();
   return;
 }
 
@@ -1069,16 +1085,22 @@ void ExtensionTable::Decode(::fidl::Decoder* _decoder, ExtensionTable* _value, s
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
 
-  return;
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
 
-  // Clear unset values.
-clear_all:
+    switch (ordinal) {
+      default:
+        break;
+    }
+  }
+
   return;
 }
 
@@ -4321,912 +4343,790 @@ void SixtyFourOrdinalTable::Decode(::fidl::Decoder* _decoder, SixtyFourOrdinalTa
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_v1();
+    _value->clear_v2();
+    _value->clear_v3();
+    _value->clear_v4();
+    _value->clear_v5();
+    _value->clear_v6();
+    _value->clear_v7();
+    _value->clear_v8();
+    _value->clear_v9();
+    _value->clear_v10();
+    _value->clear_v11();
+    _value->clear_v12();
+    _value->clear_v13();
+    _value->clear_v14();
+    _value->clear_v15();
+    _value->clear_v16();
+    _value->clear_v17();
+    _value->clear_v18();
+    _value->clear_v19();
+    _value->clear_v20();
+    _value->clear_v21();
+    _value->clear_v22();
+    _value->clear_v23();
+    _value->clear_v24();
+    _value->clear_v25();
+    _value->clear_v26();
+    _value->clear_v27();
+    _value->clear_v28();
+    _value->clear_v29();
+    _value->clear_v30();
+    _value->clear_v31();
+    _value->clear_v32();
+    _value->clear_v33();
+    _value->clear_v34();
+    _value->clear_v35();
+    _value->clear_v36();
+    _value->clear_v37();
+    _value->clear_v38();
+    _value->clear_v39();
+    _value->clear_v40();
+    _value->clear_v41();
+    _value->clear_v42();
+    _value->clear_v43();
+    _value->clear_v44();
+    _value->clear_v45();
+    _value->clear_v46();
+    _value->clear_v47();
+    _value->clear_v48();
+    _value->clear_v49();
+    _value->clear_v50();
+    _value->clear_v51();
+    _value->clear_v52();
+    _value->clear_v53();
+    _value->clear_v54();
+    _value->clear_v55();
+    _value->clear_v56();
+    _value->clear_v57();
+    _value->clear_v58();
+    _value->clear_v59();
+    _value->clear_v60();
+    _value->clear_v61();
+    _value->clear_v62();
+    _value->clear_v63();
+    _value->clear_v64();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v1(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v1();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v1(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v1();
+        }
+        break;
+      case 2:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v2(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v2();
+        }
+        break;
+      case 3:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v3(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v3();
+        }
+        break;
+      case 4:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v4(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v4();
+        }
+        break;
+      case 5:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v5(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v5();
+        }
+        break;
+      case 6:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v6(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v6();
+        }
+        break;
+      case 7:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v7(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v7();
+        }
+        break;
+      case 8:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v8(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v8();
+        }
+        break;
+      case 9:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v9(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v9();
+        }
+        break;
+      case 10:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v10(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v10();
+        }
+        break;
+      case 11:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v11(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v11();
+        }
+        break;
+      case 12:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v12(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v12();
+        }
+        break;
+      case 13:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v13(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v13();
+        }
+        break;
+      case 14:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v14(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v14();
+        }
+        break;
+      case 15:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v15(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v15();
+        }
+        break;
+      case 16:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v16(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v16();
+        }
+        break;
+      case 17:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v17(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v17();
+        }
+        break;
+      case 18:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v18(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v18();
+        }
+        break;
+      case 19:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v19(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v19();
+        }
+        break;
+      case 20:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v20(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v20();
+        }
+        break;
+      case 21:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v21(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v21();
+        }
+        break;
+      case 22:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v22(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v22();
+        }
+        break;
+      case 23:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v23(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v23();
+        }
+        break;
+      case 24:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v24(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v24();
+        }
+        break;
+      case 25:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v25(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v25();
+        }
+        break;
+      case 26:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v26(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v26();
+        }
+        break;
+      case 27:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v27(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v27();
+        }
+        break;
+      case 28:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v28(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v28();
+        }
+        break;
+      case 29:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v29(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v29();
+        }
+        break;
+      case 30:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v30(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v30();
+        }
+        break;
+      case 31:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v31(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v31();
+        }
+        break;
+      case 32:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v32(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v32();
+        }
+        break;
+      case 33:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v33(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v33();
+        }
+        break;
+      case 34:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v34(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v34();
+        }
+        break;
+      case 35:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v35(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v35();
+        }
+        break;
+      case 36:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v36(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v36();
+        }
+        break;
+      case 37:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v37(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v37();
+        }
+        break;
+      case 38:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v38(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v38();
+        }
+        break;
+      case 39:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v39(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v39();
+        }
+        break;
+      case 40:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v40(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v40();
+        }
+        break;
+      case 41:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v41(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v41();
+        }
+        break;
+      case 42:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v42(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v42();
+        }
+        break;
+      case 43:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v43(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v43();
+        }
+        break;
+      case 44:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v44(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v44();
+        }
+        break;
+      case 45:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v45(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v45();
+        }
+        break;
+      case 46:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v46(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v46();
+        }
+        break;
+      case 47:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v47(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v47();
+        }
+        break;
+      case 48:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v48(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v48();
+        }
+        break;
+      case 49:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v49(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v49();
+        }
+        break;
+      case 50:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v50(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v50();
+        }
+        break;
+      case 51:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v51(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v51();
+        }
+        break;
+      case 52:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v52(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v52();
+        }
+        break;
+      case 53:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v53(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v53();
+        }
+        break;
+      case 54:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v54(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v54();
+        }
+        break;
+      case 55:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v55(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v55();
+        }
+        break;
+      case 56:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v56(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v56();
+        }
+        break;
+      case 57:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v57(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v57();
+        }
+        break;
+      case 58:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v58(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v58();
+        }
+        break;
+      case 59:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v59(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v59();
+        }
+        break;
+      case 60:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v60(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v60();
+        }
+        break;
+      case 61:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v61(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v61();
+        }
+        break;
+      case 62:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v62(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v62();
+        }
+        break;
+      case 63:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v63(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v63();
+        }
+        break;
+      case 64:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_v64(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_v64();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
   }
-  if (count >= 2) {
-    size_t envelope_base = base + (2 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v2(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v2();
-    }
-  } else {
-    goto done_2;
+  if (count < 1) {
+    _value->clear_v1();
   }
-  if (count >= 3) {
-    size_t envelope_base = base + (3 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v3(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v3();
-    }
-  } else {
-    goto done_3;
+  if (count < 2) {
+    _value->clear_v2();
   }
-  if (count >= 4) {
-    size_t envelope_base = base + (4 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v4(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v4();
-    }
-  } else {
-    goto done_4;
+  if (count < 3) {
+    _value->clear_v3();
   }
-  if (count >= 5) {
-    size_t envelope_base = base + (5 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v5(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v5();
-    }
-  } else {
-    goto done_5;
+  if (count < 4) {
+    _value->clear_v4();
   }
-  if (count >= 6) {
-    size_t envelope_base = base + (6 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v6(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v6();
-    }
-  } else {
-    goto done_6;
+  if (count < 5) {
+    _value->clear_v5();
   }
-  if (count >= 7) {
-    size_t envelope_base = base + (7 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v7(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v7();
-    }
-  } else {
-    goto done_7;
+  if (count < 6) {
+    _value->clear_v6();
   }
-  if (count >= 8) {
-    size_t envelope_base = base + (8 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v8(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v8();
-    }
-  } else {
-    goto done_8;
+  if (count < 7) {
+    _value->clear_v7();
   }
-  if (count >= 9) {
-    size_t envelope_base = base + (9 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v9(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v9();
-    }
-  } else {
-    goto done_9;
+  if (count < 8) {
+    _value->clear_v8();
   }
-  if (count >= 10) {
-    size_t envelope_base = base + (10 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v10(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v10();
-    }
-  } else {
-    goto done_10;
+  if (count < 9) {
+    _value->clear_v9();
   }
-  if (count >= 11) {
-    size_t envelope_base = base + (11 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v11(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v11();
-    }
-  } else {
-    goto done_11;
+  if (count < 10) {
+    _value->clear_v10();
   }
-  if (count >= 12) {
-    size_t envelope_base = base + (12 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v12(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v12();
-    }
-  } else {
-    goto done_12;
+  if (count < 11) {
+    _value->clear_v11();
   }
-  if (count >= 13) {
-    size_t envelope_base = base + (13 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v13(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v13();
-    }
-  } else {
-    goto done_13;
+  if (count < 12) {
+    _value->clear_v12();
   }
-  if (count >= 14) {
-    size_t envelope_base = base + (14 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v14(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v14();
-    }
-  } else {
-    goto done_14;
+  if (count < 13) {
+    _value->clear_v13();
   }
-  if (count >= 15) {
-    size_t envelope_base = base + (15 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v15(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v15();
-    }
-  } else {
-    goto done_15;
+  if (count < 14) {
+    _value->clear_v14();
   }
-  if (count >= 16) {
-    size_t envelope_base = base + (16 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v16(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v16();
-    }
-  } else {
-    goto done_16;
+  if (count < 15) {
+    _value->clear_v15();
   }
-  if (count >= 17) {
-    size_t envelope_base = base + (17 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v17(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v17();
-    }
-  } else {
-    goto done_17;
+  if (count < 16) {
+    _value->clear_v16();
   }
-  if (count >= 18) {
-    size_t envelope_base = base + (18 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v18(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v18();
-    }
-  } else {
-    goto done_18;
+  if (count < 17) {
+    _value->clear_v17();
   }
-  if (count >= 19) {
-    size_t envelope_base = base + (19 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v19(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v19();
-    }
-  } else {
-    goto done_19;
+  if (count < 18) {
+    _value->clear_v18();
   }
-  if (count >= 20) {
-    size_t envelope_base = base + (20 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v20(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v20();
-    }
-  } else {
-    goto done_20;
+  if (count < 19) {
+    _value->clear_v19();
   }
-  if (count >= 21) {
-    size_t envelope_base = base + (21 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v21(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v21();
-    }
-  } else {
-    goto done_21;
+  if (count < 20) {
+    _value->clear_v20();
   }
-  if (count >= 22) {
-    size_t envelope_base = base + (22 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v22(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v22();
-    }
-  } else {
-    goto done_22;
+  if (count < 21) {
+    _value->clear_v21();
   }
-  if (count >= 23) {
-    size_t envelope_base = base + (23 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v23(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v23();
-    }
-  } else {
-    goto done_23;
+  if (count < 22) {
+    _value->clear_v22();
   }
-  if (count >= 24) {
-    size_t envelope_base = base + (24 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v24(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v24();
-    }
-  } else {
-    goto done_24;
+  if (count < 23) {
+    _value->clear_v23();
   }
-  if (count >= 25) {
-    size_t envelope_base = base + (25 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v25(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v25();
-    }
-  } else {
-    goto done_25;
+  if (count < 24) {
+    _value->clear_v24();
   }
-  if (count >= 26) {
-    size_t envelope_base = base + (26 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v26(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v26();
-    }
-  } else {
-    goto done_26;
+  if (count < 25) {
+    _value->clear_v25();
   }
-  if (count >= 27) {
-    size_t envelope_base = base + (27 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v27(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v27();
-    }
-  } else {
-    goto done_27;
+  if (count < 26) {
+    _value->clear_v26();
   }
-  if (count >= 28) {
-    size_t envelope_base = base + (28 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v28(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v28();
-    }
-  } else {
-    goto done_28;
+  if (count < 27) {
+    _value->clear_v27();
   }
-  if (count >= 29) {
-    size_t envelope_base = base + (29 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v29(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v29();
-    }
-  } else {
-    goto done_29;
+  if (count < 28) {
+    _value->clear_v28();
   }
-  if (count >= 30) {
-    size_t envelope_base = base + (30 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v30(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v30();
-    }
-  } else {
-    goto done_30;
+  if (count < 29) {
+    _value->clear_v29();
   }
-  if (count >= 31) {
-    size_t envelope_base = base + (31 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v31(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v31();
-    }
-  } else {
-    goto done_31;
+  if (count < 30) {
+    _value->clear_v30();
   }
-  if (count >= 32) {
-    size_t envelope_base = base + (32 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v32(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v32();
-    }
-  } else {
-    goto done_32;
+  if (count < 31) {
+    _value->clear_v31();
   }
-  if (count >= 33) {
-    size_t envelope_base = base + (33 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v33(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v33();
-    }
-  } else {
-    goto done_33;
+  if (count < 32) {
+    _value->clear_v32();
   }
-  if (count >= 34) {
-    size_t envelope_base = base + (34 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v34(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v34();
-    }
-  } else {
-    goto done_34;
+  if (count < 33) {
+    _value->clear_v33();
   }
-  if (count >= 35) {
-    size_t envelope_base = base + (35 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v35(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v35();
-    }
-  } else {
-    goto done_35;
+  if (count < 34) {
+    _value->clear_v34();
   }
-  if (count >= 36) {
-    size_t envelope_base = base + (36 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v36(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v36();
-    }
-  } else {
-    goto done_36;
+  if (count < 35) {
+    _value->clear_v35();
   }
-  if (count >= 37) {
-    size_t envelope_base = base + (37 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v37(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v37();
-    }
-  } else {
-    goto done_37;
+  if (count < 36) {
+    _value->clear_v36();
   }
-  if (count >= 38) {
-    size_t envelope_base = base + (38 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v38(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v38();
-    }
-  } else {
-    goto done_38;
+  if (count < 37) {
+    _value->clear_v37();
   }
-  if (count >= 39) {
-    size_t envelope_base = base + (39 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v39(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v39();
-    }
-  } else {
-    goto done_39;
+  if (count < 38) {
+    _value->clear_v38();
   }
-  if (count >= 40) {
-    size_t envelope_base = base + (40 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v40(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v40();
-    }
-  } else {
-    goto done_40;
+  if (count < 39) {
+    _value->clear_v39();
   }
-  if (count >= 41) {
-    size_t envelope_base = base + (41 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v41(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v41();
-    }
-  } else {
-    goto done_41;
+  if (count < 40) {
+    _value->clear_v40();
   }
-  if (count >= 42) {
-    size_t envelope_base = base + (42 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v42(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v42();
-    }
-  } else {
-    goto done_42;
+  if (count < 41) {
+    _value->clear_v41();
   }
-  if (count >= 43) {
-    size_t envelope_base = base + (43 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v43(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v43();
-    }
-  } else {
-    goto done_43;
+  if (count < 42) {
+    _value->clear_v42();
   }
-  if (count >= 44) {
-    size_t envelope_base = base + (44 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v44(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v44();
-    }
-  } else {
-    goto done_44;
+  if (count < 43) {
+    _value->clear_v43();
   }
-  if (count >= 45) {
-    size_t envelope_base = base + (45 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v45(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v45();
-    }
-  } else {
-    goto done_45;
+  if (count < 44) {
+    _value->clear_v44();
   }
-  if (count >= 46) {
-    size_t envelope_base = base + (46 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v46(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v46();
-    }
-  } else {
-    goto done_46;
+  if (count < 45) {
+    _value->clear_v45();
   }
-  if (count >= 47) {
-    size_t envelope_base = base + (47 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v47(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v47();
-    }
-  } else {
-    goto done_47;
+  if (count < 46) {
+    _value->clear_v46();
   }
-  if (count >= 48) {
-    size_t envelope_base = base + (48 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v48(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v48();
-    }
-  } else {
-    goto done_48;
+  if (count < 47) {
+    _value->clear_v47();
   }
-  if (count >= 49) {
-    size_t envelope_base = base + (49 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v49(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v49();
-    }
-  } else {
-    goto done_49;
+  if (count < 48) {
+    _value->clear_v48();
   }
-  if (count >= 50) {
-    size_t envelope_base = base + (50 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v50(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v50();
-    }
-  } else {
-    goto done_50;
+  if (count < 49) {
+    _value->clear_v49();
   }
-  if (count >= 51) {
-    size_t envelope_base = base + (51 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v51(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v51();
-    }
-  } else {
-    goto done_51;
+  if (count < 50) {
+    _value->clear_v50();
   }
-  if (count >= 52) {
-    size_t envelope_base = base + (52 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v52(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v52();
-    }
-  } else {
-    goto done_52;
+  if (count < 51) {
+    _value->clear_v51();
   }
-  if (count >= 53) {
-    size_t envelope_base = base + (53 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v53(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v53();
-    }
-  } else {
-    goto done_53;
+  if (count < 52) {
+    _value->clear_v52();
   }
-  if (count >= 54) {
-    size_t envelope_base = base + (54 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v54(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v54();
-    }
-  } else {
-    goto done_54;
+  if (count < 53) {
+    _value->clear_v53();
   }
-  if (count >= 55) {
-    size_t envelope_base = base + (55 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v55(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v55();
-    }
-  } else {
-    goto done_55;
+  if (count < 54) {
+    _value->clear_v54();
   }
-  if (count >= 56) {
-    size_t envelope_base = base + (56 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v56(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v56();
-    }
-  } else {
-    goto done_56;
+  if (count < 55) {
+    _value->clear_v55();
   }
-  if (count >= 57) {
-    size_t envelope_base = base + (57 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v57(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v57();
-    }
-  } else {
-    goto done_57;
+  if (count < 56) {
+    _value->clear_v56();
   }
-  if (count >= 58) {
-    size_t envelope_base = base + (58 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v58(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v58();
-    }
-  } else {
-    goto done_58;
+  if (count < 57) {
+    _value->clear_v57();
   }
-  if (count >= 59) {
-    size_t envelope_base = base + (59 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v59(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v59();
-    }
-  } else {
-    goto done_59;
+  if (count < 58) {
+    _value->clear_v58();
   }
-  if (count >= 60) {
-    size_t envelope_base = base + (60 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v60(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v60();
-    }
-  } else {
-    goto done_60;
+  if (count < 59) {
+    _value->clear_v59();
   }
-  if (count >= 61) {
-    size_t envelope_base = base + (61 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v61(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v61();
-    }
-  } else {
-    goto done_61;
+  if (count < 60) {
+    _value->clear_v60();
   }
-  if (count >= 62) {
-    size_t envelope_base = base + (62 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v62(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v62();
-    }
-  } else {
-    goto done_62;
+  if (count < 61) {
+    _value->clear_v61();
   }
-  if (count >= 63) {
-    size_t envelope_base = base + (63 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v63(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v63();
-    }
-  } else {
-    goto done_63;
+  if (count < 62) {
+    _value->clear_v62();
   }
-  if (count >= 64) {
-    size_t envelope_base = base + (64 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_v64(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_v64();
-    }
-  } else {
-    goto done_64;
+  if (count < 63) {
+    _value->clear_v63();
+  }
+  if (count < 64) {
+    _value->clear_v64();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_v1();
-done_2:
-  _value->clear_v2();
-done_3:
-  _value->clear_v3();
-done_4:
-  _value->clear_v4();
-done_5:
-  _value->clear_v5();
-done_6:
-  _value->clear_v6();
-done_7:
-  _value->clear_v7();
-done_8:
-  _value->clear_v8();
-done_9:
-  _value->clear_v9();
-done_10:
-  _value->clear_v10();
-done_11:
-  _value->clear_v11();
-done_12:
-  _value->clear_v12();
-done_13:
-  _value->clear_v13();
-done_14:
-  _value->clear_v14();
-done_15:
-  _value->clear_v15();
-done_16:
-  _value->clear_v16();
-done_17:
-  _value->clear_v17();
-done_18:
-  _value->clear_v18();
-done_19:
-  _value->clear_v19();
-done_20:
-  _value->clear_v20();
-done_21:
-  _value->clear_v21();
-done_22:
-  _value->clear_v22();
-done_23:
-  _value->clear_v23();
-done_24:
-  _value->clear_v24();
-done_25:
-  _value->clear_v25();
-done_26:
-  _value->clear_v26();
-done_27:
-  _value->clear_v27();
-done_28:
-  _value->clear_v28();
-done_29:
-  _value->clear_v29();
-done_30:
-  _value->clear_v30();
-done_31:
-  _value->clear_v31();
-done_32:
-  _value->clear_v32();
-done_33:
-  _value->clear_v33();
-done_34:
-  _value->clear_v34();
-done_35:
-  _value->clear_v35();
-done_36:
-  _value->clear_v36();
-done_37:
-  _value->clear_v37();
-done_38:
-  _value->clear_v38();
-done_39:
-  _value->clear_v39();
-done_40:
-  _value->clear_v40();
-done_41:
-  _value->clear_v41();
-done_42:
-  _value->clear_v42();
-done_43:
-  _value->clear_v43();
-done_44:
-  _value->clear_v44();
-done_45:
-  _value->clear_v45();
-done_46:
-  _value->clear_v46();
-done_47:
-  _value->clear_v47();
-done_48:
-  _value->clear_v48();
-done_49:
-  _value->clear_v49();
-done_50:
-  _value->clear_v50();
-done_51:
-  _value->clear_v51();
-done_52:
-  _value->clear_v52();
-done_53:
-  _value->clear_v53();
-done_54:
-  _value->clear_v54();
-done_55:
-  _value->clear_v55();
-done_56:
-  _value->clear_v56();
-done_57:
-  _value->clear_v57();
-done_58:
-  _value->clear_v58();
-done_59:
-  _value->clear_v59();
-done_60:
-  _value->clear_v60();
-done_61:
-  _value->clear_v61();
-done_62:
-  _value->clear_v62();
-done_63:
-  _value->clear_v63();
-done_64:
-  _value->clear_v64();
   return;
 }
 

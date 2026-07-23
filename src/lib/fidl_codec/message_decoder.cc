@@ -368,6 +368,7 @@ void MessageDecoder::SkipEnvelope(uint64_t offset) {
                << ": Not enough handles to decode an envelope\n";
     return;
   }
+  DiscardHandles(envelope_handles);
 }
 
 }  // namespace fidl_codec

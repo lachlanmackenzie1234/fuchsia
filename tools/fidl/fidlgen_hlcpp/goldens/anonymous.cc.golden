@@ -248,58 +248,58 @@ void FunctionApplication::Decode(::fidl::Decoder* _decoder, FunctionApplication*
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_func();
+    _value->clear_args();
+    _value->clear_flags();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_func(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_func();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_func(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_func();
+        }
+        break;
+      case 3:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_args(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_args();
+        }
+        break;
+      case 4:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_flags(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_flags();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
   }
-  if (count >= 3) {
-    size_t envelope_base = base + (3 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_args(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_args();
-    }
-  } else {
-    goto done_3;
+  if (count < 1) {
+    _value->clear_func();
   }
-  if (count >= 4) {
-    size_t envelope_base = base + (4 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_flags(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_flags();
-    }
-  } else {
-    goto done_4;
+  if (count < 3) {
+    _value->clear_args();
+  }
+  if (count < 4) {
+    _value->clear_flags();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_func();
-done_3:
-  _value->clear_args();
-done_4:
-  _value->clear_flags();
   return;
 }
 
@@ -904,30 +904,34 @@ void TableMember::Decode(::fidl::Decoder* _decoder, TableMember* _value, size_t 
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_table_data();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 2) {
-    size_t envelope_base = base + (2 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_table_data(),
-                     _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_table_data();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 2:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_table_data(),
+                         _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_table_data();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_2;
+  }
+  if (count < 2) {
+    _value->clear_table_data();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_2:
-  _value->clear_table_data();
   return;
 }
 

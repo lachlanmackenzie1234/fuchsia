@@ -302,30 +302,34 @@ void UnknownInteractionsProtocolStrictTwoWayTableResponse::Decode(::fidl::Decode
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -1274,30 +1278,34 @@ void UnknownInteractionsProtocol_StrictTwoWayTableErr_Response::Decode(::fidl::D
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -2451,30 +2459,34 @@ void UnknownInteractionsProtocol_FlexibleTwoWayTable_Response::Decode(::fidl::De
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -3781,30 +3793,34 @@ void UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Response::Decode(::fidl:
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -4365,30 +4381,34 @@ void UnknownInteractionsProtocolStrictEventTableRequest::Decode(::fidl::Decoder*
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -4693,30 +4713,34 @@ void UnknownInteractionsProtocolFlexibleEventTableRequest::Decode(::fidl::Decode
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -5021,30 +5045,34 @@ void UnknownInteractionsAjarProtocolStrictTwoWayTableResponse::Decode(::fidl::De
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -5993,30 +6021,34 @@ void UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Response::Decode(::fid
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -6526,30 +6558,34 @@ void UnknownInteractionsAjarProtocolStrictEventTableRequest::Decode(::fidl::Deco
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -6854,30 +6890,34 @@ void UnknownInteractionsAjarProtocolFlexibleEventTableRequest::Decode(::fidl::De
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -7182,30 +7222,34 @@ void UnknownInteractionsClosedProtocolStrictTwoWayTableResponse::Decode(::fidl::
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -8154,30 +8198,34 @@ void UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Response::Decode(::f
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -8687,30 +8735,34 @@ void UnknownInteractionsClosedProtocolStrictEventTableRequest::Decode(::fidl::De
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -9015,30 +9067,34 @@ void UnknownInteractionsDriverProtocolStrictTwoWayTableResponse::Decode(::fidl::
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -9987,30 +10043,34 @@ void UnknownInteractionsDriverProtocol_StrictTwoWayTableErr_Response::Decode(::f
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -11164,30 +11224,34 @@ void UnknownInteractionsDriverProtocol_FlexibleTwoWayTable_Response::Decode(::fi
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -12494,30 +12558,34 @@ void UnknownInteractionsDriverProtocol_FlexibleTwoWayTableErr_Response::Decode(:
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -13078,30 +13146,34 @@ void UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse::Decode(::fi
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -14050,30 +14122,34 @@ void UnknownInteractionsAjarDriverProtocol_StrictTwoWayTableErr_Response::Decode
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -14583,30 +14659,34 @@ void UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse::Decode(::
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 
@@ -15555,30 +15635,34 @@ void UnknownInteractionsClosedDriverProtocol_StrictTwoWayTableErr_Response::Deco
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    _value->clear_some_field();
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
-  if (count >= 1) {
-    size_t envelope_base = base + (1 - 1) * sizeof(fidl_envelope_t);
-    fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-    if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
-      ::fidl::Decode(_decoder, _value->mutable_some_field(),
-        _decoder->EnvelopeValueOffset(envelope));
-    } else {
-      _value->clear_some_field();
+
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
+
+    switch (ordinal) {
+      case 1:
+        if (*reinterpret_cast<const void* const*>(envelope) != nullptr) {
+          ::fidl::Decode(_decoder, _value->mutable_some_field(),
+            _decoder->EnvelopeValueOffset(envelope));
+        } else {
+          _value->clear_some_field();
+        }
+        break;
+      default:
+        break;
     }
-  } else {
-    goto done_1;
+  }
+  if (count < 1) {
+    _value->clear_some_field();
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
-done_1:
-  _value->clear_some_field();
   return;
 }
 

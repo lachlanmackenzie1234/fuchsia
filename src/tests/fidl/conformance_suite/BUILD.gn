@@ -43,4 +43,11 @@ fidl("conformance_fidl") {
   ]
 
   public_deps = [ "//zircon/vdso/zx" ]
+
+  available = [
+    "test:2",
+    "fuchsia:HEAD",
+  ]
+  versioned = "test:1"
+  testonly = true
 }

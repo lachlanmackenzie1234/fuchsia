@@ -86,16 +86,22 @@ void Table::Decode(::fidl::Decoder* _decoder, Table* _value, size_t _offset) {
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
 
-  return;
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
 
-  // Clear unset values.
-clear_all:
+    switch (ordinal) {
+      default:
+        break;
+    }
+  }
+
   return;
 }
 
@@ -345,28 +351,23 @@ void ResourceTable::Decode(::fidl::Decoder* _decoder, ResourceTable* _value, siz
   [[maybe_unused]] size_t base;
   [[maybe_unused]] size_t count;
   if (!encoded->data) {
-    goto clear_all;
+    return;
   }
 
   base = _decoder->GetOffset(encoded->data);
   count = encoded->count;
 
-  if (count > 0) {
-    for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
-      if (IsOrdinalKnown(ordinal)) {
-        continue;
-      }
+  for (uint64_t ordinal = 1; ordinal <= count; ordinal++) {
+    [[maybe_unused]] size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
+    [[maybe_unused]] fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
 
-      size_t envelope_base = base + (ordinal - 1) * sizeof(fidl_envelope_t);
-      fidl_envelope_t* envelope = _decoder->GetPtr<fidl_envelope_t>(envelope_base);
-      _decoder->CloseUnknownHandlesInEnvelope(envelope);
+    switch (ordinal) {
+      default:
+        _decoder->CloseUnknownHandlesInEnvelope(envelope);
+        break;
     }
   }
 
-  return;
-
-  // Clear unset values.
-clear_all:
   return;
 }
 

@@ -194,6 +194,15 @@ class MessageDecoder {
     return *handle_pos_++;
   }
 
+  // Discards the given number of handles.
+  void DiscardHandles(size_t count) {
+    if (GetRemainingHandles() < count) {
+      AddError() << "Not enough handles\n";
+      return;
+    }
+    handle_pos_ += count;
+  }
+
   // Decodes a whole message (request or response), skipping over the header.
   // The |payload_type| must be EmptyPayloadType, StructType, TableType, or UnionType.
   // Returns an EmptyPayloadValue, StructValue, TableValue, or UnionValue respectively.
