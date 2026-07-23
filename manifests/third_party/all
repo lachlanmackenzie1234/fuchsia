@@ -559,7 +559,7 @@
     <project name="third_party/Vulkan-Loader"
              path="third_party/Vulkan-Loader/src"
              remote="https://fuchsia.googlesource.com/third_party/Vulkan-Loader"
-             revision="5de20d4f0bfe5449ceb4949f10f32d8877e85130"
+             revision="20025059d61053104497a4040e63a1622352910d"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/Vulkan-ValidationLayers"
              path="third_party/Vulkan-ValidationLayers/src"
