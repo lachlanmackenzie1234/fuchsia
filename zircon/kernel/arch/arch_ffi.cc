@@ -11,6 +11,7 @@
 #include <arch/interrupt.h>
 #include <arch/ops.h>
 #include <arch/user_copy.h>
+#include <kernel/ffi.h>
 
 extern "C" {
 
@@ -24,13 +25,18 @@ uint32_t cpp_arch_max_num_cpus();
 zx_status_t cpp_arch_copy_from_user(void* dst, const void* src, size_t len);
 zx_status_t cpp_arch_copy_to_user(void* dst, const void* src, size_t len);
 
-bool cpp_arch_ints_disabled() { return arch_ints_disabled(); }
-void cpp_arch_disable_ints() { arch_disable_ints(); }
-void cpp_arch_enable_ints() { arch_enable_ints(); }
-interrupt_saved_state_t cpp_arch_interrupt_save() { return arch_interrupt_save(); }
-void cpp_arch_interrupt_restore(interrupt_saved_state_t state) { arch_interrupt_restore(state); }
-cpu_num_t cpp_arch_curr_cpu_num() { return arch_curr_cpu_num(); }
-uint32_t cpp_arch_max_num_cpus() { return arch_max_num_cpus(); }
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_arch_ints_disabled() { return arch_ints_disabled(); }
+FFI_ALWAYS_INLINE void cpp_arch_disable_ints() { arch_disable_ints(); }
+FFI_ALWAYS_INLINE void cpp_arch_enable_ints() { arch_enable_ints(); }
+FFI_ALWAYS_INLINE interrupt_saved_state_t cpp_arch_interrupt_save() {
+  return arch_interrupt_save();
+}
+FFI_ALWAYS_INLINE void cpp_arch_interrupt_restore(interrupt_saved_state_t state) {
+  arch_interrupt_restore(state);
+}
+FFI_ALWAYS_INLINE cpu_num_t cpp_arch_curr_cpu_num() { return arch_curr_cpu_num(); }
+FFI_ALWAYS_INLINE uint32_t cpp_arch_max_num_cpus() { return arch_max_num_cpus(); }
 zx_status_t cpp_arch_copy_from_user(void* dst, const void* src, size_t len) {
   return arch_copy_from_user(dst, src, len);
 }

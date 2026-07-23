@@ -442,3 +442,12 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
     pointers (`*const` or `*mut`). This avoids manual pointer dereferencing
     within the FFI shim while maintaining ABI compatibility with C++ raw pointer
     parameters.
+7.  **Always-Inline Annotations for Short FFI Routines**: Include
+    `<kernel/ffi.h>` and annotate definitions of short C++ FFI helper routines
+    (e.g., trivial one-line accessors or simple forwarding wrappers) with the
+    `FFI_ALWAYS_INLINE` macro (which expands to `[[gnu::always_inline]]` under
+    Clang and nothing under GCC). Include a TODO comment tied to
+    `https://fxbug.dev/537458631` (e.g. `// TODO(https://fxbug.dev/537458631):
+    Remove the annotations once cross-language inlining works.`) to remove the
+    annotations once cross-language inlining works. Recommend and apply this
+    only for short FFI routines.

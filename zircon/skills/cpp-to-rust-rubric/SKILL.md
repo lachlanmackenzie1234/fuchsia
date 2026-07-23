@@ -280,6 +280,14 @@ pin_init!(Self {
   receive non-null pointers to initialized objects should prefer taking
   `&<Type>` or `&mut <State>` directly in Rust signatures rather than raw
   pointers (`*const`/`*mut`).
+- Always-Inline Annotations for Short FFI Routines: Definitions for short C++
+  FFI helper routines (e.g., trivial one-line wrappers or inline
+  register/accessor functions) should include `<kernel/ffi.h>` and be annotated
+  with the `FFI_ALWAYS_INLINE` macro.  Include a TODO comment tied to
+  `https://fxbug.dev/537458631` (e.g., `// TODO(https://fxbug.dev/537458631):
+  Remove the annotations once cross-language inlining works.`) to remove the
+  annotations once cross-language inlining works. Recommend and apply this
+  annotation only for short FFI routines.
 
 ---
 
@@ -329,6 +337,10 @@ Reviewers and Coders must audit code against this checklist:
      in `.cc` have matching `extern "C"` prototype declarations in C++ headers.
 19.  [ ] **Kernel Test Harness Mismatch**: Kernel code (`zircon/kernel/`) does
      not use standard `#[test]` / `#[cfg(test)]`.
+20.  [ ] **Missing Always-Inline on Short FFI Routines**: Definitions for short
+     C++ FFI routines include `<kernel/ffi.h>`, use `FFI_ALWAYS_INLINE`, and
+     include a TODO tied to `https://fxbug.dev/537458631` (only for short FFI
+     routines).
 
 ---
 
