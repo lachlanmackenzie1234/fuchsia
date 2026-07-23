@@ -11,9 +11,9 @@ use ebpf::{
 };
 use ebpf_api::{
     __sk_buff, BpfSockContext, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef,
-    PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF,
-    SOCKET_FILTER_ARGS, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketRef, StructId,
-    bpf_sock, uaddr, uid_t,
+    PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PKTTYPE, SKF_AD_PROTOCOL, SKF_LL_OFF,
+    SKF_NET_OFF, SOCKET_FILTER_ARGS, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE,
+    SocketRef, StructId, bpf_sock, uaddr, uid_t,
 };
 use fidl_fuchsia_ebpf as febpf;
 use fidl_fuchsia_net as fnet;
@@ -299,15 +299,22 @@ impl<C> Packet for &'_ SkBuff<'_, C> {
         let (offset, slice) = if offset >= 0 {
             (offset, &self.data[self.default_offset..])
         } else if offset >= SKF_AD_OFF {
-            if offset == SKF_AD_OFF + SKF_AD_PROTOCOL {
-                return Some(u16::from_be(self.sk_buff.protocol as u16).into());
-            } else {
-                log::info!(
-                    "cBPF program tried to access unimplemented SKF_AD_OFF offset: {}",
-                    offset - SKF_AD_OFF
-                );
-                return None;
-            }
+            let ad_offset = offset - SKF_AD_OFF;
+            return match ad_offset {
+                SKF_AD_PROTOCOL => Some(u16::from_be(self.sk_buff.protocol as u16).into()),
+                SKF_AD_PKTTYPE => {
+                    // TODO(https://fxbug.dev/538258894): support
+                    // `SKF_AD_PKTTYPE` (special-cased here to cut down on log
+                    // spam).
+                    None
+                }
+                ad_offset => {
+                    log::info!(
+                        "cBPF program tried to access unimplemented SKF_AD_OFF offset: {ad_offset}",
+                    );
+                    None
+                }
+            };
         } else if offset >= SKF_NET_OFF {
             // Access network level packet.
             (offset - SKF_NET_OFF, &self.data[self.ip_offset..])
