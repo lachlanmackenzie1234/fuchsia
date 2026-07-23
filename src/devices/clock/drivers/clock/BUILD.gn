@@ -7,8 +7,17 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("clock-dml") {
+  dml = "meta/clock.dml"
+  driver_name = "clock"
+}
+
+fuchsia_driver_dml_parser("clock-metadata") {
+  dml_label = ":clock-dml"
+}
+
 driver_bind_rules("clock-bind") {
-  rules = "meta/clock.bind"
+  dml_label = ":clock-dml"
   bind_output = "clock.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -27,7 +36,7 @@ source_set("common") {
     "clock.h",
   ]
   deps = [
-    "//sdk/lib/driver/metadata/cpp",
+    ":clock-metadata",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
     "//src/devices/lib/driver:driver_runtime",
@@ -36,11 +45,11 @@ source_set("common") {
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
+    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
     "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/logging/cpp",
-    "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/power/state_recorder/cpp",
   ]
 }
@@ -56,12 +65,12 @@ fuchsia_driver_component("clock") {
     "//src/devices/clock:drivers",
   ]
   component_name = "clock"
+  dml_label = ":clock-dml"
   deps = [
     ":clock-bind",
     ":clock-driver",
   ]
   info = "meta/clock-info.json"
-  manifest = "meta/clock.cml"
 }
 
 fuchsia_driver_package("package") {

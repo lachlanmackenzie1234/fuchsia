@@ -4,6 +4,7 @@
 
 #include "clock.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.clock/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.clockimpl/cpp/fidl.h>
 #include <lib/async-default/include/lib/async/default.h>
@@ -13,11 +14,38 @@
 #include <lib/stdcompat/span.h>
 
 #include <array>
+#include <format>
 #include <optional>
 
 #include "src/lib/testing/predicates/status.h"
 
 namespace {
+
+class GenericMetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Metadata> {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+                     std::string service_name, fuchsia_driver_metadata::Dictionary metadata) {
+    auto persisted = fidl::Persist(metadata);
+    if (persisted.is_error()) {
+      return zx::error(persisted.error_value().status());
+    }
+    metadata_bytes_ = std::move(persisted.value());
+
+    fuchsia_driver_metadata::Service::InstanceHandler handler({
+        .metadata = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
+    });
+
+    return outgoing.component().AddService(std::move(handler), std::move(service_name));
+  }
+
+ private:
+  void GetPersistedMetadata(GetPersistedMetadataCompleter::Sync& completer) override {
+    completer.ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(metadata_bytes_));
+  }
+
+  std::vector<uint8_t> metadata_bytes_;
+  fidl::ServerBindingGroup<fuchsia_driver_metadata::Metadata> bindings_;
+};
 
 class FakeClockImpl : public fdf::WireServer<fuchsia_hardware_clockimpl::ClockImpl> {
  public:
@@ -145,6 +173,15 @@ class Environment : public fdf_testing::Environment {
       }
     }
 
+    if (generic_metadata_.has_value()) {
+      if (zx::result result = generic_metadata_server_.Serve(
+              to_driver_vfs, dispatcher, "fuchsia.hardware.clockimpl.ClockIdsMetadata",
+              std::move(generic_metadata_.value()));
+          result.is_error()) {
+        return result.take_error();
+      }
+    }
+
     return zx::ok();
   }
 
@@ -152,6 +189,34 @@ class Environment : public fdf_testing::Environment {
             fuchsia_hardware_clockimpl::ClockIdsMetadata clock_ids_metadata) {
     clock_init_metadata_ = std::move(clock_init_metadata);
     clock_ids_metadata_ = std::move(clock_ids_metadata);
+  }
+
+  void InitGeneric(std::vector<fuchsia_hardware_clockimpl::ClockNodeDescriptor> clock_nodes) {
+    std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
+    entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+        "clock_nodes._count", fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                                  static_cast<int64_t>(clock_nodes.size()))));
+    for (size_t i = 0; i < clock_nodes.size(); ++i) {
+      const auto& node = clock_nodes[i];
+      if (node.clock_id().has_value()) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            std::format("clock_nodes.{}.id", i),
+            fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                static_cast<int64_t>(node.clock_id().value()))));
+      }
+      if (node.node_id().has_value()) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            std::format("clock_nodes.{}.node_id", i),
+            fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                static_cast<int64_t>(node.node_id().value()))));
+      }
+      if (node.name().has_value()) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            std::format("clock_nodes.{}.name", i),
+            fuchsia_driver_metadata::DictionaryValue::WithStr(node.name().value())));
+      }
+    }
+    generic_metadata_ = fuchsia_driver_metadata::Dictionary{{.entries = std::move(entries)}};
   }
 
   FakeClockImpl& clock_impl() { return clock_impl_; }
@@ -162,8 +227,10 @@ class Environment : public fdf_testing::Environment {
       clock_init_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_clockimpl::ClockIdsMetadata>
       clock_ids_metadata_server_;
+  GenericMetadataServer generic_metadata_server_;
   std::optional<fuchsia_hardware_clockimpl::InitMetadata> clock_init_metadata_;
   std::optional<fuchsia_hardware_clockimpl::ClockIdsMetadata> clock_ids_metadata_;
+  std::optional<fuchsia_driver_metadata::Dictionary> generic_metadata_;
 };
 
 class ClockTestConfig {
@@ -177,13 +244,21 @@ class ClockTest : public ::testing::Test {
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
  protected:
-  void StartDriver(const fuchsia_hardware_clockimpl::InitMetadata& clock_init_metadata,
-                   const fuchsia_hardware_clockimpl::ClockIdsMetadata clock_ids_metadata,
+  void StartDriver(fuchsia_hardware_clockimpl::InitMetadata clock_init_metadata,
+                   fuchsia_hardware_clockimpl::ClockIdsMetadata clock_ids_metadata,
                    zx_status_t expected_start_driver_status = ZX_OK) {
-    driver_test_.RunInEnvironmentTypeContext([&](Environment& environment) mutable {
-      environment.Init(clock_init_metadata, clock_ids_metadata);
-    });
+    driver_test_.RunInEnvironmentTypeContext(
+        [clock_init_metadata = std::move(clock_init_metadata),
+         clock_ids_metadata = std::move(clock_ids_metadata)](Environment& environment) mutable {
+          environment.Init(std::move(clock_init_metadata), std::move(clock_ids_metadata));
+        });
     ASSERT_EQ(driver_test_.StartDriver().status_value(), expected_start_driver_status);
+  }
+
+  void InitGeneric(std::vector<fuchsia_hardware_clockimpl::ClockNodeDescriptor> clock_nodes) {
+    driver_test().RunInEnvironmentTypeContext(
+        [&](Environment& environment) mutable { environment.InitGeneric(std::move(clock_nodes)); });
+    ASSERT_OK(driver_test().StartDriver());
   }
 
   std::vector<FakeClockImpl::FakeClock> GetClocks() {
@@ -340,6 +415,22 @@ TEST_F(ClockTest, HandleDuplicates) {
 
   ASSERT_TRUE(clocks[2].rate_hz.has_value());
   EXPECT_EQ(clocks[2].rate_hz.value(), 4321u);
+}
+
+TEST_F(ClockTest, GenericMetadataTest) {
+  std::vector<fuchsia_hardware_clockimpl::ClockNodeDescriptor> nodes;
+  nodes.push_back(fuchsia_hardware_clockimpl::ClockNodeDescriptor{
+      {.clock_id = 1, .node_id = 10, .name = "clk-a"}});
+  nodes.push_back(fuchsia_hardware_clockimpl::ClockNodeDescriptor{
+      {.clock_id = 2, .node_id = 20, .name = "clk-b"}});
+
+  InitGeneric(std::move(nodes));
+
+  zx::result clk1 = driver_test().Connect<fuchsia_hardware_clock::Service::Clock>("clock-1_10");
+  EXPECT_TRUE(clk1.is_ok());
+
+  zx::result clk2 = driver_test().Connect<fuchsia_hardware_clock::Service::Clock>("clock-2_20");
+  EXPECT_TRUE(clk2.is_ok());
 }
 
 }  // namespace

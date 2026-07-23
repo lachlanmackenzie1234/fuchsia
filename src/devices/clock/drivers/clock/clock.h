@@ -18,10 +18,6 @@ class ClockDriver;
 
 class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
  public:
-  using AddChildCallback = fit::callback<zx_status_t(
-      std::string_view, const fuchsia_driver_framework::NodePropertyVector&,
-      const std::vector<fuchsia_driver_framework::Offer>&)>;
-
   explicit ClockDevice(const std::shared_ptr<ByteBuffer>& inspect_rate_buffer,
                        const std::shared_ptr<BitBuffer>& inspect_enable_buffer, ClockDriver* parent,
                        uint32_t id, std::string_view name)
@@ -68,7 +64,7 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
   fidl::WireClient<fuchsia_driver_framework::NodeController> child_node_;
   fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
   std::string name_;
-  std::optional<std::string> impl_name_;
+
   std::string child_name_;
   bool pending_driver_ = true;
 };

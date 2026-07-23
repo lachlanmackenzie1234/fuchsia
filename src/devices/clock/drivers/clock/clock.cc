@@ -19,7 +19,8 @@
 
 #include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <fbl/alloc_checker.h>
+
+#include "src/devices/clock/drivers/clock/clock_parser.h"
 
 namespace {
 
@@ -72,6 +73,21 @@ ClockState TryGetClockState(fdf::UnownedClientEnd<fuchsia_hardware_clockimpl::Cl
   }
 
   return state;
+}
+
+fuchsia_hardware_clockimpl::ClockIdsMetadata ConvertMetadata(
+    clock_metadata::ClockMetadata generic) {
+  std::vector<fuchsia_hardware_clockimpl::ClockNodeDescriptor> clock_nodes;
+  for (auto& c : generic.clock_nodes) {
+    fuchsia_hardware_clockimpl::ClockNodeDescriptor node;
+    node.clock_id(c.id);
+    node.node_id(c.node_id);
+    if (c.name) {
+      node.name(std::move(*c.name));
+    }
+    clock_nodes.push_back(std::move(node));
+  }
+  return {{.clock_nodes = std::move(clock_nodes)}};
 }
 
 }  // namespace
@@ -156,8 +172,8 @@ void ClockDevice::SetRate(SetRateRequestView request, SetRateCompleter::Sync& co
       });
 }
 
-void ClockDevice::ClockDevice::QuerySupportedRate(QuerySupportedRateRequestView request,
-                                                  QuerySupportedRateCompleter::Sync& completer) {
+void ClockDevice::QuerySupportedRate(QuerySupportedRateRequestView request,
+                                     QuerySupportedRateCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result =
       clock_impl_.sync().buffer(arena)->QuerySupportedRate(id_, request->hz_in);
@@ -634,14 +650,34 @@ zx_status_t ClockDriver::CreateClockDevices(
     }
   }
 
-  zx::result clock_nodes_metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_clockimpl::ClockIdsMetadata>(incoming);
-  if (clock_nodes_metadata.is_error()) {
-    fdf::error("Failed to get clock IDs: {}", clock_nodes_metadata);
-    return clock_nodes_metadata.status_value();
+  std::optional<fuchsia_hardware_clockimpl::ClockIdsMetadata> metadata;
+  {
+    // Try to get generic metadata first
+    zx::result generic_res =
+        fdf_metadata::GetMetadataFromFidlServiceIfExists<fuchsia_driver_metadata::Dictionary>(
+            incoming->svc_dir(), "fuchsia.hardware.clockimpl.ClockIdsMetadata");
+    if (generic_res.is_ok() && generic_res.value().has_value()) {
+      auto parsed = clock_metadata::ClockMetadata::Parse(*generic_res.value());
+      if (parsed) {
+        metadata = ConvertMetadata(std::move(*parsed));
+      } else {
+        fdf::error("Failed to parse generic Clock metadata");
+      }
+    }
+
+    if (!metadata.has_value()) {
+      // Fall back to old metadata
+      zx::result clock_nodes_metadata_res =
+          fdf_metadata::GetMetadata<fuchsia_hardware_clockimpl::ClockIdsMetadata>(incoming);
+      if (clock_nodes_metadata_res.is_error()) {
+        fdf::error("Failed to get clock IDs: {}", clock_nodes_metadata_res);
+        return clock_nodes_metadata_res.status_value();
+      }
+      metadata = std::move(*clock_nodes_metadata_res);
+    }
   }
 
-  const auto& clock_nodes = clock_nodes_metadata.value().clock_nodes();
+  const auto& clock_nodes = metadata->clock_nodes();
   if (!clock_nodes.has_value()) {
     return ZX_OK;
   }
