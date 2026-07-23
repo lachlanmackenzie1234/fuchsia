@@ -564,7 +564,7 @@
     <project name="third_party/Vulkan-ValidationLayers"
              path="third_party/Vulkan-ValidationLayers/src"
              remote="https://fuchsia.googlesource.com/third_party/Vulkan-ValidationLayers"
-             revision="c620055ecb8c4921fd4df1401e2b59f8a41ad4f7"
+             revision="8e70dd293fc9444bf023a8fc95a5b8416b196515"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/Vulkan-Tools"
              path="third_party/Vulkan-Tools/src"
