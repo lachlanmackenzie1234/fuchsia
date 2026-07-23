@@ -184,7 +184,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         )?;
         builder.set_config_capability(
             "fuchsia.scenic.UseFlatland2UberstructSchema",
-            Config::new(ConfigValueType::Bool, false.into()),
+            Config::new(ConfigValueType::Bool, ui_config.use_flatland2_uberstruct_schema.into()),
         )?;
         builder.set_config_capability(
             "fuchsia.ui.SupportedInputDevices",

@@ -68,6 +68,7 @@ workbench_platform_config = {
     },
     "ui": {
         "display_composition": True,
+        "use_flatland2_uberstruct_schema": True,
         "enabled": True,
         "supported_input_devices": [
             "button",
