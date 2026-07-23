@@ -93,14 +93,14 @@ impl PartitionServer {
     fn new(
         block_info: BlockInfo,
         partition: EmmcPartitionId,
-        command_queue: Arc<CommandQueue>,
+        command_queue: Weak<CommandQueue>,
     ) -> Self {
         Self {
             server: BlockServer::new(
                 block_info.block_size,
                 Arc::new(SessionManager::new(Arc::new(EmmcPartition::new(
                     partition,
-                    Arc::downgrade(&command_queue),
+                    command_queue,
                     block_info,
                 )))),
             ),
@@ -249,7 +249,7 @@ impl Driver for CqhciDriver {
                 error!(status:?; "Failed to duplicate VMAR");
             })?;
 
-        let mut host_info = cqhci.info().await.inspect_err(|status| {
+        let host_info = cqhci.info().await.inspect_err(|status| {
             error!(status:?; "Failed to get host info");
         })?;
 
@@ -265,35 +265,44 @@ impl Driver for CqhciDriver {
             }
         }
 
-        let command_queue = CommandQueue::initialize(vmar, cqhci, rpmb, &mut host_info)
-            .await
-            .inspect_err(|error| {
-                error!(error:?; "Failed to initialize command queueing");
-            })?;
-
         let mut fs = ServiceFs::new();
         let scope = Scope::new();
 
-        let mut partitions = BTreeMap::new();
+        let (command_queue, partitions_by_id) = CommandQueue::initialize(
+            vmar,
+            cqhci,
+            rpmb,
+            host_info,
+            move |weak_cq, host_info, device_flags| {
+                let mut partitions = BTreeMap::new();
+                for partition in &host_info.partitions {
+                    let block_info = fblock::BlockInfo {
+                        block_count: partition.block_count,
+                        block_size: partition.block_size,
+                        max_transfer_size: host_info.sdmmc_host_info.max_transfer_size,
+                        flags: device_flags,
+                    };
+                    let partition_server =
+                        Arc::new(PartitionServer::new(block_info, partition.id, weak_cq.clone()));
+                    partitions.insert(partition.id, partition_server);
+                }
+                partitions
+            },
+        )
+        .await
+        .inspect_err(|error| {
+            error!(error:?; "Failed to initialize command queueing");
+        })?;
 
-        for partition in host_info.partitions {
-            let block_info = fblock::BlockInfo {
-                block_count: partition.block_count,
-                block_size: partition.block_size,
-                max_transfer_size: host_info.sdmmc_host_info.max_transfer_size,
-                flags: command_queue.device_flags(),
-            };
-            let partition_server =
-                Arc::new(PartitionServer::new(block_info, partition.id, command_queue.clone()));
-            command_queue.register_partition(
-                partition.id,
-                Arc::downgrade(&partition_server) as Weak<dyn TaskStatusReceiver>,
-            );
-            partitions.insert(partition_name(partition.id).to_string(), partition_server);
-            fs.dir("svc").add_fidl_service_instance(partition_name(partition.id), move |request| {
-                (request, partition_name(partition.id).to_string())
-            });
+        let mut partitions = BTreeMap::new();
+        for (id, partition) in partitions_by_id {
+            let name = partition_name(id);
+            fs.dir("svc")
+                .add_fidl_service_instance(name, move |request| (request, name.to_string()));
+            partitions.insert(name.to_string(), partition);
         }
+        let partitions = Arc::new(Mutex::new(partitions));
+        let partitions_clone = partitions.clone();
 
         fs.dir("svc").add_fidl_next_service_instance::<rpmb::Service, _>(
             "default",
@@ -302,8 +311,6 @@ impl Driver for CqhciDriver {
 
         context.serve_outgoing(&mut fs)?;
 
-        let partitions = Arc::new(Mutex::new(partitions));
-        let partitions_clone = partitions.clone();
         let node = Arc::new(context.take_node()?);
         let node_token = context.start_args.node_token.take().map(Arc::new);
         let inline_crypto_clone = inline_crypto.clone();
@@ -324,12 +331,11 @@ impl Driver for CqhciDriver {
                     async move {
                         match request {
                             fvolume::ServiceRequest::Volume(requests) => {
-                                let partitions_clone = partitions_clone.clone();
                                 let partition =
                                     partitions_clone.lock().get(&partition_name).cloned();
-                                if let Some(partition) = partition {
+                                if let Some(partition_server) = partition {
                                     if let Err(error) =
-                                        partition.server.handle_requests(requests).await
+                                        partition_server.server.handle_requests(requests).await
                                     {
                                         error!(
                                             error:?;
@@ -396,8 +402,11 @@ impl Driver for CqhciDriver {
 
         {
             let partitions = std::mem::take(&mut *self.partitions.lock());
-            for (_, partition) in partitions {
-                fasync::unblock(move || partition.shutdown()).await;
+            for (_, partition_server) in partitions {
+                fasync::unblock(move || {
+                    partition_server.shutdown();
+                })
+                .await;
             }
         }
         debug!("sessions closed");

@@ -164,24 +164,14 @@ pub trait TaskStatusReceiver: Send + Sync + 'static {
     fn complete(&self, request_id: RequestId, status: zx::Status);
 }
 
-impl<T: TaskStatusReceiver + ?Sized> TaskStatusReceiver for Weak<T> {
-    fn complete(&self, request_id: RequestId, status: zx::Status) {
-        if let Some(r) = self.upgrade() {
-            r.complete(request_id, status);
-        }
-    }
-}
-
 /// Helper to complete a request if the receiver is still running.
 fn complete_request(
-    receiver: Option<Arc<dyn TaskStatusReceiver>>,
+    receiver: Arc<dyn TaskStatusReceiver>,
     request_id: RequestId,
     status: zx::Status,
 ) {
     debug!("Complete {request_id:?}: {status:?}");
-    if let Some(receiver) = receiver {
-        receiver.complete(request_id, status);
-    }
+    receiver.complete(request_id, status);
 }
 
 #[derive(Debug)]
@@ -201,7 +191,7 @@ impl PendingTask {
     ///
     /// This MUST be called when the hardware will no longer access the memory pointed to by
     /// `transfer` (either before it was submitted, or after it completes).
-    unsafe fn complete(self, status_receiver: Weak<dyn TaskStatusReceiver>, status: zx::Status) {
+    unsafe fn complete(self, status_receiver: Arc<dyn TaskStatusReceiver>, status: zx::Status) {
         // Order is important.  We have to:
         // 1. Invalidate CPU caches (so the transferred data is visible to the client),
         // 2. Call [`Transfer::unpin`], which unpins the pages, then
@@ -221,7 +211,7 @@ impl PendingTask {
         transfer.cache_invalidate();
         // SAFETY: By the caller's contract.
         unsafe { transfer.unpin() };
-        complete_request(status_receiver.upgrade(), request_id, status);
+        complete_request(status_receiver, request_id, status);
     }
 
     /// Unpins the transfer.  Must only be called if the task was never submitted.
@@ -492,7 +482,6 @@ struct Inner {
     irq_thread: Option<JoinHandle<()>>,
     /// Drop to shut down the IRQ thread.
     irq_lifeline: Option<zx::EventPair>,
-    partition_status_receivers: BTreeMap<EmmcPartitionId, Weak<dyn TaskStatusReceiver>>,
 }
 
 impl Inner {
@@ -612,6 +601,7 @@ impl Inner {
     /// Returns whether the caller must wake up pending wakers.
     fn take_complete(
         this: &mut ConditionGuard<'_, Self>,
+        partitions: &PartitionMap,
         mut completed_mask: u32,
         status: zx::Status,
         output: &mut CompletedTasks,
@@ -624,7 +614,7 @@ impl Inner {
                 this.slots.dcmd_status = Some(status);
                 dcmd_completed = true;
             } else if let Some(task) = this.slots.take_task(slot) {
-                let Some(receiver) = this.partition_status_receivers.get(&task.partition) else {
+                let Some((_, receiver)) = partitions.get(&task.partition) else {
                     panic!("No receiver was registered for partition {:?}", task.partition);
                 };
                 output.add(task, receiver.clone(), status);
@@ -638,16 +628,6 @@ impl Inner {
                 waker.wake();
             }
         }
-    }
-
-    fn get_request_completer(
-        &self,
-        partition: EmmcPartitionId,
-    ) -> Option<Arc<dyn TaskStatusReceiver>> {
-        let Some(receiver) = self.partition_status_receivers.get(&partition) else {
-            panic!("No receiver was registered for partition {:?}", partition);
-        };
-        receiver.upgrade()
     }
 
     /// Submits an async task to the command queue.
@@ -673,7 +653,7 @@ impl Inner {
 /// memory.
 #[derive(Default)]
 struct CompletedTasks {
-    tasks: [Option<(PendingTask, Weak<dyn TaskStatusReceiver>, zx::Status)>;
+    tasks: [Option<(PendingTask, Arc<dyn TaskStatusReceiver>, zx::Status)>;
         CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS - 1],
     count: usize,
 }
@@ -682,7 +662,7 @@ impl CompletedTasks {
     fn add(
         &mut self,
         task: PendingTask,
-        receiver: Weak<dyn TaskStatusReceiver>,
+        receiver: Arc<dyn TaskStatusReceiver>,
         status: zx::Status,
     ) {
         self.tasks[self.count] = Some((task, receiver, status));
@@ -717,7 +697,7 @@ impl Drop for CompletedTasks {
             // Unwrap OK since we only add tasks via [`CompletedTasks::add`]
             let (task, receiver, status) = entry.take().unwrap();
             task.transfer.cache_invalidate();
-            complete_request(receiver.upgrade(), task.request_id, status);
+            complete_request(receiver, task.request_id, status);
         }
     }
 }
@@ -729,7 +709,7 @@ impl Drop for CompletedTasks {
 struct SwitchAndSubmitTask {
     partition: EmmcPartitionId,
     task: Option<PendingTask>,
-    receiver: Weak<dyn TaskStatusReceiver>,
+    receiver: Arc<dyn TaskStatusReceiver>,
 }
 
 #[async_trait]
@@ -750,7 +730,7 @@ impl AsyncTask for SwitchAndSubmitTask {
                 inner.submit_transfer(tdl, task);
                 None
             } else {
-                let Some(receiver) = inner.partition_status_receivers.get(&self.partition) else {
+                let Some((_, receiver)) = cq.partitions.get(&self.partition) else {
                     panic!("No receiver was registered for partition {:?}", self.partition);
                 };
                 let task = self.task.take().unwrap();
@@ -1042,7 +1022,7 @@ impl CommandQueueExcl {
             error!(err:?; "Failed to enable CQE");
         })?;
 
-        if self.supports_barriers() {
+        if self.ext_csd.supports_barriers() {
             // Ensure barriers are enabled
             info!("Barriers supported");
             self.do_switch(EXT_CSD_BARRIER_EN, EXT_CSD_BARRIER_ENABLED).await.inspect_err(
@@ -1051,11 +1031,11 @@ impl CommandQueueExcl {
                 },
             )?;
         }
-        if self.supports_trim() {
+        if self.ext_csd.supports_trim() {
             info!("TRIM enabled");
         }
-        if self.cache_enabled() {
-            let fifo = if self.cache_policy_fifo() { "FIFO" } else { "non-FIFO" };
+        if self.ext_csd.cache_enabled() {
+            let fifo = if self.ext_csd.cache_policy_fifo() { "FIFO" } else { "non-FIFO" };
             info!("Cache enabled, policy {fifo}");
         }
         Ok(())
@@ -1080,7 +1060,13 @@ impl CommandQueueExcl {
         let mut completed_tasks = CompletedTasks::default();
         {
             let mut inner = self.inner.lock();
-            Inner::take_complete(&mut inner, u32::MAX, zx::Status::CANCELED, &mut completed_tasks);
+            Inner::take_complete(
+                &mut inner,
+                &self.partitions,
+                u32::MAX,
+                zx::Status::CANCELED,
+                &mut completed_tasks,
+            );
             for waker in inner.drain_wakers() {
                 waker.wake();
             }
@@ -1130,16 +1116,12 @@ impl CommandQueueExcl {
     async fn trim(
         &mut self,
         partition: EmmcPartitionId,
-        block_offset: u64,
+        block_offset: u32,
         block_count: u32,
     ) -> Result<(), zx::Status> {
         if block_count == 0 {
             return Ok(());
         }
-        let Ok(block_offset) = u32::try_from(block_offset) else {
-            log::warn!("Trim block offset too large; CQHCI trim only supports 32-bit offsets");
-            return Err(zx::Status::INVALID_ARGS);
-        };
         let Some(end_offset) = block_offset.checked_add(block_count - 1) else {
             log::warn!("Trim end offset overflow");
             return Err(zx::Status::INVALID_ARGS);
@@ -1165,7 +1147,13 @@ impl CommandQueueExcl {
         let mut completed_tasks = CompletedTasks::default();
         {
             let mut inner = self.inner.lock();
-            Inner::take_complete(&mut inner, u32::MAX, zx::Status::IO, &mut completed_tasks);
+            Inner::take_complete(
+                &mut inner,
+                &self.partitions,
+                u32::MAX,
+                zx::Status::IO,
+                &mut completed_tasks,
+            );
             for waker in inner.drain_wakers() {
                 waker.wake();
             }
@@ -1200,14 +1188,18 @@ impl CommandQueueExcl {
     }
 }
 
+/// Values are a tuple of (block_count, task_status_receiver).
+pub type PartitionMap = BTreeMap<EmmcPartitionId, (u64, Arc<dyn TaskStatusReceiver>)>;
+
 pub struct CommandQueue {
     inner: Condition<Inner>,
     host: Box<dyn CommandQueueHost>,
     rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
     capabilities: CqhciCqCapsRegister,
-    ext_csd: [u8; EXT_CSD_SIZE],
+    ext_csd: ExtCsd,
     rca: u16,
     transfer_manager: Arc<TransferManager>,
+    partitions: PartitionMap,
 }
 
 /// A handle returned by [`CommandQueue::suspend`] which can be used to resume CQE later.
@@ -1227,21 +1219,32 @@ impl ResumeHandle {
     }
 }
 
-impl CommandQueue {
-    fn supports_barriers(&self) -> bool {
-        self.ext_csd[EXT_CSD_BARRIER_SUPPORT] & EXT_CSD_BARRIER_SUPPORT_MASK > 0
+/// Wrapper for the EXT_CSD register.
+pub struct ExtCsd([u8; EXT_CSD_SIZE]);
+
+impl std::ops::Deref for ExtCsd {
+    type Target = [u8; EXT_CSD_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ExtCsd {
+    pub fn supports_barriers(&self) -> bool {
+        self.0[EXT_CSD_BARRIER_SUPPORT] & EXT_CSD_BARRIER_SUPPORT_MASK > 0
     }
 
-    fn supports_trim(&self) -> bool {
-        self.ext_csd[EXT_CSD_SEC_FEATURE_SUPPORT] & EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN > 0
+    pub fn supports_trim(&self) -> bool {
+        self.0[EXT_CSD_SEC_FEATURE_SUPPORT] & EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN > 0
     }
 
-    fn cache_enabled(&self) -> bool {
-        self.ext_csd[EXT_CSD_CACHE_CTRL] & EXT_CSD_CACHE_EN_MASK > 0
+    pub fn cache_enabled(&self) -> bool {
+        self.0[EXT_CSD_CACHE_CTRL] & EXT_CSD_CACHE_EN_MASK > 0
     }
 
-    fn cache_policy_fifo(&self) -> bool {
-        self.ext_csd[EXT_CSD_CACHE_FLUSH_POLICY] & EXT_CSD_CACHE_FLUSH_POLICY_FIFO > 0
+    pub fn cache_policy_fifo(&self) -> bool {
+        self.0[EXT_CSD_CACHE_FLUSH_POLICY] & EXT_CSD_CACHE_FLUSH_POLICY_FIFO > 0
     }
 
     pub fn device_flags(&self) -> fblock::DeviceFlag {
@@ -1254,16 +1257,32 @@ impl CommandQueue {
         }
         flags
     }
+}
 
+impl CommandQueue {
     /// Initializes command queueing.
     ///
-    /// `host_info` is updated to reflect the maximum transfer size supported.
-    pub async fn initialize(
+    /// `create_partitions` is a callback which is invoked with a weak reference back to this
+    /// instance.  This serves a similar purpose to [`Arc::new_cyclic`] (allowing the constructed
+    /// partitions to hold weak references back to this instance, while this instance holds weak
+    /// references to the partitions as [`TaskStatusReceiver`] instances).  Note that the same
+    /// constraints apply as for [`Arc::new_cyclic`]; in particular, the `&Weak<Self>` cannot be
+    /// upgraded from within the callback.
+    pub async fn initialize<T, P>(
         vmar: zx::Vmar,
         host: Box<dyn CommandQueueHost>,
         rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
-        host_info: &mut cqhci::CqhciHostInfo,
-    ) -> anyhow::Result<Arc<Self>> {
+        mut host_info: cqhci::CqhciHostInfo,
+        create_partitions: P,
+    ) -> anyhow::Result<(Arc<Self>, BTreeMap<EmmcPartitionId, Arc<T>>)>
+    where
+        T: TaskStatusReceiver,
+        P: FnOnce(
+            &Weak<Self>,
+            &cqhci::CqhciHostInfo,
+            fblock::DeviceFlag,
+        ) -> BTreeMap<EmmcPartitionId, Arc<T>>,
+    {
         let virtual_interrupt = zx::Interrupt::create_virtual()?;
         let virtual_interrupt_clone =
             virtual_interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
@@ -1302,29 +1321,48 @@ impl CommandQueue {
 
         let (irq_lifeline, irq_lifeline2) = zx::EventPair::create();
 
-        let this = Arc::new(Self {
-            inner: Condition::new(Inner {
-                state: State::Initializing,
-                needs_recovery: false,
-                shutting_down: false,
-                blocked: false,
-                async_task_queue: VecDeque::new(),
-                active_partition: None,
-                slots: CommandQueueSlots::new(),
-                cqhci_mmio,
-                sdhci_mmio,
-                async_task_loop: None,
-                virtual_irq_lifeline: Some(virtual_irq_lifeline),
-                irq_thread: None,
-                irq_lifeline: Some(irq_lifeline),
-                partition_status_receivers: BTreeMap::new(),
-            }),
-            host,
-            rpmb,
-            capabilities,
-            ext_csd: host_info.ext_csd.clone().try_into().map_err(|_| zx::Status::INVALID_ARGS)?,
-            rca: host_info.rca,
-            transfer_manager,
+        let partition_block_counts: BTreeMap<EmmcPartitionId, u64> =
+            host_info.partitions.iter().map(|p| (p.id, p.block_count)).collect();
+
+        let ext_csd: [u8; EXT_CSD_SIZE] =
+            host_info.ext_csd.clone().try_into().map_err(|_| zx::Status::INVALID_ARGS)?;
+        let ext_csd = ExtCsd(ext_csd);
+        let mut partitions = BTreeMap::new();
+
+        let this = Arc::new_cyclic(|weak_self| {
+            let created = create_partitions(weak_self, &host_info, ext_csd.device_flags());
+            let mut our_partitions = BTreeMap::new();
+            for (id, server) in &created {
+                let block_count = partition_block_counts.get(id).copied().unwrap_or(0);
+                our_partitions
+                    .insert(*id, (block_count, server.clone() as Arc<dyn TaskStatusReceiver>));
+            }
+            partitions = created;
+
+            Self {
+                inner: Condition::new(Inner {
+                    state: State::Initializing,
+                    needs_recovery: false,
+                    shutting_down: false,
+                    blocked: false,
+                    async_task_queue: VecDeque::new(),
+                    active_partition: None,
+                    slots: CommandQueueSlots::new(),
+                    cqhci_mmio,
+                    sdhci_mmio,
+                    async_task_loop: None,
+                    virtual_irq_lifeline: Some(virtual_irq_lifeline),
+                    irq_thread: None,
+                    irq_lifeline: Some(irq_lifeline),
+                }),
+                host,
+                rpmb,
+                capabilities,
+                ext_csd,
+                rca: host_info.rca,
+                transfer_manager,
+                partitions: our_partitions,
+            }
         });
 
         // Handle interrupts.  Note that we need to set up the port to listen to interrupt before we
@@ -1377,8 +1415,8 @@ impl CommandQueue {
             for waker in inner.drain_wakers() {
                 waker.wake();
             }
-        };
-        Ok(this)
+        }
+        Ok((this, partitions))
     }
 
     /// Shuts down the CQE and any associated background tasks.
@@ -1423,14 +1461,26 @@ impl CommandQueue {
         }
     }
 
-    /// Registers the completion callback for the given partition.
-    /// Must be called exactly once for each partition for which requests will be submitted.
-    pub fn register_partition(
+    fn ensure_request_is_in_range(
         &self,
         partition: EmmcPartitionId,
-        receiver: Weak<dyn TaskStatusReceiver>,
-    ) {
-        assert!(self.inner.lock().partition_status_receivers.insert(partition, receiver).is_none());
+        block_offset: u32,
+        block_count: u32,
+    ) -> Result<(), zx::Status> {
+        let (partition_block_count, _) =
+            self.partitions.get(&partition).ok_or(zx::Status::INVALID_ARGS)?;
+        let end_block = block_offset.checked_add(block_count).ok_or(zx::Status::OUT_OF_RANGE)?;
+        if end_block as u64 > *partition_block_count {
+            return Err(zx::Status::OUT_OF_RANGE);
+        }
+        Ok(())
+    }
+
+    fn get_request_completer(&self, partition: EmmcPartitionId) -> Arc<dyn TaskStatusReceiver> {
+        let Some((_, receiver)) = self.partitions.get(&partition) else {
+            panic!("No receiver was registered for partition {:?}", partition);
+        };
+        receiver.clone()
     }
 
     /// Blocks the current thread until a transfer slot (0..30) is acquired.
@@ -1483,7 +1533,9 @@ impl CommandQueue {
         if options.inline_crypto.is_enabled && !self.capabilities.crypto_support() {
             return Err(zx::Status::NOT_SUPPORTED);
         }
-        if options.queue_barrier && (self.cache_enabled() && !self.cache_policy_fifo()) {
+        if options.queue_barrier
+            && (self.ext_csd.cache_enabled() && !self.ext_csd.cache_policy_fifo())
+        {
             // TODO(https://fxbug.dev/490483833): If the device is not FIFO, we can't get away with
             // just using a queue barrier.  We will also need to issue an actual barrier command to
             // the MMC.
@@ -1495,7 +1547,8 @@ impl CommandQueue {
             "op" => direction.as_str(),
             "blocks" => block_count as u64
         );
-        let block_offset = block_offset.try_into().map_err(|_| zx::Status::INVALID_ARGS)?;
+        let block_offset = u32::try_from(block_offset).map_err(|_| zx::Status::INVALID_ARGS)?;
+        self.ensure_request_is_in_range(partition, block_offset, block_count)?;
 
         let slot_guard = self.acquire_transfer_slot()?;
         let tdl_slot = slot_guard.tdl_slot;
@@ -1532,8 +1585,8 @@ impl CommandQueue {
                     if inner.active_partition == Some(partition) {
                         inner.submit_transfer(tdl_slot, task);
                     } else {
-                        let receiver =
-                            inner.partition_status_receivers.get(&partition).unwrap().clone();
+                        let (_, receiver) = self.partitions.get(&partition).unwrap();
+                        let receiver = receiver.clone();
                         Inner::submit_async_task(
                             inner,
                             SwitchAndSubmitTask { partition, task: Some(task), receiver },
@@ -1575,11 +1628,7 @@ impl CommandQueue {
             TransferOptions { queue_barrier: false, inline_crypto: options.inline_crypto },
             trace_flow_id,
         ) {
-            complete_request(
-                self.inner.lock().get_request_completer(partition),
-                request_id,
-                status,
-            );
+            complete_request(self.get_request_completer(partition), request_id, status);
         }
     }
 
@@ -1606,13 +1655,10 @@ impl CommandQueue {
             TransferOptions::from(options),
             trace_flow_id,
         ) {
-            complete_request(
-                self.inner.lock().get_request_completer(partition),
-                request_id,
-                status,
-            );
+            complete_request(self.get_request_completer(partition), request_id, status);
         }
     }
+
     pub fn submit_flush(
         self: &Arc<Self>,
         partition: EmmcPartitionId,
@@ -1624,16 +1670,13 @@ impl CommandQueue {
             fuchsia_trace::flow_step!("storage", "cqhci::submit_flush", trace_flow_id.get().into());
         }
         debug!("submit_flush");
-        if !self.cache_enabled() {
-            complete_request(
-                self.inner.lock().get_request_completer(partition),
-                request_id,
-                zx::Status::OK,
-            );
+        if !self.ext_csd.cache_enabled() {
+            complete_request(self.get_request_completer(partition), request_id, zx::Status::OK);
             return;
         }
+        let (_, receiver) = self.partitions.get(&partition).unwrap();
+        let receiver = receiver.clone();
         let mut inner = self.inner.lock();
-        let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
         Inner::submit_async_task(
             &mut inner,
             into_async_task(
@@ -1669,9 +1712,18 @@ impl CommandQueue {
         if let Some(trace_flow_id) = trace_flow_id {
             fuchsia_trace::flow_step!("storage", "cqhci::submit_trim", trace_flow_id.get().into());
         }
+        let receiver = self.get_request_completer(partition);
+        let Ok(block_offset) = u32::try_from(block_offset) else {
+            complete_request(receiver.clone(), request_id, zx::Status::INVALID_ARGS);
+            return;
+        };
+        if let Err(status) = self.ensure_request_is_in_range(partition, block_offset, block_count) {
+            complete_request(receiver.clone(), request_id, status);
+            return;
+        }
         debug!("submit_trim");
+
         let mut inner = self.inner.lock();
-        let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
         Inner::submit_async_task(
             &mut inner,
             into_async_task(
@@ -1850,6 +1902,7 @@ impl CommandQueue {
                     inner.cqhci_mmio.store32(CQHCI_CQ_TCN_OFFSET, finished);
                     Inner::take_complete(
                         &mut inner,
+                        &self.partitions,
                         finished,
                         zx::Status::OK,
                         &mut completed_tasks,
@@ -1877,7 +1930,13 @@ impl CommandQueue {
                     if terri.data_transfer_error_fields_valid() {
                         mask |= 1 << terri.data_transfer_error_task_id();
                     }
-                    Inner::take_complete(&mut inner, mask, zx::Status::IO, &mut completed_tasks);
+                    Inner::take_complete(
+                        &mut inner,
+                        &self.partitions,
+                        mask,
+                        zx::Status::IO,
+                        &mut completed_tasks,
+                    );
 
                     // Per JESD84-B51A B.2.8, we need to run recovery on error.
                     if inner.needs_recovery {
