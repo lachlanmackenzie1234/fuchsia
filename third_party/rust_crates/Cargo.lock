@@ -1853,6 +1853,7 @@ dependencies = [
  "coset",
  "cpio",
  "crc",
+ "crc32fast",
  "criterion",
  "crossbeam",
  "crossbeam-utils",

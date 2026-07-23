@@ -445,6 +445,10 @@ group("crc32fast") {
   public_deps = [ ":crc32fast-v1_5_0" ]
 }
 
+group("crc32fast-1.5.0") {
+  public_deps = [ ":crc32fast-v1_5_0" ]
+}
+
 group("criterion") {
   public_deps = [ ":criterion-v0_2_11" ]
 }
