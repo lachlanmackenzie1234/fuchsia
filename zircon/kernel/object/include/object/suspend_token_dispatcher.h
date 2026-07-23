@@ -7,36 +7,51 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SUSPEND_TOKEN_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SUSPEND_TOKEN_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class SuspendTokenDispatcher final
-    : public SoloDispatcher<SuspendTokenDispatcher, ZX_DEFAULT_SUSPEND_TOKEN_RIGHTS> {
+class SuspendTokenDispatcher;
+extern "C" {
+zx_status_t cpp_suspend_token_dispatcher_create(KernelHandle<SuspendTokenDispatcher>* handle_out);
+void rust_suspend_token_dispatcher_state_init(void* state, void* disp);
+void rust_suspend_token_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_suspend_token_dispatcher_state_get_lock(const void* state);
+void rust_suspend_token_dispatcher_on_zero_handles(const SuspendTokenDispatcher* disp);
+}
+
+class SuspendTokenDispatcher final : public Dispatcher {
  public:
-  // Creates a new token which suspends |task|.
-  //
-  // Returns:
-  //   ZX_OK on success
-  //   ZX_ERR_NO_MEMORY if the token could not be allocated
-  //   ZX_ERR_WRONG_TYPE if |task| is not a supported type
-  //   ZX_ERR_NOT_SUPPORTED if |task| is trying to suspend itself
-  static zx_status_t Create(fbl::RefPtr<Dispatcher> task,
-                            KernelHandle<SuspendTokenDispatcher>* handle, zx_rights_t* rights);
-
   ~SuspendTokenDispatcher() final;
+
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_SUSPEND_TOKEN; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return true; }
+
   void on_zero_handles() final;
 
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final;
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  using Dispatcher::UpdateState;
+  using Dispatcher::UpdateStateLocked;
+
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
+
  private:
+  friend zx_status_t cpp_suspend_token_dispatcher_create(KernelHandle<SuspendTokenDispatcher>*);
   SuspendTokenDispatcher();
 
-  // A lock annotation is unnecessary because the only time |task_| is used is on_zero_handles()
-  // and Create(), and the object can only get zero handles once.
-  fbl::RefPtr<Dispatcher> task_;
+  OpaqueStorage<kSuspendTokenDispatcherStateSize, kSuspendTokenDispatcherStateAlign>
+      opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SUSPEND_TOKEN_DISPATCHER_H_

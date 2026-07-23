@@ -4,17 +4,20 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::dispatcher::DispatcherOps;
 use crate::handle::{HandleValue, KernelHandle};
 use crate::process_dispatcher_ffi::{
-    cpp_process_dispatcher_current, cpp_process_dispatcher_make_and_add_handle,
+    cpp_process_dispatcher_current, cpp_process_dispatcher_enforce_basic_policy,
+    cpp_process_dispatcher_is_current, cpp_process_dispatcher_make_and_add_handle,
+    cpp_process_dispatcher_resume, cpp_process_dispatcher_suspend,
 };
 use zx_status::Status;
 use zx_types::zx_rights_t;
 
-#[repr(C)]
-pub struct ProcessDispatcher {
-    _facade: fbl::OpaqueRefCountedFacade<crate::dispatcher::Dispatcher>,
-}
+crate::impl_dispatcher_facade!(
+    pub struct ProcessDispatcher,
+    zx_types::ZX_OBJ_TYPE_PROCESS
+);
 
 impl ProcessDispatcher {
     /// Executes the given function with a reference to the current process.
@@ -24,6 +27,29 @@ impl ProcessDispatcher {
         f(proc)
     }
 
+    /// Returns whether this `ProcessDispatcher` is the current process.
+    pub fn is_current(&self) -> bool {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_is_current(self as *const _) }
+    }
+
+    /// Suspends execution of this process.
+    ///
+    /// # Errors
+    ///
+    /// - `ZX_ERR_BAD_STATE` if the process is dying or dead.
+    pub fn suspend(&self) -> Result<(), Status> {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        let status = unsafe { cpp_process_dispatcher_suspend(self as *const _ as *mut _) };
+        Status::ok(status)
+    }
+
+    /// Resumes execution of this process.
+    pub fn resume(&self) {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_resume(self as *const _ as *mut _) }
+    }
+
     /// Creates a handle for the given dispatcher in this process's handle table.
     pub fn make_and_add_handle<T>(
         &self,
@@ -31,10 +57,12 @@ impl ProcessDispatcher {
         rights: zx_rights_t,
     ) -> Result<HandleValue, Status>
     where
-        T: fbl::HasRefCount + fbl::Recyclable + crate::DispatcherOps,
+        T: fbl::HasRefCount + fbl::Recyclable + DispatcherOps,
     {
         let mut handle = handle.cast();
         let mut out = HandleValue::default();
+        // SAFETY: `self` is a valid `ProcessDispatcher`, `handle` is a valid `KernelHandle`, and
+        // `out` points to writable memory.
         let status = unsafe {
             cpp_process_dispatcher_make_and_add_handle(
                 self as *const _,
@@ -49,12 +77,9 @@ impl ProcessDispatcher {
 
     /// Enforces basic policy for this process.
     pub fn enforce_basic_policy(&self, policy: u32) -> Result<(), Status> {
-        let status = unsafe {
-            crate::process_dispatcher_ffi::cpp_process_dispatcher_enforce_basic_policy(
-                self as *const _,
-                policy,
-            )
-        };
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        let status =
+            unsafe { cpp_process_dispatcher_enforce_basic_policy(self as *const _, policy) };
         Status::ok(status)
     }
 }

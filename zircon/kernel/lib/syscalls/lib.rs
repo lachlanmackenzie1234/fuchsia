@@ -9,4 +9,5 @@
 mod counter;
 mod debuglog;
 mod sampler;
+mod task;
 mod test;

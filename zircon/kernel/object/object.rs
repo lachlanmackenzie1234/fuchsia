@@ -18,6 +18,10 @@ mod process_dispatcher_ffi;
 mod resource_ffi;
 mod sampler_dispatcher;
 mod sampler_dispatcher_ffi;
+mod suspend_token_dispatcher;
+mod suspend_token_dispatcher_ffi;
+mod thread_dispatcher;
+mod thread_dispatcher_ffi;
 
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
@@ -27,3 +31,7 @@ pub use process_dispatcher::ProcessDispatcher;
 pub use resource_ffi::{validate_ranged_resource, validate_resource_kind_base};
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use sampler_dispatcher_ffi::*;
+pub use suspend_token_dispatcher::SuspendTokenDispatcher;
+pub use suspend_token_dispatcher_ffi::*;
+pub use thread_dispatcher::ThreadDispatcher;
+pub use thread_dispatcher_ffi::*;

@@ -136,6 +136,7 @@ kernel_rust_crate("syscalls-rs") {
     "debuglog.rs",
     "lib.rs",
     "sampler.rs",
+    "task.rs",
     "test.rs",
   ]
   deps = [

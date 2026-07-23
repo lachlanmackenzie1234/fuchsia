@@ -65,7 +65,8 @@ closed protocol Task {
     ///
     /// ## Rights
     ///
-    /// *handle* must be of type `ZX_OBJ_TYPE_THREAD` or `ZX_OBJ_TYPE_PROCESS` and have `ZX_RIGHT_WRITE`.
+    /// *handle* must be of type `ZX_OBJ_TYPE_THREAD` or `ZX_OBJ_TYPE_PROCESS` and have
+    /// `ZX_RIGHT_WRITE`.
     ///
     /// ## Return value
     ///
@@ -95,6 +96,7 @@ closed protocol Task {
     /// [`zx_process_start()`]: process_start.md
     /// [`zx_task_kill()`]: task_kill.md
     /// [`zx_thread_start()`]: thread_start.md
+    @rust
     strict Suspend(resource struct {
         handle Handle;
     }) -> (resource struct {
@@ -138,7 +140,8 @@ closed protocol Task {
     ///
     /// ## Rights
     ///
-    /// *handle* must be of type `ZX_OBJ_TYPE_THREAD` or `ZX_OBJ_TYPE_PROCESS` and have `ZX_RIGHT_WRITE`.
+    /// *handle* must be of type `ZX_OBJ_TYPE_THREAD` or `ZX_OBJ_TYPE_PROCESS` and have
+    /// `ZX_RIGHT_WRITE`.
     ///
     /// ## Return value
     ///
@@ -162,6 +165,7 @@ closed protocol Task {
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_task_kill()`]: task_kill.md
     /// [`zx_task_suspend()`]: task_suspend.md
+    @rust
     strict SuspendToken(resource struct {
         handle Handle;
     }) -> (resource struct {
@@ -226,9 +230,11 @@ closed protocol Task {
     ///
     /// ## Rights
     ///
-    /// *handle* must have `ZX_RIGHT_INSPECT` and have `ZX_RIGHT_DUPLICATE` and have `ZX_RIGHT_TRANSFER` and have `ZX_RIGHT_MANAGE_THREAD`.
+    /// *handle* must have `ZX_RIGHT_INSPECT` and have `ZX_RIGHT_DUPLICATE` and have
+    /// `ZX_RIGHT_TRANSFER` and have `ZX_RIGHT_MANAGE_THREAD`.
     ///
-    /// If *handle* is of type `ZX_OBJ_TYPE_JOB` or `ZX_OBJ_TYPE_PROCESS`, it must have `ZX_RIGHT_ENUMERATE`.
+    /// If *handle* is of type `ZX_OBJ_TYPE_JOB` or `ZX_OBJ_TYPE_PROCESS`, it must have
+    /// `ZX_RIGHT_ENUMERATE`.
     ///
     /// ## Return value
     ///
@@ -301,7 +307,8 @@ closed protocol Task {
     /// the `ZX_INFO_PROCESS` or `ZX_INFO_JOB` topic.
     ///
     /// Processes and Jobs can also be killed by other agents such as the Job policy with
-    /// `ZX_POL_ACTION_KILL` or when the system is running low on memory [OOM](/docs/development/kernel/memory/oom.md).
+    /// `ZX_POL_ACTION_KILL` or when the system is running low on memory
+    /// [OOM](/docs/development/kernel/memory/oom.md).
     ///
     /// ## Rights
     ///

@@ -33,7 +33,6 @@
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/resource_dispatcher.h>
-#include <object/suspend_token_dispatcher.h>
 #include <object/thread_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
 
@@ -286,34 +285,6 @@ zx_status_t sys_thread_legacy_yield(uint32_t options) {
   kcounter_add(thread_legacy_yield, 1);
   Thread::Current::Yield();
   return ZX_OK;
-}
-
-// zx_status_t zx_task_suspend
-zx_status_t sys_task_suspend(zx_handle_t handle, zx_handle_t* token) {
-  LTRACE_ENTRY;
-
-  auto up = ProcessDispatcher::GetCurrent();
-
-  // TODO(https://fxbug.dev/42105711): Add support for jobs
-  fbl::RefPtr<Dispatcher> task;
-  zx_status_t status =
-      up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_WRITE, &task);
-  if (status != ZX_OK)
-    return status;
-
-  KernelHandle<SuspendTokenDispatcher> new_token;
-  zx_rights_t rights;
-  status = SuspendTokenDispatcher::Create(ktl::move(task), &new_token, &rights);
-
-  if (status == ZX_OK)
-    status = up->MakeAndAddHandle(ktl::move(new_token), rights, token);
-
-  return status;
-}
-
-// zx_status_t zx_task_suspend_token
-zx_status_t sys_task_suspend_token(zx_handle_t handle, zx_handle_t* token) {
-  return sys_task_suspend(handle, token);
 }
 
 // zx_status_t zx_process_create

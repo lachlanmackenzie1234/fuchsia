@@ -34,6 +34,13 @@
 #include <vm/vm_address_region.h>
 
 class ProcessDispatcher;
+class ThreadDispatcher;
+
+extern "C" {
+bool cpp_thread_dispatcher_is_current(const ThreadDispatcher* thread);
+zx_status_t cpp_thread_dispatcher_suspend(ThreadDispatcher* thread);
+void cpp_thread_dispatcher_resume(ThreadDispatcher* thread);
+}
 
 class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAULT_THREAD_RIGHTS>,
                                public fbl::DoublyLinkedListable<ThreadDispatcher*> {

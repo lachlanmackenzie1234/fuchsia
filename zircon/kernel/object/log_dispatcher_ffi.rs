@@ -21,33 +21,7 @@ unsafe extern "C" {
 
 // Trampoline callbacks from C++ into Rust LogDispatcherState
 
-/// # Safety
-///
-/// `ptr` must point to uninitialized memory of at least `size_of::<LogDispatcherState>()` bytes,
-/// and `dispatcher` must point to the enclosing `LogDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_log_dispatcher_state_init(
-    ptr: *mut LogDispatcherState,
-    dispatcher: *const LogDispatcher,
-    flags: u32,
-) {
-    // SAFETY: `ptr` points to uninitialized memory allocated for `LogDispatcherState`.
-    unsafe {
-        let _ = pin_init::PinInit::__pinned_init(LogDispatcherState::init(dispatcher, flags), ptr);
-    }
-}
-
-/// # Safety
-///
-/// The caller must ensure `state` is a valid reference to an initialized `LogDispatcherState`,
-/// and must not use the state (or the enclosing dispatcher) after this function returns.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_log_dispatcher_state_destroy(state: &mut LogDispatcherState) {
-    // SAFETY: The caller is destroying the dispatcher and will not use it again.
-    unsafe {
-        core::ptr::drop_in_place(state);
-    }
-}
+crate::impl_dispatcher_state_init!(LogDispatcher, LogDispatcherState, flags: u32);
 
 /// Trampoline callback for DlogReader notify.
 ///

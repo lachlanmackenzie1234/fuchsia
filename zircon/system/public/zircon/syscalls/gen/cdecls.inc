@@ -582,11 +582,11 @@ _ZX_SYSCALL_DECL(task_create_exception_channel, zx_status_t, /* no attributes */
 _ZX_SYSCALL_DECL(task_kill, zx_status_t, /* no attributes */, 1, (handle),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle))
 
-_ZX_SYSCALL_DECL(task_suspend, zx_status_t, /* no attributes */, 2, (handle, token),
+_ZX_SYSCALL_DECL(task_suspend, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (handle, token),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* token))
 
-_ZX_SYSCALL_DECL(task_suspend_token, zx_status_t, /* no attributes */, 2, (handle, token),
+_ZX_SYSCALL_DECL(task_suspend_token, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (handle, token),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* token))
 

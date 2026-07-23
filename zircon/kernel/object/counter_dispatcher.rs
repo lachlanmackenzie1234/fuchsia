@@ -17,7 +17,7 @@ use zx_types::{
 };
 
 use crate::counter_dispatcher_ffi::cpp_counter_dispatcher_create;
-use crate::dispatcher::Dispatcher;
+
 use crate::{DispatcherOps, KernelHandle};
 
 use object_constants_rs as object_constants;
@@ -73,13 +73,8 @@ impl PinnedDrop for CounterDispatcherState {
     }
 }
 
-#[repr(C)]
-pub struct CounterDispatcher {
-    _facade: fbl::OpaqueRefCountedFacade<Dispatcher>,
-}
-
-crate::impl_dispatcher_facade!(
-    CounterDispatcher,
+crate::impl_dispatcher_facade_with_state!(
+    pub struct CounterDispatcher,
     CounterDispatcherState,
     ZX_OBJ_TYPE_COUNTER,
     object_constants::kCounterDispatcherStateOffset

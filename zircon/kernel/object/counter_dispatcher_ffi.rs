@@ -44,15 +44,3 @@ pub unsafe extern "C" fn rust_counter_dispatcher_state_init(
         );
     }
 }
-
-/// # Safety
-///
-/// The caller must ensure `state` is a valid reference to an initialized `CounterDispatcherState`,
-/// and must not use the state (or the enclosing dispatcher) after this function returns.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_counter_dispatcher_state_destroy(state: &mut CounterDispatcherState) {
-    // SAFETY: The caller is destroying the dispatcher and will not use it again.
-    unsafe {
-        core::ptr::drop_in_place(state);
-    }
-}

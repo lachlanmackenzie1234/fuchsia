@@ -17,7 +17,6 @@ use zx_types::{
 };
 
 use crate::KernelHandle;
-use crate::dispatcher::Dispatcher;
 use crate::sampler_dispatcher_ffi::cpp_sampler_dispatcher_create;
 
 use object_constants_rs as object_constants;
@@ -47,7 +46,9 @@ pub struct SamplerDispatcherState {
 
 impl SamplerDispatcherState {
     /// Initializes the `SamplerDispatcherState`.
-    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
+    pub fn init(
+        _dispatcher: *const SamplerDispatcher,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
         DISPATCHER_SAMPLER_CREATE_COUNT.add(1);
         pin_init!(Self {
             canary: Canary::new(),
@@ -63,14 +64,8 @@ impl PinnedDrop for SamplerDispatcherState {
     }
 }
 
-/// A Sampler manages sampling threads and writing the results out to per cpu buffers.
-#[repr(C)]
-pub struct SamplerDispatcher {
-    _facade: fbl::OpaqueRefCountedFacade<Dispatcher>,
-}
-
-crate::impl_dispatcher_facade!(
-    SamplerDispatcher,
+crate::impl_dispatcher_facade_with_state!(
+    pub struct SamplerDispatcher,
     SamplerDispatcherState,
     ZX_OBJ_TYPE_SAMPLER,
     object_constants::kSamplerDispatcherStateOffset

@@ -11,6 +11,16 @@ extern "C" {
 
 ProcessDispatcher* cpp_process_dispatcher_current() { return ProcessDispatcher::GetCurrent(); }
 
+bool cpp_process_dispatcher_is_current(const ProcessDispatcher* process) {
+  return process == ProcessDispatcher::GetCurrent();
+}
+
+zx_status_t cpp_process_dispatcher_suspend(ProcessDispatcher* process) {
+  return process->Suspend();
+}
+
+void cpp_process_dispatcher_resume(ProcessDispatcher* process) { process->Resume(); }
+
 zx_status_t cpp_process_dispatcher_make_and_add_handle(ProcessDispatcher* process,
                                                        KernelHandle<Dispatcher>* handle,
                                                        zx_rights_t rights,

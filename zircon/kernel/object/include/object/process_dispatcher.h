@@ -35,9 +35,15 @@
 #include <vm/vm_aspace.h>
 
 class JobDispatcher;
+class ProcessDispatcher;
 class VmarMapsInfoWriter;
 class VmoInfoWriter;
 
+extern "C" {
+bool cpp_process_dispatcher_is_current(const ProcessDispatcher* process);
+zx_status_t cpp_process_dispatcher_suspend(ProcessDispatcher* process);
+void cpp_process_dispatcher_resume(ProcessDispatcher* process);
+}
 namespace internal {
 // Tag for a ProcessDispatcher's parent JobDispatcher's raw job list.
 struct ProcessDispatcherRawJobListTag {};

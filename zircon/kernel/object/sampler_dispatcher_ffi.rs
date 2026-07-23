@@ -42,29 +42,4 @@ pub fn sampler_enabled() -> bool {
 
 // Trampolines from C++ into Rust SamplerDispatcherState
 
-/// # Safety
-///
-/// `ptr` must point to uninitialized memory of at least `size_of::<SamplerDispatcherState>()`
-/// bytes, and `dispatcher` must point to the enclosing `SamplerDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_sampler_dispatcher_state_init(
-    ptr: *mut SamplerDispatcherState,
-    _dispatcher: *const SamplerDispatcher,
-) {
-    // SAFETY: `ptr` points to uninitialized memory allocated for `SamplerDispatcherState`.
-    unsafe {
-        let _ = pin_init::PinInit::__pinned_init(SamplerDispatcherState::init(), ptr);
-    }
-}
-
-/// # Safety
-///
-/// The caller must ensure `state` is a valid reference to an initialized `SamplerDispatcherState`,
-/// and must not use the state (or the enclosing dispatcher) after this function returns.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_sampler_dispatcher_state_destroy(state: &mut SamplerDispatcherState) {
-    // SAFETY: The caller is destroying the dispatcher and will not use it again.
-    unsafe {
-        core::ptr::drop_in_place(state);
-    }
-}
+crate::impl_dispatcher_state_init!(SamplerDispatcher, SamplerDispatcherState);

@@ -33,4 +33,9 @@ constexpr size_t kSamplerDispatcherStateSize = 64;
 constexpr size_t kSamplerDispatcherStateAlign = 8;
 constexpr size_t kSamplerDispatcherStateOffset = 48;
 
+// Size and alignment for SuspendTokenDispatcherState.
+constexpr size_t kSuspendTokenDispatcherStateSize = 64;
+constexpr size_t kSuspendTokenDispatcherStateAlign = 8;
+constexpr size_t kSuspendTokenDispatcherStateOffset = 48;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

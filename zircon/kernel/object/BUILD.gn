@@ -62,7 +62,9 @@ source_set("object") {
     "socket_dispatcher.cc",
     "stream_dispatcher.cc",
     "suspend_token_dispatcher.cc",
+    "suspend_token_dispatcher_ffi.cc",
     "thread_dispatcher.cc",
+    "thread_dispatcher_ffi.cc",
     "timer_dispatcher.cc",
     "user_handles.cc",
     "vcpu_dispatcher.cc",
@@ -196,6 +198,10 @@ kernel_rust_crate("object-rs") {
     "resource_ffi.rs",
     "sampler_dispatcher.rs",
     "sampler_dispatcher_ffi.rs",
+    "suspend_token_dispatcher.rs",
+    "suspend_token_dispatcher_ffi.rs",
+    "thread_dispatcher.rs",
+    "thread_dispatcher_ffi.rs",
   ]
 
   deps = [

@@ -232,7 +232,8 @@ macro_rules! make_ref_counted {
     };
 }
 
-/// Macro to construct a RefPtr with pin-initialization, automatically populating the ref_count field.
+/// Macro to construct a RefPtr with pin-initialization, automatically populating the ref_count
+/// field.
 #[macro_export]
 macro_rules! pin_make_ref_counted {
     ($ty:ident { $($field:tt)* }) => {
@@ -244,7 +245,8 @@ macro_rules! pin_make_ref_counted {
     };
 }
 
-/// Macro to construct a RefPtr with fallible pin-initialization, automatically populating the ref_count field.
+/// Macro to construct a RefPtr with fallible pin-initialization, automatically populating the
+/// ref_count field.
 #[macro_export]
 macro_rules! try_pin_make_ref_counted {
     ($ty:ident { $($field:tt)* }) => {
