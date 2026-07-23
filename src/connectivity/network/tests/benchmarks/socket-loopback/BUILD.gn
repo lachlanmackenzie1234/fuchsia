@@ -183,16 +183,6 @@ if (target_cpu != "riscv64") {
 # TODO(https://fxbug.dev/359323478): Figure out a better way to disable these tests on Minfs without
 # relying on a global GN argument.
 if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
-  starnix_toolchain_test_component("loopback-socket-benchmarks-starnix") {
-    test_label = ":loopback_socket_benchmarks"
-    test_binary = "loopback_socket_benchmarks"
-
-    manifest = "meta/loopback-socket-benchmarks-starnix.cml"
-
-    test_type = "starnix"
-    is_starnix_benchmark = true
-  }
-
   starnix_toolchain_test_component(
       "loopback-socket-benchmarks-starnix-with-netstack3") {
     test_label = ":loopback_socket_benchmarks"
@@ -213,21 +203,6 @@ if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
 
     test_type = "starnix"
     is_starnix_benchmark = true
-  }
-
-  fuchsia_test_package("loopback-socket-benchmarks-starnix-pkg") {
-    package_name = "loopback-socket-benchmarks-starnix"
-    test_components = [ ":loopback-socket-benchmarks-starnix" ]
-
-    subpackages = [
-      "//src/starnix/containers/debian:debian_package",
-      "//src/starnix/kernel:starnix_kernel_package",
-      "//src/connectivity/network:netstack2",
-    ]
-
-    test_specs = {
-      package_resolution_timeout_secs = 660
-    }
   }
 
   fuchsia_package("netstack3") {
@@ -271,7 +246,6 @@ if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
   }
 
   starnix_benchmarks = [
-    ":loopback-socket-benchmarks-starnix-pkg",
     ":loopback-socket-benchmarks-starnix-with-netstack3-pkg",
     ":loopback-socket-benchmarks-starnix-with-fake-netstack-pkg",
   ]
@@ -285,19 +259,6 @@ if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
   # timeout in Infra.
   _starnix_runs = 120
   benchmark_test_configs += [
-    {
-      package = ":loopback-socket-benchmarks-starnix-pkg"
-      package_name = "loopback-socket-benchmarks-starnix"
-      runs = _starnix_runs
-      test_type = "starnix"
-      tests = [
-        {
-          name = "loopback_socket_benchmarks_starnix"
-          component = "loopback-socket-benchmarks-starnix"
-          expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.starnix.txt"
-        },
-      ]
-    },
     {
       package = ":loopback-socket-benchmarks-starnix-with-netstack3-pkg"
       package_name = "loopback-socket-benchmarks-starnix-with-netstack3"
