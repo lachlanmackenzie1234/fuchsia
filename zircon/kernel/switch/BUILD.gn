@@ -13,6 +13,7 @@ import("//build/toolchain/rbe.gni")
 import("//build/toolchain/variant.gni")
 import("//build/toolchain/zircon/gcc.gni")
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 assert(
@@ -572,4 +573,10 @@ variant("unit-tests-enabled") {
     "--cfg",
     "ktest",
   ]
+}
+
+kernel_rust_mod_attr("no_std") {
+}
+
+kernel_rust_mod_attr("no_main") {
 }

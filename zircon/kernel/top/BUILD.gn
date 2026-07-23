@@ -19,6 +19,8 @@ group("top") {
     "//zircon/kernel/arch/$zircon_cpu",
     "//zircon/kernel/kernel",
     "//zircon/kernel/lib/flow-id",  # Used by <kernel/thread.h>.
+    "//zircon/kernel/switch:no_main",
+    "//zircon/kernel/switch:no_std",
   ]
 }
 
