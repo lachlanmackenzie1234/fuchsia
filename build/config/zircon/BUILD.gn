@@ -177,7 +177,7 @@ compiler_config("compiler") {
   }
 }
 
-config("nolibc") {
+compiler_config("nolibc") {
   ldflags = [
     "-nostartfiles",
     "-nolibc",
@@ -199,10 +199,8 @@ config("nolibc") {
   # In the case of the Rust driver, -Lnative=... affects any searching it might
   # do itself like -L... affects the C++ compiler driver; but the Rust driver
   # doesn't translate that to also passing -L... to the _linker_ as C++ does.
-  rustflags += [
-    "-Lnative=" + rebase_path("libc-stub", root_build_dir),
-    "-Clink-arg=-L" + rebase_path("libc-stub", root_build_dir),
-  ]
+  rustflags += [ "-Lnative=" + rebase_path("libc-stub", root_build_dir) ]
+  rust_linker_flags = [ "-L" + rebase_path("libc-stub", root_build_dir) ]
 }
 
 config("data_sections") {

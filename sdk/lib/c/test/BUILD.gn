@@ -4,6 +4,7 @@
 
 import("//build/components.gni")
 import("//build/fuzz.gni")
+import("//build/rust/rustc_binary.gni")
 import("//build/test.gni")
 import("//build/testing/boot_tests/kernel_zbi_test.gni")
 import("//build/testing/boot_tests/zbi_test_executable.gni")
@@ -107,6 +108,28 @@ test("static-pie-noop-test") {
     ":noop-test.common",
     "..:static",
   ]
+
+  # The static libc.a doesn't handle the setup needed for things like ASan.
+  exclude_toolchain_tags = [ "uses-shadow" ]
+}
+
+libc_component_tests += [ ":rust-static-pie-noop-test" ]
+rustc_binary("rust-static-pie-noop-test") {
+  testonly = true
+  edition = "2024"
+  source_root = "src/main.rs"
+  sources = [ source_root ]
+  deps = [ "//src/sys/testing/elftest" ]
+
+  # Quite a lot that can't be propagated back to us from ..:static has to be
+  # done for Rust, even more than for C++ as in static-pie-noop-test.
+  configs += fdio_config
+  configs -= fdio_config
+  configs += [ "//build/config:standalone" ]
+  deps += [ "..:static" ]
+
+  # static_rust_standard_library is propagated, but this has to be removed too.
+  configs -= [ "//build/config/fuchsia:dynamic_rust_standard_library" ]
 
   # The static libc.a doesn't handle the setup needed for things like ASan.
   exclude_toolchain_tags = [ "uses-shadow" ]

@@ -213,6 +213,14 @@ template("ifs_shared_library") {
         " */",
         "INPUT(AS_NEEDED($ldscript_relative_gen_stub_file))",
       ]
+
+      # If this rolls up into a Rust link, the RBE wrapper will need to know
+      # that the stub and its .as-needed wrapper are both potential inputs.
+      rust_compilation_deps = rebase_path([
+                                            gen_stub_as_needed_file,
+                                            gen_stub_file,
+                                          ],
+                                          root_build_dir)
     }
   }
 
