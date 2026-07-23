@@ -21,6 +21,48 @@ Conventions:
   are usually documented in screaming snake case already, so this makes for a
   nice, readable coincidence.
 
+## Traits and testing
+
+The [`traits`] module abstracts register access as traits (e.g., [`ReadReg`] and
+[`SafeWriteReg`]), permitting register-related logic to be written generically
+for testability. The [`testing`] module - available with the `testing` feature -
+provides implementations of these traits (e.g., [`ExpectationReg`]) that may be
+supplied instead of [`Register`] at test time.
+
+For simple read-only cases, a closure can serve as a stand-in register:
+
+```rust
+# #[cfg(feature = "testing")] {
+use regio::traits::ReadReg;
+
+fn is_busy(reg: &impl ReadReg<u32>) -> bool {
+    reg.read() & 1 != 0
+}
+
+assert!(is_busy(&|| 0x3u32));
+assert!(!is_busy(&|| 0x2u32));
+# }
+```
+
+One can also reach for [`ExpectationReg`] to validates a full sequence of
+expected accesses:
+
+```rust
+# #[cfg(feature = "testing")] {
+use regio::testing::ExpectationReg;
+use regio::traits::RwSafeReg;
+
+fn set_enable_bit(reg: &impl RwSafeReg<u32>) {
+    reg.modify(|value| *value |= 1);
+}
+
+let mut reg = ExpectationReg::<u32>::new();
+reg.expect_read(0xf0).expect_write(0xf1);
+set_enable_bit(&reg);
+// On drop, `reg` asserts that no expected accesses remain.
+# }
+```
+
 ## MMIO
 
 The core MMIO types are `Offset`, `Mmio`, `MmioPtr`, and `MmioBank`. `Mmio` is

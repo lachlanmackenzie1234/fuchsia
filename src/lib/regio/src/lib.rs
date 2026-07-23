@@ -5,7 +5,11 @@
 #![no_std]
 
 mod mmio;
+pub mod traits;
 pub mod x86;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 use core::marker::PhantomData;
 

@@ -5,16 +5,30 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-rustc_library("regio") {
+regio_common = {
+  crate_name = "regio"
   edition = "2024"
-  with_unit_tests = true
   sources = [
     "src/lib.rs",
     "src/mmio.rs",
+    "src/testing.rs",
+    "src/traits.rs",
     "src/x86/mod.rs",
     "src/x86/msr.rs",
   ]
   deps = [ "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs" ]
+}
+
+rustc_library("regio") {
+  forward_variables_from(regio_common, "*")
+  with_unit_tests = true
+}
+
+# The same crate as ":regio", but with the testing feature enabled.
+rustc_library("regio-testing") {
+  forward_variables_from(regio_common, "*")
+  testonly = true
+  features = [ "testing" ]
 }
 
 fuchsia_unittest_package("regio-tests") {
