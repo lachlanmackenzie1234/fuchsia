@@ -4,6 +4,7 @@
 
 import("//build/components/fuchsia_test_package.gni")
 import("//build/components/fuchsia_unittest_component.gni")
+import("//build/rust/rustc_binary.gni")
 import("//build/test.gni")
 import("//build/testing/bootfs_test.gni")
 
@@ -37,7 +38,10 @@ source_set("debugdata") {
     "//zircon/system/ulib/ldmsg",
     "//zircon/system/ulib/zx",
   ]
-  data_deps = [ ":debugdata-test-helper" ]
+  data_deps = [
+    ":debugdata-test-helper",
+    ":rust-debugdata-test-helper",
+  ]
 }
 
 source_set("test-utils") {
@@ -75,6 +79,7 @@ source_set("sanitizer-utils") {
     "//zircon/system/ulib/zx",
   ]
   data_deps = [
+    ":rust-sanitizer-log-test-helper",
     ":sanitizer-exit-hook-test-helper",
     ":sanitizer-log-test-helper",
     ":sanitizer-module-loaded-test-helper",
@@ -235,6 +240,25 @@ executable("debugdata-test-helper") {
   exclude_toolchain_tags = [ "debugdata" ]
 }
 
+rustc_binary("rust-debugdata-test-helper") {
+  testonly = true
+  edition = "2024"
+
+  source_root = "rust-debugdata-test-helper.rs"
+  sources = [ source_root ]
+  deps = [
+    "../../rust",
+    "//sdk/rust/zx",
+  ]
+
+  configs += fdio_config
+  configs -= fdio_config
+
+  # Don't use instrumentation that emits debugdata, so only the expected test
+  # data is published.
+  exclude_toolchain_tags = [ "debugdata" ]
+}
+
 executable("sanitizer-log-test-helper") {
   visibility = [ ":*" ]
   testonly = true
@@ -251,6 +275,26 @@ executable("sanitizer-log-test-helper") {
   configs -= fdio_config
   configs += [ "//build/config:standalone" ]
   ldflags = [ "-Wl,-z,stack-size=0x40000" ]
+}
+
+rustc_binary("rust-sanitizer-log-test-helper") {
+  testonly = true
+  edition = "2024"
+
+  source_root = "rust-log-test-helper.rs"
+  sources = [ source_root ]
+  deps = [ "../../rust" ]
+
+  # Avoid anything that would do its own sanitizer logging.
+  exclude_toolchain_tags = [ "instrumentation-runtime" ]
+
+  # Making this a static PIE is the easiest way to get the test plumbing
+  # for a captured log socket to work right.
+  deps += [ "../..:static" ]
+  configs += fdio_config
+  configs -= fdio_config
+  configs += [ "//build/config:standalone" ]
+  configs -= [ "//build/config/fuchsia:dynamic_rust_standard_library" ]
 }
 
 sanitizer_tests += [ "sanitizer-allocator-test" ]

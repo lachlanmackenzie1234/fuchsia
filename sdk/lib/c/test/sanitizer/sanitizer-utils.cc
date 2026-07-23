@@ -29,6 +29,9 @@
 
 namespace {
 
+using ::testing::AllOf;
+using ::testing::HasSubstr;
+
 #if __has_feature(address_sanitizer)
 
 constexpr size_t kMaxVmos = 8192;
@@ -352,7 +355,14 @@ TEST(SanitizerUtilsTest, ModuleLoadedStartup) {
 
 TEST(SanitizerUtilsTest, Log) {
   EXPECT_THAT(RunHelper("sanitizer-log-test-helper"),
-              ExitsWith(0, "", ::testing::HasSubstr("Hello sanitizer logging!")));
+              ExitsWith(0, "", HasSubstr("Hello sanitizer logging!")));
+}
+
+TEST(SanitizerUtilsTest, RustLog) {
+  EXPECT_THAT(RunHelper("rust-sanitizer-log-test-helper"),
+              ExitsWith(0, "",
+                        AllOf(HasSubstr("Hello Rust sanitizer logging!"),
+                              HasSubstr("Rust formatting works too!"))));
 }
 
 }  // namespace

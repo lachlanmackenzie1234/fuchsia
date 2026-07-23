@@ -21,13 +21,36 @@ using ::testing::_;
 using ::testing::AllOf;
 using ::testing::Ne;
 
-constexpr std::string_view kTestHelper = "debugdata-test-helper";
+struct TestCApi {
+  static constexpr std::string_view kName = "C";
+  static constexpr const char* kTestHelper = "debugdata-test-helper";
+};
+
+struct TestRustApi {
+  static constexpr std::string_view kName = "Rust";
+  static constexpr const char* kTestHelper = "rust-debugdata-test-helper";
+};
+
+template <class Api>
+struct LibcDebugdataTests : public ::testing::Test {
+  static constexpr const char* kTestHelper = Api::kTestHelper;
+};
+
+using TestTypes = ::testing::Types<TestCApi, TestRustApi>;
+struct TestNames {
+  template <typename T>
+  static std::string GetName(int i) {
+    return std::string(T::kName);
+  }
+};
+TYPED_TEST_SUITE(LibcDebugdataTests, TestTypes, TestNames);
 
 constexpr const char* kHelperPublishCommand = "publish_data";
 constexpr const char* kHelperPublishFailCommand = "publish_data_fail";
 
+template <class Fixture>
 HelperResult RunHelperWithSvc(const char* mode, fidl::ClientEnd<fuchsia_io::Directory> client_end) {
-  return RunHelper(kTestHelper, {mode},
+  return RunHelper(Fixture::kTestHelper, {mode},
                    {{.action = FDIO_SPAWN_ACTION_ADD_NS_ENTRY,
                      .ns = {
                          .prefix = "/svc",
@@ -35,9 +58,12 @@ HelperResult RunHelperWithSvc(const char* mode, fidl::ClientEnd<fuchsia_io::Dire
                      }}});
 }
 
-auto RunHelperWithoutSvc(const char* mode) { return RunHelper(kTestHelper, {mode}); }
+template <class Fixture>
+auto RunHelperWithoutSvc(const char* mode) {
+  return RunHelper(Fixture::kTestHelper, {mode});
+}
 
-TEST(DebugDataTests, PublishData) {
+TYPED_TEST(LibcDebugdataTests, PublishData) {
   auto mock = std::make_unique<::testing::StrictMock<ld::testing::MockDebugdata>>();
   EXPECT_CALL(*mock,
               Publish(kTestName,
@@ -53,24 +79,24 @@ TEST(DebugDataTests, PublishData) {
   fidl::ClientEnd<fuchsia_io::Directory> svc_client_end;
   ASSERT_NO_FATAL_FAILURE(svc_dir.Serve(svc_client_end));
 
-  ASSERT_THAT(RunHelperWithSvc(kHelperPublishCommand, std::move(svc_client_end)),
+  ASSERT_THAT(RunHelperWithSvc<TestFixture>(kHelperPublishCommand, std::move(svc_client_end)),
               ExitsWith(0, "", ""));
 
   ASSERT_OK(svc_dir.loop().RunUntilIdle());
 }
 
-TEST(DebugDataTests, PublishDataWithoutSvc) {
-  ASSERT_THAT(RunHelperWithoutSvc(kHelperPublishFailCommand), ExitsWith(0, "", ""));
+TYPED_TEST(LibcDebugdataTests, PublishDataWithoutSvc) {
+  ASSERT_THAT(RunHelperWithoutSvc<TestFixture>(kHelperPublishFailCommand), ExitsWith(0, "", ""));
 }
 
-TEST(DebugDataTests, PublishDataWithBadSvc) {
+TYPED_TEST(LibcDebugdataTests, PublishDataWithBadSvc) {
   zx::channel client_channel_end, server_channel_end;
   ASSERT_OK(zx::channel::create(0, &client_channel_end, &server_channel_end));
   fidl::ClientEnd<fuchsia_io::Directory> client_end{
       std::move(client_channel_end),
   };
   server_channel_end.reset();
-  ASSERT_THAT(RunHelperWithSvc(kHelperPublishFailCommand, std::move(client_end)),
+  ASSERT_THAT(RunHelperWithSvc<TestFixture>(kHelperPublishFailCommand, std::move(client_end)),
               ExitsWith(0, "", _));
 }
 
