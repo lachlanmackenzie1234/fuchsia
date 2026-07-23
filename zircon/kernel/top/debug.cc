@@ -69,7 +69,8 @@ bool EndsWith(const char* str, char x) {
   return len > 0 && str[len - 1] == x;
 }
 
-[[noreturn]] void vpanic(void* pc, void* frame, const char* fmt, va_list ap) {
+[[noreturn, gnu::format(printf, 3, 0)]]
+void vpanic(void* pc, void* frame, const char* fmt, va_list ap) {
   PanicStart(pc, frame);
 
   // Print the user message.
