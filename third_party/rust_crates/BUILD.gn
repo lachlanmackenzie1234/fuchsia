@@ -1430,12 +1430,22 @@ group("pin-weak-1.1.0") {
 if (current_os == "fuchsia") {
   group("pkcs1") {
     public_deps = [ ":pkcs1-v0_7_5" ]
+
+    visibility = [ "//vendor/*" ]
+  }
+
+  group("pkcs1-0.7") {
+    public_deps = [ ":pkcs1-v0_7_5" ]
+
+    visibility = [ "//vendor/*" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("pkcs1-0.7.5") {
     public_deps = [ ":pkcs1-v0_7_5" ]
+
+    visibility = [ "//vendor/*" ]
   }
 }
 

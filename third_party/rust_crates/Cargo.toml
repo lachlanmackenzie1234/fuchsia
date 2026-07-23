@@ -906,6 +906,12 @@ license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
 [gn.package.pin-init-internal."0.3.0"]
 license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
 
+[gn.package.pkcs1."0.7.5"]
+groups = [
+  { name = "pkcs1", visibility = [ "//vendor/*" ] },
+  { name = "pkcs1-0.7", visibility = [ "//vendor/*" ] }
+]
+
 [gn.package.pkcs8."0.10.2"]
 groups = [
   { name = "pkcs8-0.10" },
