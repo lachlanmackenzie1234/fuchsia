@@ -5,7 +5,7 @@
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Protocol
 
 from .dap_types import DapBaseModel
 from .models import (
@@ -31,6 +31,17 @@ from .models import (
     VariablesResponse,
 )
 
+
+class StreamWriterProtocol(Protocol):
+    """Protocol for writer objects handling raw byte writes."""
+
+    def write(self, data: bytes) -> None:
+        ...
+
+    async def drain(self) -> None:
+        ...
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,11 +52,85 @@ class DapError(Exception):
 class DapClient:
     """A client for the Debug Adapter Protocol."""
 
+    DEFAULT_REQUEST_TIMEOUT: float = 5.0
+
     def __init__(self) -> None:
         """Initializes the DAP client."""
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._seq_counter = 1
+        self._write_queue: asyncio.Queue[
+            tuple[StreamWriterProtocol, dict[str, Any], asyncio.Future[Any]]
+        ] = asyncio.Queue()
+        self._reader_task: asyncio.Task[None] | None = None
+        self._writer_task: asyncio.Task[None] | None = None
 
+    @property
+    def is_running(self) -> bool:
+        """Returns True if both the reader loop and writer tasks are currently running."""
+        return (
+            self._reader_task is not None
+            and not self._reader_task.done()
+            and self._writer_task is not None
+            and not self._writer_task.done()
+        )
+
+    async def close(self) -> None:
+        """Closes the client and cancels active writer and reader tasks if running."""
+        tasks_to_cancel: list[asyncio.Task[None]] = []
+        if self._writer_task is not None and not self._writer_task.done():
+            tasks_to_cancel.append(self._writer_task)
+        self._writer_task = None
+
+        curr_task = asyncio.current_task()
+        if (
+            self._reader_task is not None
+            and not self._reader_task.done()
+            and self._reader_task != curr_task
+        ):
+            tasks_to_cancel.append(self._reader_task)
+        self._reader_task = None
+
+        for task in tasks_to_cancel:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        while not self._write_queue.empty():
+            try:
+                _, _, fut = self._write_queue.get_nowait()
+                if not fut.done():
+                    fut.cancel()
+                self._write_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+        for fut in self._pending_requests.values():
+            if not fut.done():
+                fut.cancel()
+        self._pending_requests.clear()
+
+    async def _run_writer_task(self) -> None:
+        """Processes queued write requests sequentially in FIFO order."""
+        while True:
+            try:
+                writer, request, fut = await self._write_queue.get()
+            except asyncio.CancelledError:
+                break
+
+            try:
+                await self._write_message(writer, request)
+            except Exception as e:
+                seq = request.get("seq")
+                if seq is not None:
+                    self._pending_requests.pop(seq, None)
+                if not fut.done():
+                    fut.set_exception(e)
+            finally:
+                self._write_queue.task_done()
+
+    # TODO(http://fxbug.dev/538056589) : let writer be provided in here instead of being provided through send_request every time.
     async def run(
         self, reader: asyncio.StreamReader, event_queue: asyncio.Queue[Any]
     ) -> None:
@@ -55,8 +140,10 @@ class DapClient:
             reader: Stream reader to receive messages from the debug adapter.
             event_queue: Queue to put received DAP events into.
         """
-        while True:
-            try:
+        self._reader_task = asyncio.current_task()
+        self._writer_task = asyncio.create_task(self._run_writer_task())
+        try:
+            while True:
                 msg = await self._read_message(reader)
                 if msg is None:
                     break  # EOF
@@ -70,16 +157,65 @@ class DapClient:
                         fut = self._pending_requests.pop(req_seq)
                         if not fut.done():
                             fut.set_result(msg)
-            except Exception:
-                logger.exception("Error in DAP client run loop")
-                break
+        except Exception:
+            logger.exception("Error in DAP client run loop")
+        finally:
+            await self.close()
+
+    def _send_request_future(
+        self,
+        writer: StreamWriterProtocol,
+        command: str,
+        arguments: DapBaseModel | None = None,
+    ) -> tuple[int, asyncio.Future[dict[str, Any]]]:
+        """Sends a request to the debug adapter synchronously by queueing it for the write worker.
+
+        Args:
+            writer: Stream writer to send the request to.
+            command: The DAP command name.
+            arguments: Optional arguments for the command.
+
+        Returns:
+            A tuple of (sequence number, response future).
+
+        Raises:
+            DapError: If the client is not running.
+            TypeError: If arguments is not a DapBaseModel instance.
+        """
+        if not self.is_running:
+            raise DapError(
+                "DapClient is not running. Call 'run()' before sending requests."
+            )
+
+        seq = self._seq_counter
+        self._seq_counter += 1
+
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+
+        request: dict[str, Any] = {
+            "seq": seq,
+            "type": MessageType.REQUEST.value,
+            "command": command,
+        }
+        if arguments is not None:
+            if not isinstance(arguments, DapBaseModel):
+                raise TypeError(
+                    f"arguments must be a DapBaseModel, got {type(arguments)}"
+                )
+            request["arguments"] = arguments.dump_dap()
+
+        self._pending_requests[seq] = fut
+        self._write_queue.put_nowait((writer, request, fut))
+
+        return seq, fut
 
     async def _send_request(
         self,
-        writer: asyncio.StreamWriter,
+        writer: StreamWriterProtocol,
         command: str,
         arguments: DapBaseModel | None = None,
-        timeout: float = 5.0,
+        timeout: float = DEFAULT_REQUEST_TIMEOUT,
     ) -> dict[str, Any]:
         """Sends a request to the debug adapter and waits for the response.
 
@@ -95,26 +231,7 @@ class DapClient:
         Raises:
             DapError: If the request times out or framing fails.
         """
-        seq = self._seq_counter
-        self._seq_counter += 1
-
-        loop = asyncio.get_running_loop()
-        fut = loop.create_future()
-        self._pending_requests[seq] = fut
-
-        request: dict[str, Any] = {
-            "seq": seq,
-            "type": MessageType.REQUEST.value,
-            "command": command,
-        }
-        if arguments is not None:
-            if not isinstance(arguments, DapBaseModel):
-                raise TypeError(
-                    f"arguments must be a DapBaseModel, got {type(arguments)}"
-                )
-            request["arguments"] = arguments.dump_dap()
-
-        await self._write_message(writer, request)
+        seq, fut = self._send_request_future(writer, command, arguments)
         try:
             resp = await asyncio.wait_for(fut, timeout=timeout)
             if not resp.get("success", True):
@@ -124,12 +241,14 @@ class DapClient:
             return resp
         except asyncio.TimeoutError:
             self._pending_requests.pop(seq, None)
+            if not fut.done():
+                fut.cancel()
             raise DapError(
                 f"Request {command} (seq={seq}) timed out after {timeout}s"
             )
 
     async def initialize(
-        self, writer: asyncio.StreamWriter, args: InitializeArguments
+        self, writer: StreamWriterProtocol, args: InitializeArguments
     ) -> Response:
         """Sends an initialize request.
 
@@ -144,7 +263,7 @@ class DapClient:
         return Response.model_validate(resp)
 
     async def disconnect(
-        self, writer: asyncio.StreamWriter, args: DisconnectArguments
+        self, writer: StreamWriterProtocol, args: DisconnectArguments
     ) -> Response:
         """Sends a disconnect request.
 
@@ -159,7 +278,7 @@ class DapClient:
         return Response.model_validate(resp)
 
     async def stack_trace(
-        self, writer: asyncio.StreamWriter, args: StackTraceArguments
+        self, writer: StreamWriterProtocol, args: StackTraceArguments
     ) -> StackTraceResponse:
         """Sends a stackTrace request.
 
@@ -174,7 +293,7 @@ class DapClient:
         return StackTraceResponse.model_validate(resp)
 
     async def continue_thread(
-        self, writer: asyncio.StreamWriter, args: ContinueArguments
+        self, writer: StreamWriterProtocol, args: ContinueArguments
     ) -> ContinueResponse:
         """Sends a continue request.
 
@@ -189,7 +308,7 @@ class DapClient:
         return ContinueResponse.model_validate(resp)
 
     async def pause_thread(
-        self, writer: asyncio.StreamWriter, args: PauseArguments
+        self, writer: StreamWriterProtocol, args: PauseArguments
     ) -> Response:
         """Sends a pause request.
 
@@ -203,7 +322,7 @@ class DapClient:
         resp = await self._send_request(writer, "pause", args)
         return Response.model_validate(resp)
 
-    async def threads(self, writer: asyncio.StreamWriter) -> ThreadsResponse:
+    async def threads(self, writer: StreamWriterProtocol) -> ThreadsResponse:
         """Sends a threads request.
 
         Args:
@@ -216,7 +335,7 @@ class DapClient:
         return ThreadsResponse.model_validate(resp)
 
     async def attach(
-        self, writer: asyncio.StreamWriter, args: AttachRequestArguments
+        self, writer: StreamWriterProtocol, args: AttachRequestArguments
     ) -> Response:
         """Sends an attach request.
 
@@ -231,7 +350,7 @@ class DapClient:
         return Response.model_validate(resp)
 
     async def launch(
-        self, writer: asyncio.StreamWriter, args: LaunchArguments
+        self, writer: StreamWriterProtocol, args: LaunchArguments
     ) -> Response:
         """Sends a launch request.
 
@@ -246,7 +365,7 @@ class DapClient:
         return Response.model_validate(resp)
 
     async def evaluate(
-        self, writer: asyncio.StreamWriter, args: EvaluateArguments
+        self, writer: StreamWriterProtocol, args: EvaluateArguments
     ) -> EvaluateResponse:
         """Sends an evaluate request.
 
@@ -261,7 +380,7 @@ class DapClient:
         return EvaluateResponse.model_validate(resp)
 
     async def scopes(
-        self, writer: asyncio.StreamWriter, args: ScopesArguments
+        self, writer: StreamWriterProtocol, args: ScopesArguments
     ) -> ScopesResponse:
         """Sends a scopes request.
 
@@ -276,7 +395,7 @@ class DapClient:
         return ScopesResponse.model_validate(resp)
 
     async def variables(
-        self, writer: asyncio.StreamWriter, args: VariablesArguments
+        self, writer: StreamWriterProtocol, args: VariablesArguments
     ) -> VariablesResponse:
         """Sends a variables request.
 
@@ -291,7 +410,7 @@ class DapClient:
         return VariablesResponse.model_validate(resp)
 
     async def set_breakpoints(
-        self, writer: asyncio.StreamWriter, args: SetBreakpointsArguments
+        self, writer: StreamWriterProtocol, args: SetBreakpointsArguments
     ) -> SetBreakpointsResponse:
         """Sends a setBreakpoints request.
 
@@ -343,7 +462,7 @@ class DapClient:
         return json.loads(body.decode("utf-8"))
 
     async def _write_message(
-        self, writer: asyncio.StreamWriter, value: dict[str, Any]
+        self, writer: StreamWriterProtocol, value: dict[str, Any]
     ) -> None:
         """Writes a message to the writer, handling protocol framing.
 

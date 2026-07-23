@@ -341,6 +341,8 @@ class DapTestFramework:
             self.client.run(reader, self.event_queue)
         )
         self._process_task = asyncio.create_task(self._event_processor_loop())
+        # So tasks(including client.run) are executed before we send requests.
+        await asyncio.sleep(0)
 
     def _send_wrapper(
         self, command: str, coro_fn: Callable[[], Coroutine[Any, Any, Any]]

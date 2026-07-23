@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import unittest
+from typing import Any
 
 from zxdb_dap import ZxdbDapClient, ZxdbDetachArguments, ZxdbStackTraceArguments
 
@@ -22,9 +23,24 @@ class MockWriter(asyncio.StreamWriter):
         self.drained.set()
 
 
+def feed_dap_response(
+    reader: asyncio.StreamReader, response: dict[str, Any]
+) -> None:
+    body = json.dumps(response, separators=(",", ":")).encode("utf-8")
+    header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
+    reader.feed_data(header + body)
+
+
 class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
+    def _start_client(self, client: ZxdbDapClient) -> asyncio.StreamReader:
+        reader = asyncio.StreamReader()
+        event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        asyncio.create_task(client.run(reader, event_queue))
+        return reader
+
     async def test_zxdb_detach_pid(self) -> None:
         client = ZxdbDapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = ZxdbDetachArguments(pid=1234)
 
@@ -45,8 +61,7 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
             "command": "zxdb.Detach",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp["success"])
@@ -56,6 +71,7 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
 
     async def test_zxdb_detach_all(self) -> None:
         client = ZxdbDapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = ZxdbDetachArguments(detach_all=True)
 
@@ -76,8 +92,7 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
             "command": "zxdb.Detach",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp["success"])
@@ -93,6 +108,7 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
 
     async def test_zxdb_stack_trace(self) -> None:
         client = ZxdbDapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = ZxdbStackTraceArguments(thread_id=5678, remote_unwind=True)
 
@@ -117,8 +133,7 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)

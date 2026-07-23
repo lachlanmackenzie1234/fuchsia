@@ -385,6 +385,9 @@ class Daemon:
 
         self.background_tasks.add(asyncio.create_task(self._process_events()))
 
+        # So tasks(including dap_client.run) are executed before we send requests.
+        await asyncio.sleep(0)
+
         await self.dap_client.initialize(
             self.zxdb_writer,
             InitializeArguments(adapterID="zxdb"),

@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import unittest
+from typing import Any
 
 from pydap.client import DapClient, DapError
 from pydap.dap_types import Source, SourceBreakpoint
@@ -23,7 +24,42 @@ class MockWriter:
         pass
 
 
+def feed_dap_response(
+    reader: asyncio.StreamReader, response: dict[str, Any]
+) -> None:
+    body = json.dumps(response, separators=(",", ":")).encode("utf-8")
+    header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
+    reader.feed_data(header + body)
+
+
 class TestDapClient(unittest.IsolatedAsyncioTestCase):
+    def _start_client(self, client: DapClient) -> asyncio.StreamReader:
+        reader = asyncio.StreamReader()
+        event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        asyncio.create_task(client.run(reader, event_queue))
+        return reader
+
+    # shouldn't send request before run the client.
+    async def test_not_running_error(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        with self.assertRaises(DapError) as cm:
+            client._send_request_future(writer, "initialize")
+        self.assertIn("DapClient is not running", str(cm.exception))
+
+    async def test_run(self) -> None:
+        client = DapClient()
+        reader = asyncio.StreamReader()
+        event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        run_task = asyncio.create_task(client.run(reader, event_queue))
+        await asyncio.sleep(0)
+        self.assertTrue(client.is_running)
+
+        reader.feed_eof()
+        await run_task
+        self.assertFalse(client.is_running)
+
     async def test_read_message(self) -> None:
         data = b'Content-Length: 26\r\n\r\n{"seq":1,"type":"request"}'
         reader = asyncio.StreamReader()
@@ -43,7 +79,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         value = {"seq": 1, "type": "request"}
 
         writer = MockWriter()
-        await client._write_message(writer, value)  # type: ignore
+        await client._write_message(writer, value)
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -52,14 +88,16 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test__send_request(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
 
         send_task = asyncio.create_task(
-            client._send_request(writer, "initialize")  # type: ignore
+            client._send_request(writer, "initialize")
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -74,8 +112,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "command": "initialize",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp["success"])
@@ -83,14 +120,14 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_initialize(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
         args = InitializeArguments(adapter_id="test")
-        send_task = asyncio.create_task(
-            client.initialize(writer, args)  # type: ignore
-        )
+        send_task = asyncio.create_task(client.initialize(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -105,22 +142,21 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "command": "initialize",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
 
     async def test_disconnect(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
         args = DisconnectArguments(terminate_debuggee=True)
-        send_task = asyncio.create_task(
-            client.disconnect(writer, args)  # type: ignore
-        )
+        send_task = asyncio.create_task(client.disconnect(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -135,22 +171,21 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "command": "disconnect",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
 
     async def test_stack_trace(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
         args = StackTraceArguments(thread_id=1)
-        send_task = asyncio.create_task(
-            client.stack_trace(writer, args)  # type: ignore
-        )
+        send_task = asyncio.create_task(client.stack_trace(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -166,22 +201,21 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "body": {"stackFrames": []},
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertEqual(resp.body.stack_frames, [])
 
     async def test_continue_thread(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
         args = ContinueArguments(thread_id=1)
-        send_task = asyncio.create_task(
-            client.continue_thread(writer, args)  # type: ignore
-        )
+        send_task = asyncio.create_task(client.continue_thread(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -197,8 +231,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "body": {"allThreadsContinued": True},
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertIsInstance(resp, ContinueResponse)
@@ -235,14 +268,14 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_pause_thread(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
         args = PauseArguments(thread_id=1)
-        send_task = asyncio.create_task(
-            client.pause_thread(writer, args)  # type: ignore
-        )
+        send_task = asyncio.create_task(client.pause_thread(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -257,19 +290,20 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "command": "pause",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
 
     async def test_threads(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
-        send_task = asyncio.create_task(client.threads(writer))  # type: ignore
+        send_task = asyncio.create_task(client.threads(writer))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -290,8 +324,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertEqual(len(resp.body.threads), 2)
@@ -300,14 +333,16 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_attach(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
 
         writer = MockWriter()
         args = AttachRequestArguments(
             restart=True, extra_fields={"process": "my_process"}
         )
-        send_task = asyncio.create_task(client.attach(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.attach(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -322,8 +357,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "command": "attach",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -332,11 +366,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_launch(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = LaunchArguments(process="my_process", launch_command="run")
-        send_task = asyncio.create_task(client.launch(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.launch(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -351,8 +387,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "command": "launch",
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -361,13 +396,15 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_evaluate(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = EvaluateArguments(
             expression="1 + 1", context="repl", frame_id=42
         )
-        send_task = asyncio.create_task(client.evaluate(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.evaluate(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -387,8 +424,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -401,11 +437,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_scopes(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = ScopesArguments(frame_id=42)
-        send_task = asyncio.create_task(client.scopes(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.scopes(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -429,8 +467,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -442,11 +479,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = VariablesArguments(variables_reference=100)
-        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.variables(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -471,8 +510,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -487,11 +525,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables_with_start_only(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = VariablesArguments(variables_reference=100, start=5)
-        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.variables(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -507,8 +547,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "body": {"variables": []},
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -518,11 +557,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables_with_count_only(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = VariablesArguments(variables_reference=100, count=10)
-        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.variables(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -538,8 +579,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "body": {"variables": []},
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -549,11 +589,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables_with_start_and_count(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = VariablesArguments(variables_reference=100, start=5, count=10)
-        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+        send_task = asyncio.create_task(client.variables(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -569,8 +611,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "body": {"variables": []},
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -580,16 +621,16 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_breakpoints(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = SetBreakpointsArguments(
             source=Source(path="/path/to/file.rs"),
             breakpoints=[SourceBreakpoint(line=12)],
         )
-        send_task = asyncio.create_task(
-            client.set_breakpoints(writer, args)  # type: ignore
-        )
+        send_task = asyncio.create_task(client.set_breakpoints(writer, args))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
+        await client._write_queue.join()
 
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
@@ -614,8 +655,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             },
         }
 
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+        feed_dap_response(reader, response)
 
         resp = await send_task
         self.assertTrue(resp.success)
@@ -629,13 +669,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_error_response(self) -> None:
         client = DapClient()
+        reader = self._start_client(client)
         writer = MockWriter()
         args = SetBreakpointsArguments(source=Source(path="relative.rs"))
 
-        send_task = asyncio.create_task(
-            client.set_breakpoints(writer, args)  # type: ignore
-        )
-        await asyncio.sleep(0.1)
+        send_task = asyncio.create_task(client.set_breakpoints(writer, args))
+        await asyncio.sleep(0)
+        await client._write_queue.join()
         buffer_val = writer.buffer.getvalue()
         headers, body = buffer_val.split(b"\r\n\r\n", 1)
         req_val = json.loads(body.decode("utf-8"))
@@ -649,8 +689,8 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             "command": "setBreakpoints",
             "message": "SetBreakpointsRequest path must be absolute!",
         }
-        if seq in client._pending_requests:
-            client._pending_requests[seq].set_result(response)
+
+        feed_dap_response(reader, response)
 
         with self.assertRaises(DapError) as cm:
             await send_task
