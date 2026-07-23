@@ -211,6 +211,7 @@ rustyline = "18.0.1"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
+sapphire-gatt = "0.1.0"
 sapphire-peer-cache = "0.1.0"
 sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
@@ -380,7 +381,6 @@ byteorder = { path = "ask2patch/byteorder" }
 csv = { path = "ask2patch/csv" }
 csv-core = { path = "ask2patch/csv-core" }
 memchr = { path = "ask2patch/memchr" }
-regex-automata = { path = "ask2patch/regex-automata" }
 same-file = { path = "ask2patch/same-file" }
 termcolor = { path = "ask2patch/termcolor" }
 walkdir = { path = "ask2patch/walkdir" }
@@ -395,7 +395,6 @@ clipboard-win = { path = "empty/clipboard-win" }
 cloudabi = { path = "empty/cloudabi"}
 core-foundation-sys = { path = "empty/core-foundation-sys" }
 crossterm_winapi = { path = "empty/crossterm_winapi" }
-ctor = { path = "empty/ctor" }
 dirs-next = { path = "empty/dirs-next-2.0.0" }
 hermit-abi = { path = "empty/hermit-abi" }
 hermit-abi-0_1_19 = { package = "hermit-abi", path = "empty/hermit-abi-0.1.19" }
@@ -404,7 +403,6 @@ js-sys-102 = { package = "js-sys", path = "empty/js-sys-102" }
 kqueue = { path = "empty/kqueue" }
 miow = { path = "empty/miow" }
 ntapi = { path = "empty/ntapi" }
-output_vt100 = { path = "empty/output_vt100" }
 pkg-config = { path = "empty/pkg-config" }
 portable-atomic = { path = "empty/portable-atomic" }
 portable-atomic-util = { path = "empty/portable-atomic-util" }
@@ -422,8 +420,6 @@ winapi-util = { path = "empty/winapi-util" }
 windows-0_61_3 = { package = "windows", path = "empty/windows-0.61.3" }
 windows-core-0_62_2 = { package = "windows-core", path = "empty/windows-core-0.62.2" }
 windows-link-0_2_1 = { package = "windows-link", path = "empty/windows-link-0.2.1" }
-windows-sys-0_45_0 = { package = "windows-sys", path = "empty/windows-sys-0.45.0" }
-windows-sys-0_48_0 = { package = "windows-sys", path = "empty/windows-sys-0.48.0" }
 windows-sys-0_52_0 = { package = "windows-sys", path = "empty/windows-sys-0.52.0" }
 windows-sys-0_60_2 = { package = "windows-sys", path = "empty/windows-sys-0.60.2" }
 windows-sys-0_61_2 = { package = "windows-sys", path = "empty/windows-sys-0.61.2" }
@@ -625,6 +621,9 @@ existing_gn_target = "//src/lib/fuchsia-cprng"
 uses_fuchsia_license = true
 
 [gn.package.sapphire-collections."0.1.0"]
+uses_fuchsia_license = true
+
+[gn.package.sapphire-gatt."0.1.0"]
 uses_fuchsia_license = true
 
 [gn.package.sapphire-peer-cache."0.1.0"]

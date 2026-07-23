@@ -1847,6 +1847,14 @@ group("sapphire-collections-0.1.0") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
 }
 
+group("sapphire-gatt") {
+  public_deps = [ ":sapphire-gatt-v0_1_0" ]
+}
+
+group("sapphire-gatt-0.1.0") {
+  public_deps = [ ":sapphire-gatt-v0_1_0" ]
+}
+
 group("sapphire-peer-cache") {
   public_deps = [ ":sapphire-peer-cache-v0_1_0" ]
 }
@@ -19193,6 +19201,40 @@ rustc_library("sapphire-collections-v0_1_0") {
     "-Cextra-filename=-8795358b52a39395",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_library("sapphire-gatt-v0_1_0") {
+  crate_name = "sapphire_gatt"
+  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-gatt/src/lib.rs"
+  output_name = "sapphire_gatt-3cfcf673d85d3aa8"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-async-v0_1_0" ]
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-peer-cache-v0_1_0" ]
+  deps += [ ":sapphire-sync-v0_1_0" ]
+  deps += [ ":sapphire-uuid-v0_1_0" ]
+  deps += [ ":futures-v0_3_31" ]
+  deps += [ ":strum-v0_28_0" ]
+  deps += [ ":strum_macros-v0_28_0($host_toolchain)" ]
+  deps += [ ":thiserror-v2_0_18" ]
+  deps += [ ":zerocopy-v0_8_48" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=3cfcf673d85d3aa8",
+    "-Cextra-filename=-3cfcf673d85d3aa8",
   ]
 
   visibility = [ ":*" ]

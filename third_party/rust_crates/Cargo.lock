@@ -2003,6 +2003,7 @@ dependencies = [
  "rutabaga_gfx",
  "sapphire-async",
  "sapphire-collections",
+ "sapphire-gatt",
  "sapphire-peer-cache",
  "sapphire-rpc-macro",
  "sapphire-sync",
@@ -4740,6 +4741,22 @@ name = "sapphire-collections"
 version = "0.1.0"
 
 [[package]]
+name = "sapphire-gatt"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "sapphire-async",
+ "sapphire-collections",
+ "sapphire-peer-cache",
+ "sapphire-sync",
+ "sapphire-uuid",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.18",
+ "zerocopy",
+]
+
+[[package]]
 name = "sapphire-peer-cache"
 version = "0.1.0"
 
@@ -6257,33 +6274,3 @@ version = "2.0.16+zstd.1.5.7"
 dependencies = [
  "libc",
 ]
-
-[[patch.unused]]
-name = "ctor"
-version = "0.1.22"
-
-
-[[patch.unused]]
-name = "output_vt100"
-version = "0.1.3"
-
-
-[[patch.unused]]
-name = "regex-automata"
-version = "0.1.10"
-
-
-[[patch.unused]]
-name = "sapphire-gatt"
-version = "0.1.0"
-
-
-[[patch.unused]]
-name = "windows-sys"
-version = "0.45.0"
-
-
-[[patch.unused]]
-name = "windows-sys"
-version = "0.48.0"
-
