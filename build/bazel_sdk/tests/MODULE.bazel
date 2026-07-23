@@ -143,9 +143,13 @@ register_toolchains("@host_no_cpp//:empty_cpp_toolchain")
 # module.
 bazel_dep(name = "rules_rust", version = "0.69.0")
 bazel_dep(name = "rules_go", version = "0.61.1", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "pybind11_bazel", version = "3.0.0")
+bazel_dep(name = "pybind11_bazel", version = "2.13.6")
 bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
-bazel_dep(name = "re2", version = "2025-11-05.bcr.1", repo_name = "com_googlesource_code_re2")
+bazel_dep(name = "re2", version = "", repo_name = "com_googlesource_code_re2")
+local_path_override(
+    module_name = "re2",
+    path = "{}/third_party/re2/src".format(_FUCHSIA_SOURCE_ROOT),
+)
 
 single_version_override(
     module_name = "rules_cc",
