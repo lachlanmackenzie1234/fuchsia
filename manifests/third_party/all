@@ -554,7 +554,7 @@
     <project name="third_party/Vulkan-Headers"
              path="third_party/Vulkan-Headers/src"
              remote="https://fuchsia.googlesource.com/third_party/Vulkan-Headers"
-             revision="ccb61f240179741791fcf3d9b84a8e1ca88a54d8"
+             revision="ffaac2e1c4a5c446f04f9d3641f71af72c61eee4"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/Vulkan-Loader"
              path="third_party/Vulkan-Loader/src"
