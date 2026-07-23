@@ -806,7 +806,7 @@ open protocol BufferCollection {
         ///
         /// In most cases the constraints field should specify all the necessary
         /// constraints known to the client, and this field should not be set.
-        @available(added=NEXT)
+        @available(added=32)
         2: must_match_vmo zx.Handle:VMO;
     });
 

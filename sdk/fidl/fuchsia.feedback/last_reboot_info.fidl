@@ -160,7 +160,7 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     BATTERY_DRAINED = 27;
 
     /// The system failed to suspend or resume within the expected time.
-    @available(added=NEXT)
+    @available(added=32)
     SUSPENSION_FAILURE = 29;
 
     // ///////////////////////////////////////////////////////////////////////////////////////////

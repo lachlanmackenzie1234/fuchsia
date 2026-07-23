@@ -112,7 +112,7 @@ TEST(ImageFormat, LinearRowBytes_V2) {
   EXPECT_FALSE(ImageFormatMinimumRowBytes(constraints, 101, &row_bytes));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, LinearRowBytesChecked_V2) {
   sysmem_v2::ImageFormatConstraints constraints;
   constraints.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
@@ -131,7 +131,7 @@ TEST(ImageFormat, LinearRowBytesChecked_V2) {
   // too wide in pixels
   EXPECT_FALSE(ImageFormatMinimumRowBytesChecked(constraints, 101).IsValid());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, LinearRowBytes_V2_wire) {
   fidl::Arena allocator;
@@ -154,7 +154,7 @@ TEST(ImageFormat, LinearRowBytes_V2_wire) {
   EXPECT_FALSE(ImageFormatMinimumRowBytes(constraints, 101, &row_bytes));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, LinearRowBytesChecked_V2_wire) {
   fidl::Arena allocator;
   sysmem_v2::wire::ImageFormatConstraints constraints(allocator);
@@ -175,7 +175,7 @@ TEST(ImageFormat, LinearRowBytesChecked_V2_wire) {
   // too wide in pixels
   EXPECT_FALSE(ImageFormatMinimumRowBytesChecked(constraints, 101).IsValid());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, LinearRowBytes_V1_wire) {
   sysmem_v1::wire::PixelFormat linear = {
@@ -202,7 +202,7 @@ TEST(ImageFormat, LinearRowBytes_V1_wire) {
   EXPECT_FALSE(ImageFormatMinimumRowBytes(constraints, 101, &row_bytes));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, LinearRowBytesChecked_V1_wire) {
   sysmem_v1::wire::PixelFormat linear = {
       .type = sysmem_v1::wire::PixelFormatType::kBgra32,
@@ -227,7 +227,7 @@ TEST(ImageFormat, LinearRowBytesChecked_V1_wire) {
   EXPECT_FALSE(ImageFormatMinimumRowBytesChecked(constraints, 11).IsValid());
   EXPECT_FALSE(ImageFormatMinimumRowBytesChecked(constraints, 101).IsValid());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, InvalidColorSpace_V1_wire) {
   fuchsia_sysmem::wire::PixelFormat kPixelFormat = {
@@ -411,7 +411,7 @@ TEST(ImageFormat, PlaneByteOffset_V2) {
   EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, 3, &row_bytes));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, PlaneByteOffsetChecked_V2) {
   sysmem_v2::ImageFormatConstraints constraints;
   constraints.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
@@ -470,7 +470,7 @@ TEST(ImageFormat, PlaneByteOffsetChecked_V2) {
 
   EXPECT_FALSE(ImageFormatPlaneRowBytesChecked(image_format, 3).IsValid());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, PlaneByteOffset_V2_wire) {
   fidl::Arena allocator;
@@ -520,7 +520,7 @@ TEST(ImageFormat, PlaneByteOffset_V2_wire) {
   EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, 3, &row_bytes));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, PlaneByteOffsetChecked_V2_wire) {
   fidl::Arena allocator;
   sysmem_v2::wire::ImageFormatConstraints constraints(allocator);
@@ -580,7 +580,7 @@ TEST(ImageFormat, PlaneByteOffsetChecked_V2_wire) {
 
   EXPECT_FALSE(ImageFormatPlaneRowBytesChecked(image_format, 3).IsValid());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, PlaneByteOffset_V1_wire) {
   sysmem_v1::wire::PixelFormat linear = {
@@ -637,7 +637,7 @@ TEST(ImageFormat, PlaneByteOffset_V1_wire) {
   EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, 3, &row_bytes));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, PlaneByteOffsetChecked_V1_wire) {
   sysmem_v1::wire::PixelFormat linear = {
       .type = sysmem_v1::wire::PixelFormatType::kBgra32,
@@ -704,7 +704,7 @@ TEST(ImageFormat, PlaneByteOffsetChecked_V1_wire) {
 
   EXPECT_FALSE(ImageFormatPlaneRowBytesChecked(image_format, 3).IsValid());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, TransactionEliminationFormats_V2) {
   PixelFormatAndModifier format;
@@ -750,7 +750,7 @@ TEST(ImageFormat, TransactionEliminationFormats_V2) {
   EXPECT_EQ(64, row_bytes);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, TransactionEliminationFormatsChecked_V2) {
   PixelFormatAndModifier format;
   format.pixel_format = fuchsia_images2::PixelFormat::kB8G8R8A8;
@@ -796,7 +796,7 @@ TEST(ImageFormat, TransactionEliminationFormatsChecked_V2) {
   // Row size should be rounded up to 64 bytes.
   EXPECT_EQ(64, row_bytes_checked.ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, TransactionEliminationFormats_V2_wire) {
   fidl::Arena allocator;
@@ -843,7 +843,7 @@ TEST(ImageFormat, TransactionEliminationFormats_V2_wire) {
   EXPECT_EQ(64, row_bytes);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, TransactionEliminationFormatsChecked_V2_wire) {
   fidl::Arena allocator;
   PixelFormatAndModifier format;
@@ -890,7 +890,7 @@ TEST(ImageFormat, TransactionEliminationFormatsChecked_V2_wire) {
   // Row size should be rounded up to 64 bytes.
   EXPECT_EQ(64, row_bytes_checked.ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, TransactionEliminationFormats_V1_wire) {
   sysmem_v1::wire::PixelFormat format = {
@@ -940,7 +940,7 @@ TEST(ImageFormat, TransactionEliminationFormats_V1_wire) {
   EXPECT_EQ(64, row_bytes);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, TransactionEliminationFormatsChecked_V1_wire) {
   sysmem_v1::wire::PixelFormat format = {
       .type = sysmem_v1::wire::PixelFormatType::kBgra32,
@@ -990,7 +990,7 @@ TEST(ImageFormat, TransactionEliminationFormatsChecked_V1_wire) {
   // Row size should be rounded up to 64 bytes.
   EXPECT_EQ(64, row_bytes_checked.ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, BasicSizes_V2) {
   constexpr uint32_t kWidth = 64;
@@ -1029,7 +1029,7 @@ TEST(ImageFormat, BasicSizes_V2) {
   EXPECT_EQ(4, ImageFormatSampleAlignment(pixel_format_and_modifier_p010));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, BasicSizesChecked_V2) {
   constexpr uint32_t kWidth = 64;
   constexpr uint32_t kHeight = 128;
@@ -1072,7 +1072,7 @@ TEST(ImageFormat, BasicSizesChecked_V2) {
   EXPECT_EQ(2, ImageFormatSurfaceHeightMinDivisor(pixel_format_and_modifier_p010));
   EXPECT_EQ(4, ImageFormatSampleAlignment(pixel_format_and_modifier_p010));
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, BasicSizes_V2_wire) {
   fidl::Arena allocator;
@@ -1102,7 +1102,7 @@ TEST(ImageFormat, BasicSizes_V2_wire) {
   EXPECT_EQ(2, ImageFormatSampleAlignment(pixel_format_and_modifier_nv12));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, BasicSizesChecked_V2_wire) {
   fidl::Arena allocator;
   constexpr uint32_t kWidth = 64;
@@ -1134,7 +1134,7 @@ TEST(ImageFormat, BasicSizesChecked_V2_wire) {
   EXPECT_EQ(2, ImageFormatSurfaceHeightMinDivisor(pixel_format_and_modifier_nv12));
   EXPECT_EQ(2, ImageFormatSampleAlignment(pixel_format_and_modifier_nv12));
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, BasicSizes_V1_wire) {
   constexpr uint32_t kWidth = 64;
@@ -1170,7 +1170,7 @@ TEST(ImageFormat, BasicSizes_V1_wire) {
   EXPECT_EQ(2, ImageFormatSampleAlignment(image_format_nv12.pixel_format));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, BasicSizesChecked_V1_wire) {
   constexpr uint32_t kWidth = 64;
   constexpr uint32_t kHeight = 128;
@@ -1208,7 +1208,7 @@ TEST(ImageFormat, BasicSizesChecked_V1_wire) {
   EXPECT_EQ(2, ImageFormatCodedHeightMinDivisor(image_format_nv12.pixel_format));
   EXPECT_EQ(2, ImageFormatSampleAlignment(image_format_nv12.pixel_format));
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, AfbcFlagFormats_V2) {
   PixelFormatAndModifier format;
@@ -1241,7 +1241,7 @@ TEST(ImageFormat, AfbcFlagFormats_V2) {
   EXPECT_EQ(kMinHeaderOffset + kMinWidth * kMinHeight * 4, ImageFormatImageSize(image_format));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, AfbcFlagFormatsChecked_V2) {
   PixelFormatAndModifier format;
   format.pixel_format = fuchsia_images2::PixelFormat::kB8G8R8A8;
@@ -1274,7 +1274,7 @@ TEST(ImageFormat, AfbcFlagFormatsChecked_V2) {
   EXPECT_TRUE(size_checked.IsValid());
   EXPECT_EQ(kMinHeaderOffset + kMinWidth * kMinHeight * 4, size_checked.ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, AfbcFlagFormats_V2_wire) {
   fidl::Arena allocator;
@@ -1309,7 +1309,7 @@ TEST(ImageFormat, AfbcFlagFormats_V2_wire) {
   EXPECT_EQ(kMinHeaderOffset + kMinWidth * kMinHeight * 4, ImageFormatImageSize(image_format));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, AfbcFlagFormatsChecked_V2_wire) {
   fidl::Arena allocator;
   PixelFormatAndModifier format;
@@ -1344,7 +1344,7 @@ TEST(ImageFormat, AfbcFlagFormatsChecked_V2_wire) {
   EXPECT_TRUE(size_checked.IsValid());
   EXPECT_EQ(kMinHeaderOffset + kMinWidth * kMinHeight * 4, size_checked.ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, AfbcFlagFormats_V1_wire) {
   sysmem_v1::wire::PixelFormat format = {
@@ -1391,7 +1391,7 @@ TEST(ImageFormat, AfbcFlagFormats_V1_wire) {
   EXPECT_EQ(kMinHeaderOffset + kMinWidth * kMinHeight * 4, ImageFormatImageSize(image_format));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, AfbcFlagFormatsChecked_V1_wire) {
   sysmem_v1::wire::PixelFormat format = {
       .type = sysmem_v1::wire::PixelFormatType::kBgra32,
@@ -1438,7 +1438,7 @@ TEST(ImageFormat, AfbcFlagFormatsChecked_V1_wire) {
   EXPECT_TRUE(size_checked.IsValid());
   EXPECT_EQ(kMinHeaderOffset + kMinWidth * kMinHeight * 4, size_checked.ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, R8G8Formats_V1_wire) {
   sysmem_v1::wire::PixelFormat format = {
@@ -1507,7 +1507,7 @@ TEST(ImageFormat, R8G8Formats_V2) {
   }
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, R8G8FormatsChecked_V2) {
   sysmem_v2::ImageFormatConstraints constraints;
   constraints.pixel_format() = fuchsia_images2::PixelFormat::kR8G8;
@@ -1543,7 +1543,7 @@ TEST(ImageFormat, R8G8FormatsChecked_V2) {
     EXPECT_EQ(18u * 17u * 1, size_checked.ValueOrDie());
   }
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, R8G8Formats_V2_wire) {
   fidl::Arena allocator;
@@ -1575,7 +1575,7 @@ TEST(ImageFormat, R8G8Formats_V2_wire) {
   }
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, R8G8FormatsChecked_V2_wire) {
   fidl::Arena allocator;
   sysmem_v2::wire::ImageFormatConstraints constraints(allocator);
@@ -1613,9 +1613,9 @@ TEST(ImageFormat, R8G8FormatsChecked_V2_wire) {
     EXPECT_EQ(18u * 17u * 1, size_checked.ValueOrDie());
   }
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, R8G8FormatsChecked_V1_wire) {
   sysmem_v1::wire::PixelFormat format = {
       .type = sysmem_v1::wire::PixelFormatType::kR8G8,
@@ -1662,7 +1662,7 @@ TEST(ImageFormat, R8G8FormatsChecked_V1_wire) {
     EXPECT_EQ(18u * 17u * 1, size_checked.ValueOrDie());
   }
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, A2R10G10B10_Formats_V1_wire) {
   for (const auto& pixel_format_type : {sysmem_v1::wire::PixelFormatType::kA2R10G10B10,
@@ -1745,7 +1745,7 @@ TEST(ImageFormat, A2R10G10B10_Formats_V2_wire) {
   }
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, A2R10G10B10_FormatsChecked_V2) {
   for (const auto& pixel_format :
        {fuchsia_images2::PixelFormat::kA2R10G10B10, fuchsia_images2::PixelFormat::kA2B10G10R10}) {
@@ -1838,7 +1838,7 @@ TEST(ImageFormat, A2R10G10B10_FormatsChecked_V1_wire) {
     EXPECT_EQ(4, ImageFormatSampleAlignment(image_format.pixel_format));
   }
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, GoldfishOptimal_V2) {
   constexpr uint32_t kWidth = 64;
@@ -1942,7 +1942,7 @@ TEST(ImageFormat, GoldfishOptimal_V1_wire) {
             ImageFormatSampleAlignment(goldfish_optimal_image_format_bgra32.pixel_format));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, GoldfishOptimalChecked_V2) {
   constexpr uint32_t kWidth = 64;
   constexpr uint32_t kHeight = 128;
@@ -2058,7 +2058,7 @@ TEST(ImageFormat, GoldfishOptimalChecked_V1_wire) {
   EXPECT_EQ(ImageFormatSampleAlignment(linear_image_format_bgra32.pixel_format),
             ImageFormatSampleAlignment(goldfish_optimal_image_format_bgra32.pixel_format));
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 TEST(ImageFormat, CorrectModifiers) {
   EXPECT_EQ(sysmem_v1::kFormatModifierArmAfbc16X16YuvTiledHeader,
@@ -2101,7 +2101,7 @@ TEST(ImageFormat, RoundUpWidthForCallers) {
   EXPECT_EQ(24, minimum_row_bytes);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, RoundUpWidthForCallersChecked) {
   sysmem_v2::ImageFormatConstraints constraints;
   constraints.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
@@ -2118,4 +2118,4 @@ TEST(ImageFormat, RoundUpWidthForCallersChecked) {
   // Lowest value that's 17 or larger and divisible by 8.
   EXPECT_EQ(24u, minimum_row_bytes.ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)

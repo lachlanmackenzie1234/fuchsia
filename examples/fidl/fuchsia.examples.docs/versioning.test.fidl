@@ -114,7 +114,7 @@ alias ReferencesTypeAndValue = vector<Type>:VALUE;
 // [END references]
 
 // [START strict-to-flexible]
-type Color2 = strict(removed=NEXT) flexible(added=NEXT) enum {
+type Color2 = strict(removed=NEXT) flexible(added=NEXT) enum { // NEVER_REPLACE_NEXT
     RED = 1;
 };
 // [END strict-to-flexible]

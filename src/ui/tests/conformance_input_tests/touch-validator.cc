@@ -377,7 +377,7 @@ TEST_P(SingleViewTouchConformanceTest, TouchEventFields) {
   const uint32_t kID = 1u;
   const int kX = 3 * display_width_as_int() / 4;
   const int kY = display_height_as_int() / 4;
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
   fuchsia_ui_test_input::ContactInputReport contact;
   contact.contact_id(kID);
   contact.position_x(kX);
@@ -441,7 +441,7 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   const int kFinger2X = kFinger1X + 5;
 
   auto build_contact = [](uint32_t id, int64_t x, int64_t y) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
     fuchsia_ui_test_input::ContactInputReport contact;
 #else
     fir::ContactInputReport contact;
@@ -453,7 +453,7 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   };
 
   {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
     fuchsia_ui_test_input::TouchInputReport finger1_down;
 #else
     fir::TouchInputReport finger1_down;
@@ -474,7 +474,7 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
     fuchsia_ui_test_input::TouchInputReport finger_1_2_down;
 #else
     fir::TouchInputReport finger_1_2_down;
@@ -500,7 +500,7 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
     fuchsia_ui_test_input::TouchInputReport keep_finger_1_2_down;
 #else
     fir::TouchInputReport keep_finger_1_2_down;
@@ -528,7 +528,7 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
     fuchsia_ui_test_input::TouchInputReport finger_2_lift;
 #else
     fir::TouchInputReport finger_2_lift;
@@ -551,7 +551,7 @@ TEST_P(SingleViewTouchConformanceTest, OneFingerDownThenAnotherThenLift) {
   }
 
   {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
     fuchsia_ui_test_input::TouchInputReport finger_1_lift;
 #else
     fir::TouchInputReport finger_1_lift;

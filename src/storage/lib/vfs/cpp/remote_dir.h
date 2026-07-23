@@ -37,7 +37,7 @@ class RemoteDir : public Vnode {
   // |Vnode| implementation:
   fuchsia_io::NodeProtocolKinds GetProtocols() const final;
   bool IsRemote() const final;
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   void DeprecatedOpenRemote(fuchsia_io::OpenFlags, fuchsia_io::ModeType, fidl::StringView,
                             fidl::ServerEnd<fuchsia_io::Node>) const final;
 #endif

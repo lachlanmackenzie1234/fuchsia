@@ -114,6 +114,10 @@
             "31": {
                 "abi_revision": "0x9080590DE5503F82",
                 "phase": "supported"
+            },
+            "32": {
+                "abi_revision": "0x30F4F8C6AB3600DE",
+                "phase": "supported"
             }
         },
         "special_api_levels": {

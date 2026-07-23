@@ -21,9 +21,9 @@ alias Mat3 = array<float32, 9>;
 
 /// The valid values of relative motion for a mouse device.
 /// - The ranges are placed in (x, y) order.
-@available(replaced=NEXT)
+@available(replaced=32)
 alias RelativeMotionRange = array<fuchsia.input.report.Axis, 2>;
-@available(added=NEXT)
+@available(added=32)
 alias RelativeMotionRange = array<fuchsia.input.Axis, 2>;
 
 /// A specification for an injector |Device|.
@@ -64,15 +64,15 @@ type Config = resource table {
     10: relative_motion_range RelativeMotionRange;
 
     /// Range of vertical scroll values issued by the device.
-    @available(replaced=NEXT)
+    @available(replaced=32)
     7: scroll_v_range fuchsia.input.report.Axis;
-    @available(added=NEXT)
+    @available(added=32)
     7: scroll_v_range fuchsia.input.Axis;
 
     /// Range of horizontal scroll values issued by the device.
-    @available(replaced=NEXT)
+    @available(replaced=32)
     8: scroll_h_range fuchsia.input.report.Axis;
-    @available(added=NEXT)
+    @available(added=32)
     8: scroll_h_range fuchsia.input.Axis;
 
     /// Mouse button identifiers issued by the device, in priority order.
@@ -88,9 +88,9 @@ type Config = resource table {
     /// discerning UI client can distinguish between the ground truth (which physical button was
     /// pressed) versus the desired interpretation (what priority does that physical button have, on
     /// the current system).
-    @available(replaced=NEXT)
+    @available(replaced=32)
     9: buttons vector<uint8>:fuchsia.input.report.MOUSE_MAX_NUM_BUTTONS;
-    @available(added=NEXT)
+    @available(added=32)
     9: buttons vector<uint8>:fuchsia.input.MOUSE_MAX_NUM_BUTTONS;
 };
 

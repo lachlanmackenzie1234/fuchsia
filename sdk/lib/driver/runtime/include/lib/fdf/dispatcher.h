@@ -186,7 +186,7 @@ zx_status_t fdf_dispatcher_seal(fdf_dispatcher_t* dispatcher, uint32_t option);
 ///
 /// WARNING: Any other use will lead to execution while suspended, which may be unexpected.
 fdf_dispatcher_t* fdf_dispatcher_get_always_on_dispatcher(fdf_dispatcher_t* dispatcher)
-    ZX_AVAILABLE_SINCE(NEXT);
+    ZX_AVAILABLE_SINCE(32);
 
 /// Registers a wake vector. Callbacks for |signals| received on this handle while suspended,
 /// wake the driver and execute after the driver's Resume hook, but before anything else.
@@ -206,7 +206,7 @@ fdf_dispatcher_t* fdf_dispatcher_get_always_on_dispatcher(fdf_dispatcher_t* disp
 ///
 /// ZX_ERR_BAD_STATE: The dispatcher is suspended.
 zx_status_t fdf_dispatcher_register_wake_vector(fdf_dispatcher_t* dispatcher, zx_handle_t handle,
-                                                zx_signals_t signals) ZX_AVAILABLE_SINCE(NEXT);
+                                                zx_signals_t signals) ZX_AVAILABLE_SINCE(32);
 
 /// Unregisters the signals on the given handle as wake vectors.
 ///
@@ -221,7 +221,7 @@ zx_status_t fdf_dispatcher_register_wake_vector(fdf_dispatcher_t* dispatcher, zx
 ///
 /// ZX_ERR_NOT_FOUND: The |handle| was never registered.
 zx_status_t fdf_dispatcher_unregister_wake_vector(fdf_dispatcher_t* dispatcher, zx_handle_t handle,
-                                                  zx_signals_t signals) ZX_AVAILABLE_SINCE(NEXT);
+                                                  zx_signals_t signals) ZX_AVAILABLE_SINCE(32);
 
 __END_CDECLS
 

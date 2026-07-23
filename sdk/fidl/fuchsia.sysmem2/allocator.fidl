@@ -267,7 +267,7 @@ open protocol Allocator {
         /// `Error.NO_MORE_STRONG_VMO_HANDLES`.
         ///
         /// This field is optional. The default is false.
-        @available(added=NEXT)
+        @available(added=32)
         2: need_weak bool;
         /// Iff set to true, a successful response will have
         /// single_buffer_settings set to the SingleBufferSettings for the
@@ -290,7 +290,7 @@ open protocol Allocator {
         /// `constraints_to_check`.
         ///
         /// This field is optional. The default is false.
-        @available(added=NEXT)
+        @available(added=32)
         3: need_single_buffer_settings bool;
         /// Iff set, `constraints_ok` will be set in the response indicating
         /// whether the sent constraints are compatible with the parent buffer
@@ -311,7 +311,7 @@ open protocol Allocator {
         /// regardless of whether the client also does some checking of its own.
         ///
         /// This field is optional. If un-set, no constraints checking occurs.
-        @available(added=NEXT)
+        @available(added=32)
         4: constraints_to_check BufferCollectionConstraints;
         /// If set, `vmo_settings_match` will be set to indicate whether the
         /// parent collection of `vmo` and `vmo_settings_to_check` have the same
@@ -319,14 +319,14 @@ open protocol Allocator {
         /// will be true if both VMOs are from the same collection, and can also
         /// be true if two VMOs from different collections have the same
         /// SingleBufferSettings.
-        @available(added=NEXT)
+        @available(added=32)
         5: vmo_settings_to_check zx.Handle:VMO;
 
         /// When vmo_settings_to_check is set to a VMO and
         /// vmo_settings_to_check_ignore_size is set to true, the buffer size
         /// is ignored when comparing the two buffer's settings. This can be
         /// useful to set when checking video decoder input buffers.
-        @available(added=NEXT)
+        @available(added=32)
         6: vmo_settings_to_check_ignore_size bool;
     }) -> (resource table {
         /// The buffer_collection_id and buffer_index together uniquely identify
@@ -369,18 +369,18 @@ open protocol Allocator {
         /// `close_weak_asap` and notice when ZX_EVENTPAIR_PEER_CLOSED is
         /// signalled and close the `weak_vmo` (and any handles to child VMOs)
         /// ASAP.
-        @available(added=NEXT)
+        @available(added=32)
         4: weak_vmo zx.Handle:VMO;
         /// Iff `need_single_buffer_settings` is set, this field will be set to
         /// the SingleBufferSettings of the vmo's collection. See also
         /// `[fuchsia.sysmem2/Allocator.GetVmoInfo]`
         /// `need_single_buffer_settings`.
-        @available(added=NEXT)
+        @available(added=32)
         5: single_buffer_settings SingleBufferSettings;
         /// Iff `constraints_to_check` was set, this field will be set. If true,
         /// the vmo conforms to `constraints_to_check`. If false, the vmo does
         /// not conform to `constraints_to_check`.
-        @available(added=NEXT)
+        @available(added=32)
         6: constraints_ok bool;
         /// Iff `vmo_settings_to_check` was set, this field will be set. If
         /// true, `vmo` and `vmo_settings_to_check` have the same
@@ -388,7 +388,7 @@ open protocol Allocator {
         /// have different SingleBufferSettings. The reason for not matching may
         /// not be visible to the client if SingleBufferSettings has a new field
         /// or similar.
-        @available(added=NEXT)
+        @available(added=32)
         7: vmo_settings_match bool;
     }) error Error;
 };

@@ -109,13 +109,13 @@ pub struct OpenRequest<'a> {
 #[derive(Debug)]
 pub enum RequestFlags {
     /// fuchsia.io/Directory.Open1 (io1)
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     Open1(fio::OpenFlags),
     /// fuchsia.io/Directory.Open3 (io2)
     Open3(fio::Flags),
 }
 
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 impl From<fio::OpenFlags> for RequestFlags {
     fn from(value: fio::OpenFlags) -> Self {
         RequestFlags::Open1(value)
@@ -175,7 +175,7 @@ impl<'a> OpenRequest<'a> {
         match self {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             OpenRequest {
                 scope,
@@ -202,7 +202,7 @@ impl<'a> OpenRequest<'a> {
         match self {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             OpenRequest {
                 scope,
@@ -234,7 +234,7 @@ impl<'a> OpenRequest<'a> {
         match self {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             OpenRequest {
                 scope,
@@ -266,7 +266,7 @@ impl<'a> OpenRequest<'a> {
         match self {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             OpenRequest {
                 scope,
@@ -301,7 +301,7 @@ impl<'a> OpenRequest<'a> {
         match self {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             OpenRequest {
                 scope,
@@ -363,7 +363,7 @@ impl<'a> OpenRequest<'a> {
         match request_flags {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             RequestFlags::Open1(flags) => {
                 scope.clone().spawn(async move {

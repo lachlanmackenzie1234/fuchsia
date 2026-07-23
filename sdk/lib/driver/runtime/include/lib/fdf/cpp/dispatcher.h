@@ -171,7 +171,7 @@ class Dispatcher {
         fdf_dispatcher_seal(dispatcher_, FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS));
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
   // Returns the always-on dispatcher interface for this dispatcher.
   // The returned dispatcher is unowned and shares the lifetime of this dispatcher.
   Unowned<Dispatcher> GetAlwaysOnDispatcher() const {

@@ -36,7 +36,7 @@ class ZxioCreateOnRepresentationEventHandler final : public fidl::WireSyncEventH
     status_ = zxio_create_with_representation(std::move(node_), *event, attr_, storage_);
   }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   void OnOpen(fidl::WireEvent<fio::Node::OnOpen>* event) final { status_ = ZX_ERR_NOT_SUPPORTED; }
 #endif
 

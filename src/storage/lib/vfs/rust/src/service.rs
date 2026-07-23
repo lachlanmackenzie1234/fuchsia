@@ -12,7 +12,7 @@ use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenReque
 use crate::execution_scope::ExecutionScope;
 use crate::node::Node;
 use crate::object_request::ObjectRequestRef;
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 use crate::object_request::ObjectRequestSend;
 use flex_client::AsyncChannel as Channel;
 use flex_client::fidl::RequestStream;
@@ -95,7 +95,7 @@ impl ServiceLike for Service {
     ) -> Result<(), Status> {
         #[cfg(any(
             fuchsia_api_level_at_least = "PLATFORM",
-            not(fuchsia_api_level_at_least = "NEXT")
+            not(fuchsia_api_level_at_least = "32")
         ))]
         let channel = if object_request.what_to_send() == ObjectRequestSend::OnOpen {
             object_request
@@ -110,7 +110,7 @@ impl ServiceLike for Service {
         };
         #[cfg(not(any(
             fuchsia_api_level_at_least = "PLATFORM",
-            not(fuchsia_api_level_at_least = "NEXT")
+            not(fuchsia_api_level_at_least = "32")
         )))]
         let channel = Some(crate::object_request::IntoAsyncChannel::into_async_channel(
             object_request.take().into_channel(),

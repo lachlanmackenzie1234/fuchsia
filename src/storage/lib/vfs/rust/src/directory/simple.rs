@@ -7,7 +7,7 @@
 //! to construct actual instances.  See [`Simple`] for details.
 
 use crate::ObjectRequestRef;
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 use crate::ToObjectRequest;
 use crate::common::CreationMode;
 use crate::directory::dirents_sink;
@@ -25,7 +25,7 @@ use crate::name::Name;
 use crate::node::Node;
 use crate::path::Path;
 use crate::protocols::ProtocolsExt;
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 use flex_client::fidl::ServerEnd;
 use flex_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
@@ -240,7 +240,7 @@ impl Node for Simple {
 }
 
 impl Directory for Simple {
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     fn deprecated_open(
         self: Arc<Self>,
         scope: ExecutionScope,
@@ -380,7 +380,7 @@ trait ToRequestFlags {
     fn to_request_flags(&self) -> RequestFlags;
 }
 
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 impl ToRequestFlags for fio::OpenFlags {
     fn to_request_flags(&self) -> RequestFlags {
         RequestFlags::Open1(*self)

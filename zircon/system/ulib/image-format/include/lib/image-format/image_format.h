@@ -15,9 +15,9 @@
 #include <lib/sysmem-version/sysmem-version.h>
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 #include <safemath/safe_math.h>
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 // Forward-declared; defined in <lib/zbi-format/graphics.h>.
 using zbi_pixel_format_t = uint32_t;
@@ -72,14 +72,14 @@ uint32_t ImageFormatStrideBytesPerWidthPixel(const fuchsia_sysmem::wire::PixelFo
 
 // This would be height * stride, if it weren't for formats like NV12, where it
 // isn't.  The return value is in bytes.
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
     const fuchsia_images2::ImageFormat& image_format);
 safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
     const fuchsia_images2::wire::ImageFormat& image_format);
 safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
     const fuchsia_sysmem::wire::ImageFormat2& image_format);
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 uint64_t ImageFormatImageSize(const fuchsia_images2::ImageFormat& image_format);
 uint64_t ImageFormatImageSize(const fuchsia_images2::wire::ImageFormat& image_format);
 uint64_t ImageFormatImageSize(const fuchsia_sysmem::wire::ImageFormat2& image_format);
@@ -101,7 +101,7 @@ uint32_t ImageFormatSampleAlignment(const fuchsia_sysmem::wire::PixelFormat& pix
 // Gets the minimum number of bytes per row possible for an image with a
 // specific width and specific constraints. Returns false if the width would not
 // be valid.
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
     const fuchsia_sysmem2::ImageFormatConstraints& constraints,
     safemath::CheckedNumeric<uint32_t> width);
@@ -133,14 +133,14 @@ fpromise::result<fuchsia_sysmem::wire::ImageFormat2> ImageConstraintsToFormat(
     const fuchsia_sysmem::wire::ImageFormatConstraints& constraints, uint32_t width,
     uint32_t height);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
     const fuchsia_images2::ImageFormat& image_format, uint32_t plane);
 safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
     const fuchsia_images2::wire::ImageFormat& image_format, uint32_t plane);
 safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
     const fuchsia_sysmem::wire::ImageFormat2& image_format, uint32_t plane);
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 bool ImageFormatPlaneByteOffset(const fuchsia_images2::ImageFormat& image_format, uint32_t plane,
                                 uint64_t* offset_out);
 bool ImageFormatPlaneByteOffset(const fuchsia_images2::wire::ImageFormat& image_format,
@@ -148,14 +148,14 @@ bool ImageFormatPlaneByteOffset(const fuchsia_images2::wire::ImageFormat& image_
 bool ImageFormatPlaneByteOffset(const fuchsia_sysmem::wire::ImageFormat2& image_format,
                                 uint32_t plane, uint64_t* offset_out);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
     const fuchsia_images2::ImageFormat& image_format, uint32_t plane);
 safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
     const fuchsia_images2::wire::ImageFormat& image_format, uint32_t plane);
 safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
     const fuchsia_sysmem::wire::ImageFormat2& image_format, uint32_t plane);
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 bool ImageFormatPlaneRowBytes(const fuchsia_images2::ImageFormat& image_format, uint32_t plane,
                               uint32_t* row_bytes_out);
 bool ImageFormatPlaneRowBytes(const fuchsia_images2::wire::ImageFormat& image_format,

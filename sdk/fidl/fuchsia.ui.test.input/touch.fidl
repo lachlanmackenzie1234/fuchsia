@@ -95,24 +95,24 @@ closed protocol TouchScreen {
     /// TouchInputReport includes a list of contacts that are currently contacting the
     /// touch surface. The report can represent multiply touch events by comparing with
     /// previous reports received.
-    @available(added=17, replaced=NEXT)
+    @available(added=17, replaced=32)
     strict SimulateTouchEvent(struct {
         report fuchsia.input.report.TouchInputReport;
     }) -> ();
-    @available(added=NEXT)
+    @available(added=32)
     strict SimulateTouchEvent(struct {
         report TouchInputReport;
     }) -> ();
 };
 
-@available(added=NEXT)
+@available(added=32)
 type ContactInputReport = table {
     1: contact_id uint32;
     2: position_x int64;
     3: position_y int64;
 };
 
-@available(added=NEXT)
+@available(added=32)
 type TouchInputReport = table {
     1: contacts vector<ContactInputReport>:MAX_FINGERS;
     2: pressed_buttons vector<uint8>:fuchsia.input.TOUCH_MAX_NUM_BUTTONS;

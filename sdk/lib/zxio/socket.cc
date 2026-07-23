@@ -459,7 +459,7 @@ SockOptResult GetSockOptProcessor::StoreOption(const fsocket::wire::TcpInfo& val
   info.tcpi_rto = value.has_rto_usec() ? value.rto_usec() : 0;
   info.tcpi_rtt = value.has_rtt_usec() ? value.rtt_usec() : 0;
   info.tcpi_rttvar = value.has_rtt_var_usec() ? value.rtt_var_usec() : 0;
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
   info.tcpi_snd_mss = value.has_tcpi_snd_mss() ? value.tcpi_snd_mss() : 0;
   info.tcpi_rcv_mss = value.has_tcpi_rcv_mss() ? value.tcpi_rcv_mss() : 0;
 #endif

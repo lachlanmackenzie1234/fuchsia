@@ -122,7 +122,7 @@ class MaybeOpenedVnode {
 // The Vfs object must outlive the Vnodes which it serves. This class is thread-safe.
 class Vfs {
  public:
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   class DeprecatedOpenResult;
 #endif
   class OpenResult;
@@ -135,7 +135,7 @@ class Vfs {
   //
   // The return value will suggest the next action to take. Refer to the variants in
   // |DeprecatedOpenResult| for more information.
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   DeprecatedOpenResult DeprecatedOpen(fbl::RefPtr<Vnode> vn, std::string_view path,
                                       DeprecatedOptions options,
                                       fuchsia_io::Rights connection_rights)
@@ -196,7 +196,7 @@ class Vfs {
   bool readonly_ = false;
 };
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 class Vfs::DeprecatedOpenResult {
  public:
   // When this variant is active, the indicated error occurred.

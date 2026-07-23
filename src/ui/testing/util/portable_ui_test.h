@@ -101,7 +101,7 @@ class PortableUITest : public LoggingEventLoop, public ::testing::Test {
   void InjectSwipe(int start_x, int start_y, int end_x, int end_y, int move_event_count);
 
   // Injects a touch event.
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
   void InjectTouchEvent(fuchsia_ui_test_input::TouchInputReport report);
 #else
   void InjectTouchEvent(fuchsia_input_report::TouchInputReport report);

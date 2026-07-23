@@ -158,9 +158,9 @@ type WlanWmmParameters = struct {
     ac_vo_params WlanWmmAccessCategoryParameters;
 };
 
-@available(added=13, removed=NEXT)
+@available(added=13, removed=32)
 const WLAN_MAC_MAX_SUPP_RATES uint32 = 8;
-@available(added=13, removed=NEXT)
+@available(added=13, removed=32)
 const WLAN_MAC_MAX_EXT_RATES uint32 = 255;
 
 @available(removed=HEAD, note="Moved to fuchsia.wlan.softmac")

@@ -302,7 +302,7 @@ type BufferMemoryConstraints = table {
     ///
     /// When set, this is the minimum alignment of the base physical address of
     /// each buffer.
-    @available(added=NEXT)
+    @available(added=32)
     9: min_physical_base_alignment uint64;
 };
 

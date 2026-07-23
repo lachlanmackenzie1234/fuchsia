@@ -106,7 +106,7 @@ void DriverBase2::DriverBaseInternalInit(DriverContext& context,
   node_ = std::move(context.start_args_.node().value());
   driver_dispatcher_ = std::move(driver_dispatcher);
   logger_ = Logger::Create2(context.incoming(), dispatcher(), name_, FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
                             ,
                             std::move(context.start_args_.log_sink())
 #endif

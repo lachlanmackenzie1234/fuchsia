@@ -509,10 +509,10 @@ fxl::RefPtr<VulkanDeviceQueues> VulkanDeviceQueues::New(VulkanInstancePtr instan
 
 // Insert NEXT as the first struct in BASE's "pNext chain".  In other words, if this is called
 // repeatedly, then the structs in the chain are in the reverse of the order they are added.
-#define INSERT_PNEXT(BASE, NEXT)                    \
-  {                                                 \
-    (NEXT).pNext = const_cast<void*>((BASE).pNext); \
-    (BASE).pNext = &(NEXT);                         \
+#define INSERT_PNEXT(BASE, NEXT)                    /* NEVER_REPLACE_NEXT */ \
+  {                                                 /* NEVER_REPLACE_NEXT */ \
+    (NEXT).pNext = const_cast<void*>((BASE).pNext); /* NEVER_REPLACE_NEXT */ \
+    (BASE).pNext = &(NEXT);                         /* NEVER_REPLACE_NEXT */ \
   }
 
   // Almost ready to create the device; start populating the VkDeviceCreateInfo.

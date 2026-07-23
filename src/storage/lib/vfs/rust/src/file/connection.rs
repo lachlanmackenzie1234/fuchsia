@@ -1127,7 +1127,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + IoOpHandler> Representa
         }))
     }
 
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     async fn node_info(&self) -> Result<fio::NodeInfoDeprecated, Status> {
         #[cfg(target_os = "fuchsia")]
         let stream = self.file.duplicate_stream()?;

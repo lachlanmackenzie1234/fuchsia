@@ -16,9 +16,9 @@ closed protocol MediaButtonsDevice {
     /// device.
     strict SimulateButtonPress(table {
         /// The button receiving the button press.
-        @available(replaced=NEXT)
+        @available(replaced=32)
         1: button fuchsia.input.report.ConsumerControlButton;
-        @available(added=NEXT)
+        @available(added=32)
         1: button fuchsia.input.ConsumerControlButton;
     }) -> ();
 
@@ -27,10 +27,10 @@ closed protocol MediaButtonsDevice {
     @available(added=19)
     strict SendButtonsState(table {
         /// The button receiving the button press.
-        @available(replaced=NEXT)
+        @available(replaced=32)
         1: buttons
                 vector<fuchsia.input.report.ConsumerControlButton>:fuchsia.input.report.CONSUMER_CONTROL_MAX_NUM_BUTTONS;
-        @available(added=NEXT)
+        @available(added=32)
         1: buttons
                 vector<fuchsia.input.ConsumerControlButton>:fuchsia.input.CONSUMER_CONTROL_MAX_NUM_BUTTONS;
     }) -> ();
@@ -41,9 +41,9 @@ closed protocol MediaButtonsDevice {
     @available(added=31)
     strict ScheduleSimulateButtonPress(table {
         /// The button receiving the button press.
-        @available(replaced=NEXT)
+        @available(replaced=32)
         1: button fuchsia.input.report.ConsumerControlButton;
-        @available(added=NEXT)
+        @available(added=32)
         1: button fuchsia.input.ConsumerControlButton;
         /// The length of the delay before sending the button (in nanos).
         2: delay zx.Duration;

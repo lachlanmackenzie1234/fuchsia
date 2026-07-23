@@ -108,6 +108,6 @@ type Error = flexible enum : uint32 {
 
     /// `GetVmoInfo` can fail with this error if `need_weak` is set to true and
     /// no more strong vmo handles remain to the logical buffer.
-    @available(added=NEXT)
+    @available(added=32)
     NO_MORE_STRONG_VMO_HANDLES = 9;
 };

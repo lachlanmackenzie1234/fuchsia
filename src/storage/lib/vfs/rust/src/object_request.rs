@@ -126,7 +126,7 @@ impl ObjectRequest {
         match self.what_to_send {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             ObjectRequestSend::OnOpen => {
                 let control_handle = stream.control_handle();
@@ -164,7 +164,7 @@ impl ObjectRequest {
     }
 
     /// Extracts the channel after sending on_open.
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     pub fn into_channel_after_sending_on_open(
         self,
         node_info: fio::NodeInfoDeprecated,
@@ -183,7 +183,7 @@ impl ObjectRequest {
         }
         #[cfg(any(
             fuchsia_api_level_at_least = "PLATFORM",
-            not(fuchsia_api_level_at_least = "NEXT")
+            not(fuchsia_api_level_at_least = "32")
         ))]
         if let ObjectRequestSend::OnOpen = self.what_to_send {
             let (_, control_handle) = ServerEnd::<fio::NodeMarker>::new(self.object_request)
@@ -195,7 +195,7 @@ impl ObjectRequest {
         }
         #[cfg(not(any(
             fuchsia_api_level_at_least = "PLATFORM",
-            not(fuchsia_api_level_at_least = "NEXT")
+            not(fuchsia_api_level_at_least = "32")
         )))]
         {
             let _ = self.object_request.close_with_epitaph(status);
@@ -326,7 +326,7 @@ pub type ObjectRequestRef<'a> = &'a mut ObjectRequest;
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(dead_code)]
 pub(crate) enum ObjectRequestSend {
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     OnOpen,
     OnRepresentation,
     Nothing,
@@ -345,7 +345,7 @@ pub trait Representation {
     ) -> impl Future<Output = Result<fio::Representation, Status>> + Send;
 
     /// Returns io1's NodeInfoDeprecated.
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     fn node_info(&self) -> impl Future<Output = Result<fio::NodeInfoDeprecated, Status>> + Send;
 }
 
@@ -368,7 +368,7 @@ impl ToObjectRequest for fio::OpenFlags {
             object_request.into().into(),
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             if self.contains(fio::OpenFlags::DESCRIBE) {
                 ObjectRequestSend::OnOpen
@@ -377,7 +377,7 @@ impl ToObjectRequest for fio::OpenFlags {
             },
             #[cfg(not(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             )))]
             ObjectRequestSend::Nothing,
             fio::NodeAttributesQuery::empty(),
@@ -396,7 +396,7 @@ impl ToObjectRequest for fio::Flags {
     }
 }
 
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 fn send_on_open(
     control_handle: &fio::NodeControlHandle,
     node_info: fio::NodeInfoDeprecated,

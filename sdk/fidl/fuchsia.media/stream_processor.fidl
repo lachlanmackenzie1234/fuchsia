@@ -13,7 +13,7 @@ using zx;
 /// messages which can apply to either input or output. For example, the
 /// `StreamProcessor.ParticipateInBufferAllocation` message includes a `port`
 /// field.
-@available(added=NEXT)
+@available(added=32)
 type Port = flexible enum : uint32 {
     INVALID = 0;
     INPUT = 1;
@@ -152,7 +152,7 @@ type StreamBufferConstraints = table {
     /// passed to CreateDecoder. Otherwise a video decoder is permitted to start
     /// putting smaller images in the existing larger buffers, with
     /// OnOutputFormat message(s) indicating this.
-    @available(added=NEXT)
+    @available(added=32)
     14: buffer_count_for_server_current uint32;
 
     /// Clients are free to ignore this field.
@@ -181,7 +181,7 @@ type StreamBufferConstraints = table {
     /// Despite this size indicating a specific width and height, the allocated
     /// buffers may permit a range of image sizes (for video decoder output or
     /// video encoder input).
-    @available(added=NEXT)
+    @available(added=32)
     15: size fuchsia.math.SizeU;
 
     /// Clients are free to ignore this field.
@@ -219,7 +219,7 @@ type StreamBufferConstraints = table {
     /// constrain the sysmem allocation to only allow this pixel format, as that
     /// would be more likely to fail allocation in comparison to letting sysmem
     /// pick a format mutually supported by all participants.
-    @available(added=NEXT)
+    @available(added=32)
     16: pixel_format fuchsia.images2.PixelFormat;
 
     @deprecated("Ignore. Obsolete.")
@@ -1539,7 +1539,7 @@ open protocol StreamProcessor {
     ///
     /// Server implementations may use sysmem to help verify buffer
     /// compatibility later when buffers are added with AddBuffer.
-    @available(added=NEXT)
+    @available(added=32)
     flexible ParticipateInBufferAllocation(resource table {
         /// Which port (input or output) the buffer(s) are for.
         ///
@@ -1743,7 +1743,7 @@ open protocol StreamProcessor {
     /// to observe a mismatch in `SingleBufferSettings` before sending AddBuffer
     /// and bump to the next odd buffer_lifetime_ordinal value for the
     /// AddBuffer.
-    @available(added=NEXT)
+    @available(added=32)
     flexible AddBuffer(resource table {
         /// Must be set. Which port (input or output) the buffer is for.
         1: port Port;
@@ -1954,7 +1954,7 @@ open protocol StreamProcessor {
     /// Assuming a valid historical buffer is specified, successful completion
     /// of this call means the buffer has been fully released by the server and
     /// won't be referenced in any subsequent OnOutputPacket.
-    @available(added=NEXT)
+    @available(added=32)
     flexible RemoveBuffer(resource table {
         /// Must be set. Which port (input or output) the buffer is for.
         1: port Port;
@@ -2037,7 +2037,7 @@ open protocol StreamProcessor {
     /// This message is only permitted when
     /// `[fuchsia.mediacodec/CodecFactory.DetailedCodecDescription.supports_dynamic_buffers]`
     /// is true.
-    @available(added=NEXT)
+    @available(added=32)
     flexible EnableOldOutputBuffers();
 
     /// This informs the StreamProcessor that the client is prepared to handle
@@ -2067,7 +2067,7 @@ open protocol StreamProcessor {
     /// This message is only permitted when
     /// `[fuchsia.mediacodec/CodecFactory.DetailedCodecDescription.supports_dynamic_buffers]`
     /// is true.
-    @available(added=NEXT)
+    @available(added=32)
     flexible EnableSameOutputBufferConcurrentlyInFlight();
 
     /// For video decoders, this forces the output buffers to be reallocated if
@@ -2095,7 +2095,7 @@ open protocol StreamProcessor {
     /// This message is only permitted when
     /// `[fuchsia.mediacodec/CodecFactory.DetailedCodecDescription.supports_dynamic_buffers]`
     /// is true.
-    @available(added=NEXT)
+    @available(added=32)
     flexible EnableForceOutputBuffersFixedImageSize();
 
     /// Most clients can ignore the `OnOutputTimestampHasNoOutput` message.
@@ -2174,7 +2174,7 @@ open protocol StreamProcessor {
     /// If a client doesn't have any specific reason to pay attention to this
     /// event, the client should ignore this event. Most clients can completely
     /// ignore this event with no adverse impact.
-    @available(added=NEXT)
+    @available(added=32)
     flexible -> OnOutputTimestampHasNoOutput(table {
         /// All servers will set this field. This is the
         /// `stream_lifetime_ordinal` value from the input `Packet` that will

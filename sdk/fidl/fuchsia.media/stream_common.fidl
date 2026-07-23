@@ -229,7 +229,7 @@ type VideoCompressedFormat = strict union {
 
 // Deprecated. Do not use.
 @strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
-@available(added=7, deprecated=NEXT)
+@available(added=7, deprecated=32)
 type VideoColorSpace = strict enum {
     INVALID = 0;
 };

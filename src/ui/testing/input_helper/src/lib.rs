@@ -1243,9 +1243,9 @@ mod tests {
         let test_fut = async {
             let schedule_fut = proxy.schedule_simulate_button_press(
                 &fidl_fuchsia_ui_test_input::MediaButtonsDeviceScheduleSimulateButtonPressRequest {
-                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    #[cfg(fuchsia_api_level_at_least = "32")]
                     button: Some(fidl_fuchsia_input::ConsumerControlButton::Power),
-                    #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+                    #[cfg(not(fuchsia_api_level_at_least = "32"))]
                     button: Some(ConsumerControlButton::Power),
                     delay: Some(zx::Duration::<zx::BootTimeline>::from_millis(750).into_nanos()), // 0.75s
                     ..Default::default()

@@ -227,7 +227,7 @@ type CreateDecoder_Params = table {
     ///
     /// Support for dynamic buffers doesn't imply support for non-sysmem
     /// buffers.
-    @available(added=NEXT)
+    @available(added=32)
     12: require_supports_dynamic_buffers bool;
 
     /// This field is only meaningful for video decoders. If this is set to
@@ -275,7 +275,7 @@ type CreateDecoder_Params = table {
     /// also change when the buffer is re-used (consistent with aggregated
     /// sysmem constraints) - if current buffers are too small (in bytes), new
     /// buffers will be requested
-    @available(added=NEXT)
+    @available(added=32)
     13: force_new_buffers_for_new_dimensions bool;
 
     /// If set to a value obtained from
@@ -289,7 +289,7 @@ type CreateDecoder_Params = table {
     /// same. A codec implementation may change its codec_specifier(s) each
     /// boot, whether updated to a new implementation version or not. A
     /// codec_specifier value is unique per boot and codec implementation.
-    @available(added=NEXT)
+    @available(added=32)
     14: codec_specifier string:CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH;
 };
 
@@ -318,7 +318,7 @@ type CreateEncoder_Params = table {
     /// have the same codec_specifier iff the underlying implementation is the
     /// same. A codec implementation may change its codec_specifier(s) each
     /// boot, whether updated to a new implementation version or not.
-    @available(added=NEXT)
+    @available(added=32)
     3: codec_specifier string:CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH;
 };
 
@@ -333,7 +333,7 @@ const CODEC_FACTORY_MAX_MIME_TYPE_LENGTH uint32 = 256;
 
 /// Constrain the codec_specifier to a size that won't cause problems. Most will be substantially
 /// shorter.
-@available(added=NEXT)
+@available(added=32)
 const CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH uint32 = 256;
 
 /// More than this many calls to AttachLifetimeTracking()
@@ -643,18 +643,18 @@ type DetailedCodecDescription = table {
     /// used in unusual ways).
     ///
     /// This does not imply support for non-sysmem-provided VMOs.
-    @available(added=NEXT)
+    @available(added=32)
     5: supports_dynamic_buffers bool;
 
     /// Having more than this many input buffers added and not yet completely
     /// removed under the latest buffer_lifetime_ordinal will result in async
     /// StreamProcessor channel closure.
-    @available(added=NEXT)
+    @available(added=32)
     6: dynamic_buffers_input_max uint32;
     /// Having more than this many output buffers added and not yet completely
     /// removed under the latest buffer_lifetime_ordinal will result in async
     /// StreamProcessor channel closure.
-    @available(added=NEXT)
+    @available(added=32)
     7: dynamic_buffers_output_max uint32;
     /// This field is set when a codec both supports dynamic buffers and is a
     /// video decoder. Adding this many buffers to a video decoder's output, and
@@ -669,7 +669,7 @@ type DetailedCodecDescription = table {
     /// actually set, since this can be rare in practice unfortunately, making
     /// paying attention to buffer_count_for_server_current potentially not
     /// actually worthwhile, depending on the expected streams' headers.
-    @available(added=NEXT)
+    @available(added=32)
     8: dynamic_buffers_video_decoder_output_safe uint32;
 
     /// Optionally set
@@ -683,7 +683,7 @@ type DetailedCodecDescription = table {
     /// intentionally not a way for clients to hard code which specific codec
     /// implementation they want to connect to, as codec selection is by
     /// properties / capabilities, not by specific codec implementation.
-    @available(added=NEXT)
+    @available(added=32)
     9: codec_specifier string:CODEC_FACTORY_MAX_CODEC_SPECIFIER_LENGTH;
 };
 

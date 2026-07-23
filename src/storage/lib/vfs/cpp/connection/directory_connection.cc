@@ -213,7 +213,7 @@ void DirectoryConnection::DeprecatedSetFlags(DeprecatedSetFlagsRequestView,
   completer.Reply(ZX_ERR_NOT_SUPPORTED);
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 void DirectoryConnection::DeprecatedOpen(DeprecatedOpenRequestView request,
                                          DeprecatedOpenCompleter::Sync& completer) {
   // TODO(https://fxbug.dev/346585458): This operation should require the TRAVERSE right.
@@ -520,7 +520,7 @@ zx::result<> DirectoryConnection::WithRepresentation(
       fidl::ObjectView<DirectoryRepresentation>::FromExternal(&representation)));
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 zx_status_t DirectoryConnection::WithNodeInfoDeprecated(
     fit::callback<zx_status_t(fuchsia_io::wire::NodeInfoDeprecated)> handler) const {
   return handler(fuchsia_io::wire::NodeInfoDeprecated::WithDirectory({}));

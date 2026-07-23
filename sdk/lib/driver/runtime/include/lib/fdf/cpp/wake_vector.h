@@ -11,7 +11,7 @@
 
 #include <utility>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 namespace fdf {
 
@@ -89,6 +89,6 @@ class WakeVectorRegistration final {
 
 }  // namespace fdf
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 #endif  // LIB_FDF_CPP_WAKE_VECTOR_H_

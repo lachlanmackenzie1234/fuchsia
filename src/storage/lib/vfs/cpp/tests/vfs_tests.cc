@@ -257,7 +257,7 @@ TEST(VfsTest, TruncateCalledOnExisting) {
   ASSERT_EQ(open_result.error_value(), ZX_ERR_NOT_SUPPORTED);
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 TEST(VfsTest, DeprecatedTruncateNotCalledOnCreation) {
   async::TestLoop loop;
   fs::SynchronousVfs vfs(loop.dispatcher());

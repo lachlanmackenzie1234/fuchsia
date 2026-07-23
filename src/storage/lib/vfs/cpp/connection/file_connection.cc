@@ -96,7 +96,7 @@ void FileConnection::Query(QueryCompleter::Sync& completer) {
   completer.Reply(fidl::VectorView<uint8_t>::FromExternal(data, kProtocolName.size()));
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 zx_status_t FileConnection::WithNodeInfoDeprecated(
     fit::callback<zx_status_t(fuchsia_io::wire::NodeInfoDeprecated)> handler) const {
   fio::wire::FileObject file_object;

@@ -32,7 +32,7 @@ fio::NodeProtocolKinds RemoteDir::GetProtocols() const {
 
 bool RemoteDir::IsRemote() const { return true; }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 void RemoteDir::DeprecatedOpenRemote(fio::OpenFlags flags, fio::ModeType mode,
                                      fidl::StringView path,
                                      fidl::ServerEnd<fio::Node> object) const {

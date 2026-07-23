@@ -1,14 +1,14 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-@available(added=NEXT)
+@available(added=32)
 library fuchsia.wlan.driver;
 
 using fuchsia.wlan.ieee80211;
 
 /// Input parameters for a join request. This definition is shared between softmac.fidl
 /// and wlantap.fidl.
-@available(added=NEXT)
+@available(added=32)
 type JoinBssRequest = table {
     1: bssid fuchsia.wlan.ieee80211.MacAddr;
     2: bss_type fuchsia.wlan.ieee80211.BssType;
@@ -16,7 +16,7 @@ type JoinBssRequest = table {
     4: beacon_period uint16; // in TU
 };
 
-@available(added=NEXT)
+@available(added=32)
 type WlanProtection = strict enum : uint8 {
     NONE = 0;
     RX = 1;
@@ -24,7 +24,7 @@ type WlanProtection = strict enum : uint8 {
     RX_TX = 3;
 };
 
-@available(added=NEXT)
+@available(added=32)
 type WlanKeyConfig = table {
     /// Which path to protect: None, TX, RX, or TX and RX.
     1: protection WlanProtection;
@@ -60,7 +60,7 @@ type WlanKeyConfig = table {
 };
 
 /// WFA WMM v1.2, 2.2.2
-@available(added=NEXT)
+@available(added=32)
 type WlanWmmAccessCategoryParameters = struct {
     /// Lower bound of contention window in exponential form
     /// `cw_min = 2^(ecw_min) - 1`. The unit for contention window is "slot time", which
@@ -78,7 +78,7 @@ type WlanWmmAccessCategoryParameters = struct {
     acm bool;
 };
 
-@available(added=NEXT)
+@available(added=32)
 type WlanWmmParameters = struct {
     apsd bool;
     ac_be_params WlanWmmAccessCategoryParameters;
@@ -88,7 +88,7 @@ type WlanWmmParameters = struct {
 };
 
 @strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
-@available(added=NEXT)
+@available(added=32)
 type WlanSoftmacHardwareCapabilityBit = strict enum : uint32 {
     /// Short packet preamble.
     SHORT_PREAMBLE = 0x0020;
@@ -113,5 +113,5 @@ type WlanSoftmacHardwareCapabilityBit = strict enum : uint32 {
 };
 
 // IEEE Std 802.11-2016, 9.4.1.4
-@available(added=NEXT)
+@available(added=32)
 alias WlanSoftmacHardwareCapability = uint32;

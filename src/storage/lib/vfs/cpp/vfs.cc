@@ -116,7 +116,7 @@ constexpr zx::result<CreationType> GetCreationType(fio::Flags flags) {
 
 Vfs::Vfs() = default;
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 Vfs::DeprecatedOpenResult Vfs::DeprecatedOpen(fbl::RefPtr<Vnode> vndir, std::string_view path,
                                               DeprecatedOptions options,
                                               fuchsia_io::Rights connection_rights) {

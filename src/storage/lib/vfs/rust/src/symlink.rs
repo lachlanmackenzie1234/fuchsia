@@ -373,7 +373,7 @@ impl<T: Symlink> Representation for Connection<T> {
         }))
     }
 
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     async fn node_info(&self) -> Result<fio::NodeInfoDeprecated, Status> {
         Ok(fio::NodeInfoDeprecated::Symlink(fio::SymlinkObject {
             target: self.symlink.read_target().await?,

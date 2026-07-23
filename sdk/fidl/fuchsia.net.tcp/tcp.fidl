@@ -59,10 +59,10 @@ type Info = table {
     11: rto_usec uint32;
     // 12: tcpi_ato uint32;
     /// The maximum segment size (MSS) this endpoint can send.
-    @available(added=NEXT)
+    @available(added=32)
     13: tcpi_snd_mss uint32;
     /// The maximum segment size (MSS) this endpoint can receive.
-    @available(added=NEXT)
+    @available(added=32)
     14: tcpi_rcv_mss uint32;
     // 15: tcpi_unacked uint32;
     // 16: tcpi_sacked uint32;

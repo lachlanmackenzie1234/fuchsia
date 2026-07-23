@@ -140,9 +140,9 @@ type MouseEvent = resource table {
 
 /// The valid values of relative motion for a mouse device.
 /// - The ranges are placed in (x, y) order.
-@available(replaced=NEXT)
+@available(replaced=32)
 alias RelativeMotionRange = array<device.Axis, 2>;
-@available(added=NEXT)
+@available(added=32)
 alias RelativeMotionRange = array<fuchsia.input.Axis, 2>;
 
 /// Information about a device that issues a mouse event stream.

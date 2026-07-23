@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 use crate::common::send_on_open_with_error;
 use crate::common::{
     decode_extended_attribute_value, encode_extended_attribute_value, extended_attributes_sender,
 };
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 use crate::directory::common::check_child_connection_flags;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::traversal_position::TraversalPosition;
@@ -206,7 +206,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             }
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "32")
             ))]
             fio::DirectoryRequest::DeprecatedOpen {
                 flags,
@@ -321,7 +321,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             .handle(|req| self.directory.clone().open(self.scope.clone(), Path::dot(), flags, req));
     }
 
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     fn handle_deprecated_open(
         &self,
         mut flags: fio::OpenFlags,
@@ -578,7 +578,7 @@ impl<DirectoryType: Directory> Representation for BaseConnection<DirectoryType> 
         }))
     }
 
-    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
     async fn node_info(&self) -> Result<fio::NodeInfoDeprecated, Status> {
         Ok(fio::NodeInfoDeprecated::Directory(fio::DirectoryObject))
     }

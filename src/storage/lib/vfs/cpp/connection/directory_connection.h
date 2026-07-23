@@ -50,7 +50,7 @@ class DirectoryConnection final : public Connection,
   zx::result<> WithRepresentation(
       fit::callback<zx::result<>(fuchsia_io::wire::Representation)> handler,
       std::optional<fuchsia_io::NodeAttributesQuery> query) const final;
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   zx_status_t WithNodeInfoDeprecated(
       fit::callback<zx_status_t(fuchsia_io::wire::NodeInfoDeprecated)> handler) const final;
 #endif
@@ -105,7 +105,7 @@ class DirectoryConnection final : public Connection,
   //
 
   void Open(OpenRequestView request, OpenCompleter::Sync& completer) final;
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   void DeprecatedOpen(DeprecatedOpenRequestView request,
                       DeprecatedOpenCompleter::Sync& completer) final;
 #endif

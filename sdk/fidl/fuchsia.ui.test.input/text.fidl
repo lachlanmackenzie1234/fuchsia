@@ -32,11 +32,11 @@ closed protocol Keyboard {
     /// KeyboardInputReport includes a list of keys that are currently pressing
     /// down. The report can represent key down / up by comparing with previous
     /// reports received.
-    @available(added=16, replaced=NEXT)
+    @available(added=16, replaced=32)
     strict SimulateKeyEvent(table {
         1: report fuchsia.input.report.KeyboardInputReport;
     }) -> ();
-    @available(added=NEXT)
+    @available(added=32)
     strict SimulateKeyEvent(table {
         1: pressed_keys vector<fuchsia.input.Key>:fuchsia.input.KEYBOARD_MAX_NUM_KEYS;
     }) -> ();

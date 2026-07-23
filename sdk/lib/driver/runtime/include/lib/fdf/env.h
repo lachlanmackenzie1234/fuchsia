@@ -254,16 +254,16 @@ void fdf_env_register_stall_scanner(fdf_env_stall_scanner_t* scanner) ZX_AVAILAB
 /// Registers for callbacks for when the driver needs to be resumed.
 /// The callback being triggered should eventually result in |fdf_env_driver_resume| being called.
 void fdf_env_register_resume_requester(const void* driver, fdf_env_resume_requester_t* requester)
-    ZX_AVAILABLE_SINCE(NEXT);
+    ZX_AVAILABLE_SINCE(32);
 
 /// Asynchronously suspends the dispatchers owned by the driver.
 /// The runtime will stop accepting new work and drain existing work before calling the completer.
 void fdf_env_driver_suspend(const void* driver, fdf_env_suspend_completer_t* completer)
-    ZX_AVAILABLE_SINCE(NEXT);
+    ZX_AVAILABLE_SINCE(32);
 
 /// Resumes the dispatchers owned by the driver.
 /// The runtime will move pending callbacks back to the main queue and start accepting new work.
-void fdf_env_driver_resume(const void* driver) ZX_AVAILABLE_SINCE(NEXT);
+void fdf_env_driver_resume(const void* driver) ZX_AVAILABLE_SINCE(32);
 
 __END_CDECLS
 

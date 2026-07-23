@@ -1274,7 +1274,7 @@ uint32_t ImageFormatStrideBytesPerWidthPixel(
   return ImageFormatStrideBytesPerWidthPixel(pixel_format_v2);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
     const fuchsia_images2::ImageFormat& image_format) {
@@ -1301,7 +1301,7 @@ safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
   return ImageFormatImageSizeChecked(image_format_v2);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 uint64_t ImageFormatImageSize(const fuchsia_images2::ImageFormat& image_format) {
   ZX_DEBUG_ASSERT(image_format.pixel_format().has_value());
@@ -1503,7 +1503,7 @@ uint32_t ImageFormatSampleAlignment(const fuchsia_sysmem::wire::PixelFormat& wir
   return ImageFormatSampleAlignment(pixel_format_v2);
 }
 
-// This is not under FUCHSIA_API_LEVEL_AT_LEAST(NEXT) due to being used by ImageConstraintsToFormat
+// This is not under FUCHSIA_API_LEVEL_AT_LEAST(32) due to being used by ImageConstraintsToFormat
 // which is available in prior API levels.
 safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
     const fuchsia_sysmem2::ImageFormatConstraints& constraints,
@@ -1522,7 +1522,7 @@ safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
   return kInvalidCheckedNumeric32;
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
     const fuchsia_sysmem2::wire::ImageFormatConstraints& wire_constraints,
@@ -1539,7 +1539,7 @@ safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
   return ImageFormatMinimumRowBytesChecked(image_format_constraints_v2, width);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
                                 uint32_t width, uint32_t* minimum_row_bytes_out) {
@@ -1693,7 +1693,7 @@ fpromise::result<fuchsia_sysmem::wire::ImageFormat2> ImageConstraintsToFormat(
   return fpromise::ok(wire_v1);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
     const fuchsia_images2::ImageFormat& image_format, uint32_t plane) {
@@ -1722,7 +1722,7 @@ safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
   return ImageFormatPlaneByteOffsetChecked(image_format_v2, plane);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 bool ImageFormatPlaneByteOffset(const ImageFormat& image_format, uint32_t plane,
                                 uint64_t* offset_out) {
@@ -1759,7 +1759,7 @@ bool ImageFormatPlaneByteOffset(const fuchsia_sysmem::wire::ImageFormat2& wire_i
   return ImageFormatPlaneByteOffset(image_format_v2, plane, offset_out);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
     const fuchsia_images2::ImageFormat& image_format, uint32_t plane) {
@@ -1788,7 +1788,7 @@ safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
   return ImageFormatPlaneRowBytesChecked(image_format_v2, plane);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
 
 bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
                               uint32_t* row_bytes_out) {

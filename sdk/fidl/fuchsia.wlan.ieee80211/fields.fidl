@@ -119,7 +119,7 @@ type SetKeyDescriptor = table {
     7: cipher_type CipherSuiteType;
 };
 
-@available(added=NEXT)
+@available(added=32)
 type BssType = flexible enum : uint32 {
     // The UNKNOWN value is added to this type instead of created a new
     // enum like `DetectedBssType` so that language bindings can avoid the use
@@ -170,7 +170,7 @@ type BssDescription = struct {
     snr_db int8;
 };
 
-@available(added=NEXT)
+@available(added=32)
 type WlanPhyType = flexible enum {
     /// IEEE 802.11-2016 Clause 15:
     ///     Direct Sequence Spread Spectrum
@@ -232,7 +232,7 @@ type WlanPhyType = flexible enum {
 
 /// HT and VHT guard interval.
 /// See IEEE 802.11-2016 Table 19-1 and Table 21-1.
-@available(added=NEXT)
+@available(added=32)
 type GuardInterval = strict enum : uint8 {
     LONG_GI = 1; // 800 ns
     SHORT_GI = 2; // 400 ns

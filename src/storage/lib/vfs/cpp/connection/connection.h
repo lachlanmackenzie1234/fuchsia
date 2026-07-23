@@ -85,7 +85,7 @@ class Connection : public fbl::DoublyLinkedListable<Connection*> {
       std::optional<fuchsia_io::NodeAttributesQuery> query) const = 0;
 
   // Invokes |handler| with the NodeInfoDeprecated event for this connection.
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   virtual zx_status_t WithNodeInfoDeprecated(
       fit::callback<zx_status_t(fuchsia_io::wire::NodeInfoDeprecated)> handler) const = 0;
 #endif

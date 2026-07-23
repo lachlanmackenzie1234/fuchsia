@@ -371,7 +371,7 @@ void PortableUITest::InjectSwipe(int start_x, int start_y, int end_x, int end_y,
   FX_LOGS(INFO) << "*** Swipe injected";
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 void PortableUITest::InjectTouchEvent(fuchsia_ui_test_input::TouchInputReport report) {
   fuchsia_ui_test_input::TouchScreenSimulateTouchEventRequest request;
   request.report() = std::move(report);

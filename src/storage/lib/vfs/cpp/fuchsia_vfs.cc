@@ -345,14 +345,14 @@ zx_status_t FuchsiaVfs::ServeDeprecated(const fbl::RefPtr<Vnode>& vnode, zx::cha
     // If |server_end| wasn't consumed, send an event if required and close it with an epitaph.
     if (server_end.is_valid()) {
       fidl::ServerEnd<fio::Node> node{std::move(server_end)};
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
       if (options.flags & fio::wire::OpenFlags::kDescribe) {
         // Ignore errors since there is nothing we can do if this fails.
         [[maybe_unused]] auto result = fidl::WireSendEvent(node)->OnOpen(status, {});
       }
 #else
       if (options.flags & fio::wire::OpenFlags::kDescribe) {
-        // OnOpen is removed in NEXT.
+        // OnOpen is removed in 32.
       }
 #endif
       // Close the channel with an epitaph indicating the failure mode.
@@ -433,7 +433,7 @@ zx_status_t FuchsiaVfs::ServeDeprecatedImpl(const fbl::RefPtr<Vnode>& vnode,
 
     // Send an |fuchsia.io/OnOpen| event if requested. At this point we know the connection is
     // either a Node connection, or a File/Directory that composes the node protocol.
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   if (options.flags & fuchsia_io::OpenFlags::kDescribe) {
     fidl::UnownedServerEnd<fio::Node> node{server_end.borrow()};
     zx_status_t status =

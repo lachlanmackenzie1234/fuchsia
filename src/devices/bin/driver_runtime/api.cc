@@ -189,7 +189,7 @@ __EXPORT zx_status_t fdf_dispatcher_seal(fdf_dispatcher_t* dispatcher, uint32_t 
   return concrete_dispatcher->Seal(option);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 __EXPORT fdf_dispatcher_t* fdf_dispatcher_get_always_on_dispatcher(fdf_dispatcher_t* dispatcher) {
   auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
   auto concrete_dispatcher = interface->GetDispatcher();
@@ -421,7 +421,7 @@ __EXPORT void fdf_env_register_stall_scanner(fdf_env_stall_scanner_t* stall_scan
 }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 __EXPORT void fdf_env_register_resume_requester(const void* driver,
                                                 fdf_env_resume_requester_t* requester) {
   driver_runtime::DispatcherCoordinator::RegisterResumeRequester(driver, requester);

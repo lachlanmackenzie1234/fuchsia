@@ -9,15 +9,15 @@ using fuchsia.input;
 /// we see devices with more than the max amount.
 // TODO(https://fxbug.dev/534432946): Deprecate and remove from
 // fuchsia.input.report in favor of fuchsia.input.
-@available(replaced=NEXT)
+@available(replaced=32)
 const TOUCH_MAX_CONTACTS uint32 = 10;
-@available(added=NEXT)
+@available(added=32)
 const TOUCH_MAX_CONTACTS uint32 = fuchsia.input.TOUCH_MAX_CONTACTS;
 // TODO(https://fxbug.dev/534432946): Deprecate and remove from
 // fuchsia.input.report in favor of fuchsia.input.
-@available(replaced=NEXT)
+@available(replaced=32)
 const TOUCH_MAX_NUM_BUTTONS uint32 = 10;
-@available(added=NEXT)
+@available(added=32)
 const TOUCH_MAX_NUM_BUTTONS uint32 = fuchsia.input.TOUCH_MAX_NUM_BUTTONS;
 
 /// The device type from which the touch originated.

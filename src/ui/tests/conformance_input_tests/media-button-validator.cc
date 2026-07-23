@@ -126,7 +126,7 @@ class MediaButtonConformanceTest : public ui_conformance_test_base::ConformanceT
     }
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
   void SimulatePress(fuchsia_input::ConsumerControlButton button) {
     futi::MediaButtonsDeviceSimulateButtonPressRequest request;
     request.button(button);

@@ -5,5 +5,5 @@ library fuchsia.input;
 
 /// A hardcoded number of max mouse buttons. This should be increased in the future
 /// if we ever see mice with more buttons.
-@available(added=NEXT)
+@available(added=32)
 const MOUSE_MAX_NUM_BUTTONS uint32 = 32;

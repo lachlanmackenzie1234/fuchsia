@@ -166,7 +166,7 @@ struct zx_proc_args {
 #define PA_ESCROWED_DICTIONARY 0x3Cu
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 // A |fuchsia.logger.LogSink| handle containing the default channel to use for logging.
 #define PA_LOG_SINK 0x3Du
 #endif
