@@ -122,27 +122,21 @@ std::string SeverityToString(int32_t severity) {
   return "INVALID";
 }
 
-void SendLogs(DebugAgent* debug_agent, std::vector<fuchsia::diagnostics::FormattedContent> batch) {
+void SendLogs(
+    DebugAgent* debug_agent,
+    const std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>& batch) {
   debug_ipc::NotifyIO notify;
   notify.timestamp = GetNowTimestamp();
   notify.process_koid = 0;
   notify.type = debug_ipc::NotifyIO::Type::kStderr;
 
-  for (auto& content : batch) {
-    auto res =
-        diagnostics::accessor2logger::ConvertFormattedContentToLogMessages(std::move(content));
-    if (res.is_error()) {
-      LOGS(Warn) << "Failed to parse log: " << res.error();
+  for (const auto& msg : batch) {
+    if (msg.is_error()) {
+      LOGS(Warn) << "Failed to parse log: " << msg.error();
     } else {
-      for (auto& msg : res.value()) {
-        if (msg.is_error()) {
-          LOGS(Warn) << "Failed to parse log: " << msg.error();
-        } else {
-          notify.data += SeverityToString(msg.value().severity) + ": ";
-          notify.data.insert(notify.data.end(), msg.value().msg.begin(), msg.value().msg.end());
-          notify.data.push_back('\n');
-        }
-      }
+      notify.data += SeverityToString(msg.value().severity) + ": ";
+      notify.data.insert(notify.data.end(), msg.value().msg.begin(), msg.value().msg.end());
+      notify.data.push_back('\n');
     }
   }
 
@@ -472,7 +466,10 @@ class ZirconComponentManager::TestLauncher : public fxl::RefCountedThreadSafe<Te
         auto& artifact = event.details()->suite_artifact_generated()->artifact().value();
         if (artifact.log()) {
           FX_CHECK(artifact.log()->batch());
-          log_listener_.Bind(artifact.log()->batch()->TakeChannel());
+          fuchsia::diagnostics::BatchIteratorPtr log_listener;
+          log_listener.Bind(artifact.log()->batch()->TakeChannel());
+          log_listener_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+              std::move(log_listener), fuchsia::diagnostics::Format::LEGACY_FXT);
           log_listener_->GetNext(
               [self = fxl::RefPtr<TestLauncher>(this)](auto res) { self->OnLog(std::move(res)); });
         }
@@ -507,17 +504,21 @@ class ZirconComponentManager::TestLauncher : public fxl::RefCountedThreadSafe<Te
   }
 
   // Handle logs.
-  void OnLog(fuchsia::diagnostics::BatchIterator_GetNext_Result result) {
-    if (result.is_response() && !result.response().batch.empty()) {
+  void OnLog(fpromise::result<
+             std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>, std::string>
+                 result) {
+    if (result.is_ok() && !result.value().empty()) {
       if (debug_agent_) {
-        SendLogs(debug_agent_.get(), std::move(result.response().batch));
+        SendLogs(debug_agent_.get(), result.value());
       }
       log_listener_->GetNext(
           [self = fxl::RefPtr<TestLauncher>(this)](auto res) { self->OnLog(std::move(res)); });
     } else {
-      if (result.is_err())
-        LOGS(Error) << "Failed to read log";
-      log_listener_.Unbind();  // Otherwise archivist won't terminate.
+      if (result.is_error())
+        LOGS(Error) << "Failed to read log: " << result.error();
+      if (log_listener_) {
+        log_listener_->Unbind();  // Otherwise archivist won't terminate.
+      }
     }
   }
 
@@ -526,7 +527,7 @@ class ZirconComponentManager::TestLauncher : public fxl::RefCountedThreadSafe<Te
   std::string test_url_;
   fidl::Client<fuchsia_test_manager::RunController> run_controller_;
   fidl::Client<fuchsia_test_manager::SuiteController> suite_controller_;
-  fuchsia::diagnostics::BatchIteratorPtr log_listener_;  // accessor2logger is still using hlcpp.
+  std::unique_ptr<diagnostics::accessor2logger::LogBatchIterator> log_listener_;
 };
 
 debug::Status ZirconComponentManager::LaunchTest(std::string url, std::optional<std::string> realm,
