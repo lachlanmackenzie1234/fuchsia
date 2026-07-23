@@ -101,26 +101,30 @@ closed protocol Endpoint {
     /// Submit Requests to queue. Processed starting with the 0th Request. Submitting a vector of
     /// Requests allows for pre-buffering.
     ///
-    /// Clients are responsible for cache management and ensuring cache coherency.
+    /// Clients are responsible for cache management and ensuring cache coherency. The explanation
+    /// to follow concerns VMOs that have been previously registered via RegisterVmos. The following
+    /// rules must be followed:
     ///
-    /// After read requests:
-    /// - Call zx_cache_flush with ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE on buffers that
-    ///   have been mapped by the client.
-    /// - Call zx_vmo_op_range with ZX_VMO_OP_CACHE_CLEAN_INVALIDATE on all other buffers.
+    /// 1. After writing to VMO-backed buffers, the caller must call zx_cache_flush with
+    ///    ZX_CACHE_FLUSH_DATA before invoking QueueRequests, causing the hardware to DMA-process
+    ///    the buffer. This avoids both stale buffer data being DMA-read, and a concurrent race
+    ///    between the hardware and CPU to update the same addresses.
     ///
-    /// Note that writing to any portion of a buffer before OnCompletion is called for that buffer
-    /// can corrupt the received data.
+    /// 2. Before reading from VMO-backed buffers, the caller must call zx_cache_flush with
+    ///    ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE after the buffer contents have been
+    ///    DMA-written by the hardware. This implies a non-dirty cache (see #1 above) and ensures
+    ///    any subsequent CPU-reads fetch the previously DMA-written data from RAM.
     ///
-    /// Before write requests:
-    /// - Call zx_cache_flush with ZX_CACHE_FLUSH_DATA on buffers that have been mapped by the
-    ///   client.
-    /// - Call zx_vmo_op_range with ZX_VMO_OP_CACHE_CLEAN on all other buffers.
+    /// Failing to adhere to these rules will result in the exchange of corrupted and/or stale data.
+    /// If the VMO is not virtually mapped (uncommon), zx_vmo_op_range should be used in lieu of
+    /// zx_cache_flush. If the usb::FidlRequest types are in use, they contain helpers for these
+    /// operations.
     ///
     /// Requests may be pre-buffered. In other words, requests may be queued for data that is not
     /// present/ready in the buffer yet. The USB Endpoint Server consuming requests does not care
     /// if the data in the buffer is ready or not and will always process requests on schedule. It
     /// is the responsibility of the USB Endpoint Client that submits requests to ensure that data
-    /// is ready on schedule.
+    /// is ready on schedule (taking into consideration cache management above).
     ///  * Definition of "on schedule" varies for different endpoints and controllers. In general,
     ///    this will be communicated by the `lead_time` parameter returned by `GetInfo`.
     strict QueueRequests(resource struct {
