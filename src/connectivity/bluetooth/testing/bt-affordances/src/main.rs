@@ -18,7 +18,7 @@ use fidl_fuchsia_bluetooth_affordances::{
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
 use futures::{FutureExt, StreamExt, TryStreamExt};
-use log::{error, warn};
+use log::error;
 use std::sync::Arc;
 
 pub enum Services {
@@ -84,22 +84,6 @@ async fn handle_single_peer_request(
                     responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
                 }
             }
-        }
-        PeerControllerRequest::ConnectPeer { payload: _, responder } => {
-            warn!("ConnectPeer is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-        }
-        PeerControllerRequest::DisconnectPeer { payload: _, responder } => {
-            warn!("DisconnectPeer is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-        }
-        PeerControllerRequest::Pair { payload: _, responder } => {
-            warn!("Pair is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-        }
-        PeerControllerRequest::ForgetPeer { payload: _, responder } => {
-            warn!("ForgetPeer is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         PeerControllerRequest::SetDiscovery { payload, responder } => {
             let PeerControllerSetDiscoveryRequest { discovery: Some(discovery), .. } = payload
@@ -190,26 +174,6 @@ async fn handle_single_host_request(
                     responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
                 }
             }
-        }
-        HostControllerRequest::SetActiveHost { payload: _, responder } => {
-            warn!("SetActiveHost is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-        }
-        HostControllerRequest::SetLocalName { payload: _, responder } => {
-            warn!("SetLocalName is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-        }
-        HostControllerRequest::StartPairingDelegate { payload: _, responder } => {
-            warn!("StartPairingDelegate is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-        }
-        HostControllerRequest::StopPairingDelegate { responder } => {
-            warn!("StopPairingDelegate is being deprecated and no-op");
-            responder.send()?;
-        }
-        HostControllerRequest::SetDeviceClass { payload: _, responder } => {
-            warn!("SetDeviceClass is being deprecated and no-op");
-            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         HostControllerRequest::_UnknownMethod { ordinal, .. } => {
             error!("HostControllerRequest: unknown method received with ordinal {ordinal}");

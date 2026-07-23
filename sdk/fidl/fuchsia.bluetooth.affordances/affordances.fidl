@@ -32,37 +32,6 @@ open protocol PeerController {
         1: id bt.PeerId;
     }) error Error;
 
-    /// Connect to a peer.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a peer ID.
-    flexible ConnectPeer(PeerSelector) -> () error Error;
-
-    /// Disconnect all logical links (BR/EDR & LE) to a peer.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a peer ID.
-    flexible DisconnectPeer(PeerSelector) -> () error Error;
-
-    /// Initiate pairing with a peer.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if `selector` or `options` is missing, or if `selector`
-    ///   does not contain a peer ID.
-    flexible Pair(table {
-        /// Required. Defines which peer to initiate pairing with.
-        1: selector PeerSelector;
-
-        /// Required. The configuration options to use for this pairing request.
-        2: options sys.PairingOptions;
-    }) -> () error Error;
-
-    /// Forget a peer and all its bonding information.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a peer ID.
-    flexible ForgetPeer(PeerSelector) -> () error Error;
-
     /// Set discovery state.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
@@ -98,60 +67,6 @@ open protocol HostController {
     flexible SetConnectability(table {
         /// Required. Set to true if making connectable or false if revoking connectability.
         1: connectable bool;
-    }) -> () error Error;
-
-    /// Set the active host.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a host ID.
-    flexible SetActiveHost(HostSelector) -> () error Error;
-
-    /// Set the active host's local name.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if `name` is missing.
-    flexible SetLocalName(table {
-        /// Required. Name to assign to the host.
-        1: name bt.DeviceName;
-    }) -> () error Error;
-
-    /// Start a pairing delegate to respond to pairing procedures. Only one pairing delegate can be
-    /// set at a time host-wide. Calling this while a delegate started by this method is already
-    /// active will drop and overwrite the existing delegate. If this is called while a delegate
-    /// started through other means is active, the new delegate will be closed immediately. Closing
-    /// a pairing delegate after it is set aborts all ongoing pairing procedures without accepting
-    /// and unsets the delegate.
-    ///
-    /// If no pairing delegate is set, all pairings will be rejected even if the peer connection was
-    /// initiated by the host.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if `input_capability` or `output_capability` is
-    ///   missing.
-    flexible StartPairingDelegate(table {
-        /// Required. Set based on the ability of the host to enter responses to pairing requests.
-        /// See [`fuchsia.bluetooth.sys/InputCapability`].
-        1: input_capability sys.InputCapability;
-
-        /// Required. Set based on the ability of the host to display information to the user
-        /// initiating or accepting a pairing. See [`fuchsia.bluetooth.sys/OutputCapability`].
-        2: output_capability sys.OutputCapability;
-    }) -> () error Error;
-
-    /// Stop a pairing delegate previously started by [`StartPairingDelegate`]. This will abort all
-    /// ongoing pairing procedures without accepting and unsets the delegate.
-    ///
-    /// This method can only stop a delegate started by [`StartPairingDelegate`], and will not stop
-    /// a delegate started through other means.
-    flexible StopPairingDelegate() -> ();
-
-    /// Set the active host's device class.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    /// * error Returns `MISSING_PARAMETERS` if `device_class` is missing.
-    flexible SetDeviceClass(table {
-        /// Required. The device class to assign to the host. See [`fuchsia.bluetooth.DeviceClass`].
-        1: device_class bt.DeviceClass;
     }) -> () error Error;
 };
 
