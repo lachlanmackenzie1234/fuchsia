@@ -52,6 +52,9 @@ void NaturalDecoder::DecodeUnknownEnvelope(const fidl_envelope_t* envelope) {
 }
 
 void NaturalDecoder::CloseNextHandles(size_t count) {
+  if (count == 0) {
+    return;
+  }
   if (unlikely(count > body_.num_handles() - handle_index_)) {
     SetError(kCodingErrorInvalidNumHandlesSpecifiedInEnvelope);
     return;
