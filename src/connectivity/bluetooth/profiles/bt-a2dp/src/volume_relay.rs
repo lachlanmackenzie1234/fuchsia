@@ -2,66 +2,105 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints;
+use fidl_fuchsia_bluetooth_avrcp as avrcp;
+use fidl_fuchsia_media as media;
+use fidl_fuchsia_settings as settings;
 use fuchsia_async::{self as fasync, DurationExt, Timer};
 use futures::channel::oneshot::Sender;
 use futures::future::{Fuse, FusedFuture};
-use futures::{select, Future, FutureExt, StreamExt};
+use futures::{Future, FutureExt, StreamExt, select};
 use log::{info, trace, warn};
 use std::fmt::Debug;
 use std::pin::pin;
-use {
-    fidl_fuchsia_bluetooth_avrcp as avrcp, fidl_fuchsia_media as media,
-    fidl_fuchsia_settings as settings,
-};
 
-/// Represents set volume request.
+/// Represents the data payload of a set volume request attempt.
 /// All volume values are AVRCP volume values with range [0, 127].
-struct SetVolumeRequest {
-    previous: u8,  // System volume value before the request was made.
-    requested: u8, // Requested new volume value.
-    responder: Option<fidl_fuchsia_bluetooth_avrcp::AbsoluteVolumeHandlerSetVolumeResponder>,
+#[derive(Clone, Copy, Debug)]
+struct SetVolumeRequestData {
+    /// System volume value before the request was made.
+    prev_system_vol: u8,
+    /// Adjusted volume value we are trying to set (may include nudging).
+    adj_requested_vol: u8,
+    /// Original volume value requested by the peer.
+    orig_requested_vol: u8,
 }
 
-impl SetVolumeRequest {
-    fn new(
-        current_volume: u8,
-        requested_volume: u8,
-        responder: Option<fidl_fuchsia_bluetooth_avrcp::AbsoluteVolumeHandlerSetVolumeResponder>,
-    ) -> Self {
-        Self { previous: current_volume, requested: requested_volume, responder }
+impl SetVolumeRequestData {
+    fn new(curr_system_vol: u8, orig_requested_vol: u8, adj_requested_vol: u8) -> Self {
+        Self { prev_system_vol: curr_system_vol, adj_requested_vol, orig_requested_vol }
     }
 
     fn is_volume_changed(&self, new_volume: u8) -> bool {
-        self.previous != new_volume
+        self.prev_system_vol != new_volume
     }
 
-    fn is_increment_request(current_vol: u8, requested_vol: u8) -> bool {
-        requested_vol > current_vol
+    /// Calculates the adjusted requested volume if it matches the previously requested volume
+    /// of this failed request.
+    ///
+    /// This is a workaround for quantization/scaling deadlocks. If a request
+    /// fails to change system volume, nudging it by one step breaks the deadlock.
+    /// Only adjusts if the new request matches the volume from the previous request.
+    fn calculate_adjusted_volume(&self, curr_system_vol: u8, new_requested_vol: u8) -> u8 {
+        const AVRCP_VOLUME_STEP_SIZE: u8 = 1;
+        const MAX_AVRCP_VOLUME: u8 = 127;
+
+        if new_requested_vol != self.orig_requested_vol {
+            trace!(
+                "New SetVolume request {new_requested_vol} differs from previously requested volume {}, not adjusting",
+                self.orig_requested_vol
+            );
+            return new_requested_vol;
+        }
+
+        let is_increment = new_requested_vol > curr_system_vol;
+
+        // Nudge based on the previously adjusted volume so repeated retries continue to nudge the volume.
+        match (is_increment, self.adj_requested_vol) {
+            (true, adj)
+                if adj
+                    .checked_add(AVRCP_VOLUME_STEP_SIZE)
+                    .is_some_and(|v| v <= MAX_AVRCP_VOLUME) =>
+            {
+                let adjusted = adj + AVRCP_VOLUME_STEP_SIZE;
+                trace!("Requested volume adjusted from {new_requested_vol} to {adjusted}");
+                adjusted
+            }
+            (false, adj) if adj.checked_sub(AVRCP_VOLUME_STEP_SIZE).is_some() => {
+                let adjusted = adj - AVRCP_VOLUME_STEP_SIZE;
+                trace!("Requested volume adjusted from {new_requested_vol} to {adjusted}");
+                adjusted
+            }
+            _ => {
+                trace!(
+                    "Requested volume same as failed request but cannot be adjusted further ({new_requested_vol})"
+                );
+                new_requested_vol
+            }
+        }
+    }
+}
+
+/// An active, pending SetVolume request (guaranteed to have a responder).
+struct PendingSetVolume {
+    data: SetVolumeRequestData,
+    responder: fidl_fuchsia_bluetooth_avrcp::AbsoluteVolumeHandlerSetVolumeResponder,
+}
+
+impl PendingSetVolume {
+    fn new(
+        data: SetVolumeRequestData,
+        responder: fidl_fuchsia_bluetooth_avrcp::AbsoluteVolumeHandlerSetVolumeResponder,
+    ) -> Self {
+        Self { data, responder }
     }
 
-    /// Regardless of if the new volume is the same or different from the
-    /// previous volume, send a response back using the SetVolumeResponder.
-    fn send(&mut self, new_volume: u8) {
-        if let None = self.responder.take().and_then(|responder| responder.send(new_volume).ok()) {
-            warn!("Could not send SetVolume response");
+    fn send(self, new_volume: u8) {
+        if let Err(e) = self.responder.send(new_volume) {
+            warn!("Could not send SetVolume response: {:?}", e);
         }
-    }
-
-    /// Sends a response back using the SetVolumeResponder if the
-    /// new volume is different from the previous volume.
-    /// Returns true if the response was sent. False if the response
-    /// wasn't sent due to volume being unchanged.
-    fn send_if_changed(&mut self, new_volume: u8) -> bool {
-        if !self.is_volume_changed(new_volume) {
-            return false;
-        }
-        if let None = self.responder.take().and_then(|responder| responder.send(new_volume).ok()) {
-            warn!("Could not send SetVolume response");
-        }
-        true
     }
 }
 
@@ -168,13 +207,10 @@ impl VolumeRelay {
         // TODO(https://fxbug.dev/42131477): Change this to be a single responder when AVRCP correctly manages the
         // lifetime of volume changed subscriptions.
         let mut hanging_onchanged = Vec::new();
-        let mut hanging_setvolumes = Vec::new();
-        // Keeps track of most recent failed set volume request.
-        // Tuple of previous volume value and requested volume value.
-        let mut failed_setvolume: Option<SetVolumeRequest> = None;
-        // For now, we use minimum AVRCP volume step size to adjust volume when
-        // set volume request fails.
-        const AVRCP_VOLUME_STEP_SIZE: u8 = 1;
+        let mut hanging_setvolumes: Vec<PendingSetVolume> = Vec::new();
+        // Keeps track of most recent failed set volume request to enable
+        // nudging adjustments on valid retries.
+        let mut failed_setvolume: Option<SetVolumeRequestData> = None;
 
         let setvolume_timeout = Fuse::terminated();
         let mut setvolume_timeout = pin!(setvolume_timeout);
@@ -201,18 +237,9 @@ impl VolumeRelay {
                                 continue;
                             }
 
-                            // TODO(dayeonglee): if the previously failed set volume request was requested
-                            // with the same value, increment/decrement it by the step size.
-                            if let Some(failed_req) = failed_setvolume.take() {
-                                let is_increment = SetVolumeRequest::is_increment_request(current_volume, requested_volume);
-                                if (is_increment && requested_volume <= failed_req.requested) || (!is_increment && requested_volume >= failed_req.requested) {
-                                    let before = requested_volume;
-                                    match is_increment {
-                                        true => requested_volume = failed_req.requested + AVRCP_VOLUME_STEP_SIZE,
-                                        false => requested_volume = failed_req.requested - AVRCP_VOLUME_STEP_SIZE,
-                                    };
-                                    info!("Requested volume adjusted from {before} to {requested_volume}");
-                                }
+                            let original_requested = requested_volume;
+                            if let Some(failed_req) = &failed_setvolume {
+                                requested_volume = failed_req.calculate_adjusted_volume(current_volume, original_requested);
                             }
 
                             let settings = AvrcpVolume(requested_volume).as_audio_settings(media::AudioRenderUsage2::Media);
@@ -222,7 +249,9 @@ impl VolumeRelay {
                                 let _ = responder.send(current_volume);
                                 continue;
                             }
-                            hanging_setvolumes.push(SetVolumeRequest::new(current_volume, requested_volume, Some(responder)));
+                            let _ = failed_setvolume.take();
+                            let data = SetVolumeRequestData::new(current_volume, original_requested, requested_volume);
+                            hanging_setvolumes.push(PendingSetVolume::new(data, responder));
                             if setvolume_timeout.is_terminated() {
                                 setvolume_timeout.set(Timer::new(SETVOLUME_TIMEOUT.after_now()).fuse());
                             }
@@ -237,13 +266,13 @@ impl VolumeRelay {
                     }
                 },
                 _ = setvolume_timeout => {
-                    hanging_setvolumes.drain(..).for_each(|mut req| {
-                        req.send(current_volume);
+                    hanging_setvolumes.drain(..).for_each(|req| {
                         // TODO(b/250265882): convert the log back to trace once issue is resolved.
-                        info!("SetVolume request timed out. Requested: {0}. Volume change: {1} -> {current_volume}", req.requested, req.previous);
+                        info!("SetVolume request timed out: {:?}. Current volume: {current_volume}", req.data);
                         if failed_setvolume.is_none() {
-                            failed_setvolume = Some(SetVolumeRequest::new(req.previous, req.requested, None));
+                            failed_setvolume = Some(req.data);
                         }
+                        req.send(current_volume);
                     });
                 },
                 watch_response = sys_volume_watch_fut => {
@@ -263,7 +292,13 @@ impl VolumeRelay {
 
                     trace!("System media volume level now at {:?} in AVRCP", current_volume);
                     if hanging_setvolumes.len() > 0 {
-                        hanging_setvolumes.retain_mut(|req| !req.send_if_changed(current_volume));
+                        hanging_setvolumes = hanging_setvolumes.into_iter().filter_map(|req| {
+                            if req.data.is_volume_changed(current_volume) {
+                                req.send(current_volume);
+                                return None;
+                            }
+                            Some(req)
+                        }).collect();
                         // When the change is the result of a setvolume command, the onchanged
                         // hanging is _not_ updated.
                         last_onchanged = Some(current_volume);
@@ -440,10 +475,11 @@ mod tests {
 
         let _ = exec.run_until_stalled(&mut relay_fut).expect("should be ready");
 
-        assert!(exec
-            .run_until_stalled(&mut settings_requests.next())
-            .expect("should be ready")
-            .is_none());
+        assert!(
+            exec.run_until_stalled(&mut settings_requests.next())
+                .expect("should be ready")
+                .is_none()
+        );
 
         let mut current_volume_fut = volume_client.get_current_volume();
         assert!(exec.run_until_stalled(&mut current_volume_fut).expect("should be ready").is_err());
@@ -647,6 +683,113 @@ mod tests {
             exec.run_until_stalled(&mut volume_set_fut).expect("should be ready"),
             Ok(104 /* 0.82 audio settings volume as AVRCP volume */)
         );
+    }
+
+    #[fuchsia::test]
+    fn failed_request_does_not_affect_different_requests() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let (mut settings_requests, avrcp_requests, _stop_sender, relay_fut) = setup_volume_relay();
+
+        let mut relay_fut = pin!(relay_fut);
+
+        exec.run_until_stalled(&mut relay_fut).expect_pending("should be pending");
+
+        let (volume_client, _watch_responder) =
+            finish_relay_setup(&mut relay_fut, &mut exec, avrcp_requests, &mut settings_requests);
+
+        // 1. Trigger a timeout with a high volume request (127).
+        let volume_set_fut = volume_client.set_volume(127);
+        let mut volume_set_fut = pin!(volume_set_fut);
+
+        exec.run_until_stalled(&mut relay_fut).expect_pending("should be pending");
+
+        let request_fut = settings_requests.select_next_some();
+        let mut request_fut = pin!(request_fut);
+
+        exec.run_until_stalled(&mut volume_set_fut).expect_pending("should be pending");
+
+        // Consume/respond to volume set request, but don't confirm actual system
+        // volume change to cause a timeout.
+        match exec.run_until_stalled(&mut request_fut).expect("should be ready") {
+            Ok(settings::AudioRequest::Set2 { responder, .. }) => {
+                let _ = responder.send(Ok(())).unwrap();
+            }
+            x => panic!("Expected Ready audio set request and got: {:?}", x),
+        };
+
+        exec.run_until_stalled(&mut relay_fut).expect_pending("should be pending");
+
+        // Advance time to trigger timeout.
+        exec.set_fake_time((SETVOLUME_TIMEOUT + zx::MonotonicDuration::from_millis(5)).after_now());
+        let _ = exec.wake_expired_timers();
+
+        exec.run_until_stalled(&mut relay_fut).expect_pending("should be pending");
+
+        // Initial volume is returned on timeout.
+        assert_matches!(
+            exec.run_until_stalled(&mut volume_set_fut).expect("should be ready"),
+            Ok(INITIAL_AVRCP_VOLUME)
+        );
+
+        // 2. Send a new request to slightly increase volume (e.g., INITIAL_AVRCP_VOLUME + 1).
+        let requested_new = INITIAL_AVRCP_VOLUME + 1;
+        let volume_set_fut = volume_client.set_volume(requested_new);
+        let mut volume_set_fut = pin!(volume_set_fut);
+
+        exec.run_until_stalled(&mut relay_fut).expect_pending("should be pending");
+        exec.run_until_stalled(&mut volume_set_fut).expect_pending("should be pending");
+
+        let request_fut = settings_requests.select_next_some();
+        let mut request_fut = pin!(request_fut);
+
+        // Requested volume should match the new request not the old failed request.
+        match exec.run_until_stalled(&mut request_fut).expect("should be ready") {
+            Ok(settings::AudioRequest::Set2 { settings, .. }) => {
+                let requested_level = settings.streams.as_ref().unwrap()[0]
+                    .user_volume
+                    .as_ref()
+                    .unwrap()
+                    .level
+                    .unwrap();
+
+                // Convert back to AVRCP volume for easier assertion.
+                let requested_avrcp = (requested_level * 127.0) as u8;
+
+                // We assert that the requested volume matches the new request volume.
+                assert_eq!(requested_avrcp, requested_new);
+            }
+            x => panic!("Expected Ready audio set request and got: {:?}", x),
+        };
+    }
+
+    #[test]
+    fn test_calculate_adjusted_volume_limits() {
+        // 1. Underflow: A failed request that asked for 0 and was set to 0.
+        let failed_req = SetVolumeRequestData::new(50, 0, 0);
+        // Peer tries again with 0 (decrement direction). Should NOT underflow, and stay at 0.
+        assert_eq!(failed_req.calculate_adjusted_volume(50, 0), 0);
+
+        // 2. Hijacking: A failed request for 60.
+        let failed_req = SetVolumeRequestData::new(50, 60, 61);
+        // Peer tries again but asks for 70 (different from failed 60). Should NOT be hijacked.
+        assert_eq!(failed_req.calculate_adjusted_volume(50, 70), 70);
+
+        // 3. Nudge Up: A failed request for 60.
+        let failed_req = SetVolumeRequestData::new(50, 60, 61);
+        // Peer tries again with 60 (same as failed). Current is 50, so it's an increment.
+        // Should be nudged up from 61 to 62.
+        assert_eq!(failed_req.calculate_adjusted_volume(50, 60), 62);
+
+        // 4. Nudge Down: A failed request for 60.
+        let failed_req = SetVolumeRequestData::new(70, 60, 59);
+        // Peer tries again with 60 (same as failed). Current is 70, so it's a decrement.
+        // Should be nudged down from 59 to 58.
+        assert_eq!(failed_req.calculate_adjusted_volume(70, 60), 58);
+
+        // 5. Max Limit: A failed request for 127.
+        let failed_req = SetVolumeRequestData::new(50, 127, 127);
+        // Peer tries again with 127 (increment direction). Should NOT exceed 127.
+        assert_eq!(failed_req.calculate_adjusted_volume(50, 127), 127);
     }
 
     /// Test that the relay returns the current volume when requested, and completes an
