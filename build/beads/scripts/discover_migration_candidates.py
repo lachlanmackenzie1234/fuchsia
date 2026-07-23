@@ -5,6 +5,7 @@
 # found in the LICENSE file.
 
 import argparse
+import csv
 import dataclasses
 import pathlib
 import re
@@ -409,7 +410,8 @@ class ComplexityCalculator:
                 f"Invalid label: {label}, only fully-qualified labels are supported"
             )
 
-        path_part, target_name = label.split(":")
+        path_part, target_name = label.split(":", 1)
+        target_name = target_name.split("(")[0]  # Drop toolchain, if any.
         path_dir = self._root_dir / path_part.lstrip("/")
         bazel_file = path_dir / "BUILD.bazel"
         if not bazel_file.exists():
@@ -436,7 +438,7 @@ class ComplexityCalculator:
             return label
 
         if ":" in label:
-            label_path, target_name = label.split(":")
+            label_path, target_name = label.split(":", 1)
             target_path = dir_path / label_path
         else:
             target_name = label
@@ -451,7 +453,7 @@ class ComplexityCalculator:
             raise ValueError(
                 f"Invalid label: {label}, only fully-qualified labels are supported"
             )
-        path_part, target_name = label.lstrip("//").split(":")
+        path_part, target_name = label.lstrip("//").split(":", 1)
         return pathlib.Path(path_part), target_name
 
     def complexity_for_label(self, label: str) -> int:
@@ -535,17 +537,99 @@ class ComplexityCalculator:
         return file_result
 
 
+def _infer_language(target_type: str) -> str:
+    """
+    Infers the language of a target based on its type.
+
+    Args:
+        target_type: The type of the target.
+
+    Returns:
+        The inferred language of the target.
+    """
+    if target_type.startswith("rustc_"):
+        return "Rust"
+    elif target_type.startswith("go_"):
+        return "Go"
+    elif target_type in (
+        "executable",
+        "source_set",
+        "static_library",
+        "shared_library",
+        "test",
+    ):
+        return "C++"
+    elif target_type.startswith("python_"):
+        return "Python"
+    return "Unknown"
+
+
+def _complexity_to_string(complexity: int) -> str:
+    """
+    Convert a complexity score to a human-readable string.
+
+    Args:
+        complexity: The complexity score.
+
+    Returns:
+        A string representing the complexity (LOW, MEDIUM, or HIGH).
+    """
+    if complexity <= 5:
+        return "LOW"
+    elif complexity <= 20:
+        return "MEDIUM"
+    else:
+        return "HIGH"
+
+
+def print_results_csv(file_results: list[GnFileInfo], top: int) -> None:
+    """
+    Print the results of the analysis in a CSV format.
+
+    Args:
+        file_results: A list of GnFileInfo objects containing the results of the analysis.
+        top: The number of top candidates to print.
+    """
+    writer = csv.writer(sys.stdout)
+    writer.writerow(
+        [
+            "Bug",
+            "Migrated?",
+            "Tool Name",
+            "GN Build File",
+            "Language",
+            "Owners",
+            "Estimated Complexity",
+        ]
+    )
+    for file_res in file_results[:top]:
+        for target in file_res.targets:
+            writer.writerow(
+                [
+                    "",
+                    "NO",
+                    target.name,
+                    f"//{file_res.path}",
+                    _infer_language(target.type),
+                    "",
+                    _complexity_to_string(target.complexity),
+                ]
+            )
+
+
 def print_results(file_results: list[GnFileInfo], top: int) -> None:
     """Print the results of the analysis in a tabular format."""
     print("\nTop Candidates for Migration (Grouped by File):")
     print("=" * 80)
     for i, file_res in enumerate(file_results[:top]):
         print(f"{i+1}. {file_res.path}")
-        print(f"   Total Complexity: {file_res.total_complexity}")
         print(f"   Targets ({file_res.total_targets}):")
         for target in file_res.targets:
             print(f"     - {target.name} ({target.type})")
-            print(f"       Complexity: {target.complexity}")
+            print(f"       Inferred language: {_infer_language(target.type)}")
+            print(
+                f"       Estimated Complexity: {_complexity_to_string(target.complexity)}"
+            )
             if target.non_standard_fields:
                 print(
                     f"       Non-standard fields: {target.non_standard_fields}"
@@ -594,6 +678,13 @@ def main() -> int:
         help="Number of top candidates to show",
     )
     parser.add_argument(
+        "--format",
+        type=str,
+        choices=["text", "csv"],
+        default="text",
+        help="Output format",
+    )
+    parser.add_argument(
         "--fuchsia-dir",
         type=pathlib.Path,
         default=_FUCHSIA_DIR,
@@ -640,7 +731,11 @@ def main() -> int:
 
     # Sort by total complexity and then by number of targets.
     actionable_files.sort(key=lambda x: (x.total_complexity, x.total_targets))
-    print_results(actionable_files, args.top)
+
+    if args.format == "csv":
+        print_results_csv(actionable_files, args.top)
+    else:
+        print_results(actionable_files, args.top)
 
     return 0
 
