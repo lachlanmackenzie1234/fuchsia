@@ -484,7 +484,6 @@ impl_icmp_message!(Ipv6, Redirect, Redirect, IcmpZeroCode, Options<B>);
 /// Parsing and serialization of NDP options.
 pub mod options {
     use core::num::NonZeroUsize;
-    use core::time::Duration;
 
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::UnicastAddress;
@@ -602,8 +601,8 @@ pub mod options {
         ///
         /// A value of [`INFINITE_LIFETIME`] represents infinity; a value of `None`
         /// means that the servers MUST no longer be used.
-        pub fn lifetime(&self) -> Option<NonZeroDuration> {
-            NonZeroDuration::new(Duration::from_secs(self.lifetime.into()))
+        pub fn lifetime(&self) -> Option<NonZeroNdpLifetime> {
+            NonZeroNdpLifetime::from_u32_with_infinite(self.lifetime)
         }
 
         /// Returns the recursive DNS server addresses.
