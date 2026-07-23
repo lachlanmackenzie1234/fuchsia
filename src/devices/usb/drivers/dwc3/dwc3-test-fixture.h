@@ -104,6 +104,19 @@ class Dwc3TestHelper {
   }
   static void HandleEpTransferCompleteEvent(Dwc3& drv, uint8_t ep_num) {
     drv.HandleEpTransferCompleteEvent(ep_num);
+    if (ep_num >= 2) {
+      if (auto* uep = drv.get_user_endpoint(ep_num); uep && uep->server.has_value()) {
+        uep->server->SendCompletions();
+      }
+    }
+  }
+  static void HandleEpTransferInProgressEvent(Dwc3& drv, uint8_t ep_num) {
+    drv.HandleEpTransferInProgressEvent(ep_num);
+    if (ep_num >= 2) {
+      if (auto* uep = drv.get_user_endpoint(ep_num); uep && uep->server.has_value()) {
+        uep->server->SendCompletions();
+      }
+    }
   }
   static void HandleEpTransferStartedEvent(Dwc3& drv, uint8_t ep_num, uint32_t rsrc_id) {
     drv.HandleEpTransferStartedEvent(ep_num, rsrc_id);
@@ -154,12 +167,49 @@ class Dwc3TestHelper {
     (void)pending;
   }
 
+  static bool GetGotNotReady(Dwc3& drv, uint8_t ep_num) {
+    if (ep_num < 2) {
+      return ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).got_not_ready;
+    }
+    auto* uep = drv.get_user_endpoint(ep_num);
+    return uep ? uep->ep.got_not_ready : false;
+  }
+
+  static void SetGotNotReady(Dwc3& drv, uint8_t ep_num, bool got_not_ready) {
+    if (ep_num < 2) {
+      ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).got_not_ready = got_not_ready;
+    } else {
+      auto* uep = drv.get_user_endpoint(ep_num);
+      if (uep) {
+        uep->ep.got_not_ready = got_not_ready;
+      }
+    }
+  }
+
+  static uint32_t GetEpRsrcId(Dwc3& drv, uint8_t ep_num) {
+    if (ep_num < 2) {
+      return ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).rsrc_id;
+    }
+    auto* uep = drv.get_user_endpoint(ep_num);
+    return uep ? uep->ep.rsrc_id : UINT32_MAX;
+  }
+
   static bool GetEpPendingCancel(Dwc3& drv, uint8_t ep_num) {
     // Stubbed out: pending_cancel is not in production yet.
     (void)drv;
     (void)ep_num;
     return false;
   }
+
+  static bool IsXferIdle(Dwc3& drv, uint8_t ep_num) {
+    if (ep_num < 2) {
+      return ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).transfer_state ==
+             dwc3::Dwc3::Endpoint::TransferState::kIdle;
+    }
+    auto* uep = drv.get_user_endpoint(ep_num);
+    return uep ? uep->ep.transfer_state == dwc3::Dwc3::Endpoint::TransferState::kIdle : true;
+  }
+
   static Dwc3::UserEndpoint* GetUserEndpoint(Dwc3& drv, uint8_t ep_num) {
     return drv.get_user_endpoint(ep_num);
   }
@@ -565,8 +615,73 @@ class TestFixture : public gtest_base {
         [&]() { return dut_.RunInDriverContext<bool>([](Dwc3& drv) { return drv.power_on(); }); });
   }
 
+  struct VmoBufferResult {
+    std::vector<fuchsia_hardware_usb_request::Request> requests;
+    fit::deferred_action<fit::closure> unmap;
+    zx_vaddr_t mapped_addr = 0;
+  };
+
+  VmoBufferResult CreateVmoBuffer(
+      const fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint>& sync_client, size_t size,
+      size_t buffer_size, uint8_t vmo_id = 1, bool map = true) {
+    fuchsia_hardware_usb_endpoint::VmoInfo vmo_info;
+    vmo_info.id(vmo_id);
+    vmo_info.size(size);
+
+    std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_infos;
+    vmo_infos.push_back(std::move(vmo_info));
+
+    auto reg_result = sync_client->RegisterVmos({std::move(vmo_infos)});
+    ZX_ASSERT_MSG(reg_result.is_ok(), "RegisterVmos failed: %s",
+                  reg_result.error_value().status_string());
+    ZX_ASSERT(reg_result->vmos().size() == 1UL);
+
+    fit::deferred_action<fit::closure> unmap;
+    zx_vaddr_t mapped_addr = 0;
+    if (map) {
+      zx::vmo vmo = std::move(*reg_result->vmos()[0].vmo());
+      zx_status_t status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                                      size, &mapped_addr);
+      ZX_ASSERT_MSG(status == ZX_OK, "vmar map failed: %s", zx_status_get_string(status));
+      unmap = fit::defer(fit::closure([mapped_addr, size]() {
+        const size_t page_size = zx_system_get_page_size();
+        const size_t rounded_size = (size + page_size - 1) & ~(page_size - 1);
+        zx_status_t status = zx::vmar::root_self()->unmap(mapped_addr, rounded_size);
+        ZX_ASSERT_MSG(status == ZX_OK, "vmar unmap failed: %s", zx_status_get_string(status));
+      }));
+    }
+
+    auto make_request = [](uint8_t id, size_t b_size) {
+      std::vector<fuchsia_hardware_usb_request::BufferRegion> regions;
+      regions.emplace_back(
+          std::move(fuchsia_hardware_usb_request::BufferRegion()
+                        .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(id))
+                        .size(b_size)
+                        .offset(0)));
+      fuchsia_hardware_usb_request::Request req;
+      req.data(std::move(regions)).defer_completion(false);
+      return req;
+    };
+
+    std::vector<fuchsia_hardware_usb_request::Request> requests;
+    requests.emplace_back(std::move(make_request(vmo_id, buffer_size)));
+
+    return VmoBufferResult{
+        .requests = std::move(requests),
+        .unmap = std::move(unmap),
+        .mapped_addr = mapped_addr,
+    };
+  }
+
+  void SetUpAndPowerOnEndpoints() {
+    dut_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { env.usb_phy().set_initial_connected(true); });
+    dut_.RunInDriverContext([&](Dwc3& drv) { Dwc3TestHelper::SetPowerOn(drv, true); });
+  }
+
   void SetUp() override {
     stuck_reset_test_ = false;
+    stuck_halt_test_ = false;
     vbus_high_ = false;
 
     dut_.RunInEnvironmentTypeContext([&](Environment& env) {
@@ -579,6 +694,13 @@ class TestFixture : public gtest_base {
       dctl_reg.SetWriteCallback(
           [this](uint64_t val) { return Write_DCTL(static_cast<uint32_t>(val)); });
       gsnpsid_reg.SetReadCallback([this]() -> uint32_t { return Read_GSNPSID(); });
+
+      env.reg_region()[DSTS::Get().addr()].SetReadCallback([this]() { return Read_DSTS(); });
+
+      auto& ver_num_reg = env.reg_region()[USB31_VER_NUMBER::Get().addr()];
+      auto& ver_type_reg = env.reg_region()[USB31_VER_TYPE::Get().addr()];
+      ver_num_reg.SetReadCallback([this]() -> uint32_t { return Read_USB31_VER_NUMBER(); });
+      ver_type_reg.SetReadCallback([this]() -> uint32_t { return Read_USB31_VER_TYPE(); });
     });
 
     if (manage_lifetime) {
@@ -641,16 +763,40 @@ class TestFixture : public gtest_base {
       updated_val = DCTL::Get().FromValue(updated_val).set_CSFTRST(0).reg_value();
     }
     dctl_val_.store(updated_val);
+
+    // Satisfy the categorical Spec conformance loop: When controller is halted, set DEVCTRLHLT.
+    if (!stuck_halt_test_) {
+      uint32_t expected = dsts_val_.load();
+      while (true) {
+        uint32_t desired =
+            DSTS::Get()
+                .FromValue(expected)
+                .set_DEVCTRLHLT(DCTL::Get().FromValue(dctl_val_.load()).RUN_STOP() == 0 ? 1 : 0)
+                .reg_value();
+        if (dsts_val_.compare_exchange_weak(expected, desired)) {
+          break;
+        }
+      }
+    }
   }
+
+  uint32_t Read_DSTS() { return dsts_val_.load(); }
 
   // Section 1.2.9 of the DWC3 Programmer's guide
   //
   // core_id = 0x5533
   // version = 1.60a
   uint32_t Read_GSNPSID() { return ver_number_; }
+  uint32_t Read_USB31_VER_NUMBER() { return ver_number31_.load(); }
+  uint32_t Read_USB31_VER_TYPE() { return ver_type31_.load(); }
 
   std::atomic<uint32_t> dctl_val_{DCTL::Get().FromValue(0).set_LPM_NYET_thres(0xF).reg_value()};
+  // Initialize as halted by default before driver enables RUN_STOP.
+  std::atomic<uint32_t> dsts_val_{DSTS::Get().FromValue(0).set_DEVCTRLHLT(1).reg_value()};
+  std::atomic<uint32_t> ver_number31_{0};
+  std::atomic<uint32_t> ver_type31_{0};
   std::atomic<bool> stuck_reset_test_{false};
+  std::atomic<bool> stuck_halt_test_{false};
   std::atomic<bool> vbus_high_{false};
 
   fdf_testing::BackgroundDriverTest<Config> dut_;
