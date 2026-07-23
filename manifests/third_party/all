@@ -569,7 +569,7 @@
     <project name="third_party/Vulkan-Tools"
              path="third_party/Vulkan-Tools/src"
              remote="https://fuchsia.googlesource.com/third_party/Vulkan-Tools"
-             revision="2af5365853c4e11743cf0a4205c00dfbe7e599a2"
+             revision="6e0f3dca09c63ceca9bf926ba9c0cef2a5d980b3"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/Vulkan-Utility-Libraries"
              path="third_party/Vulkan-Utility-Libraries/src"
