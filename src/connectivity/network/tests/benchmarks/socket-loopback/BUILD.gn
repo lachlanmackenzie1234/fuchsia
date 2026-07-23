@@ -10,6 +10,7 @@ import("//build/test.gni")
 import("//build/testing/environments.gni")
 import("//build/testing/perf/test.gni")
 import("//src/starnix/tests/build/starnix_toolchain_test_component.gni")
+import("//src/starnix/tests/starnix_test_subpackages.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 
 test("loopback_socket_benchmarks") {
@@ -183,6 +184,11 @@ if (target_cpu != "riscv64") {
 # TODO(https://fxbug.dev/359323478): Figure out a better way to disable these tests on Minfs without
 # relying on a global GN argument.
 if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
+  # Remove the netstack package so each test package can provide its own.
+  _starnix_base_subpackages =
+      starnix_test_subpackages - [ "//src/starnix/tests:netstack_package" ] +
+      [ "//src/starnix/containers/debian:debian_package" ]
+
   starnix_toolchain_test_component(
       "loopback-socket-benchmarks-starnix-with-netstack3") {
     test_label = ":loopback_socket_benchmarks"
@@ -217,11 +223,7 @@ if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
     package_name = "loopback-socket-benchmarks-starnix-with-netstack3"
     test_components = [ ":loopback-socket-benchmarks-starnix-with-netstack3" ]
 
-    subpackages = [
-      "//src/starnix/containers/debian:debian_package",
-      "//src/starnix/kernel:starnix_kernel_package",
-      ":netstack3",
-    ]
+    subpackages = _starnix_base_subpackages + [ ":netstack3" ]
 
     test_specs = {
       package_resolution_timeout_secs = 660
@@ -234,11 +236,7 @@ if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
     test_components =
         [ ":loopback-socket-benchmarks-starnix-with-fake-netstack" ]
 
-    subpackages = [
-      "//src/starnix/containers/debian:debian_package",
-      "//src/starnix/kernel:starnix_kernel_package",
-      "//src/connectivity/network/tests/benchmarks/fake-netstack:fake-netstack-pkg",
-    ]
+    subpackages = _starnix_base_subpackages + [ "//src/connectivity/network/tests/benchmarks/fake-netstack:fake-netstack-pkg" ]
 
     test_specs = {
       package_resolution_timeout_secs = 660
