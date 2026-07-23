@@ -54,4 +54,10 @@
             from: "self",
         },
     ],
+    config: {
+        monitor_root_job: {
+            type: "bool",
+            mutability: [ "parent" ],
+        },
+    },
 }

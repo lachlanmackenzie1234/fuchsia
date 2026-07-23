@@ -5,8 +5,11 @@
 #ifndef SRC_DEVELOPER_DEBUG_DEBUG_AGENT_LAUNCHER_H_
 #define SRC_DEVELOPER_DEBUG_DEBUG_AGENT_LAUNCHER_H_
 
+#include <fidl/fuchsia.component.decl/cpp/fidl.h>
 #include <fidl/fuchsia.debugger/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
+
+#include <gtest/gtest_prod.h>
 
 // This implements the |Launcher| fidl protocol, and manages instance(s) of DebugAgent. When a
 // |Launch| request is received, a new DebugAgent process is spun up and passed the server_end of
@@ -23,9 +26,15 @@ class DebugAgentLauncher : public fidl::Server<fuchsia_debugger::Launcher> {
     FX_LOGS(WARNING) << "Unknown method: " << metadata.method_ordinal;
   }
 
+  static fuchsia_component_decl::Child CreateChildDecl(
+      const std::string& name, const fuchsia_debugger::LaunchOptions& options);
+
  private:
+  FRIEND_TEST(DebugAgentLauncherTest, CreateChildDecl);
+
   void LaunchDebugAgent(fidl::ServerEnd<fuchsia_debugger::DebugAgent> server_end,
-                        const std::string& name, fit::callback<void(zx_status_t)> cb);
+                        const fuchsia_debugger::LaunchOptions& options, const std::string& name,
+                        fit::callback<void(zx_status_t)> cb);
 };
 
 #endif  // SRC_DEVELOPER_DEBUG_DEBUG_AGENT_LAUNCHER_H_

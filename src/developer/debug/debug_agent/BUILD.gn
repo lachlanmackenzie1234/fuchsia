@@ -138,6 +138,8 @@ static_library("lib") {
     ]
 
     public_deps += [
+      "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+      "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
       "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_cpp",
       "//sdk/fidl/fuchsia.exception:fuchsia.exception_cpp",
       "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
@@ -222,21 +224,43 @@ executable("bin") {
   output_name = "debug_agent"
   sources = [ "main.cc" ]
 
-  deps = [ ":lib" ]
+  deps = [
+    ":debug_agent_config",
+    ":lib",
+  ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
 }
 
-executable("launcher") {
-  output_name = "debug_agent_launcher"
+source_set("launcher") {
   sources = [
     "launcher.cc",
     "launcher.h",
-    "main_launcher.cc",
+  ]
+
+  public_deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+    "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_cpp",
+    "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/syslog/cpp",
+    "//third_party/googletest:gtest_prod",
   ]
 
   deps = [
+    "//sdk/lib/async-default",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+  ]
+}
+
+executable("debug_agent_launcher") {
+  sources = [ "main_launcher.cc" ]
+
+  deps = [
+    ":launcher",
     "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
     "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_cpp",
@@ -249,10 +273,28 @@ executable("launcher") {
   ]
 }
 
-fuchsia_component("debug_agent_component") {
+fuchsia_component_manifest("debug_agent_manifest") {
   component_name = "debug_agent"
   manifest = "meta/debug_agent.cml"
-  deps = [ ":bin" ]
+}
+
+fuchsia_structured_config_cpp_elf_lib("debug_agent_config") {
+  cm_label = ":debug_agent_manifest"
+}
+
+fuchsia_structured_config_values("debug_agent_config_default") {
+  cm_label = ":debug_agent_manifest"
+  values = {
+    monitor_root_job = true
+  }
+}
+
+fuchsia_component("debug_agent_component") {
+  cm_label = ":debug_agent_manifest"
+  deps = [
+    ":bin",
+    ":debug_agent_config_default",
+  ]
 }
 
 fuchsia_component("debug_agent_launcher_component") {
@@ -260,7 +302,7 @@ fuchsia_component("debug_agent_launcher_component") {
   manifest = "meta/debug_agent_launcher.cml"
   deps = [
     ":debug_agent_component",
-    ":launcher",
+    ":debug_agent_launcher",
   ]
 }
 
@@ -337,6 +379,18 @@ source_set("test_lib") {
   configs += [ "//build/config:Wno-conversion" ]
 }
 
+test("launcher_tests") {
+  output_name = "debug_agent_launcher_unit_tests"
+
+  sources = [ "launcher_unittest.cc" ]
+
+  deps = [
+    ":launcher",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+  ]
+}
+
 test("unit_tests") {
   output_name = "debug_agent_unit_tests"
 
@@ -397,6 +451,8 @@ test("unit_tests") {
 
     deps += [
       "testing:runtime_dir_helper",
+      "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+      "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
       "//sdk/lib/component/incoming/cpp",
       "//sdk/lib/component/outgoing/cpp",
       "//src/storage/lib/vfs/cpp",
@@ -418,6 +474,12 @@ test("unit_tests") {
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
+}
+
+fuchsia_unittest_package("debug_agent_launcher_unit_tests") {
+  component_name = "debug_agent_launcher_unit_tests"
+  manifest = "meta/debug_agent_launcher_unit_tests.cml"
+  deps = [ ":launcher_tests" ]
 }
 
 fuchsia_unittest_package("debug_agent_unit_tests") {
@@ -445,6 +507,7 @@ group("tests") {
 
   deps = [
     ":debug_agent_integration_tests",
+    ":debug_agent_launcher_unit_tests",
     ":debug_agent_unit_tests",
   ]
   if (host_os == "linux") {

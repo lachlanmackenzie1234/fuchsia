@@ -76,9 +76,10 @@ bool FilterDoesNotAppearIn(const Filter& needle, const std::vector<Filter>& hays
 
 }  // namespace
 
-DebugAgent::DebugAgent(std::unique_ptr<SystemInterface> system_interface)
+DebugAgent::DebugAgent(std::unique_ptr<SystemInterface> system_interface, DebugAgentOptions options)
     : adapter_(std::make_unique<RemoteAPIAdapter>(this, nullptr)),
       system_interface_(std::move(system_interface)),
+      options_(options),
       weak_factory_(this) {
   // Register ourselves to receive component events and limbo events.
   //
@@ -553,7 +554,9 @@ void DebugAgent::OnUpdateFilter(const debug_ipc::UpdateFilterRequest& request,
   for (const auto& debug_ipc_filter : request.filters) {
     auto filter = Filter(debug_ipc_filter);
     // Search all of the known ELF processes in the system for a match.
-    auto matched_processes = filter.ApplyToJob(root_job_->job_handle(), *system_interface_);
+    FX_DCHECK(root_job_);
+    std::vector<debug_ipc::MatchedTask> matched_processes =
+        filter.ApplyToJob(root_job_->job_handle(), *system_interface_);
     for (const auto& match : matched_processes) {
       std::vector<debug_ipc::ComponentInfo> component_info;
 
@@ -684,7 +687,9 @@ std::vector<debug_ipc::ProcessThreadId> DebugAgent::ClientSuspendAll(zx_koid_t e
 }
 
 bool DebugAgent::IsAttachedToParentOrAncestorOf(zx_koid_t parent) {
-  while (parent != ZX_KOID_INVALID && parent != root_job_->koid()) {
+  FX_DCHECK(root_job_);
+  zx_koid_t root_koid = root_job_->koid();
+  while (parent != ZX_KOID_INVALID && parent != root_koid) {
     auto debugged_job = GetDebuggedJob(parent);
     if (debugged_job && debugged_job->type() == JobExceptionChannelType::kException) {
       // We are already attached to a parent job between the process and the root job.
@@ -732,7 +737,8 @@ DebugAgent::RecursiveFilterMatchResult DebugAgent::CheckForRecursiveFilterMatche
         // Tell the client(s) that we created a new filter.
         SendNotification(filter_created);
 
-        auto new_matches =
+        FX_DCHECK(root_job_);
+        std::vector<debug_ipc::MatchedTask> new_matches =
             recursive_filter->ApplyToJob(root_job_->job_handle(), system_interface());
         if (!new_matches.empty()) {
           result.new_matches.emplace_back(recursive_filter->filter().id, new_matches);
@@ -975,8 +981,12 @@ debug::Status DebugAgent::AttachToExistingProcess(zx_koid_t process_koid,
 
 debug::Status DebugAgent::AttachToRootJob() {
   DebuggedJobCreateInfo info(system_interface().GetRootJob());
-  // Only ever attach to the root job's debugger channel.
-  info.priority = debug_ipc::AttachConfig::Priority::kWeak;
+  if (options_.monitor_root_job) {
+    // Only ever attach to the root job's debugger channel.
+    info.priority = debug_ipc::AttachConfig::Priority::kWeak;
+  } else {
+    info.priority = debug_ipc::AttachConfig::Priority::kMinimal;
+  }
 
   // The root job is otherwise treated just like any other job.
   auto status = AddDebuggedJob(std::move(info), &root_job_);

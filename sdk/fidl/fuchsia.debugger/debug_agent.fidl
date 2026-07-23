@@ -285,6 +285,11 @@ closed protocol AgentIterator {
     });
 };
 
+@available(added=HEAD)
+type LaunchOptions = table {
+    1: monitor_root_job bool;
+};
+
 @discoverable
 @available(added=HEAD)
 open protocol Launcher {
@@ -294,6 +299,7 @@ open protocol Launcher {
     /// completed.
     flexible Launch(resource struct {
         agent server_end:DebugAgent;
+        options LaunchOptions;
     }) -> () error zx.Status;
 
     /// Iterator over all DebugAgent instances.

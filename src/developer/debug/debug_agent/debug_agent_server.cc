@@ -313,6 +313,10 @@ void DebugAgentServer::OnNotification(const debug_ipc::NotifyException& notify) 
   // The thread is in an exception, we don't need to suspend it, but we do need
   // to resume it when we're done (if there isn't a debug_ipc client).
   auto thread = debug_agent_->GetDebuggedThread(notify.thread.id);
+  if (!thread) {
+    FX_LOGS(WARNING) << "Got exception notification for unknown thread " << notify.thread.id.thread;
+    return;
+  }
 
   fuchsia_debugger::DebugAgentOnFatalExceptionRequest event;
 

@@ -188,7 +188,7 @@ void DebugAgentLauncher::Launch(LaunchRequest& request, LaunchCompleter::Sync& c
   std::string name(kAgentPrefix);
   name += GetRandomHexString();
 
-  LaunchDebugAgent(std::move(request.agent()), name,
+  LaunchDebugAgent(std::move(request.agent()), request.options(), name,
                    [completer = completer.ToAsync()](zx_status_t status) mutable {
                      completer.Reply(zx::make_result(status));
                    });
@@ -200,7 +200,25 @@ void DebugAgentLauncher::GetAgents(GetAgentsRequest& request, GetAgentsCompleter
                    std::make_unique<AgentIterator>());
 }
 
+fuchsia_component_decl::Child DebugAgentLauncher::CreateChildDecl(
+    const std::string& name, const fuchsia_debugger::LaunchOptions& options) {
+  fuchsia_component_decl::Child child_decl;
+  child_decl.name(name);
+  child_decl.url(kChildUrl);
+  child_decl.startup(fuchsia_component_decl::StartupMode::kLazy);
+
+  if (options.monitor_root_job().has_value()) {
+    fuchsia_component_decl::ConfigOverride override;
+    override.key("monitor_root_job");
+    override.value(fuchsia_component_decl::ConfigValue::WithSingle(
+        fuchsia_component_decl::ConfigSingleValue::WithBool_(options.monitor_root_job().value())));
+    child_decl.config_overrides({{override}});
+  }
+  return child_decl;
+}
+
 void DebugAgentLauncher::LaunchDebugAgent(fidl::ServerEnd<fuchsia_debugger::DebugAgent> server_end,
+                                          const fuchsia_debugger::LaunchOptions& options,
                                           const std::string& name,
                                           fit::callback<void(zx_status_t)> cb) {
   zx::result client_end = component::Connect<fuchsia_component::Realm>();
@@ -214,10 +232,7 @@ void DebugAgentLauncher::LaunchDebugAgent(fidl::ServerEnd<fuchsia_debugger::Debu
                                                          async_get_default_dispatcher());
 
   // Create the child decl and all the starting parameters.
-  fuchsia_component_decl::Child child_decl;
-  child_decl.name(name);
-  child_decl.url(kChildUrl);
-  child_decl.startup(fuchsia_component_decl::StartupMode::kLazy);
+  fuchsia_component_decl::Child child_decl = CreateChildDecl(name, options);
 
   fuchsia_component_decl::CollectionRef collection(kCollectionName);
 

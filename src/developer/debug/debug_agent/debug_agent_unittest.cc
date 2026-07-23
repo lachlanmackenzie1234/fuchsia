@@ -1157,4 +1157,26 @@ TEST_F(DebugAgentTests, OnThreadsUpdatesThreadsForProcess) {
   EXPECT_EQ(reply.threads[2].id.thread, kThread3Koid);
 }
 
+TEST_F(DebugAgentTests, MonitorRootJobOption) {
+  {
+    DebugAgentOptions options;
+    options.monitor_root_job = false;
+    DebugAgent agent(MockSystemInterface::CreateWithData(), options);
+    ASSERT_TRUE(agent.AttachToRootJob().ok());
+    auto root_koid = agent.system_interface().GetRootJob()->GetKoid();
+    DebuggedJob* job = agent.GetDebuggedJob(root_koid);
+    ASSERT_NE(job, nullptr);
+    EXPECT_EQ(job->type(), JobExceptionChannelType::kNone);
+  }
+  {
+    DebugAgentOptions options;
+    options.monitor_root_job = true;
+    DebugAgent agent(MockSystemInterface::CreateWithData(), options);
+    ASSERT_TRUE(agent.AttachToRootJob().ok());
+    auto root_koid = agent.system_interface().GetRootJob()->GetKoid();
+    DebuggedJob* job = agent.GetDebuggedJob(root_koid);
+    ASSERT_NE(job, nullptr);
+    EXPECT_EQ(job->type(), JobExceptionChannelType::kDebugger);
+  }
+}
 }  // namespace debug_agent

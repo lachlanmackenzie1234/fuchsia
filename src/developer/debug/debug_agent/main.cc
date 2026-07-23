@@ -10,6 +10,7 @@
 
 #include "lib/stdcompat/functional.h"
 #include "src/developer/debug/debug_agent/debug_agent.h"
+#include "src/developer/debug/debug_agent/debug_agent_config.h"
 #include "src/developer/debug/debug_agent/debug_agent_server.h"
 #include "src/developer/debug/debug_agent/zircon_system_interface.h"
 #include "src/developer/debug/shared/platform_message_loop.h"
@@ -30,8 +31,11 @@ int main(int argc, const char* argv[]) {
     zx::channel server_end(zx_take_startup_handle(PA_HND(PA_USER0, 0)));
     FX_CHECK(server_end.is_valid());
 
+    auto config = debug_agent_config::Config::TakeFromStartupHandle();
     auto zircon_system_interface = std::make_unique<debug_agent::ZirconSystemInterface>();
-    debug_agent::DebugAgent debug_agent(std::move(zircon_system_interface));
+    debug_agent::DebugAgent debug_agent(
+        std::move(zircon_system_interface),
+        debug_agent::DebugAgentOptions{.monitor_root_job = config.monitor_root_job()});
 
     auto res = outgoing.AddUnmanagedProtocol<fuchsia_debugger::DebugAgent>(
         [&](fidl::ServerEnd<fuchsia_debugger::DebugAgent> server_end) {

@@ -35,6 +35,10 @@ namespace debug_agent {
 class SystemInterface;
 
 // Main state and control for the debug agent.
+struct DebugAgentOptions {
+  bool monitor_root_job = true;
+};
+
 class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public debug::LogBackend {
  public:
   // A MessageLoopZircon should already be set up on the current thread.
@@ -42,7 +46,8 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
   // The stream must outlive this class. It will be used to send data to the
   // client. It will not be read (that's the job of the provider of the
   // RemoteAPI).
-  explicit DebugAgent(std::unique_ptr<SystemInterface> system_interface);
+  explicit DebugAgent(std::unique_ptr<SystemInterface> system_interface,
+                      DebugAgentOptions options = {});
 
   fxl::WeakPtr<DebugAgent> GetWeakPtr();
 
@@ -143,6 +148,7 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
 
  private:
   FRIEND_TEST(DebugAgentTests, Kill);
+  FRIEND_TEST(DebugAgentTests, MonitorRootJobOption);
 
   // Breakpoint::ProcessDelegate implementation ----------------------------------------------------
 
@@ -232,8 +238,9 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
 
   fxl::ObserverList<DebugAgentObserver> observers_;
   uint32_t ipc_version_ = 0;
+  DebugAgentOptions options_;
 
-  DebuggedJob* root_job_;
+  DebuggedJob* root_job_ = nullptr;
   std::map<zx_koid_t, std::unique_ptr<DebuggedProcess>> procs_;
   std::map<zx_koid_t, std::unique_ptr<DebuggedJob>> jobs_;
 

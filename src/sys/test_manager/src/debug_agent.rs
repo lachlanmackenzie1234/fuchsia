@@ -5,15 +5,14 @@
 use crate::constants::TEST_ROOT_REALM_NAME;
 use crate::error::DebugAgentError;
 use crate::run_events::SuiteEvents;
+use fidl_fuchsia_debugger as fdbg;
+use fidl_fuchsia_test_manager as ftest_manager;
 use ftest_manager::LaunchError;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::future::RemoteHandle;
 use futures::prelude::*;
-use {
-    fidl_fuchsia_debugger as fdbg, fidl_fuchsia_test_manager as ftest_manager,
-    fuchsia_async as fasync,
-};
 
 pub(crate) struct ThreadBacktraceInfo {
     pub thread: u64,
@@ -45,7 +44,10 @@ impl DebugAgent {
         let (proxy, agent_server_end) = fidl::endpoints::create_proxy();
 
         launcher_proxy
-            .launch(agent_server_end)
+            .launch(
+                agent_server_end,
+                &fdbg::LaunchOptions { monitor_root_job: Some(false), ..Default::default() },
+            )
             .await
             .map_err(|e| DebugAgentError::LaunchLocal(e))?
             .map_err(|zx_status| DebugAgentError::LaunchResponse(zx_status))?;
@@ -329,7 +331,8 @@ mod test {
         // Expects a launch request and returns the resulting FakeDebugAgentService.
         async fn expect_launch_request(&mut self) -> FakeDebugAgentService {
             match self.next_request().await {
-                fdbg::LauncherRequest::Launch { agent, responder } => {
+                fdbg::LauncherRequest::Launch { agent, options, responder } => {
+                    assert_eq!(options.monitor_root_job, Some(false));
                     responder.send(Ok(())).expect("send response to Launcher::Launch");
                     return FakeDebugAgentService::new(agent);
                 }
