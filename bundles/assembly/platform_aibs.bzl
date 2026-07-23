@@ -428,6 +428,9 @@ platform_aib_names = bringup_platform_aib_names + [
     "driver_framework_with_heapdump",
     "full_drivers",
 
+    # Driver support
+    "base_drivers_storage",
+
     # Audio development/debugging
     "audio_development_support",
     "audio_device_registry_eager",

@@ -43,4 +43,8 @@ pub struct DriverFrameworkConfig {
     /// Fuzzing configuration used for testing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test_fuzzing_config: Option<TestFuzzingConfig>,
+
+    /// Enables routing storage capabilities to the base-drivers collection.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub enable_base_drivers_storage: bool,
 }

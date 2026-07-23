@@ -177,6 +177,10 @@ group("bootstrap") {
   deps += [ "//bundles/assembly/bazel_inputs/src/sys/instrumentation_data_processor:instrumentation_data_processor_pkg" ]
 }
 
+group("base_drivers_storage") {
+  deps = []
+}
+
 group("display_drivers_boot") {
   deps = [ "//bundles/assembly/bazel_inputs/src/graphics/display/drivers/coordinator:package" ]
 }

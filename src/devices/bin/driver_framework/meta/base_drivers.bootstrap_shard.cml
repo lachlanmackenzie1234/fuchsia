@@ -9,6 +9,12 @@
             durability: "transient",
             allowed_offers: "static_and_dynamic",
             allow_long_names: true,
+
+            // Note: This setting only allows instances in this collection to
+            // receive persisted folders when given a storage capability. Actual
+            // routing of storage capability happens in
+            // `base_drivers_storage.bootstrap_shard.cml`.
+            persistent_storage: true,
         },
     ],
     offer: [

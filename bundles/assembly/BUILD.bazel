@@ -260,6 +260,19 @@ assembly_input_bundle(
     ],
 )
 
+# This AIB composes with AIBs which add base drivers to route storage acccess to
+# base drivers.
+assembly_input_bundle(
+    name = "base_drivers_storage",
+    allowed_in = [
+        "standard",
+        "utility",
+    ],
+    bootstrap_shards = [
+        "//src/devices/bin/driver_framework:meta/base_drivers_storage.bootstrap_shard.cml",
+    ],
+)
+
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "display_drivers_boot",

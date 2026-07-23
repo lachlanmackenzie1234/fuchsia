@@ -225,6 +225,10 @@ impl
             builder.platform_bundle("interconnect_driver")?;
         }
 
+        if driver_framework.enable_base_drivers_storage {
+            builder.platform_bundle("base_drivers_storage")?;
+        }
+
         Ok(())
     }
 }
