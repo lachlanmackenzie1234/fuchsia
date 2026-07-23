@@ -87,6 +87,12 @@ inline int fputs(const char* s, FILE* f) {
 
 inline int puts(const char* s) { return fputs(s, stdout) == 0 ? putchar('\n') : -1; }
 
+
+// Shorthands for printing ktl::string_view via printf family functions.
+// Note FMT_ARG_SV evaluates its argument twice!
+#define FMT_SV ".*s"
+#define FMT_ARG_SV(sv) static_cast<int>((sv).size()), (sv).data()
+
 #else  // !__cplusplus
 
 // C users just need the function declarations.

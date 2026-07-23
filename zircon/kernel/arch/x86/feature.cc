@@ -397,44 +397,43 @@ template <typename RegisterType, typename PrintCallback>
 }
 
 void x86_feature_debug(void) {
-  // Allows us to take advantage of custom print format specifiers, which the
-  // compiler would otherwise complain about.
-  auto Printf = [](const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-  };
-
-  Printf("\n");
+  printf("\n");
 
   arch::BootCpuidIo io;
 
   {
     arch::CpuCacheInfo caches(io);
-    Printf("==== X86 CACHE INFO ====\n");
-    Printf("%-5s | %-11s | %-10s | %-5s | %-6s |\n", "Level", "Type", "Size (KiB)", "Sets",
+    printf("==== X86 CACHE INFO ====\n");
+    printf("%-5s | %-11s | %-10s | %-5s | %-6s |\n", "Level", "Type", "Size (KiB)", "Sets",
            "Assoc.");
     for (const auto& cache : caches) {
-      Printf("L%-4zu | %-11V | %-10zu | %-5zu | %-6zu |\n", cache.level, arch::ToString(cache.type),
-             cache.size_kb, cache.number_of_sets, cache.ways_of_associativity);
+      ktl::string_view cache_type = arch::ToString(cache.type);
+      printf("L%-4zu | %-11" FMT_SV " | %-10zu | %-5zu | %-6zu |\n", cache.level,
+             FMT_ARG_SV(cache_type), cache.size_kb, cache.number_of_sets,
+             cache.ways_of_associativity);
     }
-    Printf("\n");
+    printf("\n");
   }
 
-  Printf("Vendor: %V\n", arch::ToString(arch::GetVendor(io)));
-  Printf("Microarchitecture: %V\n", arch::ToString(arch::GetMicroarchitecture(io)));
-  Printf("Processor: %V\n", arch::ProcessorName(io).name());
+  ktl::string_view vendor = arch::ToString(arch::GetVendor(io));
+  ktl::string_view uarch = arch::ToString(arch::GetMicroarchitecture(io));
+  ktl::string_view proc = arch::ProcessorName(io).name();
+  printf("Vendor: %" FMT_SV "\n", FMT_ARG_SV(vendor));
+  printf("Microarchitecture: %" FMT_SV "\n", FMT_ARG_SV(uarch));
+  printf("Processor: %" FMT_SV "\n", FMT_ARG_SV(proc));
   {
     arch::HypervisorName hypervisor(io);
     ktl::string_view name = hypervisor.name();
-    Printf("Hypervisor: %V\n", name.empty() ? "None" : name);
+    if (name.empty()) {
+      name = "None";
+    }
+    printf("Hypervisor: %" FMT_SV "\n", FMT_ARG_SV(name));
   }
 
   const auto version = io.Read<arch::CpuidVersionInfo>();
-  Printf("Family/Model/Stepping: %#x/%#x/%#x\n", version.family(), version.model(),
+  printf("Family/Model/Stepping: %#x/%#x/%#x\n", version.family(), version.model(),
          version.stepping());
-  Printf("Patch level: %x\n", model_info.patch_level);
+  printf("Patch level: %x\n", model_info.patch_level);
 
   auto print_feature = [col = size_t{0}](const char* name, auto value, auto, auto) mutable {
     if (name && value) {
@@ -446,13 +445,13 @@ void x86_feature_debug(void) {
     }
   };
 
-  Printf("\nFeatures:\n");
+  printf("\nFeatures:\n");
   PrintFields<arch::CpuidFeatureFlagsC>(print_feature);
   PrintFields<arch::CpuidFeatureFlagsD>(print_feature);
   PrintFields<arch::CpuidExtendedFeatureFlagsB>(print_feature);
   // TODO(https://fxbug.dev/42147424): Print when we can afford to.
   // io.Read<arch::CpuidAmdFeatureFlagsC>().ForEachField(print_feature);
-  Printf("\n");
+  printf("\n");
 
   // Print synthetic 'features'/properties.
   auto print_property = [col = size_t{0}](const char* property, bool print = true) mutable {
@@ -464,7 +463,7 @@ void x86_feature_debug(void) {
       }
     }
   };
-  Printf("\nProperties:\n");
+  printf("\nProperties:\n");
   print_property("meltdown", g_has_meltdown);
   print_property("l1tf", g_has_l1tf);
   print_property("mds/taa", g_has_mds_taa);
@@ -507,7 +506,7 @@ void x86_feature_debug(void) {
   print_property("hyp_pv_clock", g_hypervisor_has_pv_clock);
   print_property("hyp_pv_eoi", g_hypervisor_has_pv_eoi);
   print_property("hyp_pv_ipi", g_hypervisor_has_pv_ipi);
-  Printf("\n\n");
+  printf("\n\n");
 }
 
 // The highest priority mechanism to determine the apic frequency.
