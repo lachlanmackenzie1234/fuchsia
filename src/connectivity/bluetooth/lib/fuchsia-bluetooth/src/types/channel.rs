@@ -18,10 +18,20 @@ use std::task::{Context, Poll};
 use crate::error::Error;
 
 pub mod fidl_client;
+pub mod fidl_server;
 pub mod socket;
 
 use fidl_client::FidlClientConnection;
+use fidl_server::FidlServerConnection;
 use socket::SocketConnection;
+
+/// The maximum size of a FIDL channel message is 64KB. We use 60KB as a safe limit
+/// to leave headroom for serialization overhead and other message headers.
+pub(crate) const MAX_BATCH_SIZE_BYTES: usize = 60 * 1024;
+
+/// Estimated overhead per packet in a batched FIDL Send/Receive request.
+/// (16 bytes vector header + up to 8 bytes padding).
+pub(crate) const PACKET_OVERHEAD: usize = 24;
 
 /// The Channel mode in use for a L2CAP channel.
 #[derive(PartialEq, Debug, Clone)]
@@ -159,6 +169,23 @@ impl Channel {
 
     pub fn from_fidl_client(proxy: fidl_bt::ChannelProxy, max_tx_size: usize) -> Self {
         let connection = Box::new(FidlClientConnection::new(proxy, max_tx_size));
+        Channel {
+            connection,
+            mode: ChannelMode::Basic,
+            max_tx_size,
+            flush_timeout: Arc::new(Mutex::new(None)),
+            audio_direction_ext: None,
+            l2cap_parameters_ext: None,
+            audio_offload_ext: None,
+            terminated: false,
+        }
+    }
+
+    pub fn from_fidl_server(
+        request_stream: fidl_bt::ChannelRequestStream,
+        max_tx_size: usize,
+    ) -> Self {
+        let connection = Box::new(FidlServerConnection::new(request_stream, max_tx_size));
         Channel {
             connection,
             mode: ChannelMode::Basic,

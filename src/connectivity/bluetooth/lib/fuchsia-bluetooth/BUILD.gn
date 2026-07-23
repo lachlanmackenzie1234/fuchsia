@@ -73,6 +73,7 @@ rustc_library("fuchsia-bluetooth") {
     "src/types/bonding_data.rs",
     "src/types/channel.rs",
     "src/types/channel/fidl_client.rs",
+    "src/types/channel/fidl_server.rs",
     "src/types/channel/socket.rs",
     "src/types/host_info.rs",
     "src/types/id.rs",

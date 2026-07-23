@@ -85,12 +85,10 @@ impl FidlClientConnection {
             flush_task_queued.store(false, Ordering::SeqCst);
             return None;
         }
-        const MAX_BATCH_SIZE_BYTES: usize = 60 * 1024;
         let mut batch = Vec::new();
         let mut batch_bytes = 0;
         while let Some(packet) = buffer.front() {
-            const PACKET_OVERHEAD: usize = 24; // 16 bytes vector header + up to 8 bytes padding
-            if batch_bytes + packet.len() + PACKET_OVERHEAD > MAX_BATCH_SIZE_BYTES {
+            if batch_bytes + packet.len() + super::PACKET_OVERHEAD > super::MAX_BATCH_SIZE_BYTES {
                 if batch.is_empty() {
                     // If a single packet is larger than the limit, we still try to send it.
                     let item = buffer.pop_front().unwrap();
@@ -99,7 +97,7 @@ impl FidlClientConnection {
                 break;
             }
             let item = buffer.pop_front().unwrap();
-            batch_bytes += item.len() + PACKET_OVERHEAD;
+            batch_bytes += item.len() + super::PACKET_OVERHEAD;
             batch.push(fidl_bt::Packet { packet: item });
         }
         Some(batch)
