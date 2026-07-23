@@ -166,7 +166,7 @@ class ProductionTraceHooks final : public TraceHooks {
   //    rendered. So, at worst, the output might end up garbled, but there
   //    should be no chance of running off the end of the buffer.
   //
-  void InternalVPrintf(const char* fmt, va_list args) {
+  [[gnu::format(printf, 2, 0)]] void InternalVPrintf(const char* fmt, va_list args) {
     int res = vsnprintf(linebuffer_, sizeof(linebuffer_), fmt, args);
     if (res >= 0) {
       gStdoutUnbuffered.Write({linebuffer_, static_cast<size_t>(res)});
