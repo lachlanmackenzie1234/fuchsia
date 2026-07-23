@@ -310,12 +310,40 @@ NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_
   };
 }
 
+zx::event ResolvePowerElementToken(const Node& node,
+                                   const std::map<std::string, zx::event>& node_token_overrides) {
+  zx::event power_element_token;
+
+  // Try using the name.
+  auto override_it = node_token_overrides.find(node.name());
+  if (override_it != node_token_overrides.end() && override_it->second.is_valid()) {
+    zx::event injected;
+    ZX_ASSERT(ZX_OK == override_it->second.duplicate(ZX_RIGHT_SAME_RIGHTS, &injected));
+    power_element_token = std::move(injected);
+    return power_element_token;
+  }
+
+  // Try using the moniker.
+  override_it = node_token_overrides.find(node.MakeComponentMoniker());
+  if (override_it != node_token_overrides.end() && override_it->second.is_valid()) {
+    zx::event injected;
+    ZX_ASSERT(ZX_OK == override_it->second.duplicate(ZX_RIGHT_SAME_RIGHTS, &injected));
+    power_element_token = std::move(injected);
+    return power_element_token;
+  }
+
+  // Didn't have an override, just make a new zx::event.
+  zx::event::create(0, &power_element_token);
+  return power_element_token;
+}
+
 Node::Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_manager,
-           async_dispatcher_t* dispatcher)
+           async_dispatcher_t* dispatcher, std::map<std::string, zx::event> node_token_overrides)
     : name_(name),
       type_(Normal{.parent_ = std::move(parent)}),
       node_manager_(node_manager),
       dispatcher_(dispatcher),
+      node_token_overrides_(std::move(node_token_overrides)),
       driver_host_handler_(this),
       component_controller_handler_(this) {
   // By default, we set `driver_host_` to match the primary parent's
@@ -324,15 +352,17 @@ Node::Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_
   if (auto* parent = GetPrimaryParent(); parent) {
     driver_host_ = parent->driver_host_;
   }
-  zx::event::create(0, &power_element_token_);
+  power_element_token_ = ResolvePowerElementToken(*this, node_token_overrides_);
 }
 
 Node::Node(std::string_view name, std::unordered_map<std::string, std::weak_ptr<Node>> parents,
            std::vector<std::string> parents_names, NodeManager* node_manager,
-           async_dispatcher_t* dispatcher, uint32_t primary_index)
+           async_dispatcher_t* dispatcher, uint32_t primary_index,
+           std::map<std::string, zx::event> node_token_overrides)
     : name_(name),
       node_manager_(node_manager),
       dispatcher_(dispatcher),
+      node_token_overrides_(std::move(node_token_overrides)),
       driver_host_handler_(this),
       component_controller_handler_(this) {
   std::vector<std::weak_ptr<Node>> parents_vec;
@@ -380,7 +410,20 @@ Node::Node(std::string_view name, std::unordered_map<std::string, std::weak_ptr<
   // `driver_host_`. If the node is then subsequently bound to a driver in a
   // different driver host, this value will be updated to match.
   driver_host_ = GetPrimaryParent()->driver_host_;
-  zx::event::create(0, &power_element_token_);
+  power_element_token_ = ResolvePowerElementToken(*this, node_token_overrides_);
+}
+
+std::map<std::string, zx::event> Node::DuplicateTokenOverrides(
+    const std::map<std::string, zx::event>& overrides) {
+  std::map<std::string, zx::event> copy;
+  for (const auto& [node_name, token] : overrides) {
+    if (token.is_valid()) {
+      zx::event clone;
+      ZX_ASSERT(ZX_OK == token.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone));
+      copy.emplace(node_name, std::move(clone));
+    }
+  }
+  return copy;
 }
 
 zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
@@ -388,7 +431,8 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     std::vector<std::string> parents_names,
     const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
     NodeManager* driver_binder, async_dispatcher_t* dispatcher,
-    std::string_view driver_host_name_for_colocation, uint32_t primary_index) {
+    std::string_view driver_host_name_for_colocation, uint32_t primary_index,
+    std::map<std::string, zx::event> node_token_overrides) {
   ZX_ASSERT(!dependencies.empty());
   ZX_ASSERT(parents_names.size() == dependencies.size());
 
@@ -417,9 +461,50 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     parents_map[parents_names[i]] = parent_resource->owner().lock();
   }
 
-  std::shared_ptr composite = std::make_shared<Node>(
-      node_name, std::move(parents_map), parents_names, driver_binder, dispatcher, primary_index);
+  // Create the node token overrides. The logic here uses the passed in
+  // overrides first. Then it adds overrides from the primary parent and then
+  // the rest of the parents. It does not replace tokens already in the
+  // overrides map. The effect is first to use the passed in tokens, then those
+  // from the primary parent, and then those from other parents.
+  std::map<std::string, zx::event> composite_token_overrides = std::move(node_token_overrides);
+  auto primary_parent_resource = dependencies[primary_index].lock();
+  auto primary_parent = primary_parent_resource->owner().lock();
+  if (primary_parent && !primary_parent->node_token_overrides_.empty()) {
+    for (const auto& [key, token] : primary_parent->node_token_overrides_) {
+      if (token.is_valid()) {
+        if (composite_token_overrides.contains(key)) {
+          fdf_log::warn("Duplicate token override for key '{}', existing override used instead.",
+                        key);
+          continue;
+        }
+        zx::event clone;
+        ZX_ASSERT(ZX_OK == token.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone));
+        composite_token_overrides.emplace(key, std::move(clone));
+      }
+    }
+  }
 
+  for (const auto& [name, parent] : parents_map) {
+    auto parent_ptr = parent.lock();
+    if (parent_ptr && !parent_ptr->node_token_overrides_.empty()) {
+      for (const auto& [key, token] : parent_ptr->node_token_overrides_) {
+        if (token.is_valid()) {
+          if (composite_token_overrides.contains(key)) {
+            fdf_log::warn("Duplicate token override for key '{}', existing override used instead.",
+                          key);
+            continue;
+          }
+          zx::event clone;
+          ZX_ASSERT(ZX_OK == token.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone));
+          composite_token_overrides.emplace(key, std::move(clone));
+        }
+      }
+    }
+  }
+
+  std::shared_ptr composite = std::make_shared<Node>(
+      node_name, std::move(parents_map), std::move(parents_names), driver_binder, dispatcher,
+      primary_index, std::move(composite_token_overrides));
   composite->received_resources_ = std::move(received_resources);
   for (auto& resource : composite->received_resources_) {
     resource->AddDependent(composite);
@@ -464,8 +549,8 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
   }
 
   // Copy the subtree dictionary of the primary parent node down to the composite.
-  if (primary->subtree_dictionary_ref_.has_value()) {
-    composite->subtree_dictionary_ref_ = primary->subtree_dictionary_ref_;
+  if (primary->HasSubtreeDictionaryRef()) {
+    composite->SetSubtreeDictionaryRef(primary->subtree_dictionary_ref_);
     ZX_ASSERT_MSG(!has_dictionary_offer, "Cannot use dictionary offers on node %s",
                   std::string(node_name).c_str());
   }
@@ -651,12 +736,6 @@ void Node::OnBind() {
         zx::ok(fdf::wire::DriverResult::WithDriverStartedNodeToken(std::move(node_token.value()))));
   }
   node_manager_.value()->OnNodeBound(shared_from_this());
-
-  // Manually drop our lease if there is no all_drivers but we are a hermetic
-  // power test node.
-  if (!(*node_manager_)->SuspendEnabled() && IsHermeticPowerTest()) {
-    TakeStartupLease();
-  }
 }
 
 void Node::OnMatchError(zx_status_t status) {
@@ -1149,8 +1228,12 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
       return;
     }
   };
-  std::shared_ptr child =
-      std::make_shared<Node>(name, weak_from_this(), *node_manager_, dispatcher_);
+  std::map<std::string, zx::event> child_token_overrides;
+  if (!node_token_overrides_.empty()) {
+    child_token_overrides = DuplicateTokenOverrides(node_token_overrides_);
+  }
+  std::shared_ptr child = std::make_shared<Node>(name, weak_from_this(), *node_manager_,
+                                                 dispatcher_, std::move(child_token_overrides));
   if (cpu_token_override_.has_value()) {
     zx::event token_copy;
     ZX_ASSERT(cpu_token_override_->duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy) == ZX_OK);
@@ -2004,6 +2087,12 @@ void Node::StartDriver(
           continue;
         }
 
+        // If this node is part of a power test, but the ancestor is not, skip
+        // the ancestor because we can't mix, in-test and out-of-test nodes.
+        if (IsHermeticPowerTest() && !ancestor->IsHermeticPowerTest()) {
+          continue;
+        }
+
         if (!ancestor->is_bound()) {
           for (const auto& elder : ancestor->parents()) {
             ancestors.push(elder);
@@ -2089,10 +2178,10 @@ void Node::StartDriver(
           topology_channel = std::move(topology_client.value());
         }
 
-        bool suspend_enabled =
-            (*self->node_manager_)->SuspendEnabled() || self->IsHermeticPowerTest();
+        bool create_startup_lease =
+            (*self->node_manager_)->SuspendEnabled() && !self->IsHermeticPowerTest();
         std::optional<zx::eventpair> startup_lease_peer;
-        if (suspend_enabled) {
+        if (create_startup_lease) {
           zx::eventpair startup_lease, lease_peer;
           zx_status_t status = zx::eventpair::create(0, &startup_lease, &lease_peer);
           ZX_ASSERT(status == ZX_OK);
@@ -2105,7 +2194,7 @@ void Node::StartDriver(
                 std::move(topology_channel), self->name_, std::move(clone), std::move(deps),
                 std::move(element_control_server), std::move(element_runner_client),
                 std::move(lessor_server), self->collection(), std::move(cpu_token_override),
-                std::move(startup_lease_peer),
+                std::move(startup_lease_peer), self->IsHermeticPowerTest(),
                 [weak_self = self->weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
                  use_dynamic_linker = use_dynamic_linker, url = url,
                  found_driver_host = found_driver_host,

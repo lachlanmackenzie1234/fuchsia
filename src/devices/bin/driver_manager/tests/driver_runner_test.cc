@@ -154,7 +154,7 @@ TEST_P(DriverRunnerTest, RestartWithPowerDependenciesAndCpuOverride) {
 
   driver_runner().RestartWithDictionaryAndPowerDependencies(
       "dev.second", fidl::ToNatural(std::move(dict_ref)), std::move(power_deps),
-      std::move(cpu_override_token), std::move(release_fence2));
+      std::move(cpu_override_token), {}, std::move(release_fence2));
 
   // Our driver should get closed.
   while (!stop_listener.is_stopped()) {
@@ -321,7 +321,7 @@ TEST_P(DriverRunnerTest, RestartWithCpuTokenOverrideOnly) {
   });
 
   driver_runner().RestartWithDictionaryAndPowerDependencies(
-      "dev.second", fidl::ToNatural(std::move(dict_ref)), {}, std::move(cpu_override_token),
+      "dev.second", fidl::ToNatural(std::move(dict_ref)), {}, std::move(cpu_override_token), {},
       std::move(release_fence2));
 
   // Our driver should get closed.
@@ -431,6 +431,115 @@ TEST_P(DriverRunnerTest, RestartWithCpuTokenOverrideOnly) {
   destroy_completion.Wait();
   background_loop.Quit();
   background_loop.JoinThreads();
+
+  StopDriverComponent(std::move(root_driver->controller));
+}
+
+// Verifies that RestartWithDictionaryAndPowerDependencies accepts node_power_token_overrides
+// for child nodes, and that upon driver restart, the target child node's power element token
+// matches the provided override token KOID. Also verifies that reverting the release fence resets
+// the power token overrides.
+TEST_P(DriverRunnerTest, RestartWithNodePowerTokenOverrides) {
+  auto cleanup = fit::defer([this]() { realm().ClearCreateChildHandlers(); });
+  SetupDriverRunner();
+
+  EnableIntrospector();
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  PrepareRealmForSecondDriverComponentStart();
+  std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
+  EXPECT_TRUE(RunLoopUntilIdle());
+
+  bool did_bind_1 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_1](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_1 = true;
+          return;
+        }
+        ZX_ASSERT_MSG(!result.is_ok(), " WaitForDriver succeeded, but no node token provided.");
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  EXPECT_TRUE(did_bind_1);
+  StopListener& stop_listener = ServeStopListener(std::move(controller));
+
+  zx::eventpair d_ep1, d_ep2;
+  ASSERT_EQ(ZX_OK, zx::eventpair::create(0, &d_ep1, &d_ep2));
+  fuchsia_component_sandbox::wire::DictionaryRef dict_ref;
+  dict_ref.token = std::move(d_ep1);
+
+  zx::event override_token;
+  ASSERT_EQ(zx::event::create(0, &override_token), ZX_OK);
+  zx::event override_token_copy;
+  ASSERT_EQ(override_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &override_token_copy), ZX_OK);
+
+  zx_info_handle_basic_t info;
+  ASSERT_EQ(override_token.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr),
+            ZX_OK);
+  zx_koid_t expected_koid = info.koid;
+
+  std::vector<fuchsia_driver_development::NodePowerTokenOverride> overrides;
+  overrides.push_back(fuchsia_driver_development::NodePowerTokenOverride{{
+      .target_node = "second",
+      .token = std::move(override_token),
+  }});
+
+  zx::eventpair release_fence1, release_fence2;
+  ASSERT_EQ(ZX_OK, zx::eventpair::create(0, &release_fence1, &release_fence2));
+
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name().value() == "dev.second" &&
+        decl.url().value() == second_driver_url) {
+      return true;
+    }
+    return false;
+  });
+
+  driver_runner().RestartWithDictionaryAndPowerDependencies(
+      "dev.second", fidl::ToNatural(std::move(dict_ref)), {}, std::nullopt, std::move(overrides),
+      std::move(release_fence2));
+
+  while (!stop_listener.is_stopped()) {
+    RunLoopUntilIdle();
+  }
+
+  bool did_bind_2 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_2](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_2 = true;
+          return;
+        }
+
+        ZX_ASSERT_MSG(!result.is_ok(), " WaitForDriver succeeded, but no node token provided.");
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+  auto [driver_2, controller_2] = StartSecondDriver("dev.second");
+  EXPECT_TRUE(did_bind_2);
+
+  std::shared_ptr<driver_manager::Node> node_ptr = nullptr;
+  for (const auto& c : driver_runner().root_node()->children()) {
+    if (c->name() == "second") {
+      node_ptr = c;
+      break;
+    }
+  }
+  ASSERT_NE(node_ptr, nullptr);
+  zx::event power_token = node_ptr->DuplicatePowerToken();
+  ASSERT_TRUE(power_token.is_valid());
+  ASSERT_EQ(power_token.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr),
+            ZX_OK);
+  EXPECT_EQ(info.koid, expected_koid);
+
+  ServeStopListener(std::move(controller_2));
+  release_fence1.reset();
+  RunLoopUntilIdle();
 
   StopDriverComponent(std::move(root_driver->controller));
 }

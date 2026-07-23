@@ -145,6 +145,7 @@ class NodeManager {
 
   // Create a power element where |element_token| is the access token for the newly created
   // element. |deps| are the tokens this element should depend on.
+  // |is_hermetic_power_test| indicates whether power dependencies or token overrides are active.
   // |cb| is called with:
   //   - `zx::ok(true)` if the power element was successfully created
   //   - `zx::ok(false)` if the power element could not be created because this is not a suspend-
@@ -158,7 +159,8 @@ class NodeManager {
       fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
-      std::optional<zx::eventpair> initial_lease_token, fit::callback<void(zx::result<bool>)> cb) {
+      std::optional<zx::eventpair> initial_lease_token, bool is_hermetic_power_test,
+      fit::callback<void(zx::result<bool>)> cb) {
     cb(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
 
@@ -189,10 +191,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
  public:
   Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_manager,
-       async_dispatcher_t* dispatcher);
+       async_dispatcher_t* dispatcher, std::map<std::string, zx::event> node_token_overrides = {});
   Node(std::string_view name, std::unordered_map<std::string, std::weak_ptr<Node>> parents,
        std::vector<std::string> parents_names, NodeManager* node_manager,
-       async_dispatcher_t* dispatcher, uint32_t primary_index);
+       async_dispatcher_t* dispatcher, uint32_t primary_index,
+       std::map<std::string, zx::event> node_token_overrides = {});
 
   ~Node() override;
 
@@ -201,7 +204,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       std::vector<std::string> parents_names,
       const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
       NodeManager* driver_binder, async_dispatcher_t* dispatcher,
-      std::string_view driver_host_name_for_colocation, uint32_t primary_index = 0);
+      std::string_view driver_host_name_for_colocation, uint32_t primary_index = 0,
+      std::map<std::string, zx::event> node_token_overrides = {});
 
   // This is called when |node_ref_| is unbound from the dispatcher.
   void OnNodeServerUnbound(fidl::UnbindInfo info);
@@ -464,6 +468,30 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     cpu_token_override_ = std::move(token);
   }
 
+  /// Sets power token overrides for target child/composite nodes.
+  void SetNodeTokenOverrides(std::map<std::string, zx::event> node_token_overrides) {
+    node_token_overrides_ = std::move(node_token_overrides);
+    auto override_it = node_token_overrides_.find(name_);
+    if (override_it != node_token_overrides_.end() && override_it->second.is_valid()) {
+      zx::event injected;
+      ZX_ASSERT(ZX_OK == override_it->second.duplicate(ZX_RIGHT_SAME_RIGHTS, &injected));
+      power_element_token_ = std::move(injected);
+      return;
+    }
+
+    override_it = node_token_overrides_.find(MakeComponentMoniker());
+    if (override_it != node_token_overrides_.end() && override_it->second.is_valid()) {
+      zx::event injected;
+      ZX_ASSERT(ZX_OK == override_it->second.duplicate(ZX_RIGHT_SAME_RIGHTS, &injected));
+      power_element_token_ = std::move(injected);
+      return;
+    }
+  }
+
+  /// Creates a duplicate copy of the given map of node power token overrides.
+  static std::map<std::string, zx::event> DuplicateTokenOverrides(
+      const std::map<std::string, zx::event>& overrides);
+
   const Collection& collection() const { return collection_; }
 
   const fuchsia_driver_framework::DriverPackageType& driver_package_type() const {
@@ -474,9 +502,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool can_multibind_composites() const { return can_multibind_composites_; }
 
+  /// Returns true if this node or subtree is operating within a hermetic power test,
+  /// indicated by active dictionary, power dependency, CPU token, or node power token overrides.
   bool IsHermeticPowerTest() const {
     return subtree_dictionary_ref_.has_value() || power_dependency_overrides_.has_value() ||
-           cpu_token_override_.has_value();
+           cpu_token_override_.has_value() || !node_token_overrides_.empty();
   }
 
   void set_collection(Collection collection) { collection_ = collection; }
@@ -755,6 +785,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   std::optional<std::vector<fuchsia_power_broker::LevelDependency>> power_dependency_overrides_;
   std::optional<zx::event> cpu_token_override_;
+  /// Power element token overrides keyed by node name/moniker for targeting child or composite
+  /// nodes.
+  std::map<std::string, zx::event> node_token_overrides_;
 
   // An outstanding rebind request.
   fit::callback<void(zx::result<>)> pending_bind_completer_;

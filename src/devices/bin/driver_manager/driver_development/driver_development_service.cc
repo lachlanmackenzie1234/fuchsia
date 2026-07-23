@@ -502,6 +502,8 @@ void DriverDevelopmentService::RestartWithDictionaryAndPowerDependencies(
       request->cpu_token_override.is_valid()
           ? std::make_optional(std::move(request->cpu_token_override))
           : std::nullopt,
+      fidl::ToNatural(std::move(request->node_power_token_overrides))
+          .value_or(std::vector<fuchsia_driver_development::NodePowerTokenOverride>{}),
       std::move(endpoint1));
   completer.ReplySuccess(std::move(endpoint0));
 }

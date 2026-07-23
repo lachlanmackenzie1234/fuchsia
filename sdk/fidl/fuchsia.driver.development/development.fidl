@@ -18,6 +18,20 @@ const BINDING_RESULT_MAX_2 uint32 = 256;
 
 const HASH_LENGTH uint8 = 64;
 
+@available(added=HEAD)
+const POWER_TOKEN_OVERRIDES_MAX uint8 = 16;
+
+/// Specifies a custom power token override for a targeted child or composite node.
+/// Used during driver restart operations to replace default power topology tokens
+/// with mock or test power tokens.
+@available(added=HEAD)
+type NodePowerTokenOverride = resource struct {
+    /// Moniker or name of the target node whose power token should be overridden.
+    target_node string:NODE_MONIKER_MAX;
+    /// Custom power element token event handle to associate with the target node.
+    token zx.Handle:EVENT;
+};
+
 /// Interface for the driver development manager.
 /// This interface should only be used for development and disabled in release builds.
 @discoverable(server="platform")
@@ -181,6 +195,8 @@ open protocol Manager {
                 vector<fuchsia.power.broker.LevelDependency>:fuchsia.power.broker.MAX_DEPENDENCIES_IN_ADD_ELEMENT;
         /// Custom cpu token to give to the restarted node.
         cpu_token_override zx.Handle:<EVENT, optional>;
+        /// Overrides for power element tokens of specific child/composite target nodes.
+        node_power_token_overrides vector<NodePowerTokenOverride>:POWER_TOKEN_OVERRIDES_MAX;
     }) -> (resource struct {
         /// The caller should keep this handle alive while the modified drivers are needed.
         /// Releasing this will reset the operation.

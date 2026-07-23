@@ -485,7 +485,7 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
 
     auto result = fidl::Call(driver_manager_client_end_)
                       ->RestartWithDictionaryAndPowerDependencies(
-                          {*found, std::move(dict_ref), {}, std::move(cpu_token_override)});
+                          {*found, std::move(dict_ref), {}, std::move(cpu_token_override), {}});
     EXPECT_EQ(true, result.is_ok());
 
     if (result.is_error()) {

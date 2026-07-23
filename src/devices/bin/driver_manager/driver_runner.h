@@ -209,10 +209,15 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                              fuchsia_component_sandbox::wire::DictionaryRef dictionary,
                              zx::eventpair reset_eventpair);
 
+  /// Restarts driver components bound to the node identified by |moniker|, providing
+  /// custom power dependencies, CPU token override, and targeted child node power token overrides.
+  /// Releasing |release_fence| reverts all temporary overrides and restarts the drivers again.
   void RestartWithDictionaryAndPowerDependencies(
       std::string moniker, fuchsia_component_sandbox::DictionaryRef dictionary,
       std::vector<fuchsia_power_broker::LevelDependency> power_dependencies,
-      std::optional<zx::event> cpu_token_override, zx::eventpair release_fence);
+      std::optional<zx::event> cpu_token_override,
+      std::vector<fuchsia_driver_development::NodePowerTokenOverride> node_power_token_overrides,
+      zx::eventpair release_fence);
 
   std::unordered_set<DriverHost*> DriverHostsWithDriverUrl(std::string_view url);
 
@@ -316,7 +321,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
-      std::optional<zx::eventpair> initial_lease_token,
+      std::optional<zx::eventpair> initial_lease_token, bool is_hermetic_power_test,
       fit::callback<void(zx::result<bool>)> cb) override;
 
   void CreateAllDriversPowerElement();

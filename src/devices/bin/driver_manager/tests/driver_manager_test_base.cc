@@ -19,9 +19,11 @@ void DriverManagerTestBase::TearDown() {
   TestLoopFixture::TearDown();
 }
 
-std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(std::string_view name) {
+std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(
+    std::string_view name, std::map<std::string, zx::event> node_token_overrides) {
   auto node = std::make_shared<driver_manager::Node>(name, std::weak_ptr<driver_manager::Node>{},
-                                                     GetNodeManager(), dispatcher());
+                                                     GetNodeManager(), dispatcher(),
+                                                     std::move(node_token_overrides));
   node->InitializeSelfResource();
   node->AddToDevfsForTesting(root_devnode_.value());
   node->devfs_device().publish();
@@ -29,9 +31,10 @@ std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(std::str
 }
 
 std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(
-    std::string_view name, std::weak_ptr<driver_manager::Node> parent) {
+    std::string_view name, std::weak_ptr<driver_manager::Node> parent,
+    std::map<std::string, zx::event> node_token_overrides) {
   auto node = std::make_shared<driver_manager::Node>(name, std::move(parent), GetNodeManager(),
-                                                     dispatcher());
+                                                     dispatcher(), std::move(node_token_overrides));
   node->InitializeSelfResource();
   node->AddToDevfsForTesting(root_devnode_.value());
   node->devfs_device().publish();
@@ -42,7 +45,7 @@ std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(
 std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateCompositeNode(
     std::string_view name, std::vector<std::weak_ptr<driver_manager::Node>> parents,
     const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
-    uint32_t primary_index) {
+    uint32_t primary_index, std::map<std::string, zx::event> node_token_overrides) {
   std::vector<std::string> parent_names;
   parent_names.reserve(parents.size());
   std::vector<std::weak_ptr<driver_manager::Resource>> parent_resources;
@@ -57,7 +60,7 @@ std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateCompositeNode
   }
   return driver_manager::Node::CreateCompositeNode(
              name, std::move(parent_resources), std::move(parent_names), parent_properties,
-             GetNodeManager(), dispatcher(), "", primary_index)
+             GetNodeManager(), dispatcher(), "", primary_index, std::move(node_token_overrides))
       .value();
 }
 

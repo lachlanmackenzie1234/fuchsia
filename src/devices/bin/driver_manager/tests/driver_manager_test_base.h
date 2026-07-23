@@ -37,7 +37,7 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
       driver_manager::Collection for_collection,
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
-      std::optional<zx::eventpair> initial_lease_token,
+      std::optional<zx::eventpair> initial_lease_token, bool is_hermetic_power_test,
       fit::callback<void(zx::result<bool>)> cb) override {
     cb(zx::ok(false));
   }
@@ -65,11 +65,13 @@ class DriverManagerTestBase : public gtest::TestLoopFixture {
   virtual driver_manager::NodeManager* GetNodeManager() = 0;
 
  protected:
-  std::shared_ptr<driver_manager::Node> CreateNode(std::string_view name);
+  std::shared_ptr<driver_manager::Node> CreateNode(
+      std::string_view name, std::map<std::string, zx::event> node_token_overrides = {});
 
   // Creates a DFv2 node and add it to the given parent.
-  std::shared_ptr<driver_manager::Node> CreateNode(std::string_view name,
-                                                   std::weak_ptr<driver_manager::Node> parent);
+  std::shared_ptr<driver_manager::Node> CreateNode(
+      std::string_view name, std::weak_ptr<driver_manager::Node> parent,
+      std::map<std::string, zx::event> node_token_overrides = {});
 
   std::shared_ptr<driver_manager::Resource> CreateResource(
       std::weak_ptr<driver_manager::Node> owner, std::string_view name);
@@ -77,7 +79,7 @@ class DriverManagerTestBase : public gtest::TestLoopFixture {
   std::shared_ptr<driver_manager::Node> CreateCompositeNode(
       std::string_view name, std::vector<std::weak_ptr<driver_manager::Node>> parents,
       const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
-      uint32_t primary_index = 0);
+      uint32_t primary_index = 0, std::map<std::string, zx::event> node_token_overrides = {});
 
   std::shared_ptr<driver_manager::Node> root() const { return root_; }
 

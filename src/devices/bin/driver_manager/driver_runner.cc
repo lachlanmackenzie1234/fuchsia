@@ -1302,31 +1302,35 @@ void DriverRunner::CreatePowerElement(
     fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
     fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
     std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
-    std::optional<zx::eventpair> initial_lease_token, fit::callback<void(zx::result<bool>)> cb) {
+    std::optional<zx::eventpair> initial_lease_token, bool is_hermetic_power_test,
+    fit::callback<void(zx::result<bool>)> cb) {
   if (!SuspendEnabled() && !topology_client.has_value()) {
     cb(zx::ok(false));
     return;
   }
 
   PowerDependencyToken* cpu_token = std::get_if<PowerDependencyToken>(&cpu_callbacks_or_token_);
-  if (!cpu_token && !cpu_token_override.has_value() && SuspendEnabled()) {
+  if (!cpu_token && !cpu_token_override.has_value() && SuspendEnabled() &&
+      !is_hermetic_power_test) {
     std::get<CallbackSet>(cpu_callbacks_or_token_)
-        .push_back(
-            [weak_self = weak_from_this(), topology_client = std::move(topology_client), name,
-             element_token = std::move(element_token), deps = std::move(deps),
-             control = std::move(control), runner = std::move(runner), lessor = std::move(lessor),
-             for_collection, cpu_token_override = std::move(cpu_token_override),
-             initial_lease_token = std::move(initial_lease_token), cb = std::move(cb)]() mutable {
-              auto self = weak_self.lock();
-              if (!self) {
-                return;
-              }
+        .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
+                    name, element_token = std::move(element_token), deps = std::move(deps),
+                    control = std::move(control), runner = std::move(runner),
+                    lessor = std::move(lessor), for_collection,
+                    cpu_token_override = std::move(cpu_token_override),
+                    initial_lease_token = std::move(initial_lease_token), is_hermetic_power_test,
+                    cb = std::move(cb)]() mutable {
+          auto self = weak_self.lock();
+          if (!self) {
+            return;
+          }
 
-              self->CreatePowerElement(
-                  std::move(topology_client), name, std::move(element_token), std::move(deps),
-                  std::move(control), std::move(runner), std::move(lessor), for_collection,
-                  std::move(cpu_token_override), std::move(initial_lease_token), std::move(cb));
-            });
+          self->CreatePowerElement(std::move(topology_client), name, std::move(element_token),
+                                   std::move(deps), std::move(control), std::move(runner),
+                                   std::move(lessor), for_collection, std::move(cpu_token_override),
+                                   std::move(initial_lease_token), is_hermetic_power_test,
+                                   std::move(cb));
+        });
     return;
   }
 
@@ -1335,24 +1339,27 @@ void DriverRunner::CreatePowerElement(
   // This might happen because creation of the storage power element has multiple async operations,
   // therefore it is possible that a driver from storage loads before the element is created.
   PowerDependencyToken* token = std::get_if<PowerDependencyToken>(&storage_callbacks_or_token_);
-  if (for_collection != Collection::kBoot && !token && SuspendEnabled()) {
+  if (for_collection != Collection::kBoot && !token && SuspendEnabled() &&
+      !is_hermetic_power_test && !cpu_token_override.has_value() && !topology_client.has_value()) {
     std::get<CallbackSet>(storage_callbacks_or_token_)
-        .push_back(
-            [weak_self = weak_from_this(), topology_client = std::move(topology_client), name,
-             element_token = std::move(element_token), deps = std::move(deps),
-             control = std::move(control), runner = std::move(runner), lessor = std::move(lessor),
-             for_collection, cpu_token_override = std::move(cpu_token_override),
-             initial_lease_token = std::move(initial_lease_token), cb = std::move(cb)]() mutable {
-              auto self = weak_self.lock();
-              if (!self) {
-                return;
-              }
+        .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
+                    name, element_token = std::move(element_token), deps = std::move(deps),
+                    control = std::move(control), runner = std::move(runner),
+                    lessor = std::move(lessor), for_collection,
+                    cpu_token_override = std::move(cpu_token_override),
+                    initial_lease_token = std::move(initial_lease_token), is_hermetic_power_test,
+                    cb = std::move(cb)]() mutable {
+          auto self = weak_self.lock();
+          if (!self) {
+            return;
+          }
 
-              self->CreatePowerElement(
-                  std::move(topology_client), name, std::move(element_token), std::move(deps),
-                  std::move(control), std::move(runner), std::move(lessor), for_collection,
-                  std::move(cpu_token_override), std::move(initial_lease_token), std::move(cb));
-            });
+          self->CreatePowerElement(std::move(topology_client), name, std::move(element_token),
+                                   std::move(deps), std::move(control), std::move(runner),
+                                   std::move(lessor), for_collection, std::move(cpu_token_override),
+                                   std::move(initial_lease_token), is_hermetic_power_test,
+                                   std::move(cb));
+        });
     return;
   }
 
@@ -1375,7 +1382,7 @@ void DriverRunner::CreatePowerElement(
         cpu_token_override->duplicate(ZX_RIGHT_SAME_RIGHTS, (zx::event*)&clone);
     ZX_ASSERT(dupe_result == ZX_OK);
     final_cpu_token = std::move(clone);
-  } else if (SuspendEnabled()) {
+  } else if (SuspendEnabled() && !is_hermetic_power_test) {
     fuchsia_power_broker::DependencyToken clone;
     ZX_ASSERT(std::get<PowerDependencyToken>(cpu_callbacks_or_token_)
                   .duplicate(ZX_RIGHT_SAME_RIGHTS, (zx::event*)&clone) == ZX_OK);
@@ -1387,7 +1394,8 @@ void DriverRunner::CreatePowerElement(
   }
 
   // Any drivers that aren't from bootfs have a dependency on storage.
-  if (for_collection != Collection::kBoot && SuspendEnabled()) {
+  if (for_collection != Collection::kBoot && SuspendEnabled() && !is_hermetic_power_test &&
+      !cpu_token_override.has_value() && !topology_client.has_value()) {
     std::optional<fuchsia_power_broker::DependencyToken> token = StorageElementToken();
 
     ZX_ASSERT_MSG(token.has_value(),
@@ -1442,6 +1450,7 @@ void DriverRunner::CreatePowerElement(
               return;
           }
         }
+
         cb(zx::ok(true));
       });
 }
@@ -1755,12 +1764,16 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
 void DriverRunner::RestartWithDictionaryAndPowerDependencies(
     std::string moniker, fuchsia_component_sandbox::DictionaryRef dictionary,
     std::vector<fuchsia_power_broker::LevelDependency> power_dependencies,
-    std::optional<zx::event> cpu_token_override, zx::eventpair release_fence) {
+    std::optional<zx::event> cpu_token_override,
+    std::vector<fuchsia_driver_development::NodePowerTokenOverride> node_power_token_overrides,
+    zx::eventpair release_fence) {
   dictionary_util_.ImportDictionary(std::move(dictionary), [this, moniker = std::move(moniker),
                                                             power_dependencies =
                                                                 std::move(power_dependencies),
                                                             cpu_token_override =
                                                                 std::move(cpu_token_override),
+                                                            node_power_token_overrides = std::move(
+                                                                node_power_token_overrides),
                                                             release_fence =
                                                                 std::move(release_fence)](
                                                                zx::result<
@@ -1816,6 +1829,15 @@ void DriverRunner::RestartWithDictionaryAndPowerDependencies(
           }
         }
 
+        std::map<std::string, zx::event> token_overrides_map;
+        for (auto& override_entry : node_power_token_overrides) {
+          if (!override_entry.target_node().empty() && override_entry.token().is_valid()) {
+            token_overrides_map.emplace(override_entry.target_node(),
+                                        std::move(override_entry.token()));
+          }
+        }
+        current->SetNodeTokenOverrides(std::move(token_overrides_map));
+
         current->RestartNode();
         return false;
       }
@@ -1841,6 +1863,7 @@ void DriverRunner::RestartWithDictionaryAndPowerDependencies(
             restarted_node->SetSubtreeDictionaryRef(std::nullopt);
             restarted_node->SetPowerDependencyOverrides(std::nullopt);
             restarted_node->SetCpuTokenOverride(std::nullopt);
+            restarted_node->SetNodeTokenOverrides({});
             restarted_node->RestartNode();
           });
 
