@@ -6215,8 +6215,8 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
           // TODO(sagebarreda): consider clean dirty intervals if there are large runs of markers.
           for (auto zero_offset = gap_dst_start; zero_offset < gap_dst_end;
                zero_offset += kPageSize) {
-            zx::result<VmPageOrMarker> result = AddPageLocked(
-                zero_offset, ktl::move(VmPageOrMarker::Marker()), overwrite_policy, nullptr);
+            zx::result<VmPageOrMarker> result =
+                AddPageLocked(zero_offset, VmPageOrMarker::Marker(), overwrite_policy, nullptr);
             if (result.is_error()) {
               zx_status_t add_status = handle_add_page_error(result.status_value(), zero_offset);
               if (add_status != ZX_ERR_NEXT) {
