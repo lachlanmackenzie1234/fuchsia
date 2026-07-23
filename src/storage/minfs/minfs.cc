@@ -72,13 +72,13 @@
 #include <fbl/auto_lock.h>
 #include <fbl/ref_counted_upgradeable.h>
 #include <fbl/vector.h>
-#include <storage/buffer/blocking_ring_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
-#include <storage/operation/unbuffered_operation.h>
 
 #include "src/storage/fvm/client.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/buffer/blocking_ring_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
 #include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
 #include "src/storage/lib/vfs/cpp/inspect/inspect_data.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"

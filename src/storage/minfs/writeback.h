@@ -20,7 +20,7 @@
 #include <fbl/auto_lock.h>
 #include <fbl/mutex.h>
 
-#include "storage/operation/unbuffered_operations_builder.h"
+#include "src/storage/lib/operation/unbuffered_operations_builder.h"
 #else
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #endif

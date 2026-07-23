@@ -7,9 +7,8 @@
 
 #include <lib/fzl/owned-vmo-mapper.h>
 
-#include <storage/buffer/owned_vmoid.h>
-
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 namespace block_client {
 

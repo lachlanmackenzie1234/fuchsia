@@ -14,12 +14,11 @@
 #include <utility>
 #include <vector>
 
-#include <range/interval-tree.h>
-#include <range/range.h>
-#include <storage/buffer/block_buffer_view.h>
-#include <storage/buffer/blocking_ring_buffer.h>
-#include <storage/operation/operation.h>
-
+#include "src/storage/lib/buffer/block_buffer_view.h"
+#include "src/storage/lib/buffer/blocking_ring_buffer.h"
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/range/interval-tree.h"
+#include "src/storage/lib/range/range.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
 #include "src/storage/lib/vfs/cpp/journal/superblock.h"
 #include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/buffer/ring_buffer.h"
+#include "src/storage/lib/buffer/ring_buffer.h"
 
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
@@ -12,7 +12,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <storage/operation/unbuffered_operations_builder.h>
+
+#include "src/storage/lib/operation/unbuffered_operations_builder.h"
 
 namespace storage {
 namespace {

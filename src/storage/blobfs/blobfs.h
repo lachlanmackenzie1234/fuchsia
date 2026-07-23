@@ -27,8 +27,6 @@
 
 #include <fbl/macros.h>
 #include <fbl/ref_ptr.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
 
 #include "src/storage/blobfs/allocator/allocator.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
@@ -48,6 +46,8 @@
 #include "src/storage/blobfs/transaction.h"
 #include "src/storage/blobfs/transaction_manager.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
 #include "src/storage/lib/vfs/cpp/inspect/node_operations.h"
 #include "src/storage/lib/vfs/cpp/journal/journal.h"

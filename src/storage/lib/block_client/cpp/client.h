@@ -14,10 +14,9 @@
 #include <condition_variable>
 #include <mutex>
 
-#include <storage/buffer/owned_vmoid.h>
-#include <storage/buffer/vmoid_registry.h>
-
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
 
 namespace block_client {
 

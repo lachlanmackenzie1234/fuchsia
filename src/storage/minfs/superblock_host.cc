@@ -11,8 +11,8 @@
 #include <utility>
 
 #include <bitmap/raw-bitmap.h>
-#include <storage/buffer/block_buffer.h>
 
+#include "src/storage/lib/buffer/block_buffer.h"
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/minfs/superblock.h"
 

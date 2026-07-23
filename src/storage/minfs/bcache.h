@@ -25,10 +25,9 @@
 #ifdef __Fuchsia__
 #include <lib/zx/vmo.h>
 
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
-
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
 #include "src/storage/lib/vfs/cpp/transaction/device_transaction_handler.h"
 #else
 #include <fbl/vector.h>

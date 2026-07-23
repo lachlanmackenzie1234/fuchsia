@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_MAPPED_VMO_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_MAPPED_VMO_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_MAPPED_VMO_H_
+#define SRC_STORAGE_LIB_BUFFER_MAPPED_VMO_H_
 
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -82,4 +82,4 @@ class MappedVmo {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_MAPPED_VMO_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_MAPPED_VMO_H_

@@ -10,9 +10,8 @@
 #include <cstdint>
 #include <vector>
 
-#include <storage/buffer/block_buffer_view.h>
-#include <storage/operation/operation.h>
-
+#include "src/storage/lib/buffer/block_buffer_view.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
 #include "src/storage/lib/vfs/cpp/journal/header_view.h"
 

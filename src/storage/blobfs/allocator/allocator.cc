@@ -24,14 +24,14 @@
 
 #include <fbl/algorithm.h>
 #include <id_allocator/id_allocator.h>
-#include <storage/buffer/owned_vmoid.h>
-#include <storage/operation/operation.h>
 
 #include "src/storage/blobfs/allocator/base_allocator.h"
 #include "src/storage/blobfs/allocator/node_reserver.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/node_finder.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/lib/vfs/cpp/transaction/device_transaction_handler.h"
 

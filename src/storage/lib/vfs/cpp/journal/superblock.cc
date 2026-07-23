@@ -14,8 +14,7 @@
 #include <memory>
 #include <utility>
 
-#include <storage/buffer/block_buffer.h>
-
+#include "src/storage/lib/buffer/block_buffer.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
 
 namespace fs {

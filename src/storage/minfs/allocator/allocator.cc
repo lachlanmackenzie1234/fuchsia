@@ -16,10 +16,10 @@
 #include <utility>
 
 #include <fbl/vector.h>
-#include <storage/buffer/block_buffer.h>
-#include <storage/buffer/owned_vmoid.h>
 
 #include "src/storage/lib/block_protocol/types.h"
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/minfs/pending_work.h"
 

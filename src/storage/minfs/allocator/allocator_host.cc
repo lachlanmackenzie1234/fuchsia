@@ -9,8 +9,8 @@
 #include <utility>
 
 #include <bitmap/raw-bitmap.h>
-#include <storage/buffer/block_buffer.h>
 
+#include "src/storage/lib/buffer/block_buffer.h"
 #include "src/storage/minfs/allocator/allocator.h"
 
 namespace minfs {

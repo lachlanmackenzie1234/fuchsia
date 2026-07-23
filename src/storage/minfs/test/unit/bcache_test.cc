@@ -5,10 +5,9 @@
 #include "src/storage/minfs/bcache.h"
 
 #include <gtest/gtest.h>
-#include <storage/buffer/vmo_buffer.h>
 
-#include "gtest/gtest.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/minfs/minfs.h"
 

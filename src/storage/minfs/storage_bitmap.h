@@ -8,7 +8,7 @@
 #include <bitmap/raw-bitmap.h>
 
 #ifdef __Fuchsia__
-#include <storage/buffer/vmo_bitmap_storage.h>
+#include "src/storage/lib/buffer/vmo_bitmap_storage.h"
 #else
 #include <bitmap/storage.h>
 #endif

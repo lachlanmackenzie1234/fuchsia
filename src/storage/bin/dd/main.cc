@@ -32,9 +32,9 @@
 
 #include <fbl/unique_fd.h>
 #include <safemath/checked_math.h>
-#include <storage/buffer/vmoid_registry.h>
 
 #include "src/storage/lib/block_client/cpp/client.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
 
 namespace {
 

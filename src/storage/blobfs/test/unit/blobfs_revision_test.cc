@@ -11,7 +11,6 @@
 #include <utility>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/vmo_buffer.h>
 
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
@@ -24,6 +23,7 @@
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
 
 namespace blobfs {
 namespace {

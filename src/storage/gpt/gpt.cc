@@ -28,13 +28,13 @@
 #include <fbl/vector.h>
 #include <gpt/guid.h>
 #include <mbr/mbr.h>
-#include <range/range.h>
 #include <safemath/checked_math.h>
 #include <src/lib/uuid/uuid.h>
 
 #include "src/lib/utf_conversion/utf_conversion.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
+#include "src/storage/lib/range/range.h"
 
 namespace gpt {
 

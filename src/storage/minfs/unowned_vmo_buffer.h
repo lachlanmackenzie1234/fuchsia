@@ -9,7 +9,7 @@
 
 #include <lib/zx/vmo.h>
 
-#include <storage/buffer/block_buffer.h>
+#include "src/storage/lib/buffer/block_buffer.h"
 
 namespace minfs {
 

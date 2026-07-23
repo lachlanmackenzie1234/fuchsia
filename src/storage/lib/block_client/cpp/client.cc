@@ -9,9 +9,8 @@
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
-#include <storage/buffer/owned_vmoid.h>
-
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 namespace block_client {
 

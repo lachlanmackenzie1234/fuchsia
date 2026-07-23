@@ -17,12 +17,12 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/block_buffer.h>
-#include <storage/buffer/resizeable_vmo_buffer.h>
-#include <storage/operation/operation.h>
 
 #include "src/lib/testing/predicates/status.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/buffer/resizeable_vmo_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/minfs/bcache.h"
 #include "src/storage/minfs/block_utils.h"
 #include "src/storage/minfs/format.h"

@@ -7,9 +7,8 @@
 
 #include <condition_variable>
 
-#include <storage/buffer/vmo_buffer.h>
-
 #include "src/storage/f2fs/layout.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
 
 namespace f2fs {
 

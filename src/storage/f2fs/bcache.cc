@@ -11,14 +11,14 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
-#include <storage/buffer/block_buffer.h>
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/operation/operation.h>
 
 #include "src/storage/f2fs/layout.h"
 #include "src/storage/f2fs/segment.h"
 #include "src/storage/fvm/client.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 
 namespace f2fs {
 

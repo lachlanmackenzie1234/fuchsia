@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/storage/lib/buffer/vmo_bitmap_storage.h"
+
 #include <lib/zx/vmo.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
@@ -13,7 +15,6 @@
 
 #include <bitmap/raw-bitmap.h>
 #include <gtest/gtest.h>
-#include <storage/buffer/vmo_bitmap_storage.h>
 
 #include "src/lib/testing/predicates/status.h"
 

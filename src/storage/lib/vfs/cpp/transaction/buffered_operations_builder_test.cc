@@ -13,9 +13,10 @@
 #include <cstdint>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
+
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
 
 namespace {
 

@@ -7,7 +7,7 @@
 
 #include <lib/zx/result.h>
 
-#include <range/range.h>
+#include "src/storage/lib/range/range.h"
 
 namespace minfs {
 

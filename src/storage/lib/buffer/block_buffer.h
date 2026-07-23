@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_BLOCK_BUFFER_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_BLOCK_BUFFER_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_BLOCK_BUFFER_H_
+#define SRC_STORAGE_LIB_BUFFER_BLOCK_BUFFER_H_
 
 #include <zircon/types.h>
 
@@ -48,4 +48,4 @@ class BlockBuffer {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_BLOCK_BUFFER_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_BLOCK_BUFFER_H_

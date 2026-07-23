@@ -29,7 +29,6 @@
 
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
-#include <storage/buffer/vmo_buffer.h>
 
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/node-digest.h"
@@ -46,6 +45,7 @@
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
 
 namespace blobfs {
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/storage/lib/buffer/array_buffer.h"
+
 #include <fidl/fuchsia.storage.block/cpp/natural_types.h>
 
 #include <cstddef>
@@ -9,7 +11,6 @@
 #include <cstring>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/array_buffer.h>
 
 namespace storage {
 namespace {

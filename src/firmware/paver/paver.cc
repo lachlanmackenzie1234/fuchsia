@@ -38,7 +38,6 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/unique_fd.h>
-#include <storage/buffer/owned_vmoid.h>
 
 #include "src/firmware/paver/device-partitioner.h"
 #include "src/firmware/paver/partition-client.h"
@@ -46,6 +45,7 @@
 #include "src/firmware/paver/sparse.h"
 #include "src/firmware/paver/sysconfig-fidl.h"
 #include "src/firmware/paver/validation.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 #include "sysconfig-fidl.h"
 
 namespace paver {

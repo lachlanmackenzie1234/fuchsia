@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/buffer/vmo_buffer.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
 
 #include <fidl/fuchsia.storage.block/cpp/natural_types.h>
 #include <lib/zx/vmo.h>

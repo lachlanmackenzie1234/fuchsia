@@ -8,9 +8,8 @@
 
 #include <vector>
 
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/operation/operation.h>
-
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/journal/fuzzer_utils.h"
 #include "src/storage/lib/vfs/cpp/journal/replay.h"
 #include "src/storage/lib/vfs/cpp/journal/superblock.h"

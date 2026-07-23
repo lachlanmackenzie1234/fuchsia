@@ -24,7 +24,6 @@
 
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
-#include <storage/operation/operation.h>
 
 #include "src/lib/digest/digest.h"
 #include "src/lib/testing/predicates/status.h"
@@ -40,6 +39,7 @@
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/blobfs/transaction.h"
+#include "src/storage/lib/operation/operation.h"
 
 namespace blobfs {
 

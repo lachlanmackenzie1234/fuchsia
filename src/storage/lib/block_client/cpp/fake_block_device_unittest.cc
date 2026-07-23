@@ -10,9 +10,9 @@
 #include <iterator>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/owned_vmoid.h>
 
 #include "src/storage/fvm/format.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 namespace block_client {
 namespace {

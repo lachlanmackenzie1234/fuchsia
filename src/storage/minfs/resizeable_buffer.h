@@ -6,7 +6,7 @@
 #define SRC_STORAGE_MINFS_RESIZEABLE_BUFFER_H_
 
 #ifdef __Fuchsia__
-#include <storage/buffer/resizeable_vmo_buffer.h>
+#include "src/storage/lib/buffer/resizeable_vmo_buffer.h"
 #else
 #include "src/storage/minfs/resizeable_array_buffer.h"
 #endif

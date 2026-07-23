@@ -20,10 +20,10 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
-#include <storage/buffer/block_buffer.h>
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/operation/operation.h>
 
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/minfs/format.h"
 #include "zircon/assert.h"

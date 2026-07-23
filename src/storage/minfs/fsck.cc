@@ -36,9 +36,9 @@
 #include <fbl/array.h>
 #include <fbl/ref_ptr.h>
 #include <safemath/checked_math.h>
-#include <storage/operation/operation.h>
 
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/lib/vfs/cpp/transaction/device_transaction_handler.h"
@@ -57,9 +57,8 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 
-#include <storage/buffer/owned_vmoid.h>
-
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 #endif
 

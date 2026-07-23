@@ -5,9 +5,8 @@
 #ifndef SRC_STORAGE_F2FS_READER_H_
 #define SRC_STORAGE_F2FS_READER_H_
 
-#include <storage/buffer/vmo_buffer.h>
-
 #include "src/storage/f2fs/common.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 
 namespace f2fs {

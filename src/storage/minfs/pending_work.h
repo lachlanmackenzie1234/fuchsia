@@ -7,9 +7,8 @@
 
 #include <zircon/types.h>
 
-#include <storage/buffer/block_buffer.h>
-#include <storage/operation/operation.h>
-
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/minfs/format.h"
 
 namespace minfs {

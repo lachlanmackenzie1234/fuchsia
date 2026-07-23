@@ -11,8 +11,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include <storage/buffer/array_buffer.h>
-
+#include "src/storage/lib/buffer/array_buffer.h"
 #include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
 
 namespace minfs {

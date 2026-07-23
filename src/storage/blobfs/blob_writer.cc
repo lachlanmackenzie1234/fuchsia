@@ -34,8 +34,6 @@
 #include <fbl/ref_ptr.h>
 #include <safemath/checked_math.h>
 #include <safemath/safe_conversions.h>
-#include <storage/operation/operation.h>
-#include <storage/operation/unbuffered_operation.h>
 
 #include "src/lib/chunked-compression/chunked-archive.h"
 #include "src/lib/chunked-compression/status.h"
@@ -56,6 +54,8 @@
 #include "src/storage/blobfs/iterator/node_populator.h"
 #include "src/storage/blobfs/iterator/vector_extent_iterator.h"
 #include "src/storage/blobfs/transaction.h"
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/lib/vfs/cpp/journal/data_streamer.h"
 #include "src/storage/lib/vfs/cpp/ticker.h"

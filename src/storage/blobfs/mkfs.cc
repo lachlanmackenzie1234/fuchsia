@@ -23,13 +23,13 @@
 #include <fbl/algorithm.h>
 #include <safemath/checked_math.h>
 #include <safemath/safe_conversions.h>
-#include <storage/buffer/owned_vmoid.h>
 
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/fvm/client.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 #include "src/storage/lib/vfs/cpp/journal/initializer.h"
 
 namespace blobfs {

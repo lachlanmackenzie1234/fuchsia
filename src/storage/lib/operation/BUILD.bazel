@@ -16,11 +16,10 @@ cc_library(
         "unbuffered_operations_builder.cc",
     ],
     hdrs = [
-        "include/storage/operation/operation.h",
-        "include/storage/operation/unbuffered_operation.h",
-        "include/storage/operation/unbuffered_operations_builder.h",
+        "operation.h",
+        "unbuffered_operation.h",
+        "unbuffered_operations_builder.h",
     ],
-    includes = ["include"],
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "//src/storage/lib/range",

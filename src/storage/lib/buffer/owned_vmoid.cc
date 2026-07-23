@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/buffer/owned_vmoid.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 #include <zircon/assert.h>
 #include <zircon/status.h>
 
-#include "storage/buffer/vmoid_registry.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
 
 namespace storage {
 

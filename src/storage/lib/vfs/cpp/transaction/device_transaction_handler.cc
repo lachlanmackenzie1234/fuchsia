@@ -14,9 +14,8 @@
 #include <limits>
 #include <vector>
 
-#include <storage/operation/operation.h>
-
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/trace/trace.h"
 
 namespace fs {

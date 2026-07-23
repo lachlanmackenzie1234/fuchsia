@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_OPERATION_INCLUDE_STORAGE_OPERATION_OPERATION_H_
-#define SRC_STORAGE_LIB_OPERATION_INCLUDE_STORAGE_OPERATION_OPERATION_H_
+#ifndef SRC_STORAGE_LIB_OPERATION_OPERATION_H_
+#define SRC_STORAGE_LIB_OPERATION_OPERATION_H_
 
 #include <lib/stdcompat/span.h>
 
@@ -59,4 +59,4 @@ uint64_t BlockCount(cpp20::span<const BufferedOperation> operations);
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_OPERATION_INCLUDE_STORAGE_OPERATION_OPERATION_H_
+#endif  // SRC_STORAGE_LIB_OPERATION_OPERATION_H_

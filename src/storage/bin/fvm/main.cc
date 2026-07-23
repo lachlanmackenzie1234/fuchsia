@@ -20,11 +20,11 @@
 
 #include <fbl/alloc_checker.h>
 #include <fbl/unique_fd.h>
-#include <range/interval-tree.h>
 #include <safemath/checked_math.h>
 
 #include "src/storage/blobfs/format.h"
 #include "src/storage/fvm/sparse_reader.h"
+#include "src/storage/lib/range/interval-tree.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/volume_image/adapter/commands.h"
 #include "src/storage/volume_image/ftl/ftl_image.h"

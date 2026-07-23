@@ -12,10 +12,10 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/block_buffer.h>
-#include <storage/buffer/block_buffer_view.h>
-#include <storage/operation/operation.h>
 
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/buffer/block_buffer_view.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
 
 namespace fs {

@@ -15,12 +15,12 @@
 #include <vector>
 
 #include <fuzzer/FuzzedDataProvider.h>
-#include <storage/buffer/blocking_ring_buffer.h>
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
-#include <storage/operation/unbuffered_operation.h>
 
+#include "src/storage/lib/buffer/blocking_ring_buffer.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
 #include "src/storage/lib/vfs/cpp/journal/superblock.h"
 #include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
 

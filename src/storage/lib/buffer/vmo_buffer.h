@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMO_BUFFER_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMO_BUFFER_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_VMO_BUFFER_H_
+#define SRC_STORAGE_LIB_BUFFER_VMO_BUFFER_H_
 
 #include <lib/fzl/owned-vmo-mapper.h>
 
-#include <storage/buffer/block_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
 
 namespace storage {
 
@@ -78,4 +78,4 @@ class VmoBuffer final : public BlockBuffer {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMO_BUFFER_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_VMO_BUFFER_H_

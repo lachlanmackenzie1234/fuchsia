@@ -21,7 +21,6 @@
 
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
-#include <storage/buffer/vmo_buffer.h>
 
 #include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/blob.h"
@@ -32,6 +31,7 @@
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {

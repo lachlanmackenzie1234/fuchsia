@@ -50,8 +50,8 @@
 
 #include <fbl/mutex.h>
 #include <fbl/vector.h>
-#include <storage/buffer/vmoid_registry.h>
 
+#include "src/storage/lib/buffer/vmoid_registry.h"
 #include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
 #include "src/storage/lib/vfs/cpp/journal/journal.h"
 #include "src/storage/lib/vfs/cpp/journal/superblock.h"

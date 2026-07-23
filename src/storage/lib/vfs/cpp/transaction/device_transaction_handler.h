@@ -9,9 +9,8 @@
 
 #include <vector>
 
-#include <storage/operation/operation.h>
-
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
 
 namespace fs {

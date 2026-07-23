@@ -12,16 +12,15 @@
 #include <lib/zx/result.h>
 
 #include <fbl/macros.h>
-#include <storage/operation/operation.h>
 
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/minfs/superblock.h"
 
 #ifdef __Fuchsia__
-#include <storage/buffer/owned_vmoid.h>
-
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 #endif
 
 #include "src/storage/minfs/allocator/metadata.h"

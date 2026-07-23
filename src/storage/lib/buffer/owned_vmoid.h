@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_OWNED_VMOID_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_OWNED_VMOID_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_OWNED_VMOID_H_
+#define SRC_STORAGE_LIB_BUFFER_OWNED_VMOID_H_
 
 #include <zircon/types.h>
 
 #include <utility>
 
-#include <storage/buffer/vmoid_registry.h>
+#include "src/storage/lib/buffer/vmoid_registry.h"
 
 namespace storage {
 
@@ -52,4 +52,4 @@ class OwnedVmoid {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_OWNED_VMOID_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_OWNED_VMOID_H_

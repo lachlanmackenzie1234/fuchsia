@@ -16,9 +16,8 @@
 #include <utility>
 #include <vector>
 
-#include <storage/operation/operation.h>
-#include <storage/operation/unbuffered_operation.h>
-
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
 #include "src/storage/lib/vfs/cpp/journal/journal.h"
 
 namespace fs {

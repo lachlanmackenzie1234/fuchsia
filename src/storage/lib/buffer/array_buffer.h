@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_ARRAY_BUFFER_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_ARRAY_BUFFER_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_ARRAY_BUFFER_H_
+#define SRC_STORAGE_LIB_BUFFER_ARRAY_BUFFER_H_
 
 #include <fidl/fuchsia.storage.block/cpp/fidl.h>
 
 #include <vector>
 
-#include <storage/buffer/block_buffer.h>
+#include "src/storage/lib/buffer/block_buffer.h"
 
 namespace storage {
 
@@ -43,4 +43,4 @@ class ArrayBuffer : public BlockBuffer {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_ARRAY_BUFFER_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_ARRAY_BUFFER_H_

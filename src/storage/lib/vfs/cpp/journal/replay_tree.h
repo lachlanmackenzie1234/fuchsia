@@ -10,9 +10,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <range/interval-tree.h>
-#include <range/range.h>
-#include <storage/operation/operation.h>
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/range/interval-tree.h"
+#include "src/storage/lib/range/range.h"
 
 namespace fs {
 namespace internal {

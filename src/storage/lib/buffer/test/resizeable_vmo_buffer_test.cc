@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/storage/lib/buffer/resizeable_vmo_buffer.h"
+
 #include <lib/fit/defer.h>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/resizeable_vmo_buffer.h>
 
 #include "src/lib/testing/predicates/status.h"
 

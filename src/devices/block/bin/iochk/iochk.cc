@@ -30,9 +30,9 @@
 #include <fbl/macros.h>
 #include <fbl/mutex.h>
 #include <fbl/unique_fd.h>
-#include <storage/buffer/owned_vmoid.h>
 
 #include "src/storage/lib/block_client/cpp/client.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 namespace {
 

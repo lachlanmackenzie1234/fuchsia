@@ -11,9 +11,8 @@
 
 #include <memory>
 
-#include <storage/buffer/vmoid_registry.h>
-
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
 
 namespace block_client {
 

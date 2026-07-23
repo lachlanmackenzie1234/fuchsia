@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-#include <storage/buffer/block_buffer.h>
-#include <storage/operation/operation.h>
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 
 namespace fs {
 namespace {

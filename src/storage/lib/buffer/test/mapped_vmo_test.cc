@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/storage/lib/buffer/mapped_vmo.h"
+
 #include <lib/zx/vmo.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
@@ -15,7 +17,6 @@
 #include <utility>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/mapped_vmo.h>
 
 #include "src/lib/testing/predicates/status.h"
 

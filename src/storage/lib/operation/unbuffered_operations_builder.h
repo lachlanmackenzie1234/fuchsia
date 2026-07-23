@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_OPERATION_INCLUDE_STORAGE_OPERATION_UNBUFFERED_OPERATIONS_BUILDER_H_
-#define SRC_STORAGE_LIB_OPERATION_INCLUDE_STORAGE_OPERATION_UNBUFFERED_OPERATIONS_BUILDER_H_
+#ifndef SRC_STORAGE_LIB_OPERATION_UNBUFFERED_OPERATIONS_BUILDER_H_
+#define SRC_STORAGE_LIB_OPERATION_UNBUFFERED_OPERATIONS_BUILDER_H_
 
 #ifndef __Fuchsia__
 #error Fuchsia-only Header
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include <storage/operation/unbuffered_operation.h>
+#include "src/storage/lib/operation/unbuffered_operation.h"
 
 namespace storage {
 
@@ -51,4 +51,4 @@ class UnbufferedOperationsBuilder {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_OPERATION_INCLUDE_STORAGE_OPERATION_UNBUFFERED_OPERATIONS_BUILDER_H_
+#endif  // SRC_STORAGE_LIB_OPERATION_UNBUFFERED_OPERATIONS_BUILDER_H_

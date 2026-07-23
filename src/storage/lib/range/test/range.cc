@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/storage/lib/range/range.h"
+
 #include <zircon/assert.h>
 
-#include <range/range.h>
 #include <zxtest/zxtest.h>
 
 namespace range {

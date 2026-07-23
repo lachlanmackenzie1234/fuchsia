@@ -13,8 +13,7 @@
 #include <memory>
 #include <utility>
 
-#include <storage/buffer/blocking_ring_buffer.h>
-
+#include "src/storage/lib/buffer/blocking_ring_buffer.h"
 #include "src/storage/lib/vfs/cpp/journal/fuzzer_utils.h"
 #include "src/storage/lib/vfs/cpp/journal/journal.h"
 #include "src/storage/lib/vfs/cpp/journal/superblock.h"

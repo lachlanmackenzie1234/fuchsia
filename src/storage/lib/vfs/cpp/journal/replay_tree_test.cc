@@ -9,7 +9,8 @@
 #include <cstdint>
 
 #include <gtest/gtest.h>
-#include <storage/operation/operation.h>
+
+#include "src/storage/lib/operation/operation.h"
 
 namespace fs {
 namespace {

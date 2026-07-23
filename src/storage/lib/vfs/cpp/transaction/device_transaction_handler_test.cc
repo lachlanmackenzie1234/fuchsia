@@ -15,12 +15,12 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/block_buffer.h>
-#include <storage/operation/operation.h>
 
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_protocol/block-fifo.h"
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 
 #if __has_feature(address_sanitizer) || __has_feature(leak_sanitizer) || \
     __has_feature(hwaddress_sanitizer)

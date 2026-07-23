@@ -20,11 +20,11 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/block_buffer_view.h>
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
 
+#include "src/storage/lib/buffer/block_buffer_view.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/journal/entry_view.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
 #include "src/storage/lib/vfs/cpp/journal/header_view.h"

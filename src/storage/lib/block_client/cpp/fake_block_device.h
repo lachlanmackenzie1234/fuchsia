@@ -14,10 +14,9 @@
 #include <map>
 #include <optional>
 
-#include <range/range.h>
-
 #include "lib/fidl/cpp/wire/internal/transport_channel.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/range/range.h"
 
 namespace block_client {
 

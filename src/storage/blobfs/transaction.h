@@ -12,11 +12,10 @@
 #include <utility>
 #include <vector>
 
-#include <storage/operation/operation.h>
-#include <storage/operation/unbuffered_operation.h>
-#include <storage/operation/unbuffered_operations_builder.h>
-
 #include "src/storage/blobfs/allocator/extent_reserver.h"
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
+#include "src/storage/lib/operation/unbuffered_operations_builder.h"
 #include "src/storage/lib/vfs/cpp/journal/journal.h"
 
 namespace blobfs {

@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/zircon/zx_library.gni")
-
-zx_library("range") {
-  sdk = "source"
-  sdk_headers = [ "range/range.h" ]
+source_set("range") {
+  public = [
+    "interval-tree.h",
+    "range.h",
+  ]
   sources = [ "range.cc" ]
   public_deps = [ "//zircon/system/public" ]
 }

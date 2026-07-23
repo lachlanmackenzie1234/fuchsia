@@ -19,8 +19,6 @@
 #include <vector>
 
 #include <fbl/algorithm.h>
-#include <storage/buffer/owned_vmoid.h>
-#include <storage/operation/operation.h>
 
 #include "src/storage/blobfs/blobfs_metrics.h"
 #include "src/storage/blobfs/compression_settings.h"
@@ -29,6 +27,8 @@
 #include "src/storage/blobfs/iterator/block_iterator_provider.h"
 #include "src/storage/blobfs/loader_info.h"
 #include "src/storage/blobfs/transaction_manager.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/lib/vfs/cpp/ticker.h"
 

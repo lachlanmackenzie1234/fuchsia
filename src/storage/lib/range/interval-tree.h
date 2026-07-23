@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_RANGE_INCLUDE_RANGE_INTERVAL_TREE_H_
-#define SRC_STORAGE_LIB_RANGE_INCLUDE_RANGE_INTERVAL_TREE_H_
+#ifndef SRC_STORAGE_LIB_RANGE_INTERVAL_TREE_H_
+#define SRC_STORAGE_LIB_RANGE_INTERVAL_TREE_H_
 
 #include <zircon/assert.h>
 
 #include <map>
 #include <utility>
 
-#include <range/range.h>
+#include "src/storage/lib/range/range.h"
 
 namespace range {
 
@@ -238,4 +238,4 @@ class IntervalTree {
 
 }  // namespace range
 
-#endif  // SRC_STORAGE_LIB_RANGE_INCLUDE_RANGE_INTERVAL_TREE_H_
+#endif  // SRC_STORAGE_LIB_RANGE_INTERVAL_TREE_H_

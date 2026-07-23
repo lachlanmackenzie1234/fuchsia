@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/buffer/blocking_ring_buffer.h"
+#include "src/storage/lib/buffer/blocking_ring_buffer.h"
 
 #include <sched.h>
 
@@ -10,7 +10,8 @@
 #include <thread>
 
 #include <gtest/gtest.h>
-#include <storage/operation/unbuffered_operations_builder.h>
+
+#include "src/storage/lib/operation/unbuffered_operations_builder.h"
 
 namespace storage {
 namespace {

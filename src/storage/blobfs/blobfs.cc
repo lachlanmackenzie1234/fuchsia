@@ -39,10 +39,6 @@
 #include <fbl/ref_ptr.h>
 #include <id_allocator/id_allocator.h>
 #include <safemath/safe_conversions.h>
-#include <storage/buffer/blocking_ring_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
-#include <storage/operation/unbuffered_operation.h>
 
 #include "src/lib/digest/digest.h"
 #include "src/storage/blobfs/allocator/allocator.h"
@@ -71,6 +67,10 @@
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_client/cpp/pass_through_read_only_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
+#include "src/storage/lib/buffer/blocking_ring_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
 #include "src/storage/lib/vfs/cpp/inspect/inspect_data.h"

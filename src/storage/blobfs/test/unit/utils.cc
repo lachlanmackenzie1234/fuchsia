@@ -9,7 +9,8 @@
 
 #include <gtest/gtest.h>
 #include <safemath/checked_math.h>
-#include <storage/buffer/owned_vmoid.h>
+
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 using id_allocator::IdAllocator;
 

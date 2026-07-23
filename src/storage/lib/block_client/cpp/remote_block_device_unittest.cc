@@ -19,9 +19,9 @@
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
 #include <gtest/gtest.h>
-#include <storage/buffer/owned_vmoid.h>
 
 #include "src/devices/lib/block/block.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 namespace block_client {
 namespace {

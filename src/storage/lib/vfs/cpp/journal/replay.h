@@ -11,10 +11,9 @@
 #include <cstdint>
 #include <vector>
 
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
-
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/journal/superblock.h"
 #include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
 

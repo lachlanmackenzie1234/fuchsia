@@ -25,9 +25,8 @@
 #include "src/storage/minfs/writeback.h"
 
 #ifdef __Fuchsia__
-#include <storage/buffer/mapped_vmo.h>
-
 #include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/buffer/mapped_vmo.h"
 #else
 #include "src/storage/minfs/bcache.h"
 #endif

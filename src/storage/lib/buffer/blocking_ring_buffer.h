@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_BLOCKING_RING_BUFFER_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_BLOCKING_RING_BUFFER_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_BLOCKING_RING_BUFFER_H_
+#define SRC_STORAGE_LIB_BUFFER_BLOCKING_RING_BUFFER_H_
 
 #include <memory>
 #include <mutex>
 #include <utility>
 
-#include <storage/buffer/ring_buffer.h>
+#include "src/storage/lib/buffer/ring_buffer.h"
 
 namespace storage {
 
@@ -103,4 +103,4 @@ class BlockingRingBufferReservation final : public RingBufferReservation {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_BLOCKING_RING_BUFFER_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_BLOCKING_RING_BUFFER_H_

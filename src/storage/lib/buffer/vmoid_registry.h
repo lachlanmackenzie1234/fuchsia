@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMOID_REGISTRY_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMOID_REGISTRY_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_VMOID_REGISTRY_H_
+#define SRC_STORAGE_LIB_BUFFER_VMOID_REGISTRY_H_
 
 #include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <lib/zx/vmo.h>
@@ -63,4 +63,4 @@ class VmoidRegistry {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMOID_REGISTRY_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_VMOID_REGISTRY_H_

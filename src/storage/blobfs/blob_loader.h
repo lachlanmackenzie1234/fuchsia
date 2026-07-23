@@ -12,8 +12,6 @@
 #include <memory>
 #include <span>
 
-#include <storage/buffer/resizeable_vmo_buffer.h>
-
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blob_verifier.h"
 #include "src/storage/blobfs/blobfs_metrics.h"
@@ -23,6 +21,7 @@
 #include "src/storage/blobfs/loader_info.h"
 #include "src/storage/blobfs/node_finder.h"
 #include "src/storage/blobfs/transaction_manager.h"
+#include "src/storage/lib/buffer/resizeable_vmo_buffer.h"
 
 namespace blobfs {
 

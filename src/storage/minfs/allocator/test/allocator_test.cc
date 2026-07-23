@@ -20,12 +20,12 @@
 
 #include <fbl/array.h>
 #include <gtest/gtest.h>
-#include <storage/buffer/block_buffer.h>
-#include <storage/buffer/owned_vmoid.h>
-#include <storage/operation/operation.h>
-#include <storage/operation/unbuffered_operation.h>
-#include <storage/operation/unbuffered_operations_builder.h>
 
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
+#include "src/storage/lib/operation/operation.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
+#include "src/storage/lib/operation/unbuffered_operations_builder.h"
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/minfs/allocator/allocator_reservation.h"
 #include "src/storage/minfs/allocator/metadata.h"

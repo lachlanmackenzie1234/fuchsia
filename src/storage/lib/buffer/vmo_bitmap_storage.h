@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMO_BITMAP_STORAGE_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMO_BITMAP_STORAGE_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_VMO_BITMAP_STORAGE_H_
+#define SRC_STORAGE_LIB_BUFFER_VMO_BITMAP_STORAGE_H_
 
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
 
 #include <cstddef>
 
-#include <storage/buffer/mapped_vmo.h>
+#include "src/storage/lib/buffer/mapped_vmo.h"
 
 namespace storage {
 
@@ -45,4 +45,4 @@ class VmoBitmapStorage {
 
 }  // namespace storage
    //
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_VMO_BITMAP_STORAGE_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_VMO_BITMAP_STORAGE_H_

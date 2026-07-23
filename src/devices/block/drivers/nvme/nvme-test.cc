@@ -18,7 +18,6 @@
 #include <thread>
 
 #include <gtest/gtest.h>
-#include <storage/buffer/vmoid_registry.h>
 
 #include "src/devices/block/drivers/nvme/commands/nvme-io.h"
 #include "src/devices/block/drivers/nvme/fake/fake-admin-commands.h"
@@ -27,6 +26,7 @@
 #include "src/lib/testing/predicates/status.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
 
 namespace nvme {
 

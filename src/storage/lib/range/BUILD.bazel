@@ -12,7 +12,9 @@ package(
 cc_library(
     name = "range",
     srcs = ["range.cc"],
-    hdrs = ["include/range/range.h"],
-    includes = ["include"],
+    hdrs = [
+        "interval-tree.h",
+        "range.h",
+    ],
     target_compatible_with = ["@platforms//os:fuchsia"],
 )

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_RING_BUFFER_H_
-#define SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_RING_BUFFER_H_
+#ifndef SRC_STORAGE_LIB_BUFFER_RING_BUFFER_H_
+#define SRC_STORAGE_LIB_BUFFER_RING_BUFFER_H_
 
 #ifndef __Fuchsia__
 #error Fuchsia-only Header
@@ -15,9 +15,9 @@
 #include <mutex>
 #include <vector>
 
-#include <storage/buffer/block_buffer_view.h>
-#include <storage/buffer/vmo_buffer.h>
-#include <storage/operation/unbuffered_operation.h>
+#include "src/storage/lib/buffer/block_buffer_view.h"
+#include "src/storage/lib/buffer/vmo_buffer.h"
+#include "src/storage/lib/operation/unbuffered_operation.h"
 
 namespace storage {
 
@@ -238,4 +238,4 @@ class RingBufferRequests {
 
 }  // namespace storage
 
-#endif  // SRC_STORAGE_LIB_BUFFER_INCLUDE_STORAGE_BUFFER_RING_BUFFER_H_
+#endif  // SRC_STORAGE_LIB_BUFFER_RING_BUFFER_H_

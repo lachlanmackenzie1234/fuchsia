@@ -56,7 +56,7 @@ static_library("cpp") {
     ":interface",
     "//src/storage/lib/block_protocol:block_fifo",
 
-    # client.h has #include <storage/buffer/vmoid_registry.h>.
+    # client.h has #include "src/storage/lib/buffer/vmoid_registry.h".
     "//src/storage/lib/buffer",
 
     # client.h has #include <lib/zx/fifo.h>.

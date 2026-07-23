@@ -19,7 +19,7 @@
 #include "src/devices/lib/block/block.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
 #include "src/storage/lib/block_server/block_server.h"
-#include "storage/buffer/owned_vmoid.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 namespace block_server {
 namespace {

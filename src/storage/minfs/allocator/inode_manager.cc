@@ -17,12 +17,11 @@
 #include <memory>
 #include <utility>
 
-#include <storage/buffer/owned_vmoid.h>
-#include <storage/buffer/vmoid_registry.h>
-#include <storage/operation/operation.h>
-
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_protocol/types.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
+#include "src/storage/lib/buffer/vmoid_registry.h"
+#include "src/storage/lib/operation/operation.h"
 #include "src/storage/lib/vfs/cpp/transaction/buffered_operations_builder.h"
 #include "src/storage/minfs/allocator/allocator.h"
 #include "src/storage/minfs/allocator/metadata.h"

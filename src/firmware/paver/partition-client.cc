@@ -18,11 +18,11 @@
 
 #include <fbl/algorithm.h>
 #include <fbl/unique_fd.h>
-#include <storage/buffer/owned_vmoid.h>
 
 #include "lib/fidl/cpp/wire/channel.h"
 #include "src/firmware/paver/pave-logging.h"
 #include "src/lib/uuid/uuid.h"
+#include "src/storage/lib/buffer/owned_vmoid.h"
 
 namespace paver {
 

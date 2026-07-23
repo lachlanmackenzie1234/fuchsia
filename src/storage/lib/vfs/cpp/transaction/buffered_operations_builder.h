@@ -11,15 +11,15 @@
 #include <cstdint>
 #include <vector>
 
-#include <storage/buffer/block_buffer.h>
-#include <storage/operation/operation.h>
+#include "src/storage/lib/buffer/block_buffer.h"
+#include "src/storage/lib/operation/operation.h"
 
 #ifdef __Fuchsia__
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 
 #include <utility>
 
-#include <storage/buffer/owned_vmoid.h>
+#include "src/storage/lib/buffer/owned_vmoid.h"
 #else
 #include <zircon/assert.h>
 #endif

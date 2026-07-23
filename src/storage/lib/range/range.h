@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_RANGE_INCLUDE_RANGE_RANGE_H_
-#define SRC_STORAGE_LIB_RANGE_INCLUDE_RANGE_RANGE_H_
+#ifndef SRC_STORAGE_LIB_RANGE_RANGE_H_
+#define SRC_STORAGE_LIB_RANGE_RANGE_H_
 
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -211,4 +211,4 @@ extern template bool Mergable<Range<uint64_t>>(const Range<uint64_t>& x, const R
 
 }  // namespace range
 
-#endif  // SRC_STORAGE_LIB_RANGE_INCLUDE_RANGE_RANGE_H_
+#endif  // SRC_STORAGE_LIB_RANGE_RANGE_H_

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/buffer/block_buffer_view.h"
+#include "src/storage/lib/buffer/block_buffer_view.h"
 
 #include <lib/zx/vmo.h>
 
@@ -10,7 +10,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <storage/buffer/vmo_buffer.h>
+
+#include "src/storage/lib/buffer/vmo_buffer.h"
 
 namespace storage {
 namespace {
