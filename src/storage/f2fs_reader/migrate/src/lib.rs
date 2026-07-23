@@ -67,14 +67,12 @@ fn migrate_xattr(
     for xattr in &inode.xattr {
         match xattr.index {
             XattrIndex::User => {
-                ensure!(
-                    xattr.name.len() < 9 || &xattr.name[..9] != b"security.",
-                    "illegal user-provided security context"
-                );
+                let mut name: Vec<u8> = b"user.".into();
+                name.extend_from_slice(&xattr.name);
                 transaction.add(
                     store.store_object_id(),
                     Mutation::replace_or_insert_object(
-                        ObjectKey::extended_attribute(object_id, xattr.name.to_vec()),
+                        ObjectKey::extended_attribute(object_id, name),
                         ObjectValue::inline_extended_attribute(xattr.value.to_vec()),
                     ),
                 );
@@ -636,10 +634,10 @@ pub async fn verify(
                     for xattr in &inode.xattr {
                         match xattr.index {
                             XattrIndex::User => {
-                                let fxfs_xattr_value = dir
-                                    .get_extended_attribute(xattr.name.to_vec())
-                                    .await
-                                    .context("xattr read")?;
+                                let mut name: Vec<u8> = b"user.".into();
+                                name.extend_from_slice(&xattr.name);
+                                let fxfs_xattr_value =
+                                    dir.get_extended_attribute(name).await.context("xattr read")?;
                                 assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
                             }
                             XattrIndex::Security => {
@@ -690,8 +688,10 @@ pub async fn verify(
                     for xattr in &inode.xattr {
                         match xattr.index {
                             XattrIndex::User => {
+                                let mut name: Vec<u8> = b"user.".into();
+                                name.extend_from_slice(&xattr.name);
                                 let fxfs_xattr_value = handle
-                                    .get_extended_attribute(xattr.name.to_vec())
+                                    .get_extended_attribute(name)
                                     .await
                                     .context("xattr read")?;
                                 assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
