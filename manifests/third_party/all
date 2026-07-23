@@ -496,7 +496,7 @@
              path="third_party/spirv-tools/src"
              remote="https://fuchsia.googlesource.com/third_party/spirv-tools"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="c6c58028313c7a46c9ad7661f21543e788b9cf57"/>
+             revision="a02b50e4d4046c313bfd85ed5be41576925a42e0"/>
     <project name="third_party/syzkaller"
              path="third_party/syzkaller"
              remote="https://fuchsia.googlesource.com/third_party/syzkaller"
