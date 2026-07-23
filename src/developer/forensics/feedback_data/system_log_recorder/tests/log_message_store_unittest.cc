@@ -24,6 +24,8 @@ namespace feedback_data {
 namespace system_log_recorder {
 namespace {
 
+using ConsumeResult = LogMessageStore::ConsumeResult;
+
 ::fpromise::result<fuchsia::logger::LogMessage, std::string> BuildLogMessage(
     const int32_t severity, const std::string& text,
     const zx::duration timestamp_offset = zx::duration(0),
@@ -94,8 +96,8 @@ TEST(LogMessageStoreTest, UnlimitedMessages) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
 
-  bool end_of_block;
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 2 MORE TIMES !!!
 [15604.000][07559][07687][] INFO: line 1
 !!! MESSAGE REPEATED 2 MORE TIMES !!!
@@ -103,7 +105,7 @@ TEST(LogMessageStoreTest, UnlimitedMessages) {
 !!! MESSAGE REPEATED 2 MORE TIMES !!!
 )");
 
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, AppliesRedaction) {
@@ -122,8 +124,8 @@ TEST(LogMessageStoreTest, AppliesRedaction) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
 
-  bool end_of_block;
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: R: 1
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: R: 1
 [15604.000][07559][07687][] INFO: R: 2
 [15604.000][07559][07687][] INFO: R: 3
 [15604.000][07559][07687][] INFO: R: 4
@@ -134,7 +136,7 @@ TEST(LogMessageStoreTest, AppliesRedaction) {
 [15604.000][07559][07687][] INFO: R: 9
 )");
 
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, AppliesRedactionToTags) {
@@ -143,9 +145,7 @@ TEST(LogMessageStoreTest, AppliesRedactionToTags) {
 
   EXPECT_TRUE(
       store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::duration(0), {"tag1", "tag2"})));
-
-  bool end_of_block;
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][R, R] INFO: R
+  EXPECT_EQ(store.Consume().log, R"([15604.000][07559][07687][R, R] INFO: R
 )");
 }
 
@@ -165,12 +165,12 @@ TEST(LogMessageStoreTest, RedactionCompressed) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
 
-  bool end_of_block;
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: R
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: R
 !!! MESSAGE REPEATED 8 MORE TIMES !!!
 )");
 
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyBlock) {
@@ -178,26 +178,33 @@ TEST(LogMessageStoreTest, VerifyBlock) {
   LogMessageStore store(kMaxLogLineSize * 2, kMaxLogLineSize, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
   store.TurnOnRateLimiting();
-  bool end_of_block;
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 1
+
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 1
 )");
-  EXPECT_TRUE(end_of_block);
+  EXPECT_TRUE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 2
+
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 2
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 3
+
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 3
 )");
-  EXPECT_TRUE(end_of_block);
+  EXPECT_TRUE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, AddAndConsume) {
@@ -205,27 +212,27 @@ TEST(LogMessageStoreTest, AddAndConsume) {
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
   store.TurnOnRateLimiting();
-  bool end_of_block;
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 [15604.000][07559][07687][] INFO: line 1
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 2
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 2
 [15604.000][07559][07687][] INFO: line 3
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, DropsCorrectly) {
-  bool end_of_block;
   // Set up the store to hold 2 log lines to test that the subsequent 3 are dropped.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2, MakeIdentityRedactor(),
                         MakeIdentityEncoder());
@@ -237,15 +244,15 @@ TEST(LogMessageStoreTest, DropsCorrectly) {
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 4")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 [15604.000][07559][07687][] INFO: line 1
 !!! DROPPED 3 MESSAGES !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, DropsSubsequentShorterMessages) {
-  bool end_of_block;
   // Even though the store could hold 2 log lines, all the lines after the first one will be
   // dropped because the second log message is very long.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2, MakeIdentityRedactor(),
@@ -260,14 +267,14 @@ TEST(LogMessageStoreTest, DropsSubsequentShorterMessages) {
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 4")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! DROPPED 4 MESSAGES !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepetitionMessage_AtConsume) {
-  bool end_of_block;
   // Set up the store to hold 2 log line. With three repeated messages, the last two messages
   // should get reduced to a single repeated message.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize, MakeIdentityRedactor(),
@@ -278,14 +285,14 @@ TEST(LogMessageStoreTest, VerifyRepetitionMessage_AtConsume) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 2 MORE TIMES !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepetition_DoNotResetRepeatedWarningOnConsume) {
-  bool end_of_block;
   // Test that we only write repeated warning messages when repeated messages span over 2 buffers.
   // Block capacity: very large (unlimited for this example)
   // Buffer capacity: 1 log message
@@ -310,21 +317,22 @@ TEST(LogMessageStoreTest, VerifyRepetition_DoNotResetRepeatedWarningOnConsume) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 2 MORE TIMES !!!
 )");
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"(!!! MESSAGE REPEATED 2 MORE TIMES !!!
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"(!!! MESSAGE REPEATED 2 MORE TIMES !!!
 )");
-
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepetition_ResetRepeatedWarningOnConsume) {
-  bool end_of_block;
   // Test that the first log of a block should not be a repeated warning message.
   // Block capacity: 1 log message
   // Buffer capacity: 1 log message
@@ -352,24 +360,25 @@ TEST(LogMessageStoreTest, VerifyRepetition_ResetRepeatedWarningOnConsume) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 2 MORE TIMES !!!
 )");
 
-  EXPECT_TRUE(end_of_block);
+  EXPECT_TRUE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 )");
 
-  EXPECT_TRUE(end_of_block);
+  EXPECT_TRUE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepetition_LimitRepetitionBuffers) {
-  bool end_of_block;
   // Test that repeated messages do not extend over more than kMaxRepeatedBuffers.
   // Block capacity: 2 * kMaxRepeatedBuffer log message (test only uses one block)
   // Buffer capacity: 2 log messages
@@ -397,31 +406,30 @@ TEST(LogMessageStoreTest, VerifyRepetition_LimitRepetitionBuffers) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  EXPECT_EQ(store.Consume().log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 )");
 
   for (size_t i = 1; i < kMaxRepeatedBuffers; i++) {
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
-    EXPECT_EQ(store.Consume(&end_of_block), R"(!!! MESSAGE REPEATED 1 MORE TIME !!!
+    EXPECT_EQ(store.Consume().log, R"(!!! MESSAGE REPEATED 1 MORE TIME !!!
 )");
   }
 
   for (size_t i = 0; i < kMaxRepeatedBuffers; i++) {
     EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
-    EXPECT_EQ(store.Consume(&end_of_block), "");
+    EXPECT_EQ(store.Consume().log, "");
   }
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
-  EXPECT_EQ(store.Consume(&end_of_block),
-            "!!! MESSAGE REPEATED " + std::to_string(kMaxRepeatedBuffers) + " MORE TIMES !!!\n" +
-                "[15604.000][07559][07687][] INFO: line 1\n");
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, "!!! MESSAGE REPEATED " + std::to_string(kMaxRepeatedBuffers) +
+                            " MORE TIMES !!!\n" + "[15604.000][07559][07687][] INFO: line 1\n");
 
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepetitionMessage_WhenMessageChanges) {
-  bool end_of_block;
   // Set up the store to hold 3 log line. Verify that a repetition message appears after input
   // repetition and before the input change.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2 + kRepeatedFormatStrSize,
@@ -432,15 +440,15 @@ TEST(LogMessageStoreTest, VerifyRepetitionMessage_WhenMessageChanges) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 [15604.000][07559][07687][] INFO: line 1
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepetitionMessage_WhenSeverityChanges) {
-  bool end_of_block;
   // Set up the store to hold 3 log line. Verify that a repetition message appears after input
   // repetition and before the input severity change.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2 + kRepeatedFormatStrSize,
@@ -451,15 +459,15 @@ TEST(LogMessageStoreTest, VerifyRepetitionMessage_WhenSeverityChanges) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_WARNING, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 [15604.000][07559][07687][] WARN: line 0
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepetitionMessage_WhenTagsChange) {
-  bool end_of_block;
   // Set up the store to hold 4 log lines. Verify that a repetition message appears after
   // input repetition and before the input change.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 3 + kRepeatedFormatStrSize,
@@ -471,15 +479,15 @@ TEST(LogMessageStoreTest, VerifyRepetitionMessage_WhenTagsChange) {
   EXPECT_TRUE(
       store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::duration(0), {"tag1", "tag2"})));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][tag1] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][tag1] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 [15604.000][07559][07687][tag1, tag2] INFO: line 0
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyDroppedRepeatedMessage_OnBufferFull) {
-  bool end_of_block;
   // Set up the store to hold 1 log line. Verify that repeated messages that occur after the
   // buffer is full get dropped.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 1, MakeIdentityRedactor(),
@@ -490,14 +498,14 @@ TEST(LogMessageStoreTest, VerifyDroppedRepeatedMessage_OnBufferFull) {
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! DROPPED 2 MESSAGES !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyNoRepeatMessage_AfterFirstConsume) {
-  bool end_of_block;
   // Set up the store to hold 1 log line. Verify that there is no repeat message right after
   // dropping messages.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 1, MakeIdentityRedactor(),
@@ -507,19 +515,21 @@ TEST(LogMessageStoreTest, VerifyNoRepeatMessage_AfterFirstConsume) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! DROPPED 1 MESSAGES !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 1
+
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 1
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepeatMessage_AfterFirstConsume) {
-  bool end_of_block;
   // Set up the store to hold 3 log lines. Verify that there can be a repeat message after
   // consume, when no messages were dropped.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 3, MakeIdentityRedactor(),
@@ -530,20 +540,22 @@ TEST(LogMessageStoreTest, VerifyRepeatMessage_AfterFirstConsume) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 [15604.000][07559][07687][] INFO: line 1
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
-  EXPECT_EQ(store.Consume(&end_of_block), R"(!!! MESSAGE REPEATED 1 MORE TIME !!!
+
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"(!!! MESSAGE REPEATED 1 MORE TIME !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyRepeatedAndDropped) {
-  bool end_of_block;
   // Set up the store to hold 2 log lines. Verify that we can have the repeated message, and then
   // the dropped message.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2, MakeIdentityRedactor(),
@@ -554,20 +566,22 @@ TEST(LogMessageStoreTest, VerifyRepeatedAndDropped) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 !!! DROPPED 1 MESSAGES !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 1
+
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 1
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyNoRepeatMessage_TimeOrdering) {
-  bool end_of_block;
   // Set up the store to hold 2 log line. Verify time ordering: a message cannot be counted as
   // repeated if it's in between messages, even if those messages get dropped.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2, MakeIdentityRedactor(),
@@ -581,20 +595,21 @@ TEST(LogMessageStoreTest, VerifyNoRepeatMessage_TimeOrdering) {
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! DROPPED 5 MESSAGES !!!
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyAppendToEnd) {
-  bool end_of_block;
   // Set up the store to hold 2 log line. Verify time ordering: a message cannot be counted as
   // repeated if it's in between messages, even if those messages get dropped.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2, MakeIdentityRedactor(),
@@ -609,22 +624,23 @@ TEST(LogMessageStoreTest, VerifyAppendToEnd) {
   EXPECT_FALSE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   store.AppendToEnd("DONE\n");
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 !!! DROPPED 4 MESSAGES !!!
 DONE
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 TEST(LogMessageStoreTest, VerifyNoRepeatWarningAfter_AppendToEnd) {
-  bool end_of_block;
   // Set up the store to hold 2 log line. Verify time ordering: a message cannot be counted as
   // repeated if it's in between messages, even if those messages get dropped.
   LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 2, MakeIdentityRedactor(),
@@ -635,17 +651,19 @@ TEST(LogMessageStoreTest, VerifyNoRepeatWarningAfter_AppendToEnd) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
   store.AppendToEnd("DONE\n");
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 !!! MESSAGE REPEATED 1 MORE TIME !!!
 DONE
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
 
-  EXPECT_EQ(store.Consume(&end_of_block), R"([15604.000][07559][07687][] INFO: line 0
+  result = store.Consume();
+  EXPECT_EQ(result.log, R"([15604.000][07559][07687][] INFO: line 0
 )");
-  EXPECT_FALSE(end_of_block);
+  EXPECT_FALSE(result.end_of_block);
 }
 
 }  // namespace

@@ -37,6 +37,14 @@ namespace system_log_recorder {
 // pushed entirely, even if it means going overbound.
 class LogMessageStore : public LogSink {
  public:
+  struct ConsumeResult {
+    ConsumeResult(std::string log, bool end_of_block)
+        : log(std::move(log)), end_of_block(end_of_block) {}
+
+    std::string log;
+    bool end_of_block;
+  };
+
   LogMessageStore(StorageSize max_block_capacity, StorageSize max_buffer_capacity,
                   std::unique_ptr<RedactorBase> redactor, std::unique_ptr<Encoder> encoder);
 
@@ -56,9 +64,10 @@ class LogMessageStore : public LogSink {
   // messages.
   void AppendToEnd(const std::string& str);
 
-  // Consumes the contents of the store as a string and sends a signal that notifies the end
-  // of the block (after the returned string). Calling Consume will empty the store.
-  std::string Consume(bool* end_of_block);
+  // Consumes the contents of the store and returns a ConsumeResult containing the log string and a
+  // signal that notifies the end of the block (after the returned string). Calling Consume will
+  // empty the store.
+  ConsumeResult Consume();
 
   void TurnOnRateLimiting() { buffer_rate_limit_ = true; }
 

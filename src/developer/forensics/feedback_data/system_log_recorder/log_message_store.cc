@@ -121,8 +121,7 @@ bool LogMessageStore::Add(LogSink::MessageOr message) {
   return false;
 }
 
-std::string LogMessageStore::Consume(bool* end_of_block) {
-  FX_CHECK(end_of_block != nullptr);
+LogMessageStore::ConsumeResult LogMessageStore::Consume() {
   TRACE_DURATION("feedback:io", "LogMessageStore::Consume");
 
   std::lock_guard<std::mutex> lk(mtx_);
@@ -163,12 +162,10 @@ std::string LogMessageStore::Consume(bool* end_of_block) {
     // We reset the last message pushed and its count so that we don't have a block starting with a
     // repeated message without the actual message.
     ResetLastPushedMessage();
-    *end_of_block = true;
-  } else {
-    *end_of_block = false;
+    return LogMessageStore::ConsumeResult(std::move(str), /*end_of_block=*/true);
   }
 
-  return str;
+  return LogMessageStore::ConsumeResult(std::move(str), /*end_of_block=*/false);
 }
 
 void LogMessageStore::AppendToEnd(const std::string& str) { to_append_ = str; }

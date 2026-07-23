@@ -77,17 +77,16 @@ void SystemLogWriter::StartNewFile() {
 
 void SystemLogWriter::Write() {
   TRACE_DURATION("feedback:io", "SystemLogWriter::Write");
-  bool end_of_block;
-  const std::string str = store_->Consume(&end_of_block);
+  const LogMessageStore::ConsumeResult result = store_->Consume();
 
   // The file descriptor could be negative if the file failed to open.
   if (current_file_descriptor_.is_valid()) {
     // Overcommit, i.e. write everything we consumed before starting a new file for the next
     // block as we cannot have a block spanning multiple files.
-    write(current_file_descriptor_.get(), str.c_str(), str.size());
+    write(current_file_descriptor_.get(), result.log.c_str(), result.log.size());
   }
 
-  if (end_of_block) {
+  if (result.end_of_block) {
     StartNewFile();
   }
 }

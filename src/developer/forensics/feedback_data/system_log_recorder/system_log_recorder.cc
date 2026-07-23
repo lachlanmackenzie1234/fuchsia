@@ -68,8 +68,7 @@ void SystemLogRecorder::StopAndDeleteLogs() {
   periodic_write_task_.Cancel();
 
   // Consume the data currently in the store to flush it.
-  bool end_of_block;
-  store_.Consume(&end_of_block);
+  store_.Consume();
 
   // Delete the persisted logs.
   files::DeletePath(logs_dir_, /*recursive=*/true);
