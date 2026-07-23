@@ -200,7 +200,7 @@ rayon = "1.10.0"
 ref-cast = "1.0.25"
 regex = "1.12.3"
 regex-lite = "0.1.9"
-ring = "0.17.8"
+ring = "0.17.14"
 rkyv = { version = "0.8.16", features = ["little_endian", "unaligned", "pointer_width_32"] }
 rsa = { version = "0.9.10", default-features = false }
 rustc-hash = "1.0.1"
@@ -456,7 +456,6 @@ prettytable-rs = { path = "forks/prettytable-rs" }
 #pulldown-cmark = { path = "forks/pulldown-cmark" }
 # Fork of `rapidhash` has quality benchmarks removed; see forks/rapidhash-1.4.0/README.fuchsia.
 rapidhash = { path = "forks/rapidhash-1.4.0" }
-ring = { path = "forks/ring-0.17.8" }
 semver = { path = "forks/semver-1.0.28" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
@@ -962,13 +961,13 @@ env_vars = [
 [gn.package.regex."1.12.3"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "regex_visibility" }
 
-[gn.package.ring."0.17.8"]
+[gn.package.ring."0.17.14"]
 # See https://fxbug.dev/104855 if you want to change this: Please talk to Security team.
 # Thank you!
 visibility = [
   "//third_party/rust_crates/compat/icu:*",
   ":ring",
-  ":ring-0.17.8",
+  ":ring-0.17.14",
   ":rustls-v0_21_12.actual",
   ":rustls-v0_21_12.rustdoc",
   ":rustls-v0_21_12.aux.deps.deps",
@@ -990,8 +989,15 @@ visibility = [
   ":tuf-v0_3_0-beta14.aux.deps.transdeps",
   ":tuf-v0_3_0-beta14.actual.rust_compilation_deps",
 ]
-deps = [ "//third_party/rust_crates/compat/ring-0.17.8:ring-core" ]
-env_vars = [ "RING_CORE_PREFIX=ring_core_0_17_8_" ]
+deps = [ "//third_party/rust_crates/compat/ring-0.17.14:ring-core" ]
+env_vars = [
+  "CARGO_PKG_NAME=ring",
+  "CARGO_PKG_VERSION_MAJOR=0",
+  "CARGO_PKG_VERSION_MINOR=17",
+  "CARGO_PKG_VERSION_PATCH=14",
+  "CARGO_PKG_VERSION_PRE=",
+  "RING_CORE_PREFIX=ring_core_0_17_14_",
+]
 
 [gn.package.ringbuf."0.4.8"]
 configs = [

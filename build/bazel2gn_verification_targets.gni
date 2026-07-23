@@ -120,7 +120,7 @@ bazel2gn_verification_targets = [
   "//src/sys/lib/notify-batch-watcher:verify_bazel2gn",
   "//src/sys/pkg/lib/repo:verify_bazel2gn",
   "//src/sys/pkg/testing/fake-omaha-client:verify_bazel2gn",
-  "//third_party/rust_crates/compat/ring-0.17.8:verify_bazel2gn",
+  "//third_party/rust_crates/compat/ring-0.17.14:verify_bazel2gn",
   "//tools/botanist:verify_bazel2gn",
   "//tools/build/gndoc:verify_bazel2gn",
   "//tools/build/ninjago/buildstats:verify_bazel2gn",

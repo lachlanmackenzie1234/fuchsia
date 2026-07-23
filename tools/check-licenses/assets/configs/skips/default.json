@@ -188,8 +188,7 @@
         {
             "paths": [
                 "third_party/rust_crates/compat/brotli",
-                "third_party/rust_crates/compat/ring-0.16.20",
-                "third_party/rust_crates/compat/ring-0.17.8"
+                "third_party/rust_crates/compat/ring-0.17.14"
             ],
             "description": "3p rust crates with no sources or license files."
         },

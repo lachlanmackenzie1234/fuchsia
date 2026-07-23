@@ -1636,11 +1636,11 @@ group("regex-lite-0.1.9") {
 }
 
 group("ring") {
-  public_deps = [ ":ring-v0_17_8" ]
+  public_deps = [ ":ring-v0_17_14" ]
 }
 
-group("ring-0.17.8") {
-  public_deps = [ ":ring-v0_17_8" ]
+group("ring-0.17.14") {
+  public_deps = [ ":ring-v0_17_14" ]
 }
 
 group("rkyv") {
@@ -17889,18 +17889,22 @@ rustc_library("rfc6979-v0_6_0") {
   applicable_licenses = [ ":rfc6979-v0_6_0.license" ]
 }
 
-license("ring-v0_17_8.license") {
+license("ring-v0_17_14.license") {
   public_package_name = "ring"
   license_files = [
-    "//third_party/rust_crates/forks/ring-0.17.8/LICENSE",
-    "//third_party/rust_crates/forks/ring-0.17.8/third_party/fiat/LICENSE",
+    "//third_party/rust_crates/vendor/ring-0.17.14/LICENSE",
+    "//third_party/rust_crates/vendor/ring-0.17.14/LICENSE-BoringSSL",
+    "//third_party/rust_crates/vendor/ring-0.17.14/LICENSE-other-bits",
+    "//third_party/rust_crates/vendor/ring-0.17.14/src/polyfill/once_cell/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ring-0.17.14/src/polyfill/once_cell/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ring-0.17.14/third_party/fiat/LICENSE",
   ]
 }
 
-rustc_library("ring-v0_17_8") {
+rustc_library("ring-v0_17_14") {
   crate_name = "ring"
-  source_root = "//third_party/rust_crates/forks/ring-0.17.8/src/lib.rs"
-  output_name = "ring-ce58712b7a524741"
+  source_root = "//third_party/rust_crates/vendor/ring-0.17.14/src/lib.rs"
+  output_name = "ring-cac0830246d962e0"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17910,22 +17914,31 @@ rustc_library("ring-v0_17_8") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":getrandom-v0_2_17" ]
   deps += [ ":untrusted-v0_9_0" ]
-  if ((false || current_os == "linux") && (current_cpu == "arm64" || false)) {
-    deps += [ ":libc-v0_2_186" ]
-  }
-  if (current_cpu == "arm64" && false) {
+  if (current_cpu == "arm64" && true && false) {
     deps += [ ":windows-sys-v0_52_0" ]
   }
-  if (current_cpu == "arm64" || false || false || current_cpu == "x64") {
-    deps += [ ":spin-v0_9_8" ]
+  if (current_cpu == "arm64" && true && false &&
+      (false || current_os == "mac" || false || false || false)) {
+    deps += [ ":libc-v0_2_186" ]
   }
-  deps += [ "//third_party/rust_crates/compat/ring-0.17.8:ring-core" ]
-  rustenv = [ "RING_CORE_PREFIX=ring_core_0_17_8_" ]
+  if (((current_cpu == "arm64" && true) || (false && true)) &&
+      (false || current_os == "linux")) {
+    deps += [ ":libc-v0_2_186" ]
+  }
+  deps += [ "//third_party/rust_crates/compat/ring-0.17.14:ring-core" ]
+  rustenv = [
+    "CARGO_PKG_NAME=ring",
+    "CARGO_PKG_VERSION_MAJOR=0",
+    "CARGO_PKG_VERSION_MINOR=17",
+    "CARGO_PKG_VERSION_PATCH=14",
+    "CARGO_PKG_VERSION_PRE=",
+    "RING_CORE_PREFIX=ring_core_0_17_14_",
+  ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ce58712b7a524741",
-    "-Cextra-filename=-ce58712b7a524741",
+    "-Cmetadata=cac0830246d962e0",
+    "-Cextra-filename=-cac0830246d962e0",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"dev_urandom_fallback\"",
@@ -17934,7 +17947,7 @@ rustc_library("ring-v0_17_8") {
   visibility = []
   visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":ring" ]
-  visibility += [ ":ring-0.17.8" ]
+  visibility += [ ":ring-0.17.14" ]
   visibility += [ ":rustls-v0_21_12.actual" ]
   visibility += [ ":rustls-v0_21_12.rustdoc" ]
   visibility += [ ":rustls-v0_21_12.aux.deps.deps" ]
@@ -17956,7 +17969,7 @@ rustc_library("ring-v0_17_8") {
   visibility += [ ":tuf-v0_3_0-beta14.aux.deps.transdeps" ]
   visibility += [ ":tuf-v0_3_0-beta14.actual.rust_compilation_deps" ]
 
-  applicable_licenses = [ ":ring-v0_17_8.license" ]
+  applicable_licenses = [ ":ring-v0_17_14.license" ]
 }
 
 license("ringbuf-v0_4_8.license") {
@@ -18702,8 +18715,8 @@ rustc_library("rustls-v0_21_12") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ring-v0_17_8" ]
   deps += [ ":log-v0_4_29" ]
+  deps += [ ":ring-v0_17_14" ]
   deps += [ ":rustls-webpki-v0_101_7" ]
   deps += [ ":sct-v0_7_1" ]
 
@@ -19508,7 +19521,7 @@ rustc_library("sct-v0_7_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ring-v0_17_8" ]
+  deps += [ ":ring-v0_17_14" ]
   deps += [ ":untrusted-v0_9_0" ]
 
   rustenv = []
@@ -20947,36 +20960,6 @@ rustc_library("socket2-v0_6_4") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":socket2-v0_6_4.license" ]
-}
-
-license("spin-v0_9_8.license") {
-  public_package_name = "spin"
-  license_files = [ "//third_party/rust_crates/vendor/spin-0.9.8/LICENSE" ]
-}
-
-rustc_library("spin-v0_9_8") {
-  crate_name = "spin"
-  source_root = "//third_party/rust_crates/vendor/spin-0.9.8/src/lib.rs"
-  output_name = "spin-82f46a02c0d94e5"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=82f46a02c0d94e5",
-    "-Cextra-filename=-82f46a02c0d94e5",
-    "--cfg=feature=\"once\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":spin-v0_9_8.license" ]
 }
 
 license("spki-v0_6_0.license") {
@@ -23096,7 +23079,6 @@ rustc_library("tuf-v0_3_0-beta14") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ring-v0_17_8" ]
   deps += [ ":chrono-v0_4_45" ]
   deps += [ ":data-encoding-v2_11_0" ]
   deps += [ ":futures-io-v0_3_31" ]
@@ -23106,6 +23088,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":percent-encoding-v2_3_1" ]
+  deps += [ ":ring-v0_17_14" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":tempfile-v3_27_0" ]
@@ -24419,7 +24402,7 @@ rustc_library("rustls-webpki-v0_101_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ring-v0_17_8" ]
+  deps += [ ":ring-v0_17_14" ]
   deps += [ ":untrusted-v0_9_0" ]
 
   rustenv = []

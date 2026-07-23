@@ -82,8 +82,8 @@ rust_library(
     }),
     version = "0.21.12",
     deps = [
-        "//third_party/rust_crates/forks/ring-0.17.8:ring",
         "//third_party/rust_crates/vendor/log-0.4.29:log",
+        "//third_party/rust_crates/vendor/ring-0.17.14:ring",
         "//third_party/rust_crates/vendor/rustls-0.21.12:build_script_build",
         "//third_party/rust_crates/vendor/rustls-webpki-0.101.7:webpki",
         "//third_party/rust_crates/vendor/sct-0.7.1:sct",
@@ -132,7 +132,7 @@ cargo_build_script(
     ),
     edition = "2021",
     link_deps = [
-        "//third_party/rust_crates/forks/ring-0.17.8:ring",
+        "//third_party/rust_crates/vendor/ring-0.17.14:ring",
     ],
     pkg_name = "rustls",
     rustc_flags = [

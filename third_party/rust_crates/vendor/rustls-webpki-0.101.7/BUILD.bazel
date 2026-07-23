@@ -75,7 +75,7 @@ rust_library(
     }),
     version = "0.101.7",
     deps = [
-        "//third_party/rust_crates/forks/ring-0.17.8:ring",
+        "//third_party/rust_crates/vendor/ring-0.17.14:ring",
         "//third_party/rust_crates/vendor/untrusted-0.9.0:untrusted",
     ],
 )
