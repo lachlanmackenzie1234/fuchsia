@@ -10,9 +10,9 @@ import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_internal as f_wlan_internal
+import fidl_fuchsia_wlan_sme as f_wlan_sme
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStatusResponse,
     CountryCode,
     WlanInterfaces,
 )
@@ -176,12 +176,11 @@ class AsyncWlanCore(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def status(self) -> ClientStatusResponse:
+    async def status(self) -> f_wlan_sme.ClientStatusResponse:
         """Request connection status
 
         Returns:
-            An implementation of the ClientStatusResponse protocol:
-            ClientStatusConnected, ClientStatusConnecting, or ClientStatusIdle.
+            fuchsia.wlan.sme/ClientStatusResponse FIDL union.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack
@@ -360,12 +359,11 @@ class WlanCore(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def status(self) -> ClientStatusResponse:
+    def status(self) -> f_wlan_sme.ClientStatusResponse:
         """Request connection status
 
         Returns:
-            An implementation of the ClientStatusResponse protocol:
-            ClientStatusConnected, ClientStatusConnecting, or ClientStatusIdle.
+            fuchsia.wlan.sme/ClientStatusResponse FIDL union.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack

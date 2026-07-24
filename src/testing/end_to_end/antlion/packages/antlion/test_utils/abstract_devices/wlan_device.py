@@ -24,11 +24,6 @@ from honeydew.affordances.connectivity.netstack.errors import (
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStatusConnected,
-    ClientStatusConnecting,
-    ClientStatusIdle,
-)
 from mobly.records import TestResultRecord
 
 DEFAULT_ASSOCIATE_TIMEOUT_SEC = 30
@@ -530,31 +525,28 @@ class FuchsiaWlanDevice(SupportsWLAN):
 
     def is_connected(self, ssid: str | None = None) -> bool:
         result = self.device.honeydew_fd.wlan_core_deprecated_sync.status()
-        match result:
-            case ClientStatusIdle():
-                self.device.log.info("Client status idle")
-                return False
-            case ClientStatusConnecting():
-                ssid_bytes = bytearray(result.ssid).decode(
-                    encoding="utf-8", errors="replace"
-                )
-                self.device.log.info(
-                    f"Client status connecting to ssid: {ssid_bytes}"
-                )
-                return False
-            case ClientStatusConnected():
-                ssid_bytes = bytearray(result.ssid).decode(
-                    encoding="utf-8", errors="replace"
-                )
-                self.device.log.info(f"Client connected to ssid: {ssid_bytes}")
-                if ssid is None:
-                    return True
-                return ssid == ssid_bytes
-            case _:
-                raise ValueError(
-                    "Status did not return a valid status response: "
-                    f"{result}"
-                )
+        if result.idle:
+            self.device.log.info("Client status idle")
+            return False
+        if result.connecting:
+            ssid_bytes = bytearray(result.connecting).decode(
+                encoding="utf-8", errors="replace"
+            )
+            self.device.log.info(
+                f"Client status connecting to ssid: {ssid_bytes}"
+            )
+            return False
+        if result.connected:
+            ssid_bytes = bytearray(result.connected.ssid).decode(
+                encoding="utf-8", errors="replace"
+            )
+            self.device.log.info(f"Client connected to ssid: {ssid_bytes}")
+            if ssid is None:
+                return True
+            return ssid == ssid_bytes
+        raise ValueError(
+            f"Status did not return a valid status response: {result}"
+        )
 
     def hard_power_cycle(self, pdus: list[PduDevice]) -> None:
         self.device.reboot(reboot_type="hard", testbed_pdus=pdus)

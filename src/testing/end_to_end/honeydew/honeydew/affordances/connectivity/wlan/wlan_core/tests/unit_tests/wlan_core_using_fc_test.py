@@ -23,12 +23,8 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStatusConnected,
-    ClientStatusConnecting,
-    ClientStatusIdle,
     CountryCode,
     InformationElementType,
-    WlanChannel,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.errors import NotSupportedError
@@ -106,18 +102,6 @@ _TEST_SERVING_AP_INFO = f_wlan_sme.ServingApInfo(
     rssi_dbm=4,
     snr_db=5,
     channel=f_wlan_ieee80211.WlanChannel(
-        primary=1,
-        cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20,
-        secondary80=3,
-    ),
-    protection=f_wlan_sme.Protection.WPA2_PERSONAL,
-)
-_TEST_CLIENT_STATUS_CONNECTED = ClientStatusConnected(
-    bssid=[1, 2, 3, 4, 5, 6],
-    ssid=_TEST_SSID_BYTES,
-    rssi_dbm=4,
-    snr_db=5,
-    channel=WlanChannel(
         primary=1,
         cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20,
         secondary80=3,
@@ -856,7 +840,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
                 None,
-                ClientStatusIdle(),
+                f_wlan_sme.ClientStatusResponse(idle=f_wlan_sme.Empty()),
             ),
             (
                 "valid - connected",
@@ -866,7 +850,9 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
                 None,
-                _TEST_CLIENT_STATUS_CONNECTED,
+                f_wlan_sme.ClientStatusResponse(
+                    connected=_TEST_SERVING_AP_INFO
+                ),
             ),
             (
                 "valid - connecting",
@@ -876,7 +862,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
                 None,
-                ClientStatusConnecting(_TEST_SSID_BYTES),
+                f_wlan_sme.ClientStatusResponse(connecting=_TEST_SSID_BYTES),
             ),
             ("invalid", None, ZxStatus.ZX_ERR_INTERNAL, None),
         ]:

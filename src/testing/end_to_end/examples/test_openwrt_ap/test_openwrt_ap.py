@@ -7,9 +7,9 @@ import asyncio
 import logging
 
 import fidl_fuchsia_wlan_internal as f_wlan_internal
+import fidl_fuchsia_wlan_sme as f_wlan_sme
 import fuchsia_base_test
 import openwrt_access_point
-from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
 from mobly import asserts, signals, test_runner
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
@@ -130,7 +130,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
 
         await self.dut.wlan_core.disconnect()
         status = await self.dut.wlan_core.status()
-        if status == ClientStatusIdle():
+        if status == f_wlan_sme.ClientStatusResponse(idle=f_wlan_sme.Empty()):
             return
         asserts.fail(
             f"Status did not return to idle after disconnect: {status}"

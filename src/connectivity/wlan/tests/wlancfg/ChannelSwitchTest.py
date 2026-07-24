@@ -22,7 +22,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStatusConnected,
     CountryCode,
 )
 from mobly import asserts, signals, test_runner
@@ -255,14 +254,14 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
             while time.time() < change_channel_after:
                 status = await self.dut.wlan_core.status()
-                if not isinstance(status, ClientStatusConnected):
+                if status.connected is None:
                     raise signals.TestFailure(
-                        f"want ClientStatusConnected, got {type(status)} after "
+                        f"want connected status, got {status} after "
                         f"switching from channel {previous_channel} to "
                         f"channel {current_channel}"
                     )
 
-                got_channel = status.channel.primary
+                got_channel = status.connected.channel.primary
 
                 if got_channel == previous_channel:
                     asserts.assert_less(
@@ -471,11 +470,11 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 continue
             if result.role == f_wlan_common.WlanMacRole.AP:
                 status = await self.dut.wlan_core.status()
-                if not isinstance(status, ClientStatusConnected):
+                if status.connected is None:
                     raise signals.TestFailure(
-                        f"want ClientStatusConnected, got {type(status)}"
+                        f"want connected status, got {status}"
                     )
-                return status.channel.primary
+                return status.connected.channel.primary
         raise EnvironmentError("Could not determine SoftAP channel")
 
 

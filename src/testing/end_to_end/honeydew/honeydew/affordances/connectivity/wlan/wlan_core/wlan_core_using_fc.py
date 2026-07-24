@@ -22,8 +22,6 @@ from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     BssDescriptionParser,
-    ClientStatusConnected,
-    ClientStatusResponse,
     CountryCode,
     WlanInterfaces,
 )
@@ -209,15 +207,15 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             )
 
         client_status = await self._status(sme)
-        if isinstance(client_status, ClientStatusConnected):
-            got_ssid = bytes(client_status.ssid).decode("utf-8")
+        if client_status.connected:
+            got_ssid = bytes(client_status.connected.ssid).decode("utf-8")
             if got_ssid != ssid:
                 raise wlan_errors.HoneydewWlanError(
                     f'Connected to wrong network. Expected "{ssid}", got "{got_ssid}".'
                 )
         else:
             raise wlan_errors.HoneydewWlanError(
-                f"Expected ClientStatusConnected, got {client_status}"
+                f"Expected ClientStatusResponse.connected, got {client_status}"
             )
 
         return True
@@ -554,12 +552,11 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         return sme_client
 
     @ensure_ready
-    async def status(self) -> ClientStatusResponse:
+    async def status(self) -> f_wlan_sme.ClientStatusResponse:
         """Request connection status
 
         Returns:
-            ClientStatusResponse which can be any one of three  things:
-            ClientStatusConnected, ClientStatusConnecting, ClientStatusIdle.
+            fuchsia.wlan.sme/ClientStatusResponse FIDL union.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack
@@ -572,7 +569,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
 
     async def _status(
         self, sme: f_wlan_sme.ClientSmeClient
-    ) -> ClientStatusResponse:
+    ) -> f_wlan_sme.ClientStatusResponse:
         try:
             resp = await sme.status()
         except FcTransportStatus as status:
@@ -580,7 +577,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
                 f"ClientSme.Status() error {status}"
             ) from status
 
-        return ClientStatusResponse.from_fidl(resp.resp)
+        return resp.resp
 
     @ensure_ready
     async def ensure_single_phy(self) -> int:
@@ -855,12 +852,11 @@ class WlanCore(wlan_core.WlanCore):
             self._inner.scan_for_bss_info()
         )
 
-    def status(self) -> ClientStatusResponse:
+    def status(self) -> f_wlan_sme.ClientStatusResponse:
         """Request connection status
 
         Returns:
-            ClientStatusResponse which can be any one of three  things:
-            ClientStatusConnected, ClientStatusConnecting, ClientStatusIdle.
+            fuchsia.wlan.sme/ClientStatusResponse FIDL union.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack
