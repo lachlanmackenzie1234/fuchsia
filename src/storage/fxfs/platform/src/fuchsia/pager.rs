@@ -95,7 +95,7 @@ impl<T: PagerBacked> PagerPacketReceiver<T> {
             return;
         }
 
-        let (file, epoch_guard) = {
+        let (opened_file, epoch_guard) = {
             let file_lock = self.file.lock();
             let file = match &*file_lock {
                 FileHolder::Strong(file) => file.clone(),
@@ -121,22 +121,33 @@ impl<T: PagerBacked> PagerPacketReceiver<T> {
                 ZX_PAGER_VMO_READ => Some(Epoch::global().guard()),
                 _ => None,
             };
-            (file, epoch_guard)
+
+            // This needs to be done while holding the page lock so that it cannot race with moving
+            // the open count on blob overwrite.
+            let opened_file = match file.try_keep_open() {
+                Ok(opened) => opened,
+                Err(bare) => {
+                    bare.pager().report_failure(
+                        bare.vmo(),
+                        contents.range(),
+                        zx::Status::BAD_STATE,
+                    );
+                    return;
+                }
+            };
+            (opened_file, epoch_guard)
         };
 
         // The scope guard needs to be held and outlive the file Arc and the clones of it.
-        let Some(_scope_guard) = file.pager().scope.try_active_guard() else {
+        let Some(_scope_guard) = opened_file.pager().scope.try_active_guard() else {
             // If an active guard can't be acquired then the filesystem must be shutting down. Fail
             // the page request to avoid leaving the client hanging.
-            file.pager().report_failure(file.vmo(), contents.range(), zx::Status::BAD_STATE);
+            opened_file.pager().report_failure(
+                opened_file.vmo(),
+                contents.range(),
+                zx::Status::BAD_STATE,
+            );
             return;
-        };
-        let opened_file = match file.try_keep_open() {
-            Ok(opened) => opened,
-            Err(bare) => {
-                bare.pager().report_failure(bare.vmo(), contents.range(), zx::Status::BAD_STATE);
-                return;
-            }
         };
         match command {
             ZX_PAGER_VMO_READ => {
