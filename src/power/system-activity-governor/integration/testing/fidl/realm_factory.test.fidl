@@ -33,6 +33,9 @@ type RealmOptions = resource table {
     /// Specifies the timeout in seconds for the long wake lease watchdog.
     /// Recommended to use default of 60 seconds in test.
     6: long_wake_lease_timeout_seconds uint32;
+
+    /// Specifies whether to use a fake clock for SAG. Defaults to false.
+    7: use_fake_clock bool;
 };
 
 @discoverable

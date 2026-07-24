@@ -29,6 +29,7 @@ rustc_test("bin") {
     "//src/lib/diagnostics/hierarchy/rust:diagnostics-hierarchy",
     "//src/lib/diagnostics/reader/rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/fake-clock/fidl:fidl_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

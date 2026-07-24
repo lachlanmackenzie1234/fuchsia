@@ -5,6 +5,7 @@
 use anyhow::{Error, Result};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_power_cpu_manager as fcpumanager;
+use fidl_fuchsia_testing as ftesting;
 use fidl_fuchsia_testing_harness::RealmProxy_Marker;
 use fidl_test_systemactivitygovernor::*;
 use fuchsia_async as fasync;
@@ -84,6 +85,7 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
     info!("building the realm");
 
     let use_fake_sag = options.use_fake_sag.unwrap_or(false);
+    let use_fake_clock = options.use_fake_clock.unwrap_or(false);
     let wait_for_suspending_token = options.wait_for_suspending_token.unwrap_or(false);
     let use_suspender = options.use_suspender.unwrap_or(true);
     let stuck_warning_timeout_seconds = options.stuck_warning_timeout_seconds.unwrap_or(60);
@@ -93,17 +95,39 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
 
     let builder = RealmBuilder::new().await?;
 
-    let component_ref = builder
-        .add_child(
-            ACTIVITY_GOVERNOR_CHILD_NAME,
-            if use_fake_sag {
-                "fake-system-activity-governor#meta/fake-system-activity-governor.cm"
-            } else {
-                "#meta/system-activity-governor.cm"
-            },
-            ChildOptions::new(),
-        )
-        .await?;
+    let component_url = if use_fake_sag {
+        "fake-system-activity-governor#meta/fake-system-activity-governor.cm"
+    } else if use_fake_clock {
+        "#meta/system-activity-governor-fake-time.cm"
+    } else {
+        "#meta/system-activity-governor.cm"
+    };
+
+    let component_ref =
+        builder.add_child(ACTIVITY_GOVERNOR_CHILD_NAME, component_url, ChildOptions::new()).await?;
+
+    if use_fake_clock {
+        let fake_clock =
+            builder.add_child("fake_clock", "#meta/fake_clock.cm", ChildOptions::new()).await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<ftesting::FakeClockMarker>())
+                    .from(&fake_clock)
+                    .to(&component_ref),
+            )
+            .await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<ftesting::FakeClockControlMarker>())
+                    .from(&fake_clock)
+                    .to(Ref::parent()),
+            )
+            .await?;
+    }
 
     let power_broker_ref =
         builder.add_child("power-broker", "#meta/power-broker.cm", ChildOptions::new()).await?;

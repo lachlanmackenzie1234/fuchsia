@@ -16,6 +16,7 @@ rustc_binary("bin") {
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fake-clock/fidl:fidl_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
@@ -45,6 +46,8 @@ fuchsia_package("realm-factory") {
   deps = [
     ":realm-factory-component",
     "//src/developer/forensics/public/fakes:fake_crash_reporter",
+    "//src/lib/fake-clock/svc",
+    "//src/power/system-activity-governor:component_fake_time",
     "//src/power/testing/fake-shutdown-shim",
     "//src/power/testing/fake-suspend",
   ]

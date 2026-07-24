@@ -15,6 +15,7 @@ use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_fuchsia_power_observability as fobs;
 use fidl_fuchsia_power_suspend as fsuspend;
 use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_testing as ftesting;
 use fidl_test_suspendcontrol as tsc;
 use fidl_test_systemactivitygovernor as ftest;
 use fidl_test_systemactivitygovernor::RealmOptions;
@@ -950,7 +951,11 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
 
 #[fuchsia::test]
 async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume() -> Result<()> {
-    let (realm, activity_governor_moniker) = create_realm().await?;
+    let (realm, activity_governor_moniker) =
+        create_realm_ext(ftest::RealmOptions { use_fake_clock: Some(true), ..Default::default() })
+            .await?;
+    let fake_clock_control =
+        realm.connect_to_protocol::<ftesting::FakeClockControlMarker>().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
 
@@ -1140,104 +1145,30 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
     // AfterResume should have been called once.
     let after_resume_responder = after_resume_rx.next().await.unwrap();
 
-    // Hang the response to block suspension, then drop it to allow it to proceed.
-    // 3 seconds is chosen arbitrarily to be long enough to allow some delay-based logic in SAG to
-    // run but short enough to not time out in CI or delay local development. We're not explicitly
-    // testing the behavior of the delay-based logic here, but we want to give it a chance to run in
-    // case it affects the behavior of the suspend blocker.
-    // TODO(fxbug.dev/491840509): When configurable timeouts land, revisit this test logic.
-    let now = std::time::Instant::now();
-    let hang_duration = std::time::Duration::from_secs(3);
+    // Pause fake clock and advance past SAG's internal RESUME_SUSPENDING_LEASE_DROP_DELAY
+    // (100ms) to allow the post-resume control lease to expire deterministically.
+    fake_clock_control.pause().await?;
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_millis(500).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+    fake_clock_control
+        .resume_with_increments(
+            zx::MonotonicDuration::from_millis(10).into_nanos(),
+            &ftesting::Increment::Determined(zx::MonotonicDuration::from_millis(10).into_nanos()),
+        )
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to resume fake clock: {:?}", e))?;
 
-    fasync::Task::local(async move {
-        fasync::Timer::new(hang_duration).await;
-        drop(after_resume_responder);
-    })
-    .detach();
+    // Now that the resume control lease is gone, the stuck AfterResume call is the only thing
+    // blocking suspension. Once we drop `after_resume_responder`, the call completes, and SAG is
+    // free to suspend.
+    assert!(suspend_device.await_suspend().now_or_never().is_none());
+    drop(after_resume_responder);
+    assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
 
-    // AfterResume blocks, so SAG will only drop ExecutionState to the Inactive state after hanging.
-    let custom_max_loops_count = 1000; // Run more times to ensure we don't time out.
-    block_until_inspect_matches!(
-        custom_max_loops_count,
-        activity_governor_moniker,
-        root: contains {
-            booting: false,
-            power_elements: {
-                execution_state: {
-                    // Due to timeout of the resume lease, expect this to be 0.
-                    power_level: 0u64,
-                },
-                application_activity: {
-                    power_level: 0u64,
-                },
-                cpu: {
-                    // Due to timeout of the resume lease, expect this to be 0.
-                    power_level: 0u64,
-                },
-            },
-            suspend_stats: {
-                ref fobs::SUSPEND_SUCCESS_COUNT: 1u64,
-                ref fobs::SUSPEND_FAIL_COUNT: 0u64,
-                ref fobs::SUSPEND_LAST_FAILED_ERROR: 0u64,
-                ref fobs::SUSPEND_LAST_TIMESTAMP: 2u64,
-                ref fobs::SUSPEND_CUMULATIVE_DURATION: 2u64,
-                ref fobs::SUSPEND_LAST_DURATION: 1u64,
-            },
-            ref fobs::SUSPEND_EVENTS_NODE: contains {
-                "11": {
-                    ref fobs::SUSPEND_RESUMED_AT: AnyProperty,
-                    ref fobs::SUSPEND_LAST_TIMESTAMP: 2u64,
-                    ref fobs::SUSPEND_CUMULATIVE_DURATION: 2u64,
-                },
-                "12": {
-                    ref fobs::SUSPEND_LOCK_DROPPED_AT: AnyProperty,
-                },
-                "13": {
-                    ref fobs::RESUME_CALLBACK_PHASE_START_AT: AnyProperty,
-                 },
-                "14": {
-                    ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
-                 },
-                "15": {
-                    ref fobs::SUSPEND_CALLBACK_PHASE_START_AT: AnyProperty,
-                 },
-                "16": {
-                    ref fobs::SUSPEND_CALLBACK_PHASE_END_AT: AnyProperty,
-                 },
-                "17": {
-                    ref fobs::SUSPEND_LOCK_ACQUIRED_AT: AnyProperty,
-                },
-                "18": {
-                   ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
-                },
-                "fuchsia.inspect.Stats": contains {},
-            },
-            "power_observability_state_recorders": contains {},
-            "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
-            config: {
-                use_suspender: true,
-                wait_for_suspending_token: false,
-                max_suspend_events_to_log: 6144u64,
-                suspend_resume_stuck_warning_timeout: 60u64,
-                max_active_wake_leases_to_log: 10u64,
-                reboot_on_stalled_suspend_blocker: false,
-                suspend_loop_max_attempts: 10u64,
-                long_wake_lease_timeout: 60u64,
-            },
-            "fuchsia.inspect.Health": contains {
-                status: "OK",
-            },
-            "fuchsia.inspect.Stats": contains {},
-            "suspend_blockers": {
-                // When the SuspendBlocker dropped its responder without sending a response, the
-                // FIDL channel was closed, causing SAG to unregister the blocker.
-                "names": Vec::<String>::new(),
-            },
-        }
-    );
-
-    assert!(now.elapsed() >= hang_duration);
     Ok(())
 }
 
