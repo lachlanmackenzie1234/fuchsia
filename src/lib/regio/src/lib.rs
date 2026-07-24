@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![cfg_attr(no_std, not(test))]
+#![cfg_attr(not(test), no_std)]
 
 mod mmio;
 pub mod traits;
