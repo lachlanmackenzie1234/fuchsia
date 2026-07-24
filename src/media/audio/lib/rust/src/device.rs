@@ -665,10 +665,19 @@ pub async fn list_devfs(
 
     for device_type in TYPES {
         let subdir_name = device_type.devfs_class();
-        let subdir =
-            fuchsia_fs::directory::open_directory(dev_class, subdir_name, fio::Flags::empty())
-                .await
-                .map_err(|err| ListDevfsError::Open { name: subdir_name.to_string(), err })?;
+        let subdir = match fuchsia_fs::directory::open_directory(
+            dev_class,
+            subdir_name,
+            fio::Flags::empty(),
+        )
+        .await
+        {
+            Ok(d) => d,
+            // NOT_FOUND is expected: some device classes are absent on certain boards.
+            // (e.g. /dev/class/codec is missing on VIM3 running UAC2 USB audio.)
+            Err(err) if err.is_not_found_error() => continue,
+            Err(err) => return Err(ListDevfsError::Open { name: subdir_name.to_string(), err }),
+        };
         let entries = fuchsia_fs::directory::readdir(&subdir)
             .await
             .map_err(|err| ListDevfsError::Readdir { name: subdir_name.to_string(), err })?;
@@ -861,6 +870,153 @@ mod test {
                     device_type: fac::DeviceType::Output,
                 }),
             ],
+            selectors
+        );
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    #[fuchsia::test]
+    async fn test_list_devfs_missing_dirs() {
+        // Verify that list_devfs succeeds and skips device classes whose
+        // directories are absent from devfs (NOT_FOUND), while still
+        // returning entries for the classes that are present.
+        let placeholder = placeholder_node();
+
+        // Omit "audio-input" and "codec" to simulate a board (e.g. VIM3 with
+        // UAC2 USB audio) where those devfs class directories do not exist.
+        let dev_class_vfs = pseudo_directory! {
+            "audio-composite" => pseudo_directory! {
+                "composite-0" => placeholder.clone(),
+            },
+            "dai" => pseudo_directory! {
+                "dai-0" => placeholder.clone(),
+            },
+            "audio-output" => pseudo_directory! {
+                "output-0" => placeholder.clone(),
+            },
+        };
+
+        let execution_scope = vfs::execution_scope::ExecutionScope::new();
+        let dev_class = vfs::directory::serve_read_only(dev_class_vfs, execution_scope);
+        let selectors = list_devfs(&dev_class).await.unwrap();
+
+        assert_eq!(
+            vec![
+                DevfsSelector(fac::Devfs {
+                    name: "composite-0".to_string(),
+                    device_type: fac::DeviceType::Composite,
+                }),
+                DevfsSelector(fac::Devfs {
+                    name: "dai-0".to_string(),
+                    device_type: fac::DeviceType::Dai,
+                }),
+                DevfsSelector(fac::Devfs {
+                    name: "output-0".to_string(),
+                    device_type: fac::DeviceType::Output,
+                }),
+            ],
+            selectors
+        );
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    #[fuchsia::test]
+    async fn test_list_devfs_all_missing() {
+        // Verify that list_devfs succeeds with an empty result when none of
+        // the known device class directories exist, e.g. a board that
+        // exposes no audio devices at all.
+        let dev_class_vfs = pseudo_directory! {};
+
+        let execution_scope = vfs::execution_scope::ExecutionScope::new();
+        let dev_class = vfs::directory::serve_read_only(dev_class_vfs, execution_scope);
+        let selectors = list_devfs(&dev_class).await.unwrap();
+
+        assert_eq!(Vec::<DevfsSelector>::new(), selectors);
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    #[fuchsia::test]
+    async fn test_list_devfs_one_class_present() {
+        // The opposite extreme from test_list_devfs: only a single known
+        // device class directory exists, everything else is absent.
+        let placeholder = placeholder_node();
+
+        let dev_class_vfs = pseudo_directory! {
+            "dai" => pseudo_directory! {
+                "dai-0" => placeholder.clone(),
+            },
+        };
+
+        let execution_scope = vfs::execution_scope::ExecutionScope::new();
+        let dev_class = vfs::directory::serve_read_only(dev_class_vfs, execution_scope);
+        let selectors = list_devfs(&dev_class).await.unwrap();
+
+        assert_eq!(
+            vec![DevfsSelector(fac::Devfs {
+                name: "dai-0".to_string(),
+                device_type: fac::DeviceType::Dai,
+            })],
+            selectors
+        );
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    #[fuchsia::test]
+    async fn test_list_devfs_present_but_empty() {
+        // A device class directory can exist but contain no devices yet
+        // (e.g. a hot-pluggable class before anything is plugged in). This
+        // is a distinct code path from a directory being entirely absent
+        // (NOT_FOUND): the open() succeeds and readdir() returns no
+        // entries. Both should be harmless to list_devfs.
+        let placeholder = placeholder_node();
+
+        let dev_class_vfs = pseudo_directory! {
+            "codec" => pseudo_directory! {},
+            "dai" => pseudo_directory! {
+                "dai-0" => placeholder.clone(),
+            },
+        };
+
+        let execution_scope = vfs::execution_scope::ExecutionScope::new();
+        let dev_class = vfs::directory::serve_read_only(dev_class_vfs, execution_scope);
+        let selectors = list_devfs(&dev_class).await.unwrap();
+
+        assert_eq!(
+            vec![DevfsSelector(fac::Devfs {
+                name: "dai-0".to_string(),
+                device_type: fac::DeviceType::Dai,
+            })],
+            selectors
+        );
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    #[fuchsia::test]
+    async fn test_list_devfs_unknown_class_ignored() {
+        // list_devfs only opens the fixed set of known device class names;
+        // an unrelated /dev/class subdirectory (e.g. from an unrelated
+        // driver) should be ignored rather than surfacing an error or
+        // being included in the result.
+        let placeholder = placeholder_node();
+
+        let dev_class_vfs = pseudo_directory! {
+            "dai" => pseudo_directory! {
+                "dai-0" => placeholder.clone(),
+            },
+            "thermal" => pseudo_directory! {
+                "thermal-0" => placeholder.clone(),
+            },
+        };
+
+        let execution_scope = vfs::execution_scope::ExecutionScope::new();
+        let dev_class = vfs::directory::serve_read_only(dev_class_vfs, execution_scope);
+        let selectors = list_devfs(&dev_class).await.unwrap();
+
+        assert_eq!(
+            vec![DevfsSelector(fac::Devfs {
+                name: "dai-0".to_string(),
+                device_type: fac::DeviceType::Dai,
+            })],
             selectors
         );
     }
