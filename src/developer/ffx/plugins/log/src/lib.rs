@@ -414,8 +414,8 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use log_command_fdomain::{
-        DumpCommand, LogData, LogFilterArgs, OneOrMany, SymbolizeMode, TIMESTAMP_FORMAT,
-        TimeFormat, WatchCommand, parse_seconds_string_as_duration, parse_time, parse_utc_time,
+        LogData, LogFilterArgs, OneOrMany, RawDumpCommand, RawWatchCommand, SymbolizeMode,
+        TIMESTAMP_FORMAT, TimeFormat, parse_seconds_string_as_duration, parse_time, parse_utc_time,
     };
     use moniker::Moniker;
     use selectors::parse_log_interest_selector;
@@ -497,8 +497,8 @@ mod tests {
         let environment = TestEnvironment::new(TestEnvironmentConfig::default()).await;
         let rcs_connector = environment.rcs_connector().await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
         let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
@@ -543,11 +543,11 @@ mod tests {
         .await;
         let rcs_connector = environment.rcs_connector().await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
 
@@ -577,8 +577,8 @@ ffx log --force-set-severity.
         let show_initial_timestamp = config.show_initial_timestamp;
         let mut environment = TestEnvironment::new(config).await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..cmd.filters },
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..cmd.filters },
             ..cmd
         };
 
@@ -613,12 +613,12 @@ ffx log --force-set-severity.
 
         let config = TestEnvironmentConfig { hang_device_connection: true, ..Default::default() };
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
 
-        let result = logger_dump_string_with_env_clock(config, cmd, clock, env).await;
+        let result = Box::pin(logger_dump_string_with_env_clock(config, cmd, clock, env)).await;
 
         assert_matches!(result, Err(fho::Error::User(err)) => {
             assert_matches!(err.downcast_ref::<LogError>(), Some(LogError::AIAgentTimedOut));
@@ -634,8 +634,8 @@ ffx log --force-set-severity.
 
         let config = TestEnvironmentConfig { fail_device_connection: true, ..Default::default() };
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            sub_command: Some(LogSubCommand::Watch(RawWatchCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
 
@@ -684,9 +684,9 @@ ffx log --force-set-severity.
         })
         .await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: selectors.clone(),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
         let rcs_connector = environment.rcs_connector().await;
@@ -706,9 +706,9 @@ ffx log --force-set-severity.
     async fn logger_prints_error_if_both_dump_and_since_now_are_combined() {
         let environment = TestEnvironment::new(TestEnvironmentConfig::default()).await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             filters: LogFilterArgs {
-                symbolize: SymbolizeMode::Off,
+                symbolize: Some(SymbolizeMode::Off),
                 since: Some(parse_time("now").unwrap()),
                 ..Default::default()
             },
@@ -739,8 +739,8 @@ ffx log --force-set-severity.
     async fn logger_prints_current_logs_and_exits_on_dump() {
         let mut environment = TestEnvironment::new(TestEnvironmentConfig::default()).await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
         let rcs_connector = environment.rcs_connector().await;
@@ -779,8 +779,8 @@ ffx log --force-set-severity.
         .await;
         let rcs_connector = environment.rcs_connector().await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
         let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
@@ -829,7 +829,7 @@ ffx log --force-set-severity.
         Box::pin(logger_dump_test(
             TestEnvironmentConfig::default(),
             LogCommand {
-                filters: LogFilterArgs { clock: TimeFormat::Utc, ..Default::default() },
+                filters: LogFilterArgs { clock: Some(TimeFormat::Utc), ..Default::default() },
                 ..LogCommand::default()
             },
             "[1970-01-01 00:00:00.000][ffx] INFO: Hello world!\u{1b}[m\n",
@@ -847,10 +847,10 @@ ffx log --force-set-severity.
         .await;
 
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
+            sub_command: Some(LogSubCommand::Watch(RawWatchCommand::default())),
             set_severity: selectors.clone(),
             filters: LogFilterArgs {
-                symbolize: SymbolizeMode::Off,
+                symbolize: Some(SymbolizeMode::Off),
                 no_color: true,
                 disable_reconnect: true,
                 until: None,
@@ -899,8 +899,8 @@ ffx log --force-set-severity.
             },
             LogCommand {
                 filters: LogFilterArgs {
-                    clock: TimeFormat::Utc,
-                    severity: Severity::Error,
+                    clock: Some(TimeFormat::Utc),
+                    severity: Some(Severity::Error),
                     ..Default::default()
                 },
                 ..LogCommand::default()
@@ -922,11 +922,11 @@ ffx log --force-set-severity.
         })
         .await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
+            sub_command: Some(LogSubCommand::Watch(RawWatchCommand::default())),
             set_severity: selectors.clone(),
             filters: LogFilterArgs {
-                symbolize: SymbolizeMode::Off,
-                clock: TimeFormat::Utc,
+                symbolize: Some(SymbolizeMode::Off),
+                clock: Some(TimeFormat::Utc),
                 since: Some(log_command_fdomain::DetailedDateTime {
                     is_now: true,
                     ..parse_utc_time("1980-01-01T00:00:01").unwrap()
@@ -1001,10 +1001,10 @@ ffx log --force-set-severity.
         })
         .await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
+            sub_command: Some(LogSubCommand::Watch(RawWatchCommand::default())),
             filters: LogFilterArgs {
-                symbolize: SymbolizeMode::Off,
-                clock: TimeFormat::Utc,
+                symbolize: Some(SymbolizeMode::Off),
+                clock: Some(TimeFormat::Utc),
                 since: Some(log_command_fdomain::DetailedDateTime {
                     is_now: true,
                     ..parse_utc_time("1980-01-01T00:00:01").unwrap()
@@ -1045,10 +1045,10 @@ ffx log --force-set-severity.
         })
         .await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
+            sub_command: Some(LogSubCommand::Watch(RawWatchCommand::default())),
             filters: LogFilterArgs {
-                symbolize: SymbolizeMode::Off,
-                clock: TimeFormat::Utc,
+                symbolize: Some(SymbolizeMode::Off),
+                clock: Some(TimeFormat::Utc),
                 since: Some(log_command_fdomain::DetailedDateTime {
                     is_now: true,
                     ..parse_utc_time("1980-01-01T00:00:01").unwrap()
@@ -1124,7 +1124,7 @@ ffx log --force-set-severity.
                 filters: LogFilterArgs {
                     since: Some(parse_utc_time("1980-01-01T00:00:01").unwrap()),
                     until: Some(parse_utc_time("1980-01-01T00:00:05").unwrap()),
-                    clock: TimeFormat::Utc,
+                    clock: Some(TimeFormat::Utc),
                     ..Default::default()
                 },
                 ..LogCommand::default()
@@ -1147,7 +1147,7 @@ ffx log --force-set-severity.
             },
             LogCommand {
                 filters: LogFilterArgs {
-                    clock: TimeFormat::Utc,
+                    clock: Some(TimeFormat::Utc),
                     since_boot: Some(parse_seconds_string_as_duration("1").unwrap()),
                     until_boot: Some(parse_seconds_string_as_duration("5").unwrap()),
                     ..Default::default()
@@ -1164,7 +1164,7 @@ ffx log --force-set-severity.
         Box::pin(logger_dump_test(
             TestEnvironmentConfig::default(),
             LogCommand {
-                filters: LogFilterArgs { clock: TimeFormat::Local, ..Default::default() },
+                filters: LogFilterArgs { clock: Some(TimeFormat::Local), ..Default::default() },
                 ..LogCommand::default()
             },
             &format!(
@@ -1243,9 +1243,9 @@ ffx log --force-set-severity.
         let selector =
             vec![OneOrMany::One(parse_log_interest_selector("archivist.cm#TRACE").unwrap())];
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: selector.clone(),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
         let mut event_stream = environment.take_event_stream().unwrap();
@@ -1409,13 +1409,20 @@ ffx log --force-set-severity.
         let environment = TestEnvironment::new(TestEnvironmentConfig::default()).await;
         let rcs_connector = environment.rcs_connector().await;
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
-            filters: LogFilterArgs { symbolize: SymbolizeMode::Off, ..Default::default() },
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
             ..LogCommand::default()
         };
         let writer = BrokenPipeWriter;
         assert_matches!(
-            log_impl(writer, &environment.environment_context(), cmd, rcs_connector, false).await,
+            Box::pin(log_impl(
+                writer,
+                &environment.environment_context(),
+                cmd,
+                rcs_connector,
+                false
+            ))
+            .await,
             Ok(())
         );
     }

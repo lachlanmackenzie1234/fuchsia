@@ -105,12 +105,17 @@ fn convert_to_lowercase_if_needed<'a>(input: &'a str, case_sensitive: bool) -> C
 }
 
 impl LogFilterCriteria {
-    pub fn try_from(mut cmd: LogCommand) -> Result<Self, LogError> {
+    pub fn try_from(cmd: LogCommand) -> Result<Self, LogError> {
+        let case_sensitive = cmd.case_sensitive();
+        let min_severity = cmd.severity();
+        let pid = cmd.pid();
+        let tid = cmd.tid();
+        let kernel = cmd.kernel();
+
         let mut exclude_regexes = Vec::new();
         for pattern in cmd.exclude_regex() {
-            let re = regex_lite::RegexBuilder::new(pattern)
-                .case_insensitive(!cmd.case_sensitive())
-                .build()?;
+            let re =
+                regex_lite::RegexBuilder::new(pattern).case_insensitive(!case_sensitive).build()?;
             exclude_regexes.push(re);
         }
         if let Some(path) = cmd.exclude_regex_file() {
@@ -121,32 +126,33 @@ impl LogFilterCriteria {
                     continue;
                 }
                 let re = regex_lite::RegexBuilder::new(line)
-                    .case_insensitive(!cmd.case_sensitive())
+                    .case_insensitive(!case_sensitive)
                     .build()?;
                 exclude_regexes.push(re);
             }
         }
 
-        let case_sensitive = cmd.case_sensitive();
+        let mut filters = cmd.filters;
+        if kernel {
+            filters.component.push(KLOG.to_string());
+        }
+        let moniker_filters = MonikerFilters::new(filters.component);
+
         Ok(Self {
-            min_severity: cmd.severity(),
-            filters: std::mem::take(&mut cmd.filters.filter),
-            tags: std::mem::take(&mut cmd.filters.tag)
+            min_severity,
+            filters: filters.filter,
+            tags: filters
+                .tag
                 .into_iter()
                 .map(|value| convert_to_lowercase_if_needed(&value, case_sensitive).to_string())
                 .collect(),
-            excludes: std::mem::take(&mut cmd.filters.exclude),
+            excludes: filters.exclude,
             exclude_regexes,
-            moniker_filters: if cmd.kernel() {
-                cmd.filters.component.push(KLOG.to_string());
-                MonikerFilters::new(std::mem::take(&mut cmd.filters.component))
-            } else {
-                MonikerFilters::new(std::mem::take(&mut cmd.filters.component))
-            },
-            exclude_tags: std::mem::take(&mut cmd.filters.exclude_tags),
-            pid: cmd.pid(),
+            moniker_filters,
+            exclude_tags: filters.exclude_tags,
+            pid,
             case_sensitive,
-            tid: cmd.tid(),
+            tid,
             interest_selectors: cmd.set_severity.into_iter().flatten().collect(),
         })
     }
@@ -385,13 +391,13 @@ mod test {
     use selectors::parse_log_interest_selector;
 
     use crate::log_socket_stream::OneOrMany;
-    use crate::{DumpCommand, LogSubCommand};
+    use crate::{LogSubCommand, RawDumpCommand};
 
     use super::*;
 
     fn empty_dump_command() -> LogCommand {
         LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             ..LogCommand::default()
         }
     }
@@ -514,7 +520,7 @@ mod test {
     #[fuchsia::test]
     async fn test_per_component_severity() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("test_selector#DEBUG").unwrap(),
             )],
@@ -554,7 +560,7 @@ mod test {
         ];
 
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: vec![
                 OneOrMany::One(parse_log_interest_selector("test_selector#INFO").unwrap()),
                 OneOrMany::One(parse_log_interest_selector("test_selector#TRACE").unwrap()),
@@ -644,7 +650,7 @@ mod test {
     #[fuchsia::test]
     async fn test_severity_filter_with_debug() {
         let mut cmd = empty_dump_command();
-        cmd.filters.severity = Severity::Trace;
+        cmd.filters.severity = Some(Severity::Trace);
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -879,7 +885,7 @@ mod test {
             filters: LogFilterArgs {
                 filter: vec!["included".to_string()],
                 exclude: vec!["not this".to_string()],
-                severity: Severity::Error,
+                severity: Some(Severity::Error),
                 ..Default::default()
             },
             ..empty_dump_command()

@@ -100,7 +100,7 @@ async fn cmd_impl(
             filters: LogFilterArgs { filter: vec![log_filter], ..Default::default() },
             ..LogCommand::default()
         };
-        log_impl(writer, ctx, log_cmd, connector, true).await?;
+        Box::pin(log_impl(writer, ctx, log_cmd, connector, true)).await?;
     }
     Ok(())
 }

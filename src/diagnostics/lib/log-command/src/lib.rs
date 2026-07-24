@@ -42,8 +42,8 @@ pub use log_formatter::dump_fxt_logs_from_socket;
 #[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum LogSubCommand {
-    Watch(WatchCommand),
-    Dump(DumpCommand),
+    Watch(RawWatchCommand),
+    Dump(RawDumpCommand),
     SetSeverity(SetSeverityCommand),
 }
 
@@ -71,20 +71,6 @@ pub struct SetSeverityCommand {
     /// May be repeated.
     #[argh(positional, from_str_fn(log_interest_selector))]
     pub interest_selector: Vec<OneOrMany<LogInterestSelector>>,
-}
-
-#[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
-/// Watches for and prints logs from a target. Default if no sub-command is specified.
-#[argh(subcommand, name = "watch")]
-pub struct WatchCommand {}
-
-#[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug, Default)]
-/// Dumps all log from a given target's session.
-#[argh(subcommand, name = "dump")]
-pub struct DumpCommand {
-    /// return only the last N log lines.
-    #[argh(option)]
-    pub tail: Option<usize>,
 }
 
 pub fn parse_time(value: &str) -> Result<DetailedDateTime, String> {
@@ -195,142 +181,302 @@ impl SymbolizeMode {
     }
 }
 
-/// Container for log filtering and display arguments.
-#[derive(Clone, Debug, PartialEq)]
-pub struct LogFilterArgs {
-    pub filter: Vec<String>,
-    pub moniker: Vec<String>,
-    pub component: Vec<String>,
-    pub exclude: Vec<String>,
-    pub exclude_regex: Vec<String>,
-    pub exclude_regex_file: Option<String>,
-    pub tag: Vec<String>,
-    pub exclude_tags: Vec<String>,
-    pub hide_tags: bool,
-    pub hide_file: bool,
-    pub clock: TimeFormat,
-    pub no_color: bool,
-    pub kernel: bool,
-    pub severity: Severity,
-    pub show_metadata: bool,
-    pub force_set_severity: bool,
-    pub since: Option<DetailedDateTime>,
-    pub since_boot: Option<Duration>,
-    pub until: Option<DetailedDateTime>,
-    pub until_boot: Option<Duration>,
-    pub case_sensitive: bool,
-    pub show_full_moniker: bool,
-    pub prefer_url_component_name: bool,
-    pub hide_moniker: bool,
-    pub pid: Option<u64>,
-    pub tid: Option<u64>,
-    #[cfg(target_os = "fuchsia")]
-    pub encoding: LogEncoding,
-    #[cfg(target_os = "fuchsia")]
-    pub json: bool,
-    #[cfg(not(target_os = "fuchsia"))]
-    pub disable_reconnect: bool,
-    #[cfg(not(target_os = "fuchsia"))]
-    pub symbolize: SymbolizeMode,
-}
-
-impl Default for LogFilterArgs {
-    fn default() -> Self {
-        LogFilterArgs {
-            filter: vec![],
-            moniker: vec![],
-            component: vec![],
-            exclude: vec![],
-            exclude_regex: vec![],
-            exclude_regex_file: None,
-            tag: vec![],
-            exclude_tags: vec![],
-            hide_tags: false,
-            hide_file: false,
-            clock: TimeFormat::Boot,
-            no_color: false,
-            kernel: false,
-            severity: Severity::Info,
-            show_metadata: false,
-            force_set_severity: false,
-            since: None,
-            since_boot: None,
-            until: None,
-            until_boot: None,
-            case_sensitive: false,
-            show_full_moniker: false,
-            prefer_url_component_name: false,
-            hide_moniker: false,
-            pid: None,
-            tid: None,
-            #[cfg(target_os = "fuchsia")]
-            encoding: LogEncoding::Json,
-            #[cfg(target_os = "fuchsia")]
-            json: false,
-            #[cfg(not(target_os = "fuchsia"))]
-            disable_reconnect: false,
-            #[cfg(not(target_os = "fuchsia"))]
-            symbolize: SymbolizeMode::Pretty,
+/// Helper macro to merge individual `LogFilterArgs` fields based on outer field type.
+#[doc(hidden)]
+macro_rules! overlay_field {
+    (Vec, $self:ident, $child:ident, $field:ident) => {
+        $self.$field.extend($child.$field.into_iter());
+    };
+    (Option, $self:ident, $child:ident, $field:ident) => {
+        if $child.$field.is_some() {
+            $self.$field = $child.$field;
         }
-    }
+    };
+    (bool, $self:ident, $child:ident, $field:ident) => {
+        $self.$field |= $child.$field;
+    };
 }
 
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(
-    subcommand,
-    name = "log",
-    description = "Display logs from a target device",
-    note = "Logs are retrieve from the target at the moment this command is called.
+/// Helper Token-Tree (TT) Muncher macro for [`define_log_filter_args!`](define_log_filter_args!).
+///
+/// # Purpose
+/// Rust pattern destructuring and struct field initialization cannot contain documentation
+/// comments (`///`) or non-`cfg` attributes (`#[argh(...)]`). Doing so produces syntax errors.
+/// However, conditionally compiled fields (`#[cfg(...)]`) *must* be preserved in pattern
+/// destructuring and struct literals so that conditional flags compile correctly.
+///
+/// This macro uses a Token-Tree (TT) Muncher pattern to inspect all field attributes, stripping non-`cfg`
+/// attributes (`#[argh]`, `#[doc]`) while preserving `#[cfg(...)]` annotations.
+///
+/// # TT-Muncher Stages
+/// - `[ $(#[$attr])* ]`: Accumulated attributes for the field being processed.
+/// - `[ $(#[$cfg])* ]`: Accumulated `#[cfg(...)]` attributes for the field being processed.
+/// - `[ $($fields)* ]`: Output tuples of stripped fields `( [attrs] [cfgs] vis field : ty )`.
+#[doc(hidden)]
+macro_rules! __define_log_filter_args_helper {
+    (
+        [ $(#[$attr:meta])* ]
+        [ $(#[$cfg:meta])* ]
+        [ $($fields:tt)* ]
+        #[cfg $($cfg_args:tt)*]
+        $($rest:tt)*
+    ) => {
+        __define_log_filter_args_helper! {
+            [ $(#[$attr])* #[cfg $($cfg_args)*] ]
+            [ $(#[$cfg])* #[cfg $($cfg_args)*] ]
+            [ $($fields)* ]
+            $($rest)*
+        }
+    };
 
-You may see some additional information attached to the log line:
+    (
+        [ $(#[$attr:meta])* ]
+        [ $(#[$cfg:meta])* ]
+        [ $($fields:tt)* ]
+        #[$other_attr:meta]
+        $($rest:tt)*
+    ) => {
+        __define_log_filter_args_helper! {
+            [ $(#[$attr])* #[$other_attr] ]
+            [ $(#[$cfg])* ]
+            [ $($fields)* ]
+            $($rest)*
+        }
+    };
 
-- `dropped=N`: this means that N logs attributed to the component were dropped when the component
-  wrote to the log socket. This can happen when archivist cannot keep up with the rate of logs being
-  emitted by the component and the component filled the log socket buffer in the kernel.
+    (
+        [ $(#[$attr:meta])* ]
+        [ $(#[$cfg:meta])* ]
+        [ $($fields:tt)* ]
+        $vis:vis $field:ident : $ty_outer:ident $( < $ty_inner:ty > )? $(, $($rest:tt)*)?
+    ) => {
+        __define_log_filter_args_helper! {
+            [ ]
+            [ ]
+            [
+                $($fields)*
+                (
+                    [ $(#[$attr])* ]
+                    [ $(#[$cfg])* ]
+                    $vis $field : $ty_outer $( < $ty_inner > )?
+                )
+            ]
+            $($($rest)*)?
+        }
+    };
 
-- `rolled=N`: this means that N logs rolled out from the archivist buffer and ffx never saw them.
-  This can happen when more logs are being ingested by the archivist across all components and the
-  ffx couldn't retrieve them fast enough.
+    (
+        [ ]
+        [ ]
+        [
+            $(
+                (
+                    [ $(#[$all_attr:meta])* ]
+                    [ $(#[$cfg_attr:meta])* ]
+                    $vis:vis $field:ident : $ty_outer:ident $( < $ty_inner:ty > )?
+                )
+            )*
+        ]
+    ) => {
+        /// Container for log filtering and display arguments.
+        #[derive(Clone, Debug, PartialEq)]
+        pub struct LogFilterArgs {
+            $(
+                $(#[$cfg_attr])*
+                $vis $field: $ty_outer $( < $ty_inner > )?,
+            )*
+        }
 
-Symbolization is performed in the background using the symbolizer host tool. You can pass
-additional arguments to the symbolizer tool (for example, to add a remote symbol server) using:
-  $ ffx config set proactive_log.symbolize.extra_args \"--symbol-server gs://some-url/path --symbol-server gs://some-other-url/path ...\"
+        impl Default for LogFilterArgs {
+            fn default() -> Self {
+                LogFilterArgs {
+                    $(
+                        $(#[$cfg_attr])*
+                        $field: Default::default(),
+                    )*
+                }
+            }
+        }
 
-To learn more about configuring the log viewer, visit https://fuchsia.dev/fuchsia-src/development/tools/ffx/commands/log",
-    example = "\
-Dump the most recent logs and stream new ones as they happen:
-  $ ffx log
+        impl LogFilterArgs {
+            /// Merges `other` filter arguments into `self`, extending list filters and overlaying non-default scalar/flag values.
+            pub fn merge(&mut self, other: LogFilterArgs) {
+                $(
+                    $(#[$cfg_attr])*
+                    overlay_field!($ty_outer, self, other, $field);
+                )*
+            }
+        }
 
-Stream new logs starting from the current time, filtering for severity of at least \"WARN\":
-  $ ffx log --severity warn --since now
+        #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
+        /// Raw command line arguments for `ffx log` before subcommand flag merging.
+        #[argh(
+            subcommand,
+            name = "log",
+            description = "Display logs from a target device",
+            note = "Logs are retrieved from the target at the moment this command is called.\n\nYou may see some additional information attached to the log line:\n\n- `dropped=N`: this means that N logs attributed to the component were dropped when the component\n  wrote to the log socket. This can happen when archivist cannot keep up with the rate of logs being\n  emitted by the component and the component filled the log socket buffer in the kernel.\n\n- `rolled=N`: this means that N logs rolled out from the archivist buffer and ffx never saw them.\n  This can happen when more logs are being ingested by the archivist across all components and the\n  ffx couldn't retrieve them fast enough.\n\nSymbolization is performed in the background using the symbolizer host tool. You can pass\nadditional arguments to the symbolizer tool (for example, to add a remote symbol server) using:\n  $ ffx config set proactive_log.symbolize.extra_args \"--symbol-server gs://some-url/path --symbol-server gs://some-other-url/path ...\"\n\nTo learn more about configuring the log viewer, visit https://fuchsia.dev/fuchsia-src/development/tools/ffx/commands/log",
+            example = "Dump the most recent logs and stream new ones as they happen:\n  $ ffx log\n\nStream new logs starting from the current time, filtering for severity of at least \"WARN\":\n  $ ffx log --severity warn --since now\n\nStream logs where the source moniker, component url and message do not include \"sys\":\n  $ ffx log --exclude sys\n\nStream ERROR logs with source moniker, component url or message containing either\n\"netstack\" or \"remote-control.cm\", but not containing \"sys\":\n  $ ffx log --severity error --filter netstack --filter remote-control.cm --exclude sys\n\nDump all available logs where the source moniker, component url, or message contains\n\"remote-control\":\n  $ ffx log --filter remote-control dump\n\nDump all logs from the last 30 minutes logged before 5 minutes ago:\n  $ ffx log --since \"30m ago\" --until \"5m ago\" dump\n\nEnable DEBUG logs from the \"core/audio\" component while logs are streaming:\n  $ ffx log --set-severity core/audio#DEBUG"
+        )]
+        pub struct RawLogCommand {
+            #[argh(subcommand)]
+            pub sub_command: Option<LogSubCommand>,
 
-Stream logs where the source moniker, component url and message do not include \"sys\":
-  $ ffx log --exclude sys
+            /// dumps all logs and exits. This flag is deprecated. ffx log dump
+            /// should be used instead. This is now a subcommand.
+            /// This switch will eventually be removed.
+            #[argh(switch, hidden_help)]
+            pub dump: bool,
 
-Stream ERROR logs with source moniker, component url or message containing either
-\"netstack\" or \"remote-control.cm\", but not containing \"sys\":
-  $ ffx log --severity error --filter netstack --filter remote-control.cm --exclude sys
+            /// configure the log settings on the target device for components matching
+            /// the given selector. This modifies the minimum log severity level emitted
+            /// by components during the logging session.
+            /// Specify using the format <component-selector>#<log-level>, with level
+            /// as one of FATAL|ERROR|WARN|INFO|DEBUG|TRACE.
+            /// May be repeated and it's also possible to pass multiple comma-separated
+            /// strings per invocation.
+            /// Cannot be used in conjunction with the set-severity subcommand.
+            #[argh(option, from_str_fn(log_interest_selector))]
+            pub set_severity: Vec<OneOrMany<LogInterestSelector>>,
 
-Dump all available logs where the source moniker, component url, or message contains
-\"remote-control\":
-  $ ffx log --filter remote-control dump
+            $(
+                $(#[$all_attr])*
+                $vis $field: $ty_outer $( < $ty_inner > )?,
+            )*
+        }
 
-Dump all logs from the last 30 minutes logged before 5 minutes ago:
-  $ ffx log --since \"30m ago\" --until \"5m ago\" dump
+        impl RawLogCommand {
+            pub fn into_log_command(self) -> LogCommand {
+                LogCommand {
+                    sub_command: self.sub_command,
+                    dump: self.dump,
+                    set_severity: self.set_severity,
+                    filters: LogFilterArgs {
+                        $(
+                            $(#[$cfg_attr])*
+                            $field: self.$field,
+                        )*
+                    },
+                }
+            }
+        }
 
-Enable DEBUG logs from the \"core/audio\" component while logs are streaming:
-  $ ffx log --set-severity core/audio#DEBUG"
-)]
-struct LogCommandCli {
-    #[argh(subcommand)]
-    pub sub_command: Option<LogSubCommand>,
+        #[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
+        /// Dumps all logs from a given target's session.
+        #[argh(subcommand, name = "dump")]
+        pub struct RawDumpCommand {
+            /// return only the last N log lines.
+            #[argh(option)]
+            pub tail: Option<usize>,
 
-    /// dumps all logs and exits. This flag is deprecated. ffx log dump
-    /// should be used instead. This is now a subcommand.
-    /// This switch will eventually be removed.
-    #[argh(switch, hidden_help)]
-    pub dump: bool,
+            $(
+                $(#[$all_attr])*
+                $vis $field: $ty_outer $( < $ty_inner > )?,
+            )*
+        }
 
+        impl Default for RawDumpCommand {
+            fn default() -> Self {
+                let filters = LogFilterArgs::default();
+                Self {
+                    tail: None,
+                    $(
+                        $(#[$cfg_attr])*
+                        $field: filters.$field,
+                    )*
+                }
+            }
+        }
+
+        impl RawDumpCommand {
+            pub fn into_filter_args(self) -> LogFilterArgs {
+                LogFilterArgs {
+                    $(
+                        $(#[$cfg_attr])*
+                        $field: self.$field,
+                    )*
+                }
+            }
+        }
+
+        #[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
+        /// Watches for and prints logs from a target. Default if no sub-command is specified.
+        #[argh(subcommand, name = "watch")]
+        pub struct RawWatchCommand {
+            $(
+                $(#[$all_attr])*
+                $vis $field: $ty_outer $( < $ty_inner > )?,
+            )*
+        }
+
+        impl Default for RawWatchCommand {
+            fn default() -> Self {
+                let filters = LogFilterArgs::default();
+                Self {
+                    $(
+                        $(#[$cfg_attr])*
+                        $field: filters.$field,
+                    )*
+                }
+            }
+        }
+
+        impl RawWatchCommand {
+            pub fn into_filter_args(self) -> LogFilterArgs {
+                LogFilterArgs {
+                    $(
+                        $(#[$cfg_attr])*
+                        $field: self.$field,
+                    )*
+                }
+            }
+        }
+    };
+}
+
+/// Macro to define `LogFilterArgs` and all derivative raw CLI command structs.
+///
+/// # Purpose
+/// `ffx log` supports filtering options both at the root command level (e.g. `ffx log --severity warn`)
+/// and at the subcommand level (e.g. `ffx log dump --severity warn`).
+///
+/// `argh` requires CLI flags to be defined directly on the struct corresponding to a command/subcommand.
+/// To avoid manually duplicating 30+ filter flags across `RawLogCommand`, `RawDumpCommand`, and `RawWatchCommand`,
+/// this macro generates:
+/// 1. `LogFilterArgs`: Container struct holding all active filter criteria.
+/// 2. `RawLogCommand`: Top-level CLI `argh` parser struct.
+/// 3. `RawDumpCommand`: `dump` subcommand `argh` parser struct.
+/// 4. `RawWatchCommand`: `watch` subcommand `argh` parser struct.
+/// 5. Conversion methods (`into_log_command`, `into_filter_args`).
+/// 6. `LogFilterArgs::merge()`: Method to merge subcommand filter overrides.
+///
+/// # Adding New Log Filter Flags
+/// To add a new CLI flag to `ffx log`:
+/// 1. Locate the `define_log_filter_args!` invocation in `src/diagnostics/lib/log-command/src/lib.rs`.
+/// 2. Add the field with doc comments (`///`) and `argh` attributes (`#[argh(option)]` or `#[argh(switch)]`).
+/// 3. The macro will automatically propagate the field to `LogFilterArgs`, all `Raw*Command` structs,
+///    their respective `into_*` conversion functions, and `LogFilterArgs::merge()`.
+/// 4. Add an encapsulated getter accessor method to `impl LogCommand`.
+///
+/// # Syntax
+/// ```rust,ignore
+/// define_log_filter_args! {
+///     /// Filter description for CLI help output.
+///     #[argh(option)]
+///     pub my_flag: Option<String>,
+/// }
+/// ```
+macro_rules! define_log_filter_args {
+    ($($tokens:tt)*) => {
+        __define_log_filter_args_helper! {
+            [ ]
+            [ ]
+            [ ]
+            $($tokens)*
+        }
+    };
+}
+
+define_log_filter_args! {
     /// filter for a string in either the message, component or url.
     /// May be repeated.
     #[argh(option)]
@@ -368,8 +514,8 @@ struct LogCommandCli {
 
     /// set the minimum severity. Accepted values (from lower to higher) are: trace, debug, info,
     /// warn (or warning), error, fatal. This field is case insensitive.
-    #[argh(option, default = "Severity::Info")]
-    pub severity: Severity,
+    #[argh(option)]
+    pub severity: Option<Severity>,
 
     /// outputs only kernel logs, unless combined with --component.
     #[argh(switch)]
@@ -388,7 +534,7 @@ struct LogCommandCli {
     #[argh(option, from_str_fn(parse_time))]
     pub until: Option<DetailedDateTime>,
 
-    /// show only logs until a certain time (as a a boot
+    /// show only logs until a certain time (as a boot
     /// timestamp: seconds since the target's boot time).
     #[argh(option, from_str_fn(parse_seconds_string_as_duration))]
     pub until_boot: Option<Duration>,
@@ -408,7 +554,7 @@ struct LogCommandCli {
     pub no_color: bool,
 
     /// if enabled, text filtering options are case-sensitive
-    /// this applies to --filter, --exclude, --tag, and --exclude-tag.
+    /// this applies to --filter, --exclude, --tag, and --exclude-tags.
     #[argh(switch)]
     pub case_sensitive: bool,
 
@@ -432,27 +578,16 @@ struct LogCommandCli {
     /// how to display log timestamps.
     /// Options are "utc", "local", or "boot" (i.e. nanos since target boot).
     /// Default is boot.
-    #[argh(option, default = "TimeFormat::Boot")]
-    pub clock: TimeFormat,
+    #[argh(option)]
+    pub clock: Option<TimeFormat>,
 
     /// configure symbolization options. Valid options are:
     /// - pretty (default): pretty concise symbolization
     /// - off: disables all symbolization
     /// - classic: traditional, non-prettified symbolization
     #[cfg(not(target_os = "fuchsia"))]
-    #[argh(option, default = "SymbolizeMode::Pretty")]
-    pub symbolize: SymbolizeMode,
-
-    /// configure the log settings on the target device for components matching
-    /// the given selector. This modifies the minimum log severity level emitted
-    /// by components during the logging session.
-    /// Specify using the format <component-selector>#<log-level>, with level
-    /// as one of FATAL|ERROR|WARN|INFO|DEBUG|TRACE.
-    /// May be repeated and it's also possible to pass multiple comma-separated
-    /// strings per invocation.
-    /// Cannot be used in conjunction with --set-severity-persist.
-    #[argh(option, from_str_fn(log_interest_selector))]
-    pub set_severity: Vec<OneOrMany<LogInterestSelector>>,
+    #[argh(option)]
+    pub symbolize: Option<SymbolizeMode>,
 
     /// filters by pid
     #[argh(option)]
@@ -465,15 +600,15 @@ struct LogCommandCli {
     /// if enabled, selectors will be passed directly to Archivist without any filtering.
     /// If disabled and no matching components are found, the user will be prompted to
     /// either enable this or be given a list of selectors to choose from.
-    /// This applies to both --set-severity and --set-severity-persist.
+    /// This applies to both --set-severity and the set-severity subcommand.
     #[argh(switch)]
     pub force_set_severity: bool,
 
     /// EXPERIMENTAL/SUBJECT TO REMOVAL: select the encoding used to retrieve logs from the
     /// archivist. Options are "json" or "fxt". Default is "json".
     #[cfg(target_os = "fuchsia")]
-    #[argh(option, default = "LogEncoding::Json")]
-    pub encoding: LogEncoding,
+    #[argh(option)]
+    pub encoding: Option<LogEncoding>,
 
     /// enables structured JSON logs.
     #[cfg(target_os = "fuchsia")]
@@ -486,8 +621,8 @@ struct LogCommandCli {
     pub disable_reconnect: bool,
 }
 
-/// Consolidated log command representation containing merged filter criteria and subcommands.
 #[derive(Default, Clone, Debug, PartialEq)]
+/// Consolidated log command representation containing merged filter criteria and subcommands.
 pub struct LogCommand {
     pub sub_command: Option<LogSubCommand>,
     pub dump: bool,
@@ -495,61 +630,38 @@ pub struct LogCommand {
     pub filters: LogFilterArgs,
 }
 
+impl LogCommand {
+    /// Merges subcommand filter overrides (e.g. `dump` or `watch`) into `self.filters`.
+    pub fn merge_subcommand(&mut self) {
+        match &self.sub_command {
+            Some(LogSubCommand::Dump(raw_dump)) => {
+                self.filters.merge(raw_dump.clone().into_filter_args());
+            }
+            Some(LogSubCommand::Watch(raw_watch)) => {
+                self.filters.merge(raw_watch.clone().into_filter_args());
+            }
+            _ => {}
+        }
+    }
+}
+
 impl FromArgs for LogCommand {
     fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
-        let cli = LogCommandCli::from_args(command_name, args)?;
-        Ok(LogCommand {
-            sub_command: cli.sub_command,
-            dump: cli.dump,
-            set_severity: cli.set_severity,
-            filters: LogFilterArgs {
-                filter: cli.filter,
-                moniker: cli.moniker,
-                component: cli.component,
-                exclude: cli.exclude,
-                exclude_regex: cli.exclude_regex,
-                exclude_regex_file: cli.exclude_regex_file,
-                tag: cli.tag,
-                exclude_tags: cli.exclude_tags,
-                hide_tags: cli.hide_tags,
-                hide_file: cli.hide_file,
-                clock: cli.clock,
-                no_color: cli.no_color,
-                kernel: cli.kernel,
-                severity: cli.severity,
-                show_metadata: cli.show_metadata,
-                force_set_severity: cli.force_set_severity,
-                since: cli.since,
-                since_boot: cli.since_boot,
-                until: cli.until,
-                until_boot: cli.until_boot,
-                case_sensitive: cli.case_sensitive,
-                show_full_moniker: cli.show_full_moniker,
-                prefer_url_component_name: cli.prefer_url_component_name,
-                hide_moniker: cli.hide_moniker,
-                pid: cli.pid,
-                tid: cli.tid,
-                #[cfg(target_os = "fuchsia")]
-                encoding: cli.encoding,
-                #[cfg(target_os = "fuchsia")]
-                json: cli.json,
-                #[cfg(not(target_os = "fuchsia"))]
-                disable_reconnect: cli.disable_reconnect,
-                #[cfg(not(target_os = "fuchsia"))]
-                symbolize: cli.symbolize,
-            },
-        })
+        let cli = RawLogCommand::from_args(command_name, args)?;
+        let mut cmd = cli.into_log_command();
+        cmd.merge_subcommand();
+        Ok(cmd)
     }
 }
 
 impl ArgsInfo for LogCommand {
     fn get_args_info() -> argh::CommandInfoWithArgs {
-        LogCommandCli::get_args_info()
+        RawLogCommand::get_args_info()
     }
 }
 
 impl argh::SubCommand for LogCommand {
-    const COMMAND: &'static argh::CommandInfo = LogCommandCli::COMMAND;
+    const COMMAND: &'static argh::CommandInfo = RawLogCommand::COMMAND;
 }
 
 /// Result returned from processing logs
@@ -676,27 +788,27 @@ impl LogCommand {
     /// Returns the minimum log severity.
     #[must_use]
     pub fn severity(&self) -> Severity {
-        self.filters.severity
+        self.filters.severity.unwrap_or(Severity::Info)
     }
 
     /// Returns the timestamp display format.
     #[must_use]
     pub fn clock(&self) -> TimeFormat {
-        self.filters.clock.clone()
+        self.filters.clock.clone().unwrap_or(TimeFormat::Boot)
     }
 
     /// Returns the symbolization mode.
     #[cfg(not(target_os = "fuchsia"))]
     #[must_use]
     pub fn symbolize(&self) -> SymbolizeMode {
-        self.filters.symbolize.clone()
+        self.filters.symbolize.clone().unwrap_or(SymbolizeMode::Pretty)
     }
 
     /// Returns the log encoding format.
     #[cfg(target_os = "fuchsia")]
     #[must_use]
     pub fn encoding(&self) -> LogEncoding {
-        self.filters.encoding.clone()
+        self.filters.encoding.clone().unwrap_or(LogEncoding::Json)
     }
 
     /// Returns the log text filter patterns.
@@ -1128,7 +1240,7 @@ mod test {
         // Main should return an error
 
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
@@ -1170,7 +1282,7 @@ ffx log --force-set-severity.
     #[fuchsia::test]
     async fn logger_translates_selector_if_one_match() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
@@ -1210,7 +1322,7 @@ ffx log --force-set-severity.
     #[fuchsia::test]
     async fn logger_uses_specified_selectors_if_no_results_returned() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("core/something/a:b/elements:main/otherstuff:*#DEBUG")
                     .unwrap(),
@@ -1342,7 +1454,7 @@ ffx log --force-set-severity.
     #[fuchsia::test]
     async fn logger_prints_ignores_ambiguity_if_machine_output_is_used() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
+            sub_command: Some(LogSubCommand::Dump(RawDumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
@@ -1426,5 +1538,531 @@ ffx log --force-set-severity.
         );
         assert!(!LogError::IOError(std::io::Error::other("other")).is_broken_pipe());
         assert!(!LogError::NoBootTimestamp.is_broken_pipe());
+    }
+
+    #[test]
+    fn test_raw_dump_command_into_filter_args() {
+        let raw_dump = RawDumpCommand {
+            tail: Some(42),
+            filter: vec!["foo".to_string()],
+            severity: Some(Severity::Warn),
+            hide_tags: true,
+            ..RawDumpCommand::default()
+        };
+        let filters = raw_dump.into_filter_args();
+        assert_eq!(filters.filter, vec!["foo".to_string()]);
+        assert_eq!(filters.severity, Some(Severity::Warn));
+        assert!(filters.hide_tags);
+    }
+
+    #[test]
+    fn test_raw_watch_command_into_filter_args() {
+        let raw_watch = RawWatchCommand {
+            tag: vec!["my_tag".to_string()],
+            no_color: true,
+            ..RawWatchCommand::default()
+        };
+        let filters = raw_watch.into_filter_args();
+        assert_eq!(filters.tag, vec!["my_tag".to_string()]);
+        assert!(filters.no_color);
+    }
+
+    #[test]
+    fn test_merge_subcommand_dump_overlay() {
+        let cmd = LogCommand::from_args(
+            &["log"],
+            &[
+                "--severity",
+                "info",
+                "--filter",
+                "top_filter",
+                "dump",
+                "--tail",
+                "10",
+                "--severity",
+                "debug",
+                "--filter",
+                "sub_filter",
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(cmd.severity(), Severity::Debug);
+        assert_eq!(cmd.filter(), &["top_filter".to_string(), "sub_filter".to_string()]);
+        if let Some(LogSubCommand::Dump(dump)) = &cmd.sub_command {
+            assert_eq!(dump.tail, Some(10));
+        } else {
+            panic!("expected Dump subcommand");
+        }
+    }
+
+    #[test]
+    fn test_merge_subcommand_watch_overlay() {
+        let cmd = LogCommand::from_args(
+            &["log"],
+            &["--tag", "t1", "watch", "--tag", "t2", "--hide-tags"],
+        )
+        .unwrap();
+
+        assert_eq!(cmd.tag(), &["t1".to_string(), "t2".to_string()]);
+        assert!(cmd.hide_tags());
+    }
+
+    #[test]
+    fn test_merge_subcommand_validate_warnings_on_merged_moniker() {
+        let mut cmd =
+            LogCommand::from_args(&["log"], &["dump", "--moniker", "my_moniker"]).unwrap();
+
+        assert_eq!(cmd.moniker(), &["my_moniker".to_string()]);
+        let warnings = cmd.validate_cmd_flags_with_warnings().unwrap();
+        assert!(!warnings.is_empty());
+        assert_eq!(cmd.component(), &["my_moniker".to_string()]);
+        assert!(cmd.moniker().is_empty());
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    #[fuchsia::test]
+    async fn test_symbolize_accessor() {
+        let cmd_default = LogCommand::from_args(&["ffx", "log"], &["dump"]).unwrap();
+        assert_eq!(cmd_default.symbolize(), SymbolizeMode::Pretty);
+
+        let cmd_custom =
+            LogCommand::from_args(&["ffx", "log"], &["dump", "--symbolize", "off"]).unwrap();
+        assert_eq!(cmd_custom.symbolize(), SymbolizeMode::Off);
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::test]
+    async fn test_encoding_accessor() {
+        let cmd_default = LogCommand::from_args(&["ffx", "log"], &["dump"]).unwrap();
+        assert_eq!(cmd_default.encoding(), LogEncoding::Json);
+
+        let cmd_custom =
+            LogCommand::from_args(&["ffx", "log"], &["dump", "--encoding", "fxt"]).unwrap();
+        assert_eq!(cmd_custom.encoding(), LogEncoding::Fxt);
+    }
+
+    #[fuchsia::test]
+    async fn test_subcommand_moniker_deprecation() {
+        let mut cmd =
+            LogCommand::from_args(&["ffx", "log"], &["dump", "--moniker", "foo"]).unwrap();
+        assert_eq!(cmd.filters.moniker, vec!["foo"]);
+
+        let warnings = cmd.validate_cmd_flags_with_warnings().unwrap();
+        assert_eq!(warnings, vec!["WARNING: --moniker is deprecated, use --component instead"]);
+        assert_eq!(cmd.filters.component, vec!["foo"]);
+        assert!(cmd.filters.moniker.is_empty());
+
+        let mut cmd_both = LogCommand::from_args(
+            &["ffx", "log"],
+            &["dump", "--moniker", "foo", "--component", "bar"],
+        )
+        .unwrap();
+        let warnings_both = cmd_both.validate_cmd_flags_with_warnings().unwrap();
+        assert_eq!(
+            warnings_both,
+            vec![
+                "WARNING: --moniker is deprecated, use --component instead",
+                "WARNING: ignoring --moniker arguments in favor of --component"
+            ]
+        );
+        assert_eq!(cmd_both.filters.component, vec!["bar"]);
+    }
+
+    #[test]
+    fn test_subcommand_enum_overrides() {
+        let cmd =
+            LogCommand::from_args(&["log"], &["--severity", "warn", "dump", "--severity", "info"])
+                .unwrap();
+        assert_eq!(cmd.severity(), Severity::Info);
+        assert_eq!(cmd.filters.severity, Some(Severity::Info));
+    }
+
+    #[test]
+    fn test_merge_subcommand_no_subcommand_or_set_severity() {
+        let initial_filters = LogFilterArgs {
+            severity: Some(Severity::Warn),
+            filter: vec!["test_filter".into()],
+            no_color: true,
+            ..Default::default()
+        };
+        let mut cmd_none = LogCommand {
+            sub_command: None,
+            dump: false,
+            set_severity: vec![],
+            filters: initial_filters.clone(),
+        };
+        cmd_none.merge_subcommand();
+        assert_eq!(cmd_none.filters, initial_filters);
+        assert_eq!(cmd_none.sub_command, None);
+
+        let set_severity_cmd =
+            SetSeverityCommand { no_persist: true, force: true, interest_selector: vec![] };
+        let mut cmd_set_sev = LogCommand {
+            sub_command: Some(LogSubCommand::SetSeverity(set_severity_cmd.clone())),
+            dump: false,
+            set_severity: vec![],
+            filters: initial_filters.clone(),
+        };
+        cmd_set_sev.merge_subcommand();
+        assert_eq!(cmd_set_sev.filters, initial_filters);
+        assert_eq!(cmd_set_sev.sub_command, Some(LogSubCommand::SetSeverity(set_severity_cmd)));
+    }
+
+    #[test]
+    fn test_macro_raw_command_conversions() {
+        #[cfg(not(target_os = "fuchsia"))]
+        let raw_dump = RawDumpCommand::from_args(
+            &["dump"],
+            &[
+                "--tail",
+                "50",
+                "--severity",
+                "error",
+                "--filter",
+                "dump_filter",
+                "--symbolize",
+                "off",
+                "--disable-reconnect",
+            ],
+        )
+        .unwrap();
+
+        #[cfg(target_os = "fuchsia")]
+        let raw_dump = RawDumpCommand::from_args(
+            &["dump"],
+            &[
+                "--tail",
+                "50",
+                "--severity",
+                "error",
+                "--filter",
+                "dump_filter",
+                "--encoding",
+                "fxt",
+                "--json",
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(raw_dump.tail, Some(50));
+        let dump_filters = raw_dump.into_filter_args();
+        assert_eq!(dump_filters.severity, Some(Severity::Error));
+        assert_eq!(dump_filters.filter, vec!["dump_filter"]);
+        #[cfg(not(target_os = "fuchsia"))]
+        {
+            assert_eq!(dump_filters.symbolize, Some(SymbolizeMode::Off));
+            assert!(dump_filters.disable_reconnect);
+        }
+        #[cfg(target_os = "fuchsia")]
+        {
+            assert_eq!(dump_filters.encoding, Some(LogEncoding::Fxt));
+            assert!(dump_filters.json);
+        }
+
+        #[cfg(not(target_os = "fuchsia"))]
+        let raw_watch = RawWatchCommand::from_args(
+            &["watch"],
+            &["--severity", "warn", "--tag", "watch_tag", "--symbolize", "classic"],
+        )
+        .unwrap();
+
+        #[cfg(target_os = "fuchsia")]
+        let raw_watch = RawWatchCommand::from_args(
+            &["watch"],
+            &["--severity", "warn", "--tag", "watch_tag", "--encoding", "json"],
+        )
+        .unwrap();
+
+        let watch_filters = raw_watch.into_filter_args();
+        assert_eq!(watch_filters.severity, Some(Severity::Warn));
+        assert_eq!(watch_filters.tag, vec!["watch_tag"]);
+        #[cfg(not(target_os = "fuchsia"))]
+        assert_eq!(watch_filters.symbolize, Some(SymbolizeMode::Classic));
+        #[cfg(target_os = "fuchsia")]
+        assert_eq!(watch_filters.encoding, Some(LogEncoding::Json));
+    }
+
+    #[test]
+    fn test_dump_help_text() {
+        let help_err = RawDumpCommand::from_args(&["dump"], &["--help"]).unwrap_err();
+        let help_output = help_err.output;
+        assert!(help_output.contains("--tail"), "dump help should include --tail");
+        assert!(help_output.contains("--severity"), "dump help should include --severity");
+        assert!(help_output.contains("--filter"), "dump help should include --filter");
+        assert!(help_output.contains("--since"), "dump help should include --since");
+        assert!(help_output.contains("--until"), "dump help should include --until");
+    }
+
+    #[test]
+    fn test_watch_help_text() {
+        let help_err = RawWatchCommand::from_args(&["watch"], &["--help"]).unwrap_err();
+        let help_output = help_err.output;
+        assert!(help_output.contains("--severity"), "watch help should include --severity");
+        assert!(help_output.contains("--filter"), "watch help should include --filter");
+        assert!(help_output.contains("--since"), "watch help should include --since");
+        assert!(help_output.contains("--until"), "watch help should include --until");
+    }
+
+    #[test]
+    fn test_option_field_subcommand_overlay() {
+        // 1. Subcommand `Some` overrides top-level `None`
+        let cmd_sub_some = LogCommand::from_args(
+            &["log"],
+            &[
+                "dump",
+                "--pid",
+                "123",
+                "--tid",
+                "456",
+                "--since",
+                "10m ago",
+                "--until",
+                "5m ago",
+                "--exclude-regex-file",
+                "/path/sub.txt",
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(cmd_sub_some.pid(), Some(123));
+        assert_eq!(cmd_sub_some.tid(), Some(456));
+        assert!(cmd_sub_some.since().is_some());
+        assert!(cmd_sub_some.until().is_some());
+        assert_eq!(cmd_sub_some.exclude_regex_file(), Some("/path/sub.txt"));
+
+        // 2. Subcommand `Some` overrides top-level `Some`
+        let cmd_sub_override = LogCommand::from_args(
+            &["log"],
+            &[
+                "--pid",
+                "11",
+                "--tid",
+                "22",
+                "--since",
+                "20m ago",
+                "--until",
+                "15m ago",
+                "--exclude-regex-file",
+                "/path/top.txt",
+                "dump",
+                "--pid",
+                "123",
+                "--tid",
+                "456",
+                "--since",
+                "10m ago",
+                "--until",
+                "5m ago",
+                "--exclude-regex-file",
+                "/path/sub.txt",
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(cmd_sub_override.pid(), Some(123));
+        assert_eq!(cmd_sub_override.tid(), Some(456));
+        assert_eq!(cmd_sub_override.exclude_regex_file(), Some("/path/sub.txt"));
+        assert!(cmd_sub_override.since().is_some());
+        assert!(cmd_sub_override.until().is_some());
+
+        // 3. Subcommand `None` preserves top-level `Some`
+        let cmd_top_some = LogCommand::from_args(
+            &["log"],
+            &[
+                "--pid",
+                "11",
+                "--tid",
+                "22",
+                "--since",
+                "20m ago",
+                "--until",
+                "15m ago",
+                "--exclude-regex-file",
+                "/path/top.txt",
+                "dump",
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(cmd_top_some.pid(), Some(11));
+        assert_eq!(cmd_top_some.tid(), Some(22));
+        assert_eq!(cmd_top_some.exclude_regex_file(), Some("/path/top.txt"));
+        assert!(cmd_top_some.since().is_some());
+        assert!(cmd_top_some.until().is_some());
+    }
+
+    #[test]
+    fn test_enum_subcommand_overlay_and_preservation() {
+        // Top-level non-default enum preserved when subcommand uses defaults
+        #[cfg(not(target_os = "fuchsia"))]
+        let cmd = LogCommand::from_args(
+            &["log"],
+            &["--severity", "warn", "--clock", "local", "--symbolize", "off", "dump"],
+        )
+        .unwrap();
+
+        #[cfg(target_os = "fuchsia")]
+        let cmd = LogCommand::from_args(
+            &["log"],
+            &["--severity", "warn", "--clock", "local", "--encoding", "fxt", "dump"],
+        )
+        .unwrap();
+
+        assert_eq!(cmd.severity(), Severity::Warn);
+        assert_eq!(cmd.clock(), TimeFormat::Local);
+        #[cfg(not(target_os = "fuchsia"))]
+        assert_eq!(cmd.symbolize(), SymbolizeMode::Off);
+        #[cfg(target_os = "fuchsia")]
+        assert_eq!(cmd.encoding(), LogEncoding::Fxt);
+
+        // Subcommand non-default enum overrides top-level non-default enum
+        #[cfg(not(target_os = "fuchsia"))]
+        let cmd_override = LogCommand::from_args(
+            &["log"],
+            &[
+                "--severity",
+                "warn",
+                "--clock",
+                "local",
+                "--symbolize",
+                "off",
+                "dump",
+                "--severity",
+                "error",
+                "--clock",
+                "utc",
+                "--symbolize",
+                "classic",
+            ],
+        )
+        .unwrap();
+
+        #[cfg(target_os = "fuchsia")]
+        let cmd_override = LogCommand::from_args(
+            &["log"],
+            &[
+                "--severity",
+                "warn",
+                "--clock",
+                "local",
+                "dump",
+                "--severity",
+                "error",
+                "--clock",
+                "utc",
+                "--encoding",
+                "fxt",
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(cmd_override.severity(), Severity::Error);
+        assert_eq!(cmd_override.clock(), TimeFormat::Utc);
+        #[cfg(not(target_os = "fuchsia"))]
+        assert_eq!(cmd_override.symbolize(), SymbolizeMode::Classic);
+        #[cfg(target_os = "fuchsia")]
+        assert_eq!(cmd_override.encoding(), LogEncoding::Fxt);
+    }
+
+    #[test]
+    fn test_boolean_flag_cumulative_or() {
+        let cmd = LogCommand::from_args(
+            &["log"],
+            &["--no-color", "--case-sensitive", "dump", "--hide-file", "--kernel"],
+        )
+        .unwrap();
+
+        assert!(cmd.no_color());
+        assert!(cmd.case_sensitive());
+        assert!(cmd.hide_file());
+        assert!(cmd.kernel());
+        assert!(!cmd.hide_tags());
+        assert!(!cmd.show_metadata());
+
+        // Verify OR combining when set on both top-level and subcommand
+        let cmd_both = LogCommand::from_args(&["log"], &["--kernel", "dump", "--kernel"]).unwrap();
+
+        assert!(cmd_both.kernel());
+    }
+
+    #[test]
+    fn test_log_command_accessors() {
+        // Test default state
+        let default_cmd = LogCommand::default();
+        assert_eq!(default_cmd.pid(), None);
+        assert_eq!(default_cmd.tid(), None);
+        assert!(!default_cmd.hide_file());
+        #[cfg(target_os = "fuchsia")]
+        assert!(!default_cmd.json());
+        assert!(default_cmd.exclude().is_empty());
+        assert!(default_cmd.exclude_regex().is_empty());
+        assert_eq!(default_cmd.since(), None);
+        assert_eq!(default_cmd.until(), None);
+        assert!(!default_cmd.kernel());
+        assert!(!default_cmd.case_sensitive());
+        #[cfg(not(target_os = "fuchsia"))]
+        assert!(!default_cmd.disable_reconnect());
+
+        // Test with non-default values set via CLI args
+        #[cfg(not(target_os = "fuchsia"))]
+        let args = &[
+            "--pid",
+            "123",
+            "--tid",
+            "456",
+            "--hide-file",
+            "--exclude",
+            "bad_tag",
+            "--exclude",
+            "other_tag",
+            "--exclude-regex",
+            "^error.*",
+            "--since",
+            "10m ago",
+            "--until",
+            "5m ago",
+            "--kernel",
+            "--case-sensitive",
+            "--disable-reconnect",
+        ];
+
+        #[cfg(target_os = "fuchsia")]
+        let args = &[
+            "--pid",
+            "123",
+            "--tid",
+            "456",
+            "--hide-file",
+            "--exclude",
+            "bad_tag",
+            "--exclude",
+            "other_tag",
+            "--exclude-regex",
+            "^error.*",
+            "--since",
+            "10m ago",
+            "--until",
+            "5m ago",
+            "--kernel",
+            "--case-sensitive",
+            "--json",
+        ];
+
+        let cmd = LogCommand::from_args(&["log"], args).unwrap();
+
+        assert_eq!(cmd.pid(), Some(123));
+        assert_eq!(cmd.tid(), Some(456));
+        assert!(cmd.hide_file());
+        #[cfg(target_os = "fuchsia")]
+        assert!(cmd.json());
+        assert_eq!(cmd.exclude(), &["bad_tag".to_string(), "other_tag".to_string()]);
+        assert_eq!(cmd.exclude_regex(), &["^error.*".to_string()]);
+        assert!(cmd.since().is_some());
+        assert!(cmd.until().is_some());
+        assert!(cmd.kernel());
+        assert!(cmd.case_sensitive());
+        #[cfg(not(target_os = "fuchsia"))]
+        assert!(cmd.disable_reconnect());
     }
 }

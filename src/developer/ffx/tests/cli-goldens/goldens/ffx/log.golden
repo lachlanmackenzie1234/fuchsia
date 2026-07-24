@@ -24,6 +24,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "set-severity"
+        }
+      },
+      "optionality": "repeating",
+      "long": "--set-severity",
+      "short": null,
+      "description": "configure the log settings on the target device for components matching the given selector. This modifies the minimum log severity level emitted by components during the logging session. Specify using the format <component-selector>#<log-level>, with level as one of FATAL|ERROR|WARN|INFO|DEBUG|TRACE. May be repeated and it's also possible to pass multiple comma-separated strings per invocation. Cannot be used in conjunction with the set-severity subcommand.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "filter"
         }
       },
@@ -182,7 +194,7 @@
       "optionality": "optional",
       "long": "--until-boot",
       "short": null,
-      "description": "show only logs until a certain time (as a a boot timestamp: seconds since the target's boot time).",
+      "description": "show only logs until a certain time (as a boot timestamp: seconds since the target's boot time).",
       "hidden": false
     },
     {
@@ -214,7 +226,7 @@
       "optionality": "optional",
       "long": "--case-sensitive",
       "short": null,
-      "description": "if enabled, text filtering options are case-sensitive this applies to --filter, --exclude, --tag, and --exclude-tag.",
+      "description": "if enabled, text filtering options are case-sensitive this applies to --filter, --exclude, --tag, and --exclude-tags.",
       "hidden": false
     },
     {
@@ -276,18 +288,6 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "set-severity"
-        }
-      },
-      "optionality": "repeating",
-      "long": "--set-severity",
-      "short": null,
-      "description": "configure the log settings on the target device for components matching the given selector. This modifies the minimum log severity level emitted by components during the logging session. Specify using the format <component-selector>#<log-level>, with level as one of FATAL|ERROR|WARN|INFO|DEBUG|TRACE. May be repeated and it's also possible to pass multiple comma-separated strings per invocation. Cannot be used in conjunction with --set-severity-persist.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "pid"
         }
       },
@@ -314,7 +314,7 @@
       "optionality": "optional",
       "long": "--force-set-severity",
       "short": null,
-      "description": "if enabled, selectors will be passed directly to Archivist without any filtering. If disabled and no matching components are found, the user will be prompted to either enable this or be given a list of selectors to choose from. This applies to both --set-severity and --set-severity-persist.",
+      "description": "if enabled, selectors will be passed directly to Archivist without any filtering. If disabled and no matching components are found, the user will be prompted to either enable this or be given a list of selectors to choose from. This applies to both --set-severity and the set-severity subcommand.",
       "hidden": false
     },
     {
@@ -327,7 +327,7 @@
     }
   ],
   "notes": [
-    "Logs are retrieve from the target at the moment this command is called.\n\nYou may see some additional information attached to the log line:\n\n- `dropped=N`: this means that N logs attributed to the component were dropped when the component\n  wrote to the log socket. This can happen when archivist cannot keep up with the rate of logs being\n  emitted by the component and the component filled the log socket buffer in the kernel.\n\n- `rolled=N`: this means that N logs rolled out from the archivist buffer and ffx never saw them.\n  This can happen when more logs are being ingested by the archivist across all components and the\n  ffx couldn't retrieve them fast enough.\n\nSymbolization is performed in the background using the symbolizer host tool. You can pass\nadditional arguments to the symbolizer tool (for example, to add a remote symbol server) using:\n  $ ffx config set proactive_log.symbolize.extra_args \"--symbol-server gs://some-url/path --symbol-server gs://some-other-url/path ...\"\n\nTo learn more about configuring the log viewer, visit https://fuchsia.dev/fuchsia-src/development/tools/ffx/commands/log"
+    "Logs are retrieved from the target at the moment this command is called.\n\nYou may see some additional information attached to the log line:\n\n- `dropped=N`: this means that N logs attributed to the component were dropped when the component\n  wrote to the log socket. This can happen when archivist cannot keep up with the rate of logs being\n  emitted by the component and the component filled the log socket buffer in the kernel.\n\n- `rolled=N`: this means that N logs rolled out from the archivist buffer and ffx never saw them.\n  This can happen when more logs are being ingested by the archivist across all components and the\n  ffx couldn't retrieve them fast enough.\n\nSymbolization is performed in the background using the symbolizer host tool. You can pass\nadditional arguments to the symbolizer tool (for example, to add a remote symbol server) using:\n  $ ffx config set proactive_log.symbolize.extra_args \"--symbol-server gs://some-url/path --symbol-server gs://some-other-url/path ...\"\n\nTo learn more about configuring the log viewer, visit https://fuchsia.dev/fuchsia-src/development/tools/ffx/commands/log"
   ],
   "commands": [],
   "positionals": [],
