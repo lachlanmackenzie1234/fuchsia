@@ -38,6 +38,12 @@ const RAW_SPINLOCK_SIZE: usize = 4;
 #[repr(C, align(8))]
 struct RawSpinlockStorage(zr::OpaqueBytes<RAW_SPINLOCK_SIZE>);
 
+impl RawSpinlockStorage {
+    const fn zeroed() -> Self {
+        Self(zr::OpaqueBytes::new([0; RAW_SPINLOCK_SIZE]))
+    }
+}
+
 /// Opaque layout block matching the Zircon C++ SpinLock exactly.
 #[pin_data(PinnedDrop)]
 #[repr(C)]
@@ -45,6 +51,17 @@ pub struct RawSpinlock {
     #[cfg(feature = "lock_dep")]
     class_id: *const c_void,
     storage: RawSpinlockStorage,
+}
+
+impl RawSpinlock {
+    /// Creates a zero-initialized (un-acquired) `RawSpinlock`.
+    pub const fn zeroed() -> Self {
+        Self {
+            #[cfg(feature = "lock_dep")]
+            class_id: core::ptr::null(),
+            storage: RawSpinlockStorage::zeroed(),
+        }
+    }
 }
 
 // SAFETY: RawSpinlock is safe to share and access across threads.
