@@ -67,20 +67,6 @@ _ZX_SYSCALL_DECL(sampler_stop, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (iobuffer),
 
 _ZX_SYSCALL_DECL(syscall_next_1, zx_status_t, /* no attributes */, 1, (arg), (int32_t arg))
 
-_ZX_SYSCALL_DECL(system_set_processor_power_domain, zx_status_t, /* no attributes */, 8,
-                 (resource, options, domain, port, power_levels, num_power_levels, transitions,
-                  num_transitions),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint64_t options,
-                  const zx_processor_power_domain_t* domain,
-                  _ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t port,
-                  const zx_processor_power_level_t* power_levels, size_t num_power_levels,
-                  const zx_processor_power_level_transition_t* transitions, size_t num_transitions))
-
-_ZX_SYSCALL_DECL(system_set_processor_power_state, zx_status_t, /* no attributes */, 2,
-                 (port, power_state),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t port,
-                  const zx_processor_power_state_t* power_state))
-
 _ZX_SYSCALL_DECL(system_suspend_enter, zx_status_t, /* no attributes */, 7,
                  (resource, resume_deadline, options, header, entries, num_entries, actual_entries),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource,

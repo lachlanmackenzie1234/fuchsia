@@ -9,7 +9,6 @@ import("//src/power/cpu-manager/node_config/node_config.gni")
 
 cpu_manager_deps = [
   ":cpu-manager-config-lib",
-  "energy_model_config/parser",
   "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
   "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
   "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
@@ -58,7 +57,6 @@ cpu_manager_sources = [
   "src/main.rs",
   "src/message.rs",
   "src/node.rs",
-  "src/rppm_handler.rs",
   "src/syscall_handler.rs",
   "src/test/mock_node.rs",
   "src/test/mod.rs",

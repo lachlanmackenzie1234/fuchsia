@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::types::{OperatingPoint, ThermalLoad};
-use energy_model_config::PowerLevelDomain;
 use fidl_fuchsia_power_cpu as fcpu;
 use zx::sys;
 
@@ -26,12 +25,6 @@ pub enum Message {
 
     // Issues the zx_system_set_performance_info syscall.
     SetCpuPerformanceInfo(Vec<sys::zx_cpu_performance_info_t>),
-
-    // Issues the zx_system_set_processor_power_domain syscall.
-    SetProcessorPowerDomain(PowerLevelDomain, sys::zx_handle_t),
-
-    // Issues the zx_system_set_processor_power_state syscall.
-    SetProcessorPowerState(sys::zx_handle_t, sys::zx_processor_power_state_t),
 
     /// Get the current operating point
     GetOperatingPoint,
@@ -89,12 +82,6 @@ pub enum MessageReturn {
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     SetCpuPerformanceInfo,
-
-    /// There is no arg in this MessageReturn type. It only serves as an ACK.
-    SetProcessorPowerDomain,
-
-    /// There is no arg in this MessageReturn type. It only serves as an ACK.
-    SetProcessorPowerState,
 
     /// Arg: the operating point returned from the node
     GetOperatingPoint(u32),

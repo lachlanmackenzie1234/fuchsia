@@ -3,53 +3,7 @@
 // found in the LICENSE file.
 library zx;
 
-const MAX_POWER_LEVELS usize64 = 256;
-const MAX_POWER_LEVEL_TRANSITIONS usize64 = 65536; // MAX_POWER_LEVELS^2
-type ProcessorPowerDomain = struct {
-    // mask of Cpus that belong to this power domain.
-    mask array<uint64, 8>;
-    // Defines an `id` used for transition requests.
-    domain_id uint32;
-    // Padding bytes.
-    padding1 array<uint8, 4>;
-};
 
-type ProcessorPowerLevelOptions = flexible bits : uint64 {
-    PROCESSOR_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT = 1;
-};
-
-type ProcessorPowerControl = flexible enum : uint64 {
-    PROCESSOR_POWER_CONTROL_CPU_DRIVER = 0;
-    PROCESSOR_POWER_CONTROL_ARM_PSCI = 1;
-    PROCESSOR_POWER_CONTROL_ARM_WFI = 2;
-    PROCESSOR_POWER_CONTROL_RISCV_SBI = 3;
-    PROCESSOR_POWER_CONTROL_RISCV_WFI = 4;
-};
-
-type ProcessorPowerLevel = struct {
-    options ProcessorPowerLevelOptions;
-    processing_rate uint64;
-    power_coefficient_nw uint64;
-    control_interface ProcessorPowerControl;
-    control_argument uint64;
-    diagnostic_name string_array<MAX_NAME_LEN>;
-    reserved array<uint8, 32>;
-};
-
-type ProcessorPowerLevelTransition = struct {
-    latency Duration;
-    energy_nj uint64;
-    from uint8;
-    to uint8;
-    reserved array<uint8, 6>;
-};
-
-type ProcessorPowerState = struct {
-    domain_id uint32;
-    option uint32;
-    control_interface ProcessorPowerControl;
-    control_argument uint64;
-};
 
 type SystemPowerctlArg = struct {
         // TODO(scottmg): More unnamed unions.
@@ -753,45 +707,7 @@ closed protocol System {
     }) -> () error Status;
 
 
-    /// ## Summary
-    ///
-    /// Updates the current processor power level state as observed by the kernel.
-    /// Note: Process must use next-vdso.
-    ///
-    ///
-    /// ## Declaration
-    ///
-    /// ```c
-    /// #include <zircon/syscalls-next.h>
-    ///
-    /// zx_status_t zx_system_set_processor_power_state(zx_handle_t port,
-    ///                                                 const zx_processor_power_state_t* power_state);
-    /// ```
-    ///
-    /// ## Description
-    ///
-    /// `port`  must be of type `ZX_OBJ_TYPE_PORT` and must be the same port where the power domain
-    ///  transition requests are queued. The `port` is the capability for updating a specific
-    ///   power domain.
-    ///
-    /// `power_state` is the power state of the domain provided in `power_state.target_id`.
-    ///
-    /// ## Rights
-    /// `port` must have `ZX_RIGHT_IO`.
-    ///
-    /// ## Errors
-    ///
-    /// `ZX_ERR_ACCESS_DENIED` if `port` is not the one registered with the power domain.
-    ///
-    /// `ZX_ERR_WRONG_TYPE` if `port` is not of type `ZX_OBJ_TYPE_PORT`.
-    ///
-    /// `ZX_ERR_INVALID_ARGS` if `power_state` transition is not present in the registered energy model.
-    ///
-    @next
-    strict SetProcessorPowerState(resource struct {
-        port Handle:PORT;
-        power_state ProcessorPowerState;
-    }) -> () error Status;
+
 
     /// ## Summary
     ///
@@ -1254,76 +1170,4 @@ closed protocol System {
     }) -> (struct {
         actual_entries uint32;
     }) error Status;
-
-    /// ## Summary
-    ///
-    /// Informs the kernel of the processor power levels within a given power
-    /// domain for energy-aware scheduling.
-    ///
-    /// ## Declaration
-    ///
-    /// ```c
-    /// #include <zircon/syscalls-next.h>
-    ///
-    /// zx_status_t zx_system_set_processor_power_domain(
-    ///     zx_handle_t resource,
-    ///     uint64_t options,
-    ///     const zx_power_domain_t* power_domain,
-    ///     zx_handle_t port,
-    ///     const zx_processor_power_level_t* power_levels,
-    ///     size_t num_power_levels,
-    ///     const zx_processor_power_level_transition_t* transitions,
-    ///     size_t num_transitions);
-    /// ```
-    ///
-    /// ## Description
-    ///
-    /// Enables energy-aware scheduling for a given processor power domain.
-    ///
-    /// Power levels are implicitly enumerated as the indices of `power_levels`.
-    ///
-    /// There are no ordering restrictions on `transformations` and the power
-    /// levels they encode correspond to those defined by `power_levels`. An
-    /// absent transformation between levels is assumed to indicate that there
-    /// is no energy cost borne by perfoming it.
-    ///
-    /// The provided `power_domain_id` provides a unique identifier for requesting
-    /// operations on all CPUs that are part of `cpus` mask. Any power level
-    /// transition handler must understand the association.
-    ///
-    /// This syscall shall have "set or update" semantics, such that any new data
-    /// replaces exisitng one. This applies for `power_domain_id` and `cpus`.
-    ///
-    /// Provided `port` will be used for queueing power level transition requests.
-    ///
-    /// ## Rights
-    ///
-    /// `resource` must be of `ZX_RSRC_KIND_SYSTEM` kind and
-    /// `ZX_RSRC_SYSTEM_CPU_BASE` base.
-    ///
-    /// ## Return value
-    ///
-    /// `ZX_OK` is returned if and only if the processor power level domain
-    /// was successfully registered.
-    ///
-    /// ## Errors
-    ///
-    /// `ZX_ERR_ACCESS_DENIED` if `resource` is not a valid handle.
-    ///
-    /// `ZX_ERR_WRONG_TYPE` if `resource` is not a valid resource handle of
-    /// SYSTEM kind and CPU base.
-    ///
-    /// `ZX_ERR_OUT_OF_RANGE` if `num_power_levels` exceeds
-    /// `ZX_MAX_POWER_LEVELS` or `num_transitions` exceeds
-    /// `ZX_MAX_POWER_LEVEL_TRANSITIONS`.
-    ///
-    @next
-    strict SetProcessorPowerDomain(resource struct {
-        resource Handle:RESOURCE;
-        options uint64;
-        domain ProcessorPowerDomain;
-        port Handle:PORT;
-        power_levels vector<ProcessorPowerLevel>:MAX_POWER_LEVELS;
-        transitions vector<ProcessorPowerLevelTransition>:MAX_POWER_LEVEL_TRANSITIONS;
-    }) -> () error Status;
 };

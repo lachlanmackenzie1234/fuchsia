@@ -5,23 +5,23 @@
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use anyhow::{Context, Error, format_err};
+use fidl_fuchsia_power_cpu_manager as fcpumanager;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter as _; // for `set_starting_up()`, etc.
 use futures::future::{LocalBoxFuture, join_all};
 use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
 use log::*;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_power_cpu_manager as fcpumanager, fuchsia_async as fasync, serde_json as json, zx,
-};
+use zx;
 
 // nodes
 use crate::{
     cpu_control_handler, cpu_device_handler, cpu_manager_main, cpu_stats_handler,
-    cpu_stats_recorder, domain_controller, rppm_handler, syscall_handler, thermal_watcher,
-    trippoint_watcher,
+    cpu_stats_recorder, domain_controller, syscall_handler, thermal_watcher, trippoint_watcher,
 };
 
 pub struct CpuManager {
@@ -185,11 +185,6 @@ impl CpuManager {
                 service_fs,
             )
             .build()?,
-            "RppmHandler" => {
-                rppm_handler::RppmHandlerBuilder::new_from_json(json_data, &self.nodes)
-                    .build(node_futures)
-                    .await?
-            }
 
             // TODO(fxbug.dev/42062455): Remove async node creation
             "SyscallHandler" => {

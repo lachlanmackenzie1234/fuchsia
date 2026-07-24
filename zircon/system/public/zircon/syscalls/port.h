@@ -159,24 +159,6 @@ typedef struct zx_packet_page_request {
   uint64_t reserved1;
 } zx_packet_page_request_t;
 
-typedef struct {
-  /// Request targeting the provided power domain.
-  uint32_t domain_id;
-
-  // Options applying to this transition.
-  uint32_t options;
-
-  // Control Interface ID provided in the energy model.
-  uint64_t control_interface;
-
-  // Control Interface Argument provided in the energy model.
-  uint64_t control_argument;
-
-  // Padding bits.
-  uint64_t reserved;
-
-} zx_packet_processor_power_level_transition_request_t;
-
 typedef struct zx_port_packet {
   uint64_t key;
   zx_packet_type_t type;
@@ -190,7 +172,6 @@ typedef struct zx_port_packet {
     zx_packet_guest_vcpu_t guest_vcpu;
     zx_packet_interrupt_t interrupt;
     zx_packet_page_request_t page_request;
-    zx_packet_processor_power_level_transition_request_t processor_power_level_transition;
   };
 } zx_port_packet_t;
 

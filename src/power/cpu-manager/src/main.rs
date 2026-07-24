@@ -20,7 +20,6 @@ mod cpu_device_handler;
 mod cpu_manager_main;
 mod cpu_stats_handler;
 mod cpu_stats_recorder;
-mod rppm_handler;
 mod syscall_handler;
 mod thermal_watcher;
 mod trippoint_watcher;

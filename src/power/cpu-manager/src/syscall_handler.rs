@@ -7,12 +7,12 @@ use crate::message::{Message, MessageResult, MessageReturn};
 use crate::node::Node;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use energy_model_config::PowerLevelDomain;
+use fidl_fuchsia_kernel as fkernel;
 use fuchsia_inspect::{self as inspect, NumericProperty as _, Property as _};
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::rc::Rc;
 use zx::sys;
-use {fidl_fuchsia_kernel as fkernel, serde_json as json};
 
 /// Node: SyscallHandler
 ///
@@ -22,8 +22,6 @@ use {fidl_fuchsia_kernel as fkernel, serde_json as json};
 /// Handles Messages:
 ///     - GetNumCpus
 ///     - SetCpuPerformanceInfo
-///     - SetProcessorPowerDomain
-///     - SetProcessorPowerState
 ///
 /// FIDL dependencies: None
 
@@ -151,66 +149,6 @@ impl SyscallHandler {
 
         Ok(MessageReturn::SetCpuPerformanceInfo)
     }
-
-    fn handle_set_processor_power_domain(
-        &self,
-        power_level_domain: &PowerLevelDomain,
-        port_handle: sys::zx_handle_t,
-    ) -> MessageResult {
-        let PowerLevelDomain { power_domain, power_levels, power_level_transitions } =
-            power_level_domain.clone();
-        let status = unsafe {
-            sys::zx_system_set_processor_power_domain(
-                self.cpu_resource.raw_handle(),
-                0,
-                &power_domain,
-                port_handle,
-                power_levels.as_ptr() as *const sys::zx_processor_power_level_t,
-                power_levels.len(),
-                power_level_transitions.as_ptr()
-                    as *const sys::zx_processor_power_level_transition_t,
-                power_level_transitions.len(),
-            )
-        };
-
-        if let Err(e) = zx::Status::ok(status) {
-            self.inspect.set_processor_power_domain_error_count.add(1);
-            let error_string = e.to_string();
-            self.inspect.set_processor_power_domain_last_error.set(&error_string);
-            let verbose_string = format!(
-                "{}: zx_system_set_processor_power_domain returned error: {}",
-                self.name(),
-                error_string
-            );
-            log::error!("{}", verbose_string);
-            return Err(format_err!("{}", verbose_string).into());
-        }
-
-        Ok(MessageReturn::SetProcessorPowerDomain)
-    }
-
-    fn handle_set_processor_power_state(
-        &self,
-        port_handle: sys::zx_handle_t,
-        pstate: &sys::zx_processor_power_state_t,
-    ) -> MessageResult {
-        let status = unsafe { sys::zx_system_set_processor_power_state(port_handle, pstate) };
-
-        if let Err(e) = zx::Status::ok(status) {
-            self.inspect.set_processor_power_state_error_count.add(1);
-            let error_string = e.to_string();
-            self.inspect.set_processor_power_state_last_error.set(&error_string);
-            let verbose_string = format!(
-                "{}: zx_system_set_processor_power_state returned error: {}",
-                self.name(),
-                error_string
-            );
-            log::error!("{}", verbose_string);
-            return Err(format_err!("{}", verbose_string).into());
-        }
-
-        Ok(MessageReturn::SetProcessorPowerState)
-    }
 }
 
 #[async_trait(?Send)]
@@ -225,12 +163,7 @@ impl Node for SyscallHandler {
             Message::SetCpuPerformanceInfo(new_info) => {
                 self.handle_set_cpu_performance_info(new_info)
             }
-            Message::SetProcessorPowerDomain(power_level_domain, port_handle) => {
-                self.handle_set_processor_power_domain(power_level_domain, *port_handle)
-            }
-            Message::SetProcessorPowerState(port_handle, pstate) => {
-                self.handle_set_processor_power_state(*port_handle, pstate)
-            }
+
             _ => Err(CpuManagerError::Unsupported),
         }
     }
@@ -243,12 +176,6 @@ struct InspectData {
     // Properties
     set_performance_info_error_count: inspect::UintProperty,
     set_performance_info_last_error: inspect::StringProperty,
-
-    set_processor_power_domain_error_count: inspect::UintProperty,
-    set_processor_power_domain_last_error: inspect::StringProperty,
-
-    set_processor_power_state_error_count: inspect::UintProperty,
-    set_processor_power_state_last_error: inspect::StringProperty,
 }
 
 impl InspectData {
@@ -261,28 +188,10 @@ impl InspectData {
             set_performance_info.create_string("last_error", "<None>");
         root_node.record(set_performance_info);
 
-        let set_processor_power_domain = root_node.create_child("set_processor_power_domain");
-        let set_processor_power_domain_error_count =
-            set_processor_power_domain.create_uint("error_count", 0);
-        let set_processor_power_domain_last_error =
-            set_processor_power_domain.create_string("last_error", "<None>");
-        root_node.record(set_processor_power_domain);
-
-        let set_processor_power_state = root_node.create_child("set_processor_power_state");
-        let set_processor_power_state_error_count =
-            set_processor_power_state.create_uint("error_count", 0);
-        let set_processor_power_state_last_error =
-            set_processor_power_state.create_string("last_error", "<None>");
-        root_node.record(set_processor_power_state);
-
         Self {
             _root_node: root_node,
             set_performance_info_error_count,
             set_performance_info_last_error,
-            set_processor_power_domain_error_count,
-            set_processor_power_domain_last_error,
-            set_processor_power_state_error_count,
-            set_processor_power_state_last_error,
         }
     }
 }
@@ -292,7 +201,6 @@ mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
-    use zx::sys::zx_processor_power_domain_t;
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
     #[fuchsia::test]
@@ -367,99 +275,6 @@ mod tests {
                         error_count: 1u64,
                         last_error: set_performance_info_status_string.clone(),
                     },
-                    set_processor_power_domain: {
-                        error_count: 0u64,
-                        last_error: "<None>".to_string(),
-                    },
-                    set_processor_power_state: {
-                        error_count: 0u64,
-                        last_error: "<None>".to_string(),
-                    }
-                }
-            }
-        );
-
-        // The test links against a fake implementation of
-        // zx_system_set_processor_power_domain that is hard-coded to return ZX_ERR_INTERNAL.
-        let set_power_level_domain_status_string = zx::Status::INTERNAL.to_string();
-
-        match handler
-            .handle_message(&&Message::SetProcessorPowerDomain(
-                PowerLevelDomain {
-                    power_domain: zx_processor_power_domain_t::default(),
-                    power_levels: Vec::new(),
-                    power_level_transitions: Vec::new(),
-                },
-                0,
-            ))
-            .await
-        {
-            Ok(_) => panic!("Expected to receive an error"),
-            Err(CpuManagerError::GenericError(e)) => {
-                assert!(e.to_string().contains(&set_power_level_domain_status_string));
-            }
-            Err(e) => panic!("Expected GenericError; received {:?}", e),
-        }
-
-        assert_data_tree!(
-            inspector,
-            root: {
-                SyscallHandler: {
-                    zx_system_set_performance_info: {
-                        error_count: 1u64,
-                        last_error: set_performance_info_status_string.clone(),
-                    },
-                    set_processor_power_domain: {
-                        error_count: 1u64,
-                        last_error: set_power_level_domain_status_string.clone(),
-                    },
-                    set_processor_power_state: {
-                        error_count: 0u64,
-                        last_error: "<None>".to_string(),
-                    }
-                }
-            }
-        );
-
-        // The test links against a fake implementation of zx_system_set_processor_power_state
-        // that is hard-coded to return ZX_ERR_INTERNAL_INTR_RETRY.
-        let set_processor_power_state_status_string = zx::Status::INTERRUPTED_RETRY.to_string();
-
-        match handler
-            .handle_message(&&Message::SetProcessorPowerState(
-                0,
-                sys::zx_processor_power_state_t {
-                    domain_id: 0,
-                    control_interface: sys::ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER,
-                    control_argument: 0,
-                    options: 0,
-                },
-            ))
-            .await
-        {
-            Ok(_) => panic!("Expected to receive an error"),
-            Err(CpuManagerError::GenericError(e)) => {
-                assert!(e.to_string().contains(&set_processor_power_state_status_string));
-            }
-            Err(e) => panic!("Expected GenericError; received {:?}", e),
-        }
-
-        assert_data_tree!(
-            inspector,
-            root: {
-                SyscallHandler: {
-                    zx_system_set_performance_info: {
-                        error_count: 1u64,
-                        last_error: set_performance_info_status_string,
-                    },
-                    set_processor_power_domain: {
-                        error_count: 1u64,
-                        last_error: set_power_level_domain_status_string,
-                    },
-                    set_processor_power_state: {
-                        error_count: 1u64,
-                        last_error: set_processor_power_state_status_string,
-                    }
                 }
             }
         );

@@ -6,7 +6,6 @@
 
 #include <lib/boot-options/boot-options.h>
 #include <lib/heap.h>
-#include <lib/power-management/energy-model.h>
 #include <lib/stall.h>
 #include <lib/syscalls/forward.h>
 #include <lib/zircon-internal/macros.h>
@@ -234,10 +233,6 @@ zx::result<zx_info_process_handle_stats_t> GetHandleStats(ProcessDispatcher* pro
         return ZX_OK;
       });
   return zx::ok(info);
-}
-
-zx::result<fbl::Array<zx_power_domain_info_t>> GetPowerDomainsInfo(size_t max_copy) {
-  return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
 // Copies to usermode the actual (number of records written) and the avail (number of records
@@ -863,21 +858,6 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
         }
       }
       return actual_avail_result(num_to_copy, num_regions, _actual, _avail);
-    }
-
-    case ZX_INFO_POWER_DOMAINS: {
-      if (zx_status_t res =
-              validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1);
-          res != ZX_OK) {
-        return res;
-      }
-      size_t max_copy = buffer_size / sizeof(zx_power_domain_info_t);
-      auto result = GetPowerDomainsInfo(max_copy);
-      if (result.is_error()) {
-        return result.error_value();
-      }
-      fbl::Array<zx_power_domain_info_t> entries{ktl::move(result.value())};
-      return multi_record_result(_buffer, buffer_size, _actual, _avail, entries);
     }
 
     case ZX_INFO_MEMORY_STALL:

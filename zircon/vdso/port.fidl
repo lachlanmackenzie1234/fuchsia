@@ -106,22 +106,6 @@ type PacketPageRequest = struct {
     reserved1 uint64;
 };
 
-@next
-type PacketProcessorPowerLevelTransitionRequest = struct {
-    /// Request targeting the provided power domain.
-    domain_id uint32;
-
-    // Options applying to this transition.
-    options uint32;
-
-    // Control Interface ID provided in the energy model.
-    control_argument uint64;
-
-    // Control Interface Argument provided in the energy model.
-    control_interface uint64;
-
-    reserved uint64;
-};
 
 type PortPacket = struct {
     key uint64;
@@ -138,7 +122,7 @@ type PortPacket = struct {
     guest_vcpu PacketGuestVcpu;
     interrupt PacketInterrupt;
     page_request PacketPageRequest;
-    processor_power_level_transition PacketProcessorPowerLevelTransitionRequest;
+
     // };
 };
 

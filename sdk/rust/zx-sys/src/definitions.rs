@@ -848,22 +848,6 @@ unsafe extern "C" {
         count: usize,
     ) -> zx_status_t;
 
-    pub fn zx_system_set_processor_power_domain(
-        resource: zx_handle_t,
-        options: u64,
-        domain: *const zx_processor_power_domain_t,
-        port: zx_handle_t,
-        power_levels: *const zx_processor_power_level_t,
-        num_power_levels: usize,
-        transitions: *const zx_processor_power_level_transition_t,
-        num_transitions: usize,
-    ) -> zx_status_t;
-
-    pub fn zx_system_set_processor_power_state(
-        port: zx_handle_t,
-        power_state: *const zx_processor_power_state_t,
-    ) -> zx_status_t;
-
     pub fn zx_system_suspend_enter(
         resource: zx_handle_t,
         resume_deadline: zx_instant_boot_t,

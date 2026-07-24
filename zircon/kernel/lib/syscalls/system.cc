@@ -816,16 +816,3 @@ zx_status_t sys_system_suspend_enter(zx_handle_t resource, zx_instant_boot_t res
   }
   return ZX_OK;
 }
-
-zx_status_t sys_system_set_processor_power_domain(
-    zx_handle_t resource, uint64_t options, user_in_ptr<const zx_processor_power_domain_t> domain,
-    zx_handle_t port, user_in_ptr<const zx_processor_power_level_t> power_levels,
-    size_t num_power_levels, user_in_ptr<const zx_processor_power_level_transition_t> transitions,
-    size_t num_transitions) {
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-zx_status_t sys_system_set_processor_power_state(
-    zx_handle_t port, user_in_ptr<const zx_processor_power_state_t> power_state_pointer) {
-  return ZX_ERR_NOT_SUPPORTED;
-}

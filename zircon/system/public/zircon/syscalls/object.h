@@ -65,7 +65,7 @@ typedef uint32_t zx_object_info_topic_t;
 #define ZX_INFO_IOB                         ((zx_object_info_topic_t) 34u) // zx_info_iob_t[1]
 #define ZX_INFO_IOB_REGIONS                 ((zx_object_info_topic_t) 35u) // zx_iob_region_info_t[n]
 #define ZX_INFO_VMAR_MAPS                   ((zx_object_info_topic_t) 36u) // zx_info_maps_t[n]
-#define ZX_INFO_POWER_DOMAINS               ((zx_object_info_topic_t) 37u) // zx_info_power_domain_info_t[n] - next syscall.
+#define ZX_INFO_POWER_DOMAINS               ((zx_object_info_topic_t) 37u) // next syscall (keep for reuse).
 #define ZX_INFO_MEMORY_STALL                ((zx_object_info_topic_t) 38u) // zx_info_memory_stall_t[1]
 #define ZX_INFO_INTERRUPT                   ((zx_object_info_topic_t) 39u) // zx_info_interrupt_t[1].
 #define ZX_INFO_CLOCK_MAPPED_SIZE           ((zx_object_info_topic_t)40u)  // uint64_t
