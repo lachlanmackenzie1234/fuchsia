@@ -37,6 +37,11 @@ fuchsia_test_component("battery_manager_integration_test_component") {
   deps = [ ":battery_manager_integration_test" ]
 }
 
+resource("test_config") {
+  sources = [ "config/test_config.json" ]
+  outputs = [ "config/test_config.json" ]
+}
+
 fuchsia_test_package("battery-manager-integration-tests") {
   package_name = "battery_manager_integration_test"
   test_components = [ ":battery_manager_integration_test_component" ]
@@ -46,6 +51,7 @@ fuchsia_test_package("battery-manager-integration-tests") {
     }
   }
   deps = [
+    ":test_config",
     "//src/devices/bus/drivers/platform:platform-bus",
     "//src/lib/fake-clock/svc",
     "//src/power/battery-manager:battery_manager_fake_time",

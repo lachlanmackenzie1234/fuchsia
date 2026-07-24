@@ -257,6 +257,10 @@ struct BoardInputBundleArgs {
     #[argh(option)]
     kernel_boot_args: Vec<String>,
 
+    /// battery-manager configuration
+    #[argh(option)]
+    battery_manager_config: Option<Utf8PathBuf>,
+
     /// power-manager configuration
     #[argh(option)]
     power_manager_config: Option<Utf8PathBuf>,

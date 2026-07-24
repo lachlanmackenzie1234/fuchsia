@@ -67,6 +67,11 @@ pub struct BoardProvidedConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_model: Option<Utf8PathBuf>,
 
+    /// Configuration for the battery-manager service
+    #[walk_paths]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery_manager: Option<Utf8PathBuf>,
+
     /// Configuration for the power-manager service
     #[walk_paths]
     #[serde(skip_serializing_if = "Option::is_none")]

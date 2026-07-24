@@ -21,6 +21,14 @@
             to: [ "#battery_manager" ],
         },
         {
+            directory: "boot",
+            from: "parent",
+            as: "config",
+            to: [ "#battery_manager" ],
+            rights: [ "r*" ],
+            subdir: "config/battery_manager",
+        },
+        {
             service: [ "fuchsia.hardware.power.battery.Service" ],
             from: "parent",
             to: "#battery_manager",

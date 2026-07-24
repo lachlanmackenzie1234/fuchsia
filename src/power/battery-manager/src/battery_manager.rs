@@ -137,7 +137,18 @@ fn get_current_time() -> i64 {
 }
 
 impl BatteryManager {
+    #[cfg(test)]
     pub fn new(recorder_config: RecorderConfig) -> BatteryManager {
+        Self::new_with_battery_manager_config(
+            recorder_config,
+            crate::BatteryManagerConfig::default(),
+        )
+    }
+
+    pub fn new_with_battery_manager_config(
+        recorder_config: RecorderConfig,
+        battery_manager_config: crate::BatteryManagerConfig,
+    ) -> BatteryManager {
         let watchers_rc = Rc::new(RefCell::new(Vec::new()));
         // For now the size is arbitrary chosen. Will log error and catch in CQ.
         let (sender, receiver) = futures::channel::mpsc::channel(10);
@@ -168,7 +179,9 @@ impl BatteryManager {
                 timestamp: Some(get_current_time()),
                 ..Default::default()
             }),
-            data_polisher: RefCell::new(Polisher::new()),
+            data_polisher: RefCell::new(Polisher::new_with_battery_manager_config(
+                battery_manager_config,
+            )),
             info_recorders: BatteryInfoRecorders::new(recorder_config),
             charge_wake_lease: RefCell::new(None),
             update_sender: sender,
@@ -556,7 +569,10 @@ mod tests {
         let recorder_config = RecorderConfig {
             persistence_dirs: Some(PersistenceDirs { storage_dir, volatile_dir }),
         };
-        let battery_manager = BatteryManager::new(recorder_config);
+        let battery_manager = BatteryManager::new_with_battery_manager_config(
+            recorder_config,
+            crate::BatteryManagerConfig { shutdown_offset_percent: 3.0 },
+        );
         (dir, battery_manager)
     }
 

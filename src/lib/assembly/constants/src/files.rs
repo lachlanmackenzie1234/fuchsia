@@ -68,6 +68,8 @@ pub enum BootfsDestination {
     EnergyModelConfig,
     /// The power manager node config.
     PowerManagerNodeConfig,
+    /// The battery manager config.
+    BatteryManagerConfig,
     /// The power manager thermal config.
     PowerManagerThermalConfig,
     /// The power manager system power mode config.
@@ -102,6 +104,7 @@ impl std::fmt::Display for BootfsDestination {
                 Self::CpuManagerNodeConfig => "config/cpu_manager/node_config.json",
                 Self::EnergyModelConfig => "config/cpu_manager/energy_model_config.json",
                 Self::PowerManagerNodeConfig => "config/power_manager/node_config.json",
+                Self::BatteryManagerConfig => "config/battery_manager/config.json",
                 Self::PowerManagerThermalConfig => "config/power_manager/thermal_config.json",
                 Self::SystemPowerModeConfig => "config/power_manager/system_power_mode_config.json",
                 Self::SshAuthorizedKeys => "data/ssh/authorized_keys",

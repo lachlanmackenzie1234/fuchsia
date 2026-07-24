@@ -38,13 +38,15 @@ pub(crate) enum TimeEstimatorError {
 struct InitialScaler;
 
 impl InitialScaler {
-    // Scale the initial battery level from 3-100% to 0-100%
-    const SHUTDOWN_OFFSET: f32 = 3.0;
-    fn scale_level(level: f32) -> f32 {
+    fn scale_level_with_offset(level: f32, offset: f32) -> f32 {
         if level >= 100.0 {
             return 100.0;
-        } else if level >= Self::SHUTDOWN_OFFSET {
-            let scaled = (level - Self::SHUTDOWN_OFFSET) * 100.0 / (100.0 - Self::SHUTDOWN_OFFSET);
+        }
+        if offset <= 0.0 || offset >= 100.0 {
+            return level.ceil();
+        }
+        if level >= offset {
+            let scaled = (level - offset) * 100.0 / (100.0 - offset);
             return scaled.ceil();
         } else {
             return 0.0;
@@ -608,6 +610,7 @@ impl RateLimiter {
 }
 
 pub(crate) struct Polisher {
+    config: crate::BatteryManagerConfig,
     curve_mapper: CurveMapper,
     last_rate_limited_level: Option<f32>,
     last_post_curve: Option<f32>,
@@ -618,8 +621,14 @@ pub(crate) struct Polisher {
 }
 
 impl Polisher {
+    #[cfg(test)]
     pub fn new() -> Polisher {
+        Self::new_with_battery_manager_config(crate::BatteryManagerConfig::default())
+    }
+
+    pub fn new_with_battery_manager_config(config: crate::BatteryManagerConfig) -> Polisher {
         Polisher {
+            config,
             curve_mapper: CurveMapper::new(),
             last_rate_limited_level: None,
             last_post_curve: None,
@@ -632,7 +641,10 @@ impl Polisher {
 
     fn scale_battery_level(&self, info: &mut fpower::BatteryInfo) {
         if let Some(level) = info.level_percent {
-            info.level_percent = Some(InitialScaler::scale_level(level as f32));
+            info.level_percent = Some(InitialScaler::scale_level_with_offset(
+                level as f32,
+                self.config.shutdown_offset_percent,
+            ));
         }
     }
 
@@ -859,13 +871,32 @@ mod tests {
 
     #[fuchsia::test]
     fn test_scale_level() {
-        assert_eq!(InitialScaler::scale_level(InitialScaler::SHUTDOWN_OFFSET), 0.0);
-        assert_eq!(InitialScaler::scale_level(13.0), 11.0);
-        assert_eq!(InitialScaler::scale_level(51.0), 50.0);
-        assert_eq!(InitialScaler::scale_level(51.5), 50.0);
-        assert_eq!(InitialScaler::scale_level(99.0), 99.0);
-        assert_eq!(InitialScaler::scale_level(100.0), 100.0);
-        assert_eq!(InitialScaler::scale_level(101.0), 100.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(3.0, 3.0), 0.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(13.0, 3.0), 11.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(51.0, 3.0), 50.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(51.5, 3.0), 50.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(99.0, 3.0), 99.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(100.0, 3.0), 100.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(101.0, 3.0), 100.0);
+    }
+
+    #[fuchsia::test]
+    fn test_scale_level_with_offset_bounds() {
+        // Offset <= 0.0 or >= 100.0 should perform no scaling but apply ceil()
+        assert_eq!(InitialScaler::scale_level_with_offset(50.0, 0.0), 50.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 0.0), 51.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.0, -5.0), 50.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, -5.0), 51.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.0, 100.0), 50.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 100.0), 51.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.0, 105.0), 50.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 105.0), 51.0);
+
+        // Level >= 100.0 should be capped at 100.0 even when offset <= 0.0
+        assert_eq!(InitialScaler::scale_level_with_offset(101.0, 0.0), 100.0);
+
+        // Valid offset (e.g. 3.0) scales normally
+        assert_eq!(InitialScaler::scale_level_with_offset(51.0, 3.0), 50.0);
     }
 
     #[fuchsia::test]
@@ -903,13 +934,12 @@ mod tests {
 
     #[fuchsia::test]
     fn test_scale_battery_level() {
-        let polisher = Polisher::new();
+        let polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 3.0,
+        });
 
-        // Test when level_percent = shutdown offset
-        let mut info = fpower::BatteryInfo {
-            level_percent: Some(InitialScaler::SHUTDOWN_OFFSET),
-            ..Default::default()
-        };
+        // Test when level_percent = shutdown offset (3.0)
+        let mut info = fpower::BatteryInfo { level_percent: Some(3.0), ..Default::default() };
         polisher.scale_battery_level(&mut info);
         assert_eq!(info.level_percent, Some(0.0));
 
@@ -940,7 +970,7 @@ mod tests {
         // Input a normal charging level
         let info = polisher.polish_info(new_info(83.0, fpower::ChargeStatus::Charging));
 
-        let expected_level = InitialScaler::scale_level(83.0);
+        let expected_level = InitialScaler::scale_level_with_offset(83.0, 0.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
 
         // The curve should have its midpoint set at the first reading (83.0)
@@ -958,7 +988,7 @@ mod tests {
         // Input a discharging level at boot
         let info = polisher.polish_info(new_info(77.0, fpower::ChargeStatus::Discharging));
 
-        let expected_level = InitialScaler::scale_level(77.0);
+        let expected_level = InitialScaler::scale_level_with_offset(77.0, 0.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
 
         // The curve should have its midpoint set at the first reading (77.0)
@@ -980,7 +1010,7 @@ mod tests {
         // Unplug at 96%.
         let _ = polisher.polish_info(new_info(96.0, fpower::ChargeStatus::Charging));
         let info = polisher.polish_info(new_info(96.0, fpower::ChargeStatus::Discharging));
-        let expected_level = InitialScaler::scale_level(96.0);
+        let expected_level = InitialScaler::scale_level_with_offset(96.0, 0.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
 
         // Verify that the curve midpoint was set at the current point on disconnect
@@ -1643,7 +1673,7 @@ mod tests {
         incoming_info.timestamp = Some(0);
 
         let info = polisher.polish_info(incoming_info);
-        let initial_scaled_level = InitialScaler::scale_level(initial_level);
+        let initial_scaled_level = InitialScaler::scale_level_with_offset(initial_level, 0.0);
         assert_matches!(info.level_percent, Some(p) if (p - initial_scaled_level).abs() < f32::EPSILON);
 
         let t0_s = 30;
@@ -1660,11 +1690,13 @@ mod tests {
 
     #[fuchsia::test]
     fn test_polish_info_for_full_cycle() {
-        let mut polisher = Polisher::new();
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 3.0,
+        });
         // Establish that we are charging.
         let info = polisher.polish_info(new_info(95.0, fpower::ChargeStatus::Charging));
         assert_eq!(polisher.curve_mapper.current_curve, CurveMapper::CHG_CURVE_DEFAULT);
-        let expected_real = InitialScaler::scale_level(95.0);
+        let expected_real = InitialScaler::scale_level_with_offset(95.0, 3.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_real).abs() < f32::EPSILON);
 
         // Reaching 100%, then unplug. Real is 96%, but since previous UI was 100% and
@@ -1694,11 +1726,13 @@ mod tests {
 
     #[fuchsia::test]
     fn test_polish_info() {
-        let mut polisher = Polisher::new();
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 3.0,
+        });
 
-        // Test when level_percent = shutdown offset
+        // Test when level_percent = shutdown offset (3.0)
         let mut info = fpower::BatteryInfo {
-            level_percent: Some(InitialScaler::SHUTDOWN_OFFSET),
+            level_percent: Some(3.0),
             charge_status: Some(fpower::ChargeStatus::Discharging),
             charge_source: Some(fpower::ChargeSource::Usb),
             ..Default::default()

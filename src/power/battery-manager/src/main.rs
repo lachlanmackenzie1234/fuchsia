@@ -25,6 +25,16 @@ use inspect_runtime::PublishOptions;
 use log::{error, info, warn};
 use std::sync::{Arc, Weak};
 
+fn is_default<T: Default + PartialEq>(t: &T) -> bool {
+    *t == T::default()
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, serde::Serialize)]
+struct BatteryManagerConfig {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub shutdown_offset_percent: f32,
+}
+
 pub(crate) enum BatteryInfoSource {
     New(fbattery::BatteryProxy),
     ModernService(fpower::BatteryInfoProviderProxy),
@@ -118,6 +128,57 @@ fn remove_battery_history() {
     let _ = std::fs::remove_file(CURR_BOOT_BATTERY_HISTORY_FILE);
 }
 
+// Paths to search for configuration: /config/config.json from BootFS (in production),
+// falling back to /pkg/config/test_config.json (in integration tests).
+const BOOTFS_CONFIG_PATH: &str = "/config/config.json";
+const PKG_CONFIG_PATH: &str = "/pkg/config/test_config.json";
+
+fn load_battery_manager_config_from_path(path: &str) -> Result<BatteryManagerConfig, Error> {
+    info!("Loading battery manager config from {path}");
+    let contents = std::fs::read_to_string(path).map_err(|e| {
+        let err = anyhow::format_err!(
+            "Failed to read battery manager config at '{path}': {e}. \
+            Please verify the configuration file path and permissions."
+        );
+        error!("{err}");
+        err
+    })?;
+    parse_battery_manager_config(&contents, path)
+}
+
+fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryManagerConfig, Error> {
+    let config: BatteryManagerConfig = serde_json::from_str(contents).map_err(|e| {
+        let err = anyhow::format_err!(
+            "Failed to parse battery manager config at '{path}': {e}. \
+            Ensure the configuration file contains valid JSON matching the BatteryManagerConfig schema."
+        );
+        error!("{err}");
+        err
+    })?;
+
+    if config.shutdown_offset_percent < 0.0 || config.shutdown_offset_percent >= 100.0 {
+        let err = anyhow::format_err!(
+            "Invalid battery manager config at '{path}': shutdown_offset_percent ({}) must be in range [0.0, 100.0).",
+            config.shutdown_offset_percent
+        );
+        error!("{err}");
+        return Err(err);
+    }
+
+    Ok(config)
+}
+
+fn load_battery_manager_config() -> Result<BatteryManagerConfig, Error> {
+    if std::path::Path::new(BOOTFS_CONFIG_PATH).exists() {
+        load_battery_manager_config_from_path(BOOTFS_CONFIG_PATH)
+    } else if std::path::Path::new(PKG_CONFIG_PATH).exists() {
+        load_battery_manager_config_from_path(PKG_CONFIG_PATH)
+    } else {
+        info!("No config file found in bootfs or package, using default config");
+        Ok(BatteryManagerConfig::default())
+    }
+}
+
 #[fuchsia::main(logging_tags = ["battery_manager"])]
 async fn main() -> Result<(), Error> {
     info!("starting up");
@@ -126,16 +187,22 @@ async fn main() -> Result<(), Error> {
     let _inspect_server_task = inspect_runtime::publish(inspector, PublishOptions::default());
     inspect::component::serve_inspect_stats();
 
-    // Remove the legacy battery history file before the service starts.
-    remove_battery_history();
-
-    let config = RecorderConfig::default();
-    let battery_manager = Arc::new(BatteryManager::new(config));
-    let battery_manager_clone = battery_manager.clone();
-
     let config = Config::take_from_startup_handle();
     inspector.root().record_child("config", |config_node| config.record_inspect(config_node));
     log::info!(config:?; "config");
+
+    // Remove the legacy battery history file before the service starts.
+    remove_battery_history();
+
+    let battery_manager_config = load_battery_manager_config()?;
+    info!("Loaded battery manager config: {:?}", battery_manager_config);
+
+    let recorder_config = RecorderConfig::default();
+    let battery_manager = Arc::new(BatteryManager::new_with_battery_manager_config(
+        recorder_config,
+        battery_manager_config,
+    ));
+    let battery_manager_clone = battery_manager.clone();
 
     fasync::Task::local(async move {
         let source = match get_battery_info_source().await {
@@ -239,4 +306,41 @@ async fn main() -> Result<(), Error> {
 
     info!("stopping battery_manager");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_battery_manager_config_valid() {
+        let json = r#"{"shutdown_offset_percent": 5.0}"#;
+        let config = parse_battery_manager_config(json, "test_path").unwrap();
+        assert_eq!(config.shutdown_offset_percent, 5.0);
+    }
+
+    #[test]
+    fn test_parse_battery_manager_config_default() {
+        let json = r#"{}"#;
+        let config = parse_battery_manager_config(json, "test_path").unwrap();
+        assert_eq!(config.shutdown_offset_percent, 0.0);
+    }
+
+    #[test]
+    fn test_parse_battery_manager_config_invalid_json() {
+        let json = r#"{"shutdown_offset_percent": invalid_value}"#;
+        let err = parse_battery_manager_config(json, "test_path").unwrap_err();
+        assert!(err.to_string().contains("Failed to parse battery manager config"));
+    }
+
+    #[test]
+    fn test_parse_battery_manager_config_out_of_range() {
+        let json = r#"{"shutdown_offset_percent": -5.0}"#;
+        let err = parse_battery_manager_config(json, "test_path").unwrap_err();
+        assert!(err.to_string().contains("must be in range"));
+
+        let json = r#"{"shutdown_offset_percent": 100.0}"#;
+        let err = parse_battery_manager_config(json, "test_path").unwrap_err();
+        assert!(err.to_string().contains("must be in range"));
+    }
 }

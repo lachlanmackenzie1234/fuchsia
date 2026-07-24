@@ -25,6 +25,7 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
         bootfs_or_base_packages,
         energy_model_config,
         kernel_boot_args,
+        battery_manager_config,
         power_manager_config,
         system_power_mode_config,
         cpu_manager_config,
@@ -71,7 +72,8 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
     }
 
     // Create the configuration.
-    let configuration = if cpu_manager_config.is_some()
+    let configuration = if battery_manager_config.is_some()
+        || cpu_manager_config.is_some()
         || energy_model_config.is_some()
         || power_manager_config.is_some()
         || power_metrics_recorder_config.is_some()
@@ -82,6 +84,7 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
         || !sysmem_format_costs_config.is_empty()
     {
         Some(BoardProvidedConfig {
+            battery_manager: battery_manager_config.as_ref().map(|f| f.into()),
             cpu_manager: cpu_manager_config.as_ref().map(|f| f.into()),
             energy_model: energy_model_config.as_ref().map(|f| f.into()),
             power_manager: power_manager_config.as_ref().map(|f| f.into()),

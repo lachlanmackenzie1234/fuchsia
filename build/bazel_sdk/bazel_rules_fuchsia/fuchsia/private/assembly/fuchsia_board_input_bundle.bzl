@@ -91,6 +91,7 @@ def _fuchsia_board_input_bundle_impl(ctx):
 
     # Add single-file configs
     for (arg, file) in [
+        ("--battery-manager-config", "battery_manager_config"),
         ("--energy-model-config", "energy_model_config"),
         ("--cpu-manager-config", "cpu_manager_config"),
         ("--power-manager-config", "power_manager_config"),
@@ -226,6 +227,10 @@ fuchsia_board_input_bundle = rule(
         ),
         "energy_model_config": attr.label(
             doc = "Path to energy model configuration",
+            allow_single_file = True,
+        ),
+        "battery_manager_config": attr.label(
+            doc = "Path to battery_manager configuration",
             allow_single_file = True,
         ),
         "cpu_manager_config": attr.label(

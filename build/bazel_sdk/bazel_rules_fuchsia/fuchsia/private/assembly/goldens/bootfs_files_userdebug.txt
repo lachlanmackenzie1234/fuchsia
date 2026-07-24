@@ -28,6 +28,7 @@ bin/vmaps
 bin/vmos
 bin/waitfor
 ?config/additional_boot_args
+?config/battery_manager/config.json
 config/build_info/minimum_utc_stamp
 ?config/component_id_index
 ?config/component_manager
