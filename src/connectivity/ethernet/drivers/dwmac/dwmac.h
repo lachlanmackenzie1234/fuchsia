@@ -21,6 +21,7 @@
 #include <zircon/types.h>
 
 #include <atomic>
+#include <bitset>
 #include <memory>
 #include <optional>
 
