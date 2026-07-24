@@ -4,12 +4,14 @@
 
 #include "gpio.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pinimpl/cpp/driver/fidl.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
+#include <format>
 #include <optional>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -29,6 +31,32 @@
 namespace gpio {
 
 namespace {
+
+class GenericMetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Metadata> {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+                     std::string service_name, fuchsia_driver_metadata::Dictionary metadata) {
+    auto persisted = fidl::Persist(metadata);
+    if (persisted.is_error()) {
+      return zx::error(persisted.error_value().status());
+    }
+    metadata_bytes_ = std::move(persisted.value());
+
+    fuchsia_driver_metadata::Service::InstanceHandler handler({
+        .metadata = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
+    });
+
+    return outgoing.component().AddService(std::move(handler), std::move(service_name));
+  }
+
+ private:
+  void GetPersistedMetadata(GetPersistedMetadataCompleter::Sync& completer) override {
+    completer.ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(metadata_bytes_));
+  }
+
+  std::vector<uint8_t> metadata_bytes_;
+  fidl::ServerBindingGroup<fuchsia_driver_metadata::Metadata> bindings_;
+};
 
 class MockPinImpl : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
  public:
@@ -181,6 +209,14 @@ class GpioTestEnvironment : public fdf_testing::Environment {
       EXPECT_OK(pin_metadata_server_.Serve(
           to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), pin_metadata_.value()));
     }
+    if (generic_metadata_.has_value()) {
+      if (zx::result result = generic_metadata_server_.Serve(
+              to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+              "fuchsia.hardware.pinimpl.Metadata", std::move(generic_metadata_.value()));
+          result.is_error()) {
+        return result.take_error();
+      }
+    }
     if (role_name_.has_value()) {
       EXPECT_OK(scheduler_role_name_metadata_server_.Serve(
           to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher(), role_name_.value()));
@@ -190,6 +226,27 @@ class GpioTestEnvironment : public fdf_testing::Environment {
 
   void SetPinMetadata(fuchsia_hardware_pinimpl::Metadata metadata) {
     pin_metadata_ = std::move(metadata);
+  }
+
+  void InitGeneric(std::vector<fuchsia_hardware_pinimpl::Pin> pins) {
+    std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
+    entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+        "pins._count",
+        fuchsia_driver_metadata::DictionaryValue::WithInt64(static_cast<int64_t>(pins.size()))));
+    for (size_t i = 0; i < pins.size(); ++i) {
+      const auto& pin = pins[i];
+      if (pin.pin().has_value()) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            std::format("pins.{}.pin", i), fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                                               static_cast<int64_t>(pin.pin().value()))));
+      }
+      if (pin.name().has_value()) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            std::format("pins.{}.name", i),
+            fuchsia_driver_metadata::DictionaryValue::WithStr(pin.name().value())));
+      }
+    }
+    generic_metadata_ = fuchsia_driver_metadata::Dictionary{{.entries = std::move(entries)}};
   }
 
   void SetSchedulerRoleName(fuchsia_scheduler::RoleName role_name) {
@@ -202,8 +259,10 @@ class GpioTestEnvironment : public fdf_testing::Environment {
   MockPinImpl pinimpl_;
   fdf_metadata::MetadataServer<fuchsia_hardware_pinimpl::Metadata> pin_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_scheduler::RoleName> scheduler_role_name_metadata_server_;
+  GenericMetadataServer generic_metadata_server_;
   std::optional<fuchsia_hardware_pinimpl::Metadata> pin_metadata_;
   std::optional<fuchsia_scheduler::RoleName> role_name_;
+  std::optional<fuchsia_driver_metadata::Dictionary> generic_metadata_;
 };
 
 class FixtureConfig final {
@@ -230,6 +289,13 @@ class GpioTest : public ::testing::Test {
   void SetPinMetadata(const fuchsia_hardware_pinimpl::Metadata& metadata) {
     driver_test().RunInEnvironmentTypeContext(
         [&](GpioTestEnvironment& env) { env.SetPinMetadata(metadata); });
+  }
+
+  void SetGenericPinMetadata(std::vector<fuchsia_hardware_pinimpl::Pin> pins) {
+    driver_test().RunInEnvironmentTypeContext(
+        [pins = std::move(pins)](GpioTestEnvironment& env) mutable {
+          env.InitGeneric(std::move(pins));
+        });
   }
 
  private:
@@ -1366,6 +1432,25 @@ TEST_F(GpioTest, TestPinStates) {
       });
   driver_test().runtime().Run();
   driver_test().runtime().ResetQuit();
+
+  EXPECT_TRUE(driver_test().StopDriver().is_ok());
+}
+
+TEST_F(GpioTest, GenericMetadataTest) {
+  SetGenericPinMetadata({{
+      {{.pin = 1, .name = "pin-1"}},
+      {{.pin = 2, .name = "pin-2"}},
+  }});
+
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = false}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
+
+  zx::result client_end = driver_test().Connect<fuchsia_hardware_gpio::Service::Device>("gpio-1");
+  EXPECT_TRUE(client_end.is_ok());
 
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
 }

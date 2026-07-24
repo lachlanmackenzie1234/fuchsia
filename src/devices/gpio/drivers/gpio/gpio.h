@@ -227,6 +227,9 @@ class GpioRootDevice : public fdf::DriverBase2 {
 
   void ClientTeardownHandler();
 
+  std::optional<fuchsia_hardware_pinimpl::Metadata> GetMetadata();
+  std::optional<fuchsia_hardware_pinimpl::Metadata> GetGenericMetadata();
+
   fdf::UnownedDispatcher fidl_dispatcher() const {
     return fidl_dispatcher_ ? fdf::UnownedDispatcher(fidl_dispatcher_->get())
                             : fdf::Dispatcher::GetCurrent();

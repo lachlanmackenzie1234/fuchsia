@@ -4,6 +4,7 @@
 
 #include "gpio.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/wire.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
@@ -22,6 +23,8 @@
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/pin/cpp/bind.h>
 #include <fbl/alloc_checker.h>
+
+#include "src/devices/gpio/drivers/gpio/gpio_parser.h"
 
 namespace gpio {
 
@@ -484,25 +487,218 @@ void PinStatesDevice::handle_unknown_method(
   logger_.log(fdf::ERROR, "Unknown PinStates method ordinal 0x{:016x}", metadata.method_ordinal);
 }
 
+namespace {
+
+std::optional<fuchsia_hardware_pin::Pull> ConvertPull(std::optional<gpio_metadata::Pull> pull) {
+  if (!pull)
+    return std::nullopt;
+  switch (*pull) {
+    case gpio_metadata::Pull::kNone:
+      return fuchsia_hardware_pin::Pull::kNone;
+    case gpio_metadata::Pull::kUp:
+      return fuchsia_hardware_pin::Pull::kUp;
+    case gpio_metadata::Pull::kDown:
+      return fuchsia_hardware_pin::Pull::kDown;
+  }
+}
+
+std::optional<fuchsia_hardware_gpio::BufferMode> ConvertBufferMode(
+    std::optional<gpio_metadata::BufferMode> buffer_mode) {
+  if (!buffer_mode)
+    return std::nullopt;
+  switch (*buffer_mode) {
+    case gpio_metadata::BufferMode::kInput:
+      return fuchsia_hardware_gpio::BufferMode::kInput;
+    case gpio_metadata::BufferMode::kOutputLow:
+      return fuchsia_hardware_gpio::BufferMode::kOutputLow;
+    case gpio_metadata::BufferMode::kOutputHigh:
+      return fuchsia_hardware_gpio::BufferMode::kOutputHigh;
+  }
+}
+
+std::optional<fuchsia_hardware_pinimpl::InitCall> ConvertInitCall(
+    const gpio_metadata::InitCall& gc) {
+  if (gc.pin_config) {
+    fuchsia_hardware_pin::Configuration config;
+    if (auto pull = ConvertPull(gc.pin_config->pull)) {
+      config.pull(*pull);
+    }
+    if (gc.pin_config->function) {
+      config.function(*gc.pin_config->function);
+    }
+    if (gc.pin_config->drive_strength_ua) {
+      config.drive_strength_ua(*gc.pin_config->drive_strength_ua);
+    }
+    return fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(config));
+  } else if (auto mode = ConvertBufferMode(gc.buffer_mode)) {
+    return fuchsia_hardware_pinimpl::InitCall::WithBufferMode(*mode);
+  }
+  return std::nullopt;
+}
+
+std::vector<fuchsia_hardware_pinimpl::PinConfiguration> ConvertPinConfigs(
+    std::vector<gpio_metadata::PinConfiguration> gpcs) {
+  std::vector<fuchsia_hardware_pinimpl::PinConfiguration> pcs;
+  for (auto& gpc : gpcs) {
+    if (auto init_call = ConvertInitCall(gpc.call)) {
+      pcs.emplace_back(gpc.pin, std::move(*init_call));
+    }
+  }
+  return pcs;
+}
+
+std::vector<fuchsia_hardware_pinimpl::PinState> ConvertPinStates(
+    std::vector<gpio_metadata::PinState> gpss) {
+  std::vector<fuchsia_hardware_pinimpl::PinState> pss;
+  for (auto& gps : gpss) {
+    fuchsia_hardware_pinimpl::PinState ps;
+    ps.name(std::move(gps.name));
+    ps.pins(ConvertPinConfigs(std::move(gps.pins)));
+    pss.push_back(std::move(ps));
+  }
+  return pss;
+}
+
+std::vector<fuchsia_hardware_pinimpl::DevicePinStates> ConvertDevicePinStates(
+    std::vector<gpio_metadata::DevicePinStates> gdps) {
+  std::vector<fuchsia_hardware_pinimpl::DevicePinStates> dps;
+  for (auto& gd : gdps) {
+    fuchsia_hardware_pinimpl::DevicePinStates d;
+    d.name(std::move(gd.name));
+    d.states(ConvertPinStates(std::move(gd.states)));
+    dps.push_back(std::move(d));
+  }
+  return dps;
+}
+
+std::optional<fuchsia_hardware_pinimpl::Metadata> ConvertMetadata(
+    gpio_metadata::GpioMetadata generic) {
+  fuchsia_hardware_pinimpl::Metadata metadata;
+  metadata.controller_id(generic.controller_id);
+
+  std::vector<fuchsia_hardware_pinimpl::Pin> pins;
+  std::vector<fuchsia_hardware_pinimpl::InitStep> init_steps;
+
+  for (auto& p : generic.pins) {
+    fuchsia_hardware_pinimpl::Pin pin;
+    pin.pin(p.pin);
+    if (p.name) {
+      pin.name(std::move(*p.name));
+    }
+    pins.push_back(std::move(pin));
+
+    // Generate InitSteps
+    fuchsia_hardware_pin::Configuration config;
+    bool has_config = false;
+
+    if (p.function) {
+      config.function(*p.function);
+      has_config = true;
+    }
+    if (p.drive_strength_ua) {
+      config.drive_strength_ua(*p.drive_strength_ua);
+      has_config = true;
+    }
+    if (auto pull = ConvertPull(p.pull)) {
+      config.pull(*pull);
+      has_config = true;
+    }
+
+    if (has_config) {
+      fuchsia_hardware_pinimpl::InitCall init_call =
+          fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(config));
+      fuchsia_hardware_pinimpl::InitStep step = fuchsia_hardware_pinimpl::InitStep::WithCall(
+          fuchsia_hardware_pinimpl::Call(p.pin, std::move(init_call)));
+      init_steps.push_back(std::move(step));
+    }
+
+    if (auto mode = ConvertBufferMode(p.buffer_mode)) {
+      fuchsia_hardware_pinimpl::InitCall init_call =
+          fuchsia_hardware_pinimpl::InitCall::WithBufferMode(*mode);
+      fuchsia_hardware_pinimpl::InitStep step = fuchsia_hardware_pinimpl::InitStep::WithCall(
+          fuchsia_hardware_pinimpl::Call(p.pin, std::move(init_call)));
+      init_steps.push_back(std::move(step));
+    }
+  }
+
+  metadata.pins(std::move(pins));
+  metadata.init_steps(std::move(init_steps));
+
+  if (generic.device_pin_states) {
+    metadata.device_pin_states(ConvertDevicePinStates(std::move(*generic.device_pin_states)));
+  }
+
+  return metadata;
+}
+
+}  // namespace
+
+std::optional<fuchsia_hardware_pinimpl::Metadata> GpioRootDevice::GetGenericMetadata() {
+  auto client_end = fdf_metadata::ConnectToMetadataProtocol(incoming()->svc_dir(),
+                                                            "fuchsia.hardware.pinimpl.Metadata");
+  if (client_end.is_error()) {
+    return std::nullopt;
+  }
+  fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client(std::move(client_end.value()));
+  auto persisted_res = client->GetPersistedMetadata();
+  if (!persisted_res.ok()) {
+    logger().log(fdf::INFO, "Failed to send GetPersistedMetadata request: {}",
+                 persisted_res.status_string());
+    return std::nullopt;
+  }
+  if (persisted_res->is_error()) {
+    logger().log(fdf::INFO, "GetPersistedMetadata returned error: {}",
+                 zx_status_get_string(persisted_res->error_value()));
+    return std::nullopt;
+  }
+
+  auto unpersisted = fidl::Unpersist<fuchsia_driver_metadata::Dictionary>(
+      persisted_res.value()->persisted_metadata.get());
+  if (unpersisted.is_error()) {
+    logger().log(fdf::INFO, "Failed to unpersist as Dictionary (might be old metadata): {}",
+                 unpersisted.error_value().status_string());
+    return std::nullopt;
+  }
+
+  const auto& dict = unpersisted.value();
+  if (!dict.entries().has_value() || dict.entries()->empty()) {
+    logger().log(fdf::INFO, "Generic GPIO metadata dictionary is empty");
+    return std::nullopt;
+  }
+
+  auto parsed = gpio_metadata::GpioMetadata::Parse(dict);
+  if (!parsed) {
+    logger().log(fdf::ERROR, "Failed to parse generic GPIO metadata");
+    return std::nullopt;
+  }
+
+  return ConvertMetadata(std::move(*parsed));
+}
+
+std::optional<fuchsia_hardware_pinimpl::Metadata> GpioRootDevice::GetMetadata() {
+  if (auto metadata = GetGenericMetadata()) {
+    return metadata;
+  }
+
+  // Fall back to old metadata
+  zx::result result =
+      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_pinimpl::Metadata>(incoming());
+  if (result.is_error()) {
+    logger().log(fdf::ERROR, "Failed to get metadata: {}", result);
+    return std::nullopt;
+  }
+  if (!result.value().has_value()) {
+    logger().log(fdf::INFO, "No gpio metadata provided");
+  }
+  return std::move(result.value());
+}
+
 void GpioRootDevice::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
   uint32_t controller_id = 0;
 
-  std::optional<fuchsia_hardware_pinimpl::Metadata> metadata;
-  {
-    zx::result result =
-        fdf_metadata::GetMetadataIfExists<fuchsia_hardware_pinimpl::Metadata>(incoming());
-    if (result.is_error()) {
-      logger().log(fdf::ERROR, "Failed to get metadata: {}", result);
-      completer(result.take_error());
-      return;
-    }
-    if (!result.value().has_value()) {
-      logger().log(fdf::INFO, "No gpio metadata provided");
-    }
-    metadata = std::move(result.value());
-  }
+  std::optional<fuchsia_hardware_pinimpl::Metadata> metadata = GetMetadata();
 
   if (metadata.has_value() && metadata->controller_id().has_value()) {
     controller_id = metadata->controller_id().value();
@@ -550,8 +746,14 @@ void GpioRootDevice::Start(fdf::DriverContext context, fdf::StartCompleter compl
     if (metadata.has_value() && metadata->init_steps().has_value() &&
         !metadata->init_steps()->empty()) {
       // Process init metadata while we are still the exclusive owner of the GPIO client.
+      logger().log(fdf::INFO, "Processing {} init steps", metadata->init_steps()->size());
       init_device_ = GpioInitDevice::Create(metadata->init_steps().value(), node().borrow(),
                                             logger(), controller_id, pinimpl_);
+      if (!init_device_) {
+        logger().log(fdf::ERROR, "Failed to create GpioInitDevice");
+      } else {
+        logger().log(fdf::INFO, "GpioInitDevice created successfully");
+      }
     } else {
       logger().log(fdf::INFO, "No init steps provided");
     }
@@ -743,7 +945,9 @@ std::unique_ptr<GpioInitDevice> GpioInitDevice::Create(
     fidl::UnownedClientEnd<fuchsia_driver_framework::Node> node, fdf::Logger& logger,
     uint32_t controller_id, fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl>& pinimpl) {
   std::unique_ptr device = std::make_unique<GpioInitDevice>();
-  if (ConfigureGpios(init_steps, pinimpl, logger) != ZX_OK) {
+  zx_status_t status = ConfigureGpios(init_steps, pinimpl, logger);
+  if (status != ZX_OK) {
+    logger.log(fdf::ERROR, "ConfigureGpios failed: {}", zx_status_get_string(status));
     // Return without adding the init device if some GPIOs could not be configured. This will
     // prevent all drivers that depend on the initial state from binding, which should make it
     // more obvious that something has gone wrong.
@@ -758,7 +962,7 @@ std::unique_ptr<GpioInitDevice> GpioInitDevice::Create(
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =
       fdf::AddChild(node, logger, "gpio-init", props, {});
   if (result.is_error()) {
-    logger.log(fdf::TRACE, "Failed to add gpio-init node: {}", result);
+    logger.log(fdf::ERROR, "Failed to add gpio-init node: {}", result);
     return {};
   }
 
@@ -779,7 +983,7 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       continue;
     }
     if (step.Which() != fuchsia_hardware_pinimpl::InitStep::Tag::kCall) {
-      logger.log(fdf::TRACE, "Invalid GPIO init metadata");
+      logger.log(fdf::ERROR, "Invalid GPIO init metadata");
       return ZX_ERR_INVALID_ARGS;
     }
 
@@ -789,11 +993,12 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       const auto& config = call.pin_config().value();
       auto result = pinimpl.sync().buffer(arena)->Configure(pin, fidl::ToWire(arena, config));
       if (!result.ok()) {
-        logger.log(fdf::TRACE, "Call to Configure failed: {}", result.status_string());
+        logger.log(fdf::ERROR, "Call to Configure failed for pin {}: {}", pin,
+                   result.status_string());
         return result.status();
       }
       if (result->is_error()) {
-        logger.log(fdf::TRACE, "Configure failed for {}: {}", pin,
+        logger.log(fdf::ERROR, "Configure failed for pin {}: {}", pin,
                    zx_status_get_string(result->error_value()));
         return result->error_value();
       }
@@ -842,11 +1047,12 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       auto result = pinimpl.sync().buffer(arena)->SetBufferMode(
           pin, fidl::ToWire(arena, call.buffer_mode().value()));
       if (!result.ok()) {
-        logger.log(fdf::TRACE, "Call to SetBufferMode failed: {}", result.status_string());
+        logger.log(fdf::ERROR, "Call to SetBufferMode failed for pin {}: {}", pin,
+                   result.status_string());
         return result.status();
       }
       if (result->is_error()) {
-        logger.log(fdf::TRACE, "SetBufferMode failed for {}: {}", pin,
+        logger.log(fdf::ERROR, "SetBufferMode failed for pin {}: {}", pin,
                    zx_status_get_string(result->error_value()));
         return result->error_value();
       }
