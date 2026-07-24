@@ -12,7 +12,24 @@
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/trace/event.h>
 
+#include "src/devices/i2c/drivers/i2c/i2c_parser.h"
+
 namespace i2c {
+
+namespace {
+fuchsia_hardware_i2c_businfo::I2CBusMetadata ConvertMetadata(i2c_metadata::I2cMetadata generic) {
+  std::vector<fuchsia_hardware_i2c_businfo::I2CChannel> channels;
+  for (auto& c : generic.channels) {
+    fuchsia_hardware_i2c_businfo::I2CChannel channel;
+    channel.address(c.address);
+    if (c.name) {
+      channel.name(std::move(*c.name));
+    }
+    channels.push_back(std::move(channel));
+  }
+  return {{.channels = std::move(channels), .bus_id = generic.bus_id}};
+}
+}  // namespace
 
 zx::result<> I2cDriver::Start(fdf::DriverContext context) {
   auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
@@ -24,14 +41,35 @@ zx::result<> I2cDriver::Start(fdf::DriverContext context) {
   i2c_.Bind(std::move(*i2cimpl_result), fdf::Dispatcher::GetCurrent()->get());
 
   fidl::Arena arena;
-  zx::result i2c_bus_metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(incoming);
-  if (i2c_bus_metadata.is_error()) {
-    fdf::error("Failed to get i2c_bus_metadata  {}", i2c_bus_metadata);
-    return i2c_bus_metadata.take_error();
+  std::optional<fuchsia_hardware_i2c_businfo::I2CBusMetadata> metadata;
+
+  // Try to get generic metadata first
+  zx::result generic_res =
+      fdf_metadata::GetMetadataFromFidlServiceIfExists<fuchsia_driver_metadata::Dictionary>(
+          incoming->svc_dir(), "fuchsia.hardware.i2c.businfo.I2CBusMetadata");
+  if (generic_res.is_ok() && generic_res.value().has_value()) {
+    auto parsed = i2c_metadata::I2cMetadata::Parse(*generic_res.value());
+    if (parsed) {
+      metadata = ConvertMetadata(std::move(*parsed));
+    } else {
+      fdf::error("Failed to parse generic I2C metadata");
+    }
   }
 
-  if (!i2c_bus_metadata->channels().has_value()) {
+  if (!metadata.has_value()) {
+    // Fall back to old metadata
+    zx::result i2c_bus_metadata_res =
+        fdf_metadata::GetMetadata<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(incoming);
+    if (i2c_bus_metadata_res.is_error()) {
+      fdf::error("Failed to get i2c_bus_metadata  {}", i2c_bus_metadata_res);
+      return i2c_bus_metadata_res.take_error();
+    }
+    metadata = std::move(*i2c_bus_metadata_res);
+  }
+
+  fuchsia_hardware_i2c_businfo::I2CBusMetadata i2c_bus_metadata = std::move(*metadata);
+
+  if (!i2c_bus_metadata.channels().has_value()) {
     fdf::error("No channels supplied from the metadata");
     return zx::error(ZX_ERR_NO_RESOURCES);
   }
@@ -59,8 +97,7 @@ zx::result<> I2cDriver::Start(fdf::DriverContext context) {
   i2c_node_ = std::move(child->node_);
 
   const auto config = context.take_config<i2c_config::Config>();
-  if (zx::result<> result =
-          AddI2cChildren(i2c_bus_metadata.value(), config, context.node_name(), incoming);
+  if (zx::result<> result = AddI2cChildren(i2c_bus_metadata, config, context.node_name(), incoming);
       result.is_error()) {
     return result;
   }

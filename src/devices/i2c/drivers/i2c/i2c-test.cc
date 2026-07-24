@@ -21,13 +21,23 @@ fuchsia_hardware_i2c_businfo::I2CChannel CreateChannel(uint32_t address, uint32_
       .did = did,
   }};
 }
-}  // namespace
 
 class I2cDriverTest : public ::testing::Test {
  public:
   void Init(const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata) {
     test_runner.RunInEnvironmentTypeContext(
         [metadata](TestEnvironment& env) { env.AddMetadata(metadata); });
+    EXPECT_TRUE(test_runner
+                    .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                      i2c_config::Config config{{.enable_suspend = true}};
+                      args.config(config.ToVmo());
+                    })
+                    .is_ok());
+  }
+
+  void InitGeneric(fuchsia_hardware_i2c_businfo::I2CBusMetadata metadata) {
+    test_runner.RunInEnvironmentTypeContext(
+        [metadata = std::move(metadata)](TestEnvironment& env) { env.InitGeneric(metadata); });
     EXPECT_TRUE(test_runner
                     .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
                       i2c_config::Config config{{.enable_suspend = true}};
@@ -108,7 +118,7 @@ TEST_F(I2cDriverTest, GetName) {
   test_runner.RunInNodeContext([expected_name = kTestChildName](fdf_testing::TestNode& node) {
     ASSERT_EQ(1u, node.children().count("i2c"));
     fdf_testing::TestNode& i2c_node = node.children().at("i2c");
-    EXPECT_TRUE(i2c_node.children().count("i2c-16-5"));
+    EXPECT_TRUE(i2c_node.children().count(expected_name));
   });
 
   zx::result connect_result =
@@ -123,5 +133,25 @@ TEST_F(I2cDriverTest, GetName) {
       });
   ASSERT_OK(run_result.status_value());
 }
+
+TEST_F(I2cDriverTest, GenericMetadataTest) {
+  const fuchsia_hardware_i2c_businfo::I2CChannel kChannel = CreateChannel(5, 10, 2, 4, 6);
+  const uint32_t kBusId = 32;
+
+  InitGeneric(fuchsia_hardware_i2c_businfo::I2CBusMetadata{{
+      .channels{{kChannel}},
+      .bus_id = kBusId,
+  }});
+
+  test_runner.RunInNodeContext([](fdf_testing::TestNode& node) {
+    ASSERT_EQ(1u, node.children().count("i2c"));
+    fdf_testing::TestNode& i2c_node = node.children().at("i2c");
+
+    EXPECT_EQ(1u, i2c_node.children().size());
+    EXPECT_TRUE(i2c_node.children().count("i2c-32-5"));
+  });
+}
+
+}  // namespace
 
 }  // namespace i2c
