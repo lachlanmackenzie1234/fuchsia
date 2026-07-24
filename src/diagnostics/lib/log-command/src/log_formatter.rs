@@ -479,14 +479,14 @@ where
                     None
                 } else {
                     Some(LogTextDisplayOptions {
-                        show_tags: !cmd.hide_tags,
-                        color: if cmd.no_color {
+                        show_tags: !cmd.hide_tags(),
+                        color: if cmd.no_color() {
                             LogTextColor::None
                         } else {
                             LogTextColor::BySeverity
                         },
-                        show_metadata: cmd.show_metadata,
-                        time_format: match cmd.clock {
+                        show_metadata: cmd.show_metadata(),
+                        time_format: match cmd.clock() {
                             TimeFormat::Boot => LogTimeDisplayFormat::Original,
                             TimeFormat::Local => LogTimeDisplayFormat::WallTime {
                                 tz: Timezone::Local,
@@ -501,14 +501,14 @@ where
                                 offset: 0,
                             },
                         },
-                        show_file: !cmd.hide_file,
-                        show_moniker: !cmd.hide_moniker,
-                        show_full_moniker: cmd.show_full_moniker,
-                        prefer_url_component_name: cmd.prefer_url_component_name,
+                        show_file: !cmd.hide_file(),
+                        show_moniker: !cmd.hide_moniker(),
+                        show_full_moniker: cmd.show_full_moniker(),
+                        prefer_url_component_name: cmd.prefer_url_component_name(),
                     })
                 },
-                since: DeviceOrLocalTimestamp::new(cmd.since.as_ref(), cmd.since_boot.as_ref()),
-                until: DeviceOrLocalTimestamp::new(cmd.until.as_ref(), cmd.until_boot.as_ref()),
+                since: DeviceOrLocalTimestamp::new(cmd.since(), cmd.since_boot().as_ref()),
+                until: DeviceOrLocalTimestamp::new(cmd.until(), cmd.until_boot().as_ref()),
                 tail: match &cmd.sub_command {
                     Some(LogSubCommand::Dump(dump)) => dump.tail,
                     _ => None,

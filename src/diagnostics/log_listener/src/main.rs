@@ -49,8 +49,7 @@ async fn main() -> Result<(), Error> {
     let stream_mode = if matches!(cmd.sub_command, Some(LogSubCommand::Dump(..))) {
         fidl_fuchsia_diagnostics::StreamMode::Snapshot
     } else {
-        cmd.since
-            .as_ref()
+        cmd.since()
             .map(|value| {
                 if value.is_now {
                     fidl_fuchsia_diagnostics::StreamMode::Subscribe
@@ -60,7 +59,7 @@ async fn main() -> Result<(), Error> {
             })
             .unwrap_or(fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
     };
-    let format = match cmd.encoding {
+    let format = match cmd.encoding() {
         log_utils::LogEncoding::Json => fidl_fuchsia_diagnostics::Format::Json,
         log_utils::LogEncoding::Fxt => fidl_fuchsia_diagnostics::Format::Fxt,
     };
@@ -83,14 +82,14 @@ async fn main() -> Result<(), Error> {
     );
     let mut formatter = DefaultLogFormatter::<JsonWriter<LogEntry>>::new_from_args(
         &cmd,
-        JsonWriter::new(if cmd.json { Some(Format::Json) } else { None }),
+        JsonWriter::new(if cmd.json() { Some(Format::Json) } else { None }),
     )?;
     formatter.expand_monikers(&realm_proxy).await?;
     for warning in cmd.validate_cmd_flags_with_warnings()? {
         writeln!(formatter.writer().stderr(), "{warning}")?;
     }
     cmd.maybe_set_interest(&log_settings, &realm_proxy).await?;
-    if let Some(LogSubCommand::SetSeverity(options)) = cmd.sub_command {
+    if let Some(LogSubCommand::SetSeverity(options)) = &cmd.sub_command {
         if options.no_persist {
             // Block forever.
             pending::<()>().await;
@@ -100,7 +99,7 @@ async fn main() -> Result<(), Error> {
         }
     }
     formatter.set_boot_timestamp(boot_ts);
-    match cmd.encoding {
+    match cmd.encoding() {
         log_utils::LogEncoding::Json => {
             match log_utils::dump_logs_from_socket(
                 flex_client::socket_to_async(receiver),

@@ -107,13 +107,13 @@ fn convert_to_lowercase_if_needed<'a>(input: &'a str, case_sensitive: bool) -> C
 impl LogFilterCriteria {
     pub fn try_from(mut cmd: LogCommand) -> Result<Self, LogError> {
         let mut exclude_regexes = Vec::new();
-        for pattern in &cmd.exclude_regex {
+        for pattern in cmd.exclude_regex() {
             let re = regex_lite::RegexBuilder::new(pattern)
-                .case_insensitive(!cmd.case_sensitive)
+                .case_insensitive(!cmd.case_sensitive())
                 .build()?;
             exclude_regexes.push(re);
         }
-        if let Some(ref path) = cmd.exclude_regex_file {
+        if let Some(path) = cmd.exclude_regex_file() {
             let content = std::fs::read_to_string(path)?;
             for line in content.lines() {
                 let line = line.trim();
@@ -121,32 +121,32 @@ impl LogFilterCriteria {
                     continue;
                 }
                 let re = regex_lite::RegexBuilder::new(line)
-                    .case_insensitive(!cmd.case_sensitive)
+                    .case_insensitive(!cmd.case_sensitive())
                     .build()?;
                 exclude_regexes.push(re);
             }
         }
 
+        let case_sensitive = cmd.case_sensitive();
         Ok(Self {
-            min_severity: cmd.severity,
-            filters: cmd.filter,
-            tags: cmd
-                .tag
+            min_severity: cmd.severity(),
+            filters: std::mem::take(&mut cmd.filters.filter),
+            tags: std::mem::take(&mut cmd.filters.tag)
                 .into_iter()
-                .map(|value| convert_to_lowercase_if_needed(&value, cmd.case_sensitive).to_string())
+                .map(|value| convert_to_lowercase_if_needed(&value, case_sensitive).to_string())
                 .collect(),
-            excludes: cmd.exclude,
+            excludes: std::mem::take(&mut cmd.filters.exclude),
             exclude_regexes,
-            moniker_filters: if cmd.kernel {
-                cmd.component.push(KLOG.to_string());
-                MonikerFilters::new(cmd.component)
+            moniker_filters: if cmd.kernel() {
+                cmd.filters.component.push(KLOG.to_string());
+                MonikerFilters::new(std::mem::take(&mut cmd.filters.component))
             } else {
-                MonikerFilters::new(cmd.component)
+                MonikerFilters::new(std::mem::take(&mut cmd.filters.component))
             },
-            exclude_tags: cmd.exclude_tags,
-            pid: cmd.pid,
-            case_sensitive: cmd.case_sensitive,
-            tid: cmd.tid,
+            exclude_tags: std::mem::take(&mut cmd.filters.exclude_tags),
+            pid: cmd.pid(),
+            case_sensitive,
+            tid: cmd.tid(),
             interest_selectors: cmd.set_severity.into_iter().flatten().collect(),
         })
     }
@@ -380,6 +380,7 @@ fn moniker_contains_in_last_segment(
 
 #[cfg(test)]
 mod test {
+    use crate::LogFilterArgs;
     use diagnostics_data::{ExtendedMoniker, Timestamp};
     use selectors::parse_log_interest_selector;
 
@@ -401,7 +402,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_criteria_tag_filter_filters_moniker() {
-        let cmd = LogCommand { tag: vec!["testcomponent".to_string()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { tag: vec!["testcomponent".to_string()], ..Default::default() },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -423,8 +427,13 @@ mod test {
 
     #[fuchsia::test]
     async fn test_criteria_exclude_tag_filters_moniker() {
-        let cmd =
-            LogCommand { exclude_tags: vec!["testcomponent".to_string()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs {
+                exclude_tags: vec!["testcomponent".to_string()],
+                ..Default::default()
+            },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
         assert!(
             !criteria.matches(&make_log_entry(
@@ -446,8 +455,11 @@ mod test {
     #[fuchsia::test]
     async fn test_criteria_tag_filter() {
         let cmd = LogCommand {
-            tag: vec!["tag1".to_string()],
-            exclude_tags: vec!["tag3".to_string()],
+            filters: LogFilterArgs {
+                tag: vec!["tag1".to_string()],
+                exclude_tags: vec!["tag3".to_string()],
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::from(cmd);
@@ -573,8 +585,11 @@ mod test {
     #[fuchsia::test]
     async fn test_criteria_tag_filter_legacy() {
         let cmd = LogCommand {
-            tag: vec!["tag1".to_string()],
-            exclude_tags: vec!["tag3".to_string()],
+            filters: LogFilterArgs {
+                tag: vec!["tag1".to_string()],
+                exclude_tags: vec!["tag3".to_string()],
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::from(cmd);
@@ -629,7 +644,7 @@ mod test {
     #[fuchsia::test]
     async fn test_severity_filter_with_debug() {
         let mut cmd = empty_dump_command();
-        cmd.severity = Severity::Trace;
+        cmd.filters.severity = Severity::Trace;
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -676,7 +691,7 @@ mod test {
     #[fuchsia::test]
     async fn test_pid_filter() {
         let mut cmd = empty_dump_command();
-        cmd.pid = Some(123);
+        cmd.filters.pid = Some(123);
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -723,7 +738,10 @@ mod test {
     #[fuchsia::test]
     async fn test_criteria_component_filter() {
         let cmd = LogCommand {
-            component: vec!["/core/network/netstack".to_string()],
+            filters: LogFilterArgs {
+                component: vec!["/core/network/netstack".to_string()],
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
 
@@ -776,7 +794,10 @@ mod test {
     #[fuchsia::test]
     async fn test_criteria_component_filter_not_found() {
         let cmd = LogCommand {
-            component: vec!["non_existent_component".to_string()],
+            filters: LogFilterArgs {
+                component: vec!["non_existent_component".to_string()],
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
 
@@ -808,7 +829,7 @@ mod test {
     #[fuchsia::test]
     async fn test_tid_filter() {
         let mut cmd = empty_dump_command();
-        cmd.tid = Some(123);
+        cmd.filters.tid = Some(123);
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -855,9 +876,12 @@ mod test {
     #[fuchsia::test]
     async fn test_criteria_moniker_message_and_severity_matches() {
         let cmd = LogCommand {
-            filter: vec!["included".to_string()],
-            exclude: vec!["not this".to_string()],
-            severity: Severity::Error,
+            filters: LogFilterArgs {
+                filter: vec!["included".to_string()],
+                exclude: vec!["not this".to_string()],
+                severity: Severity::Error,
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::from(cmd);
@@ -958,7 +982,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_criteria_klog_only() {
-        let cmd = LogCommand { tag: vec!["component_manager".into()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { tag: vec!["component_manager".into()], ..Default::default() },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -1043,7 +1070,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_criteria_klog_tag_hack() {
-        let cmd = LogCommand { kernel: true, ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { kernel: true, ..Default::default() },
+            ..empty_dump_command()
+        };
         let mut criteria = LogFilterCriteria::from(cmd);
 
         criteria.expand_monikers(&FakeInstanceGetter).await.unwrap();
@@ -1078,7 +1108,10 @@ mod test {
 
     #[test]
     fn filter_fiters_filename() {
-        let cmd = LogCommand { filter: vec!["sometestfile".into()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { filter: vec!["sometestfile".into()], ..Default::default() },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -1160,7 +1193,10 @@ mod test {
     #[test]
     fn filter_fiters_case_sensitivity() {
         // Case-insensitive by default
-        let cmd = LogCommand { filter: vec!["sometestfile".into()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { filter: vec!["sometestfile".into()], ..Default::default() },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
 
         let entry_0 = make_log_entry(
@@ -1193,8 +1229,11 @@ mod test {
 
         // Case-sensitive
         let cmd = LogCommand {
-            filter: vec!["sometestfile".into()],
-            case_sensitive: true,
+            filters: LogFilterArgs {
+                filter: vec!["sometestfile".into()],
+                case_sensitive: true,
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::from(cmd);
@@ -1206,7 +1245,10 @@ mod test {
     #[test]
     fn filter_fiters_case_sensitivity_for_tags() {
         // Case-insensitive by default
-        let cmd = LogCommand { tag: vec!["someTAG".into()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { tag: vec!["someTAG".into()], ..Default::default() },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
 
         let entry_0 = make_log_entry(
@@ -1239,8 +1281,11 @@ mod test {
 
         // Case-sensitive
         let cmd = LogCommand {
-            tag: vec!["someTAG".into()],
-            case_sensitive: true,
+            filters: LogFilterArgs {
+                tag: vec!["someTAG".into()],
+                case_sensitive: true,
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::from(cmd);
@@ -1252,7 +1297,10 @@ mod test {
     #[test]
     fn filter_fiters_case_sensitivity_for_tags_including_moniker() {
         // Case-insensitive by default
-        let cmd = LogCommand { tag: vec!["someTAG".into()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { tag: vec!["someTAG".into()], ..Default::default() },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
 
         let entry_0 = make_log_entry(
@@ -1283,8 +1331,11 @@ mod test {
 
         // Case-sensitive
         let cmd = LogCommand {
-            tag: vec!["someTAG".into()],
-            case_sensitive: true,
+            filters: LogFilterArgs {
+                tag: vec!["someTAG".into()],
+                case_sensitive: true,
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::from(cmd);
@@ -1296,7 +1347,10 @@ mod test {
     #[test]
     fn tag_matches_moniker_last_segment() {
         // When the tags are empty, the last segment of the moniker is treated as the tag.
-        let cmd = LogCommand { tag: vec!["last_segment".to_string()], ..empty_dump_command() };
+        let cmd = LogCommand {
+            filters: LogFilterArgs { tag: vec!["last_segment".to_string()], ..Default::default() },
+            ..empty_dump_command()
+        };
         let criteria = LogFilterCriteria::from(cmd);
 
         assert!(
@@ -1317,7 +1371,10 @@ mod test {
     #[test]
     fn test_criteria_exclude_regex() {
         let cmd = LogCommand {
-            exclude_regex: vec!["foo.*bar".to_string(), "baz".to_string()],
+            filters: LogFilterArgs {
+                exclude_regex: vec!["foo.*bar".to_string(), "baz".to_string()],
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::try_from(cmd).unwrap();
@@ -1370,7 +1427,10 @@ mod test {
         std::fs::write(&file_path, "# comment\n\nfoo.*bar\nbaz\n").unwrap();
 
         let cmd = LogCommand {
-            exclude_regex_file: Some(file_path.to_string_lossy().to_string()),
+            filters: LogFilterArgs {
+                exclude_regex_file: Some(file_path.to_string_lossy().to_string()),
+                ..Default::default()
+            },
             ..empty_dump_command()
         };
         let criteria = LogFilterCriteria::try_from(cmd).unwrap();

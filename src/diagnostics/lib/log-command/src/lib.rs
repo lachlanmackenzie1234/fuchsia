@@ -195,6 +195,86 @@ impl SymbolizeMode {
     }
 }
 
+/// Container for log filtering and display arguments.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LogFilterArgs {
+    pub filter: Vec<String>,
+    pub moniker: Vec<String>,
+    pub component: Vec<String>,
+    pub exclude: Vec<String>,
+    pub exclude_regex: Vec<String>,
+    pub exclude_regex_file: Option<String>,
+    pub tag: Vec<String>,
+    pub exclude_tags: Vec<String>,
+    pub hide_tags: bool,
+    pub hide_file: bool,
+    pub clock: TimeFormat,
+    pub no_color: bool,
+    pub kernel: bool,
+    pub severity: Severity,
+    pub show_metadata: bool,
+    pub force_set_severity: bool,
+    pub since: Option<DetailedDateTime>,
+    pub since_boot: Option<Duration>,
+    pub until: Option<DetailedDateTime>,
+    pub until_boot: Option<Duration>,
+    pub case_sensitive: bool,
+    pub show_full_moniker: bool,
+    pub prefer_url_component_name: bool,
+    pub hide_moniker: bool,
+    pub pid: Option<u64>,
+    pub tid: Option<u64>,
+    #[cfg(target_os = "fuchsia")]
+    pub encoding: LogEncoding,
+    #[cfg(target_os = "fuchsia")]
+    pub json: bool,
+    #[cfg(not(target_os = "fuchsia"))]
+    pub disable_reconnect: bool,
+    #[cfg(not(target_os = "fuchsia"))]
+    pub symbolize: SymbolizeMode,
+}
+
+impl Default for LogFilterArgs {
+    fn default() -> Self {
+        LogFilterArgs {
+            filter: vec![],
+            moniker: vec![],
+            component: vec![],
+            exclude: vec![],
+            exclude_regex: vec![],
+            exclude_regex_file: None,
+            tag: vec![],
+            exclude_tags: vec![],
+            hide_tags: false,
+            hide_file: false,
+            clock: TimeFormat::Boot,
+            no_color: false,
+            kernel: false,
+            severity: Severity::Info,
+            show_metadata: false,
+            force_set_severity: false,
+            since: None,
+            since_boot: None,
+            until: None,
+            until_boot: None,
+            case_sensitive: false,
+            show_full_moniker: false,
+            prefer_url_component_name: false,
+            hide_moniker: false,
+            pid: None,
+            tid: None,
+            #[cfg(target_os = "fuchsia")]
+            encoding: LogEncoding::Json,
+            #[cfg(target_os = "fuchsia")]
+            json: false,
+            #[cfg(not(target_os = "fuchsia"))]
+            disable_reconnect: false,
+            #[cfg(not(target_os = "fuchsia"))]
+            symbolize: SymbolizeMode::Pretty,
+        }
+    }
+}
+
 #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(
     subcommand,
@@ -241,7 +321,7 @@ Dump all logs from the last 30 minutes logged before 5 minutes ago:
 Enable DEBUG logs from the \"core/audio\" component while logs are streaming:
   $ ffx log --set-severity core/audio#DEBUG"
 )]
-pub struct LogCommand {
+struct LogCommandCli {
     #[argh(subcommand)]
     pub sub_command: Option<LogSubCommand>,
 
@@ -406,48 +486,70 @@ pub struct LogCommand {
     pub disable_reconnect: bool,
 }
 
-impl Default for LogCommand {
-    fn default() -> Self {
-        LogCommand {
-            filter: vec![],
-            moniker: vec![],
-            component: vec![],
-            exclude: vec![],
-            exclude_regex: vec![],
-            exclude_regex_file: None,
-            tag: vec![],
-            exclude_tags: vec![],
-            hide_tags: false,
-            hide_file: false,
-            clock: TimeFormat::Boot,
-            no_color: false,
-            kernel: false,
-            severity: Severity::Info,
-            show_metadata: false,
-            force_set_severity: false,
-            since: None,
-            since_boot: None,
-            until: None,
-            case_sensitive: false,
-            until_boot: None,
-            sub_command: None,
-            dump: false,
-            set_severity: vec![],
-            show_full_moniker: false,
-            prefer_url_component_name: false,
-            hide_moniker: false,
-            pid: None,
-            tid: None,
-            #[cfg(target_os = "fuchsia")]
-            encoding: LogEncoding::Json,
-            #[cfg(target_os = "fuchsia")]
-            json: false,
-            #[cfg(not(target_os = "fuchsia"))]
-            disable_reconnect: false,
-            #[cfg(not(target_os = "fuchsia"))]
-            symbolize: SymbolizeMode::Pretty,
-        }
+/// Consolidated log command representation containing merged filter criteria and subcommands.
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct LogCommand {
+    pub sub_command: Option<LogSubCommand>,
+    pub dump: bool,
+    pub set_severity: Vec<OneOrMany<LogInterestSelector>>,
+    pub filters: LogFilterArgs,
+}
+
+impl FromArgs for LogCommand {
+    fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
+        let cli = LogCommandCli::from_args(command_name, args)?;
+        Ok(LogCommand {
+            sub_command: cli.sub_command,
+            dump: cli.dump,
+            set_severity: cli.set_severity,
+            filters: LogFilterArgs {
+                filter: cli.filter,
+                moniker: cli.moniker,
+                component: cli.component,
+                exclude: cli.exclude,
+                exclude_regex: cli.exclude_regex,
+                exclude_regex_file: cli.exclude_regex_file,
+                tag: cli.tag,
+                exclude_tags: cli.exclude_tags,
+                hide_tags: cli.hide_tags,
+                hide_file: cli.hide_file,
+                clock: cli.clock,
+                no_color: cli.no_color,
+                kernel: cli.kernel,
+                severity: cli.severity,
+                show_metadata: cli.show_metadata,
+                force_set_severity: cli.force_set_severity,
+                since: cli.since,
+                since_boot: cli.since_boot,
+                until: cli.until,
+                until_boot: cli.until_boot,
+                case_sensitive: cli.case_sensitive,
+                show_full_moniker: cli.show_full_moniker,
+                prefer_url_component_name: cli.prefer_url_component_name,
+                hide_moniker: cli.hide_moniker,
+                pid: cli.pid,
+                tid: cli.tid,
+                #[cfg(target_os = "fuchsia")]
+                encoding: cli.encoding,
+                #[cfg(target_os = "fuchsia")]
+                json: cli.json,
+                #[cfg(not(target_os = "fuchsia"))]
+                disable_reconnect: cli.disable_reconnect,
+                #[cfg(not(target_os = "fuchsia"))]
+                symbolize: cli.symbolize,
+            },
+        })
     }
+}
+
+impl ArgsInfo for LogCommand {
+    fn get_args_info() -> argh::CommandInfoWithArgs {
+        LogCommandCli::get_args_info()
+    }
+}
+
+impl argh::SubCommand for LogCommand {
+    const COMMAND: &'static argh::CommandInfo = LogCommandCli::COMMAND;
 }
 
 /// Result returned from processing logs
@@ -571,6 +673,195 @@ impl InstanceGetter for RealmQueryProxy {
 }
 
 impl LogCommand {
+    /// Returns the minimum log severity.
+    #[must_use]
+    pub fn severity(&self) -> Severity {
+        self.filters.severity
+    }
+
+    /// Returns the timestamp display format.
+    #[must_use]
+    pub fn clock(&self) -> TimeFormat {
+        self.filters.clock.clone()
+    }
+
+    /// Returns the symbolization mode.
+    #[cfg(not(target_os = "fuchsia"))]
+    #[must_use]
+    pub fn symbolize(&self) -> SymbolizeMode {
+        self.filters.symbolize.clone()
+    }
+
+    /// Returns the log encoding format.
+    #[cfg(target_os = "fuchsia")]
+    #[must_use]
+    pub fn encoding(&self) -> LogEncoding {
+        self.filters.encoding.clone()
+    }
+
+    /// Returns the log text filter patterns.
+    #[must_use]
+    pub fn filter(&self) -> &[String] {
+        &self.filters.filter
+    }
+
+    /// Returns the deprecated moniker filter patterns.
+    #[must_use]
+    pub fn moniker(&self) -> &[String] {
+        &self.filters.moniker
+    }
+
+    /// Returns the component filter patterns.
+    #[must_use]
+    pub fn component(&self) -> &[String] {
+        &self.filters.component
+    }
+
+    /// Returns the text exclusion patterns.
+    #[must_use]
+    pub fn exclude(&self) -> &[String] {
+        &self.filters.exclude
+    }
+
+    /// Returns the regular expression exclusion patterns.
+    #[must_use]
+    pub fn exclude_regex(&self) -> &[String] {
+        &self.filters.exclude_regex
+    }
+
+    /// Returns the tag filter patterns.
+    #[must_use]
+    pub fn tag(&self) -> &[String] {
+        &self.filters.tag
+    }
+
+    /// Returns the tag exclusion patterns.
+    #[must_use]
+    pub fn exclude_tags(&self) -> &[String] {
+        &self.filters.exclude_tags
+    }
+
+    /// Returns whether tags are hidden from output.
+    #[must_use]
+    pub fn hide_tags(&self) -> bool {
+        self.filters.hide_tags
+    }
+
+    /// Returns whether colored output is disabled.
+    #[must_use]
+    pub fn no_color(&self) -> bool {
+        self.filters.no_color
+    }
+
+    /// Sets whether colored output is disabled.
+    pub fn set_no_color(&mut self, no_color: bool) {
+        self.filters.no_color = no_color;
+    }
+
+    /// Returns whether PID and TID metadata are displayed.
+    #[must_use]
+    pub fn show_metadata(&self) -> bool {
+        self.filters.show_metadata
+    }
+
+    /// Returns whether file and line number locations are hidden.
+    #[must_use]
+    pub fn hide_file(&self) -> bool {
+        self.filters.hide_file
+    }
+
+    /// Returns whether monikers are hidden from output.
+    #[must_use]
+    pub fn hide_moniker(&self) -> bool {
+        self.filters.hide_moniker
+    }
+
+    /// Returns whether full monikers are displayed.
+    #[must_use]
+    pub fn show_full_moniker(&self) -> bool {
+        self.filters.show_full_moniker
+    }
+
+    /// Returns whether component URL is preferred over moniker for display.
+    #[must_use]
+    pub fn prefer_url_component_name(&self) -> bool {
+        self.filters.prefer_url_component_name
+    }
+
+    /// Returns the starting timestamp filter.
+    #[must_use]
+    pub fn since(&self) -> Option<&DetailedDateTime> {
+        self.filters.since.as_ref()
+    }
+
+    /// Returns the ending timestamp filter.
+    #[must_use]
+    pub fn until(&self) -> Option<&DetailedDateTime> {
+        self.filters.until.as_ref()
+    }
+
+    /// Returns the starting boot duration filter.
+    #[must_use]
+    pub fn since_boot(&self) -> Option<Duration> {
+        self.filters.since_boot
+    }
+
+    /// Returns the ending boot duration filter.
+    #[must_use]
+    pub fn until_boot(&self) -> Option<Duration> {
+        self.filters.until_boot
+    }
+
+    /// Returns whether JSON output is enabled.
+    #[cfg(target_os = "fuchsia")]
+    #[must_use]
+    pub fn json(&self) -> bool {
+        self.filters.json
+    }
+
+    /// Returns the path to the regex exclusion file, if set.
+    #[must_use]
+    pub fn exclude_regex_file(&self) -> Option<&str> {
+        self.filters.exclude_regex_file.as_deref()
+    }
+
+    /// Returns whether only kernel logs should be displayed.
+    #[must_use]
+    pub fn kernel(&self) -> bool {
+        self.filters.kernel
+    }
+
+    /// Returns whether severity selectors bypass ambiguity checks.
+    #[must_use]
+    pub fn force_set_severity(&self) -> bool {
+        self.filters.force_set_severity
+    }
+
+    /// Returns whether text filtering is case-sensitive.
+    #[must_use]
+    pub fn case_sensitive(&self) -> bool {
+        self.filters.case_sensitive
+    }
+
+    /// Returns the process ID filter, if set.
+    #[must_use]
+    pub fn pid(&self) -> Option<u64> {
+        self.filters.pid
+    }
+
+    /// Returns the thread ID filter, if set.
+    #[must_use]
+    pub fn tid(&self) -> Option<u64> {
+        self.filters.tid
+    }
+
+    /// Returns whether automatic reconnection is disabled.
+    #[cfg(not(target_os = "fuchsia"))]
+    #[must_use]
+    pub fn disable_reconnect(&self) -> bool {
+        self.filters.disable_reconnect
+    }
+
     async fn map_interest_selectors<'a>(
         realm_query: &impl InstanceGetter,
         interest_selectors: impl Iterator<Item = &'a LogInterestSelector>,
@@ -631,10 +922,10 @@ impl LogCommand {
     pub fn validate_cmd_flags_with_warnings(&mut self) -> Result<Vec<&'static str>, LogError> {
         let mut warnings = vec![];
 
-        if !self.moniker.is_empty() {
+        if !self.filters.moniker.is_empty() {
             warnings.push("WARNING: --moniker is deprecated, use --component instead");
-            if self.component.is_empty() {
-                self.component = std::mem::take(&mut self.moniker);
+            if self.filters.component.is_empty() {
+                self.filters.component = std::mem::take(&mut self.filters.moniker);
             } else {
                 warnings.push("WARNING: ignoring --moniker arguments in favor of --component");
             }
@@ -663,7 +954,7 @@ impl LogCommand {
                 }
                 (&options.interest_selector, options.force, !options.no_persist)
             } else {
-                (&self.set_severity, self.force_set_severity, false)
+                (&self.set_severity, self.filters.force_set_severity, false)
             };
 
         if persist || !set_severity.is_empty() {
@@ -800,7 +1091,7 @@ mod test {
                 force: false,
                 no_persist: false,
             })),
-            hide_file: true,
+            filters: LogFilterArgs { hide_file: true, ..LogFilterArgs::default() },
             ..LogCommand::default()
         };
         let mut set_interest_result = None;
@@ -1055,7 +1346,7 @@ ffx log --force-set-severity.
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
-            force_set_severity: true,
+            filters: LogFilterArgs { force_set_severity: true, ..LogFilterArgs::default() },
             ..LogCommand::default()
         };
         let getter = FakeInstanceGetter {

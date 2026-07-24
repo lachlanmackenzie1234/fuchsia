@@ -20,7 +20,7 @@ use ffx_log_args::LogCommand;
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
 use futures::FutureExt;
-use log_command_fdomain::LogEntry;
+use log_command_fdomain::{LogEntry, LogFilterArgs};
 use std::io::Write;
 use target_holders::RemoteControlProxyHolder;
 
@@ -96,7 +96,10 @@ async fn cmd_impl(
 
     if args.follow_logs {
         let log_filter = args.moniker.to_string();
-        let log_cmd = LogCommand { filter: vec![log_filter], ..LogCommand::default() };
+        let log_cmd = LogCommand {
+            filters: LogFilterArgs { filter: vec![log_filter], ..Default::default() },
+            ..LogCommand::default()
+        };
         log_impl(writer, ctx, log_cmd, connector, true).await?;
     }
     Ok(())
