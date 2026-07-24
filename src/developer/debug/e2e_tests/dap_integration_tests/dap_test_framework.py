@@ -403,7 +403,7 @@ class DapTestFramework:
         return req_fut
 
     def on_event(
-        self, event_name: str, timeout: Optional[float] = None
+        self, event_name: str, timeout: Optional[float] = 120.0
     ) -> EventFuture:
         """Returns an EventFuture to track expectations on events."""
         event_fut = EventFuture(self, event_name, timeout=timeout)
@@ -1072,7 +1072,7 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
         self.framework.set_sent_callback(seq, callback)
 
     def on_event(
-        self, event_name: str, timeout: Optional[float] = None
+        self, event_name: str, timeout: Optional[float] = 120.0
     ) -> EventFuture:
         return self.framework.on_event(event_name, timeout=timeout)
 

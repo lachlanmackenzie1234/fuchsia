@@ -181,6 +181,59 @@ class TestLaunch(DapTestCase):
         )
 
 
+class TestDapStackTrace(DapTestCase):
+    # TODO(https://fxbug.dev/529615917): remove target_cpu requirement once core.vim3-vg-release is not flaky.
+    require_build_type = ["target_cpu!=arm64", "is_coverage=false"]
+
+    async def test_pretty_stack(self) -> None:
+        self.launch(
+            LaunchArguments(
+                process="fuchsia-pkg://fuchsia.com/crasher#meta/rust_crasher.cm"
+            )
+        )
+
+        stopped_event = await self.on_event("stopped", timeout=120.0)
+        thread_id = stopped_event["body"]["threadId"]
+
+        stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+
+        frames = stack_resp["body"]["stackFrames"]
+        self.assertTrue(len(frames) > 0)
+
+        # Find main frame and startup frame
+        main_frame = next(
+            (f for f in frames if "rust_crasher::main" in f["name"]), None
+        )
+        startup_frame = next(
+            (
+                f
+                for f in frames
+                if f.get("source", {}).get("origin") == "Rust startup"
+            ),
+            None,
+        )
+
+        self.assertIsNotNone(main_frame, "rust_crasher::main frame not found")
+        self.assertIsNotNone(
+            startup_frame, "'Rust startup' origin frame not found"
+        )
+        # Explicitly narrow optional union types for Mypy across dynamic assertIsNotNone calls.
+        assert main_frame is not None
+        assert startup_frame is not None
+
+        # In console zxdb, we fold the frames. In DAP, we mark those frames as "subtle"
+        # main frame should NOT be subtle
+        self.assertNotEqual(main_frame.get("presentationHint"), "subtle")
+
+        # startup frame SHOULD be subtle and have origin "Rust startup"
+        self.assertEqual(startup_frame.get("presentationHint"), "subtle")
+        self.assertEqual(
+            startup_frame.get("source", {}).get("origin"), "Rust startup"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
 
