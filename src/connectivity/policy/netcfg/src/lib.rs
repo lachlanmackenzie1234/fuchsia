@@ -180,22 +180,23 @@ const WLAN_AP_NETWORK_ADDR: fnet::Ipv4Address = fidl_ip_v4!("192.168.255.248");
 /// 1 day in seconds.
 const WLAN_AP_DHCP_LEASE_TIME_SECONDS: u32 = 24 * 60 * 60;
 
+/// The DnsServerWatcher yields a collection of information used in recording available DNS servers.
+/// The DnsServerUpdate consolidates all of that information.
+#[derive(Debug)]
+pub(crate) struct DnsServerUpdate {
+    pub(crate) source: DnsServersUpdateSource,
+    pub(crate) payload: DnsWatcherResultPayload,
+    pub(crate) lifetime: DnsServerLifetime,
+    pub(crate) result: Result<Vec<fnet_name::DnsServer_>, fidl::Error>,
+}
+
 /// A map of DNS server watcher streams that yields `DnsServerWatcherEvent` as DNS
 /// server updates become available.
 ///
 /// DNS server watcher streams may be added or removed at runtime as the watchers
 /// are started or stopped.
-type DnsServerWatchers<'a> = async_utils::stream::StreamMap<
-    DnsServersUpdateSource,
-    BoxStream<
-        'a,
-        (
-            DnsServersUpdateSource,
-            DnsWatcherResultPayload,
-            Result<Vec<fnet_name::DnsServer_>, fidl::Error>,
-        ),
-    >,
->;
+type DnsServerWatchers<'a> =
+    async_utils::stream::StreamMap<DnsServersUpdateSource, BoxStream<'a, DnsServerUpdate>>;
 
 type DelegatedNetworksStream = futures::future::Either<
     fnp_socketproxy::NetworkRegistryRequestStream,
@@ -740,6 +741,9 @@ pub struct NetCfg<'a> {
     // (InterfaceId, router address).
     ndp_dns_servers: HashMap<(InterfaceId, net_types::ip::Ipv6Addr), Vec<fnet_name::DnsServer_>>,
 
+    // Manages the lifetime of NDP-learned DNS servers.
+    ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker,
+
     inspector: fuchsia_inspect::Inspector,
 }
 
@@ -875,7 +879,12 @@ fn start_dhcpv6_client(
         })?;
     let stream = dns_servers_stream
         .tagged(source)
-        .map(|(src, res)| (src, DnsWatcherResultPayload::Generic, res))
+        .map(|(source, result)| DnsServerUpdate {
+            source,
+            payload: DnsWatcherResultPayload::Generic,
+            lifetime: DnsServerLifetime::Undefined,
+            result,
+        })
         .boxed();
     if let Some(o) = watchers.insert(source, stream) {
         let _: BoxStream<'_, _> = o;
@@ -940,6 +949,12 @@ enum DnsWatcherResultPayload {
     Ndp { router_address: net_types::ip::Ipv6Addr },
 }
 
+#[derive(Debug, PartialEq)]
+enum DnsServerLifetime {
+    Undefined,
+    Seconds(u32),
+}
+
 // Events associated with provisioning a device.
 #[derive(Debug)]
 enum ProvisioningEvent {
@@ -949,13 +964,7 @@ enum ProvisioningEvent {
             fidl::Error,
         >,
     ),
-    DnsWatcherResult(
-        Option<(
-            dns_server_watcher::DnsServersUpdateSource,
-            DnsWatcherResultPayload,
-            Result<Vec<fnet_name::DnsServer_>, fidl::Error>,
-        )>,
-    ),
+    DnsWatcherResult(Option<DnsServerUpdate>),
     RequestStream(Option<RequestStream>),
     Dhcpv4Configuration(
         Option<(InterfaceId, Result<fnet_dhcp_ext::Configuration, fnet_dhcp_ext::Error>)>,
@@ -971,6 +980,7 @@ enum ProvisioningEvent {
     ),
     VirtualizationEvent(virtualization::Event),
     MasqueradeEvent(masquerade::Event),
+    NdpDnsExpired(InterfaceId, net_types::ip::Ipv6Addr),
 }
 
 // Per RFC 2131 "The client SHOULD wait a minimum of ten seconds before
@@ -1085,6 +1095,7 @@ impl<'a> NetCfg<'a> {
             interface_provisioning_policy,
             netpol_networks_service,
             ndp_dns_servers: Default::default(),
+            ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker::new(),
             inspector,
         })
     }
@@ -1264,7 +1275,12 @@ impl<'a> NetCfg<'a> {
             DnsServersUpdateSource::Netstack,
             dns_server_watcher,
         )
-        .map(|(source, res)| (source, DnsWatcherResultPayload::Generic, res))
+        .map(|(source, result)| DnsServerUpdate {
+            source,
+            payload: DnsWatcherResultPayload::Generic,
+            lifetime: DnsServerLifetime::Undefined,
+            result,
+        })
         .boxed();
 
         let dns_watchers = DnsServerWatchers::empty();
@@ -1402,6 +1418,13 @@ impl<'a> NetCfg<'a> {
                 dns_watchers_res = dns_watchers.next() => {
                     Event::ProvisioningEvent(
                         ProvisioningEvent::DnsWatcherResult(dns_watchers_res)
+                    )
+                }
+                ndp_dns_expiry = self.ndp_dns_expiry_tracker.next() => {
+                    let (interface_id, router_address) =
+                        ndp_dns_expiry.expect("expiry stream should never end");
+                    Event::ProvisioningEvent(
+                        ProvisioningEvent::NdpDnsExpired(interface_id, router_address)
                     )
                 }
                 req_stream = fs.next() => {
@@ -1605,10 +1628,11 @@ impl<'a> NetCfg<'a> {
                 }
             }
             ProvisioningEvent::DnsWatcherResult(dns_watchers_res) => {
-                let (source, payload, res) = dns_watchers_res.ok_or_else(|| {
-                    anyhow::anyhow!("dns watchers stream should never be exhausted")
-                })?;
-                let servers = match res {
+                let DnsServerUpdate { source, payload, lifetime, result } = dns_watchers_res
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("dns watchers stream should never be exhausted")
+                    })?;
+                let servers = match result {
                     Ok(s) => s,
                     Err(e) => {
                         // TODO(https://fxbug.dev/42135335): Restart the DNS server watcher.
@@ -1632,6 +1656,7 @@ impl<'a> NetCfg<'a> {
 
                 match source {
                     DnsServersUpdateSource::Ndp { interface_id } => {
+                        // Update DNS servers associated with the interface and router.
                         let interface_id_typed =
                             InterfaceId::new(interface_id).ok_or_else(|| {
                                 anyhow::anyhow!("NDP update with invalid zero interface ID")
@@ -1643,7 +1668,7 @@ impl<'a> NetCfg<'a> {
                                     self.ndp_dns_servers.remove(&key);
                             } else {
                                 let _: Option<Vec<fnet_name::DnsServer_>> =
-                                    self.ndp_dns_servers.insert(key, servers);
+                                    self.ndp_dns_servers.insert(key, servers.clone());
                             }
                         } else {
                             return Err(format_err!(
@@ -1658,6 +1683,23 @@ impl<'a> NetCfg<'a> {
                             .flat_map(|(_, servers)| servers.iter().cloned())
                             .collect::<Vec<_>>();
                         self.update_dns_servers(source, flattened_servers).await;
+
+                        // If the router address and lifetime have been provided, update the DNS
+                        // server expiration tracking.  Note that the lifetime may be 0.  In this
+                        // case, the timer is allowed to immediately expire and remove the entry to
+                        // unify these code paths.
+                        if let (
+                            DnsWatcherResultPayload::Ndp { router_address },
+                            DnsServerLifetime::Seconds(lifetime_seconds),
+                        ) = (payload, lifetime)
+                        {
+                            // Set the expiration timer for this latest batch of DNS servers.
+                            self.ndp_dns_expiry_tracker.record_expiry(
+                                interface_id_typed,
+                                router_address,
+                                lifetime_seconds,
+                            );
+                        }
                     }
                     DnsServersUpdateSource::Default
                     | DnsServersUpdateSource::Netstack
@@ -1667,6 +1709,9 @@ impl<'a> NetCfg<'a> {
                         self.update_dns_servers(source, servers).await
                     }
                 };
+            }
+            ProvisioningEvent::NdpDnsExpired(interface_id, router_address) => {
+                self.handle_ndp_dns_expired(interface_id, router_address).await
             }
             // TODO(https://fxbug.dev/42080722): Add tests to ensure we do not offer
             // these services when interface has ProvisioningType::Delegated
@@ -3836,6 +3881,30 @@ impl<'a> NetCfg<'a> {
 
         Ok(interface::generate_identifier(&mac, topological_path))
     }
+
+    async fn handle_ndp_dns_expired(
+        &mut self,
+        interface_id: crate::InterfaceId,
+        router_address: net_types::ip::Ipv6Addr,
+    ) {
+        info!(
+            "NDP DNS servers expired for router {:?} on interface {:?}",
+            router_address, interface_id
+        );
+        let key = (interface_id, router_address);
+        let _: Option<Vec<fnet_name::DnsServer_>> = self.ndp_dns_servers.remove(&key);
+        let flattened_servers = self
+            .ndp_dns_servers
+            .iter()
+            .filter(|((iface_id, _), _)| *iface_id == interface_id)
+            .flat_map(|(_, servers)| servers.iter().cloned())
+            .collect::<Vec<_>>();
+        self.update_dns_servers(
+            DnsServersUpdateSource::Ndp { interface_id: interface_id.into() },
+            flattened_servers,
+        )
+        .await;
+    }
 }
 
 pub async fn run<M: Mode>() -> Result<(), anyhow::Error> {
@@ -4131,6 +4200,7 @@ mod tests {
         fidl_ip, fidl_ip_v4_with_prefix, fidl_ip_v6, fidl_ip_v6_with_prefix, fidl_mac, fidl_subnet,
     };
     use pretty_assertions::assert_eq;
+    use std::task::Poll;
     use test_case::test_case;
 
     use super::*;
@@ -4242,6 +4312,7 @@ mod tests {
                 interface_provisioning_policy: Default::default(),
                 netpol_networks_service: Default::default(),
                 ndp_dns_servers: Default::default(),
+                ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker::new(),
                 inspector: fuchsia_inspect::Inspector::default(),
             },
             ServerEnds {
@@ -7374,5 +7445,49 @@ mod tests {
             })),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn test_ndp_dns_expired_event_removes_target_router() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+
+        let (
+            mut netcfg,
+            ServerEnds {
+                lookup_admin: _,
+                dhcpv4_client_provider: _,
+                dhcpv6_client_provider: _,
+                route_set_v4_provider: _,
+                dhcpv4_server: _,
+                fuchsia_networks: _,
+            },
+        ) = test_netcfg(NetcfgTestArgs {
+            with_dhcpv4_client_provider: false,
+            with_fuchsia_networks: false,
+        })
+        .expect("error creating test netcfg");
+        const IFACE_ID: InterfaceId = InterfaceId::new(1).unwrap();
+        let router_a: net_types::ip::Ipv6Addr = [10; 16].into();
+        let router_b: net_types::ip::Ipv6Addr = [20; 16].into();
+
+        let dns_server_a = test_ndp_dns_server(IFACE_ID, fidl_ip_v6!("2001:db8::1"));
+        let dns_server_b = test_ndp_dns_server(IFACE_ID, fidl_ip_v6!("2001:db8::2"));
+
+        // Insert entries for both Router A and Router B on IFACE_ID.
+        assert!(netcfg.ndp_dns_servers.insert((IFACE_ID, router_a), vec![dns_server_a]).is_none());
+        assert!(netcfg.ndp_dns_servers.insert((IFACE_ID, router_b), vec![dns_server_b]).is_none());
+        assert_eq!(netcfg.ndp_dns_servers.len(), 2);
+
+        // Call handle_ndp_dns_expired for Router A directly.
+        {
+            let fut = netcfg.handle_ndp_dns_expired(IFACE_ID, router_a);
+            futures::pin_mut!(fut);
+            assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
+        }
+
+        // Assert Router A is removed from ndp_dns_servers, while Router B remains.
+        assert_eq!(netcfg.ndp_dns_servers.len(), 1);
+        assert_eq!(netcfg.ndp_dns_servers.get(&(IFACE_ID, router_a)), None);
+        assert!(netcfg.ndp_dns_servers.contains_key(&(IFACE_ID, router_b)));
     }
 }

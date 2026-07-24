@@ -14,8 +14,9 @@ use anyhow::Context;
 use async_utils::stream::{Tagged, WithTag as _};
 use dns_server_watcher::{DnsServers, DnsServersUpdateSource};
 use fidl::endpoints::{ControlHandle as _, Responder as _};
-use futures::stream::BoxStream;
-use futures::{Stream, StreamExt};
+use fuchsia_async::DurationExt as _;
+use futures::stream::{BoxStream, FuturesUnordered};
+use futures::{Future, FutureExt as _, Stream, StreamExt};
 use log::{error, info, trace, warn};
 use net_types::{Scope, ScopeableAddress};
 use packet_formats::icmp::ndp as packet_formats_ndp;
@@ -23,7 +24,7 @@ use packet_formats::icmp::ndp as packet_formats_ndp;
 /// RFC-1035§4.2 specifies port 53 (decimal) as the default port for DNS requests.
 pub const DNS_PORT: u16 = 53;
 
-use crate::{DnsWatcherResultPayload, network};
+use crate::{DnsServerLifetime, DnsServerUpdate, DnsWatcherResultPayload, network};
 
 /// Updates the DNS servers used by the DNS resolver.
 pub(super) async fn update_servers(
@@ -63,8 +64,12 @@ pub(super) async fn create_rdnss_stream(
     interface_id: u64,
 ) -> Option<
     Result<
-        impl Stream<Item = Result<(DnsWatcherResultPayload, Vec<fnet_name::DnsServer_>), fidl::Error>>
-        + use<>,
+        impl Stream<
+            Item = Result<
+                (DnsWatcherResultPayload, Vec<fnet_name::DnsServer_>, DnsServerLifetime),
+                fidl::Error,
+            >,
+        > + use<>,
         fidl::Error,
     >,
 > {
@@ -104,33 +109,52 @@ pub(super) async fn create_rdnss_stream(
             fnet_ndp_ext::OptionWatchStreamItem::Entry(entry) => {
                 let router_address = entry.source_address;
                 match entry.try_parse_as_rdnss() {
-                    fnet_ndp_ext::TryParseAsOptionResult::Parsed(option) => Some(Ok((
-                        DnsWatcherResultPayload::Ndp { router_address },
-                        option
-                            .iter_addresses()
-                            .iter()
-                            .map(|addr| fnet_name::DnsServer_ {
-                                address: Some(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
-                                    address: fnet::Ipv6Address { addr: addr.ipv6_bytes() },
-                                    port: DNS_PORT,
-                                    // Determine whether the address has a zone or not in accordance
-                                    // with https://datatracker.ietf.org/doc/html/rfc8106
-                                    zone_index: addr
-                                        .scope()
-                                        .can_have_zone()
-                                        .then_some(interface_id)
-                                        .unwrap_or_default(),
-                                })),
-                                source: Some(fnet_name::DnsServerSource::Ndp(
-                                    fnet_name::NdpDnsServerSource {
-                                        source_interface: Some(interface_id),
-                                        ..Default::default()
-                                    },
-                                )),
-                                ..Default::default()
-                            })
-                            .collect::<Vec<_>>(),
-                    ))),
+                    fnet_ndp_ext::TryParseAsOptionResult::Parsed(option) => {
+                        let lifetime = match option.lifetime() {
+                            Some(packet_formats_ndp::NonZeroNdpLifetime::Finite(duration)) => {
+                                DnsServerLifetime::Seconds(duration.get().as_secs() as u32)
+                            }
+                            Some(packet_formats_ndp::NonZeroNdpLifetime::Infinite) => {
+                                DnsServerLifetime::Seconds(u32::MAX)
+                            }
+                            None => DnsServerLifetime::Seconds(0),
+                        };
+                        let servers = match lifetime {
+                            DnsServerLifetime::Undefined => vec![],
+                            DnsServerLifetime::Seconds(_) => option
+                                .iter_addresses()
+                                .iter()
+                                .map(|addr| fnet_name::DnsServer_ {
+                                    address: Some(fnet::SocketAddress::Ipv6(
+                                        fnet::Ipv6SocketAddress {
+                                            address: fnet::Ipv6Address { addr: addr.ipv6_bytes() },
+                                            port: DNS_PORT,
+                                            // Determine whether the address has a zone or not in
+                                            // accordance with
+                                            // https://datatracker.ietf.org/doc/html/rfc8106
+                                            zone_index: addr
+                                                .scope()
+                                                .can_have_zone()
+                                                .then_some(interface_id)
+                                                .unwrap_or_default(),
+                                        },
+                                    )),
+                                    source: Some(fnet_name::DnsServerSource::Ndp(
+                                        fnet_name::NdpDnsServerSource {
+                                            source_interface: Some(interface_id),
+                                            ..Default::default()
+                                        },
+                                    )),
+                                    ..Default::default()
+                                })
+                                .collect::<Vec<_>>(),
+                        };
+                        Some(Ok((
+                            DnsWatcherResultPayload::Ndp { router_address },
+                            servers,
+                            lifetime,
+                        )))
+                    }
                     fnet_ndp_ext::TryParseAsOptionResult::OptionTypeMismatch => {
                         // Netstack didn't respect our interest configuration.
                         error!("Option type provided did not match RDNSS option type");
@@ -170,8 +194,15 @@ pub(super) async fn add_rdnss_watcher(
                 .context("failed to create watcher stream")?
                 .tagged(source)
                 .map(|(source, res)| match res {
-                    Ok((payload, servers)) => (source, payload, Ok(servers)),
-                    Err(e) => (source, DnsWatcherResultPayload::Generic, Err(e)),
+                    Ok((payload, servers, lifetime)) => {
+                        DnsServerUpdate { source, payload, lifetime, result: Ok(servers) }
+                    }
+                    Err(e) => DnsServerUpdate {
+                        source,
+                        payload: DnsWatcherResultPayload::Generic,
+                        lifetime: DnsServerLifetime::Undefined,
+                        result: Err(e),
+                    },
                 })
                 .boxed();
             if let Some(o) = watchers.insert(source, tagged_stream) {
@@ -335,17 +366,113 @@ impl futures::stream::FusedStream for DnsServerWatcherRequestStreams {
     }
 }
 
+/// Tracks the expiry of NDP-learned DNS servers.
+///
+/// Interface ID - DNS server address pairs learned via NDP have associated lifetimes. These
+/// lifetimes can be updated by subsequent NDP messages. `NdpDnsExpiryTracker` tracks all of these
+/// lifetimes and removes DNS entries when they expire.
+pub(crate) struct NdpDnsExpiryTracker {
+    // Monotonically increasing generation counter.
+    next_generation: u64,
+
+    // Lifetimes are tracked by interface ID - DNS server address pairs.  Whenever a lifetime for
+    // one of these pairs is updated, a new generation is assigned and a new timer is started.
+    // This ensures that timers associated with older generations do not cause the removal of a DNS
+    // entry whose lifetime has been updated.
+    generations: HashMap<(crate::InterfaceId, net_types::ip::Ipv6Addr), u64>,
+
+    // Storage for the timers associated with interface ID - server pairs and the generation
+    // associated with the timer.
+    timers: FuturesUnordered<
+        Pin<Box<dyn Future<Output = (crate::InterfaceId, net_types::ip::Ipv6Addr, u64)> + Send>>,
+    >,
+}
+
+impl NdpDnsExpiryTracker {
+    pub fn new() -> Self {
+        Self {
+            next_generation: 1,
+            generations: HashMap::new(),
+            timers: futures::stream::FuturesUnordered::new(),
+        }
+    }
+
+    pub fn record_expiry(
+        &mut self,
+        interface_id: crate::InterfaceId,
+        router_address: net_types::ip::Ipv6Addr,
+        lifetime_seconds: u32,
+    ) {
+        let key = (interface_id, router_address);
+
+        // If lifetime is infinite, we don't need a timer.
+        if lifetime_seconds == u32::MAX {
+            let _: Option<u64> = self.generations.remove(&key);
+            return;
+        }
+
+        let current_generation = self.next_generation;
+        self.next_generation += 1;
+        let _: Option<u64> = self.generations.insert(key, current_generation);
+
+        let timer = fuchsia_async::Timer::new(
+            zx::MonotonicDuration::from_seconds(lifetime_seconds as i64).after_now(),
+        )
+        .map(move |()| (interface_id, router_address, current_generation));
+
+        self.timers.push(Box::pin(timer));
+    }
+}
+
+impl Stream for NdpDnsExpiryTracker {
+    type Item = (crate::InterfaceId, net_types::ip::Ipv6Addr);
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        loop {
+            if self.timers.is_empty() {
+                return std::task::Poll::Pending;
+            }
+            match Pin::new(&mut self.timers).poll_next(cx) {
+                std::task::Poll::Ready(Some((interface_id, router_address, generation))) => {
+                    let key = (interface_id, router_address);
+                    if self.generations.get(&key) == Some(&generation) {
+                        let _: u64 = self.generations.remove(&key).expect("generation must exist");
+                        return std::task::Poll::Ready(Some(key));
+                    }
+                    // Superseded timer, loop again
+                }
+                std::task::Poll::Ready(None) => {
+                    return std::task::Poll::Pending;
+                }
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            }
+        }
+    }
+}
+
+impl futures::stream::FusedStream for NdpDnsExpiryTracker {
+    fn is_terminated(&self) -> bool {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
+    use assert_matches::assert_matches;
     use fuchsia_component::server::{ServiceFs, ServiceFsDir};
     use fuchsia_component_test::{
         Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
     };
     use futures::channel::mpsc;
-    use futures::{FutureExt as _, SinkExt as _, TryFutureExt as _, TryStreamExt as _};
+    use futures::{SinkExt as _, TryFutureExt as _, TryStreamExt as _};
     use net_declare::{fidl_socket_addr, net_ip_v6};
     use pretty_assertions::assert_eq;
+    use std::sync::LazyLock;
+    use std::task::Poll;
 
     use super::*;
 
@@ -599,10 +726,11 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia::test]
-    async fn test_create_rdnss_stream_router_address_extraction() {
-        use futures::StreamExt as _;
-        use net_declare::fidl_ip_v6;
+    // Note: The `lifetime_bytes` are parsed as seconds by the netstack.
+    fn run_create_rdnss_stream_test_with_lifetime(
+        lifetime_bytes: [u8; 4],
+    ) -> (DnsWatcherResultPayload, Vec<fnet_name::DnsServer_>, DnsServerLifetime) {
+        let mut exec = fuchsia_async::TestExecutor::new();
 
         let (provider_proxy, mut provider_stream) = fidl::endpoints::create_proxy_and_stream::<
             fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker,
@@ -611,67 +739,193 @@ mod tests {
         const IFACE_ID: u64 = 1;
         let expected_router_address = net_ip_v6!("fe80::1");
 
-        let stream_fut = async {
-            let stream = create_rdnss_stream(&provider_proxy, IFACE_ID)
-                .await
-                .expect("provider available")
-                .expect("stream creation succeeded");
-            futures::pin_mut!(stream);
-            stream.next().await.expect("stream item available").expect("item ok")
+        // Start create_rdnss_stream call.
+        let create_stream_fut = create_rdnss_stream(&provider_proxy, IFACE_ID);
+        futures::pin_mut!(create_stream_fut);
+        assert!(exec.run_until_stalled(&mut create_stream_fut).is_pending());
+
+        // Provider receives NewRouterAdvertisementOptionWatcher request.
+        let mut provider_req_fut = provider_stream.next();
+        let provider_req = assert_matches!(
+            exec.run_until_stalled(&mut provider_req_fut),
+            Poll::Ready(Some(Ok(req))) => req
+        );
+        let (watcher, params, _control_handle) = provider_req
+            .into_new_router_advertisement_option_watcher()
+            .expect("into new watcher request");
+        assert_eq!(params.interest_interface_id, Some(IFACE_ID));
+
+        // Watcher receives Probe request.
+        let mut watcher_stream = watcher.into_stream();
+        let mut watcher_req_fut = watcher_stream.next();
+        let watcher_req = assert_matches!(
+            exec.run_until_stalled(&mut watcher_req_fut),
+            Poll::Ready(Some(Ok(req))) => req
+        );
+        let responder = assert_matches!(
+            watcher_req,
+            fnet_ndp::OptionWatcherRequest::Probe { responder } => responder
+        );
+        responder.send().expect("send Probe response succeeded");
+
+        // Complete create_rdnss_stream and retrieve option watcher stream.
+        let Poll::Ready(Some(Ok(stream))) = exec.run_until_stalled(&mut create_stream_fut) else {
+            panic!("create_rdnss_stream failed");
         };
+        futures::pin_mut!(stream);
 
-        let server_fut = async {
-            let (watcher_server_end, params, _control_handle) = provider_stream
-                .next()
-                .await
-                .expect("provider request")
-                .expect("request ok")
-                .into_new_router_advertisement_option_watcher()
-                .expect("new watcher request");
+        // Start polling for next item on the stream.
+        let mut next_item_fut = stream.next();
+        assert!(exec.run_until_stalled(&mut next_item_fut).is_pending());
 
-            assert_eq!(params.interest_interface_id, Some(IFACE_ID));
+        // Watcher receives WatchOptions request.
+        let watcher_req_fut = watcher_stream.next();
+        futures::pin_mut!(watcher_req_fut);
+        let watcher_req = assert_matches!(
+            exec.run_until_stalled(&mut watcher_req_fut),
+            Poll::Ready(Some(Ok(req))) => req
+        );
+        let responder = assert_matches!(
+            watcher_req,
+            fnet_ndp::OptionWatcherRequest::WatchOptions { responder } => responder
+        );
 
-            let mut watcher_stream = watcher_server_end.into_stream();
+        let mut rdnss_body = vec![0, 0]; // Reserved (2 bytes)
+        rdnss_body.extend_from_slice(&lifetime_bytes); // Lifetime (4 bytes)
+        rdnss_body.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
 
-            match watcher_stream.next().await.expect("watcher request").expect("request ok") {
-                fnet_ndp::OptionWatcherRequest::Probe { responder } => {
-                    responder.send().expect("send probe response succeeded");
-                }
-                req => panic!("expected Probe request, got {req:?}"),
+        let entry = fnet_ndp::OptionWatchEntry {
+            interface_id: Some(IFACE_ID),
+            source_address: Some(fnet::Ipv6Address { addr: expected_router_address.ipv6_bytes() }),
+            option_type: Some(25),
+            body: Some(rdnss_body),
+            ..Default::default()
+        };
+        responder.send(&[entry], 0).expect("send response succeeded");
+
+        // Poll stream to receive item.
+        assert_matches!(
+            exec.run_until_stalled(&mut next_item_fut),
+            Poll::Ready(Some(Ok((payload, servers, lifetime)))) => (payload, servers, lifetime)
+        )
+    }
+
+    static IFACE_ID: LazyLock<crate::InterfaceId> =
+        LazyLock::new(|| crate::InterfaceId::new(1).unwrap());
+    static ROUTER_ADDR: LazyLock<net_types::ip::Ipv6Addr> =
+        LazyLock::new(|| net_types::ip::Ipv6Addr::from([10; 16]));
+
+    #[test]
+    fn test_ndp_dns_expiry_tracker_timer_expiry() {
+        let mut exec = fuchsia_async::TestExecutor::new_with_fake_time();
+        let mut tracker = NdpDnsExpiryTracker::new();
+
+        // Record a 5-second expiry.
+        tracker.record_expiry(*IFACE_ID, *ROUTER_ADDR, 5);
+
+        // Before 5 seconds, poll should be Pending.
+        let mut next_fut = tracker.next();
+        assert_matches!(exec.run_until_stalled(&mut next_fut), Poll::Pending);
+
+        // Advance fake time past 5 seconds and wake timers.
+        exec.set_fake_time(exec.now() + zx::MonotonicDuration::from_seconds(6));
+        assert!(exec.wake_expired_timers());
+
+        // Now poll should be Ready with (IFACE_ID, router_addr).
+        assert_matches!(
+            exec.run_until_stalled(&mut next_fut),
+            Poll::Ready(Some((iface_id, router_addr))) if iface_id == *IFACE_ID && router_addr == *ROUTER_ADDR
+        );
+    }
+
+    #[test]
+    fn test_ndp_dns_expiry_tracker_superseded_renewal() {
+        let mut exec = fuchsia_async::TestExecutor::new_with_fake_time();
+        let mut tracker = NdpDnsExpiryTracker::new();
+
+        // Record a 5-second expiry, then immediately supersede it with a 20-second expiry.
+        tracker.record_expiry(*IFACE_ID, *ROUTER_ADDR, 5);
+        tracker.record_expiry(*IFACE_ID, *ROUTER_ADDR, 20);
+
+        // Advance fake time past 5 seconds (to 6 seconds) and wake timers.
+        exec.set_fake_time(exec.now() + zx::MonotonicDuration::from_seconds(6));
+        assert!(!exec.wake_expired_timers());
+
+        // The 5-second timer fired but was for an older generation, so tracker ignores it.
+        let mut next_fut = tracker.next();
+        assert_matches!(exec.run_until_stalled(&mut next_fut), Poll::Pending);
+
+        // Advance fake time past 20 seconds (to 21 seconds total) and wake timers.
+        exec.set_fake_time(exec.now() + zx::MonotonicDuration::from_seconds(15));
+        assert!(exec.wake_expired_timers());
+
+        // Now poll should be Ready with (IFACE_ID, router_addr).
+        assert_matches!(
+            exec.run_until_stalled(&mut next_fut),
+            Poll::Ready(Some((iface_id, router_addr))) if iface_id == *IFACE_ID && router_addr == *ROUTER_ADDR
+        );
+    }
+
+    #[test]
+    fn test_ndp_dns_expiry_tracker_infinite_lifetime() {
+        let mut tracker = NdpDnsExpiryTracker::new();
+
+        // Infinite lifetime (u32::MAX) should not schedule a timer.
+        tracker.record_expiry(*IFACE_ID, *ROUTER_ADDR, u32::MAX);
+        assert!(tracker.generations.is_empty())
+    }
+
+    #[test]
+    fn test_ndp_dns_expiry_tracker_infinite_lifetime_reset_race() {
+        let mut exec = fuchsia_async::TestExecutor::new_with_fake_time();
+        let mut tracker = NdpDnsExpiryTracker::new();
+
+        // Record a 5-second expiry (generation 1 assigned).
+        tracker.record_expiry(*IFACE_ID, *ROUTER_ADDR, 5);
+
+        // Record an infinite lifetime (removes key from generations).
+        tracker.record_expiry(*IFACE_ID, *ROUTER_ADDR, u32::MAX);
+
+        // Record a 20-second expiry (generation 2 assigned via monotonic counter).
+        tracker.record_expiry(*IFACE_ID, *ROUTER_ADDR, 20);
+
+        // Advance fake time past 5 seconds (to 6 seconds) and wake timers.
+        exec.set_fake_time(exec.now() + zx::MonotonicDuration::from_seconds(6));
+        assert!(!exec.wake_expired_timers());
+
+        // The 5-second timer (generation 1) fires, but is ignored because active generation is 2.
+        let mut next_fut = tracker.next();
+        assert_matches!(exec.run_until_stalled(&mut next_fut), Poll::Pending);
+
+        // Advance fake time past 20 seconds (to 21 seconds total) and wake timers.
+        exec.set_fake_time(exec.now() + zx::MonotonicDuration::from_seconds(15));
+        assert!(exec.wake_expired_timers());
+
+        // Now poll should be Ready with (IFACE_ID, ROUTER_ADDR) at 20 seconds.
+        assert_matches!(
+            exec.run_until_stalled(&mut next_fut),
+            Poll::Ready(Some((iface_id, router_addr))) => {
+                assert_eq!(iface_id, *IFACE_ID);
+                assert_eq!(router_addr, *ROUTER_ADDR);
             }
+        );
+    }
 
-            let responder =
-                match watcher_stream.next().await.expect("watcher request").expect("request ok") {
-                    fnet_ndp::OptionWatcherRequest::WatchOptions { responder } => responder,
-                    req => panic!("expected WatchOptions request, got {req:?}"),
-                };
+    #[test]
+    fn test_create_rdnss_stream_router_address_extraction() {
+        use net_declare::fidl_ip_v6;
 
-            let mut rdnss_body = vec![
-                0, 0, // Reserved (2 bytes)
-                0, 0, 0, 120, // Lifetime 120 (4 bytes)
-            ];
-            rdnss_body
-                .extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-
-            let entry = fnet_ndp::OptionWatchEntry {
-                interface_id: Some(IFACE_ID),
-                source_address: Some(fnet::Ipv6Address {
-                    addr: expected_router_address.ipv6_bytes(),
-                }),
-                option_type: Some(25),
-                body: Some(rdnss_body),
-                ..Default::default()
-            };
-
-            responder.send(&[entry], 0).expect("send response succeeded");
-        };
-
-        let ((payload, servers), ()) = futures::join!(stream_fut, server_fut);
+        let expected_router_address =
+            net_types::ip::Ipv6Addr::from([0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        let expected_lifetime = 120;
+        let (payload, servers, lifetime) =
+            run_create_rdnss_stream_test_with_lifetime([0, 0, 0, expected_lifetime]);
 
         assert_eq!(
             payload,
             DnsWatcherResultPayload::Ndp { router_address: expected_router_address }
         );
+        assert_eq!(lifetime, DnsServerLifetime::Seconds(expected_lifetime.into()));
         assert_eq!(servers.len(), 1);
         assert_eq!(
             servers[0].address,
@@ -681,5 +935,19 @@ mod tests {
                 zone_index: 0,
             }))
         );
+    }
+
+    #[test]
+    fn test_create_rdnss_stream_infinite_lifetime() {
+        let (_payload, _servers, lifetime) =
+            run_create_rdnss_stream_test_with_lifetime([0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(lifetime, DnsServerLifetime::Seconds(u32::MAX));
+    }
+
+    #[test]
+    fn test_create_rdnss_stream_zero_lifetime() {
+        let (_payload, _servers, lifetime) =
+            run_create_rdnss_stream_test_with_lifetime([0, 0, 0, 0]);
+        assert_eq!(lifetime, DnsServerLifetime::Seconds(0));
     }
 }
