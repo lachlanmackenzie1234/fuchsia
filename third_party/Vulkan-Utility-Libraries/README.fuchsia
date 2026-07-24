@@ -1,7 +1,7 @@
 Name: Vulkan-Utility-Libraries
 URL: https://github.com/KhronosGroup/Vulkan-Utility-Libraries
-Version: vulkan-sdk-1.4.350
-Revision: a96bd4933c6adfc21329d15e9999791a0153bbf3
+Version: vulkan-sdk-1.4.304
+Revision: 5a88b6042edb8f03eefc8de73bd73a899989373f
 Security Critical: yes
 
 License File: src/LICENSE.md
@@ -12,4 +12,4 @@ License File: src/LICENSES/Apache-2.0.txt
 
 Description:
   Shared code across various Vulkan repositories.
-  Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.350`.
+  Revision is from `git merge-base JIRI_HEAD origin/upstream/vulkan-sdk-1.4.304`.
