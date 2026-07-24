@@ -2,7 +2,97 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bstr::{BString, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
+
+/// An item yielded by `OptionParser`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OptionItem<'a> {
+    /// A single character flag (e.g., `-f`, `+x`).
+    Flag { enable: bool, flag: u8 },
+
+    /// A flag with an associated string value (e.g., `-c "cmd"` or `-cecho`).
+    OptArg { enable: bool, flag: u8, value: &'a BStr },
+}
+
+/// A zero-allocation parser for POSIX-compatible shell command options.
+#[derive(Debug)]
+pub struct OptionParser<'a> {
+    args: &'a [BString],
+    idx: usize,
+    char_idx: usize,
+    stopped: bool,
+    allow_plus: bool,
+}
+
+impl<'a> OptionParser<'a> {
+    /// Creates a new `OptionParser` over `args`.
+    pub fn new(args: &'a [BString]) -> Self {
+        Self { args, idx: 0, char_idx: 1, stopped: false, allow_plus: false }
+    }
+
+    /// Enables parsing options prefixed with `+` in addition to `-`.
+    pub fn allow_plus_options(mut self, allow: bool) -> Self {
+        self.allow_plus = allow;
+        self
+    }
+
+    /// Yields the next option or flag from the argument list.
+    pub fn next_option<F>(&mut self, takes_arg: F) -> Option<Result<OptionItem<'a>, String>>
+    where
+        F: Fn(u8) -> bool,
+    {
+        if self.stopped || self.idx >= self.args.len() {
+            return None;
+        }
+
+        let arg = self.args[self.idx].as_bytes();
+        let enable = arg.first() == Some(&b'-');
+
+        if self.char_idx == 1 {
+            if arg.len() < 2 || (!enable && (!self.allow_plus || arg.first() != Some(&b'+'))) {
+                self.stopped = true;
+                return None;
+            }
+            if arg == b"--" {
+                self.idx += 1;
+                self.stopped = true;
+                return None;
+            }
+        }
+
+        let flag = arg[self.char_idx];
+        self.char_idx += 1;
+
+        if takes_arg(flag) {
+            let value = if self.char_idx < arg.len() {
+                let rem = &arg[self.char_idx..];
+                self.idx += 1;
+                self.char_idx = 1;
+                BStr::new(rem)
+            } else if self.idx + 1 < self.args.len() {
+                self.idx += 2;
+                self.char_idx = 1;
+                self.args[self.idx - 1].as_bstr()
+            } else {
+                let opt_prefix = if enable { "-" } else { "+" };
+                return Some(Err(format!("{}{} requires an argument", opt_prefix, flag as char)));
+            };
+            return Some(Ok(OptionItem::OptArg { enable, flag, value }));
+        }
+
+        if self.char_idx >= arg.len() {
+            self.idx += 1;
+            self.char_idx = 1;
+        }
+
+        Some(Ok(OptionItem::Flag { enable, flag }))
+    }
+
+    /// Returns the remaining unparsed positional arguments.
+    pub fn rest(&self) -> &'a [BString] {
+        if self.idx < self.args.len() { &self.args[self.idx..] } else { &[] }
+    }
+}
 
 /// Parsed command line arguments for the shell.
 #[derive(Default, Debug, Clone)]
@@ -105,122 +195,64 @@ pub struct Args {
 /// - `-` forces reading from stdin and ends option parsing.
 pub fn parse_args(args: &[BString]) -> Result<Args, String> {
     let mut result = Args::default();
-    let mut iter = args.iter().skip(1); // skip argv[0]
+    let slice = if !args.is_empty() { &args[1..] } else { args };
+    let mut parser = OptionParser::new(slice).allow_plus_options(true);
 
-    while let Some(arg) = iter.next() {
-        let bytes = arg.as_bytes();
-        if bytes == b"--" {
-            break;
-        }
-        if bytes == b"-" {
-            result.stdin = true;
-            break;
-        }
-        if (bytes.starts_with(b"-") || bytes.starts_with(b"+")) && bytes.len() > 1 {
-            let enable = bytes[0] == b'-';
-            let mut chars = bytes[1..].iter().copied();
-            while let Some(c) = chars.next() {
-                match c {
-                    b'c' => {
-                        if !enable {
-                            return Err("cannot unset -c".to_string());
-                        }
-                        let val = {
-                            let rem: Vec<u8> = chars.collect();
-                            if !rem.is_empty() {
-                                BString::from(rem)
-                            } else {
-                                if let Some(next_arg) = iter.next() {
-                                    next_arg.clone()
-                                } else {
-                                    return Err("-c requires an argument".to_string());
-                                }
-                            }
-                        };
-                        result.command = Some(val);
-                        break;
-                    }
-                    b'o' => {
-                        let val = {
-                            let rem: Vec<u8> = chars.collect();
-                            if !rem.is_empty() {
-                                BString::from(rem)
-                            } else {
-                                if let Some(next_arg) = iter.next() {
-                                    next_arg.clone()
-                                } else {
-                                    return Err(format!(
-                                        "{}o requires an argument",
-                                        if enable { "-" } else { "+" }
-                                    ));
-                                }
-                            }
-                        };
-                        if enable {
-                            result.options_to_set.push(val);
-                        } else {
-                            result.options_to_clear.push(val);
-                        }
-                        break;
-                    }
-                    b'a' => result.opt_allexport = Some(enable),
-                    b'b' => result.opt_notify = Some(enable),
-                    b'C' => result.opt_noclobber = Some(enable),
-                    b'e' => result.opt_errexit = Some(enable),
-                    b'f' => result.opt_noglob = Some(enable),
-                    b'I' => result.opt_ignoreeof = Some(enable),
-                    b'i' => result.opt_interactive = enable,
-                    b'm' => result.opt_monitor = Some(enable),
-                    b'n' => result.opt_noexec = Some(enable),
-                    b's' => result.stdin = enable,
-                    b'x' => result.opt_xtrace = Some(enable),
-                    b'v' => result.opt_verbose = Some(enable),
-                    b'V' => result.opt_vi = Some(enable),
-                    b'E' => result.opt_emacs = Some(enable),
-                    b'u' => result.opt_nounset = Some(enable),
-                    b'l' => result.login = enable,
-                    _ => {
-                        return Err(format!(
-                            "unknown option: {}{}",
-                            if enable { "-" } else { "+" },
-                            c as char
-                        ));
-                    }
+    while let Some(opt_res) = parser.next_option(|flag| flag == b'c' || flag == b'o') {
+        let item = opt_res?;
+        match item {
+            OptionItem::OptArg { enable: true, flag: b'c', value } => {
+                result.command = Some(BString::from(value));
+            }
+            OptionItem::OptArg { enable: false, flag: b'c', .. } => {
+                return Err("cannot unset -c".to_string());
+            }
+            OptionItem::OptArg { enable, flag: b'o', value } => {
+                if enable {
+                    result.options_to_set.push(BString::from(value));
+                } else {
+                    result.options_to_clear.push(BString::from(value));
                 }
             }
-        } else {
-            let mut pos = vec![arg.clone()];
-            pos.extend(iter.cloned());
-
-            if result.command.is_some() {
-                if !pos.is_empty() {
-                    result.script_name = Some(pos.remove(0));
-                    result.positional_args = pos;
-                }
-            } else if result.stdin {
-                result.positional_args = pos;
-            } else {
-                if !pos.is_empty() {
-                    result.script_name = Some(pos.remove(0));
-                    result.positional_args = pos;
-                }
+            OptionItem::Flag { enable, flag: b'a' } => result.opt_allexport = Some(enable),
+            OptionItem::Flag { enable, flag: b'b' } => result.opt_notify = Some(enable),
+            OptionItem::Flag { enable, flag: b'C' } => result.opt_noclobber = Some(enable),
+            OptionItem::Flag { enable, flag: b'e' } => result.opt_errexit = Some(enable),
+            OptionItem::Flag { enable, flag: b'f' } => result.opt_noglob = Some(enable),
+            OptionItem::Flag { enable, flag: b'I' } => result.opt_ignoreeof = Some(enable),
+            OptionItem::Flag { enable, flag: b'i' } => result.opt_interactive = enable,
+            OptionItem::Flag { enable, flag: b'm' } => result.opt_monitor = Some(enable),
+            OptionItem::Flag { enable, flag: b'n' } => result.opt_noexec = Some(enable),
+            OptionItem::Flag { enable, flag: b's' } => result.stdin = enable,
+            OptionItem::Flag { enable, flag: b'x' } => result.opt_xtrace = Some(enable),
+            OptionItem::Flag { enable, flag: b'v' } => result.opt_verbose = Some(enable),
+            OptionItem::Flag { enable, flag: b'V' } => result.opt_vi = Some(enable),
+            OptionItem::Flag { enable, flag: b'E' } => result.opt_emacs = Some(enable),
+            OptionItem::Flag { enable, flag: b'u' } => result.opt_nounset = Some(enable),
+            OptionItem::Flag { enable, flag: b'l' } => result.login = enable,
+            OptionItem::Flag { enable, flag } => {
+                let opt_prefix = if enable { "-" } else { "+" };
+                return Err(format!("unknown option: {}{}", opt_prefix, flag as char));
             }
-            return Ok(result);
+            _ => unreachable!(),
         }
     }
 
-    let mut pos: Vec<BString> = iter.cloned().collect();
-    if result.command.is_some() {
-        if !pos.is_empty() {
-            result.script_name = Some(pos.remove(0));
-            result.positional_args = pos;
-        }
-    } else if result.stdin {
-        result.positional_args = pos;
-    } else {
-        if !pos.is_empty() {
-            result.script_name = Some(pos.remove(0));
-            result.positional_args = pos;
+    let mut pos = parser.rest();
+    if !pos.is_empty() && pos[0] == "-" {
+        result.stdin = true;
+        pos = &pos[1..];
+    }
+
+    if !pos.is_empty() {
+        if result.command.is_some() {
+            result.script_name = Some(pos[0].clone());
+            result.positional_args = pos[1..].to_vec();
+        } else if result.stdin {
+            result.positional_args = pos.to_vec();
+        } else {
+            result.script_name = Some(pos[0].clone());
+            result.positional_args = pos[1..].to_vec();
         }
     }
 
