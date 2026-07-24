@@ -5,6 +5,8 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.aliases` by zither, a Fuchsia platform tool.
 
+#![no_std]
+
 // The following `use ... as _;` declarations satisfy any unused-crate-dependencies
 // errors for unconditionally depended-on crates.
 use bitflags as _;
