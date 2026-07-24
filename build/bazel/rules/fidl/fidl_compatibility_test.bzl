@@ -216,6 +216,10 @@ def fidl_compatibility_test(
         # `update_goldens`. See `_fidl_api_compatibility_check()` for details.
         # Build a file path or a Label as appropriate then pass it as the
         # appropriate attribute.
+        # Note: The `golden_path` file must be visible to the FIDL rules package
+        # because this runs inside the `_fidl_library()` symbolic macro. This is
+        # different from the `api_file_path` file because its Label is passed to
+        # the symbolic macro.
         file_separator = "/" if update_goldens else ":"
         golden_path = "%s/%s%s%s.api_summary.json" % (
             goldens_dir,

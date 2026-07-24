@@ -4,10 +4,18 @@
 
 package(default_applicable_licenses = ["//:license"])
 
+# FIDL API summary Labels are referenced within a symbolic macro, so the files
+# must be exported to the FIDL rules package.
 exports_files(
-    glob([
-        "*.api_summary.json",
-        "*.ifs",
-    ]),
-    visibility = ["//visibility:public"],
+    glob(["*.api_summary.json"]),
+    visibility = ["//build/bazel/rules/fidl:__subpackages__"],
+)
+
+# IDK shared libraries are defined under //sdk/lib/ and in macro tests.
+exports_files(
+    glob(["*.ifs"]),
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__subpackages__",
+        "//sdk/lib:__subpackages__",
+    ],
 )
