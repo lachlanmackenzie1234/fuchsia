@@ -481,7 +481,7 @@
              path="third_party/shaderc/src"
              remote="https://fuchsia.googlesource.com/third_party/shaderc"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="196e76b584cd2411ac44f167b54fa3c170998760"/>
+             revision="9d868743b240228f8f8f22edc171b47e9d94f42f"/>
     <project name="third_party/spirv-cross"
              path="third_party/spirv-cross/src"
              remote="https://fuchsia.googlesource.com/third_party/spirv-cross"
