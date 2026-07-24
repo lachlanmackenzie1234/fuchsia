@@ -9,10 +9,14 @@
     },
     capabilities: [
         { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.net.power.WakeGroupProvider" },
     ],
     expose: [
         {
-            protocol: "fuchsia.posix.socket.Provider",
+            protocol: [
+                "fuchsia.net.power.WakeGroupProvider",
+                "fuchsia.posix.socket.Provider",
+            ],
             from: "self",
         },
     ],

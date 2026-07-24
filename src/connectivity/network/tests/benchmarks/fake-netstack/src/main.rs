@@ -12,12 +12,14 @@ use fidl::Peered as _;
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_power as fnet_power;
+use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_posix as fposix;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use futures::io::AsyncReadExt as _;
 use futures::stream::SelectAll;
-use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
+use futures::{FutureExt as _, StreamExt as _};
 use log::{error, info};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, Ipv4, Ipv6};
@@ -43,16 +45,25 @@ fn next_cookie() -> SocketCookie {
     SocketCookie(NEXT_COOKIE.fetch_add(1, Ordering::Relaxed))
 }
 
+enum IncomingRequest {
+    Provider(fposix_socket::ProviderRequestStream),
+    WakeGroupProvider(fnet_power::WakeGroupProviderRequestStream),
+}
+
 #[fuchsia::main]
 async fn main() {
     info!("started");
 
     let mut fs = ServiceFs::new_local();
-    let _: &mut ServiceFsDir<'_, _> =
-        fs.dir("svc").add_fidl_service(|s: fposix_socket::ProviderRequestStream| s);
+    let _: &mut ServiceFsDir<'_, _> = fs
+        .dir("svc")
+        .add_fidl_service(IncomingRequest::Provider)
+        .add_fidl_service(IncomingRequest::WakeGroupProvider);
     let _: &mut ServiceFs<_> = fs.take_and_serve_directory_handle().expect("take startup handle");
-    let mut provider_requests = fs.fuse().map(Ok).try_flatten_unordered(None);
+    let mut fs = fs.fuse();
 
+    let mut provider_requests = SelectAll::new();
+    let mut wake_group_provider_requests = SelectAll::new();
     let mut datagram_requests = SelectAll::new();
     let mut stream_requests = SelectAll::new();
     // Maintains a set of currently bound sockets.
@@ -67,6 +78,15 @@ async fn main() {
 
     loop {
         futures::select! {
+            incoming = fs.next() => match incoming {
+                Some(IncomingRequest::Provider(stream)) => {
+                    provider_requests.push(stream);
+                }
+                Some(IncomingRequest::WakeGroupProvider(stream)) => {
+                    wake_group_provider_requests.push(stream);
+                }
+                None => break,
+            },
             provider_request = provider_requests.select_next_some() => {
                 handle_provider_request(
                     provider_request,
@@ -75,6 +95,10 @@ async fn main() {
                 )
                 .await
                 .unwrap_or_else(|e| error!("error handling socket provider request: {:?}", e));
+            }
+            wake_group_request = wake_group_provider_requests.select_next_some() => {
+                handle_wake_group_provider_request(wake_group_request)
+                    .unwrap_or_else(|e| error!("error handling wake group provider request: {:?}", e));
             }
             datagram_request = datagram_requests.select_next_some() => {
                 let (socket, request) = datagram_request;
@@ -104,6 +128,27 @@ async fn main() {
             complete => break,
         };
     }
+}
+
+fn handle_wake_group_provider_request(
+    request: Result<fnet_power::WakeGroupProviderRequest, fidl::Error>,
+) -> Result<(), anyhow::Error> {
+    match request.context("receive wake group provider request")? {
+        fnet_power::WakeGroupProviderRequest::CreateWakeGroup {
+            options: _,
+            wake_watcher: _,
+            responder,
+        } => {
+            let event = zx::Event::create();
+            responder
+                .send(fnet_power::CreateWakeGroupResponse {
+                    token: Some(fnet_resources::WakeGroupToken { token: event }),
+                    ..Default::default()
+                })
+                .context("send CreateWakeGroup response")?;
+        }
+    }
+    Ok(())
 }
 
 async fn handle_provider_request(
