@@ -6,7 +6,6 @@
 #define FBL_ALLOC_CHECKER_H_
 
 #include <stddef.h>
-#include <stdlib.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
 
@@ -130,25 +129,21 @@ std::unique_ptr<T> make_unique_for_overwrite_checked(AllocChecker& ac, size_t si
 //
 // We use different implementations in userspace and kernel:
 //
-//   * The kernel, which has limited C++ library support, calls directly into malloc/memalign.
+//   * The kernel intentionally omits any operator new or new[] signatures
+//     that _aren't_ the fbl::AllocChecker ones so no unchecked allocations
+//     can get into the kernel accidentally (stopped by link-time failure).
+//     It provides its own implementations that don't need to be inlined.
 //
-//   * Userspace uses the standard C++ library std::nothrow_t versions of the `new` operator.
-//     These work better with sanitizers such as ASAN that ensure that the correct `new`/`new[]`
-//     operator is paired with the correct `delete`/`delete[]` operator.
+//   * Userspace uses the standard C++ library std::nothrow_t versions of the
+//     `new` operator.  These work better with sanitizers such as ASAN that
+//     ensure that the correct `new`/`new[]` operator is paired with the
+//     correct `delete`/`delete[]` operator.
 //
 #if _KERNEL
-inline void* operator new(size_t size, fbl::AllocChecker& ac) noexcept {
-  return fbl::internal::checked(size, ac, malloc(size));
-}
-inline void* operator new(size_t size, std::align_val_t align, fbl::AllocChecker& ac) noexcept {
-  return fbl::internal::checked(size, ac, memalign(static_cast<size_t>(align), size));
-}
-inline void* operator new[](size_t size, fbl::AllocChecker& ac) noexcept {
-  return fbl::internal::checked(size, ac, malloc(size));
-}
-inline void* operator new[](size_t size, std::align_val_t align, fbl::AllocChecker& ac) noexcept {
-  return fbl::internal::checked(size, ac, memalign(static_cast<size_t>(align), size));
-}
+void* operator new(size_t size, fbl::AllocChecker& ac) noexcept;
+void* operator new(size_t size, std::align_val_t align, fbl::AllocChecker& ac) noexcept;
+void* operator new[](size_t size, fbl::AllocChecker& ac) noexcept;
+void* operator new[](size_t size, std::align_val_t align, fbl::AllocChecker& ac) noexcept;
 #else
 inline void* operator new(size_t size, fbl::AllocChecker& ac) noexcept {
   return fbl::internal::checked(size, ac, operator new(size, std::nothrow_t()));

@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <errno.h>
-#include <inttypes.h>
-#include <math.h>
 #include <zircon/assert.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <numeric>
 #include <utility>
 
