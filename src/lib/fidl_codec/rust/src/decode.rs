@@ -349,7 +349,10 @@ fn decode_vector<'t>(
     move |bytes: &[u8]| {
         let (bytes, (size, presence)) = pair(take_u64, take_u64).parse(bytes)?;
         let size = size as usize;
-        let align = alignment_padding_for_size(size * ty.inline_size(ns)?);
+        let Some(byte_count) = size.checked_mul(ty.inline_size(ns)?) else {
+            return Err(Error::DecodeError("Vector too long".to_owned()).into());
+        };
+        let align = alignment_padding_for_size(byte_count);
 
         if presence == 0 {
             if nullable {
@@ -493,7 +496,8 @@ fn decode_handle_with<T: Clone + 'static>(
                             {
                                 let handle_info = handles.remove(0);
 
-                                let decoded_rights = match (handle_info.rights(), constrain_rights) {
+                                let decoded_rights = match (handle_info.rights(), constrain_rights)
+                                {
                                     (Rights::SAME_RIGHTS, Some(_)) => Rights::SAME_RIGHTS,
                                     (handle_rights, Some(Rights::SAME_RIGHTS)) => handle_rights,
                                     (handle_rights, None) => handle_rights,

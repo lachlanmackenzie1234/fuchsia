@@ -1349,3 +1349,19 @@ decode_failure("ResourceTableUnknownBytesNonMultipleOf8") {
     },
     err = INVALID_NUM_BYTES_IN_ENVELOPE,
 }
+
+decode_failure("TableCountOverflow") {
+    bindings_denylist = [rust_next],
+    type = StructOfSimpleTable,
+    bytes = {
+        v2 = [
+            // count/max ordinal: 0x2000000000000001
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20,
+            // presence: FIDL_ALLOC_PRESENT
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            // out-of-line envelope table body: 8 bytes (matching the overflowed size 8)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    },
+    err = TABLE_COUNT_EXCEEDS_32_BIT_LIMIT,
+}

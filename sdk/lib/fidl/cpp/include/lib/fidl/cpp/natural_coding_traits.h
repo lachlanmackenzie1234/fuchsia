@@ -317,7 +317,12 @@ struct NaturalCodingTraits<::std::vector<T>, Constraint> {
 
     size_t stride = NaturalDecodingInlineSize<T, InnerConstraint>(decoder);
     size_t base;
-    if (!decoder->Alloc(count * stride, &base)) {
+    size_t allocation_size;
+    if (__builtin_mul_overflow(count, stride, &allocation_size)) {
+      decoder->SetError(kCodingErrorAllocationSizeExceeds32Bits);
+      return;
+    }
+    if (!decoder->Alloc(allocation_size, &base)) {
       return;
     }
     internal::NaturalDecodeVectorBody<T, InnerConstraint>(

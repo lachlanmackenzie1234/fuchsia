@@ -271,10 +271,10 @@ struct NaturalStructCodingTraits {
 
   static void Encode(NaturalEncoder* encoder, T* value, size_t offset, size_t recursion_depth) {
     if constexpr (kIsMemcpyCompatible) {
-      #pragma GCC diagnostic push
-      #pragma GCC diagnostic ignored "-Wnontrivial-memaccess"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnontrivial-memaccess"
       memcpy(encoder->GetPtr<T>(offset), value, sizeof(T));
-      #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
     } else {
       MemberVisitor<T>::Visit(value, [&](auto* member, auto& member_info) -> void {
         using Constraint = typename std::remove_reference_t<decltype(member_info)>::Constraint;
@@ -286,10 +286,10 @@ struct NaturalStructCodingTraits {
 
   static void Decode(NaturalDecoder* decoder, T* value, size_t offset, size_t recursion_depth) {
     if constexpr (kIsMemcpyCompatible) {
-      #pragma GCC diagnostic push
-      #pragma GCC diagnostic ignored "-Wnontrivial-memaccess"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnontrivial-memaccess"
       memcpy(value, decoder->GetPtr<T>(offset), sizeof(T));
-      #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
     } else {
       MemberVisitor<T>::Visit(value, [&](auto* member, auto& member_info) {
         using Constraint = typename std::remove_reference_t<decltype(member_info)>::Constraint;
@@ -458,7 +458,12 @@ struct NaturalTableCodingTraits {
 
     size_t count = encoded->count;
     size_t base;
-    if (!decoder->Alloc(sizeof(fidl_envelope_t) * count, &base)) {
+    size_t allocation_size;
+    if (__builtin_mul_overflow(sizeof(fidl_envelope_t), count, &allocation_size)) {
+      decoder->SetError(kCodingErrorAllocationSizeExceeds32Bits);
+      return;
+    }
+    if (!decoder->Alloc(allocation_size, &base)) {
       return;
     }
     auto envelope_offset = [base](size_t ordinal) {

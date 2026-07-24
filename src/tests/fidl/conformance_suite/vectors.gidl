@@ -744,3 +744,18 @@ decode_failure("VectorWithLimitInUnionExceedsLimit") {
     },
     err = COUNT_EXCEEDS_LIMIT,
 }
+
+decode_failure("VectorCountOverflow") {
+    type = VectorOfUint64,
+    bytes = {
+        v2 = [
+            // count: 0x2000000000000001 (which is 2^61 + 1)
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20,
+            // presence: FIDL_ALLOC_PRESENT
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            // out-of-line data: 8 bytes (matching the overflowed size 8)
+            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    },
+    err = VECTOR_COUNT_EXCEEDS_32_BIT_LIMIT,
+}

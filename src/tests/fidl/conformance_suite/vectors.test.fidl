@@ -55,3 +55,7 @@ type VectorWithLimitInUnion = struct {
         1: v vector<uint8>:2;
     };
 };
+
+type VectorOfUint64 = struct {
+    v vector<uint64>;
+};
