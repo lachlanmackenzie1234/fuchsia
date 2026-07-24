@@ -25,7 +25,6 @@ executable("clkctl") {
     "//sdk/fidl/fuchsia.hardware.clock.measure:fuchsia.hardware.clock.measure_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/lib/files",
-    "//src/lib/stdformat",
   ]
 }
 

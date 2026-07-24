@@ -12,9 +12,10 @@
 #include <string.h>
 #include <sys/types.h>
 
+#include <print>
+
 #include "src/devices/clock/bin/clock/clock_debug.h"
 #include "src/lib/files/directory.h"
-#include "src/lib/stdformat/print.h"
 
 using FrequencyInfo = fuchsia_hardware_clock_measure::wire::FrequencyInfo;
 
@@ -189,7 +190,7 @@ int main(int argc, char** argv) {
     if (strcmp(arg, "show") == 0) {
       auto id = parse_uint32(argv[2]);
       if (!id.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
+        std::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
         return -1;
       }
       clock_debug::Clock clock = clock_debug::GetClock(*id);
@@ -200,7 +201,7 @@ int main(int argc, char** argv) {
     if (strcmp(arg, "enable") == 0) {
       auto id = parse_uint32(argv[2]);
       if (!id.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
+        std::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
         return -1;
       }
       clock_debug::Clock clock = clock_debug::GetClock(*id);
@@ -211,7 +212,7 @@ int main(int argc, char** argv) {
     if (strcmp(arg, "disable") == 0) {
       auto id = parse_uint32(argv[2]);
       if (!id.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
+        std::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
         return -1;
       }
       clock_debug::Clock clock = clock_debug::GetClock(*id);
@@ -222,13 +223,13 @@ int main(int argc, char** argv) {
     if (strcmp(arg, "query-rate") == 0) {
       auto id = parse_uint32(argv[2]);
       if (!id.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
+        std::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
         return -1;
       }
       clock_debug::Clock clock = clock_debug::GetClock(*id);
       auto rate = parse_uint64(argv[3]);
       if (!rate.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid rate: {}", argv[3]);
+        std::println(stderr, "ERROR: Invalid rate: {}", argv[3]);
         return -1;
       }
       clock_debug::QueryRate(clock, *rate);
@@ -238,13 +239,13 @@ int main(int argc, char** argv) {
     if (strcmp(arg, "set-rate") == 0) {
       auto id = parse_uint32(argv[2]);
       if (!id.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
+        std::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
         return -1;
       }
       clock_debug::Clock clock = clock_debug::GetClock(*id);
       auto rate = parse_uint64(argv[3]);
       if (!rate.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid rate: {}", argv[3]);
+        std::println(stderr, "ERROR: Invalid rate: {}", argv[3]);
         return -1;
       }
       clock_debug::ClockSetRate(clock, *rate);
@@ -254,7 +255,7 @@ int main(int argc, char** argv) {
     if (strcmp(arg, "set-input") == 0) {
       auto id = parse_uint32(argv[2]);
       if (!id.has_value()) {
-        cpp23::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
+        std::println(stderr, "ERROR: Invalid clock ID: {}", argv[2]);
         return -1;
       }
       clock_debug::Clock clock = clock_debug::GetClock(*id);

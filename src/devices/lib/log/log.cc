@@ -16,8 +16,6 @@
 
 #include <fbl/no_destructor.h>
 
-#include "src/lib/stdformat/print.h"
-
 namespace fdf_log {
 namespace {
 const char* StripPath(const char* path) {

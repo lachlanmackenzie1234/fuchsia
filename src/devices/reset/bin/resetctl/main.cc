@@ -4,9 +4,9 @@
 
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/fdio/directory.h>
-#include <lib/stdformat/print.h>
 
 #include <filesystem>
+#include <print>
 
 #include "resetctl.h"
 
@@ -33,16 +33,16 @@ int main(int argc, const char* argv[]) {
   } else if (std::filesystem::exists(out_svc_path)) {
     chosen_root = "/out/svc";
   } else {
-    cpp23::println(stderr, "Reset service instance '{}' not found in /svc or /out/svc",
-                   instance_name);
+    std::println(stderr, "Reset service instance '{}' not found in /svc or /out/svc",
+                 instance_name);
     return -1;
   }
 
   zx::result<fidl::ClientEnd<fuchsia_io::Directory>> svc_dir =
       component::OpenServiceRoot(chosen_root);
   if (svc_dir.is_error()) {
-    cpp23::println(stderr, "Failed to open service root {}: {}", chosen_root,
-                   svc_dir.status_string());
+    std::println(stderr, "Failed to open service root {}: {}", chosen_root,
+                 svc_dir.status_string());
     return -1;
   }
 
@@ -50,14 +50,14 @@ int main(int argc, const char* argv[]) {
       component::ConnectAtMember<fuchsia_hardware_reset::Service::Reset>(svc_dir.value(),
                                                                          instance_name);
   if (client_end.is_error()) {
-    cpp23::println(stderr, "Failed to connect to reset protocol for instance {}: {}", instance_name,
-                   client_end.status_string());
+    std::println(stderr, "Failed to connect to reset protocol for instance {}: {}", instance_name,
+                 client_end.status_string());
     return -1;
   }
 
   auto result = resetctl::Run(argc - 1, argv + 1, std::move(client_end.value()));
   if (result.is_error()) {
-    cpp23::println(stderr, "Failed to run command: {}", result.status_string());
+    std::println(stderr, "Failed to run command: {}", result.status_string());
     return -1;
   }
 

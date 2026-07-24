@@ -8,12 +8,12 @@
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/fdio/directory.h>
 #include <lib/fit/defer.h>
-#include <lib/stdformat/print.h>
 #include <stdio.h>
 #include <zircon/types.h>
 
 #include <filesystem>
 #include <optional>
+#include <print>
 #include <string_view>
 
 // Directory path to the GPIO class
@@ -95,7 +95,7 @@ int ParseArgs(int argc, char** argv, GpioFunc* func, fidl::AnyArena& arena,
         std::optional<fuchsia_hardware_gpio::InterruptMode> parsed_interrupt_mode =
             ParseInterruptFlags(argv[3]);
         if (!parsed_interrupt_mode) {
-          cpp23::println(stderr, "Invalid interrupt flag \"{}\"\n", argv[3]);
+          std::println(stderr, "Invalid interrupt flag \"{}\"\n", argv[3]);
           return -1;
         }
 
@@ -160,7 +160,7 @@ int ParseArgs(int argc, char** argv, GpioFunc* func, fidl::AnyArena& arena,
 
       std::optional<fuchsia_hardware_pin::Pull> parsed_pull = ParsePull(argv[3]);
       if (!parsed_pull) {
-        cpp23::println(stderr, "Invalid pull value \"{}\"\n", argv[3]);
+        std::println(stderr, "Invalid pull value \"{}\"\n", argv[3]);
         return -1;
       }
 
@@ -186,14 +186,14 @@ zx::result<> ListGpios() {
     const char* gpio_path = dir_entry.path().c_str();
     zx::result client_end = component::Connect<fuchsia_hardware_pin::Debug>(gpio_path);
     if (client_end.is_error()) {
-      cpp23::println(stderr, "Could not connect to client from {}: {}", gpio_path, client_end);
+      std::println(stderr, "Could not connect to client from {}: {}", gpio_path, client_end);
       return client_end.take_error();
     }
 
     fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client(std::move(client_end.value()));
     const fidl::WireResult result = client->GetProperties();
     if (!result.ok()) {
-      cpp23::println(stderr, "Could not get properties from {}: {}", gpio_path, result.error());
+      std::println(stderr, "Could not get properties from {}: {}", gpio_path, result.error());
       return zx::error(result.status());
     }
 
@@ -217,7 +217,7 @@ zx::result<fidl::WireSyncClient<fuchsia_hardware_pin::Debug>> FindDebugClientByN
 
     zx::result client_end = component::Connect<fuchsia_hardware_pin::Debug>(gpio_path);
     if (client_end.is_error()) {
-      cpp23::println(stderr, "Could not connect to client from {}: {}", gpio_path, client_end);
+      std::println(stderr, "Could not connect to client from {}: {}", gpio_path, client_end);
       return client_end.take_error();
     }
 
@@ -225,8 +225,7 @@ zx::result<fidl::WireSyncClient<fuchsia_hardware_pin::Debug>> FindDebugClientByN
 
     const fidl::WireResult result_name = client->GetProperties();
     if (!result_name.ok()) {
-      cpp23::println(stderr, "Could not get properties from {}: {}", gpio_path,
-                     result_name.error());
+      std::println(stderr, "Could not get properties from {}: {}", gpio_path, result_name.error());
       return zx::error(result_name.status());
     }
     std::string_view gpio_name = result_name->name().get();
@@ -245,12 +244,12 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
   if (func == GetName) {
     auto result = client->GetProperties();
     if (!result.ok()) {
-      cpp23::println(stderr, "Call to get properties failed: {}", result.error());
+      std::println(stderr, "Call to get properties failed: {}", result.error());
       return -2;
     }
     auto pin = result->pin();
     auto name = result->name().get();
-    cpp23::println("GPIO Name: [gpio-{}] {}", pin, name);
+    std::println("GPIO Name: [gpio-{}] {}", pin, name);
     return 0;
   }
 
@@ -258,10 +257,10 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> gpio_client(std::move(gpio_client_end));
 
   if (auto result = client->ConnectGpio(std::move(gpio_server_end)); !result.ok()) {
-    cpp23::println(stderr, "Call to connect GPIO failed: {}", result.error());
+    std::println(stderr, "Call to connect GPIO failed: {}", result.error());
     return -2;
   } else if (result->is_error()) {
-    cpp23::println(stderr, "Failed to connect GPIO: {}", zx::make_result(result->error_value()));
+    std::println(stderr, "Failed to connect GPIO: {}", zx::make_result(result->error_value()));
     return -2;
   }
 
@@ -269,10 +268,10 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
   fidl::WireSyncClient<fuchsia_hardware_pin::Pin> pin_client(std::move(pin_client_end));
 
   if (auto result = client->ConnectPin(std::move(pin_server_end)); !result.ok()) {
-    cpp23::println(stderr, "Call to connect pin failed: {}", result.error());
+    std::println(stderr, "Call to connect pin failed: {}", result.error());
     return -2;
   } else if (result->is_error()) {
-    cpp23::println(stderr, "Failed to connect pin: {}", zx::make_result(result->error_value()));
+    std::println(stderr, "Failed to connect pin: {}", zx::make_result(result->error_value()));
     return -2;
   }
 
@@ -280,25 +279,25 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
     case Read: {
       auto result = gpio_client->Read();
       if (!result.ok()) {
-        cpp23::println(stderr, "Call to read GPIO failed: {}", result.error());
+        std::println(stderr, "Call to read GPIO failed: {}", result.error());
         return -2;
       }
       if (result->is_error()) {
-        cpp23::println(stderr, "Could not read GPIO: {}", zx::make_result(result->error_value()));
+        std::println(stderr, "Could not read GPIO: {}", zx::make_result(result->error_value()));
         return -2;
       }
-      cpp23::println("GPIO Value: {}", result->value()->value);
+      std::println("GPIO Value: {}", result->value()->value);
       break;
     }
     case SetBufferMode: {
       auto result = gpio_client->SetBufferMode(buffer_mode);
       if (!result.ok()) {
-        cpp23::println(stderr, "Call to set GPIO buffer mode failed: {}", result.error());
+        std::println(stderr, "Call to set GPIO buffer mode failed: {}", result.error());
         return -2;
       }
       if (result->is_error()) {
-        cpp23::println(stderr, "Could not set GPIO buffer mode: {}",
-                       zx::make_result(result->error_value()));
+        std::println(stderr, "Could not set GPIO buffer mode: {}",
+                     zx::make_result(result->error_value()));
         return -2;
       }
       break;
@@ -308,28 +307,28 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
                                   .mode(interrupt_mode)
                                   .Build();
       if (auto result = gpio_client->ConfigureInterrupt(interrupt_config); !result.ok()) {
-        cpp23::println(stderr, "Call to get GPIO interrupt failed: {}", result.error());
+        std::println(stderr, "Call to get GPIO interrupt failed: {}", result.error());
         return -2;
       } else if (result->is_error()) {
-        cpp23::println(stderr, "Could not get GPIO interrupt: {}",
-                       zx::make_result(result->error_value()));
+        std::println(stderr, "Could not get GPIO interrupt: {}",
+                     zx::make_result(result->error_value()));
         return -2;
       }
 
       auto result = gpio_client->GetInterrupt({});
       if (!result.ok()) {
-        cpp23::println(stderr, "Call to get GPIO interrupt failed: {}", result.error());
+        std::println(stderr, "Call to get GPIO interrupt failed: {}", result.error());
         return -2;
       }
       if (result->is_error()) {
-        cpp23::println(stderr, "Could not get GPIO interrupt: {}",
-                       zx::make_result(result->error_value()));
+        std::println(stderr, "Could not get GPIO interrupt: {}",
+                     zx::make_result(result->error_value()));
         return -2;
       }
 
       zx::time_boot timestamp{};
       if (zx_status_t status = result->value()->interrupt.wait(&timestamp); status != ZX_OK) {
-        cpp23::println(stderr, "Interrupt wait failed: {}", zx::make_result(status));
+        std::println(stderr, "Interrupt wait failed: {}", zx::make_result(status));
         return -2;
       }
 
@@ -337,12 +336,12 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
 
       auto release = gpio_client->ReleaseInterrupt();
       if (!release.ok()) {
-        cpp23::println(stderr, "Call to release GPIO interrupt failed: {}", release.error());
+        std::println(stderr, "Call to release GPIO interrupt failed: {}", release.error());
         return -2;
       }
       if (release->is_error()) {
-        cpp23::println(stderr, "Could not release GPIO interrupt: {}",
-                       zx::make_result(release->error_value()));
+        std::println(stderr, "Could not release GPIO interrupt: {}",
+                     zx::make_result(release->error_value()));
         return -2;
       }
       break;
@@ -350,12 +349,11 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
     case Configure: {
       auto result = pin_client->Configure(config);
       if (!result.ok()) {
-        cpp23::println(stderr, "Call to configure pin failed: {}", result.error());
+        std::println(stderr, "Call to configure pin failed: {}", result.error());
         return -2;
       }
       if (result->is_error()) {
-        cpp23::println(stderr, "Could not configure pin: {}",
-                       zx::make_result(result->error_value()));
+        std::println(stderr, "Could not configure pin: {}", zx::make_result(result->error_value()));
         return -2;
       }
 
@@ -363,7 +361,7 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
         if (result->value()->new_config.has_drive_strength_ua()) {
           printf("Set drive strength to %lu\n", result->value()->new_config.drive_strength_ua());
         } else {
-          cpp23::println(stderr, "Driver did not return new drive strength");
+          std::println(stderr, "Driver did not return new drive strength");
         }
       }
       break;
@@ -372,24 +370,24 @@ int ClientCall(fidl::WireSyncClient<fuchsia_hardware_pin::Debug> client, GpioFun
       // Call Configure() with no arguments to retrieve the current configuration.
       auto result = pin_client->Configure({});
       if (!result.ok()) {
-        cpp23::println(stderr, "Call to get pin drive strength failed: {}", result.error());
+        std::println(stderr, "Call to get pin drive strength failed: {}", result.error());
         return -2;
       }
       if (result->is_error()) {
-        cpp23::println(stderr, "Could not get pin drive strength: {}",
-                       zx::make_result(result->error_value()));
+        std::println(stderr, "Could not get pin drive strength: {}",
+                     zx::make_result(result->error_value()));
         return -2;
       }
 
       if (result->value()->new_config.has_drive_strength_ua()) {
-        cpp23::println("Drive strength: {} ua", result->value()->new_config.drive_strength_ua());
+        std::println("Drive strength: {} ua", result->value()->new_config.drive_strength_ua());
       } else {
-        cpp23::println(stderr, "Driver did not return drive strength");
+        std::println(stderr, "Driver did not return drive strength");
       }
       break;
     }
     default:
-      cpp23::println(stderr, "Invalid function\n");
+      std::println(stderr, "Invalid function\n");
       return -1;
   }
   return 0;

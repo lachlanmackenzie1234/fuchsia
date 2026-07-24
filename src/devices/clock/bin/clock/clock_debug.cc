@@ -7,9 +7,8 @@
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 
 #include <algorithm>
+#include <print>
 #include <unordered_set>
-
-#include "src/lib/stdformat/print.h"
 
 namespace clock_debug {
 
@@ -22,7 +21,7 @@ std::vector<Clock> ListClocks() {
         watcher.GetNextInstance(true);
     if (result.is_error()) {
       if (result.error_value() != ZX_ERR_STOP) {
-        cpp23::println("Failed to list all clocks: {}", zx_status_get_string(result.error_value()));
+        std::println("Failed to list all clocks: {}", zx_status_get_string(result.error_value()));
       }
       break;
     }
@@ -79,7 +78,7 @@ void PrintClocks(const std::vector<Clock>& clocks, bool verbose) {
 
       // 17 is 15 (length of left column in ShowClock) + 2 (size of "| ")
       size_t separator_width = 17 + std::max(clock.name.length(), id_length);
-      cpp23::println("{0:-<{1}}", "", separator_width);
+      std::println("{0:-<{1}}", "", separator_width);
     }
 
     return;
@@ -96,11 +95,11 @@ void PrintClocks(const std::vector<Clock>& clocks, bool verbose) {
   std::string header = std::format("{:<{}} | {:<{}}", "Clock ID", id_width, "Name", name_width);
   std::string divider(header.length(), '-');
 
-  cpp23::println("{}", header);
-  cpp23::println("{}", divider);
+  std::println("{}", header);
+  std::println("{}", divider);
 
   for (const auto& [id, name, _] : clocks) {
-    cpp23::println("{:<{}} | {:<{}}", id, id_width, name, name_width);
+    std::println("{:<{}} | {:<{}}", id, id_width, name, name_width);
   }
 }
 
@@ -130,23 +129,23 @@ void ShowClock(const Clock& clock) {
     num_inputs = num_inputs_result.value().n();
   }
 
-  cpp23::println("{:<15}| {}", "Clock ID", clock.id);
-  cpp23::println("{:<15}| {}", "Name", clock.name);
+  std::println("{:<15}| {}", "Clock ID", clock.id);
+  std::println("{:<15}| {}", "Name", clock.name);
 
   if (enabled) {
-    cpp23::println("{:<15}| {}", "Enabled", enabled.value());
+    std::println("{:<15}| {}", "Enabled", enabled.value());
   }
 
   if (rate) {
-    cpp23::println("{:<15}| {}hz", "Rate", rate.value());
+    std::println("{:<15}| {}hz", "Rate", rate.value());
   }
 
   if (input) {
-    cpp23::println("{:<15}| {}", "Current Input", input.value());
+    std::println("{:<15}| {}", "Current Input", input.value());
   }
 
   if (num_inputs) {
-    cpp23::println("{:<15}| {}", "Total Inputs", num_inputs.value());
+    std::println("{:<15}| {}", "Total Inputs", num_inputs.value());
   }
 }
 
@@ -156,9 +155,9 @@ void QueryRate(const Clock& clock, uint64_t rate) {
   auto query_result = fidl::Call(client)->QuerySupportedRate({rate});
 
   if (query_result.is_ok()) {
-    cpp23::println("{:<15}| {}hz", "Output Rate", query_result.value().hz_out());
+    std::println("{:<15}| {}hz", "Output Rate", query_result.value().hz_out());
   } else {
-    cpp23::println("QueryRate failed: {}", query_result.error_value().FormatDescription());
+    std::println("QueryRate failed: {}", query_result.error_value().FormatDescription());
   }
 }
 
@@ -167,9 +166,9 @@ void EnableClock(const Clock& clock) {
 
   auto result = fidl::Call(client)->Enable();
   if (result.is_ok()) {
-    cpp23::println("Enabled successfully.");
+    std::println("Enabled successfully.");
   } else {
-    cpp23::println("Failed to enable: {}", result.error_value().FormatDescription());
+    std::println("Failed to enable: {}", result.error_value().FormatDescription());
   }
 }
 
@@ -178,9 +177,9 @@ void DiableClock(const Clock& clock) {
 
   auto result = fidl::Call(client)->Disable();
   if (result.is_ok()) {
-    cpp23::println("Disabled successfully.");
+    std::println("Disabled successfully.");
   } else {
-    cpp23::println("Failed to disable: {}", result.error_value().FormatDescription());
+    std::println("Failed to disable: {}", result.error_value().FormatDescription());
   }
 }
 
@@ -189,9 +188,9 @@ void ClockSetRate(const Clock& clock, uint64_t rate) {
 
   auto result = fidl::Call(client)->SetRate({rate});
   if (result.is_ok()) {
-    cpp23::println("Set rate successfully.");
+    std::println("Set rate successfully.");
   } else {
-    cpp23::println("Failed to set rate: {}", result.error_value().FormatDescription());
+    std::println("Failed to set rate: {}", result.error_value().FormatDescription());
   }
 }
 
@@ -200,9 +199,9 @@ void ClockSetInput(const Clock& clock, uint32_t index) {
 
   auto result = fidl::Call(client)->SetInput({index});
   if (result.is_ok()) {
-    cpp23::println("Set input successfully.");
+    std::println("Set input successfully.");
   } else {
-    cpp23::println("Failed to set input: {}", result.error_value().FormatDescription());
+    std::println("Failed to set input: {}", result.error_value().FormatDescription());
   }
 }
 

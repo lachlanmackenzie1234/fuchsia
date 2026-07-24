@@ -102,7 +102,6 @@ group("tests") {
     "scoped_task:tests",
     "security:tests",
     "shared-buffer:tests",
-    "stdformat:tests",
     "structured_ui:tests",
     "symbolizer-markup:tests",
     "syslog:tests",

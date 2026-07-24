@@ -25,7 +25,7 @@
 #include <source_location>
 #endif
 
-#include "src/lib/stdformat/print.h"
+#include <print>
 
 namespace fdf_log {
 class Logger;
@@ -126,8 +126,8 @@ class Logger {
 
     if (use_stdout_) {
       // We rely on line buffering to ensure this is a single syscall.
-      cpp23::print("[driver_manager.cm]: {}: ", internal::SeverityToString(severity));
-      cpp23::print(fmt, std::forward<Args>(args)...);
+      std::print("[driver_manager.cm]: {}: ", internal::SeverityToString(severity));
+      std::print(fmt, std::forward<Args>(args)...);
       fputc('\n', stdout);
       return;
     }

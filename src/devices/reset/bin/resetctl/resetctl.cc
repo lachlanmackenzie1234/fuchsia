@@ -4,28 +4,28 @@
 
 #include "resetctl.h"
 
-#include <lib/stdformat/print.h>
+#include <print>
 
 namespace resetctl {
 
 void PrintUsage(const char* binary_name) {
-  cpp23::println(stderr, "Usage: {} <instance_name> <subcommand> [args]", binary_name);
-  cpp23::println(stderr, "Subcommands:");
-  cpp23::println(stderr, "  assert   - Assert the reset line");
-  cpp23::println(stderr, "             Example: {} <instance_name> assert", binary_name);
-  cpp23::println(stderr, "  deassert - Deassert the reset line");
-  cpp23::println(stderr, "             Example: {} <instance_name> deassert", binary_name);
-  cpp23::println(stderr, "  toggle   - Toggle the reset line (optional timeout in ns)");
-  cpp23::println(stderr, "             Example: {} <instance_name> toggle", binary_name);
-  cpp23::println(stderr, "             Example: {} <instance_name> toggle 1000", binary_name);
-  cpp23::println(stderr, "  status   - Get the reset status");
-  cpp23::println(stderr, "             Example: {} <instance_name> status", binary_name);
+  std::println(stderr, "Usage: {} <instance_name> <subcommand> [args]", binary_name);
+  std::println(stderr, "Subcommands:");
+  std::println(stderr, "  assert   - Assert the reset line");
+  std::println(stderr, "             Example: {} <instance_name> assert", binary_name);
+  std::println(stderr, "  deassert - Deassert the reset line");
+  std::println(stderr, "             Example: {} <instance_name> deassert", binary_name);
+  std::println(stderr, "  toggle   - Toggle the reset line (optional timeout in ns)");
+  std::println(stderr, "             Example: {} <instance_name> toggle", binary_name);
+  std::println(stderr, "             Example: {} <instance_name> toggle 1000", binary_name);
+  std::println(stderr, "  status   - Get the reset status");
+  std::println(stderr, "             Example: {} <instance_name> status", binary_name);
 }
 
 zx::result<> Run(int argc, const char** argv,
                  fidl::ClientEnd<fuchsia_hardware_reset::Reset> client_end) {
   if (argc < 2) {
-    cpp23::println(stderr, "Subcommand missing.");
+    std::println(stderr, "Subcommand missing.");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -78,10 +78,10 @@ zx::result<> Run(int argc, const char** argv,
     if (result->is_error()) {
       return zx::error(result->error_value());
     }
-    cpp23::println("Asserted: {}", result->value()->asserted ? "true" : "false");
+    std::println("Asserted: {}", result->value()->asserted ? "true" : "false");
     return zx::ok();
   } else {
-    cpp23::println(stderr, "Unknown subcommand: {}", subcommand);
+    std::println(stderr, "Unknown subcommand: {}", subcommand);
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 }
