@@ -168,8 +168,7 @@ TEST_F(UnmanagedTestFixture, OppositeDirectionXferNotReady) {
   TearDownAndPowerOffDriver();
 }
 
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_ResetDuringControlWrite) {
+TEST_F(UnmanagedTestFixture, ResetDuringControlWrite) {
   SetUpAndPowerOnDriver();
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -271,8 +270,7 @@ TEST_F(UnmanagedTestFixture, EndTransferOnValidResource) {
   EXPECT_TRUE(depcmd_written);
 }
 
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_EndTransferOnBothEndpoints) {
+TEST_F(UnmanagedTestFixture, EndTransferOnBothEndpoints) {
   bool ep0_out_end_transfer = false;
   bool ep0_in_end_transfer = false;
 
@@ -371,8 +369,7 @@ TEST_F(UnmanagedTestFixture, FidlControlCallFailure) {
   TearDownAndPowerOffDriver();
 }
 
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_UsbBusResetDuringTransfer) {
+TEST_F(UnmanagedTestFixture, UsbBusResetDuringTransfer) {
   SetUpAndPowerOnDriver();
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -394,7 +391,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_UsbBusResetDuringTransfer) {
   TearDownAndPowerOffDriver();
 }
 
-// TODO(b/509735595): Re-enable once the production fixes are landed.
+// TODO(b/509735595): Re-enable once the deferred cancel logic production fixes land in a future CL.
 TEST_F(UnmanagedTestFixture, DISABLED_DisableEndpointDuringTransfer) {
   SetUpAndPowerOnDriver();
 

@@ -1544,13 +1544,11 @@ void Dwc3::UserEpReset(UserEndpoint& uep) {
 
 void Dwc3::Ep0Reset() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Reset");
-  if (ep0_.in.TransferStateIsActive() || ep0_.out.TransferStateIsActive()) {
-    bool is_out = (ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
-    if (ep0_.state == Ep0::State::Status) {
-      // Flip direction for status.
-      is_out = !is_out;
-    }
-    CmdEpEndTransfer(is_out ? ep0_.out : ep0_.in);
+  if (ep0_.out.TransferStateIsActive() && ep0_.out.rsrc_id != Endpoint::kInvalidResourceId) {
+    CmdEpEndTransfer(ep0_.out);
+  }
+  if (ep0_.in.TransferStateIsActive() && ep0_.in.rsrc_id != Endpoint::kInvalidResourceId) {
+    CmdEpEndTransfer(ep0_.in);
   }
   EpReset(ep0_.out);
   EpReset(ep0_.in);
