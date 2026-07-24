@@ -4,6 +4,7 @@
 
 #include "aml-pwm.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -21,6 +22,8 @@
 #include <soc/aml-common/aml-pwm-regs.h>
 #include <soc/aml-s905d2/s905d2-pwm.h>
 #include <soc/aml-t931/t931-pwm.h>
+
+#include "pwm_parser.h"
 
 namespace pwm {
 
@@ -189,6 +192,17 @@ void CopyConfig(pwm_config_t* dest, const pwm_config_t* src) {
   memset(dest->mode_config_buffer, 0, dest->mode_config_size);
   memcpy(dest->mode_config_buffer, src->mode_config_buffer, src->mode_config_size);
   dest->mode_config_size = src->mode_config_size;
+}
+
+fuchsia_hardware_pwm::PwmChannelsMetadata ConvertMetadata(pwm_metadata::PwmMetadata generic) {
+  std::vector<fuchsia_hardware_pwm::PwmChannelInfo> channels;
+  for (const auto& c : generic.channels) {
+    fuchsia_hardware_pwm::PwmChannelInfo info;
+    info.id(c.channel);
+    info.period_ns(c.period_ns);
+    channels.push_back(std::move(info));
+  }
+  return {{.channels = std::move(channels)}};
 }
 
 }  // namespace
@@ -550,12 +564,33 @@ zx::result<> AmlPwmDriver::Start(fdf::DriverContext context) {
     mmios.push_back(std::move(*mmio));
   }
 
-  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>();
-  if (!metadata_result.is_ok()) {
-    fdf::error("Failed to get metadata: {}", metadata_result.status_string());
-    return metadata_result.take_error();
+  fuchsia_hardware_pwm::PwmChannelsMetadata metadata;
+  {
+    std::optional<fuchsia_hardware_pwm::PwmChannelsMetadata> parsed_metadata;
+    // Try to get generic metadata first
+    zx::result generic_res = pdev.GetFidlMetadata<fuchsia_driver_metadata::Dictionary>(
+        "fuchsia.hardware.pwm.PwmChannelsMetadata");
+    if (generic_res.is_ok()) {
+      auto parsed = pwm_metadata::PwmMetadata::Parse(generic_res.value());
+      if (parsed) {
+        parsed_metadata = ConvertMetadata(std::move(*parsed));
+      } else {
+        fdf::error("Failed to parse generic PWM metadata");
+      }
+    }
+
+    if (!parsed_metadata.has_value()) {
+      // Fall back to old metadata
+      zx::result metadata_res = pdev.GetFidlMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>();
+      if (metadata_res.is_error()) {
+        fdf::error("Failed to get metadata: {}", metadata_res.status_string());
+        return metadata_res.take_error();
+      }
+      metadata = std::move(*metadata_res);
+    } else {
+      metadata = std::move(*parsed_metadata);
+    }
   }
-  const auto& metadata = metadata_result.value();
 
   if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher(), metadata);
       result.is_error()) {

@@ -4,6 +4,7 @@
 
 #include "pwm.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
@@ -16,7 +17,35 @@ namespace pwm {
 namespace {
 constexpr size_t kMaxConfigBufferSize = 256;
 
-}  // namespace
+class GenericMetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Metadata> {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+                     std::string service_name,
+                     const fuchsia_driver_metadata::Dictionary& metadata) {
+    fit::result persisted_metadata = fidl::Persist(metadata);
+    if (persisted_metadata.is_error()) {
+      return zx::error(persisted_metadata.error_value().status());
+    }
+    persisted_metadata_ = std::move(persisted_metadata.value());
+
+    fuchsia_driver_metadata::Service::InstanceHandler handler(
+        {.metadata = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure)});
+
+    return outgoing.component().AddService(std::move(handler), std::move(service_name));
+  }
+
+  void GetPersistedMetadata(GetPersistedMetadataCompleter::Sync& completer) override {
+    if (!persisted_metadata_.has_value()) {
+      completer.ReplyError(ZX_ERR_NOT_FOUND);
+      return;
+    }
+    completer.ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(persisted_metadata_.value()));
+  }
+
+ private:
+  fidl::ServerBindingGroup<fuchsia_driver_metadata::Metadata> bindings_;
+  std::optional<std::vector<uint8_t>> persisted_metadata_;
+};
 
 struct fake_mode_config {
   uint32_t mode;
@@ -97,6 +126,31 @@ class PwmTestEnvironment : public fdf_testing::Environment {
     metadata_ = std::move(metadata);
   }
 
+  void InitGeneric(fuchsia_hardware_pwm::PwmChannelsMetadata metadata) {
+    device_server_.Initialize("default", std::nullopt, pwm_impl_.GetBanjoConfig());
+
+    std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
+    if (metadata.channels().has_value()) {
+      const auto& channels = metadata.channels().value();
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+          "channels._count", fuchsia_driver_metadata::DictionaryValue::WithInt64(channels.size())));
+      for (size_t i = 0; i < channels.size(); ++i) {
+        if (channels[i].id().has_value()) {
+          entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+              std::format("channels.{}.channel", i),
+              fuchsia_driver_metadata::DictionaryValue::WithInt64(channels[i].id().value())));
+        }
+        if (channels[i].period_ns().has_value()) {
+          entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+              std::format("channels.{}.period_ns", i),
+              fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                  channels[i].period_ns().value())));
+        }
+      }
+    }
+    generic_metadata_ = fuchsia_driver_metadata::Dictionary{{.entries = std::move(entries)}};
+  }
+
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     auto* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
@@ -106,6 +160,15 @@ class PwmTestEnvironment : public fdf_testing::Environment {
 
     if (metadata_.has_value()) {
       if (zx::result result = metadata_server_.Serve(to_driver_vfs, dispatcher, metadata_.value());
+          result.is_error()) {
+        return result.take_error();
+      }
+    }
+
+    if (generic_metadata_.has_value()) {
+      if (zx::result result = generic_metadata_server_.Serve(
+              to_driver_vfs, dispatcher, "fuchsia.hardware.pwm.PwmChannelsMetadata",
+              generic_metadata_.value());
           result.is_error()) {
         return result.take_error();
       }
@@ -121,6 +184,8 @@ class PwmTestEnvironment : public fdf_testing::Environment {
   compat::DeviceServer device_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata_server_;
   std::optional<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata_;
+  GenericMetadataServer generic_metadata_server_;
+  std::optional<fuchsia_driver_metadata::Dictionary> generic_metadata_;
 };
 
 class FixtureConfig final {
@@ -286,5 +351,23 @@ TEST_F(PwmTest, DisableFidlTest) {
     EXPECT_EQ(pwm_impl.SetConfigCount(), 0u);
   });
 }
+
+class PwmGenericMetadataTest : public ::testing::Test {
+ protected:
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
+  fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
+};
+
+TEST_F(PwmGenericMetadataTest, GenericMetadataTest) {
+  static const fuchsia_hardware_pwm::PwmChannelsMetadata kTestMetadataChannels{
+      {.channels{{{{.id = 0, .period_ns = 1000}}}}}};
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](PwmTestEnvironment& env) { env.InitGeneric(kTestMetadataChannels); });
+  ASSERT_OK(driver_test_.StartDriver());
+
+  zx::result pwm = driver_test_.Connect<fuchsia_hardware_pwm::Service::Pwm>("pwm-0");
+  ASSERT_OK(pwm);
+}
+}  // namespace
 
 }  // namespace pwm

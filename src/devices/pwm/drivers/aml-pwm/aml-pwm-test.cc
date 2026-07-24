@@ -4,6 +4,7 @@
 
 #include "aml-pwm.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
@@ -17,13 +18,31 @@
 #include "src/lib/testing/predicates/status.h"
 
 namespace pwm {
+namespace {
 
 class AmlPwmDriverTestEnvironment : public fdf_testing::Environment {
  public:
-  void Init() {
-    static constexpr size_t kRegSize = 0x00001000 / sizeof(uint32_t);  // in 32 bits chunks.
+  void SetupCommon() {
+    static constexpr size_t kRegSize = 0x00001000 / sizeof(uint32_t);
     static constexpr size_t kMmioCount = 5;
 
+    device_server_.Initialize(component::kDefaultInstance);
+
+    std::map<uint32_t, fdf_fake::Mmio> mmios;
+    for (size_t i = 0; i < kMmioCount; ++i) {
+      auto& mmio = *mmios_.emplace_back(
+          std::make_unique<ddk_mock::MockMmioRegRegion>(sizeof(uint32_t), kRegSize));
+      mmio[2lu * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFDFFFFFA);
+      if (i != 1) {
+        mmio[2lu * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFEFFFFF5);
+      }
+      mmios.insert({i, mmio.GetMmioBuffer()});
+    }
+    pdev_.SetConfig({.mmios = std::move(mmios), .device_info{{.mmio_count = kMmioCount}}});
+  }
+
+  void Init() {
+    SetupCommon();
     // Protect channel 3 for protect tests
     static const fuchsia_hardware_pwm::PwmChannelsMetadata kMetadata{
         {{{{{.id = 0}},
@@ -36,26 +55,12 @@ class AmlPwmDriverTestEnvironment : public fdf_testing::Environment {
            {{.id = 7}},
            {{.id = 8}},
            {{.id = 9}}}}}};
-
-    device_server_.Initialize(component::kDefaultInstance);
-
-    std::map<uint32_t, fdf_fake::Mmio> mmios;
-    for (size_t i = 0; i < kMmioCount; ++i) {
-      auto& mmio = *mmios_.emplace_back(
-          std::make_unique<ddk_mock::MockMmioRegRegion>(sizeof(uint32_t), kRegSize));
-      // Even numbered channel SetMode calls.
-      mmio[2lu * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFDFFFFFA);
-
-      // Odd numbered channel SetMode calls. However, initialization will be skipped for channel 3.
-      if (i != 1) {
-        mmio[2lu * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFEFFFFF5);
-      }
-
-      mmios.insert({i, mmio.GetMmioBuffer()});
-    }
-
-    pdev_.SetConfig({.mmios = std::move(mmios), .device_info{{.mmio_count = kMmioCount}}});
     pdev_.AddFidlMetadata(fuchsia_hardware_pwm::PwmChannelsMetadata::kSerializableName, kMetadata);
+  }
+
+  void InitGeneric(fuchsia_driver_metadata::Dictionary metadata) {
+    SetupCommon();
+    pdev_.AddFidlMetadata("fuchsia.hardware.pwm.PwmChannelsMetadata", std::move(metadata));
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
@@ -652,5 +657,28 @@ TEST_F(AmlPwmDriverTest, TwoTimerChannelSeparationTest) {
   });
   EXPECT_OK(driver().PwmImplSetConfig(0, &timer2_cfg));
 }
+
+class AmlPwmDriverGenericMetadataTest : public ::testing::Test {
+ protected:
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
+  fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
+};
+
+TEST_F(AmlPwmDriverGenericMetadataTest, GenericMetadataTest) {
+  std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
+  entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+      "channels._count", fuchsia_driver_metadata::DictionaryValue::WithInt64(1)));
+  entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+      "channels.0.channel", fuchsia_driver_metadata::DictionaryValue::WithInt64(0)));
+  entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+      "channels.0.period_ns", fuchsia_driver_metadata::DictionaryValue::WithInt64(1000)));
+
+  fuchsia_driver_metadata::Dictionary dict{{.entries = std::move(entries)}};
+
+  driver_test_.RunInEnvironmentTypeContext(
+      [dict = std::move(dict)](auto& env) mutable { env.InitGeneric(std::move(dict)); });
+  ASSERT_OK(driver_test_.StartDriver());
+}
+}  // namespace
 
 }  // namespace pwm

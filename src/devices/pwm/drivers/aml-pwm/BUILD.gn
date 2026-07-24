@@ -70,7 +70,10 @@ source_set("common") {
     "aml-pwm.cc",
     "aml-pwm.h",
   ]
-  deps = [ "//sdk/lib/driver/platform-device/cpp" ]
+  deps = [
+    "//sdk/lib/driver/platform-device/cpp",
+    "//src/devices/pwm/drivers/pwm:pwm-metadata",
+  ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.pwm:fuchsia.hardware.pwm_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",

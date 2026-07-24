@@ -9,9 +9,24 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 
+#include "src/devices/pwm/drivers/pwm/pwm_parser.h"
+
 namespace pwm {
 
 constexpr size_t kMaxConfigBufferSize = 256;
+
+namespace {
+fuchsia_hardware_pwm::PwmChannelsMetadata ConvertMetadata(pwm_metadata::PwmMetadata generic) {
+  std::vector<fuchsia_hardware_pwm::PwmChannelInfo> channels;
+  for (const auto& c : generic.channels) {
+    fuchsia_hardware_pwm::PwmChannelInfo info;
+    info.id(c.channel);
+    info.period_ns(c.period_ns);
+    channels.push_back(std::move(info));
+  }
+  return {{.channels = std::move(channels)}};
+}
+}  // namespace
 
 zx::result<> Pwm::Start(fdf::DriverContext context) {
   auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
@@ -21,12 +36,33 @@ zx::result<> Pwm::Start(fdf::DriverContext context) {
     return pwm_impl.take_error();
   }
 
-  zx::result metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(*incoming);
-  if (metadata.is_error()) {
-    fdf::error("Failed to get metadata: {}", metadata);
-    return metadata.take_error();
+  std::optional<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata;
+  {
+    // Try to get generic metadata first
+    zx::result generic_res =
+        fdf_metadata::GetMetadataFromFidlServiceIfExists<fuchsia_driver_metadata::Dictionary>(
+            incoming->svc_dir(), "fuchsia.hardware.pwm.PwmChannelsMetadata");
+    if (generic_res.is_ok() && generic_res.value().has_value()) {
+      auto parsed = pwm_metadata::PwmMetadata::Parse(*generic_res.value());
+      if (parsed) {
+        metadata = ConvertMetadata(std::move(*parsed));
+      } else {
+        fdf::error("Failed to parse generic PWM metadata");
+      }
+    }
+
+    if (!metadata.has_value()) {
+      // Fall back to old metadata
+      zx::result metadata_res =
+          fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(*incoming);
+      if (metadata_res.is_error()) {
+        fdf::error("Failed to get metadata: {}", metadata_res);
+        return metadata_res.take_error();
+      }
+      metadata = std::move(*metadata_res);
+    }
   }
+
   if (!metadata.value().channels().has_value()) {
     fdf::error("Metadata missing `channels` field");
     return zx::error(ZX_ERR_INTERNAL);

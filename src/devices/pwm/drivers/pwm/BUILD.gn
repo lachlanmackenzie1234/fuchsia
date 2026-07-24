@@ -7,8 +7,17 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("pwm-dml") {
+  dml = "meta/pwm.dml"
+  driver_name = "pwm"
+}
+
+fuchsia_driver_dml_parser("pwm-metadata") {
+  dml_label = ":pwm-dml"
+}
+
 driver_bind_rules("pwm-bind") {
-  rules = "meta/pwm.bind"
+  dml_label = ":pwm-dml"
   bind_output = "pwm.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.pwm" ]
@@ -30,11 +39,11 @@ fuchsia_driver_component("pwm") {
   ]
   info = "meta/pwm-info.json"
   component_name = "pwm"
+  dml_label = ":pwm-dml"
   deps = [
     ":pwm-bind",
     ":pwm-driver",
   ]
-  manifest = "meta/pwm.cml"
 }
 
 fuchsia_driver_package("package") {
@@ -60,11 +69,12 @@ source_set("common") {
     "pwm.h",
   ]
   deps = [
-    "//sdk/lib/driver/metadata/cpp",
+    ":pwm-metadata",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.pwm:fuchsia.hardware.pwm_banjo_cpp",
+    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp",
     "//sdk/lib/driver/compat/cpp",
@@ -79,6 +89,9 @@ fuchsia_unittest_package("pwm-test") {
   deps = [ ":pwm-test-bin" ]
   test_specs = {
     environments = basic_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
   }
 }
 
