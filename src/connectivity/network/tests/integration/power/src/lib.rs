@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::pin::pin;
 
 use assert_matches::assert_matches;
-use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _, ServiceMarker as _};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker as _};
 use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_hardware_power_suspend as fhsuspend;
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
@@ -39,6 +39,7 @@ use packet_formats::ip::{IpPacket, IpProto, Ipv6Proto};
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::udp::{UdpPacket, UdpParseArgs};
 use test_case::test_case;
+use zx::Peered as _;
 
 // TODO(https://fxbug.dev/372010366): Revisit this test as we consider better integrating
 // fake-suspend with fake SAG.
@@ -684,6 +685,13 @@ impl WakeupSocket for UdpSocketPair {
     }
 }
 
+const GROUP_WAKEUP_SIGNAL: zx::Signals =
+    zx::Signals::from_bits(fnet_power::GROUP_WAKEUP_SIGNAL).unwrap();
+const WAITER_AWAKE_SIGNAL: zx::Signals =
+    zx::Signals::from_bits(fnet_power::WAITER_AWAKE_SIGNAL).unwrap();
+const WAITER_ASLEEP_SIGNAL: zx::Signals =
+    zx::Signals::from_bits(fnet_power::WAITER_ASLEEP_SIGNAL).unwrap();
+
 #[netstack_test]
 #[test_case(PhantomData::<TcpSocketPair>; "tcp")]
 #[test_case(PhantomData::<UdpSocketPair>; "udp")]
@@ -694,9 +702,12 @@ async fn wake_group_sockets<S: WakeupSocket>(name: &str, _socket_type: PhantomDa
     let provider = realm
         .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
         .expect("connect to protocol");
-    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
+    let (wake_watcher, wake_watcher_other) = zx::EventPair::create();
+    wake_watcher_other
+        .signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL)
+        .expect("signal initial awake state");
     let fnet_power::CreateWakeGroupResponse { token, .. } = provider
-        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
+        .create_wake_group(&fnet_power::WakeGroupOptions::default(), wake_watcher)
         .await
         .expect("create wake group");
     let fnet_resources::WakeGroupToken { token } =
@@ -707,141 +718,40 @@ async fn wake_group_sockets<S: WakeupSocket>(name: &str, _socket_type: PhantomDa
         &realm,
         fnet_resources::WakeGroupToken {
             token: token
-                .duplicate_handle(zx::Rights::TRANSFER | zx::Rights::DUPLICATE)
+                .duplicate_handle(zx::Rights::TRANSFER | zx::Rights::DUPLICATE | zx::Rights::WAIT)
                 .expect("duplicate wake group handle"),
         },
     )
     .await;
 
     // Subscribe to be woken up when data arrives.
-    let wake_group = wake_group.into_proxy();
-    let mut fut = wake_group.wait_for_data();
+    let mut fut = pin!(fasync::OnSignals::new(&token, GROUP_WAKEUP_SIGNAL));
     assert_matches!((&mut fut).now_or_never(), None);
 
-    // If we send some data but have not yet armed the hanging get, we will not be
+    // If we send some data while the peer is awake, we will not be
     // notified.
     setup.client_write().await;
     assert_matches!((&mut fut).now_or_never(), None);
     setup.server_read().await;
 
-    // If we arm the hanging get, incoming data should notify the wake group.
-    assert!(wake_group.arm().await.expect("arm hanging get"));
+    // If the peer signals that it is asleep, incoming data should notify the wake group.
+    wake_watcher_other
+        .signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL)
+        .expect("signal suspend");
     setup.client_write().await;
 
-    let fnet_power::WakeGroupWaitForDataResponse { source, .. } = fut.await.expect("wait for data");
-    let source = source.expect("netstack should specify wake source");
-    assert_eq!(source, fnet_power::WakeSource::Data(fnet_power::Empty {}));
+    let signals = fut.await.expect("wait for data");
+    assert_eq!(signals, GROUP_WAKEUP_SIGNAL);
+
+    wake_watcher_other
+        .signal_peer(WAITER_ASLEEP_SIGNAL, WAITER_AWAKE_SIGNAL)
+        .expect("signal resume");
     setup.server_read().await;
 
-    // Closing the wake group channel will remove the wake group, but the socket can
-    // still be used after the wake group it was attached to has become defunct.
-    drop(wake_group);
+    // Closing the wake watcher will unregister the wake group, but the socket
+    // can still be used after the wake group it was attached to has become
+    // defunct.
+    drop(wake_watcher_other);
     setup.client_write().await;
     setup.server_read().await;
-}
-
-#[netstack_test]
-async fn wake_group_hanging_get_called_when_pending(name: &str) {
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
-
-    let provider = realm
-        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
-        .expect("connect to protocol");
-    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
-    let _response = provider
-        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
-        .await
-        .expect("create wake group");
-
-    let wake_group = wake_group.into_proxy();
-
-    // Call `WaitForData` twice and observe the protocol close.
-    assert_matches!(
-        futures::future::join(wake_group.wait_for_data(), wake_group.wait_for_data()).await,
-        (
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
-        )
-    );
-    assert!(wake_group.is_closed());
-}
-
-#[netstack_test]
-async fn wake_group_hanging_get_called_when_armed(name: &str) {
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
-
-    let provider = realm
-        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
-        .expect("connect to protocol");
-    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
-    let _response = provider
-        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
-        .await
-        .expect("create wake group");
-
-    let wake_group = wake_group.into_proxy();
-    let fut = wake_group.wait_for_data();
-    assert!(wake_group.arm().await.expect("arm hanging get"));
-
-    // Call `WaitForData` again and observe the protocol close.
-    assert_matches!(
-        futures::future::join(fut, wake_group.wait_for_data()).await,
-        (
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
-        )
-    );
-    assert!(wake_group.is_closed());
-}
-
-#[netstack_test]
-async fn wake_group_arm_called_when_armed(name: &str) {
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
-
-    let provider = realm
-        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
-        .expect("connect to protocol");
-    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
-    let _response = provider
-        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
-        .await
-        .expect("create wake group");
-
-    let wake_group = wake_group.into_proxy();
-    let fut = wake_group.wait_for_data();
-    assert!(wake_group.arm().await.expect("arm hanging get"));
-
-    // Call `Arm` again and observe the protocol close.
-    assert_matches!(
-        futures::future::join(fut, wake_group.arm()).await,
-        (
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
-        )
-    );
-    assert!(wake_group.is_closed());
-}
-
-#[netstack_test]
-async fn wake_group_arm_called_with_no_hanging_get(name: &str) {
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
-
-    let provider = realm
-        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
-        .expect("connect to protocol");
-    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
-    let _response = provider
-        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
-        .await
-        .expect("create wake group");
-
-    let wake_group = wake_group.into_proxy();
-
-    // Calling `Arm` when there is no hanging get is allowed, but the netstack
-    // should notify us that it was a no-op since there was no hanging get pending.
-    assert_eq!(wake_group.arm().await.expect("arm hanging get"), false);
 }

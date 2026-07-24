@@ -250,6 +250,7 @@
             protocol: [
                 "fuchsia.net.filter.Control",
                 "fuchsia.net.filter.SocketControl",
+                "fuchsia.net.power.WakeGroupProvider",
             ],
             from: "#netstack",
             availability: "same_as_target",

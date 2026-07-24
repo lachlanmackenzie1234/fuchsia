@@ -36,8 +36,5 @@ if (is_host) {
 fidl("fuchsia.net.power") {
   sources = [ "wake_group.fidl" ]
   visibility = [ "*" ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.net.resources",
-    "//sdk/fidl/fuchsia.power.system",
-  ]
+  public_deps = [ "//sdk/fidl/fuchsia.net.resources" ]
 }

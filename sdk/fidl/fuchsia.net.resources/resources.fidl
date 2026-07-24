@@ -35,7 +35,8 @@ type ProofOfInterfaceAuthorization = resource struct {
 };
 
 /// A token representing a wake group that can be provided to networking
-/// resources (such as sockets) to add them to the group.
+/// resources (such as sockets) to add them to the group, and waited upon to
+/// receive wake signals.
 type WakeGroupToken = resource struct {
-    token zx.Handle:<EVENT, zx.Rights.TRANSFER | zx.Rights.DUPLICATE>;
+    token zx.Handle:<EVENT, zx.Rights.TRANSFER | zx.Rights.DUPLICATE | zx.Rights.WAIT>;
 };
