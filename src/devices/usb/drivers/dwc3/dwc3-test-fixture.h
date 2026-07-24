@@ -44,6 +44,7 @@ namespace fvreg = fuchsia_hardware_vreg;
 class Dwc3TestHelper {
  public:
   using State = Dwc3::Ep0::State;
+  using TransferState = Dwc3::Endpoint::TransferState;
   static void HandleEp0TransferCompleteEvent(Dwc3& drv, uint8_t ep_num) {
     if (!drv.ep0_.shared_fifo.IsEmpty()) {
       dwc3_trb_t* trb = drv.ep0_.shared_fifo.current_read();
@@ -138,9 +139,7 @@ class Dwc3TestHelper {
   }
   static void SetDeviceAddress(Dwc3& drv, uint32_t address) { drv.SetDeviceAddress(address); }
   static bool IsFifoEmpty(Dwc3& drv) { return drv.ep0_.shared_fifo.IsEmpty(); }
-  static void SetXferInProgress(Dwc3& drv, uint8_t ep_num, bool in_progress) {
-    auto state = in_progress ? dwc3::Dwc3::Endpoint::TransferState::kActiveSingle
-                             : dwc3::Dwc3::Endpoint::TransferState::kIdle;
+  static void SetEpTransferState(Dwc3& drv, uint8_t ep_num, TransferState state) {
     if (ep_num < 2) {
       ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).transfer_state = state;
     } else {
@@ -274,6 +273,26 @@ class Dwc3TestHelper {
 
     trb->control &= ~TRB_HWO;
     drv.HandleEp0TransferCompleteEvent(0);  // EP0 OUT
+  }
+
+  static void SimulateDataInPhase(Dwc3& drv) {
+    dwc3_trb_t* trb = drv.ep0_.shared_fifo.current_read();
+    trb->status = 0;  // Simulate all bytes sent (0 remaining)
+    trb->control &= ~TRB_HWO;
+    drv.HandleEp0TransferCompleteEvent(1);  // EP0 IN
+  }
+
+  static void SimulateStatusPhase(Dwc3& drv, bool is_in) {
+    uint8_t ep_num = is_in ? 1 : 0;
+    drv.HandleEp0TransferNotReadyEvent(ep_num, DEPEVT_XFER_NOT_READY_STAGE_STATUS);
+
+    // Simulate completion of the status phase TRB
+    dwc3_trb_t* trb = drv.ep0_.shared_fifo.current_read();
+    trb->status = TRB_BUFSIZ(
+        static_cast<uint32_t>(drv.ep0_.buffer->size()));  // 0 bytes transferred in status phase
+    trb->control &= ~TRB_HWO;
+
+    drv.HandleEp0TransferCompleteEvent(ep_num);
   }
 };
 

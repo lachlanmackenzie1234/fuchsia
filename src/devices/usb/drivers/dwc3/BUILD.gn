@@ -131,6 +131,7 @@ test("dwc3-test-bin") {
   sources = [
     "dwc3-commands-test.cc",
     "dwc3-endpoints-test.cc",
+    "dwc3-ep0-test.cc",
     "dwc3-events-test.cc",
     "dwc3-test.cc",
   ]

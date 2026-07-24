@@ -716,7 +716,7 @@ TEST_P(Dwc3EndpointsTest, EndpointReset) {
     // Set some flags
     Dwc3TestHelper::SetGotNotReady(drv, 2, true);
     Dwc3TestHelper::SetEpRsrcId(drv, 2, 5);
-    Dwc3TestHelper::SetXferInProgress(drv, 2, true);
+    Dwc3TestHelper::SetEpTransferState(drv, 2, Dwc3TestHelper::TransferState::kActiveSingle);
   });
 
   dut_.RunInEnvironmentTypeContext([&](Environment& env) {
