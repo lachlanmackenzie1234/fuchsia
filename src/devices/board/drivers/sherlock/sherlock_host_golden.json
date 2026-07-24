@@ -217,12 +217,6 @@
     },
     {
         "drivers": [
-            "fuchsia-boot:///usb-bus#meta/usb-bus.cm",
-            "fuchsia-boot:///xhci#meta/xhci.cm"
-        ]
-    },
-    {
-        "drivers": [
             "fuchsia-pkg://fuchsia.com/aml-gpu-package#meta/aml-gpu.cm",
             "fuchsia-pkg://fuchsia.com/msd-arm-mali#meta/msd_arm.cm"
         ]
