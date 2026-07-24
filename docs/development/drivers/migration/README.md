@@ -29,8 +29,6 @@ Notice the following key differences between DFv1 and DFv2:
   including communication between drivers and non-drivers. The driver
   framework manages the life cycle of drivers.
 
-For more information, see [Comparison between DFv1 and DFv2][dfv1-vs-dfv2].
-
 ### Expected outcome {:#expected-outcome}
 
 Here is a list for the expected conditions of your driver after completing
@@ -78,7 +76,6 @@ missing in the playbook:
 [driver-framework]: /docs/concepts/drivers/driver_framework.md
 [components]: /docs/concepts/components/v2/README.md
 [fidl]: /docs/concepts/fidl/overview.md
-[dfv1-vs-dfv2]: /docs/concepts/drivers/comparison_between_dfv1_and_dfv2.md
 [driver-manager]: /docs/concepts/drivers/driver_framework.md#driver_manager
 [driver-node]: /docs/concepts/drivers/drivers_and_nodes.md
 [migrate-from-banjo-to-fidl]: /docs/development/drivers/migration/migrate-from-banjo-to-fidl/overview.md

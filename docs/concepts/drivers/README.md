@@ -18,8 +18,6 @@ all devices (known as [nodes][nodes]) and drivers in a Fuchsia system.
 
 *  [**Driver framework (DFv2)**][driver-framework]: Explains the core concepts
    and structure of Fuchsia's new driver framework.
-*  [**Comparison between DFv1 and DFv2**][dfv1-and-dfv2]: Compares the two
-   versions of Fuchsia's driver framework.
 *  [**Drivers and nodes**][nodes]: Explains the fundamental concepts of nodes,
    which are the building blocks in DFv2.
 *  [**Driver binding**][driver-binding]: Explains the process of how the driver
@@ -41,7 +39,6 @@ To learn more about creating DFv2 drivers, see the
 
 [components]: /docs/concepts/components/v2/README.md
 [driver-framework]: driver_framework.md
-[dfv1-and-dfv2]: comparison_between_dfv1_and_dfv2.md
 [nodes]: drivers_and_nodes.md
 [driver-binding]: driver_binding.md
 [driver-communication]: driver_communication.md
