@@ -472,7 +472,7 @@ bool VulkanExtensionTest::ExecBuffer(uint32_t size) {
   buffer_create_info.flags =
       use_protected_memory_ ? vk::BufferCreateFlagBits::eProtected : vk::BufferCreateFlagBits();
   buffer_create_info.size = size;
-  buffer_create_info.usage = vk::BufferUsageFlagBits::eIndexBuffer;
+  buffer_create_info.usage = vk::BufferUsageFlagBits::eTransferDst;
   buffer_create_info.sharingMode = vk::SharingMode::eExclusive;
 
   vk::BufferCollectionCreateInfoFUCHSIA import_info(vulkan_token.Unbind().TakeChannel().release());
