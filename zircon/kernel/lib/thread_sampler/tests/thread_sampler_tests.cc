@@ -9,6 +9,8 @@
 #include <lib/page/size.h>
 #include <lib/thread_sampler/thread_sampler.h>
 #include <lib/unittest/unittest.h>
+#include <lib/unittest/user_memory.h>
+#include <lib/user_copy/user_ptr.h>
 #include <lib/zx/time.h>
 
 #include <kernel/cpu.h>
@@ -56,7 +58,7 @@ class TestThreadSampler {
   static void SampleThread(sampler::ThreadSampler& sampler, zx_koid_t pid, zx_koid_t tid,
                            GeneralRegsSource source, void* gregs) {
     ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> buffers =
-        sampler.GetBufferRef(arch_curr_cpu_num());
+        sampler.GetBufferRefForWriting(arch_curr_cpu_num());
     if (!buffers) {
       return;
     }
@@ -180,7 +182,8 @@ class TestThreadSampler {
       ASSERT_EQ(sampler::SamplingState::Configured, sampler.State());
       ASSERT_TRUE(sampler.Start().is_ok());
       ASSERT_EQ(sampler::SamplingState::Running, sampler.State());
-      ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(0);
+      ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref =
+          sampler.GetBufferRefForWriting(0);
       ASSERT_TRUE(ref.has_value());
       ASSERT_EQ(sampler::SamplingState::Running, sampler.State());
       uint64_t ref_count = TestThreadSampler::get_buffer_ref_count(sampler);
@@ -211,7 +214,8 @@ class TestThreadSampler {
       sampler::ThreadSampler& sampler = sampler::gThreadSampler;
       // We shouldn't be able to get a buffer reference if we don't have buffers.
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref =
+            sampler.GetBufferRefForWriting(i);
         ASSERT_FALSE(ref.has_value());
       }
       // Construct a thread sampler state and initialize it
@@ -223,28 +227,32 @@ class TestThreadSampler {
 
       // We shouldn't be able to get the buffers unless we're running.
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref =
+            sampler.GetBufferRefForWriting(i);
         ASSERT_FALSE(ref.has_value());
       }
       ASSERT_TRUE(sampler.Start().is_ok());
 
       for (cpu_num_t i = 0; i < arch_max_num_cpus(); i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref =
+            sampler.GetBufferRefForWriting(i);
         ASSERT_TRUE(ref.has_value());
       }
 
       ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> bad_ref =
-          sampler.GetBufferRef(arch_max_num_cpus());
+          sampler.GetBufferRefForWriting(arch_max_num_cpus());
       ASSERT_FALSE(bad_ref.has_value());
 
       ASSERT_TRUE(sampler.Stop().is_ok());
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref =
+            sampler.GetBufferRefForWriting(i);
         ASSERT_FALSE(ref.has_value());
       }
       ASSERT_TRUE(sampler.Destroy().is_ok());
       for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
-        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref = sampler.GetBufferRef(i);
+        ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> ref =
+            sampler.GetBufferRefForWriting(i);
         ASSERT_FALSE(ref.has_value());
       }
     }
@@ -544,6 +552,120 @@ class TestThreadSampler {
 
     END_TEST;
   }
+
+  static bool AcquireBuffersReading() {
+    BEGIN_TEST;
+    sampler::ThreadSampler& sampler = sampler::gThreadSampler;
+    // We shouldn't be able to get a buffer reference if we don't have buffers.
+    {
+      ktl::optional<sampler::ThreadSampler::ReadToken> ref = sampler.GetBufferRefForReading();
+      ASSERT_FALSE(ref.has_value());
+    }
+
+    // Construct a thread sampler state and initialize it
+    zx_sampler_config_t config{
+        .period = zx::msec(1).get(),
+        .buffer_size = kPageSize,
+    };
+    ASSERT_OK(sampler.SetUp(config).status_value());
+
+    // Unlike writing, we can get buffer references as long as we have buffers
+    {
+      ktl::optional<sampler::ThreadSampler::ReadToken> ref = sampler.GetBufferRefForReading();
+      ASSERT_TRUE(ref.has_value());
+    }
+
+    ASSERT_OK(sampler.Start().status_value());
+    {
+      ktl::optional<sampler::ThreadSampler::ReadToken> ref = sampler.GetBufferRefForReading();
+      ASSERT_TRUE(ref.has_value());
+    }
+
+    ASSERT_OK(sampler.Stop().status_value());
+    {
+      ktl::optional<sampler::ThreadSampler::ReadToken> ref = sampler.GetBufferRefForReading();
+      ASSERT_TRUE(ref.has_value());
+    }
+
+    // But once the buffers are destroyed, we can not longer get them.
+    ASSERT_OK(sampler.Destroy().status_value());
+    ktl::optional<sampler::ThreadSampler::ReadToken> ref = sampler.GetBufferRefForReading();
+    ASSERT_FALSE(ref.has_value());
+
+    END_TEST;
+  }
+  static bool ReadingDuringSession() {
+    BEGIN_TEST;
+    // Construct a thread sampler state and initialize it
+    zx_sampler_config_t config{
+        .period = zx::msec(1).get(),
+        .buffer_size = kPageSize,
+    };
+    sampler::ThreadSampler& sampler = sampler::gThreadSampler;
+    ASSERT_OK(sampler.SetUp(config).status_value());
+    ASSERT_OK(sampler.Start().status_value());
+
+    zx_instant_mono_ticks_t before = current_mono_ticks();
+    //  Write some fake samples to each buffer on each cpu
+    mp_sync_exec(
+        mp_ipi_target::ALL, 0,
+        [](void*) {
+          TestThreadSampler::SampleThread(sampler::gThreadSampler, arch_curr_cpu_num(), 1,
+                                          GeneralRegsSource::None, nullptr);
+        },
+        nullptr);
+    zx_instant_mono_ticks_t after = current_mono_ticks();
+
+    // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
+    // tid + 1 blob size = 70
+    constexpr size_t num_words = 70;
+    // We should see a large blob
+    constexpr uint64_t large_blob_header =
+        fxt::MakeLargeHeader(fxt::LargeRecordType::kBlob, fxt::WordSize(num_words));
+    fxt::LargeBlobFields::BlobFormat::Make(ToUnderlyingType(fxt::LargeBlobFormat::kMetadata));
+
+    auto [query_status, expected_size] = sampler.ReadUser(make_user_out_ptr<void>(nullptr), 0);
+    ASSERT_OK(query_status);
+    auto user = testing::UserMemory::Create(expected_size);
+    auto [status, bytes_read] = sampler.ReadUser(user->user_out<void>(), expected_size);
+    ASSERT_OK(status);
+
+    unsigned num_cpus_online = ktl::popcount(mp_get_online_mask());
+    ASSERT_EQ(num_cpus_online * size_t{70 * sizeof(uint64_t)}, bytes_read);
+
+    for (size_t i = 0; i < num_cpus_online; i++) {
+      uint64_t record[70];
+      size_t record_size = sizeof(record);
+      user->VmoRead(record, i * record_size, record_size);
+      EXPECT_EQ(large_blob_header, record[0]);
+      // 0 arguments, inline thread ref, and empty name/category
+      EXPECT_EQ(uint64_t{0}, record[1]);
+
+      // timestamp
+      EXPECT_GE(record[2], static_cast<uint64_t>(before));
+      EXPECT_LE(record[2], static_cast<uint64_t>(after));
+
+      // We wrote the cpu number as the pid
+      EXPECT_EQ(i, record[3]);
+      // And 1 as the tid
+      EXPECT_EQ(uint64_t{1}, record[4]);
+      // Blob size
+      EXPECT_EQ(record[5], uint64_t{64} * sizeof(uint64_t));
+      for (unsigned frame = 0; frame < 64; frame++) {
+        EXPECT_EQ(record[6 + frame], frame);
+      }
+    }
+
+    // Reading again, we should get no data
+    auto [empty_status, empty_read] = sampler.ReadUser(user->user_out<void>(), expected_size);
+    ASSERT_OK(empty_status);
+    ASSERT_EQ(size_t{0}, empty_read);
+
+    ASSERT_OK(sampler.Stop().status_value());
+    ASSERT_OK(sampler.Destroy().status_value());
+
+    END_TEST;
+  }
 };
 }  // namespace thread_sampler_tests
 
@@ -553,9 +675,10 @@ UNITTEST("read/write", thread_sampler_tests::TestThreadSampler::WriteSampleTest)
 UNITTEST("state_change", thread_sampler_tests::TestThreadSampler::StateChange)
 UNITTEST("acquire_buffers", thread_sampler_tests::TestThreadSampler::AcquireBuffers)
 UNITTEST("timer_references", thread_sampler_tests::TestThreadSampler::TimerReferences)
-
 // TODO(b/511205186): Re-enable these once hotplugging flakes have been fixed.
 // UNITTEST("cpu_offlining", thread_sampler_tests::TestThreadSampler::CpuOfflining)
 // UNITTEST("cpu_hotplug_multithreaded",
 //          thread_sampler_tests::TestThreadSampler::CpuHotplugMultiThreaded)
+UNITTEST("acquire_buffers_reading", thread_sampler_tests::TestThreadSampler::AcquireBuffersReading)
+UNITTEST("reading_during_session", thread_sampler_tests::TestThreadSampler::ReadingDuringSession)
 UNITTEST_END_TESTCASE(thread_sampler_tests, "thread_sampler", "Thread Sampler tests")

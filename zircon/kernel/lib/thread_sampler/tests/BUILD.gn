@@ -10,5 +10,6 @@ source_set("tests") {
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/unittest",
+    "//zircon/kernel/lib/user_copy",
   ]
 }

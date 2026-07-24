@@ -34,63 +34,36 @@ class ThreadSampler;
  *
  * ```
  *
- *    /- [ Destroying ] <- [ Reading ]
- *    |                      ^   |
- *    v                      |   v
+ *    /- [ Destroying ] <- --\
+ *    |                      |
+ *    v                      |
  * [ Unallocated ] -> [ Configured ] -> [ Running ]
- *          ^           |      ^          |
- *          \----------/       |          v
+ *                             ^          |
+ *                             |          v
  *                             \-[ Stopping ]
  *
  * ```
  */
 enum class SamplingState : uint8_t {
   // The idle state for the sampler. We're not actively sampling nor is there a user handle
-  // associated with us.
+  // associated with the thread sampler singleton.
   Unallocated = 0,
 
-  // We have buffers allocated and the user has a handle to us and can start a session.
+  // We have buffers allocated and the user has a handle to us and can start a session. Reading is
+  // allowed, but not writing.
   Configured,
 
-  // The session is in progress. We are taking samples and writing data.
+  // The session is in progress. We are taking samples and writing data. Both reading and writing
+  // are allowed.
   Running,
 
-  // The session is stopping, no more references to the buffers are allowed to be created and we're
-  // waiting for existing references to be released.
+  // The session is stopping, no more write references to the buffers are allowed to be created and
+  // we're waiting for existing write references to be released.
   Stopping,
 
-  // We have a read in flight. If we get a destruction request, we need to delay destruction of
-  // resources until the read is completed.
-  Reading,
-
-  // We requested a session teardown while were we reading. Once the read finishes, we'll clear the
-  // buffers and become allocated.
+  // We have stopped giving out read references and are waiting for all existing read references to
+  // close. Once there are no buffer references, we'll destroy the buffers and become unallocated.
   Destroying,
-};
-
-// A helper type to ensure we always call our Read functions in the order of PrepareRead,
-// ReadUserImpl, then FinishRead.
-//
-// The only way to get a token is through PrepareRead. Calling ReadUserImpl requires a token, and
-// the only way to "disarm" the token (prevent an assert on destruction), is to pass it to
-// FinishRead.
-struct ReadToken {
- public:
-  ReadToken(const ReadToken&) = delete;
-  ReadToken& operator=(const ReadToken&) = delete;
-  ReadToken(ReadToken&& other) : disarmed(other.disarmed) { other.disarmed = true; }
-  ReadToken& operator=(ReadToken&& other) {
-    disarmed = other.disarmed;
-    other.disarmed = true;
-    return *this;
-  }
-  ~ReadToken() { DEBUG_ASSERT_MSG(disarmed, "FinishRead was not called after Reading"); }
-
- private:
-  ReadToken() = default;
-
-  bool disarmed = false;
-  friend class ::sampler::ThreadSampler;
 };
 
 class ThreadSampler {
@@ -102,25 +75,26 @@ class ThreadSampler {
     return static_cast<SamplingState>(state_.load(ktl::memory_order_acquire) & kStateMask);
   }
 
-  zx::result<size_t> ReadUser(user_out_ptr<void> ptr, uint32_t offset, size_t len);
-
   zx::result<> SetUp(const zx_sampler_config_t& config) TA_EXCL(ThreadSamplerLock::Get());
   zx::result<> Start() TA_EXCL(ThreadSamplerLock::Get());
   zx::result<> Stop() TA_EXCL(ThreadSamplerLock::Get());
   zx::result<> Destroy() TA_EXCL(ThreadSamplerLock::Get());
 
-  zx::result<sampler::ReadToken> PrepareRead() TA_EXCL(ThreadSamplerLock::Get());
-  void FinishRead(sampler::ReadToken&& token) TA_EXCL(ThreadSamplerLock::Get());
   // ReadUser calls into VmObject::ReadUser. As we could be copying to pager backed user memory, we
   // must not hold any locks.
-  ktl::pair<zx_status_t, size_t> ReadUser(const sampler::ReadToken& token, user_out_ptr<void> ptr,
-                                          size_t len) TA_EXCL(ThreadSamplerLock::Get());
+  ktl::pair<zx_status_t, size_t> ReadUser(user_out_ptr<void> ptr, size_t len)
+      TA_EXCL(ThreadSamplerLock::Get());
 
   class PerCpuBufferRef {
    public:
     explicit PerCpuBufferRef(ktl::atomic<uint64_t>& state, percpu_writer::Buffer& buffer)
         : buffer_(buffer), state_(state) {}
-    ~PerCpuBufferRef() { state_.fetch_sub(kBufferRefCountIncrement, ktl::memory_order_acq_rel); }
+    PerCpuBufferRef(const PerCpuBufferRef&) = delete;
+    PerCpuBufferRef& operator=(const PerCpuBufferRef&) = delete;
+    ~PerCpuBufferRef() {
+      constexpr uint64_t decrement = kBufferRefCountIncrement + kWriteRefCountIncrement;
+      state_.fetch_sub(decrement, ktl::memory_order_acq_rel);
+    }
     percpu_writer::Buffer& Get() { return buffer_; }
 
    private:
@@ -130,10 +104,11 @@ class ThreadSampler {
 
   // Atomically acquire a reference to the buffer for `cpu_num` and ensure that the buffers are not
   // destroyed until the reference is released.
-  ktl::optional<PerCpuBufferRef> GetBufferRef(cpu_num_t cpu_num) {
+  ktl::optional<PerCpuBufferRef> GetBufferRefForWriting(cpu_num_t cpu_num) {
     if (cpu_num >= per_cpu_buffers_.size()) {
       return ktl::nullopt;
     }
+    constexpr uint64_t increment = kBufferRefCountIncrement + kWriteRefCountIncrement;
     uint64_t expected = state_.load(ktl::memory_order_relaxed);
     bool success = false;
     do {
@@ -141,12 +116,54 @@ class ThreadSampler {
       if (state != SamplingState::Running) {
         return ktl::nullopt;
       }
-      DEBUG_ASSERT((expected & kBufferRefCountMask) != kBufferRefCountMask);
-      const uint64_t desired = expected + kBufferRefCountIncrement;
+      if (((expected & kBufferRefCountMask) == kBufferRefCountMask) ||
+          ((expected & kWriteRefCountMask) == kWriteRefCountMask)) {
+        // This shouldn't happen, but we should handle it release builds regardless.
+        DEBUG_ASSERT((expected & kBufferRefCountMask) != kBufferRefCountMask);
+        DEBUG_ASSERT((expected & kWriteRefCountMask) != kWriteRefCountMask);
+        return ktl::nullopt;
+      }
+      const uint64_t desired = expected + increment;
       success = state_.compare_exchange_weak(expected, desired, ktl::memory_order_acq_rel,
                                              ktl::memory_order_relaxed);
     } while (!success);
     return ktl::make_optional<PerCpuBufferRef>(state_, per_cpu_buffers_[cpu_num]);
+  }
+
+  struct ReadToken {
+   public:
+    ReadToken(ktl::atomic<uint64_t>& state, fbl::Array<percpu_writer::Buffer>& buffers)
+        : buffers_(buffers), state_(state) {}
+    fbl::Array<percpu_writer::Buffer>& Get() { return buffers_; }
+    ReadToken(const ReadToken&) = delete;
+    ReadToken& operator=(const ReadToken&) = delete;
+    ~ReadToken() { state_.fetch_sub(kBufferRefCountIncrement, ktl::memory_order_acq_rel); }
+
+   private:
+    fbl::Array<percpu_writer::Buffer>& buffers_;
+    ktl::atomic<uint64_t>& state_;
+  };
+
+  // Atomically acquire a reference to the buffer for `cpu_num` and ensure that the buffers are not
+  // destroyed until the reference is released.
+  ktl::optional<ReadToken> GetBufferRefForReading() TA_EXCL(ThreadSamplerLock::Get()) {
+    uint64_t expected = state_.load(ktl::memory_order_relaxed);
+    bool success = false;
+    do {
+      const SamplingState state = static_cast<SamplingState>(expected & kStateMask);
+      if (state == SamplingState::Unallocated || state == SamplingState::Destroying) {
+        return ktl::nullopt;
+      }
+      if ((expected & kBufferRefCountMask) == kBufferRefCountMask) {
+        // This shouldn't happen, but we should handle it release builds regardless.
+        DEBUG_ASSERT((expected & kBufferRefCountMask) != kBufferRefCountMask);
+        return ktl::nullopt;
+      }
+      const uint64_t desired = expected + kBufferRefCountIncrement;
+      success = state_.compare_exchange_weak(expected, desired, ktl::memory_order_acq_rel,
+                                             ktl::memory_order_relaxed);
+    } while (!success);
+    return ktl::make_optional<ReadToken>(state_, per_cpu_buffers_);
   }
 
   // Atomically request the current cpu mark a thread for sampling if the session is Running.
@@ -183,29 +200,65 @@ class ThreadSampler {
 
   void StopLocked() TA_REQ(ThreadSamplerLock::Get());
 
-  // per_cpu_buffers_ and state_ may be READ without acquiring the ThreadSamplerLock.
-  // However, the lock must be acquired to WRITE them.
+  // per_cpu_buffers_ and the SamplingState bits of state_ may be READ without acquiring the
+  // ThreadSamplerLock. However, the lock must be acquired to WRITE them.
   //
   // per_cpu_buffers_ must not be modified while the session is in the states:
   //  - Configured
   //  - Running
-  //  - Reading
+  //  - Stopping
   // state_ is eight bytes composed as:
   //
-  // RR RR RR MM MM BB BB SS
+  // MM MM WW WW BB BB XX SS
   //
   // SS: 8 bits, SamplingState
+  // XX: 8 bits, Reserved
   // BB: 16 bits, BufferRefCount
+  // WW: 16 bits, WriteRefCount
   // MM: 16 bits, MarkingsScheduled
-  // RR: 24 bits, Reserved
+  //
+  // Rules for our state:
+  //
+  // BufferRefCount is used to control when we can transition from Configured to Unallocated.
+  // BufferRefCount is incremented when a caller reads data through zx_sampler_read.
+  // - BufferRefCount must be zero if State is Unallocated.
+  // - BufferRefCount can only be incremented in states Configured, Stopping, and Running
+  // - We use the intermediate state Destroying to prevent new references and wait for existing
+  //   references to close.
+  // - We cannot transition to Unallocated until BufferRefCount is 0
+  //
+  // WriteRefCount is used to control when we can transition from Running to Configured.
+  // WriteRefCount is incremented before a writer attempts to access any per-cpu buffer, and
+  // decremented when it’s done writing.
+  // - WriteRefCount must be zero if State is Unallocated, Configured, or Destroying.
+  // - WriteRefCount can only be incremented in the state Running
+  // - We use the intermediate state Stopping to prevent new Write references and wait for existing
+  //   ones to close.
+  // - We cannot transition from Running to Configured until WriteRefCount is 0.
+  // - As we always require a BufferRef in order to write, it will always be that BufferRef >=
+  //   WriteRefCount.
+  //
+  // MarkingsScheduled is also used to control when we can transition from Running to Configured.
+  // MarkingsScheduled is equal to the number of timer callbacks running or scheduled to run. It is
+  // decremented when we cancel the timer callbacks or a timer callback finds that the state is no
+  // longer Running.
+  // - MarkingsScheduled must be zero if State is Unallocated, Configured, or Destroying.
+  // - MarkingScheduled can only be incremented in the state Running.
+  // - We use the intermediate state Stopping to prevent new timers and wait for existing ones to
+  //   close.
+  // - We cannot transition from Running to Configured until MarkingsScheduled is 0.
   static constexpr uint64_t kStateMaskShift = 0;
   static constexpr uint64_t kStateMask = 0xFF << kStateMaskShift;
 
-  static constexpr uint64_t kBufferRefCountShift = 8;
+  static constexpr uint64_t kBufferRefCountShift = 16;
   static constexpr uint64_t kBufferRefCountIncrement = uint64_t{1} << kBufferRefCountShift;
   static constexpr uint64_t kBufferRefCountMask = uint64_t{0xFFFF} << kBufferRefCountShift;
 
-  static constexpr uint64_t kMarkingsScheduledShift = 24;
+  static constexpr uint64_t kWriteRefCountShift = 32;
+  static constexpr uint64_t kWriteRefCountIncrement = uint64_t{1} << kWriteRefCountShift;
+  static constexpr uint64_t kWriteRefCountMask = uint64_t{0xFFFF} << kWriteRefCountShift;
+
+  static constexpr uint64_t kMarkingsScheduledShift = 48;
   static constexpr uint64_t kMarkingsScheduledIncrement = uint64_t{1} << kMarkingsScheduledShift;
   static constexpr uint64_t kMarkingsScheduledMask = uint64_t{0xFFFF} << kMarkingsScheduledShift;
 

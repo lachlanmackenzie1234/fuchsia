@@ -93,20 +93,26 @@ zx::result<> ForEachRecord(zx_handle_t sampler, size_t buffer_size,
   return zx::ok();
 }
 
-zx::result<size_t> CountRecords(zx_handle_t sampler, size_t buffer_size) {
+zx::result<> ReadNRecords(zx_handle_t sampler, size_t buffer_size, size_t N) {
   size_t record_count{0};
-  if (zx::result res = ForEachRecord(sampler, buffer_size,
-                                     [&record_count](std::span<uint64_t>) { record_count += 1; });
-      res.is_error()) {
-    return res.take_error();
+  zx::time deadline = zx::deadline_after(zx::sec(30));
+  while (zx::clock::get_monotonic() < deadline) {
+    if (zx::result res = ForEachRecord(sampler, buffer_size,
+                                       [&record_count](std::span<uint64_t>) { record_count += 1; });
+        res.is_error()) {
+      return res.take_error();
+    }
+    if (record_count >= N) {
+      return zx::ok();
+    }
   }
-
-  return zx::ok(record_count);
+  return zx::error(ZX_ERR_TIMED_OUT);
 }
 
-zx::result<size_t> CountRecordsContainingTid(zx_handle_t sampler, size_t buffer_size,
-                                             zx_koid_t desired_tid) {
+zx::result<> ReadNRecordsContainingTid(zx_handle_t sampler, size_t buffer_size,
+                                       zx_koid_t desired_tid, size_t N) {
   size_t record_count{0};
+  zx::time deadline = zx::deadline_after(zx::sec(30));
   auto f = [&record_count, desired_tid](std::span<uint64_t> record_data) {
     ZX_ASSERT(fxt::RecordFields::Type::Get<size_t>(record_data[0]) ==
               static_cast<size_t>(fxt::RecordType::kLargeRecord));
@@ -122,10 +128,15 @@ zx::result<size_t> CountRecordsContainingTid(zx_handle_t sampler, size_t buffer_
       record_count += 1;
     }
   };
-  if (zx::result res = ForEachRecord(sampler, buffer_size, f); res.is_error()) {
-    return res.take_error();
+  while (zx::clock::get_monotonic() < deadline) {
+    if (zx::result res = ForEachRecord(sampler, buffer_size, f); res.is_error()) {
+      return res.take_error();
+    }
+    if (record_count >= N) {
+      return zx::ok();
+    }
   }
-  return zx::ok(record_count);
+  return zx::error(ZX_ERR_TIMED_OUT);
 }
 
 TEST(ThreadSampler, StartStop) {
@@ -167,14 +178,10 @@ TEST(ThreadSampler, StartStop) {
   zx_koid_t tid = GetTid(native_handle);
   ASSERT_NE(tid, ZX_KOID_INVALID);
 
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+  ASSERT_OK(ReadNRecordsContainingTid(sampler, buffer_size, tid, 10).status_value());
   ASSERT_OK(zx_sampler_stop(sampler));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
-
-  zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
-  ASSERT_OK(record_count.status_value());
-  ASSERT_GE(*record_count, 10);
   ASSERT_OK(zx_handle_close(sampler));
 }
 
@@ -282,15 +289,12 @@ TEST(ThreadSampler, DroppedSampler) {
   create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
   ASSERT_OK(create_res);
   ASSERT_OK(zx_sampler_start(sampler));
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+  ASSERT_OK(ReadNRecordsContainingTid(sampler, buffer_size, tid, 10).status_value());
   ASSERT_OK(zx_sampler_stop(sampler));
 
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
 
-  zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
-  ASSERT_OK(record_count.status_value());
-  ASSERT_GE(*record_count, 10);
   ASSERT_OK(zx_handle_close(sampler));
 }
 
@@ -336,15 +340,12 @@ TEST(ThreadSampler, NonRunningThread) {
   ASSERT_NO_FATAL_FAILURE(test_thread.Start(threads_test_wait_loop, event_handle));
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
 
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+  ASSERT_OK(ReadNRecordsContainingTid(sampler, buffer_size, tid, 10).status_value());
   ASSERT_OK(zx_sampler_stop(sampler));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
 
   ASSERT_NO_FATAL_FAILURE(test_thread.Wait());
 
-  zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
-  ASSERT_OK(record_count.status_value());
-  ASSERT_GE(*record_count, size_t{10});
   ASSERT_OK(zx_handle_close(sampler));
 }
 
@@ -387,7 +388,9 @@ TEST(ThreadSampler, HighFrequency) {
   }
 
   ASSERT_OK(zx_sampler_start(sampler));
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+
+  ASSERT_OK(ReadNRecords(sampler, buffer_size, 10).status_value());
+
   ASSERT_OK(zx_sampler_stop(sampler));
 
   for (auto& event : events) {
@@ -397,9 +400,6 @@ TEST(ThreadSampler, HighFrequency) {
     thread.join();
   }
 
-  zx::result<size_t> record_count = CountRecords(sampler, buffer_size);
-  ASSERT_OK(record_count.status_value());
-  ASSERT_GE(*record_count, 10);
   ASSERT_OK(zx_handle_close(sampler));
 }
 

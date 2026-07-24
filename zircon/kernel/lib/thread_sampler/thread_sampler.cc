@@ -115,8 +115,8 @@ zx::result<> sampler::ThreadSampler::Stop() {
 }
 
 void sampler::ThreadSampler::StopLocked() {
-  // We start by disabling new writes, timers, and buffer references. Then we need to wait for any
-  // that are in flight to finish.
+  // We start by disabling new writes, timers, and buffer write references. Then we need to wait for
+  // any that are in flight to finish.
   SetState(SamplingState::Stopping);
 
   session_id_.fetch_add(1);
@@ -133,7 +133,10 @@ void sampler::ThreadSampler::StopLocked() {
   zx_instant_mono_t next_warn_time = zx_time_add_duration(current_mono_time(), warn_duration);
   int64_t warn_events = 0;
   constexpr zx_duration_t max_sleep_duration = ZX_SEC(1);
-  const uint64_t pending_operations_mask = kBufferRefCountMask | kMarkingsScheduledMask;
+
+  // Stopping ends the session, but keeps the buffers alive so reads may exfiltrate any remaining
+  // data. Here, we need to wait for all writes and markings to finish.
+  const uint64_t pending_operations_mask = kWriteRefCountMask | kMarkingsScheduledMask;
   while (state_.load(ktl::memory_order_acquire) & pending_operations_mask) {
     // Warn if we have spend an 'unreasonable' amount of time waiting.
     if (current_mono_time() > next_warn_time) {
@@ -149,7 +152,8 @@ void sampler::ThreadSampler::StopLocked() {
   }
 
   // At this point, there are no longer pending writes or marks. There may still be threads that
-  // have been marked to be sampled, but have not yet attempted a sample.
+  // have been marked to be sampled, but have not yet attempted a sample. In addition, there may
+  // still be buffer read references.
   //
   // As the sampler has static lifetime, these threads can safely access `state_` and will see that
   // the session is no longer running, aborting their attempt at a sample.
@@ -158,17 +162,32 @@ void sampler::ThreadSampler::StopLocked() {
 
 zx::result<> sampler::ThreadSampler::Destroy() {
   Guard<Mutex> guard(ThreadSamplerLock::Get());
-  SamplingState state = State();
-  if (state == SamplingState::Reading) {
-    // There's a read in flight, we can't destroy our buffers yet. We set the state to Destroying,
-    // and when the read finishes, it will also clean up the buffers.
-    SetState(SamplingState::Destroying);
-    return zx::ok();
-  }
-
-  // The userspace end of the sampler has closed. Time to clean up our state
-  if (state == SamplingState::Running) {
+  if (State() == SamplingState::Running) {
+    // The userspace end of the sampler has closed and we've skipped right to destroying.
     StopLocked();
+  }
+  SetState(SamplingState::Destroying);
+
+  // Some timers may not have not been able to be canceled, so we need to wait for any samples that
+  // have already started to finish.
+  //
+  // In order to destroy the buffers, we should have no references and no in flight samples.
+  // After StopLocked, the WriteRefCount and SamplingScheduled must be 0, and can no longer
+  // be incremented. So we only now need to wait for all buffer references to close.
+  zx_instant_mono_t deadline = zx_time_add_duration(current_mono_time(), ZX_SEC(30));
+  const uint64_t pending_operations_mask = kBufferRefCountMask;
+  uint64_t pending_operations;
+  do {
+    pending_operations = state_.load(ktl::memory_order_acquire) & pending_operations_mask;
+    if (pending_operations) {
+      Thread::Current::SleepRelative(ZX_MSEC(1));
+    }
+  } while (pending_operations && (current_mono_time() < deadline));
+  // We'll wait an unreasonable amount of time for the operations to finish. If the operations
+  // really haven't finished by this point, something has gone terribly wrong.
+  if (pending_operations) {
+    printf("WARNING: Timed out after waiting 30 seconds for sampler destruction\n");
+    return zx::error(ZX_ERR_BAD_STATE);
   }
 
   // After StopLocked, we have prevented further threads from accessing the per_cpu_states, and then
@@ -303,7 +322,7 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
   // attempt to write.
   InterruptDisableGuard irqd;
 
-  ktl::optional<PerCpuBufferRef> token = GetBufferRef(arch_curr_cpu_num());
+  ktl::optional<PerCpuBufferRef> token = GetBufferRefForWriting(arch_curr_cpu_num());
   if (!token) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
@@ -318,51 +337,35 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
   return zx::ok();
 }
 
-zx::result<sampler::ReadToken> sampler::ThreadSampler::PrepareRead() {
-  Guard<Mutex> guard(ThreadSamplerLock::Get());
-  if (State() != sampler::SamplingState::Configured) {
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-  SetState(SamplingState::Reading);
-  return zx::ok(sampler::ReadToken{});
-}
-
-void sampler::ThreadSampler::FinishRead(sampler::ReadToken&& token) {
-  Guard<Mutex> guard(ThreadSamplerLock::Get());
-  SamplingState state = State();
-  DEBUG_ASSERT(state == SamplingState::Reading || state == SamplingState::Destroying);
-  if (state == SamplingState::Destroying) {
-    // The dispatcher was closed while we held a lock doing the read. We were reading, so we delayed
-    // cleaning the buffers as to not corrupt the read. However, now we're responsible for the
-    // remaining buffer clean up.
-    SetState(SamplingState::Unallocated);
-    per_cpu_buffers_.reset();
-  } else {
-    // No additional action is needed.
-    SetState(SamplingState::Configured);
-  }
-  token.disarmed = true;
-}
-
-ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(const sampler::ReadToken&,
-                                                                user_out_ptr<void> ptr,
+ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(user_out_ptr<void> ptr,
                                                                 size_t len) {
-  // We're going to call into VmObject::ReadUser which could be copying to pager backed user memory.
-  // We can't be holding any locks.
+  // We unfortunately run into some complexity here: while the buffer our samples in is created by
+  // the kernel and is safe to read from, the user memory we are writing to could be pager-backed.
+  // This means that when we attempt to write to it as part of the VmObjectPaged::ReadUser call,
+  // we cannot be holding locks.
+  //
+  // During the copy, we'd need to prevent:
+  //   1) The buffers being destroyed due to the read handle being zx_handle_close'd
+  //   2) A new sampler from being created.
+  //
+  // We do this by atomically incrementing a ref count on the buffers if they are safe to
+  // read, then only allowing the buffers to be destroyed and the sampler state to advance once we
+  // release the ref count.
   lockdep::AssertNoLocksHeld();
 
-  const size_t num_buffers = per_cpu_buffers_.size();
+  ktl::optional<ReadToken> ref = GetBufferRefForReading();
+  if (!ref) {
+    return {ZX_ERR_BAD_STATE, 0};
+  }
+  fbl::Array<percpu_writer::Buffer>& per_cpu_buffers = ref->Get();
+
+  const size_t num_buffers = per_cpu_buffers.size();
   // All buffers are the same size.
-  const size_t buffer_size = per_cpu_buffers_[0].Size();
+  const size_t buffer_size = per_cpu_buffers[0].Size();
 
   // The caller can query the required buffer size by passing in a nulltpr.
   if (!ptr) {
     return {ZX_OK, buffer_size * num_buffers};
-  }
-
-  // If the per-CPU buffers have not been initialized, there's nothing to do, so return early.
-  if (!per_cpu_buffers_) {
-    return {ZX_OK, 0};
   }
 
   // Eventually, this should support users passing in buffers smaller than the sum of the size of
@@ -388,7 +391,7 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(const sampler::R
   };
 
   for (uint32_t i = 0; i < num_buffers; i++) {
-    const zx::result<size_t> result = per_cpu_buffers_[i].Read(copy_fn, static_cast<uint32_t>(len));
+    const zx::result<size_t> result = per_cpu_buffers[i].Read(copy_fn, static_cast<uint32_t>(len));
     if (result.is_error()) {
       // If we copied some data from a previous buffer, we have to return the fact that we did so
       // here. Otherwise, that data will be lost.
@@ -418,7 +421,10 @@ void sampler::ThreadSampler::ScheduleMarking() {
     if (s != SamplingState::Running) {
       return;
     }
-    DEBUG_ASSERT((expected & kMarkingsScheduledMask) != kMarkingsScheduledMask);
+    if ((expected & kMarkingsScheduledMask) == kMarkingsScheduledMask) {
+      DEBUG_ASSERT((expected & kMarkingsScheduledMask) != kMarkingsScheduledMask);
+      return;
+    }
     const uint64_t desired = expected + kMarkingsScheduledIncrement;
     success = state_.compare_exchange_weak(expected, desired, ktl::memory_order_acq_rel,
                                            ktl::memory_order_relaxed);
