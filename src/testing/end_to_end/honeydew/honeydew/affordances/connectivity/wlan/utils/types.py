@@ -252,35 +252,6 @@ class ClientStateSummary:
 
 
 @dataclass(frozen=True)
-class WlanChannel:
-    """Wlan channel information.
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
-    """
-
-    primary: int
-    cbw: f_wlan_ieee80211.ChannelBandwidth
-    secondary80: int
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_ieee80211.WlanChannel) -> "WlanChannel":
-        """Parse from a fuchsia.wlan.common/WlanChannel."""
-        return WlanChannel(
-            primary=fidl.primary,
-            cbw=f_wlan_ieee80211.ChannelBandwidth(fidl.cbw),
-            secondary80=fidl.secondary80,
-        )
-
-    def to_fidl(self) -> f_wlan_ieee80211.WlanChannel:
-        """Convert to a fuchsia.wlan.common/WlanChannel."""
-        return f_wlan_ieee80211.WlanChannel(
-            primary=self.primary,
-            cbw=self.cbw,
-            secondary80=self.secondary80,
-        )
-
-
-@dataclass(frozen=True)
 class WlanInterfaces:
     """WLAN interfaces separated by device type and keyed by MAC address."""
 
