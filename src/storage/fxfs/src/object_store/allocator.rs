@@ -1109,7 +1109,7 @@ impl Allocator {
         {
             let mut inner = self.inner.lock();
 
-            assert!(inner.trim_reserved_bytes == 0, "Multiple trims ongoing");
+            ensure!(inner.trim_reserved_bytes == 0, FxfsError::AlreadyBound);
             inner.trim_listener = Some(listener);
             inner.trim_reserved_bytes = bytes;
             debug_assert!(
@@ -2189,7 +2189,7 @@ mod tests {
     };
     use crate::object_store::transaction::{Options, TRANSACTION_METADATA_MAX_AMOUNT, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{Directory, LockKey, NewChildStoreOptions, ObjectStore};
+    use crate::object_store::{Directory, FxfsError, LockKey, NewChildStoreOptions, ObjectStore};
     use crate::range::RangeExt;
     use crate::round::round_up;
     use crate::serialized_types::{LATEST_VERSION, Versioned};
@@ -3359,5 +3359,24 @@ mod tests {
         assert_eq!((range.end - range.start) % fs.block_size(), 0);
 
         println!("{}", range.end - range.start);
+    }
+
+    #[fuchsia::test]
+    async fn test_concurrent_take_for_trimming_returns_error() {
+        let (fs, allocator) = test_fs().await;
+        let max_extent_size = fs.device().size() as usize;
+        const EXTENTS_PER_BATCH: usize = usize::MAX;
+
+        {
+            let _trimmable_extents = allocator
+                .take_for_trimming(0, max_extent_size, EXTENTS_PER_BATCH)
+                .await
+                .expect("take_for_trimming failed");
+
+            let res = allocator.take_for_trimming(0, max_extent_size, EXTENTS_PER_BATCH).await;
+            assert!(matches!(res, Err(e) if FxfsError::AlreadyBound.matches(&e)));
+        }
+
+        fs.close().await.expect("close failed");
     }
 }

@@ -2632,4 +2632,32 @@ mod tests {
 
         fs.close().await.expect("close failed");
     }
+
+    #[fuchsia::test]
+    async fn test_concurrent_do_trim_returns_error() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .trim_config(None)
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed");
+
+        let max_extent_size = fs.device().size() as usize;
+        const EXTENTS_PER_BATCH: usize = usize::MAX;
+
+        // Hold onto trimmable extents to simulate an in-flight trim operation.
+        let allocator = fs.allocator();
+        let _trimmable_extents = allocator
+            .take_for_trimming(0, max_extent_size, EXTENTS_PER_BATCH)
+            .await
+            .expect("take_for_trimming failed");
+
+        // Attempting to run do_trim concurrently while a trim is in-flight
+        // should return FxfsError::AlreadyBound rather than panicking.
+        let res = fs.do_trim(None).await;
+        assert!(matches!(res, Err(e) if FxfsError::AlreadyBound.matches(&e)));
+
+        fs.close().await.expect("close failed");
+    }
 }
