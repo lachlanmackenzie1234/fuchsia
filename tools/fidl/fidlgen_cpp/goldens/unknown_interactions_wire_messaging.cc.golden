@@ -1444,6 +1444,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleOneWay() {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleOneWay> _request_object{  };
@@ -1547,6 +1548,7 @@
     return ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictOneWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictOneWay>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1560,6 +1562,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleOneWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleOneWay>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1573,96 +1576,112 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayFields() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayUnion() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayTable() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayFieldsErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayUnionErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayTableErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayFields() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayUnion() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayTable() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayFieldsErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayUnionErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayTableErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr> _request{  };
@@ -4558,6 +4577,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictOneWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleOneWay() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleOneWay> _request{  };
@@ -4571,6 +4591,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleOneWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWay() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay> _request{  };
@@ -4584,6 +4605,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayFields() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> _request{  };
@@ -4597,6 +4619,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayUnion() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion> _request{  };
@@ -4610,6 +4633,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayTable() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable> _request{  };
@@ -4623,6 +4647,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr> _request{  };
@@ -4636,6 +4661,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayFieldsErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr> _request{  };
@@ -4649,6 +4675,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayUnionErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr> _request{  };
@@ -4662,6 +4689,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::StrictTwoWayTableErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr> _request{  };
@@ -4675,6 +4703,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWay() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay> _request{  };
@@ -4688,6 +4717,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayFields() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields> _request{  };
@@ -4701,6 +4731,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayUnion() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion> _request{  };
@@ -4714,6 +4745,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayTable() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable> _request{  };
@@ -4727,6 +4759,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr> _request{  };
@@ -4740,6 +4773,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayFieldsErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr> _request{  };
@@ -4753,6 +4787,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayUnionErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr> _request{  };
@@ -4766,6 +4801,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsProtocolFl
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>::FlexibleTwoWayTableErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr> _request{  };
@@ -5980,6 +6016,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_unknowninteracti
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::FlexibleOneWay() {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::FlexibleOneWay> _request_object{  };
@@ -6035,6 +6072,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_unknowninteracti
     return ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictOneWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictOneWay>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -6048,6 +6086,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_unknowninteracti
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::FlexibleOneWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::FlexibleOneWay>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -6061,48 +6100,56 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_unknowninteracti
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayFields() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayUnion() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayTable() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayFieldsErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayUnionErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayTableErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr> _request{  };
@@ -7768,6 +7815,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictOneWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::FlexibleOneWay() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::FlexibleOneWay> _request{  };
@@ -7781,6 +7829,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::FlexibleOneWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWay() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay> _request{  };
@@ -7794,6 +7843,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayFields() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields> _request{  };
@@ -7807,6 +7857,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayUnion() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion> _request{  };
@@ -7820,6 +7871,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayTable() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable> _request{  };
@@ -7833,6 +7885,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr> _request{  };
@@ -7846,6 +7899,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayFieldsErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr> _request{  };
@@ -7859,6 +7913,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayUnionErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr> _request{  };
@@ -7872,6 +7927,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsAjarProtoc
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>::StrictTwoWayTableErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr> _request{  };
@@ -9051,6 +9107,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_unknowninteracti
     return ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictOneWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictOneWay>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -9064,48 +9121,56 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_unknowninteracti
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWay() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayFields() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayUnion() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayTable() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayFieldsErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayUnionErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr> fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayTableErr() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr>();
   ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr> _request{  };
@@ -10556,6 +10621,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictOneWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWay() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay> _request{  };
@@ -10569,6 +10635,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayFields() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields> _request{  };
@@ -10582,6 +10649,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayUnion() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion> _request{  };
@@ -10595,6 +10663,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayTable() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable> _request{  };
@@ -10608,6 +10677,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr> _request{  };
@@ -10621,6 +10691,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayFieldsErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr> _request{  };
@@ -10634,6 +10705,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayUnionErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr> _request{  };
@@ -10647,6 +10719,7 @@ return MakeReply(::test_unknowninteractions::wire::UnknownInteractionsClosedProt
         return ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr>(
           ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr>
       fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>::StrictTwoWayTableErr() {
         ::fidl::internal::TransactionalRequest<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr> _request{  };

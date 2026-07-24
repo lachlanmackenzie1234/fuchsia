@@ -11,12 +11,21 @@
 //
 {{- end }}
 // Caller provides the backing storage for FIDL message.
+{{- if ExperimentEnabled "api_coverage" }}
+{{ .ApiCoverageMethodAnnotation }}
+{{ end }}
 {{ .WireBufferThenable }} {{ .Name }}({{ RenderParams .RequestArgs }});
+{{- if ExperimentEnabled "api_coverage" }}
+{{ .ApiCoverageMethodAnnotation }}:end
+{{ end }}
 {{ end }}
 
 
 
 {{- define "Method:ClientImplAsyncBuffer:WireMessagingSource" }}
+{{ if ExperimentEnabled "api_coverage" }}
+{{ .ApiCoverageMethodAnnotation }}
+{{ end }}
 {{ .WireBufferThenable }} {{ .Protocol.WireWeakAsyncBufferClientImpl.NoLeading }}::{{ .Name }}(
     {{- RenderParams .RequestArgs }}) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<{{ .Marker }}>();
@@ -24,4 +33,7 @@
   return {{ .WireBufferThenable }}{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+{{ if ExperimentEnabled "api_coverage" }}
+{{ .ApiCoverageMethodAnnotation }}:end
+{{ end }}
 {{- end }}

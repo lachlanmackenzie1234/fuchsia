@@ -100,6 +100,7 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_error::Exa
   return ::fidl::internal::WireThenable<::test_error::Example::Foo>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_error::Example::Foo> fidl::internal::WireWeakAsyncBufferClientImpl<::test_error::Example>::Foo(::fidl::StringView s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_error::Example::Foo>();
   ::fidl::internal::TransactionalRequest<::test_error::Example::Foo> _request{s};

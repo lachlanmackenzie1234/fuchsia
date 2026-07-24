@@ -64,6 +64,7 @@ constexpr ::fidl::MessageDynamicFlags kFirstProtocol_MethodOnFirst_DynamicFlags 
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_service::FirstProtocol>::MethodOnFirst() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_service::FirstProtocol::MethodOnFirst>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -218,6 +219,7 @@ constexpr ::fidl::MessageDynamicFlags kSecondProtocol_MethodOnSecond_DynamicFlag
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_service::SecondProtocol>::MethodOnSecond() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_service::SecondProtocol::MethodOnSecond>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =

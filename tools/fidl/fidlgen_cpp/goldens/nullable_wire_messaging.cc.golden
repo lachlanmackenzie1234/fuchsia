@@ -102,6 +102,7 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_nullable::
   return ::fidl::internal::WireThenable<::test_nullable::SimpleProtocol::Add>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_nullable::SimpleProtocol::Add> fidl::internal::WireWeakAsyncBufferClientImpl<::test_nullable::SimpleProtocol>::Add(int32_t a, int32_t b) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_nullable::SimpleProtocol::Add>();
   ::fidl::internal::TransactionalRequest<::test_nullable::SimpleProtocol::Add> _request{a, b};

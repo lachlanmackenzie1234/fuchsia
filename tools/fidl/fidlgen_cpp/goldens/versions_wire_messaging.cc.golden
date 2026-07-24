@@ -104,6 +104,7 @@ constexpr ::fidl::MessageDynamicFlags kProtocol_Foo_DynamicFlags = ::fidl::Messa
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_versions::Protocol>::Foo() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_versions::Protocol::Foo>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =

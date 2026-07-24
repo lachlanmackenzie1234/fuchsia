@@ -101,6 +101,7 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_anonymous:
   return ::fidl::internal::WireThenable<::test_anonymous::SomeProtocol::SomeMethod>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_anonymous::SomeProtocol::SomeMethod> fidl::internal::WireWeakAsyncBufferClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(::test_anonymous::wire::UnionMember union_member, ::test_anonymous::wire::TableMember table_member) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_anonymous::SomeProtocol::SomeMethod>();
   ::fidl::internal::TransactionalRequest<::test_anonymous::SomeProtocol::SomeMethod> _request{union_member, table_member};

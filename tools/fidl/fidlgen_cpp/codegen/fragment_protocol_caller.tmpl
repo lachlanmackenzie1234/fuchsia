@@ -20,8 +20,14 @@ class {{ .WireSyncClientImpl }} final :
     //
     {{- end }}
     // {{- template "Method:ClientAllocationComment:Helper" . }}
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}
+    {{ end }}
     {{ if .HasResponse }}{{ .WireResult }}{{ else }}::fidl::OneWayStatus{{ end }}
     {{ .Name }}({{- RenderParams .RequestArgs }});
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}:end
+    {{ end }}
 {{ "" }}
   {{- end }}
 };
@@ -33,8 +39,14 @@ class {{ .WireSyncBufferClientImpl }} final :
   {{ range .ClientMethods }}
     {{- .Docs }}
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}
+    {{ end }}
     {{ if .HasResponse }}{{ .WireUnownedResult }}{{ else }}::fidl::OneWayStatus{{ end }}
     {{ .Name }}({{ RenderParams .RequestArgs }});
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}:end
+    {{ end }}
 {{ "" }}
   {{- end }}
 };
@@ -44,19 +56,31 @@ class {{ .WireSyncBufferClientImpl }} final :
   {{- if eq .Transport.Name "Channel" }}
     {{- $protocol := . }}
     {{- range .ClientMethods }}
+{{ if ExperimentEnabled "api_coverage" }}
+      {{ .ApiCoverageMethodAnnotation }}
+{{ end }}
       {{ if .HasResponse }}{{ .WireResult }}{{ else }}::fidl::OneWayStatus{{ end }}
       {{ $protocol.WireSyncClientImpl.NoLeading }}::{{ .Name }}({{- RenderParams .RequestArgs }}) {
         {{ .WireTransactionalRequest }} _request{ {{ RenderForwardParams .RequestArgs }} };
         return {{ .WireResult }}(
           {{ $protocol.UnownedClientEnd }}(_transport().get<{{ $protocol.Transport.Type }}>()), &_request);
       }
+{{ if ExperimentEnabled "api_coverage" }}
+      {{ .ApiCoverageMethodAnnotation }}:end
+{{ end }}
 
+{{ if ExperimentEnabled "api_coverage" }}
+      {{ .ApiCoverageMethodAnnotation }}
+{{ end }}
       {{ if .HasResponse }}{{ .WireUnownedResult }}{{ else }}::fidl::OneWayStatus{{ end }}
       {{ $protocol.WireSyncBufferClientImpl.NoLeading }}::{{ .Name }}({{ RenderParams .RequestArgs }}) {
         {{ .WireTransactionalRequest }} _request{ {{ RenderForwardParams .RequestArgs }} };
         return {{ .WireUnownedResult }}(
           {{ $protocol.UnownedClientEnd }}(_transport().get<{{ $protocol.Transport.Type }}>()), _allocator(), &_request);
       }
+{{ if ExperimentEnabled "api_coverage" }}
+      {{ .ApiCoverageMethodAnnotation }}:end
+{{ end }}
 
     {{- end }}
   {{ end }}
@@ -71,13 +95,25 @@ class {{ .NaturalSyncClientImpl }} final
  public:
   {{ range .TwoWayMethods }}
     {{ .Docs }}
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}
+    {{ end }}
     {{ .NaturalResult }} {{ .Name }}({{ .NaturalRequestArg "request" }});
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}:end
+    {{ end }}
 
   {{ end }}
 
   {{ range .OneWayMethods }}
     {{ .Docs }}
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}
+    {{ end }}
     ::fit::result<::fidl::OneWayError> {{ .Name }}({{ .NaturalRequestArg "request" }});
+    {{- if ExperimentEnabled "api_coverage" }}
+    {{ .ApiCoverageMethodAnnotation }}:end
+    {{ end }}
 
   {{ end }}
 
@@ -93,6 +129,9 @@ class {{ .NaturalSyncClientImpl }} final
 {{- EnsureNamespace "" }}
 
 {{ range .TwoWayMethods }}
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+  {{ end }}
   {{ .NaturalResult }}
   {{ $.NaturalSyncClientImpl.NoLeading }}::{{ .Name }}({{ .NaturalRequestArg "request" }}) {
     ::fidl::internal::NaturalMessageEncoder encoder{
@@ -105,10 +144,16 @@ class {{ .NaturalSyncClientImpl }} final
     return ::fidl::internal::DecodeResponseAndFoldError<{{ .Marker }}>(
         msg.Call(_client_end().handle(), response_storage.view()), nullptr);
   }
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+  {{ end }}
 
 {{ end }}
 
 {{ range .OneWayMethods }}
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+  {{ end }}
   ::fit::result<::fidl::OneWayError>
   {{ $.NaturalSyncClientImpl.NoLeading }}::{{ .Name }}({{ .NaturalRequestArg "request" }}) {
     ::fidl::internal::NaturalMessageEncoder encoder{
@@ -120,6 +165,9 @@ class {{ .NaturalSyncClientImpl }} final
     msg.Write(_client_end().handle());
     return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
   }
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+  {{ end }}
 
 {{ end }}
 

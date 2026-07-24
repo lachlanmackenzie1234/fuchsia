@@ -308,6 +308,7 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocolrequest::Parent>::TakeChildRequest(::fidl::ServerEnd<::test_protocolrequest::Child>&& r) {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChildRequest> _request_object{std::move(r)};
@@ -327,6 +328,7 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
   return ::fidl::internal::WireThenable<::test_protocolrequest::Parent::GetChildRequest>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocolrequest::Parent>::TakeChild(::fidl::ClientEnd<::test_protocolrequest::Child>&& c) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::TakeChild>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -340,6 +342,7 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocolrequest::Parent>::TakeChildRequest(::fidl::ServerEnd<::test_protocolrequest::Child>&& r) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::TakeChildRequest>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -353,12 +356,14 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocolrequest::Parent::GetChild> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocolrequest::Parent>::GetChild() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::GetChild>();
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChild> _request{};
   return ::fidl::internal::WireBufferThenable<::test_protocolrequest::Parent::GetChild>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocolrequest::Parent::GetChildRequest> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocolrequest::Parent>::GetChildRequest() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::GetChildRequest>();
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChildRequest> _request{};
@@ -786,6 +791,7 @@ fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::GetChi
   return ::fidl::WireUnownedResult<::test_protocolrequest::Parent::GetChild>(
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
 ::fidl::WireResult<::test_protocolrequest::Parent::GetChildRequest>
 fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::GetChildRequest() {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChildRequest> _request{};
@@ -799,6 +805,7 @@ fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::GetChi
   return ::fidl::WireUnownedResult<::test_protocolrequest::Parent::GetChildRequest>(
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::TakeChild(::fidl::ClientEnd<::test_protocolrequest::Child>&& c) {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChild> _request{std::move(c)};
@@ -812,6 +819,7 @@ fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::TakeCh
   return ::fidl::WireUnownedResult<::test_protocolrequest::Parent::TakeChild>(
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::TakeChildRequest(::fidl::ServerEnd<::test_protocolrequest::Child>&& r) {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChildRequest> _request{std::move(r)};

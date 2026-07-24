@@ -186,12 +186,14 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_errorsynta
   return ::fidl::internal::WireThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail> fidl::internal::WireWeakAsyncBufferClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::ComposedCallWhichMayFail(::fidl::StringView s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>();
   ::fidl::internal::TransactionalRequest<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail> _request{s};
   return ::fidl::internal::WireBufferThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail> fidl::internal::WireWeakAsyncBufferClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::CallWhichMayFail(::fidl::StringView s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>();
   ::fidl::internal::TransactionalRequest<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail> _request{s};
@@ -591,6 +593,7 @@ fidl::internal::WireSyncBufferClientImpl<::test_errorsyntax::ExampleUseOfErrorSy
   return ::fidl::WireUnownedResult<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>(
       ::fidl::UnownedClientEnd<::test_errorsyntax::ExampleUseOfErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
 ::fidl::WireResult<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>
 fidl::internal::WireSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::CallWhichMayFail(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail> _request{s};

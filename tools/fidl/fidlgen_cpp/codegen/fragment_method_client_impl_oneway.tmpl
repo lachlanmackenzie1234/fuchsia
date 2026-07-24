@@ -12,11 +12,20 @@
     //
   {{- end }}
   // {{- template "Method:ClientAllocationComment:Helper" . }}
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+  {{ end }}
   ::fidl::OneWayStatus {{ .Name }}({{ RenderParams .RequestArgs }});
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+  {{ end }}
 {{- end }}
 
 
 {{- define "Method:WireWeakOnewayClientImpl:WireMessagingSource" }}
+{{ if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+{{ end }}
   ::fidl::OneWayStatus {{ .Protocol.WireWeakOnewayClientImpl.NoLeading }}::{{ .Name }}(
         {{- RenderParams .RequestArgs }}) {
     __UNINITIALIZED
@@ -25,4 +34,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+{{ if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+{{ end }}
 {{- end }}

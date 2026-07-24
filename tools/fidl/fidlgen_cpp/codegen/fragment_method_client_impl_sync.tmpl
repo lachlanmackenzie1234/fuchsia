@@ -10,14 +10,22 @@
   //
   {{- end }}
   // {{- template "Method:ClientAllocationComment:Helper" . }}
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+  {{ end }}
   {{ .WireResult }} {{ .Name }}({{ RenderParams .RequestArgs }});
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+  {{ end }}
 {{- end }}
 
 
 
 {{- define "Method:WireWeakSyncClientImpl:WireMessagingSource" }}
   {{ EnsureNamespace "" }}
-
+{{ if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+{{ end }}
   {{ .WireResult }}
   {{ .Protocol.WireWeakSyncClientImpl.NoLeading }}::{{ .Name }}({{ RenderParams .RequestArgs }}) {
     return _client_base()->MakeSyncCallWith(
@@ -28,5 +36,7 @@
           return {{ .WireResult }}({{- RenderForwardParams (List $transport "&_request") }});
         });
   }
-
+{{ if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+{{ end }}
 {{- end }}

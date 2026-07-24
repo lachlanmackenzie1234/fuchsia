@@ -15,19 +15,29 @@
   {{- else }}
     // The request and callback are allocated on the heap.
   {{- end }}
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+  {{ end }}
   {{ .WireThenable }} {{ .Name }}({{ RenderParams .RequestArgs }});
+  {{- if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+  {{ end }}
 
 {{- end }}
 
 
 
 {{- define "Method:WireWeakAsyncClientImpl:WireMessagingSource" }}
-
+{{ if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}
+{{ end }}
   {{ .WireThenable }} {{ .Protocol.WireWeakAsyncClientImpl.NoLeading }}::{{ .Name }}(
         {{- RenderParams .RequestArgs }}) {
     {{ .WireTransactionalRequest }} _request{ {{ RenderForwardParams .RequestArgs }} };
     return {{ .WireThenable }}{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
-
+{{ if ExperimentEnabled "api_coverage" }}
+  {{ .ApiCoverageMethodAnnotation }}:end
+{{ end }}
 {{- end }}

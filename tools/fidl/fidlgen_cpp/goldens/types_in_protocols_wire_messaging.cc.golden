@@ -2349,6 +2349,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayCompound> _request_object{ bits, enum_, struct_, table, union_, opt_struct, opt_union };
@@ -2356,6 +2357,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayArrayBasic> _request_object{ array_uint8, array_uint16, array_uint32, array_uint64, array_int8, array_int16, array_int32, array_int64, array_float32, array_float64, array_string, array_opt_string };
@@ -2363,6 +2365,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayArrayCompound> _request_object{ array_bits, array_enum, array_struct, array_table, array_union, array_opt_struct, array_opt_union };
@@ -2370,6 +2373,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayVectorBasic> _request_object{ vector_uint8, vector_uint16, vector_uint32, vector_uint64, vector_int8, vector_int16, vector_int32, vector_int64, vector_float32, vector_float64, vector_string, vector_opt_string };
@@ -2377,6 +2381,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayVectorCompound> _request_object{ vector_bits, vector_enum, vector_struct, vector_table, vector_union, vector_opt_struct, vector_opt_union };
@@ -2384,6 +2389,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayVectorOptional> _request_object{ opt_vector_uint8, opt_vector_string, opt_vector_struct, opt_vector_opt_struct };
@@ -2391,6 +2397,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayArrayVectorNested> _request_object{ array_array_uint8, array_vector_uint8, vector_array_uint8, vector_vector_uint8 };
@@ -2398,6 +2405,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protocol>::OneWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayResource> _request_object{ std::move(handle), std::move(vmo), std::move(client_end), std::move(server_end), std::move(struct_), table, std::move(union_), std::move(opt_handle), std::move(opt_vmo), std::move(opt_client_end), std::move(opt_server_end), opt_struct, std::move(opt_union), std::move(array_handle), std::move(array_vmo), std::move(array_client_end), std::move(array_server_end), std::move(array_struct), std::move(array_table), std::move(array_union), vector_handle, vector_vmo, vector_client_end, vector_server_end, vector_struct, vector_table, vector_union };
@@ -2513,6 +2521,7 @@
     return ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorResource>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayBasic>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2526,6 +2535,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayCompound>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2539,6 +2549,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayArrayBasic>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2552,6 +2563,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayArrayCompound>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2565,6 +2577,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayVectorBasic>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2578,6 +2591,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayVectorCompound>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2591,6 +2605,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayVectorOptional>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2604,6 +2619,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayArrayVectorNested>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2617,6 +2633,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::Protocol>::OneWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::OneWayResource>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -2630,108 +2647,126 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayBasic> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayBasic>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayBasic> _request{ uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64, string, opt_string };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayBasic>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorBasic> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorBasic() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorBasic>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorBasic> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorBasic>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayCompound> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayCompound>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayCompound> _request{ bits, enum_, struct_, table, union_, opt_struct, opt_union };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayCompound>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorCompound> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorCompound() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorCompound>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorCompound> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorCompound>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayBasic> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayArrayBasic>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayArrayBasic> _request{ array_uint8, array_uint16, array_uint32, array_uint64, array_int8, array_int16, array_int32, array_int64, array_float32, array_float64, array_string, array_opt_string };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayBasic>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayBasic> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayBasic() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorArrayBasic>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorArrayBasic> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayBasic>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayCompound> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayArrayCompound>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayArrayCompound> _request{ array_bits, array_enum, array_struct, array_table, array_union, array_opt_struct, array_opt_union };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayCompound>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayCompound> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayCompound() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorArrayCompound>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorArrayCompound> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayCompound>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorBasic> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayVectorBasic>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayVectorBasic> _request{ vector_uint8, vector_uint16, vector_uint32, vector_uint64, vector_int8, vector_int16, vector_int32, vector_int64, vector_float32, vector_float64, vector_string, vector_opt_string };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorBasic>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorBasic> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorBasic() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorVectorBasic>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorVectorBasic> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorBasic>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorCompound> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayVectorCompound>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayVectorCompound> _request{ vector_bits, vector_enum, vector_struct, vector_table, vector_union, vector_opt_struct, vector_opt_union };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorCompound>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorCompound> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorCompound() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorVectorCompound>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorVectorCompound> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorCompound>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorOptional> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayVectorOptional>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayVectorOptional> _request{ opt_vector_uint8, opt_vector_string, opt_vector_struct, opt_vector_opt_struct };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorOptional>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorOptional> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorOptional() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorVectorOptional>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorVectorOptional> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorOptional>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested> _request{ array_array_uint8, array_vector_uint8, vector_array_uint8, vector_vector_uint8 };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayVectorNested> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayVectorNested() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorArrayVectorNested> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayResource> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::TwoWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::TwoWayResource>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayResource> _request{ std::move(handle), std::move(vmo), std::move(client_end), std::move(server_end), std::move(struct_), table, std::move(union_), std::move(opt_handle), std::move(opt_vmo), std::move(opt_client_end), std::move(opt_server_end), opt_struct, std::move(opt_union), std::move(array_handle), std::move(array_vmo), std::move(array_client_end), std::move(array_server_end), std::move(array_struct), std::move(array_table), std::move(array_union), vector_handle, vector_vmo, vector_client_end, vector_server_end, vector_struct, vector_table, vector_union };
   return ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayResource>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorResource> fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::Protocol>::ErrorResource() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_typesinprotocols::Protocol::ErrorResource>();
   ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorResource> _request{  };
@@ -6611,6 +6646,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayBasic>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayBasic> _request{ uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64, string, opt_string };
@@ -6624,6 +6660,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorBasic>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorBasic() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorBasic> _request{  };
@@ -6637,6 +6674,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayCompound> _request{ bits, enum_, struct_, table, union_, opt_struct, opt_union };
@@ -6650,6 +6688,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayCompound>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayCompound> _request{ bits, enum_, struct_, table, union_, opt_struct, opt_union };
@@ -6663,6 +6702,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorCompound>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorCompound() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorCompound> _request{  };
@@ -6676,6 +6716,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayArrayBasic> _request{ array_uint8, array_uint16, array_uint32, array_uint64, array_int8, array_int16, array_int32, array_int64, array_float32, array_float64, array_string, array_opt_string };
@@ -6689,6 +6730,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayArrayBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayBasic>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayArrayBasic> _request{ array_uint8, array_uint16, array_uint32, array_uint64, array_int8, array_int16, array_int32, array_int64, array_float32, array_float64, array_string, array_opt_string };
@@ -6702,6 +6744,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayArrayBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayBasic>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayBasic() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorArrayBasic> _request{  };
@@ -6715,6 +6758,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorArrayBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayArrayCompound> _request{ array_bits, array_enum, array_struct, array_table, array_union, array_opt_struct, array_opt_union };
@@ -6728,6 +6772,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayArrayCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayCompound>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayArrayCompound> _request{ array_bits, array_enum, array_struct, array_table, array_union, array_opt_struct, array_opt_union };
@@ -6741,6 +6786,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayArrayCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayCompound>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayCompound() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorArrayCompound> _request{  };
@@ -6754,6 +6800,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorArrayCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayVectorBasic> _request{ vector_uint8, vector_uint16, vector_uint32, vector_uint64, vector_int8, vector_int16, vector_int32, vector_int64, vector_float32, vector_float64, vector_string, vector_opt_string };
@@ -6767,6 +6814,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayVectorBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorBasic>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayVectorBasic> _request{ vector_uint8, vector_uint16, vector_uint32, vector_uint64, vector_int8, vector_int16, vector_int32, vector_int64, vector_float32, vector_float64, vector_string, vector_opt_string };
@@ -6780,6 +6828,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayVectorBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorBasic>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorBasic() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorVectorBasic> _request{  };
@@ -6793,6 +6842,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorVectorBasic>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayVectorCompound> _request{ vector_bits, vector_enum, vector_struct, vector_table, vector_union, vector_opt_struct, vector_opt_union };
@@ -6806,6 +6856,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayVectorCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorCompound>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayVectorCompound> _request{ vector_bits, vector_enum, vector_struct, vector_table, vector_union, vector_opt_struct, vector_opt_union };
@@ -6819,6 +6870,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayVectorCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorCompound>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorCompound() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorVectorCompound> _request{  };
@@ -6832,6 +6884,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorVectorCompound>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayVectorOptional> _request{ opt_vector_uint8, opt_vector_string, opt_vector_struct, opt_vector_opt_struct };
@@ -6845,6 +6898,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayVectorOptional>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorOptional>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayVectorOptional> _request{ opt_vector_uint8, opt_vector_string, opt_vector_struct, opt_vector_opt_struct };
@@ -6858,6 +6912,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayVectorOptional>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorOptional>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorOptional() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorVectorOptional> _request{  };
@@ -6871,6 +6926,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorVectorOptional>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayArrayVectorNested> _request{ array_array_uint8, array_vector_uint8, vector_array_uint8, vector_vector_uint8 };
@@ -6884,6 +6940,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayArrayVectorNested>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested> _request{ array_array_uint8, array_vector_uint8, vector_array_uint8, vector_vector_uint8 };
@@ -6897,6 +6954,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayVectorNested() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorArrayVectorNested> _request{  };
@@ -6910,6 +6968,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::OneWayResource> _request{ std::move(handle), std::move(vmo), std::move(client_end), std::move(server_end), std::move(struct_), table, std::move(union_), std::move(opt_handle), std::move(opt_vmo), std::move(opt_client_end), std::move(opt_server_end), opt_struct, std::move(opt_union), std::move(array_handle), std::move(array_vmo), std::move(array_client_end), std::move(array_server_end), std::move(array_struct), std::move(array_table), std::move(array_union), vector_handle, vector_vmo, vector_client_end, vector_server_end, vector_struct, vector_table, vector_union };
@@ -6923,6 +6982,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::OneWayResource>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayResource>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union) {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::TwoWayResource> _request{ std::move(handle), std::move(vmo), std::move(client_end), std::move(server_end), std::move(struct_), table, std::move(union_), std::move(opt_handle), std::move(opt_vmo), std::move(opt_client_end), std::move(opt_server_end), opt_struct, std::move(opt_union), std::move(array_handle), std::move(array_vmo), std::move(array_client_end), std::move(array_server_end), std::move(array_struct), std::move(array_table), std::move(array_union), vector_handle, vector_vmo, vector_client_end, vector_server_end, vector_struct, vector_table, vector_union };
@@ -6936,6 +6996,7 @@ return MakeReply(::test_typesinprotocols::wire::ProtocolErrorResourceResult::Wit
         return ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayResource>(
           ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorResource>
       fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorResource() {
         ::fidl::internal::TransactionalRequest<::test_typesinprotocols::Protocol::ErrorResource> _request{  };

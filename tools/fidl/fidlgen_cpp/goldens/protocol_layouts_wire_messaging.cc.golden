@@ -1196,6 +1196,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::MainProtocol>::OneWayNamedComposed(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayNamedComposed> _request_object{ ImportTablePayload };
@@ -1203,6 +1204,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::MainProtocol>::OneWayImport(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayImport> _request_object{ ImportTablePayload };
@@ -1210,6 +1212,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::MainProtocol>::OneWayLocal(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayLocal> _request_object{ LocalTablePayload };
@@ -1217,6 +1220,7 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::MainProtocol>::OneWayAnon(::test_protocollayouts::wire::MainProtocolOneWayAnonRequest MainProtocolOneWayAnonRequest) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayAnon> _request_object{ MainProtocolOneWayAnonRequest };
@@ -1284,6 +1288,7 @@
     return ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayAnonWithError>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::MainProtocol>::OneWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolOneWayAnonComposedRequest ComposedProtocolOneWayAnonComposedRequest) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::OneWayAnonComposed>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1297,6 +1302,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::MainProtocol>::OneWayNamedComposed(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::OneWayNamedComposed>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1310,6 +1316,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::MainProtocol>::OneWayImport(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::OneWayImport>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1323,6 +1330,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::MainProtocol>::OneWayLocal(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::OneWayLocal>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1336,6 +1344,7 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::MainProtocol>::OneWayAnon(::test_protocollayouts::wire::MainProtocolOneWayAnonRequest MainProtocolOneWayAnonRequest) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::OneWayAnon>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1349,60 +1358,70 @@
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest ComposedProtocolTwoWayAnonComposedRequest) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> _request{ ComposedProtocolTwoWayAnonComposedRequest };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnonComposedWithError(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest ComposedProtocolTwoWayAnonComposedWithErrorRequest) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError> _request{ ComposedProtocolTwoWayAnonComposedWithErrorRequest };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposed> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayNamedComposed(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayNamedComposed>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayNamedComposed> _request{ ImportUnionPayload };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposed>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayNamedComposedWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError> _request{ ImportTablePayload };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayImport> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayImport(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayImport>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayImport> _request{ ImportUnionPayload };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayImport>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayImportWithError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayImportWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayImportWithError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayImportWithError> _request{ ImportTablePayload };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayImportWithError>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayLocal> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayLocal(::test_protocollayouts::wire::LocalUnionPayload LocalUnionPayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayLocal>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayLocal> _request{ LocalUnionPayload };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayLocal>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayLocalWithError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayLocalWithError(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayLocalWithError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayLocalWithError> _request{ LocalTablePayload };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayLocalWithError>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnon> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnon(::test_protocollayouts::wire::MainProtocolTwoWayAnonRequest MainProtocolTwoWayAnonRequest) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayAnon>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnon> _request{ MainProtocolTwoWayAnonRequest };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnon>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonWithError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnonWithError(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRequest MainProtocolTwoWayAnonWithErrorRequest) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::MainProtocol::TwoWayAnonWithError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnonWithError> _request{ MainProtocolTwoWayAnonWithErrorRequest };
@@ -3514,6 +3533,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::OneWayAnonComposed>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest ComposedProtocolTwoWayAnonComposedRequest) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> _request{ ComposedProtocolTwoWayAnonComposedRequest };
@@ -3527,6 +3547,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnonComposedWithError(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest ComposedProtocolTwoWayAnonComposedWithErrorRequest) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError> _request{ ComposedProtocolTwoWayAnonComposedWithErrorRequest };
@@ -3540,6 +3561,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::OneWayNamedComposed(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayNamedComposed> _request{ ImportTablePayload };
@@ -3553,6 +3575,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::OneWayNamedComposed>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposed>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayNamedComposed(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayNamedComposed> _request{ ImportUnionPayload };
@@ -3566,6 +3589,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposed>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayNamedComposedWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError> _request{ ImportTablePayload };
@@ -3579,6 +3603,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::OneWayImport(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayImport> _request{ ImportTablePayload };
@@ -3592,6 +3617,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::OneWayImport>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayImport>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayImport(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayImport> _request{ ImportUnionPayload };
@@ -3605,6 +3631,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayImport>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayImportWithError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayImportWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayImportWithError> _request{ ImportTablePayload };
@@ -3618,6 +3645,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayImportWithError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::OneWayLocal(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayLocal> _request{ LocalTablePayload };
@@ -3631,6 +3659,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::OneWayLocal>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayLocal>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayLocal(::test_protocollayouts::wire::LocalUnionPayload LocalUnionPayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayLocal> _request{ LocalUnionPayload };
@@ -3644,6 +3673,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayLocal>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayLocalWithError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayLocalWithError(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayLocalWithError> _request{ LocalTablePayload };
@@ -3657,6 +3687,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayLocalWithError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::OneWayAnon(::test_protocollayouts::wire::MainProtocolOneWayAnonRequest MainProtocolOneWayAnonRequest) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::OneWayAnon> _request{ MainProtocolOneWayAnonRequest };
@@ -3670,6 +3701,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::OneWayAnon>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnon>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnon(::test_protocollayouts::wire::MainProtocolTwoWayAnonRequest MainProtocolTwoWayAnonRequest) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnon> _request{ MainProtocolTwoWayAnonRequest };
@@ -3683,6 +3715,7 @@ return MakeReply(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRe
         return ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayAnon>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonWithError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>::TwoWayAnonWithError(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRequest MainProtocolTwoWayAnonWithErrorRequest) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::MainProtocol::TwoWayAnonWithError> _request{ MainProtocolTwoWayAnonWithErrorRequest };
@@ -4490,6 +4523,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocollayouts:
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::OpenProtocol>::StrictOneWay(int32_t value) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::StrictOneWay> _request_object{ value };
@@ -4497,6 +4531,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocollayouts:
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleOneWayNamedPayload(int32_t value) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::FlexibleOneWayNamedPayload> _request_object{ value };
@@ -4528,6 +4563,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocollayouts:
     return ::fidl::internal::WireThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleOneWay(int32_t value) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::OpenProtocol::FlexibleOneWay>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -4541,6 +4577,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocollayouts:
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::OpenProtocol>::StrictOneWay(int32_t value) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::OpenProtocol::StrictOneWay>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -4554,6 +4591,7 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocollayouts:
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleOneWayNamedPayload(int32_t value) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::OpenProtocol::FlexibleOneWayNamedPayload>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -4567,24 +4605,28 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocollayouts:
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleTwoWayNoError(int32_t value) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError> _request{ value };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleTwoWayWithError(int32_t value) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError> _request{ value };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::OpenProtocol>::StrictTwoWayNoError(int32_t value) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError> _request{ value };
   return ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::OpenProtocol>::StrictTwoWayWithError(int32_t value) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError>();
   ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError> _request{ value };
@@ -5560,6 +5602,7 @@ return MakeReply(::test_protocollayouts_imported::wire::ComposedOpenProtocolStri
         return ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::FlexibleOneWay>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::OpenProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleTwoWayNoError(int32_t value) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError> _request{ value };
@@ -5573,6 +5616,7 @@ return MakeReply(::test_protocollayouts_imported::wire::ComposedOpenProtocolStri
         return ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::OpenProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleTwoWayWithError(int32_t value) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError> _request{ value };
@@ -5586,6 +5630,7 @@ return MakeReply(::test_protocollayouts_imported::wire::ComposedOpenProtocolStri
         return ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::OpenProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::OpenProtocol>::StrictOneWay(int32_t value) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::StrictOneWay> _request{ value };
@@ -5599,6 +5644,7 @@ return MakeReply(::test_protocollayouts_imported::wire::ComposedOpenProtocolStri
         return ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::StrictOneWay>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::OpenProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::OpenProtocol>::StrictTwoWayNoError(int32_t value) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError> _request{ value };
@@ -5612,6 +5658,7 @@ return MakeReply(::test_protocollayouts_imported::wire::ComposedOpenProtocolStri
         return ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::OpenProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::WireResult<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError>
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::OpenProtocol>::StrictTwoWayWithError(int32_t value) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError> _request{ value };
@@ -5625,6 +5672,7 @@ return MakeReply(::test_protocollayouts_imported::wire::ComposedOpenProtocolStri
         return ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError>(
           ::fidl::UnownedClientEnd<::test_protocollayouts::OpenProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocollayouts::OpenProtocol>::FlexibleOneWayNamedPayload(int32_t value) {
         ::fidl::internal::TransactionalRequest<::test_protocollayouts::OpenProtocol::FlexibleOneWayNamedPayload> _request{ value };

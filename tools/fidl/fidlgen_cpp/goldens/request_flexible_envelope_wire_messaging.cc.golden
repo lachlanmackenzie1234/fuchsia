@@ -188,12 +188,14 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_requestfle
   return ::fidl::internal::WireThenable<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> fidl::internal::WireWeakAsyncBufferClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(::test_requestflexibleenvelope::wire::StrictFoo s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>();
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> _request{s};
   return ::fidl::internal::WireBufferThenable<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> fidl::internal::WireWeakAsyncBufferClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(::test_requestflexibleenvelope::wire::FlexibleFoo s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>();
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> _request{s};
@@ -543,6 +545,7 @@ fidl::internal::WireSyncBufferClientImpl<::test_requestflexibleenvelope::Protoco
   return ::fidl::WireUnownedResult<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>(
       ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
 ::fidl::WireResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>
 fidl::internal::WireSyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(::test_requestflexibleenvelope::wire::FlexibleFoo s) {
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> _request{s};

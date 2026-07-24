@@ -924,6 +924,12 @@ func (m Method) CtsMethodAnnotation() string {
 	return "// cts-coverage-fidl-name:" + m.FullyQualifiedName
 }
 
+// ApiCoverageMethodAnnotation generates a comment containing information about the FIDL
+// method that is covered by the generated C++ method stubs for the API coverage pipeline.
+func (m Method) ApiCoverageMethodAnnotation() string {
+	return "// api-coverage-fidl-name:" + m.FullyQualifiedName
+}
+
 type messageDirection int
 
 const (

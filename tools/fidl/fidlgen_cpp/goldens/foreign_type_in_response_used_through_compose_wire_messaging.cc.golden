@@ -95,6 +95,7 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_foreigntyp
   return ::fidl::internal::WireThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
 ::fidl::internal::WireBufferThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> fidl::internal::WireWeakAsyncBufferClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>();
   ::fidl::internal::TransactionalRequest<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> _request{};
