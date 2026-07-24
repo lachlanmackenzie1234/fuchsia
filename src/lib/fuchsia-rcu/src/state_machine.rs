@@ -5,7 +5,7 @@
 use crate::atomic_stack::{AtomicListIterator, AtomicStack};
 use fuchsia_sync::Mutex;
 use std::cell::Cell;
-use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering, fence};
+use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 use std::thread_local;
 
 #[cfg(feature = "rseq_backend")]
@@ -255,13 +255,13 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
         block.has_pending_callbacks.set(true);
     });
 
-    // We need to synchronize with rcu_read_lock.  We need to ensure that all prior stores are
-    // visible to threads that have called rcu_read_lock.  We must synchronize with both read
-    // counters using a store operation.  We don't need to change the value.
-    fence(Ordering::Release);
-
     #[cfg(not(feature = "rseq_backend"))]
     {
+        // We need to synchronize with rcu_read_lock.  We need to ensure that all prior stores are
+        // visible to threads that have called rcu_read_lock.  We must synchronize with both read
+        // counters using a store operation.  We don't need to change the value.
+        std::sync::atomic::fence(Ordering::Release);
+
         RCU_CONTROL_BLOCK.read_counters[0].fetch_add(0, Ordering::Relaxed);
         RCU_CONTROL_BLOCK.read_counters[1].fetch_add(0, Ordering::Relaxed);
     }

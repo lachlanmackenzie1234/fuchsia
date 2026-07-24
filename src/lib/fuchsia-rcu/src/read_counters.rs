@@ -135,6 +135,20 @@ impl RcuReadCounters {
 
         let mut sum = 0usize;
 
+        // This barrier ensures that either a Reader in rcu_read_unlock sees our
+        // advancer.store(WAITING) or we see the Reader's `end` store. If both writes are missed,
+        // we'll sleep here due to seeing active readers and the Reader won't wake us due to seeing
+        // advancer = IDLE.
+        //
+        // With the barrier there are two possibilities:
+        //
+        // i)  A Reader's `end` store is before the barrier. We'll see the end store and consider
+        //     the reader no longer active. We won't seelp
+        // ii) The Reader's `end` store is after the barrier. Then the Reader's advancer
+        //     load is also after the barrier. So then the reader must then observe the WAITING
+        //     that the advancer wrote before the barrier and will wake us.
+        unsafe { zx_membarrier_sync_process_data() };
+
         // Phase 1: Subtract Ends (read before barrier)
         for cpu in 0..num_cpus {
             let end_ptr = self.get_state(cpu).counts[index].end.get();
