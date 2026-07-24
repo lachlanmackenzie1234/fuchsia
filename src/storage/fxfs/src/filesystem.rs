@@ -722,6 +722,10 @@ impl FxFilesystem {
         &self.options
     }
 
+    pub fn scope(&self) -> &fasync::Scope {
+        &self.background_tasks
+    }
+
     /// Returns a guard that must be taken before any transaction can commence.  This guard takes a
     /// shared lock on the filesystem.  `fsck` will take an exclusive lock so that it can get a
     /// consistent picture of the filesystem that it can verify.  It is important that this lock is

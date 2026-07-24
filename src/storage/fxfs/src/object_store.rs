@@ -2311,7 +2311,7 @@ impl ObjectStore {
         std::mem::drop(guard);
 
         if !read_only && !self.filesystem().options().read_only {
-            self.flush_with_reason(flush::Reason::PostMount).await?;
+            self.flush_with_reason(flush::Reason::EncryptedMutations).await?;
 
             // Reap purged files within this store.
             let _ = self.filesystem().graveyard().initial_reap(&self).await?;

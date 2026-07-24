@@ -1700,6 +1700,15 @@ pub struct WriteGuard<'a> {
     lock_keys: LockKeys,
 }
 
+impl WriteGuard<'_> {
+    pub fn into_owned(mut self, fs: Arc<FxFilesystem>) -> WriteGuard<'static> {
+        WriteGuard {
+            manager: LockManagerRef::Owned(fs),
+            lock_keys: std::mem::replace(&mut self.lock_keys, LockKeys::None),
+        }
+    }
+}
+
 impl Drop for WriteGuard<'_> {
     fn drop(&mut self) {
         let mut locks = self.manager.locks.lock();

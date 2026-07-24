@@ -28,24 +28,32 @@ pub enum Reason {
     /// Journal memory or space pressure.
     Journal,
 
-    /// After replay of encrypted mutations, or to upgrade lsm tree versions. If neither of these
-    /// things actually needs to be done, it will be a no-op.
-    PostMount,
+    /// Clean up an encrypted mutations object after mount.
+    EncryptedMutations,
+
+    /// Upgrade old layer files to the latest version after mount. This performs a full compaction.
+    UpgradeVersion,
 }
 
 #[fxfs_trace::trace]
 impl ObjectStore {
-    #[trace("store_object_id" => self.store_object_id)]
+    /// Takes a flush lock on self and performs the flush.
     pub async fn flush_with_reason(&self, reason: Reason) -> Result<Version, Error> {
+        let filesystem = self.filesystem();
+
+        let keys = lock_keys![LockKey::flush(self.store_object_id())];
+        let _guard = filesystem.lock_manager().write_lock(keys).await;
+
+        self.flush_guarded_with_reason(reason).await
+    }
+
+    /// Performs a flush while already holding a flush guard on self.
+    #[trace("store_object_id" => self.store_object_id)]
+    pub async fn flush_guarded_with_reason(&self, reason: Reason) -> Result<Version, Error> {
         if self.parent_store.is_none() {
             // Early exit, but still return the earliest version used by a struct in the tree
             return Ok(self.tree.get_earliest_version());
         }
-        let filesystem = self.filesystem();
-        let object_manager = filesystem.object_manager();
-
-        let keys = lock_keys![LockKey::flush(self.store_object_id())];
-        let _guard = Some(filesystem.lock_manager().write_lock(keys).await);
 
         // After taking the lock, check to see if the store has been deleted.
         if matches!(*self.lock_state.lock(), LockState::Deleted) {
@@ -54,33 +62,18 @@ impl ObjectStore {
             return Ok(LATEST_VERSION);
         }
 
-        match reason {
-            Reason::PostMount => {
-                // If we're unlocking, only flush if there are encrypted mutations currently stored
-                // in a file or the version needs to be updated.  We don't worry if the mutations
-                // are in memory because a flush should get triggered when the journal gets full.
-                // Safe to unwrap store_info here because this was invoked from ObjectStore::unlock,
-                // so store_info is already accessible.
-                if self.store_info().unwrap().encrypted_mutations_object_id == INVALID_OBJECT_ID
-                    && self.tree.get_earliest_version() == LATEST_VERSION
-                {
-                    // Early exit, but still return the earliest version used by a struct in the
-                    // tree.
-                    return Ok(self.tree.get_earliest_version());
-                }
-            }
-            Reason::Journal => {
-                // We flush if we have something to flush *or* the on-disk version of data is not
-                // the latest.
-                let earliest_version = self.tree.get_earliest_version();
-                if !object_manager.needs_flush(self.store_object_id)
-                    && earliest_version == LATEST_VERSION
-                {
-                    // Early exit, but still return the earliest version used by a struct in the
-                    // tree.
-                    return Ok(earliest_version);
-                }
-            }
+        let filesystem = self.filesystem();
+        let object_manager = filesystem.object_manager();
+        let earliest_version = self.tree.get_earliest_version();
+        // If we don't need to do anything for the stated flush purpose, do nothing.
+        if (reason == Reason::Journal && !object_manager.needs_flush(self.store_object_id))
+            || (reason == Reason::UpgradeVersion && earliest_version == LATEST_VERSION)
+            || (reason == Reason::EncryptedMutations
+                && self.store_info().unwrap().encrypted_mutations_object_id == INVALID_OBJECT_ID)
+        {
+            // Early exit, but still return the earliest version used by a struct in the
+            // tree.
+            return Ok(earliest_version);
         }
 
         let trace = self.trace.load(Ordering::Relaxed);
@@ -218,6 +211,7 @@ impl ObjectStore {
             &self.tree,
             writer,
             (reason == Reason::Journal).then(|| filesystem.journal().get_compaction_yielder()),
+            reason == Reason::UpgradeVersion,
         )
         .await
         .context("Failed to flush tree")?;

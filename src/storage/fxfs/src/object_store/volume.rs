@@ -12,7 +12,9 @@ use crate::object_store::{
     ChildValue, DirType, INVALID_OBJECT_ID, LockKey, NewChildStoreOptions, ObjectDescriptor,
     ObjectKey, ObjectStore, ObjectValue, StoreOptions, load_store_info,
 };
+use crate::serialized_types::LATEST_VERSION;
 use anyhow::{Context, Error, anyhow, bail, ensure};
+use log::error;
 use std::sync::Arc;
 
 // Volumes are a grouping of an object store and a root directory within this object store. They
@@ -120,8 +122,34 @@ impl RootVolume {
         } else if store.is_locked() {
             bail!(FxfsError::AccessDenied);
         }
-        if !self.filesystem.options().read_only {
-            store.flush_with_reason(Reason::PostMount).await?;
+        // If the layer files are out of date, kick off a full compaction in the background.
+        if let Some(scope_guard) = self.filesystem.scope().active_guard()
+            && !self.filesystem.options().read_only
+            && store.tree().get_earliest_version() != LATEST_VERSION
+        {
+            let keys = lock_keys![LockKey::flush(store_object_id)];
+            let guard = self
+                .filesystem
+                .lock_manager()
+                .write_lock(keys)
+                .await
+                .into_owned(self.filesystem.clone());
+            let store = store.clone();
+            self.filesystem.scope().spawn(async move {
+                // This needs to be taken outside the task and passed in. The volume cannot be
+                // re-locked until the guard is dropped so this prevents a race where the flush
+                // starts after locking by taking it synchronously.
+                let _guard = guard;
+                // Takes a scope guard so that unencrypted stores will finish their flush before
+                // allowing the filesystem to close as well. Journal flushes are normally run on
+                // the filesystem's scope, and just like that case it is safe since encrypted
+                // volumes can't be locked without taking the flush lock so it will be forced to
+                // wait for this completion.
+                let _scope_guard = scope_guard;
+                if let Err(error) = store.flush_guarded_with_reason(Reason::UpgradeVersion).await {
+                    error!(error:?; "Failed background flush");
+                }
+            });
         }
         Ok(store)
     }
@@ -767,15 +795,30 @@ mod tests {
         let device = fs.take_device().await;
         device.reopen(false);
         let fs = FxFilesystem::open(device).await.expect("open failed");
-        let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
-        let store = root_vol
-            .volume("test", StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() })
-            .await
-            .expect("volume failed");
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let _store = root_vol
+                .volume("test", StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() })
+                .await
+                .expect("volume failed");
+        }
 
-        assert_eq!(store.tree.get_earliest_version(), LATEST_VERSION);
-        // Should have exactly 1 flush despite being called twice in the encrypted case.
-        assert_eq!(store.counters.lock().num_flushes, 1);
+        // Closing the filesystem should force the background flush to complete.
+        fs.close().await.expect("close failed");
+
+        // Re-open filesystem again to ensure the layer file version has been updated.
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystem::open(device).await.expect("open failed");
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_vol
+                .volume("test", StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() })
+                .await
+                .expect("volume failed");
+
+            assert_eq!(store.tree.get_earliest_version(), LATEST_VERSION);
+        }
 
         fs.close().await.expect("close failed");
     }

@@ -6,7 +6,6 @@ use crate::lsm_tree::types::{LayerIterator, MergeableKey, Value};
 use crate::lsm_tree::{LSMTree, LockedLayer, Query, Yielder, compact_with_iterator};
 use crate::object_handle::WriteBytes;
 use crate::object_store::journal;
-use crate::serialized_types::LATEST_VERSION;
 use anyhow::{Context, Error};
 use std::future::{Future, ready};
 
@@ -30,15 +29,17 @@ pub async fn flush<'a, K: MergeableKey, V: Value>(
     tree: &'a LSMTree<K, V>,
     writer: impl WriteBytes + Send,
     yielder: Option<impl Yielder>,
+    full_compaction: bool,
 ) -> Result<(Layers<K, V>, Layers<K, V>), Error>
 where
     LSMTree<K, V>: MajorCompactable<K, V>,
 {
-    let earliest_version = tree.get_earliest_version();
     let mut layer_set = tree.immutable_layer_set();
     let mut total_size = 0;
     let mut layer_count = 0;
-    let mut split_index = if earliest_version == LATEST_VERSION {
+    let mut split_index = if full_compaction {
+        layer_set.layers.len()
+    } else {
         layer_set
             .layers
             .iter()
@@ -59,10 +60,6 @@ where
                 false
             })
             .unwrap_or(layer_set.layers.len())
-    } else {
-        // We force a full compaction if there is an older version data structure
-        // in the layer set to upgrade it to the latest.
-        layer_set.layers.len()
     };
 
     // If there's only one immutable layer to merge with and it's big, don't merge with it.
