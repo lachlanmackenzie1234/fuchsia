@@ -11,3 +11,6 @@ pub struct PAddr(pub usize);
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VAddr(pub usize);
+
+#[allow(non_camel_case_types)]
+pub type cpu_mask_t = u32;

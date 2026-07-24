@@ -22,6 +22,8 @@ mod suspend_token_dispatcher;
 mod suspend_token_dispatcher_ffi;
 mod thread_dispatcher;
 mod thread_dispatcher_ffi;
+mod vm_address_region_dispatcher;
+mod vm_address_region_dispatcher_ffi;
 
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
@@ -37,3 +39,4 @@ pub use suspend_token_dispatcher::SuspendTokenDispatcher;
 pub use suspend_token_dispatcher_ffi::*;
 pub use thread_dispatcher::ThreadDispatcher;
 pub use thread_dispatcher_ffi::*;
+pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;

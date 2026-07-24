@@ -56,7 +56,7 @@ impl<T> UserInPtr<T> {
     /// Copies a single element from userspace into `dst`.
     pub fn copy_from_user<'a>(&self, dst: &'a mut MaybeUninit<T>) -> Result<&'a mut T, Status>
     where
-        T: FromBytes + IntoBytes,
+        T: FromBytes,
     {
         // SAFETY: `dst.as_mut_ptr()` points to `size_of::<T>()` bytes of valid kernel memory.  If
         // `arch_copy_from_user` succeeds, `dst` is fully initialized with bytes from user memory.
@@ -75,7 +75,7 @@ impl<T> UserInPtr<T> {
     /// Reads and returns a single copyable element from userspace.
     pub fn read(&self) -> Result<T, Status>
     where
-        T: FromBytes + IntoBytes + Immutable,
+        T: FromBytes,
     {
         let mut val = MaybeUninit::uninit();
         self.copy_from_user(&mut val)?;
@@ -90,7 +90,7 @@ impl<T> UserInPtr<T> {
         dst: &'a mut [MaybeUninit<T>],
     ) -> Result<&'a mut [T], Status>
     where
-        T: FromBytes + IntoBytes,
+        T: FromBytes,
     {
         let len_bytes = core::mem::size_of_val(dst);
         // SAFETY: `dst.as_mut_ptr()` points to `len_bytes` of valid kernel memory buffer space.

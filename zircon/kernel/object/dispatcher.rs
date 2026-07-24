@@ -154,6 +154,32 @@ macro_rules! impl_dispatcher_facade_with_state {
 /// Helper macro to generate standard `rust_<type>_state_init` FFI trampolines.
 #[macro_export]
 macro_rules! impl_dispatcher_state_init {
+    (fallible $type:ident, $state:ident $(, $arg:ident : $arg_ty:ty)* $(,)?) => {
+        paste::paste! {
+            /// Initializes a `$state` in-place using `$state::init(dispatcher, ...)`.
+            ///
+            /// # Safety
+            ///
+            /// `ptr` must point to uninitialized memory of at least `size_of::<$state>()`
+            /// bytes, and `dispatcher` must point to the enclosing `$type`.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _state_init>](
+                ptr: *mut $state,
+                dispatcher: *const $type,
+                $( $arg : $arg_ty ),*
+            ) -> zx_types::zx_status_t {
+                // SAFETY: `ptr` points to uninitialized memory allocated for `$state`.
+                unsafe {
+                    let init = match $state::init(dispatcher, $( $arg ),*) {
+                        Ok(init) => init,
+                        Err(status) => return status.into_raw(),
+                    };
+                    let _ = pin_init::PinInit::__pinned_init(init, ptr);
+                    zx_types::ZX_OK
+                }
+            }
+        }
+    };
     ($type:ident, $state:ident $(, $arg:ident : $arg_ty:ty)* $(,)?) => {
         paste::paste! {
             /// Initializes a `$state` in-place using `$state::init(dispatcher, ...)`.
@@ -220,18 +246,7 @@ impl Dispatcher {
     where
         T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
     {
-        let mut ref_ptr = MaybeUninit::<fbl::RefPtr<Dispatcher>>::zeroed();
-        let mut actual_rights = MaybeUninit::<zx_rights_t>::zeroed();
-        // SAFETY: ref_ptr and actual_rights point to valid, writable uninitialized memory.
-        let (dispatcher, actual_rights) = unsafe {
-            let status = cpp_handle_table_get_dispatcher(
-                handle,
-                ref_ptr.as_mut_ptr(),
-                actual_rights.as_mut_ptr(),
-            );
-            Status::ok(status)?;
-            (ref_ptr.assume_init(), actual_rights.assume_init())
-        };
+        let (dispatcher, actual_rights) = Self::get_dispatcher_and_rights(handle)?;
         if T::TYPE != zx_types::ZX_OBJ_TYPE_NONE && dispatcher.get_type() != T::TYPE {
             return Err(Status::WRONG_TYPE);
         }
@@ -240,6 +255,24 @@ impl Dispatcher {
         }
         // SAFETY: We verified the type of the dispatcher, so it is safe to cast.
         unsafe { Ok(dispatcher.cast::<T>()) }
+    }
+
+    /// Resolves a handle to a dispatcher and returns its associated rights.
+    pub fn get_dispatcher_and_rights(
+        handle: HandleValue,
+    ) -> Result<(fbl::RefPtr<Dispatcher>, zx_rights_t), Status> {
+        let mut ref_ptr = MaybeUninit::<fbl::RefPtr<Dispatcher>>::zeroed();
+        let mut actual_rights = MaybeUninit::<zx_rights_t>::zeroed();
+        // SAFETY: ref_ptr and actual_rights point to valid, writable uninitialized memory.
+        unsafe {
+            let status = cpp_handle_table_get_dispatcher(
+                handle,
+                ref_ptr.as_mut_ptr(),
+                actual_rights.as_mut_ptr(),
+            );
+            Status::ok(status)?;
+            Ok((ref_ptr.assume_init(), actual_rights.assume_init()))
+        }
     }
 }
 

@@ -38,4 +38,8 @@ constexpr size_t kSuspendTokenDispatcherStateSize = 64;
 constexpr size_t kSuspendTokenDispatcherStateAlign = 8;
 constexpr size_t kSuspendTokenDispatcherStateOffset = 48;
 
+// Size and alignment for SchedulerState::BaseProfile.
+constexpr size_t kSchedulerStateBaseProfileSize = 32;
+constexpr size_t kSchedulerStateBaseProfileAlign = 8;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

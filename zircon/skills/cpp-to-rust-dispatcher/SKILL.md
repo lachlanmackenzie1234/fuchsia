@@ -495,3 +495,11 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
     Remove the annotations once cross-language inlining works.`) to remove the
     annotations once cross-language inlining works. Recommend and apply this
     only for short FFI routines.
+8.  **Cross-Object Operations & Facade Safety**: When an operation targets
+    another kernel object type (such as `ThreadDispatcher` or
+    `VmAddressRegionDispatcher`), provide safe wrapper methods directly on that
+    target object's Rust facade (creating the facade and its `*_ffi` files if
+    they do not yet exist). Group the corresponding C++ FFI functions with that
+    object's `*_ffi` files, perform downcasts on the Rust side using
+    `.downcast::<TargetType>()`, and call the facade methods directly from Rust
+    rather than making cross-object FFI calls or C++ helper shims.

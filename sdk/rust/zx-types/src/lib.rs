@@ -2632,7 +2632,8 @@ pub const ZX_CPU_SET_MAX_CPUS: usize = 512;
 pub const ZX_CPU_SET_BITS_PER_WORD: usize = 64;
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, zerocopy::FromBytes, zerocopy::Immutable)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_cpu_set_t {
     pub mask: [u64; ZX_CPU_SET_MAX_CPUS / ZX_CPU_SET_BITS_PER_WORD],
 }
@@ -2640,12 +2641,26 @@ pub struct zx_cpu_set_t {
 // source: zircon/system/public/zircon/syscalls/scheduler.h
 #[repr(C)]
 #[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_profile_info_t {
     pub flags: u32,
     padding1: [PadByte; 4],
     pub zx_profile_info_union: zx_profile_info_union,
     pub cpu_affinity_mask: zx_cpu_set_t,
 }
+
+pub const ZX_PROFILE_INFO_FLAG_PRIORITY: u32 = 1 << 0;
+pub const ZX_PROFILE_INFO_FLAG_CPU_MASK: u32 = 1 << 1;
+pub const ZX_PROFILE_INFO_FLAG_DEADLINE: u32 = 1 << 2;
+pub const ZX_PROFILE_INFO_FLAG_NO_INHERIT: u32 = 1 << 3;
+pub const ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY: u32 = 1 << 4;
+pub const ZX_PROFILE_INFO_FLAG_CRITICAL: u32 = 1 << 5;
+
+pub const ZX_PRIORITY_LOWEST: i32 = 0;
+pub const ZX_PRIORITY_LOW: i32 = 8;
+pub const ZX_PRIORITY_DEFAULT: i32 = 16;
+pub const ZX_PRIORITY_HIGH: i32 = 24;
+pub const ZX_PRIORITY_HIGHEST: i32 = 31;
 
 #[cfg(feature = "zerocopy")]
 impl Default for zx_profile_info_t {
@@ -2677,7 +2692,7 @@ pub union zx_profile_info_union {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
 pub struct zx_sched_deadline_params_t {
     pub capacity: zx_duration_t,
     pub relative_deadline: zx_duration_t,
