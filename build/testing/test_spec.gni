@@ -291,6 +291,9 @@ if (allowed_device_types == []) {
 #     otherwise do to detect panics. Some tests that create exception channels at the job
 #     level will fail if test_manager creates its customary exception channels.
 #
+#   test_filters (optional)
+#     [list of strings] Test case filter patterns to apply when running the test.
+#
 template("test_spec") {
   testonly = true
 
@@ -592,6 +595,7 @@ template("test_spec") {
                                "build_rule",
                                "has_generated_manifest",
                                "list_cases_argument",
+                               "test_filters",
                              ])
       if (defined(_parallel)) {
         parallel = _parallel
