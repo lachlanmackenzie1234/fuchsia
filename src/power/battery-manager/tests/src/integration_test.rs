@@ -326,24 +326,105 @@ async fn test_watch_dynamic_updates() -> Result<()> {
         .await?;
 
     // Wait for the update on watcher stream
-    let t1 = loop {
-        if let Some(Ok(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+    let Some(Ok(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+        info, responder, ..
+    })) = watcher_stream.next().await
+    else {
+        panic!("Watcher stream ended before receiving expected driver updates");
+    };
+    responder.send()?;
+    let level = info.level_percent.expect("level_percent missing");
+    assert!((level - 100.0).abs() < f32::EPSILON, "expected 100.0, got {level}");
+    assert_eq!(info.charge_status, Some(fpower::ChargeStatus::Charging));
+    let t1 = info.timestamp.expect("timestamp missing from first update");
+    assert_gt!(t1, t0);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_shutdown_offset_scaling() -> Result<()> {
+    let realm = setup_realm(FidlRouteMode::NewOnly).await?;
+
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let service = fuchsia_component::client::Service::open_from_dir(
+        realm.root.get_exposed_dir(),
+        ftest_battery::ServiceMarker,
+    )?;
+    let service_instance = service.watch_for_any().await?;
+    let control = service_instance.connect_to_control()?;
+
+    let (watcher_client, watcher_stream) =
+        fidl::endpoints::create_request_stream::<fpower::BatteryInfoWatcherMarker>();
+    battery_mgr.watch(watcher_client)?;
+
+    // Wait for the initial update from driver
+    let (info, mut watcher_stream) = wait_for_battery_info(watcher_stream).await?;
+    assert_default_battery_info(&info);
+
+    let fake_clock_control =
+        realm.root.connect_to_protocol_at_exposed_dir::<ftesting::FakeClockControlProxy>()?;
+    fake_clock_control.pause().await?;
+
+    async fn update_and_check(
+        control: &ftest_battery::ControlProxy,
+        fake_clock_control: &ftesting::FakeClockControlProxy,
+        watcher_stream: &mut fpower::BatteryInfoWatcherRequestStream,
+        raw_level: f32,
+        expected_scaled: f32,
+    ) -> Result<()> {
+        // Advance time by 1000 seconds to bypass the rate limiter's maximum rate limit
+        fake_clock_control
+            .advance(&ftesting::Increment::Determined(
+                zx::MonotonicDuration::from_seconds(1000).into_nanos(),
+            ))
+            .await?
+            .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+
+        control
+            .set_battery_status(&fbattery::Status {
+                level_percent: Some(raw_level),
+                charge_status: Some(fbattery::ChargeStatus::Charging),
+                ..Default::default()
+            })
+            .await?;
+
+        let Some(Ok(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
             info,
             responder,
             ..
         })) = watcher_stream.next().await
-        {
-            responder.send()?;
-            if info.level_percent == Some(100.0)
-                && info.charge_status == Some(fpower::ChargeStatus::Charging)
-            {
-                break info.timestamp.expect("timestamp missing from first update");
-            }
-        } else {
-            panic!("Watcher stream ended before receiving expected driver updates");
-        }
-    };
-    assert_gt!(t1, t0);
+        else {
+            return Err(anyhow::anyhow!("Watcher stream ended prematurely"));
+        };
+        responder.send()?;
+        let level = info.level_percent.expect("level_percent missing");
+        assert!(
+            (level - expected_scaled).abs() < f32::EPSILON,
+            "expected level_percent {expected_scaled}, got {level}"
+        );
+        Ok(())
+    }
+
+    // Test cases:
+    // 1. Raw level at or below offset (3.0%) -> Scaled level 0.0%
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 4.0, 2.0).await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 3.1, 1.0).await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 3.0, 0.0).await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 2.0, 0.0).await?;
+
+    // 2. Raw level in middle (51.5%) -> Scaled level 50.0%
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 51.5, 50.0).await?;
+
+    // 3. Raw level 99.0% -> Scaled level 99.0%
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 99.0, 99.0).await?;
+
+    // 4. Raw level 100% -> Scaled level 100.0%
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 100.0, 100.0).await?;
+
+    // 5. Raw level above 100% (101.0%) -> Scaled level capped at 100.0%
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 101.0, 100.0).await?;
 
     Ok(())
 }
