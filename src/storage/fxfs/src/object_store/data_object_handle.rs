@@ -1023,7 +1023,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         mut buf: MutableBufferRef<'_>,
         options: OverwriteOptions,
     ) -> Result<(), Error> {
-        assert_eq!((buf.len() as u32) % self.store().device.block_size(), 0);
+        ensure!((buf.len() as u32) % self.store().device.block_size() == 0, FxfsError::InvalidArgs);
         let end = offset + buf.len() as u64;
 
         let key_id = self.get_key(None).await?.0;
@@ -1411,8 +1411,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         file_range: &mut Range<u64>,
     ) -> Result<Vec<Range<u64>>, Error> {
         let block_size = self.block_size();
-        assert!(file_range.is_aligned(block_size));
-        assert!(!self.handle.is_encrypted());
+        ensure!(file_range.is_aligned(block_size), FxfsError::InvalidArgs);
+        ensure!(!self.handle.is_encrypted(), FxfsError::NotSupported);
         let mut ranges = Vec::new();
         let tree = &self.store().tree;
         let layer_set = tree.layer_set();
@@ -2363,6 +2363,42 @@ mod tests {
             TEST_DATA
         );
         assert_eq!(&buf.as_slice()[offset as usize..offset as usize + 2048], &[95; 2048]);
+    }
+
+    #[fuchsia::test]
+    async fn test_unaligned_overwrite_returns_error() {
+        let (fs, object) = test_filesystem_and_object().await;
+        let mut buf = object.allocate_buffer(100).await;
+        let res = object.overwrite(0, buf.as_mut(), OverwriteOptions::default()).await;
+        assert!(matches!(res, Err(e) if FxfsError::InvalidArgs.matches(&e)));
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_unaligned_preallocate_returns_error() {
+        let (fs, object) = test_filesystem_and_object().await;
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new failed");
+        let res = object.preallocate_range(&mut transaction, &mut (0..100)).await;
+        assert!(matches!(res, Err(e) if FxfsError::InvalidArgs.matches(&e)));
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_encrypted_preallocate_returns_error() {
+        let (fs, object) = test_filesystem_and_object().await;
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new failed");
+        let bs = fs.block_size();
+        let res = object.preallocate_range(&mut transaction, &mut (0..bs)).await;
+        assert!(matches!(res, Err(e) if FxfsError::NotSupported.matches(&e)));
+        fs.close().await.expect("Close failed");
     }
 
     #[fuchsia::test]
