@@ -6,6 +6,8 @@
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
+visibility("private")
+
 def fidl_rust_library(
         *,
         name,

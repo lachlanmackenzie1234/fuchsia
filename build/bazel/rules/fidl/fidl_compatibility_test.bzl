@@ -8,6 +8,8 @@ load("@fuchsia_build_info//:args.bzl", "update_goldens")
 load(":fidl_ir.bzl", "fidl_ir")
 load(":fidl_summary.bzl", "fidl_summary")
 
+visibility("private")
+
 # LINT.IfChange(run_compatibility_test)
 def _fidl_api_compatibility_check_impl(ctx):
     inputs = [ctx.file.current_file]

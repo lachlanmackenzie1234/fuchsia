@@ -7,6 +7,8 @@
 load("//build/bazel/rules/fidl:providers.bzl", "FidlLibraryInfo")
 load("//build/bazel/rules/idk:providers.bzl", "FuchsiaIdkAtomInfo", "FuchsiaIdkMoleculeInfo")
 
+visibility(["//build/fidl/..."])
+
 FidlMetadataAspectInfo = provider(
     doc = "Collects struct metadata for FIDL libraries.",
     fields = {
