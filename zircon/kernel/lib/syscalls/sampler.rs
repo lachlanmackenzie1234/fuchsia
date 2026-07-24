@@ -40,7 +40,7 @@ pub fn sys_sampler_create(
 
     check_sampler_supported()?;
 
-    validate_ranged_resource(rsrc, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_SAMPLING_BASE as usize, 1)?;
+    validate_ranged_resource(rsrc, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_SAMPLING_BASE, 1)?;
 
     ProcessDispatcher::with_current(|up| {
         up.enforce_basic_policy(ZX_POL_NEW_SAMPLER)?;

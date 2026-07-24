@@ -18,4 +18,8 @@ zx_status_t arch_system_powerctl(uint32_t cmd, const zx_system_powerctl_arg_t* a
 #else
 zx_status_t arch_system_powerctl(uint32_t cmd, const zx_system_powerctl_arg_t* arg);
 #endif
+
+zx_status_t system_mexec_core(zx_handle_t resource, zx_handle_t kernel_vmo,
+                              zx_handle_t data_zbi_vmo);
+
 #endif  // ZIRCON_KERNEL_LIB_SYSCALLS_SYSTEM_PRIV_H_

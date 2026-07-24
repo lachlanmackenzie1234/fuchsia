@@ -947,6 +947,7 @@ closed protocol System {
     ///  - [`zx_system_mexec_payload_get()`]
     ///
     /// [`zx_system_mexec_payload_get()`]: system_mexec_payload_get.md
+    @rust
     strict Mexec(resource struct {
         resource Handle:RESOURCE;
         kernel_vmo Handle:VMO;
@@ -1005,6 +1006,7 @@ closed protocol System {
     ///  - [`zx_system_mexec()`]
     ///
     /// [`zx_system_mexec()`]: system_mexec.md
+    @rust
     strict MexecPayloadGet(resource struct {
         resource Handle:RESOURCE;
     }) -> (struct {

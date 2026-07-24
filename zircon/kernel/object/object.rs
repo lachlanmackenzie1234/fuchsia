@@ -28,7 +28,9 @@ pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use handle::{HandleValue, KernelHandle};
 pub use log_dispatcher::*;
 pub use process_dispatcher::ProcessDispatcher;
-pub use resource_ffi::{validate_ranged_resource, validate_resource_kind_base};
+pub use resource_ffi::{
+    validate_ranged_resource, validate_resource_kind_base, validate_system_resource,
+};
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use sampler_dispatcher_ffi::*;
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;

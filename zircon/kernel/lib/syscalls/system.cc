@@ -293,55 +293,12 @@ static zx_status_t vmo_coalesce_pages(zx_handle_t vmo_hdl, const size_t extra_by
   return ZX_OK;
 }
 
-// zx_status_t zx_system_mexec_payload_get
-zx_status_t sys_system_mexec_payload_get(zx_handle_t resource, user_out_ptr<void> user_buffer,
-                                         size_t buffer_size) {
-  if (!BootOptions::Get()->enable_debugging_syscalls) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  // Highly privileged, only mexec resource should have access.
-  if (zx_status_t result =
-          validate_ranged_resource(resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1);
-      result != ZX_OK) {
-    return result;
-  }
-
-  // Limit the size of the result that we can return to userspace.
-  if (buffer_size > kBootdataPlatformExtraBytes) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  fbl::AllocChecker ac;
-  ktl::unique_ptr<ktl::byte[]> buffer(new (&ac) ktl::byte[buffer_size]);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  if (auto result = WriteMexecData({buffer.get(), buffer_size}); result.is_error()) {
-    return result.error_value();
-  } else {
-    size_t zbi_size = ktl::move(result).value();
-    ZX_DEBUG_ASSERT(zbi_size <= buffer_size);
-    return user_buffer.reinterpret<ktl::byte>().copy_array_to_user(buffer.get(), zbi_size);
-  }
-}
-
-// zx_status_t zx_system_mexec
-NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vmo,
-                                     zx_handle_t data_zbi_vmo) {
-  if (!BootOptions::Get()->enable_debugging_syscalls) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t result =
-      validate_ranged_resource(resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1);
-  if (result != ZX_OK)
-    return result;
-
+NO_ASAN zx_status_t system_mexec_core(zx_handle_t resource, zx_handle_t kernel_vmo,
+                                      zx_handle_t data_zbi_vmo) {
   paddr_t new_kernel_addr;
   size_t new_kernel_len;
-  result = vmo_coalesce_pages(kernel_vmo, 0, &new_kernel_addr, nullptr, &new_kernel_len);
+  zx_status_t result =
+      vmo_coalesce_pages(kernel_vmo, 0, &new_kernel_addr, nullptr, &new_kernel_len);
   if (result != ZX_OK) {
     return result;
   }
