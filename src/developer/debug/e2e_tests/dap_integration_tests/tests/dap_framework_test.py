@@ -4,6 +4,7 @@
 
 import asyncio
 import gc
+import json
 import sys
 import unittest
 from io import StringIO
@@ -13,6 +14,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from async_utils.command import StderrEvent, StdoutEvent, TerminationEvent
 from dap_test_framework import DapTestCase, DapTestFramework, RequestFuture
 from pydap.client import DapClient
+from zxdb_dap import ZxdbDapClient
 
 
 class TestDapFramework(unittest.IsolatedAsyncioTestCase):
@@ -293,6 +295,50 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
 
         finally:
             loop.set_exception_handler(None)
+
+    async def test_send_wrapper_fifo_serialization(self) -> None:
+        self.framework.client = ZxdbDapClient()
+        self.framework._writer = Mock(spec=asyncio.StreamWriter)
+        self.framework._writer.wait_closed = AsyncMock()
+        reader = asyncio.StreamReader()
+        asyncio.create_task(
+            self.framework.client.run(reader, self.framework.event_queue)
+        )
+        await asyncio.sleep(0)
+
+        execution_order: list[str] = []
+
+        async def mock_write_message(
+            writer: Any, request: dict[str, Any]
+        ) -> None:
+            seq = request.get("seq", 0)
+            command = request.get("command", "")
+            if command == "cmd1":
+                await asyncio.sleep(0.05)
+            execution_order.append(command)
+            resp = {
+                "seq": seq,
+                "type": "response",
+                "request_seq": seq,
+                "success": True,
+                "command": command,
+            }
+            body = json.dumps(resp, separators=(",", ":")).encode("utf-8")
+            header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
+            reader.feed_data(header + body)
+
+        setattr(self.framework.client, "_write_message", mock_write_message)
+
+        fut1 = self.framework._send_wrapper("cmd1")
+        fut2 = self.framework._send_wrapper("cmd2")
+
+        await asyncio.sleep(0)
+        await self.framework.client._write_queue.join()
+        await asyncio.gather(fut1, fut2)
+
+        self.assertEqual(execution_order, ["cmd1", "cmd2"])
+        self.assertEqual(fut1.request_seq, 1)
+        self.assertEqual(fut2.request_seq, 2)
 
 
 class TestDapTestCaseTeardown(unittest.TestCase):

@@ -9,7 +9,10 @@ import sys
 import unittest
 from typing import Any, Dict
 
-from dap_test_framework import DapTestCase, get_dap_source_path
+from dap_test_framework import (
+    DapTestCase,
+    get_dap_source_path,
+)
 from pydap.dap_types import Source, SourceBreakpoint
 from pydap.models import (
     InitializeArguments,
@@ -32,14 +35,13 @@ class TestDapInit(DapTestCase):
         await self.initialize(InitializeArguments(adapterID="zxdb"))
 
     async def test_initialize_partial(self) -> None:
-        self.split_request(1, delay=0.1)
-        await self.initialize(InitializeArguments(adapterID="zxdb"))
+        init_fut = self.initialize(InitializeArguments(adapterID="zxdb"))
+        self.split_request(init_fut.request_seq, delay=0.1)
+        await init_fut
 
 
 class TestDapDisconnect(DapTestCase):
     async def test_disconnect_on_close(self) -> None:
-        seq = self.framework.client._seq_counter
-
         # Create a future to explicitly synchronize when the callback runs
         callback_run_future = asyncio.get_running_loop().create_future()
 
@@ -55,11 +57,13 @@ class TestDapDisconnect(DapTestCase):
                 if not callback_run_future.done():
                     callback_run_future.set_result(True)
 
-        # Register the callback ONLY for this specific sequence number
-        self.set_sent_callback(seq, close_socket_on_disconnect)
-
         # Trigger disconnect in background
         disconnect_fut = self.disconnect()
+
+        # Register the callback for the disconnect request sequence
+        self.set_sent_callback(
+            disconnect_fut.request_seq, close_socket_on_disconnect
+        )
 
         # Wait explicitly for the socket closure callback to execute and complete
         await asyncio.wait_for(callback_run_future, timeout=5.0)
@@ -118,6 +122,7 @@ class TestDapBreakpoint(DapTestCase):
 
 class TestLaunch(DapTestCase):
     async def test_strong_attach(self) -> None:
+        await self.avoid_racy_attach()
         self.launch(
             LaunchArguments(
                 process="fuchsia-pkg://fuchsia.com/crasher#meta/cpp_crasher.cm"

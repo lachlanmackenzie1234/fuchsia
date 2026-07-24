@@ -13,7 +13,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Dict,
+    List,
+    Optional,
+)
 
 from async_utils.command import (
     AsyncCommand,
@@ -65,9 +73,16 @@ class RequestFuture:
         except Exception as e:
             self.fut.set_exception(e)
 
-    def set_exception(self, exc: Exception) -> None:
+    # asyncio.CancelledError inherits directly from BaseException.
+    def set_exception(self, exc: BaseException) -> None:
         if not self.fut.done():
             self.fut.set_exception(exc)
+
+    def cancel(self, msg: Optional[str] = None) -> bool:
+        return self.fut.cancel(msg)
+
+    def cancelled(self) -> bool:
+        return self.fut.cancelled()
 
 
 class EventFuture:
@@ -214,7 +229,8 @@ class DapTestFramework:
         self.unmatched_events: List[Dict[str, Any]] = []
         self._client_reader_task: Optional[asyncio.Task[None]] = None
         self._process_task: Optional[asyncio.Task[None]] = None
-        self._request_tasks: List[asyncio.Task[None]] = []
+        self.request_timeout: float = 5.0
+        self._request_tasks: set[asyncio.Task[Any]] = set()
         self.proc: Optional[AsyncCommand] = None
         self._server_log_task: Optional[asyncio.Task[None]] = None
         self._writer: Optional[asyncio.StreamWriter] = None
@@ -336,7 +352,7 @@ class DapTestFramework:
         print(f"Connecting to DAP server on port {port}...")
         reader, writer = await asyncio.open_connection("localhost", port)
         self._writer = writer
-        # Start background task for protocol handling
+        # Start background tasks for protocol and event handling.
         self._client_reader_task = asyncio.create_task(
             self.client.run(reader, self.event_queue)
         )
@@ -345,31 +361,45 @@ class DapTestFramework:
         await asyncio.sleep(0)
 
     def _send_wrapper(
-        self, command: str, coro_fn: Callable[[], Coroutine[Any, Any, Any]]
+        self,
+        command: str,
+        arguments: Optional[DapBaseModel] = None,
     ) -> RequestFuture:
-        """Executes a DAP client coroutine in the background and returns a RequestFuture."""
-        seq = self.client._seq_counter
+        """Writes a DAP request directly to the socket and returns a RequestFuture.
+
+        Args:
+            command: DAP command string.
+            arguments: Optional command arguments model.
+        """
+        assert (
+            self._writer is not None
+        ), "DAP client socket writer is not initialized."
+
+        seq, fut = self.client._send_request_future(
+            self._writer, command, arguments
+        )
+
         req_fut = RequestFuture(self, command, seq)
         self.pending_futures.append(req_fut)
 
-        async def do_send() -> None:
+        async def _wait_and_resolve() -> None:
             try:
-                resp = await coro_fn()
-                assert isinstance(resp, DapBaseModel)
-                resp_dict = resp.dump_dap()
+                resp_dict = await asyncio.wait_for(
+                    fut, timeout=self.request_timeout
+                )
                 self.traffic_history.append(resp_dict)
-                if not resp_dict.get("success", True):
-                    raise AssertionError(
-                        f"DAP request {command} failed: {resp_dict.get('message')}"
-                    )
                 if command == "initialize":
                     self.initialized = True
                 req_fut.set_result(resp_dict)
-            except Exception as e:
-                req_fut.set_exception(e)
+            except BaseException as e:
+                if not req_fut.fut.done():
+                    req_fut.set_exception(e)
+                if not isinstance(e, Exception):
+                    raise
 
-        task = asyncio.create_task(do_send())
-        self._request_tasks.append(task)
+        task = asyncio.create_task(_wait_and_resolve())
+        self._request_tasks.add(task)
+        task.add_done_callback(self._request_tasks.discard)
         return req_fut
 
     def on_event(
@@ -380,6 +410,7 @@ class DapTestFramework:
         self.event_expectations.append(event_fut)
         return event_fut
 
+    # This function is only used for testing socket related behaviors now.
     async def _patched_write_message(
         self, writer: asyncio.StreamWriter, value: dict[str, Any]
     ) -> None:
@@ -582,86 +613,43 @@ class DapTestFramework:
                 if isinstance(item, dict) and key in item:
                     self._recursive_strip_path(item[key], parts[1:])
 
-    # High-Level Wrappers
     def initialize(self, args: InitializeArguments) -> RequestFuture:
-        assert self._writer is not None
-        writer = self._writer
-        return self._send_wrapper(
-            "initialize",
-            lambda: self.client.initialize(writer, args),
+        return self._send_wrapper("initialize", args)
+
+    def avoid_racy_attach(self) -> RequestFuture:
+        """Sends a setBreakpoints request to avoid racy attach behavior."""
+        avoid_racy_path = str(
+            (get_build_root() / "this_can_be_any_name_to_avoid_racy").resolve()
         )
+        return self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=avoid_racy_path),
+                breakpoints=[SourceBreakpoint(line=1)],
+            )
+        ).expect({"success": True})
 
-    def launch(
-        self, args: LaunchArguments, avoid_racy_attach: bool = True
-    ) -> RequestFuture:
-        # TODO(https://fxbug.dev/476364291): Remove this workaround once process launch synchronization is fixed.
-        # Releasing the process starting exception too early causes the inferior to run in
-        # parallel with the debugger before attaching completes. Registering any pending
-        # breakpoint in advance (even on a placeholder filename) prevents early exception release,
-        # ensuring synchronous attach before execution begins.
-        async def do_launch() -> Any:
-            if avoid_racy_attach:
-                avoid_racy_path = str(
-                    (
-                        get_build_root() / "this_can_be_any_name_to_avoid_racy"
-                    ).resolve()
-                )
-                bp_resp = await self.set_breakpoints(
-                    SetBreakpointsArguments(
-                        source=Source(path=avoid_racy_path),
-                        breakpoints=[SourceBreakpoint(line=1)],
-                    )
-                )
-                if not bp_resp.get("success"):
-                    raise RuntimeError(
-                        f"Failed to set preset breakpoint for racy attach avoidance: {bp_resp}"
-                    )
-
-            assert self._writer is not None
-            writer = self._writer
-            return await self.client.launch(writer, args)
-
-        return self._send_wrapper("launch", do_launch)
+    def launch(self, args: LaunchArguments) -> RequestFuture:
+        return self._send_wrapper("launch", args)
 
     def evaluate(self, args: EvaluateArguments) -> RequestFuture:
-        assert self._writer is not None
-        writer = self._writer
-        return self._send_wrapper(
-            "evaluate", lambda: self.client.evaluate(writer, args)
-        )
+        return self._send_wrapper("evaluate", args)
 
     def threads(self) -> RequestFuture:
-        assert self._writer is not None
-        writer = self._writer
-        return self._send_wrapper(
-            "threads", lambda: self.client.threads(writer)
-        )
+        return self._send_wrapper("threads")
 
     def stack_trace(self, args: StackTraceArguments) -> RequestFuture:
-        assert self._writer is not None
-        writer = self._writer
-        return self._send_wrapper(
-            "stackTrace", lambda: self.client.stack_trace(writer, args)
-        )
+        return self._send_wrapper("stackTrace", args)
 
     def set_breakpoints(self, args: SetBreakpointsArguments) -> RequestFuture:
-        assert self._writer is not None
-        writer = self._writer
-        return self._send_wrapper(
-            "setBreakpoints", lambda: self.client.set_breakpoints(writer, args)
-        )
+        return self._send_wrapper("setBreakpoints", args)
 
     def disconnect(
         self, args: Optional[DisconnectArguments] = None
     ) -> RequestFuture:
         self.disconnected = True
-        assert self._writer is not None
-        writer = self._writer
         if args is None:
             args = DisconnectArguments()
-        return self._send_wrapper(
-            "disconnect", lambda: self.client.disconnect(writer, args)
-        )
+        return self._send_wrapper("disconnect", args)
 
     async def verify_all_expectations(self) -> None:
         """Awaits all pending futures and verifies event expectations."""
@@ -805,7 +793,7 @@ class DapTestFramework:
 
     async def teardown(self) -> None:
         """Cleans up connections and processes."""
-        for task in self._request_tasks:
+        for task in list(self._request_tasks):
             if not task.done():
                 task.cancel()
                 try:
@@ -996,10 +984,11 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
     def initialize(self, args: InitializeArguments) -> RequestFuture:
         return self.framework.initialize(args)
 
-    def launch(
-        self, args: LaunchArguments, avoid_racy_attach: bool = True
-    ) -> RequestFuture:
-        return self.framework.launch(args, avoid_racy_attach=avoid_racy_attach)
+    def avoid_racy_attach(self) -> RequestFuture:
+        return self.framework.avoid_racy_attach()
+
+    def launch(self, args: LaunchArguments) -> RequestFuture:
+        return self.framework.launch(args)
 
     def evaluate(self, args: EvaluateArguments) -> RequestFuture:
         return self.framework.evaluate(args)
