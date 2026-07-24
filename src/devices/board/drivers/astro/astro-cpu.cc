@@ -104,7 +104,7 @@ zx_status_t Astro::CpuInit() {
   }
 
   const fpbus::Node node({
-      .name = "aml-cpu",
+      .name = "cpu-controller-0",
       .vid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE,
       .pid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_ASTRO,
       .did = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_DID_GOOGLE_AMLOGIC_CPU,
@@ -146,7 +146,7 @@ zx_status_t Astro::CpuInit() {
   auto composite_result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_cpu", .parents2 = parents}}));
+                                   {.name = "cpu-controller-0", .parents2 = parents}}));
 
   if (!composite_result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec request failed: %s",

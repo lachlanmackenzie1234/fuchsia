@@ -43,7 +43,7 @@ static const std::vector<fpbus::Irq> astro_ram_ctl_irqs{
 
 static const fpbus::Node ramctl_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml-ram-ctl";
+  dev.name() = "ram-controller-ff638000";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_RAM_CTL;
@@ -59,7 +59,7 @@ zx_status_t Astro::RamCtlInit() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, ramctl_dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_ram", .parents2 = {}}}));
+                                   {.name = "ram-controller-ff638000", .parents2 = {}}}));
   if (!result.ok()) {
     zxlogf(ERROR, "%s: AddCompositeNodeSpec RamCtl(ramctl_dev) request failed: %s", __func__,
            result.FormatDescription().data());

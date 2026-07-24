@@ -127,7 +127,7 @@ zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   };
 
   fpbus::Node usb_phy_dev{{
-      .name = "aml-usb-phy",
+      .name = "usb-phy-ffe09000",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
       .pid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2,
       .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_USB_PHY_V2,

@@ -92,7 +92,7 @@ zx_status_t Astro::ButtonsInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena buttons_arena('BTTN');
 
-  fpbus::Node dev({.name = "astro-buttons",
+  fpbus::Node dev({.name = "gpio-buttons",
                    .vid = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC,
                    .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
                    .did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_BUTTONS,
@@ -178,7 +178,7 @@ zx_status_t Astro::ButtonsInit() {
   };
 
   fuchsia_driver_framework::CompositeNodeSpec buttonComposite = {
-      {.name = "astro-buttons", .parents2 = std::move(parents)}};
+      {.name = "gpio-buttons", .parents2 = std::move(parents)}};
 
   fdf::WireUnownedResult result =
       pbus_.buffer(buttons_arena)

@@ -204,5 +204,6 @@ group("tests") {
     ":astro-bind_test",
     ":driver-host-enumeration-test-astro",
     "post-init:tests",
+    "//zircon/system/utest/device-enumeration:device-enumeration-test-astro",
   ]
 }

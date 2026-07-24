@@ -60,7 +60,7 @@ zx_status_t AddPowerImpl(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Plat
   }
 
   fpbus::Node node(
-      {.name = "aml-power-impl-composite",
+      {.name = "power-controller",
        .vid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE,
        .pid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_ASTRO,
        .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_POWER,
@@ -91,7 +91,7 @@ zx_status_t AddPowerImpl(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Plat
   fdf::WireUnownedResult result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml-power-impl-composite", .parents2 = kParents}}));
+                                   {.name = "power-controller", .parents2 = kParents}}));
 
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s", result.status_string());

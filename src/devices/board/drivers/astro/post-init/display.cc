@@ -110,9 +110,19 @@ zx::result<> PostInit::InitDisplay() {
       }},
   };
 
+  std::string display_name;
+  if (panel_type_ == display::PanelType::kBoeTv070wsmFitipowerJd9364Astro) {
+    display_name = "boe-display-ff900000";
+  } else if (panel_type_ == display::PanelType::kInnoluxP070acbFitipowerJd9364) {
+    display_name = "innolux-display-ff900000";
+  } else {
+    fdf::error("Unknown panel type: {}", static_cast<uint32_t>(panel_type_));
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   const fpbus::Node display_dev = [&]() {
     fpbus::Node dev = {};
-    dev.name() = "display";
+    dev.name() = display_name;
     dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
     dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2;
     dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_DISPLAY;
@@ -157,7 +167,8 @@ zx::result<> PostInit::InitDisplay() {
       }},
   };
 
-  fuchsia_driver_framework::CompositeNodeSpec node_group{{.name = "display", .parents2 = parents}};
+  fuchsia_driver_framework::CompositeNodeSpec node_group{
+      {.name = display_name, .parents2 = parents}};
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('DISP');

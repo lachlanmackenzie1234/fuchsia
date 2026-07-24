@@ -187,7 +187,7 @@ zx_status_t Astro::CreateGpioPlatformDevice() {
   };
 
   fpbus::Node gpio_dev{{
-      .name = "gpio",
+      .name = "gpio-controller-ff634400",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
       .pid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2,
       .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_GPIO,
@@ -200,7 +200,7 @@ zx_status_t Astro::CreateGpioPlatformDevice() {
   fdf::Arena arena('GPIO');
 
   auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(fidl_arena)
-                            .name("aml_gpio")
+                            .name("gpio-controller-ff634400")
                             .Build();
 
   auto result =
@@ -219,6 +219,13 @@ zx_status_t Astro::CreateGpioPlatformDevice() {
 }
 
 zx_status_t Astro::GpioInit() {
+  gpio_init_steps_.push_back(GpioPull(GPIO_LIGHT_INTERRUPT, fuchsia_hardware_pin::Pull::kNone));
+  gpio_init_steps_.push_back(fuchsia_hardware_pinimpl::InitStep::WithCall({{
+      .pin = GPIO_LIGHT_INTERRUPT,
+      .call = fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
+          fuchsia_hardware_gpio::BufferMode::kInput),
+  }}));
+
   if (zx_status_t status = CreateGpioPlatformDevice(); status != ZX_OK) {
     zxlogf(ERROR, "Failed to create gpio platform device: %s", zx_status_get_string(status));
     return status;

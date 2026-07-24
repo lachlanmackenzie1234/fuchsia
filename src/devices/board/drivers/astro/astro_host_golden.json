@@ -5,8 +5,10 @@
             "fuchsia-boot:///adc#meta/adc.cm",
             "fuchsia-boot:///aml-saradc#meta/aml-saradc.cm",
             "fuchsia-boot:///amlogic-clk#meta/amlogic-clk.cm",
-            "fuchsia-boot:///astro#meta/astro-post-init.cm",
-            "fuchsia-boot:///astro#meta/astro.cm",
+            "?fuchsia-boot:///astro#meta/astro-post-init.cm",
+            "?fuchsia-boot:///astro-devicetree#meta/astro-post-init.cm",
+            "?fuchsia-boot:///astro#meta/astro.cm",
+            "?fuchsia-boot:///astro-devicetree#meta/astro-devicetree.cm",
             "fuchsia-boot:///clock#meta/clock.cm",
             "fuchsia-boot:///platform-bus#meta/platform-bus.cm"
         ]
@@ -130,6 +132,11 @@
     {
         "drivers": [
             "fuchsia-boot:///registers#meta/registers.cm"
+        ]
+    },
+    {
+        "drivers": [
+            "?fuchsia-pkg://fuchsia.com/aml-g12-composite#meta/aml-g12-composite.cm"
         ]
     },
     {

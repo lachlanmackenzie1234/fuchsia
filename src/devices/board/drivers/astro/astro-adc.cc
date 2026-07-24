@@ -39,15 +39,15 @@ static const std::vector<fuchsia_hardware_platform_bus::Irq> saradc_irqs{
 
 // ADC Channels to expose from generic ADC driver.
 static const fidl_metadata::adc::Channel kAdcChannels[] = {
-    DECL_ADC_CHANNEL(ASTRO_THERMISTOR_SOC),
-    DECL_ADC_CHANNEL(ASTRO_THERMISTOR_WIFI),
-    DECL_ADC_CHANNEL(ASTRO_THERMISTOR_DSP),
-    DECL_ADC_CHANNEL(ASTRO_THERMISTOR_AMBIENT),
+    DECL_ADC_CHANNEL_WITH_NAME(ASTRO_THERMISTOR_SOC, "adc-0"),
+    DECL_ADC_CHANNEL_WITH_NAME(ASTRO_THERMISTOR_WIFI, "adc-1"),
+    DECL_ADC_CHANNEL_WITH_NAME(ASTRO_THERMISTOR_DSP, "ASTRO_ADC_BUTTON"),
+    DECL_ADC_CHANNEL_WITH_NAME(ASTRO_THERMISTOR_AMBIENT, "adc-3"),
 };
 
 zx::result<> Astro::AdcInit() {
   fuchsia_hardware_platform_bus::Node node;
-  node.name() = "adc";
+  node.name() = "adc-9000";
   node.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   node.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
   node.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_ADC;
@@ -70,7 +70,7 @@ zx::result<> Astro::AdcInit() {
   fdf::Arena arena('ADC_');
 
   auto composite_spec =
-      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("aml_saradc").Build();
+      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("adc-9000").Build();
 
   auto result =
       pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, node), composite_spec);

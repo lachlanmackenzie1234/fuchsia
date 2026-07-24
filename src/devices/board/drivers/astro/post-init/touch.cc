@@ -130,7 +130,7 @@ zx::result<> AddFocaltechTouch(
     return zx::error(persisted_metadata.error_value().status());
   }
 
-  fpbus::Node node({.name = "focaltech_touch",
+  fpbus::Node node({.name = "focaltech-touch-38",
                     .vid = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC,
                     .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
                     .did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_FOCALTOUCH,
@@ -160,8 +160,8 @@ zx::result<> AddFocaltechTouch(
       }},
   };
 
-  auto composite_node_spec =
-      fuchsia_driver_framework::CompositeNodeSpec{{.name = "focaltech_touch", .parents2 = parents}};
+  auto composite_node_spec = fuchsia_driver_framework::CompositeNodeSpec{
+      {.name = "focaltech-touch-38", .parents2 = parents}};
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('FOCL');
@@ -217,7 +217,7 @@ zx::result<> PostInit::InitGoodixTouch(const fdf::Namespace& incoming) {
   };
 
   const fuchsia_driver_framework::CompositeNodeSpec goodix_node_spec{{
-      .name = "gt92xx_touch",
+      .name = "goodix-touch-5d",
       .parents2 = goodix_parents,
   }};
 

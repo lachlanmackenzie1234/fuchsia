@@ -33,7 +33,7 @@ static const std::vector<fpbus::Bti> astro_canvas_btis{
 
 static const fpbus::Node canvas_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "canvas";
+  dev.name() = "canvas-ff638000";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_CANVAS;
@@ -46,8 +46,9 @@ zx_status_t Astro::CanvasInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('CANV');
 
-  auto composite_spec =
-      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("aml_canvas").Build();
+  auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
+                            .name("canvas-ff638000")
+                            .Build();
 
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, canvas_dev),
                                                           composite_spec);

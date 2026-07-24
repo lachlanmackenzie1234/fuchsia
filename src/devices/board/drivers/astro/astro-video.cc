@@ -88,7 +88,7 @@ static const std::vector<fpbus::Smc> astro_video_smcs{
 
 static const fpbus::Node video_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml_video";
+  dev.name() = "video-decoder-ffd00000";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_VIDEO;
@@ -164,7 +164,7 @@ zx_status_t Astro::VideoInit() {
   }};
 
   auto video_spec = fuchsia_driver_framework::CompositeNodeSpec{{
-      .name = "aml_video",
+      .name = "video-decoder-ffd00000",
       .parents2 = {{video_canvas, video_clock_dos_vdec, video_clock_dos, video_tee}},
   }};
 

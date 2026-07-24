@@ -70,7 +70,7 @@ static const std::vector<fpbus::Bti> mali_btis{
 zx_status_t Astro::MaliInit() {
   {
     fpbus::Node aml_gpu_dev;
-    aml_gpu_dev.name() = "aml_gpu";
+    aml_gpu_dev.name() = "gpu-ffe40000";
     aml_gpu_dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
     aml_gpu_dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2;
     aml_gpu_dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_MALI_INIT;
@@ -135,8 +135,8 @@ zx_status_t Astro::MaliInit() {
     auto parents = std::vector<fuchsia_driver_framework::ParentSpec2>{aml_gpu_register_reset_node,
                                                                       aml_gpu_clock_node};
 
-    auto composite_node_spec = fuchsia_driver_framework::CompositeNodeSpec(
-        {.name = "aml-gpu-composite", .parents2 = parents});
+    auto composite_node_spec =
+        fuchsia_driver_framework::CompositeNodeSpec({.name = "gpu-ffe40000", .parents2 = parents});
 
     auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
         fidl::ToWire(fidl_arena, aml_gpu_dev), fidl::ToWire(fidl_arena, composite_node_spec));
@@ -154,7 +154,7 @@ zx_status_t Astro::MaliInit() {
 
   {
     fpbus::Node mali_dev;
-    mali_dev.name() = "mali";
+    mali_dev.name() = "arm-mali-0";
     mali_dev.vid() = bind_fuchsia_arm_platform::BIND_PLATFORM_DEV_VID_ARM;
     mali_dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
     mali_dev.did() = bind_fuchsia_arm_platform::BIND_PLATFORM_DEV_DID_MAGMA_MALI;
@@ -176,8 +176,8 @@ zx_status_t Astro::MaliInit() {
     auto parents =
         std::vector{fuchsia_driver_framework::ParentSpec2(aml_gpu_bind_rules, aml_gpu_properties)};
 
-    auto composite_node_spec = fuchsia_driver_framework::CompositeNodeSpec(
-        {.name = "mali-composite", .parents2 = parents});
+    auto composite_node_spec =
+        fuchsia_driver_framework::CompositeNodeSpec({.name = "arm-mali-0", .parents2 = parents});
 
     auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
         fidl::ToWire(fidl_arena, mali_dev), fidl::ToWire(fidl_arena, composite_node_spec));

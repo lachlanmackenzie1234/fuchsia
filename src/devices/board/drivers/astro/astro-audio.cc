@@ -284,7 +284,7 @@ zx_status_t Astro::AudioInit() {
     }
 
     fpbus::Node dev;
-    dev.name() = "audio_codec_tas27xx";
+    dev.name() = "audio-codec-48";
     dev.vid() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI;
     dev.did() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS2770;
     dev.metadata() = std::vector<fpbus::Metadata>{
@@ -299,7 +299,7 @@ zx_status_t Astro::AudioInit() {
         fdf::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
     };
     auto composite_node_spec =
-        fdf::CompositeNodeSpec{{.name = "audio_codec_tas27xx", .parents2 = parents}};
+        fdf::CompositeNodeSpec{{.name = "audio-codec-48", .parents2 = parents}};
 
     fdf::WireUnownedResult result = pbus_.buffer(arena)->AddCompositeNodeSpec(
         fidl::ToWire(arena, dev), fidl::ToWire(arena, composite_node_spec));

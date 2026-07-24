@@ -87,7 +87,7 @@ zx_status_t Astro::ClkInit() {
 
   const fpbus::Node clk_dev = [&clock_metadata]() {
     fpbus::Node dev = {};
-    dev.name() = "astro-clk";
+    dev.name() = "clock-controller-ff63c000";
     dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
     dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2;
     dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_G12A_CLK;
@@ -100,7 +100,7 @@ zx_status_t Astro::ClkInit() {
   fdf::Arena arena('CLK_');
 
   auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
-                            .name("amlogic_clock")
+                            .name("clock-controller-ff63c000")
                             .Build();
 
   auto result =

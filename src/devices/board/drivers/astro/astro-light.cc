@@ -9,17 +9,20 @@
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
+#include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/amlogic/platform/s905d2/cpp/bind.h>
 #include <bind/fuchsia/ams/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/google/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/i2c/cpp/bind.h>
 #include <bind/fuchsia/hardware/pwm/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
+#include <bind/fuchsia/platform/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d2/s905d2-pwm.h>
@@ -31,13 +34,6 @@ namespace astro {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 zx_status_t Astro::LightInit() {
-  gpio_init_steps_.push_back(GpioPull(GPIO_LIGHT_INTERRUPT, fuchsia_hardware_pin::Pull::kNone));
-  gpio_init_steps_.push_back(fuchsia_hardware_pinimpl::InitStep::WithCall({{
-      .pin = GPIO_LIGHT_INTERRUPT,
-      .call = fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
-          fuchsia_hardware_gpio::BufferMode::kInput),
-  }}));
-
   // TODO(kpt): Insert the right parameters here.
   static const fuchsia_hardware_lightsensor::Metadata kLightSensorMetadata({
       .gain = 64,
@@ -53,7 +49,7 @@ zx_status_t Astro::LightInit() {
   }
 
   const fpbus::Node tcs3400_light_node({
-      .name = "tcs3400_light",
+      .name = "tcs3400-light-39",
       .vid = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC,
       .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
       .did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_TCS3400_LIGHT,
@@ -93,13 +89,6 @@ zx_status_t Astro::LightInit() {
       fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_LIGHT_INTERRUPT),
   };
 
-  const auto kGpioInitBindRules = std::vector{
-      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-  };
-  const auto kGpioInitProperties = std::vector{
-      fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-  };
-
   auto kTcs3400LightParents = std::vector{
       fuchsia_driver_framework::ParentSpec2{{
           .bind_rules = kI2cBindRules,
@@ -109,17 +98,13 @@ zx_status_t Astro::LightInit() {
           .bind_rules = kGpioLightInterruptRules,
           .properties = kGpioLightInterruptProperties,
       }},
-      fuchsia_driver_framework::ParentSpec2{{
-          .bind_rules = kGpioInitBindRules,
-          .properties = kGpioInitProperties,
-      }},
   };
 
   fidl::Arena<> fidl_arena;
   fdf::Arena tcs3400_light_arena('TCS3');
 
   auto tcs3400_light_spec = fuchsia_driver_framework::CompositeNodeSpec{
-      {.name = "tcs3400_light", .parents2 = kTcs3400LightParents}};
+      {.name = "tcs3400-light-39", .parents2 = kTcs3400LightParents}};
   fdf::WireUnownedResult tsc3400_light_result =
       pbus_.buffer(tcs3400_light_arena)
           ->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, tcs3400_light_node),
@@ -153,7 +138,7 @@ zx_status_t Astro::LightInit() {
   }
 
   fpbus::Node light_node;
-  light_node.name() = "gpio-light";
+  light_node.name() = "aml-light";
   light_node.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   light_node.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
   light_node.did() = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_GPIO_LIGHT;
@@ -197,6 +182,12 @@ zx_status_t Astro::LightInit() {
       fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
                          bind_fuchsia_pwm::PWM_ID_FUNCTION_AMBER_LED),
   };
+  const auto kGpioInitBindRules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+  };
+  const auto kGpioInitProperties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+  };
 
   auto aml_light_parents = std::vector{
       fuchsia_driver_framework::ParentSpec2{{
@@ -216,7 +207,7 @@ zx_status_t Astro::LightInit() {
   fdf::Arena arena('LIGH');
 
   auto aml_light_spec = fuchsia_driver_framework::CompositeNodeSpec{
-      {.name = "aml_light", .parents2 = aml_light_parents}};
+      {.name = "aml-light", .parents2 = aml_light_parents}};
   fdf::WireUnownedResult result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, light_node), fidl::ToWire(fidl_arena, aml_light_spec));
 

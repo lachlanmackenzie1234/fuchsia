@@ -79,8 +79,18 @@ zx::result<> PostInit::InitBacklight() {
       }},
   };
 
+  std::string backlight_name;
+  if (panel_type_ == display::PanelType::kBoeTv070wsmFitipowerJd9364Astro) {
+    backlight_name = "backlight-boe-2c";
+  } else if (panel_type_ == display::PanelType::kInnoluxP070acbFitipowerJd9364) {
+    backlight_name = "backlight-innolux-2c";
+  } else {
+    fdf::error("Unknown panel type: {}", static_cast<uint32_t>(panel_type_));
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   fpbus::Node backlight_dev = {};
-  backlight_dev.name() = "backlight";
+  backlight_dev.name() = backlight_name;
   backlight_dev.vid() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI;
   backlight_dev.pid() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_PID_LP8556;
   backlight_dev.did() = bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_BACKLIGHT;
@@ -111,7 +121,7 @@ zx::result<> PostInit::InitBacklight() {
   };
 
   const auto composite_node_spec =
-      fuchsia_driver_framework::CompositeNodeSpec{{.name = "backlight", .parents2 = parents}};
+      fuchsia_driver_framework::CompositeNodeSpec{{.name = backlight_name, .parents2 = parents}};
 
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, backlight_dev), fidl::ToWire(fidl_arena, composite_node_spec));

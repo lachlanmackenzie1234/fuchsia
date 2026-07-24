@@ -2,7 +2,7 @@
     "temperature_drivers": [
         {
             "alias": "soc_pll",
-            "sensor_name": "aml-thermal-pll"
+            "sensor_name": "temperature-sensor-ff634800"
         },
         {
             "alias": "therm_ambient",

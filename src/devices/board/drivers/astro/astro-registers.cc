@@ -105,7 +105,7 @@ zx_status_t Astro::RegistersInit() {
   };
 
   fpbus::Node registers_dev;
-  registers_dev.name() = "registers";
+  registers_dev.name() = "register-controller-1000";
   registers_dev.vid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC;
   registers_dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
   registers_dev.did() = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_REGISTERS;
@@ -115,8 +115,9 @@ zx_status_t Astro::RegistersInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('REGI');
 
-  auto composite_spec =
-      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("registers").Build();
+  auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
+                            .name("register-controller-1000")
+                            .Build();
 
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, registers_dev),
                                                           composite_spec);

@@ -254,7 +254,7 @@ zx::result<> AddWifiNode(fdf::WireSyncClient<fpbus::PlatformBus>& pbus) {
   };
 
   fpbus::Node node{{
-      .name = "wifi",
+      .name = "wifi-1",
       .vid = bind_fuchsia_broadcom_platform::BIND_PLATFORM_DEV_VID_BROADCOM,
       .pid = bind_fuchsia_broadcom_platform::BIND_PLATFORM_DEV_PID_BCM43458,
       .did = bind_fuchsia_broadcom_platform::BIND_PLATFORM_DEV_DID_WIFI,
@@ -294,7 +294,7 @@ zx::result<> AddWifiNode(fdf::WireSyncClient<fpbus::PlatformBus>& pbus) {
   fdf::WireUnownedResult result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "wifi", .parents2 = wifi_parents}}));
+                                   {.name = "wifi-1", .parents2 = wifi_parents}}));
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
            result.FormatDescription().data());
@@ -331,7 +331,7 @@ zx::result<> AddSdEmmcNode(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
   };
 
   fpbus::Node node{{
-      .name = "aml-sdio",
+      .name = "mmc-ffe05000",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
       .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
       .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_SDMMC_B,
@@ -353,7 +353,7 @@ zx::result<> AddSdEmmcNode(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
           ->AddCompositeNodeSpec(
               fidl::ToWire(fidl_arena, node),
               fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                           {.name = "aml_sdio", .parents2 = kSdioParents}}));
+                                           {.name = "mmc-ffe05000", .parents2 = kSdioParents}}));
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
            result.FormatDescription().data());

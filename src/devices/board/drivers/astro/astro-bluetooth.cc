@@ -98,7 +98,7 @@ zx_status_t Astro::BluetoothInit() {
 
   auto builder =
       fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
-          .name("bluetooth-composite-spec")
+          .name("bt-uart-ffd24000")
           .parents2(fidl::VectorView<fuchsia_driver_framework::wire::ParentSpec2>(arena, parents));
 
   fit::result encoded = fidl::Persist(bt_uart_serial_info);
@@ -117,7 +117,7 @@ zx_status_t Astro::BluetoothInit() {
 
   const fpbus::Node bt_uart_dev = [&]() {
     fpbus::Node dev = {};
-    dev.name() = "bt-uart";
+    dev.name() = "bt-uart-ffd24000";
     dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
     dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
     dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_UART;

@@ -75,7 +75,7 @@ static const std::vector<fdf::ParentSpec2> kRawNandParents = std::vector{
 };
 
 static const auto kCompositeNodeSpec =
-    fdf::CompositeNodeSpec{{.name = "raw_nand", .parents2 = kRawNandParents}};
+    fdf::CompositeNodeSpec{{.name = "nand-ffe07800", .parents2 = kRawNandParents}};
 
 zx_status_t Astro::RawNandInit() {
   // Set alternate functions to enable raw_nand.
@@ -126,7 +126,7 @@ zx_status_t Astro::RawNandInit() {
   };
 
   fpbus::Node raw_nand_dev{{
-      .name = "raw_nand",
+      .name = "nand-ffe07800",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
       .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
       .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_RAW_NAND,

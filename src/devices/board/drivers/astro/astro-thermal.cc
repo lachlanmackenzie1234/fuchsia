@@ -86,7 +86,7 @@ zx::result<> CreateThermalPllNode(
   };
 
   static const fpbus::Node node{{
-      .name = "aml-thermal-pll",
+      .name = "temperature-sensor-ff634800",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
       .pid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2,
       .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_THERMAL_PLL,
@@ -100,7 +100,7 @@ zx::result<> CreateThermalPllNode(
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_thermal_pll", .parents2 = {}}}));
+                                   {.name = "temperature-sensor-ff634800", .parents2 = {}}}));
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
            result.FormatDescription().data());
@@ -166,7 +166,7 @@ zx::result<> CreateThermalDdrNode(
   };
 
   fpbus::Node node{{
-      .name = "aml-thermal-ddr",
+      .name = "temperature-sensor-ff634c00",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
       .pid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2,
       .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_THERMAL_DDR,
@@ -180,7 +180,7 @@ zx::result<> CreateThermalDdrNode(
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_thermal_ddr", .parents2 = {}}}));
+                                   {.name = "temperature-sensor-ff634c00", .parents2 = {}}}));
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
            result.FormatDescription().data());

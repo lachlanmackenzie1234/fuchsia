@@ -33,7 +33,7 @@ static const std::vector<fpbus::Bti> astro_secure_mem_btis{
 
 static const fpbus::Node secure_mem_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml-secure-mem";
+  dev.name() = "secure-monitor";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_S905D2;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_SECURE_MEM;
@@ -63,7 +63,7 @@ zx_status_t Astro::SecureMemInit() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, secure_mem_dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_securemem", .parents2 = parents}}));
+                                   {.name = "secure-monitor", .parents2 = parents}}));
   if (!result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec SecureMem(secure_mem_dev) request failed: %s",
            result.FormatDescription().data());
