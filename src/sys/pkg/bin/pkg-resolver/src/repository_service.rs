@@ -14,7 +14,7 @@ use fidl_fuchsia_pkg_ext::RepositoryConfig;
 use fuchsia_async as fasync;
 use fuchsia_url::RepositoryUrl;
 use futures::prelude::*;
-use log::{error, info};
+use log::{error, info, warn};
 use std::sync::Arc;
 use zx::Status;
 
@@ -84,23 +84,31 @@ impl RepositoryService {
     }
 
     async fn serve_remove(&mut self, repo_url: String) -> Result<(), Status> {
-        info!("removing repository {}", repo_url);
-
         let repo_url = match RepositoryUrl::parse(&repo_url) {
             Ok(repo_url) => repo_url,
             Err(err) => {
-                error!("invalid repository URL: {:#}", anyhow!(err));
+                error!("invalid repository URL {repo_url}: {:#}", anyhow!(err));
                 return Err(Status::INVALID_ARGS);
             }
         };
 
         match self.repo_manager.write().await.remove(&repo_url).await {
-            Ok(Some(_)) => Ok(()),
-            Ok(None) => Err(Status::NOT_FOUND),
-            Err(e) => match e {
-                RemoveError::CannotRemoveStaticRepositories
-                | RemoveError::DynamicConfigurationDisabled => Err(Status::ACCESS_DENIED),
-            },
+            Ok(Some(_)) => {
+                info!("removed repository {repo_url}");
+                Ok(())
+            }
+            Ok(None) => {
+                warn!("could not remove missing repository: {repo_url}");
+                Err(Status::NOT_FOUND)
+            }
+            Err(e) => {
+                let res = match &e {
+                    RemoveError::CannotRemoveStaticRepositories
+                    | RemoveError::DynamicConfigurationDisabled => Err(Status::ACCESS_DENIED),
+                };
+                warn!("could not remove repository {repo_url}: {:#}", anyhow!(e));
+                res
+            }
         }
     }
 

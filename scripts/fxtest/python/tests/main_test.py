@@ -834,7 +834,18 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                         "0",
                         "--name",
                         "fxtest-temp-test-uuid",
-                    )
+                    ),
+                    (
+                        "fx",
+                        "--dir",
+                        self.out_dir,
+                        "ffx",
+                        "target",
+                        "repository",
+                        "deregister",
+                        "-r",
+                        "fxtest-temp-test-uuid",
+                    ),
                 },
                 call_prefixes,
             )
@@ -1690,8 +1701,8 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         if existing_package_server:
             self.assertEqual(command_mock.call_count, 2)
         else:
-            # has to run an extra command: "fx serve"
-            self.assertEqual(command_mock.call_count, 3)
+            # has to run two extra commands: "fx serve" and "fx ffx target repository deregister"
+            self.assertEqual(command_mock.call_count, 4)
 
         events = [
             e.payload.enumerate_test_cases

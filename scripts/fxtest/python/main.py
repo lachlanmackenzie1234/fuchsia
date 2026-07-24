@@ -1993,23 +1993,45 @@ class AsyncMain:
 
         cancel_event = asyncio.Event()
 
-        return (
-            asyncio.create_task(
+        # Aborting the `fx serve` task stops the repository server but does not remove the
+        # corresponding repository config or rewrite rule from the device. The repository config is
+        # explicitly deregistered from the device (which also removes the rewrite rule) before
+        # cancelling the server task to avoid the pkg-resolver's AutoClient logging that the server
+        # has gone away.
+        async def impl() -> None:
+            repo_name = f"fxtest-temp-{uuid.uuid4()}"
+            repo_deregistered_event = asyncio.Event()
+            serve_task = asyncio.create_task(
                 execution.run_command(
                     *exec_env.fx_cmd_line(
                         "serve",
                         "-l",
                         "0",
                         "--name",
-                        f"fxtest-temp-{uuid.uuid4()}",
+                        repo_name,
                     ),
                     recorder=recorder,
-                    abort_signal=cancel_event,
+                    abort_signal=repo_deregistered_event,
                     quiet_mode=True,
                 )
-            ),
-            cancel_event,
-        )
+            )
+            await cancel_event.wait()
+            await execution.run_command(
+                *exec_env.fx_cmd_line(
+                    "ffx",
+                    "target",
+                    "repository",
+                    "deregister",
+                    "-r",
+                    repo_name,
+                ),
+                recorder=recorder,
+                quiet_mode=True,
+            )
+            repo_deregistered_event.set()
+            await serve_task
+
+        return (asyncio.create_task(impl()), cancel_event)
 
     async def _get_active_devices(self) -> list[dict[str, typing.Any]]:
         """Fetch the list of active devices from ffx.
