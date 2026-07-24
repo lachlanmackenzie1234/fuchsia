@@ -12,7 +12,6 @@ driver_bind_rules("pl031_rtc_bind") {
 }
 
 fuchsia_cc_driver("pl031-rtc-driver") {
-  legacy = true
   output_name = "pl031-rtc"
   configs += [
     "//build/config:all_source",
@@ -22,12 +21,12 @@ fuchsia_cc_driver("pl031-rtc-driver") {
   deps = [
     ":pl031_rtc_bind",
     "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
-    "//src/devices/lib/driver",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/devices/rtc/lib/rtc:rtc_llcpp",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
   ]
 }
 

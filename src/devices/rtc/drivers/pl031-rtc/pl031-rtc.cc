@@ -4,68 +4,55 @@
 
 #include "src/devices/rtc/drivers/pl031-rtc/pl031-rtc.h"
 
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/driver.h>
-#include <lib/ddk/platform-defs.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/zx/clock.h>
 #include <lib/zx/result.h>
-#include <lib/zx/time.h>
 #include <zircon/status.h>
-#include <zircon/syscalls.h>
-#include <zircon/types.h>
-
-#include <ddktl/fidl.h>
 
 #include "src/devices/rtc/lib/rtc/include/librtc_llcpp.h"
 
 namespace rtc {
 
-zx_status_t Pl031::Bind(void* /*unused*/, zx_device_t* dev) {
-  zx::result pdev_client_end =
-      DdkConnectFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(dev);
-  if (pdev_client_end.is_error()) {
-    zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
-    return pdev_client_end.status_value();
+zx::result<> Pl031::Start(fdf::DriverContext context) {
+  zx::result pdev_client =
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>();
+  if (pdev_client.is_error()) {
+    fdf::error("Failed to connect to platform device: {}", pdev_client.status_string());
+    return pdev_client.take_error();
   }
-  fdf::PDev pdev{std::move(pdev_client_end.value())};
+  fdf::PDev pdev{std::move(pdev_client.value())};
 
   // Carve out some address space for this device.
   zx::result mmio = pdev.MapMmio(0);
   if (mmio.is_error()) {
-    zxlogf(ERROR, "Failed to map mmio: %s", mmio.status_string());
-    return mmio.status_value();
+    fdf::error("Failed to map mmio: {}", mmio.status_string());
+    return mmio.take_error();
   }
-
-  auto pl031_device = std::make_unique<Pl031>(dev, *std::move(mmio));
-
-  zx_status_t status =
-      pl031_device->DdkAdd(ddk::DeviceAddArgs("rtc").set_proto_id(ZX_PROTOCOL_RTC));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s error adding device: %s", __func__, zx_status_get_string(status));
-    return status;
-  }
+  mmio_ = std::move(mmio.value());
+  regs_ = reinterpret_cast<MMIO_PTR Pl031Regs*>(mmio_->get());
 
   // Retrieve and sanitize the RTC value. Set the RTC to the value.
-  FidlRtc::wire::Time rtc = SecondsToRtc(MmioRead32(&pl031_device->regs_->dr));
-  rtc = SanitizeRtc(dev, rtc);
-  status = pl031_device->SetRtc(rtc);
+  FidlRtc::wire::Time rtc = SecondsToRtc(MmioRead32(&regs_->dr));
+  rtc = SanitizeRtc(rtc);
+  zx_status_t status = SetRtc(rtc);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "%s failed to set rtc: %s", __func__, zx_status_get_string(status));
+    fdf::error("Failed to set rtc: {}", zx_status_get_string(status));
   }
 
-  // The object is owned by the DDK, now that it has been added. It will be deleted
-  // when the device is released.
-  [[maybe_unused]] auto ptr = pl031_device.release();
+  // Serve FIDL service.
+  FidlRtc::Service::InstanceHandler handler({
+      .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+  });
 
-  return status;
+  zx::result service_result = outgoing()->AddService<FidlRtc::Service>(std::move(handler));
+  if (service_result.is_error()) {
+    fdf::error("Failed to add RTC service: {}", service_result.status_string());
+    return service_result.take_error();
+  }
+
+  return zx::ok();
 }
-
-Pl031::Pl031(zx_device_t* parent, fdf::MmioBuffer mmio)
-    : RtcDeviceType(parent),
-      mmio_(std::move(mmio)),
-      regs_(reinterpret_cast<MMIO_PTR Pl031Regs*>(mmio_.get())) {}
 
 void Pl031::Get(GetCompleter::Sync& completer) {
   FidlRtc::wire::Time rtc = SecondsToRtc(MmioRead32(&regs_->dr));
@@ -82,8 +69,6 @@ void Pl031::Set2(Set2RequestView request, Set2Completer::Sync& completer) {
   }
 }
 
-void Pl031::DdkRelease() { delete this; }
-
 zx_status_t Pl031::SetRtc(FidlRtc::wire::Time rtc) {
   if (!IsRtcValid(rtc)) {
     return ZX_ERR_OUT_OF_RANGE;
@@ -94,11 +79,6 @@ zx_status_t Pl031::SetRtc(FidlRtc::wire::Time rtc) {
   return ZX_OK;
 }
 
-zx_driver_ops_t pl031_driver_ops = {
-    .version = DRIVER_OPS_VERSION,
-    .bind = Pl031::Bind,
-};
-
 }  // namespace rtc
 
-ZIRCON_DRIVER(pl031, rtc::pl031_driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT2(rtc::Pl031);

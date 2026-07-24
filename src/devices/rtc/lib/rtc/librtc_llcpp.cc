@@ -4,8 +4,6 @@
 
 #include "librtc_llcpp.h"
 
-#include <lib/ddk/driver.h>
-
 namespace rtc {
 
 namespace {
@@ -148,7 +146,7 @@ uint64_t SecondsSinceEpoch(FidlRtc::wire::Time rtc) {
   return kLocalEpoch + kSecondsSinceLocalEpoch;
 }
 
-FidlRtc::wire::Time SanitizeRtc(zx_device_t* device, FidlRtc::wire::Time rtc) {
+FidlRtc::wire::Time SanitizeRtc(FidlRtc::wire::Time rtc) {
   if (!IsRtcValid(rtc) || rtc.year < kDefaultYear) {
     fprintf(stderr, "RTC is sanitized to constant default\n");
     return kDefaultRtc;
