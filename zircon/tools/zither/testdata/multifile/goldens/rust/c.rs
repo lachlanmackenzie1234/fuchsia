@@ -5,12 +5,9 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.multifile` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 use zerocopy::{IntoBytes, TryFromBytes};
 
-use crate::a::*;
-use crate::b::*;
+use crate::{A, B2};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]

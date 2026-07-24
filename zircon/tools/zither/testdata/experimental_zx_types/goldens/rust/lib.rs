@@ -11,5 +11,4 @@ use bitflags as _;
 use zerocopy as _;
 
 mod experimental_zx_types;
-#[allow(unused)]
 pub use experimental_zx_types::*;

@@ -11,5 +11,4 @@ use bitflags as _;
 use zerocopy as _;
 
 mod enums;
-#[allow(unused)]
 pub use enums::*;

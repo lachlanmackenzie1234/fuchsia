@@ -5,8 +5,6 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.experimental.zx.types` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
 
 /// 'a'

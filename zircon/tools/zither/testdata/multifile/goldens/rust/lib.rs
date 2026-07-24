@@ -11,13 +11,10 @@ use bitflags as _;
 use zerocopy as _;
 
 mod a;
-#[allow(unused)]
 pub use a::*;
 
 mod b;
-#[allow(unused)]
 pub use b::*;
 
 mod c;
-#[allow(unused)]
 pub use c::*;

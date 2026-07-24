@@ -32,6 +32,7 @@ func NewGenerator(formatter fidlgen.Formatter) *Generator {
 		"UpperCamelCase":           zither.UpperCamelCase,
 		"ScalarTypeName":           ScalarTypeName,
 		"Imports":                  Imports,
+		"CrateImports":             CrateImports,
 		"ConstType":                ConstType,
 		"ConstValue":               ConstValue,
 		"BitsAttributes":           BitsAttributes,
@@ -283,6 +284,29 @@ func Imports(summary zither.FileSummary) []string {
 		imports = append(imports, fmt.Sprintf("zerocopy::{%s}", strings.Join(zerocopyImports, ", ")))
 	}
 	return imports
+}
+
+func CrateImports(summary zither.FileSummary) []string {
+	localDecls := make(map[string]struct{})
+	for _, decl := range summary.Decls {
+		localDecls[decl.Name().String()] = struct{}{}
+	}
+
+	importedSymbols := make(map[string]struct{})
+	for _, ref := range summary.ReferencedDecls() {
+		if _, isLocal := localDecls[ref]; !isLocal {
+			layout, _ := fidlgen.MustReadName(ref).SplitMember()
+			symbol := fidlgen.ToUpperCamelCase(layout.DeclarationName())
+			importedSymbols[symbol] = struct{}{}
+		}
+	}
+
+	var crateImports []string
+	for symbol := range importedSymbols {
+		crateImports = append(crateImports, symbol)
+	}
+	sort.Strings(crateImports)
+	return crateImports
 }
 
 func ConstType(c zither.Const) string {

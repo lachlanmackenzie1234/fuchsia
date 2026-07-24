@@ -11,5 +11,4 @@ use bitflags as _;
 use zerocopy as _;
 
 mod structs;
-#[allow(unused)]
 pub use structs::*;

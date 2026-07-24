@@ -5,8 +5,6 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.structs` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 use bitflags::bitflags;
 use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
 
@@ -73,7 +71,7 @@ impl Enum {
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bits(u16);
 
-bitflags::bitflags! {
+bitflags! {
     impl Bits : u16 {
         const ONE = 1 << 0;
         const TWO = 1 << 1;

@@ -5,8 +5,6 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zx` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 use bitflags::bitflags;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -14,7 +12,7 @@ use zerocopy::{FromBytes, IntoBytes};
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rights(u32);
 
-bitflags::bitflags! {
+bitflags! {
     impl Rights : u32 {
         const DUPLICATE = 1 << 0;
         const TRANSFER = 1 << 1;

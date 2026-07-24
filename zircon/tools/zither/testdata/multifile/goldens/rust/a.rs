@@ -5,8 +5,6 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.multifile` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 use zerocopy::{IntoBytes, TryFromBytes};
 
 #[repr(u32)]

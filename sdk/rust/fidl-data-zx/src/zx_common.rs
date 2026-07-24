@@ -5,11 +5,7 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zx` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 use zerocopy::{IntoBytes, TryFromBytes};
-
-use crate::rights::*;
 
 pub type Status = i32;
 

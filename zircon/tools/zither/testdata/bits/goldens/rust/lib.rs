@@ -11,5 +11,4 @@ use bitflags as _;
 use zerocopy as _;
 
 mod bits;
-#[allow(unused)]
 pub use bits::*;

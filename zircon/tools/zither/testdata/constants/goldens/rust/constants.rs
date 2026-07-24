@@ -5,8 +5,6 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.constants` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 pub const UINT8_ZERO: u8 = 0;
 
 pub const UINT8_MAX_DEC: u8 = 255;

@@ -12,14 +12,12 @@
 // DO NOT EDIT.
 // Generated from FIDL library `{{ .Library.String }}` by zither, a Fuchsia platform tool.
 
-#![allow(unused_imports)]
-
 {{ range Imports . }}
 {{- "" -}} use {{ . }};
 {{ end }}
 
-{{ range $name := .Deps }}
-{{- "" -}} use crate::{{ $name }}::*;
+{{ range $symbol := CrateImports . }}
+{{- "" -}} use crate::{{ $symbol }};
 {{ end }}
 
 {{ range .Decls }}

@@ -275,6 +275,42 @@ func (summary FileSummary) Deps() []string {
 	return deps
 }
 
+// ReferencedDecls returns full FIDL declaration names referenced by types in
+// this file's declarations.
+func (summary FileSummary) ReferencedDecls() []string {
+	var refs []string
+	var visitType func(desc TypeDescriptor)
+	visitType = func(desc TypeDescriptor) {
+		switch desc.Kind {
+		case TypeKindEnum, TypeKindBits, TypeKindStruct, TypeKindOverlay, TypeKindAlias:
+			refs = append(refs, desc.Type)
+		case TypeKindArray, TypeKindPointer, TypeKindVoidPointer:
+			if desc.ElementType != nil {
+				visitType(*desc.ElementType)
+			}
+		}
+	}
+	for _, decl := range summary.Decls {
+		switch d := decl.AsDecl().(type) {
+		case *Struct:
+			for _, m := range d.Members {
+				visitType(m.Type)
+			}
+		case *Overlay:
+			for _, v := range d.Variants {
+				visitType(v.Type)
+			}
+		case *Alias:
+			visitType(d.Value)
+		case *Const:
+			if d.Kind == TypeKindEnum || d.Kind == TypeKindBits {
+				refs = append(refs, d.Type)
+			}
+		}
+	}
+	return refs
+}
+
 // TypeKinds gives the kinds of types contained in this file's declarations.
 // This is useful for knowing the precise set of imports to make in the code
 // generated from this file.

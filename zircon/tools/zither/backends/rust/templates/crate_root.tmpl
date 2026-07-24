@@ -19,7 +19,6 @@ use bitflags as _;
 
 {{ range .Modules }}
 mod {{ . }};
-#[allow(unused)]
 pub use {{ . }}::*;
 {{ end }}
 {{ end }}
