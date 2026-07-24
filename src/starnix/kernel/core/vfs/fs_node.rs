@@ -2388,6 +2388,9 @@ impl FsNode {
 
     /// Clear the SUID and SGID bits unless the `current_task` has `CAP_FSETID`
     pub fn clear_suid_and_sgid_bits(&self, current_task: &CurrentTask) -> Result<(), Errno> {
+        if !self.info().has_suid_or_sgid_bits() {
+            return Ok(());
+        }
         self.update_attributes(current_task, |info| {
             if info.has_suid_or_sgid_bits()
                 && !security::is_task_capable_noaudit(current_task, CAP_FSETID)
