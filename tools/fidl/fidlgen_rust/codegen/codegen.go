@@ -20,7 +20,7 @@ type Generator struct {
 	*fidlgen.Generator
 }
 
-func NewGenerator(rustfmtPath, rustfmtConfigPath string, fdomain bool, common bool, use_common string) *Generator {
+func NewGenerator(rustfmtPath, rustfmtConfigPath string, fdomain bool, common bool, use_common string, apiCoverage bool) *Generator {
 	var args []string
 	if rustfmtConfigPath != "" {
 		args = append(args, "--config-path", rustfmtConfigPath)
@@ -31,6 +31,7 @@ func NewGenerator(rustfmtPath, rustfmtConfigPath string, fdomain bool, common bo
 		fdomain: fdomain,
 		common:  common,
 		Generator: fidlgen.NewGenerator("RustTemplates", templates, formatter, template.FuncMap{
+			"ApiCoverage": func() bool { return apiCoverage },
 			"ResourceDialect": func() string {
 				if fdomain {
 					return "fdomain_client::fidl::FDomainResourceDialect"

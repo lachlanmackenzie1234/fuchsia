@@ -5,3 +5,8 @@
 fidl_toolchain = "//build/fidl:fidling"
 
 is_fidl_toolchain = current_toolchain == fidl_toolchain
+
+declare_args() {
+  # If true, generates API coverage comments inside FIDL bindings.
+  fidl_api_coverage = false
+}

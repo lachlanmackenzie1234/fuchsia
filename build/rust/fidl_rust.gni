@@ -254,6 +254,9 @@ template("fidl_rust") {
 
   shared_deps = []
   shared_fidlgen_args = []
+  if (fidl_api_coverage) {
+    shared_fidlgen_args += [ "--api-coverage=true" ]
+  }
   shared_features = []
   if (defined(invoker.deps)) {
     shared_deps += invoker.deps

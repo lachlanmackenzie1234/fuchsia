@@ -24,6 +24,7 @@ type flagsDef struct {
 	common             *bool
 	use_common         *string
 	includeDrivers     *bool
+	apiCoverage        *bool
 }
 
 var flags = flagsDef{
@@ -39,6 +40,7 @@ var flags = flagsDef{
 	common:         flag.Bool("common", false, "if given, generate only the common (non-resource) data structures."),
 	use_common:     flag.String("use_common", "", "if given, depend on the given crate name for the common (non-resource) data structures."),
 	includeDrivers: flag.Bool("include-drivers", false, "whether to include driver transport protocols or not"),
+	apiCoverage:    flag.Bool("api-coverage", false, "whether to generate API coverage annotations"),
 }
 
 // valid returns true if the parsed flags are valid.
@@ -72,7 +74,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	generator := codegen.NewGenerator(*flags.rustfmtPath, *flags.rustfmtConfigPath, *flags.fdomain, *flags.common, *flags.use_common)
+	generator := codegen.NewGenerator(*flags.rustfmtPath, *flags.rustfmtConfigPath, *flags.fdomain, *flags.common, *flags.use_common, *flags.apiCoverage)
 	err = generator.GenerateFidl(
 		root, *flags.outputFilenamePath, *flags.includeDrivers)
 	if err != nil {

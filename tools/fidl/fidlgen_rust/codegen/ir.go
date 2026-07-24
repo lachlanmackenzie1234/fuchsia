@@ -202,6 +202,8 @@ type Method struct {
 	Responder string
 	// Name of the method's ResponseFut type in the protocol's ProxyInterface trait.
 	ResponseFut string
+	// FullyQualifiedName is the fully qualified name of the FIDL method.
+	FullyQualifiedName string
 
 	Request  Payload
 	Response Payload
@@ -214,6 +216,14 @@ func (m *Method) DynamicFlags() string {
 		return "fidl::encoding::DynamicFlags::empty()"
 	}
 	return "fidl::encoding::DynamicFlags::FLEXIBLE"
+}
+
+func (m *Method) ApiCoverageMethodAnnotation() string {
+	return "// api-coverage-fidl-name:" + m.FullyQualifiedName
+}
+
+func (m *Method) ApiCoverageEndMethodAnnotation() string {
+	return "// api-coverage-fidl-name:" + m.FullyQualifiedName + ":end"
 }
 
 // A method request or response.
@@ -1467,12 +1477,13 @@ func (c *compiler) compileProtocol(val fidlgen.Protocol) Protocol {
 	for _, v := range val.Methods {
 		snake_name := compileSnakeIdentifier(v.Name)
 		m := Method{
-			Method:         v,
-			Name:           snake_name,
-			UpperSnakeName: strings.ToUpper(snake_name),
-			CamelName:      compileCamelIdentifier(v.Name),
-			Request:        c.compileRequest(v),
-			Response:       c.compileResponse(v),
+			Method:             v,
+			Name:               snake_name,
+			UpperSnakeName:     strings.ToUpper(snake_name),
+			CamelName:          compileCamelIdentifier(v.Name),
+			FullyQualifiedName: fmt.Sprintf("%s.%s", val.Name, v.Name),
+			Request:            c.compileRequest(v),
+			Response:           c.compileResponse(v),
 		}
 		if v.HasRequest && v.HasResponse {
 			m.Responder = name + m.CamelName + "Responder"

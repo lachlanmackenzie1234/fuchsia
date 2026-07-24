@@ -110,6 +110,9 @@ impl {{ $protocol.SynchronousProxy }} {
     {{- range .DocComments }}
     ///{{ . }}
     {{- end }}
+    {{- if ApiCoverage }}
+    {{ $method.ApiCoverageMethodAnnotation }}
+    {{- end }}
     pub fn r#{{ $method.Name }}(
         &self,
         {{- range $method.Request.Parameters }}
@@ -142,6 +145,9 @@ impl {{ $protocol.SynchronousProxy }} {
         )
         {{- end }}
     }
+    {{- if ApiCoverage }}
+    {{ $method.ApiCoverageEndMethodAnnotation }}
+    {{- end }}
     {{- end }}
     {{- end }}
 }
@@ -242,6 +248,9 @@ impl {{ $protocol.ProxyInterface }} for {{ $protocol.Proxy }} {
     {{ "" }}
     {{- if $method.HasResponse }}
     type {{ $method.ResponseFut }} = fidl::client::QueryResponseFut<{{ $method.Response.TupleType }}, {{ ResourceDialect }}>;
+    {{- if ApiCoverage }}
+    {{ $method.ApiCoverageMethodAnnotation }}
+    {{- end }}
     fn r#{{ $method.Name }}(
         &self,
         {{- range $method.Request.Parameters }}
@@ -269,7 +278,13 @@ impl {{ $protocol.ProxyInterface }} for {{ $protocol.Proxy }} {
             _decode,
         )
     }
+    {{- if ApiCoverage }}
+    {{ $method.ApiCoverageEndMethodAnnotation }}
+    {{- end }}
     {{- else }}
+    {{- if ApiCoverage }}
+    {{ $method.ApiCoverageMethodAnnotation }}
+    {{- end }}
     fn r#{{ $method.Name }}(
         &self,
         {{- range $method.Request.Parameters }}
@@ -282,6 +297,9 @@ impl {{ $protocol.ProxyInterface }} for {{ $protocol.Proxy }} {
             {{ $method.DynamicFlags }},
         )
     }
+    {{- if ApiCoverage }}
+    {{ $method.ApiCoverageEndMethodAnnotation }}
+    {{- end }}
     {{- end }}
     {{- end }}
     {{- end }}
