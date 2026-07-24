@@ -635,7 +635,7 @@ impl ChunkedDecompressor {
     /// Returns the compression algorithm used by this decompressor.
     pub fn algorithm(&self) -> CompressionAlgorithm {
         match &self.decompressor {
-            Decompressor::Zstd(_) => CompressionAlgorithm::Zstd,
+            Decompressor::Zstd => CompressionAlgorithm::Zstd,
             Decompressor::Lz4 => CompressionAlgorithm::Lz4,
         }
     }
