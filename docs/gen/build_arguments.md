@@ -969,7 +969,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -2093,6 +2093,13 @@ From //build/config/compiler.gni:82
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidl_api_diff_/fidl_api_diff"
   ninja = "fidl_api_diff"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/fidl_api_summarize:fidl_api_summarize"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidl_api_summarize_/fidl_api_summarize"
+  ninja = "fidl_api_summarize"
 }]
   install_host_tool = true
 }, {
