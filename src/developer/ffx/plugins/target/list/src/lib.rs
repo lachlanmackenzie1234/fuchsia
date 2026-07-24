@@ -145,32 +145,47 @@ impl ListTool {
         &self,
         query: TargetInfoQuery,
     ) -> Result<Vec<TargetInfo>, ListError> {
-        let connect_to_rcs =
-            !self.cmd.no_probe && !matches!(self.cmd.format, ffx_list_args::Format::Addresses);
+        let is_addresses_format = matches!(
+            self.cmd.format,
+            ffx_list_args::Format::Addresses | ffx_list_args::Format::AddressesWithLexicalScope
+        );
+        let connect_to_rcs = !self.cmd.no_probe && !is_addresses_format;
         Ok(match query.get_target_addr() {
-            Some(addr) if connect_to_rcs => {
-                // We don't need to do discovery, and in fact may not be able to
-                // discover the device. So instead, just query the information
-                // directly.  We're going to assume this device is in product mode.
-                // (Note: we check whether we explicitly told _not_ to connect to RCS, in
-                // which case we're not going to get anything useful from trying to do an IdentifyHost.
-                // If the device is undiscoverable _and_ we cannot connect to RCS,
-                // then there's not much to be done. Unfortunately we can't
-                // know if a device is undiscoverable or not, so we can't give the
-                // user useful guidance in that situation.)
-                let mut context = self.context.clone();
-                context.override_target_specifier(&self.cmd.nodename);
-                let target_env = target_interface(&self.fho_env);
-                let behavior = target_env.init_connection_behavior(&context).await?;
-                let ConnectionBehavior::DirectConnector(ref connector) = *behavior else {
-                    return Err(ListError::NoDirectConnector(query));
-                };
-                let resolution = connector.resolution().await?;
-                let target_info = resolution
-                    .get_target_info(addr, &context)
-                    .await
-                    .map_err(ListError::GetTargetInfo)?;
-                vec![target_info]
+            Some(addr) => {
+                if connect_to_rcs {
+                    // We don't need to do discovery, and in fact may not be able to
+                    // discover the device. So instead, just query the information
+                    // directly.  We're going to assume this device is in product mode.
+                    // (Note: we check whether we explicitly told _not_ to connect to RCS, in
+                    // which case we're not going to get anything useful from trying to do an IdentifyHost.
+                    // If the device is undiscoverable _and_ we cannot connect to RCS,
+                    // then there's not much to be done. Unfortunately we can't
+                    // know if a device is undiscoverable or not, so we can't give the
+                    // user useful guidance in that situation.)
+                    let mut context = self.context.clone();
+                    context.override_target_specifier(&self.cmd.nodename);
+                    let target_env = target_interface(&self.fho_env);
+                    let behavior = target_env.init_connection_behavior(&context).await?;
+                    let ConnectionBehavior::DirectConnector(ref connector) = *behavior else {
+                        return Err(ListError::NoDirectConnector(query));
+                    };
+                    let resolution = connector.resolution().await?;
+                    let target_info = resolution
+                        .get_target_info(addr, &context)
+                        .await
+                        .map_err(ListError::GetTargetInfo)?;
+                    vec![target_info]
+                } else {
+                    // Short-circuit: We have the address, and were told not to probe (or format is addresses and we decided not to probe).
+                    // Just return what we know without connecting.
+                    vec![TargetInfo {
+                        nodename: self.cmd.nodename.clone(),
+                        addresses: vec![addr],
+                        rcs_state: ffx_target::info::RemoteControlState::Unknown,
+                        target_state: ffx_target::info::TargetState::Unknown,
+                        ..Default::default()
+                    }]
+                }
             }
             _ => {
                 ffx_target::list_targets(
@@ -626,6 +641,59 @@ mod test {
 
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("MockConnectionError"));
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_short_circuits_when_not_probing() {
+        let env = ffx_config::test_init().unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
+
+        let behavior = ConnectionBehavior::DirectConnector(
+            DirectConnector::from_resolution_for_test(ffx_target::Resolution::mock(|| {
+                panic!("Resolution should not be called when no_probe is true");
+            })),
+        );
+        let target_env = target_interface(&fho_env);
+        target_env.set_behavior_for_test(behavior);
+
+        let list_cmd = ListCommand { no_probe: true, ..Default::default() };
+        let tool = build_list_tool(list_cmd, &env, fho_env).await;
+
+        let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
+
+        let res = tool.list_targets_direct(query).await.unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
+        assert_eq!(res[0].rcs_state, RemoteControlState::Unknown);
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_short_circuits_for_addresses_format() {
+        let env = ffx_config::test_init().unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
+
+        let behavior = ConnectionBehavior::DirectConnector(
+            DirectConnector::from_resolution_for_test(ffx_target::Resolution::mock(|| {
+                panic!("Resolution should not be called when format is Addresses");
+            })),
+        );
+        let target_env = target_interface(&fho_env);
+        target_env.set_behavior_for_test(behavior);
+
+        let list_cmd =
+            ListCommand { format: ffx_list_args::Format::Addresses, ..Default::default() };
+        let tool = build_list_tool(list_cmd, &env, fho_env).await;
+
+        let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
+
+        let res = tool.list_targets_direct(query).await.unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
+        assert_eq!(res[0].rcs_state, RemoteControlState::Unknown);
     }
 
     #[test]
