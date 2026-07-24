@@ -141,6 +141,7 @@ zx::result<power_cpu_state> psci_get_cpu_state(uint64_t mpid);
 
 zx_status_t psci_system_off();
 zx_status_t psci_system_reset(power_reboot_flags flags);
+zx_status_t psci_system_reset_cold();
 
 // Used when calling SYSTEM_RESET2 directly
 zx_status_t psci_system_reset2_raw(uint32_t reset_type, uint32_t cookie);

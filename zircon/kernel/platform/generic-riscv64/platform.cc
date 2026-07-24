@@ -445,7 +445,8 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
   TRACEF("suggested_action %u, reason %u, halt_on_panic %d\n", suggested_action,
          static_cast<unsigned int>(reason), halt_on_panic);
   if (suggested_action == HALT_ACTION_REBOOT) {
-    power_reboot(power_reboot_flags::REBOOT_NORMAL);
+    power_reboot((reason == ZirconCrashReason::NoCrash) ? power_reboot_flags::REBOOT_NORMAL
+                                                        : power_reboot_flags::REBOOT_PANIC);
     printf("reboot failed\n");
   } else if (suggested_action == HALT_ACTION_REBOOT_BOOTLOADER) {
     power_reboot(power_reboot_flags::REBOOT_BOOTLOADER);
@@ -463,7 +464,7 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
     Thread::Current::GetBacktrace(bt);
     bt.Print();
     if (!halt_on_panic) {
-      power_reboot(power_reboot_flags::REBOOT_NORMAL);
+      power_reboot(power_reboot_flags::REBOOT_PANIC);
       printf("reboot failed\n");
     }
     dprintf(ALWAYS, "CRASH: starting debug shell... (reason = %d)\n", static_cast<int>(reason));

@@ -15,6 +15,7 @@ enum class power_reboot_flags {
   REBOOT_NORMAL = 0,
   REBOOT_BOOTLOADER = 1,
   REBOOT_RECOVERY = 2,
+  REBOOT_PANIC = 3,
 };
 
 // power_cpu_state represents the state a CPU in, and contains a union of the states found in all

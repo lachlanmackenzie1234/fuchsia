@@ -338,6 +338,10 @@ zx_status_t psci_system_reset(power_reboot_flags flags) {
   return psci_status_to_zx_status(do_psci_call(reset_command, args[0], args[1], args[2]));
 }
 
+zx_status_t psci_system_reset_cold() {
+  return psci_status_to_zx_status(do_psci_call(PSCI64_SYSTEM_RESET, 0, 0, 0));
+}
+
 zx_status_t psci_set_suspend_mode(psci_suspend_mode mode) {
   return psci_status_to_zx_status(do_psci_call(PSCI64_PSCI_SET_SUSPEND_MODE, mode, 0, 0));
 }

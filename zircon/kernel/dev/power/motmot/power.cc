@@ -55,6 +55,7 @@ zx_status_t motmot_reboot(power_reboot_flags flags) {
       __FALLTHROUGH;
 
     case power_reboot_flags::REBOOT_NORMAL:
+    case power_reboot_flags::REBOOT_PANIC:
       dprintf(INFO, "Sending reboot command via SMC\n");
       result = modify_register_via_smc(SYSTEM_CONFIGURATION_REG, SWRESET_SYSTEM, SWRESET_SYSTEM);
       modify_register_via_smc(SYSTEM_CONFIGURATION_REG, SWRESET_SYSTEM, SWRESET_SYSTEM);

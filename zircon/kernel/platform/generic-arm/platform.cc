@@ -492,7 +492,8 @@ zx_status_t platform_mp_cpu_unplug(cpu_num_t cpu_id) { return arch_mp_cpu_unplug
 void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_reason_t reason,
                             bool halt_on_panic) {
   if (suggested_action == HALT_ACTION_REBOOT) {
-    power_reboot(power_reboot_flags::REBOOT_NORMAL);
+    power_reboot((reason == ZirconCrashReason::NoCrash) ? power_reboot_flags::REBOOT_NORMAL
+                                                        : power_reboot_flags::REBOOT_PANIC);
     printf("reboot failed\n");
   } else if (suggested_action == HALT_ACTION_REBOOT_BOOTLOADER) {
     power_reboot(power_reboot_flags::REBOOT_BOOTLOADER);
@@ -509,7 +510,7 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
     Thread::Current::GetBacktrace(bt);
     bt.Print();
     if (!halt_on_panic) {
-      power_reboot(power_reboot_flags::REBOOT_NORMAL);
+      power_reboot(power_reboot_flags::REBOOT_PANIC);
       printf("reboot failed\n");
     }
     dprintf(ALWAYS, "CRASH: starting debug shell... (reason = %d)\n", static_cast<int>(reason));
