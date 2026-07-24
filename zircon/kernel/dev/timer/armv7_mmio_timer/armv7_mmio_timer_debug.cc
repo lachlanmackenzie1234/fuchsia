@@ -6,6 +6,7 @@
 
 // #include <lib/root_resource_filter.h>
 
+#include <inttypes.h>
 #include <lib/console.h>
 
 #include <arch/arm64/periphmap.h>
@@ -14,6 +15,8 @@
 #include <ktl/algorithm.h>
 #include <ktl/array.h>
 #include <ktl/bit.h>
+#include <ktl/limits.h>
+#include <ktl/string_view.h>
 #include <ktl/unique_ptr.h>
 #include <ktl/utility.h>
 #include <lk/init.h>
@@ -25,10 +28,11 @@ using namespace armv7_mmio_timer_registers;
 template <typename T>
 void DumpReg(const char* tag, const T& r) {
   using VT = T::ValueType;
+  constexpr int kHexWidth = ktl::numeric_limits<VT>::digits / 4;
 
   if constexpr (T::PrinterEnabled::value) {
-    constexpr const char* raw_field_name = "raw";
-    size_t max_name_width = strlen(raw_field_name);
+    static constexpr char kRawFieldName[] = "raw";
+    size_t max_name_width = sizeof(kRawFieldName) - 1;
     uint32_t field_count = 0;
 
     r.ForEachField([&max_name_width, &field_count](const char* name, VT, uint32_t, uint32_t) {
@@ -38,38 +42,24 @@ void DumpReg(const char* tag, const T& r) {
       }
     });
 
-    if (field_count) {
-      char fmt_string[32];
-      const char* val_fmt = sizeof(VT) == 8 ? "0x%016lx (%lu)" : "0x%08x (%u)";
-      int fmt_res =
-          snprintf(fmt_string, 32, "[%%2u:%%2u] : %%%zus : %s\n", max_name_width, val_fmt);
-      if ((fmt_res < 0) || (fmt_res >= static_cast<int>(sizeof(fmt_string)))) {
-        printf("Format error when printing %s\n", tag);
-        return;
-      }
-
-      printf("%s\n", tag);
-      auto field_printer = [fmt_string](const char* name, VT val, uint32_t hi, uint32_t lo) {
-        if (name != nullptr) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-          printf(fmt_string, hi, lo, name, val, val);
-#pragma GCC diagnostic pop
+    if (field_count > 0) {
+      auto field_printer = [max_name_width](const char* name, VT val, uint32_t hi, uint32_t lo) {
+        if (name) {
+          const int width = static_cast<int>(max_name_width);
+          printf("[%*" PRIu32 ":%*" PRIu32 "] : %*s : 0x%0*" PRIx64 "\n", width, hi, width, lo,
+                 width, name, kHexWidth, static_cast<uint64_t>(val));
         }
       };
 
-      field_printer(raw_field_name, r.reg_value(), (sizeof(VT) << 3) - 1, 0);
+      field_printer(kRawFieldName, r.reg_value(), ktl::numeric_limits<VT>::digits - 1, 0);
       r.ForEachField(field_printer);
-      printf("\n");
+      putchar('\n');
       return;
     }
   }
 
-  if constexpr (sizeof(VT) == 8) {
-    printf("%s : 0x%016lx (%lu)\n", tag, r.reg_value(), r.reg_value());
-  } else {
-    printf("%s : 0x%08x (%u)\n", tag, r.reg_value(), r.reg_value());
-  }
+  printf("%s : 0x%*" PRIx64 " (%" PRIu64 ")\n", tag, kHexWidth,
+         static_cast<uint64_t>(r.reg_value()), static_cast<uint64_t>(r.reg_value()));
 }
 
 enum class SkipZeros { No, Yes };
