@@ -447,7 +447,7 @@ async fn finalize_profile_session(
     }
 
     if let Ok(symbolized_record) = unsymbolized_samples.process_unsymbolized_samples(
-        &options.output.to_string().into(),
+        &options.output,
         options.pprof_conversion,
         context,
     ) {

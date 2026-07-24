@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 import("//tools/protobuf/rust_proto_library.gni")
 
-assert(is_host, "port_picker is for use with the host toolchain only")
+assert(is_host, "profiler is for use with the host toolchain only")
 
 rustc_library("profiler") {
   name = "ffx_profiler"
@@ -50,16 +50,16 @@ rust_proto_library("profile_rust_proto") {
 
 group("tests") {
   testonly = true
-  deps = [
-    ":profiler_test",
-    "//third_party/rust_crates:assert_matches",
-  ]
+  deps = [ ":profiler_test" ]
 }
 
 if (is_host) {
   group("host_tests") {
     testonly = true
-    deps = [ "tests:host_tests" ]
+    deps = [
+      ":profiler_test",
+      "tests:host_tests",
+    ]
   }
 }
 

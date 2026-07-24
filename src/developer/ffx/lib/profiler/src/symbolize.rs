@@ -2,21 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::parse::{
-    BacktraceDetails, ModuleWithMmapDetails, Pid, ProfilingRecordHandler, SymbolizeError, Tid,
-    UnsymbolizedSamples,
-};
+pub use crate::parse::{SymbolizeError, UnsymbolizedSamples};
+
+use crate::parse::{BacktraceDetails, ModuleWithMmapDetails, Pid, ProfilingRecordHandler, Tid};
 use ffx_symbolize::{ResolvedLocation, Symbolizer};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::io::Read;
-use std::path::PathBuf;
+use std::path::Path;
 
 // It defines how many processes a symbolizer will handle.
 // We create a symbolizer for every thread.
 // More threads => more symbolizers => more latency, but higher throughput.
 // NUM_PROCESS_PER_THREAD is a hard coded number considering the trade off above.
-static NUM_PROCESS_PER_THREAD: usize = 4;
+const NUM_PROCESS_PER_THREAD: usize = 4;
 
 /// A resolved address.
 #[derive(Clone, PartialEq)]
@@ -56,53 +54,46 @@ impl SymbolizedRecord {
     }
 }
 
-pub fn create_unsymbolized_samples(input: &PathBuf) -> Result<UnsymbolizedSamples, SymbolizeError> {
+pub fn create_unsymbolized_samples(
+    input: impl AsRef<Path>,
+) -> Result<UnsymbolizedSamples, SymbolizeError> {
     logging_rust_cpp_bridge::init_with_log_severity(logging_rust_cpp_bridge::FUCHSIA_LOG_FATAL);
-    let mut file = std::fs::File::open(input)?;
-    let mut magic = [0; 11];
-    file.read_exact(&mut magic)?;
-
-    if magic == *b"{{{reset}}}" {
-        UnsymbolizedSamples::new(input)
-    } else {
-        UnsymbolizedSamples::new_from_fxt_file(input)
-    }
+    UnsymbolizedSamples::new_from_fxt_file(input)
 }
 
 fn find_debug_file(
     symbol_index: &symbol_index::SymbolIndex,
     binary_id: &str,
 ) -> Option<std::path::PathBuf> {
-    if binary_id.len() > 2 {
-        if let Some(p) = symbol_index.build_id_dirs.iter().find_map(|dir| {
-            let p = std::path::PathBuf::from(&dir.path)
-                .join(&binary_id[..2])
-                .join(format!("{}.debug", &binary_id[2..]));
-            p.exists().then_some(p)
-        }) {
+    if binary_id.len() <= 2 {
+        return None;
+    }
+    if let Some(p) = symbol_index.build_id_dirs.iter().find_map(|dir| {
+        let p = std::path::PathBuf::from(&dir.path)
+            .join(&binary_id[..2])
+            .join(format!("{}.debug", &binary_id[2..]));
+        p.exists().then_some(p)
+    }) {
+        return Some(p);
+    }
+
+    // Fallback to the default symbol cache directory
+    if let Ok(home) = std::env::var("HOME") {
+        let p = std::path::PathBuf::from(home)
+            .join(".fuchsia/debug/symbol-cache")
+            .join(&binary_id[..2])
+            .join(format!("{}.debug", &binary_id[2..]));
+        if p.exists() {
             return Some(p);
         }
-
-        // Fallback to the default symbol cache directory
-        if let Ok(home) = std::env::var("HOME") {
-            let p = std::path::PathBuf::from(home)
-                .join(".fuchsia/debug/symbol-cache")
-                .join(&binary_id[..2])
-                .join(format!("{}.debug", &binary_id[2..]));
-            if p.exists() {
-                return Some(p);
-            }
-        }
-        None
-    } else {
-        None
     }
+    None
 }
 
 impl UnsymbolizedSamples {
     pub fn process_unsymbolized_samples(
         self,
-        output: &PathBuf,
+        output: impl AsRef<Path>,
         pprof_conversion: bool,
         context: &ffx_config::EnvironmentContext,
     ) -> Result<SymbolizedRecords, SymbolizeError> {
@@ -160,7 +151,7 @@ impl UnsymbolizedSamples {
                                     seen_bt.entry(*backtrace).or_insert_with_key(|bt_key| {
                                         let resolved_locations = symbolizer
                                             .resolve_addr(bt_key.0)
-                                            .unwrap_or_else(|_| Vec::new());
+                                            .unwrap_or_default();
                                         ResolvedAddress {
                                             addr: bt_key.0,
                                             locations: resolved_locations,
@@ -190,7 +181,7 @@ impl UnsymbolizedSamples {
                                     let resolved_addr = seen_bt.entry(bt).or_insert_with_key(|bt_key| {
                                         let resolved_locations = symbolizer
                                             .resolve_addr(bt_key.0)
-                                            .unwrap_or_else(|_| Vec::new());
+                                            .unwrap_or_default();
                                         ResolvedAddress {
                                             addr: bt_key.0,
                                             locations: resolved_locations,

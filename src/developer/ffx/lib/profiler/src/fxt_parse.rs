@@ -13,11 +13,11 @@ use fxt::session::SessionParser;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::Path;
 
 impl UnsymbolizedSamples {
-    pub fn new_from_fxt_file(input: &PathBuf) -> Result<Self, SymbolizeError> {
-        let file = File::open(input)?;
+    pub fn new_from_fxt_file(input: impl AsRef<Path>) -> Result<Self, SymbolizeError> {
+        let file = File::open(input.as_ref())?;
         let reader = BufReader::new(file);
         let mut parser = SessionParser::new(reader);
         let mut unsymbolized = Self { handlers: HashMap::new(), thread_names: HashMap::new() };
@@ -38,21 +38,21 @@ impl UnsymbolizedSamples {
                     }
                     ProfilerRecord::Mapping(mapping) => {
                         let pid = Pid(mapping.process.0);
-                        if let Some(handler) = unsymbolized.handlers.get_mut(&pid) {
-                            if let Some(ModuleWithMmapDetails { module: _, mmaps }) =
-                                handler.module_with_mmap_records.get_mut(&mapping.module_id)
-                            {
-                                let flags = MappingFlags::from_bits_truncate(mapping.flags as u32);
-                                mmaps.push(MappingDetails {
-                                    start_addr: mapping.start_addr,
-                                    size: mapping.range,
-                                    flags,
-                                    vaddr: mapping.vaddr,
-                                });
-                            } else {
-                                return Err(SymbolizeError::InvalidMappingRecord);
-                            }
-                        }
+                        let handler = unsymbolized
+                            .handlers
+                            .get_mut(&pid)
+                            .ok_or(SymbolizeError::InvalidMappingRecord)?;
+                        let ModuleWithMmapDetails { mmaps, .. } = handler
+                            .module_with_mmap_records
+                            .get_mut(&mapping.module_id)
+                            .ok_or(SymbolizeError::InvalidMappingRecord)?;
+                        let flags = MappingFlags::from_bits_truncate(mapping.flags as u32);
+                        mmaps.push(MappingDetails {
+                            start_addr: mapping.start_addr,
+                            size: mapping.range,
+                            flags,
+                            vaddr: mapping.vaddr,
+                        });
                     }
                     ProfilerRecord::Backtrace(backtrace) => {
                         let pid = Pid(backtrace.process.0);
@@ -100,6 +100,7 @@ mod tests {
     use super::*;
     use crate::parse::ProfilingRecordHandler;
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::NamedTempFile;
 
     #[test]
