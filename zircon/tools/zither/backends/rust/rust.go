@@ -36,7 +36,6 @@ func NewGenerator(formatter fidlgen.Formatter) *Generator {
 		"ConstValue":               ConstValue,
 		"BitsAttributes":           BitsAttributes,
 		"EnumAttributes":           EnumAttributes,
-		"U64EnumAttributes":        U64EnumAttributes,
 		"StructAttributes":         StructAttributes,
 		"OverlayAttributes":        OverlayAttributes,
 		"DescribeType": func(desc zither.TypeDescriptor) string {
@@ -68,7 +67,7 @@ type traits struct {
 
 	// Whether zerocopy::FromBytes is supported (effectively whether each
 	// byte slice (of the same size and alignment) is uniquely converible to an
-	// instance.
+	// instance. If it isn't, then we derive zerocopy::TryFromBytes.
 	//
 	// https://docs.rs/zerocopy/latest/zerocopy/trait.FromBytes.html
 	fromBytes bool
@@ -87,6 +86,8 @@ func (t traits) supported() []string {
 	}
 	if t.fromBytes {
 		supported = append(supported, "FromBytes")
+	} else {
+		supported = append(supported, "TryFromBytes")
 	}
 	return supported
 }
@@ -254,21 +255,30 @@ func Imports(summary zither.FileSummary) []string {
 
 	intoBytes := false
 	fromBytes := false
+	tryFromBytes := false
 	for _, decl := range summary.Decls {
-		t := extraTraits[decl.Name().String()]
-		intoBytes = intoBytes || t.intoBytes
-		fromBytes = fromBytes || t.fromBytes
-		if intoBytes && fromBytes {
+		switch decl.AsDecl().(type) {
+		case *zither.Enum, *zither.Bits, *zither.Struct, *zither.Overlay:
+			t := extraTraits[decl.Name().String()]
+			intoBytes = intoBytes || t.intoBytes
+			fromBytes = fromBytes || t.fromBytes
+			tryFromBytes = tryFromBytes || !t.fromBytes
+		}
+		if intoBytes && fromBytes && tryFromBytes {
 			break
 		}
 	}
-	if intoBytes || fromBytes {
+
+	if intoBytes || fromBytes || tryFromBytes {
 		var zerocopyImports []string
 		if intoBytes {
 			zerocopyImports = append(zerocopyImports, "IntoBytes")
 		}
 		if fromBytes {
 			zerocopyImports = append(zerocopyImports, "FromBytes")
+		}
+		if tryFromBytes {
+			zerocopyImports = append(zerocopyImports, "TryFromBytes")
 		}
 		imports = append(imports, fmt.Sprintf("zerocopy::{%s}", strings.Join(zerocopyImports, ", ")))
 	}
@@ -324,6 +334,10 @@ func layoutAttributes(decl zither.Decl) []string {
 	repr := "#[repr(C)]"
 	if e, ok := decl.(*zither.Enum); ok {
 		repr = fmt.Sprintf("#[repr(%s)]", ScalarTypeName(e.Subtype))
+	} else if _, ok := decl.(*zither.Overlay); ok {
+		// A repr(u64) enum where all variants are repr(C) will stil in effect
+		// be repr(C) itself.
+		repr = "#[repr(u64)]"
 	}
 
 	t := extraTraits[decl.GetName().String()]
@@ -337,15 +351,6 @@ func layoutAttributes(decl zither.Decl) []string {
 }
 
 func EnumAttributes(e zither.Enum) []string { return layoutAttributes(&e) }
-
-func U64EnumAttributes() []string {
-	supported := append(defaultTraits, "IntoBytes", "Debug", "Eq", "PartialEq")
-	sort.Strings(supported)
-	return []string{
-		"#[repr(u64)]",
-		fmt.Sprintf("#[derive(%s)]", strings.Join(supported, ", ")),
-	}
-}
 
 func BitsAttributes() []string {
 	// The default traits are already implicitly derived via the bitflags!

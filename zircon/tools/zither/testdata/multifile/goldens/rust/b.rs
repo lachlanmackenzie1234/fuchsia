@@ -7,14 +7,14 @@
 
 #![allow(unused_imports)]
 
-use zerocopy::IntoBytes;
+use zerocopy::{IntoBytes, TryFromBytes};
 
 use crate::a::*;
 
 pub const B1: A = A::Member;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub struct B2 {
     pub a: A,
 }

@@ -7,7 +7,8 @@
 
 // The following `use ... as _;` declarations satisfy any unused-crate-dependencies
 // errors for unconditionally depended-on crates.
-use {bitflags as _, zerocopy as _};
+use bitflags as _;
+use zerocopy as _;
 
 mod bits;
 #[allow(unused)]

@@ -7,10 +7,10 @@
 
 #![allow(unused_imports)]
 
-use zerocopy::IntoBytes;
+use zerocopy::{IntoBytes, TryFromBytes};
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Color {
     Red = 0,
     Orange = 1,
@@ -44,7 +44,7 @@ impl Color {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Uint8Limits {
     Min = 0,
     Max = 0b11111111,
@@ -63,7 +63,7 @@ impl Uint8Limits {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Uint16Limits {
     Min = 0,
     Max = 0xffff,
@@ -82,7 +82,7 @@ impl Uint16Limits {
 }
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Uint32Limits {
     Min = 0,
     Max = 0xffffffff,
@@ -101,7 +101,7 @@ impl Uint32Limits {
 }
 
 #[repr(u64)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Uint64Limits {
     Min = 0,
     Max = 0xffffffffffffffff,
@@ -120,7 +120,7 @@ impl Uint64Limits {
 }
 
 #[repr(i8)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Int8Limits {
     Min = -0x80,
     Max = 0x7f,
@@ -139,7 +139,7 @@ impl Int8Limits {
 }
 
 #[repr(i16)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Int16Limits {
     Min = -0x8000,
     Max = 0x7fff,
@@ -158,7 +158,7 @@ impl Int16Limits {
 }
 
 #[repr(i32)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Int32Limits {
     Min = -0x80000000,
     Max = 0x7fffffff,
@@ -177,7 +177,7 @@ impl Int32Limits {
 }
 
 #[repr(i64)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Int64Limits {
     Min = -0x8000000000000000,
     Max = 0x7fffffffffffffff,
@@ -198,7 +198,7 @@ impl Int64Limits {
 pub const FOUR: u16 = 0b100;
 
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum EnumWithExpressions {
     OrWithLiteral = 3,  // 0b01 | 0b10
     OrWithConstant = 5, // 0b001 | FOUR
@@ -218,7 +218,7 @@ impl EnumWithExpressions {
 
 /// Enum with a one-line comment.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum EnumWithOneLineComment {
     /// Enum member with one-line comment.
     MemberWithOneLineComment = 0,
@@ -248,7 +248,7 @@ impl EnumWithOneLineComment {
 ///         many-line
 ///           comment.
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum EnumWithManyLineComment {
     Member = 0,
 }

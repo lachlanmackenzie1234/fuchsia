@@ -7,7 +7,7 @@
 
 #![allow(unused_imports)]
 
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::{IntoBytes, TryFromBytes};
 
 use crate::rights::*;
 
@@ -48,7 +48,7 @@ pub const MAX_NAME_LEN: u64 = 32;
 pub const MAX_CPUS: u64 = 512;
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum ObjType {
     None = 0,
     Process = 1,

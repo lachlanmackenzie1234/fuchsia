@@ -15,47 +15,14 @@
 {{- range $attrs }}
 {{ . }}
 {{- end }}
-pub struct {{ $name }} {
-    pub discriminant: {{ $discType }},
-    pub variant: {{ $name }}Variant,
-}
-
-{{ range U64EnumAttributes }}
-{{ . }}
-{{- end }}
-pub enum {{ $discType }} {
+pub enum {{ $name }} {
 {{ range .Variants }}
 {{- if .Comments }}
 {{ range .Comments }}
     ///{{ . }}
 {{- end }}
 {{ end -}}
-    {{ UpperCamelCase . }} = {{ .Discriminant }},
-{{ end }}
-}
-
-// TODO(https://github.com/rust-lang/rust/issues/49804): Define anonymously.
-{{- range $attrs }}
-{{ . }}
-{{- end }}
-pub union {{ $name }}Variant {
-{{ range .Variants }}
-    pub {{ LowerCaseWithUnderscores . }}: {{ DescribeType .Type }},
-{{- end }}
-}
-
-impl {{ $name }} {
-{{ range .Variants }}
-    pub fn is_{{ .Name }}(&self) -> bool {
-        self.discriminant == {{ $discType }}::{{ UpperCamelCase . }}
-    }
-
-    pub fn as_{{ .Name }}(&mut self) -> Option<&mut {{ DescribeType .Type }}> {
-        if self.is_{{ .Name }}() {
-            return None;
-        }
-        unsafe { Some(&mut self.variant.{{ LowerCaseWithUnderscores . }}) }
-    }
+    {{ UpperCamelCase . }}({{ DescribeType .Type }}) = {{ .Discriminant }},
 {{ end }}
 }
 

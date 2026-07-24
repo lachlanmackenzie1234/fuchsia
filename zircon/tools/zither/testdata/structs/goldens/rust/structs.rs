@@ -8,7 +8,7 @@
 #![allow(unused_imports)]
 
 use bitflags::bitflags;
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, FromBytes, IntoBytes, PartialEq)]
@@ -28,7 +28,7 @@ pub struct Doubtleton {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromBytes)]
 pub struct PrimitiveMembers {
     pub i64: i64,
     pub u64: u64,
@@ -51,7 +51,7 @@ pub struct ArrayMembers {
 }
 
 #[repr(i32)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Enum {
     Zero = 0,
     One = 1,
@@ -81,7 +81,7 @@ bitflags::bitflags! {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromBytes)]
 pub struct EnumAndBitsMembers {
     pub e: Enum,
     pub b: Bits,
@@ -89,7 +89,7 @@ pub struct EnumAndBitsMembers {
 
 /// Struct with a one-line comment.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromBytes)]
 pub struct StructWithOneLineComment {
     /// Struct member with one-line comment.
     pub member_with_one_line_comment: u32,
