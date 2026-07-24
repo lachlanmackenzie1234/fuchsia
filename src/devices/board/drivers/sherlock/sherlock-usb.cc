@@ -73,20 +73,6 @@ static const std::vector<fpbus::BootMetadata> usb_boot_metadata{
     }},
 };
 
-static const std::vector<fpbus::Mmio> xhci_mmios{
-    {{
-        .base = T931_USB0_BASE,
-        .length = T931_USB0_LENGTH,
-    }},
-};
-
-static const std::vector<fpbus::Irq> xhci_irqs{
-    {{
-        .irq = fpbus::IrqSpec::WithIrq(T931_USB0_IRQ),
-        .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
-    }},
-};
-
 static const std::vector<fpbus::Mmio> usb_phy_mmios{
     {{
         .base = T931_USBCTRL_BASE,
@@ -116,23 +102,11 @@ static const std::vector<fpbus::Bti> usb_btis{
     }},
 };
 
-static const fpbus::Node xhci_dev = []() {
-  fpbus::Node dev = {};
-  dev.name() = "xhci";
-  dev.vid() = PDEV_VID_GENERIC;
-  dev.pid() = PDEV_PID_GENERIC;
-  dev.did() = PDEV_DID_USB_XHCI_COMPOSITE;
-  dev.mmio() = xhci_mmios;
-  dev.irq() = xhci_irqs;
-  dev.bti() = usb_btis;
-  return dev;
-}();
-
 zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                                fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
   static const std::vector<fuchsia_hardware_usb_phy::UsbPhyMode> kUsbPhyModes = {
       {{.protocol = fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20,
-        .dr_mode = fuchsia_hardware_usb_phy::Mode::kHost,
+        .dr_mode = fuchsia_hardware_usb_phy::Mode::kUnknown,
         .is_otg_capable = false}},
       {{.protocol = fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20,
         .dr_mode = fuchsia_hardware_usb_phy::Mode::kPeripheral,
@@ -272,49 +246,6 @@ zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   return ZX_OK;
 }
 
-zx_status_t AddXhciComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
-                             fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
-  const std::vector<fuchsia_driver_framework::BindRule2> kXhciCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_usb_phy::SERVICE,
-                              bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
-                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
-                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
-                              bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
-  };
-  const std::vector<fuchsia_driver_framework::NodeProperty2> kXhciCompositeProperties = {
-      fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                         bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
-                         bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
-                         bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
-                         bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
-  };
-
-  const std::vector<fuchsia_driver_framework::ParentSpec2> kXhciParents = {
-      fuchsia_driver_framework::ParentSpec2{
-          {.bind_rules = kXhciCompositeRules, .properties = kXhciCompositeProperties}}};
-  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
-      fidl::ToWire(fidl_arena, xhci_dev),
-      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "xhci-phy", .parents2 = kXhciParents}}));
-  if (!result.ok()) {
-    zxlogf(ERROR, "AddCompositeNodeSpec Usb(xhci-phy) request failed: %s",
-           result.FormatDescription().data());
-    return result.status();
-  }
-  if (result->is_error()) {
-    zxlogf(ERROR, "AddCompositeNodeSpec Usb(xhci-phy) failed: %s",
-           zx_status_get_string(result->error_value()));
-    return result->error_value();
-  }
-  return ZX_OK;
-}
-
 }  // namespace
 
 zx_status_t Sherlock::UsbInit() {
@@ -322,12 +253,6 @@ zx_status_t Sherlock::UsbInit() {
   fdf::Arena arena('USB_');
 
   auto status = AddUsbPhyComposite(pbus_, fidl_arena, arena);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  // Add XHCI and DWC2 to the same driver_host as the aml-usb-phy.
-  status = AddXhciComposite(pbus_, fidl_arena, arena);
   if (status != ZX_OK) {
     return status;
   }
