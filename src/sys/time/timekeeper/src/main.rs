@@ -206,6 +206,13 @@ impl Config {
         )
     }
 
+    fn get_min_acceptable_boot_time_for_utc_update(&self) -> zx::BootInstant {
+        zx::BootInstant::ZERO
+            + zx::BootDuration::from_minutes(
+                self.source_config.min_acceptable_boot_time_for_utc_update_minutes as i64,
+            )
+    }
+
     fn get_periodic_rtc_update_interval(&self) -> Option<zx::BootDuration> {
         let update_interval_minutes =
             self.source_config.periodic_rtc_update_interval_minutes as i64;
@@ -963,6 +970,7 @@ mod tests {
             serve_test_protocols: false,
             use_connectivity: false,
             min_utc_reference_to_backstop_diff_minutes: 0,
+            min_acceptable_boot_time_for_utc_update_minutes: 0,
             periodic_rtc_update_interval_minutes: 0,
             rtc_allow_setting_past_utc: "default".to_string(),
         };

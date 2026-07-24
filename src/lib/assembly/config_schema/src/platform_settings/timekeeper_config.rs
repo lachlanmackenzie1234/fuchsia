@@ -14,6 +14,7 @@ pub struct TimekeeperConfig {
     /// The time to wait until retrying to sample the pull time source,
     /// expressed in seconds.
     #[derivative(Default(value = "300"))]
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub back_off_time_between_pull_samples_sec: i64,
     /// The time to wait before sampling the time source for the first time,
     /// expressed in seconds.
@@ -22,6 +23,7 @@ pub struct TimekeeperConfig {
     /// If set, the device's real time clock is only ever read from, but
     /// not written to.
     #[derivative(Default(value = "\"https://clients3.google.com/generate_204\".into()"))]
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub time_source_endpoint_url: String,
     /// If set, Timekeeper will serve test-only protocols from the library
     /// `fuchsia.time.test`.
@@ -74,7 +76,13 @@ pub struct TimekeeperConfig {
     /// If we receive a UTC reference timestamp that is less than this amount of time away from
     /// backstop, we reject it.
     #[derivative(Default(value = "20"))]
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub min_utc_reference_to_backstop_diff_minutes: u64,
+    /// If we receive a UTC reference timestamp when boot time is less than
+    /// this threshold, we reject it.
+    #[derivative(Default(value = "5"))]
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub min_acceptable_boot_time_for_utc_update_minutes: u64,
     /// The policy for how to handle RTC readings that are in the past with respect
     /// to the current boot clock.
     #[serde(skip_serializing_if = "crate::common::is_default")]

@@ -736,17 +736,18 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                             info!("manage_clock: got a reference time sample: {:?}", sample);
                             let utc_reference_to_backstop_diff = (utc_reference - utc_backstop).max(UtcDuration::from_nanos(0));
 
-                            if utc_reference_to_backstop_diff < self.config.get_min_utc_reference_to_backstop_diff() {
-                                warn!(
-                                    concat!(
-                                        "manage_clock: UTC clock not started, ",
-                                        "reference time sample is rejected ",
-                                        "as too close to backstop, {:?}"),
-                                    utc_reference_to_backstop_diff);
-                                log::info!("UTC parameters:");
-                                log::info!("    - diff:             = {utc_reference_to_backstop_diff:?}");
-                                log::info!("    - backstop:         = {utc_backstop:?}");
-                                log::info!("    - reference utc_now = {utc_reference:?}\n\n");
+                            let boot_min_reference = self.config.get_min_acceptable_boot_time_for_utc_update();
+                            if utc_reference_to_backstop_diff
+                                < self.config.get_min_utc_reference_to_backstop_diff()
+                            {
+                                log_rejected_too_close_to_backstop(
+                                    utc_reference_to_backstop_diff,
+                                    utc_backstop,
+                                    utc_reference,
+                                );
+                            } else if boot_reference < boot_min_reference
+                            {
+                                log_rejected_boot_time_too_low(boot_reference, utc_reference, boot_min_reference);
                             } else {
                                 last_proposal = Some(sample);
                                 self.managed_clock_start(
@@ -991,6 +992,46 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
     fn record_clock_correction(&self, correction: UtcDuration, strategy: ClockCorrectionStrategy) {
         self.diagnostics.record(Event::ClockCorrection { track: self.track, correction, strategy });
     }
+}
+
+fn log_rejected_too_close_to_backstop(
+    utc_reference_to_backstop_diff: UtcDuration,
+    utc_backstop: UtcInstant,
+    utc_reference: UtcInstant,
+) {
+    warn!(
+        concat!(
+            "manage_clock: UTC clock not started, ",
+            "reference time sample is rejected ",
+            "as too close to backstop, {:?}"
+        ),
+        utc_reference_to_backstop_diff
+    );
+    info!("Rejected UTC parameters:");
+    info!("    - diff:             = {utc_reference_to_backstop_diff:?}");
+    info!("    - backstop:         = {utc_backstop:?}");
+    info!("    - reference utc_now = {utc_reference:?}\n\n");
+}
+
+fn log_rejected_boot_time_too_low(
+    boot_reference: zx::BootInstant,
+    utc_reference: UtcInstant,
+    boot_min_reference: zx::BootInstant,
+) {
+    let boot_reference_duration = boot_reference - zx::BootInstant::ZERO;
+    warn!(
+        concat!(
+            "manage_clock: UTC clock not started, ",
+            "reference time sample is rejected ",
+            "as boot time is too low, {:?}"
+        ),
+        boot_reference_duration
+    );
+    info!("Rejected UTC parameters:");
+    info!("    - boot_reference:     = {boot_reference:?}");
+    info!("    - boot_min_reference: = {boot_min_reference:?}");
+    info!("    - boot_duration:      = {boot_reference_duration:?}");
+    info!("    - reference utc_now   = {utc_reference:?}\n\n");
 }
 
 /// Applies an update to the supplied clock, panicking with a comprehensible error on failure.
@@ -2214,5 +2255,59 @@ mod tests {
         assert_matches!(sample_signaler_rx.try_next(), Ok(_));
 
         Ok(())
+    }
+
+    #[fuchsia::test]
+    fn reject_reference_sample_below_min_boot_time() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        executor.set_fake_time(fasync::MonotonicInstant::ZERO);
+        executor.set_fake_boot_to_mono_offset(zx::BootDuration::ZERO);
+        let clock = create_clock();
+        let diagnostics = Arc::new(FakeDiagnostics::new());
+        let boot_now = executor.boot_now(); // zero.
+
+        let config = make_test_config_with_fn(|mut config| {
+            config.min_acceptable_boot_time_for_utc_update_minutes = 5;
+            config
+        });
+
+        let clock_manager = create_clock_manager_no_test_signalers(
+            Arc::clone(&clock),
+            // Ensure we never get any time samples.
+            vec![],
+            None,
+            None,
+            Arc::clone(&diagnostics),
+            config,
+        );
+
+        let (mut cmd_tx, cmd_rx) = mpsc::channel(2);
+        let b = new_state_for_test(false);
+
+        let proposed_utc = BACKSTOP_TIME + UtcDuration::from_hours(1);
+
+        let (responder, mut rx) = mpsc::channel(1);
+        let mut run_fut = pin!(async move {
+            cmd_tx
+                .send(Command::Reference {
+                    boot_reference: boot_now.into(),
+                    utc_reference: proposed_utc,
+                    responder,
+                })
+                .await
+                .unwrap();
+
+            clock_manager.maintain_clock(cmd_rx, b).await;
+        });
+        let _ignore = run_in_fake_time(
+            &mut executor,
+            &mut run_fut,
+            fasync::MonotonicDuration::from_micros(1),
+        );
+
+        let res = rx.try_next().unwrap().unwrap();
+        assert!(res.is_ok());
+        // Verify clock was not started because boot reference was below threshold.
+        assert_eq!(clock.get_details().unwrap().backstop, BACKSTOP_TIME);
     }
 }

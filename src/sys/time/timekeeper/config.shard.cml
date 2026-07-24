@@ -109,6 +109,10 @@
         /// less than this amount of time away from backstop, we reject it.
         min_utc_reference_to_backstop_diff_minutes: { type: "uint64" },
 
+        /// If we receive a UTC reference timestamp when boot time is less than
+        /// this threshold in minutes, we reject it.
+        min_acceptable_boot_time_for_utc_update_minutes: { type: "uint64" },
+
         /// The interval at which the RTC is updated from the UTC clock,
         /// expressed in minutes. If set to 0, periodic updates are disabled.
         periodic_rtc_update_interval_minutes: { type: "uint32" },
