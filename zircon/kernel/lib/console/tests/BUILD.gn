@@ -11,7 +11,10 @@ kernel_rust_crate("console_tests_rust") {
   sources = [ "src/lib.rs" ]
   deps = [
     "//sdk/rust/zx-status",
-    "//zircon/kernel/lib/console/rust:console_rust",
+    "//src/lib/zr",
+    "//zircon/kernel/lib/console:console_rust",
+    "//zircon/kernel/lib/unittest:unittest-rs",
+    "//zircon/kernel/platform:platform-rs",
   ]
 }
 

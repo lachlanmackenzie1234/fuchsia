@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <zircon/types.h>
 
 #include <fbl/macros.h>
 #include <kernel/mutex.h>
@@ -91,8 +92,7 @@ class RecurringCallback {
 
 /* external api */
 int console_run_script(const char* string);
-int console_run_script_locked(const char* string);  // special case from inside a command
-void console_exit();
+extern "C" int console_run_script_locked(const char* string);  // special case from inside a command
 
 /* panic shell api */
 void panic_shell_start();
@@ -101,13 +101,10 @@ void panic_shell_start();
 // Will return if shell is not started or if shell exits.
 void kernel_shell_init();
 
-extern int lastresult;
-
 #if !CONSOLE_ENABLED
 // Easier to link in stubbed definitions when the console is disabled.
 inline int console_run_script(const char* string) { return 0; }
 inline int console_run_script_locked(const char* string) { return 0; }
-inline void console_exit() {}
 inline void panic_shell_start() {}
 inline void kernel_shell_init() {}
 #endif
