@@ -6,8 +6,8 @@
 //   zither.structs (//zircon/tools/zither/testdata/structs/structs.test.fidl)
 // by zither, a Fuchsia platform tool.
 
-#ifndef FIDL_ZITHER_STRUCTS_DATA_ASM_STRUCTS_H_
-#define FIDL_ZITHER_STRUCTS_DATA_ASM_STRUCTS_H_
+#ifndef STRUCTS_ASM_STRUCTS_H_
+#define STRUCTS_ASM_STRUCTS_H_
 
 #define ZITHER_STRUCTS_EMPTY_SIZEOF (1)
 
@@ -74,4 +74,4 @@
 
 #define ZITHER_STRUCTS_STRUCT_WITH_MANY_LINE_COMMENT_MEMBER (0)
 
-#endif  // FIDL_ZITHER_STRUCTS_DATA_ASM_STRUCTS_H_
+#endif  // STRUCTS_ASM_STRUCTS_H_

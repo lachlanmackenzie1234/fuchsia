@@ -6,8 +6,8 @@
 //   zither.constants (//zircon/tools/zither/testdata/constants/constants.test.fidl)
 // by zither, a Fuchsia platform tool.
 
-#ifndef FIDL_ZITHER_CONSTANTS_DATA_C_CONSTANTS_H_
-#define FIDL_ZITHER_CONSTANTS_DATA_C_CONSTANTS_H_
+#ifndef CONSTANTS_C_CONSTANTS_H_
+#define CONSTANTS_C_CONSTANTS_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -124,4 +124,4 @@ extern "C" {
 }
 #endif
 
-#endif  // FIDL_ZITHER_CONSTANTS_DATA_C_CONSTANTS_H_
+#endif  // CONSTANTS_C_CONSTANTS_H_

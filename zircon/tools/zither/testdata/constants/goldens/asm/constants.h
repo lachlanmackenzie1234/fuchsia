@@ -6,8 +6,8 @@
 //   zither.constants (//zircon/tools/zither/testdata/constants/constants.test.fidl)
 // by zither, a Fuchsia platform tool.
 
-#ifndef FIDL_ZITHER_CONSTANTS_DATA_ASM_CONSTANTS_H_
-#define FIDL_ZITHER_CONSTANTS_DATA_ASM_CONSTANTS_H_
+#ifndef CONSTANTS_ASM_CONSTANTS_H_
+#define CONSTANTS_ASM_CONSTANTS_H_
 
 #define ZITHER_CONSTANTS_UINT8_ZERO (0)
 
@@ -113,4 +113,4 @@
 //             comment.
 #define ZITHER_CONSTANTS_CONSTANT_MANY_LINE_COMMENT ""
 
-#endif  // FIDL_ZITHER_CONSTANTS_DATA_ASM_CONSTANTS_H_
+#endif  // CONSTANTS_ASM_CONSTANTS_H_

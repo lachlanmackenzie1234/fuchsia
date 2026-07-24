@@ -241,8 +241,8 @@ template("zither_golden_test") {
         forward_variables_from(backend_info.output_namespace, "*")
         parts = prefix_parts
         if (defined(library_name_separator)) {
-          parts +=
-              [ string_replace(library_target, ".", library_name_separator) ]
+          _lib_name = string_replace(library_target, "zither.", "")
+          parts += [ string_replace(_lib_name, ".", library_name_separator) ]
         }
         parts += suffix_parts
         path = string_join(part_separator, parts)

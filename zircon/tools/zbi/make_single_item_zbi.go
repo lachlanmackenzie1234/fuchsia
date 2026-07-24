@@ -15,7 +15,7 @@ import (
 	"path"
 	"unsafe"
 
-	"fidl/data/zbi"
+	"zbi"
 )
 
 var flags = struct {

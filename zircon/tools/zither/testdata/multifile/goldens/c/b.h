@@ -6,8 +6,8 @@
 //   zither.multifile (//zircon/tools/zither/testdata/multifile/b.test.fidl)
 // by zither, a Fuchsia platform tool.
 
-#ifndef FIDL_ZITHER_MULTIFILE_DATA_C_B_H_
-#define FIDL_ZITHER_MULTIFILE_DATA_C_B_H_
+#ifndef MULTIFILE_C_B_H_
+#define MULTIFILE_C_B_H_
 
 #include "a.h"
 
@@ -25,4 +25,4 @@ typedef struct {
 }
 #endif
 
-#endif  // FIDL_ZITHER_MULTIFILE_DATA_C_B_H_
+#endif  // MULTIFILE_C_B_H_

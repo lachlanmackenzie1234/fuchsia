@@ -206,10 +206,10 @@ def _zither_c_family_library_impl(
     # `bazel-bin/sdk/fidl/zbi/zither/`, they are peers such as
     # `bazel-bin/sdk/fidl/zbi/zbi_zither.c.gen.out/`.
     # The files generated in directories such as
-    # `bazel-bin/sdk/fidl/zbi/zbi_zither.c.gen.out/fidl/zbi/data/c/`.
+    # `bazel-bin/sdk/fidl/zbi/zbi_zither.c.gen.out/zbi/c/`.
     #
     # The following shows how this path is composed:
-    #   bazel-bin/sdk/fidl/zbi/zbi_zither.c.gen.out/fidl/zbi/data/c/
+    #   bazel-bin/sdk/fidl/zbi/zbi_zither.c.gen.out/zbi/c/
     #   package:  ^^^^^^^^^^^^
     #   output_dir override:   ^^^^^^^^^^^^^^^^^^^^
     #   prefix_parts:                               ^^^^
@@ -549,10 +549,9 @@ _SUPPORTED_ZITHER_BACKEND_INFO = {
     # C data layout bindings.
     "c": {
         "output_namespace": {
-            "prefix_parts": ["fidl"],
+            "prefix_parts": [],
             "library_name_separator": ".",
             "suffix_parts": [
-                "data",
                 "c",
             ],
             "supports_override": True,
@@ -563,10 +562,9 @@ _SUPPORTED_ZITHER_BACKEND_INFO = {
     # Assembly data layout bindings.
     "asm": {
         "output_namespace": {
-            "prefix_parts": ["fidl"],
+            "prefix_parts": [],
             "library_name_separator": ".",
             "suffix_parts": [
-                "data",
                 "asm",
             ],
             "supports_override": True,
@@ -613,10 +611,7 @@ _SUPPORTED_ZITHER_BACKEND_INFO.update({
     # Rust data layout bindings.
     "rust": {
         "output_namespace": {
-            "prefix_parts": [
-                "fidl",
-                "data",
-            ],
+            "prefix_parts": [],
             "library_name_separator": "-",
             "part_separator": "-",
         },

@@ -6,8 +6,8 @@ used in assembly code
 ## Output layout
 
 Given a FIDL library by the name of `id1.id2.....idn`, one header
-`<fidl/id1/id2/.../idn/data/asm/${filename}.h>` is generated per original FIDL
-source file, containing the bindings for the declarations defined therein.
+`<id1/id2/.../idn/asm/${filename}.h>` is generated per original FIDL source
+file, containing the bindings for the declarations defined therein.
 
 ## GN integration
 

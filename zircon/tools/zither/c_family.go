@@ -14,7 +14,8 @@ import (
 // CIncludeNamespace gives the default 'include' namespace for the headers
 // of bindings generated for a given FIDL library and C family backend.
 func CIncludeNamespace(lib fidlgen.LibraryName, backend string) string {
-	return filepath.Join("fidl", lib.String(), "data", backend)
+	str := strings.TrimPrefix(lib.String(), "zither.")
+	return filepath.Join(str, backend)
 }
 
 // CHeaderPath gives the header path within the 'include' namespace associated

@@ -8,7 +8,7 @@
 #define ZIRCON_KERNEL_ARCH_X86_PHYS_INCLUDE_PHYS_ARCH_ZBI_H_
 
 #ifdef __ASSEMBLER__
-#include <fidl/zbi/data/asm/zbi.h>
+#include <zbi/asm/zbi.h>
 #else
 #include <lib/zbi-format/zbi.h>
 #endif

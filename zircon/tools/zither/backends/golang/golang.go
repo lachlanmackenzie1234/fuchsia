@@ -46,7 +46,11 @@ func (gen Generator) DeclOrder() zither.DeclOrder {
 func (gen Generator) DeclCallback(zither.Decl) {}
 
 func (gen *Generator) Generate(summary zither.LibrarySummary, outputDir string) ([]string, error) {
-	pkgParts := append([]string{"fidl", "data"}, summary.Library.Parts()...)
+	parts := summary.Library.Parts()
+	if len(parts) > 1 && parts[0] == "zither" {
+		parts = parts[1:]
+	}
+	pkgParts := parts
 	pkgPath := path.Join(pkgParts...) // path.Join() over filepath.Join(), as package names always use '/'
 	outputDir = filepath.Join(outputDir, filepath.Join(pkgParts...))
 

@@ -112,12 +112,8 @@ _rustfmt = {
 supported_zither_backend_info = {
   c = {
     output_namespace = {
-      prefix_parts = [ "fidl" ]
       library_name_separator = "."
-      suffix_parts = [
-        "data",
-        "c",
-      ]
+      suffix_parts = [ "c" ]
       supports_override = true
     }
     formatter = _clang_format
@@ -127,12 +123,8 @@ supported_zither_backend_info = {
 
   asm = {
     output_namespace = {
-      prefix_parts = [ "fidl" ]
       library_name_separator = "."
-      suffix_parts = [
-        "data",
-        "asm",
-      ]
+      suffix_parts = [ "asm" ]
       supports_override = true
     }
     formatter = _clang_format
@@ -142,10 +134,6 @@ supported_zither_backend_info = {
 
   go = {
     output_namespace = {
-      prefix_parts = [
-        "fidl",
-        "data",
-      ]
       library_name_separator = "/"
     }
     formatter = _gofmt
@@ -155,10 +143,6 @@ supported_zither_backend_info = {
 
   rust = {
     output_namespace = {
-      prefix_parts = [
-        "fidl",
-        "data",
-      ]
       library_name_separator = "-"
       part_separator = "-"
     }
@@ -925,9 +909,8 @@ template("zither_library") {
           forward_variables_from(backend_info.output_namespace, "*")
           parts = prefix_parts
           if (defined(library_name_separator)) {
-            parts += [ string_replace(invoker.library_name,
-                                      ".",
-                                      library_name_separator) ]
+            _lib_name = string_replace(invoker.library_name, "zither.", "")
+            parts += [ string_replace(_lib_name, ".", library_name_separator) ]
           }
           parts += suffix_parts
           path = string_join(part_separator, parts)

@@ -769,8 +769,8 @@ if (toolchain_environment == "kernel.phys" ||
 source_set("zbi") {
   public = [ "include/phys/zbi.h" ]
   public_deps = [
-    # <phys/zbi.h> has #include <fidl/zbi/data/asm/zbi.h>
-    # <phys/arch/zbi.h> has #include <fidl/zbi/data/asm/zbi.h>
+    # <phys/zbi.h> has #include <zbi/asm/zbi.h>
+    # <phys/arch/zbi.h> has #include <zbi/asm/zbi.h>
     "//sdk/fidl/zbi:zbi_zither.asm",
 
     # <phys/zbi.h>" has #include <lib/zbi-format/kernel.h>.

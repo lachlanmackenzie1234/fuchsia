@@ -7,8 +7,8 @@
 //   (//zircon/tools/zither/testdata/experimental_zx_types/experimental_zx_types.test.fidl)
 // by zither, a Fuchsia platform tool.
 
-#ifndef FIDL_ZITHER_EXPERIMENTAL_ZX_TYPES_DATA_C_EXPERIMENTAL_ZX_TYPES_H_
-#define FIDL_ZITHER_EXPERIMENTAL_ZX_TYPES_DATA_C_EXPERIMENTAL_ZX_TYPES_H_
+#ifndef EXPERIMENTAL_ZX_TYPES_C_EXPERIMENTAL_ZX_TYPES_H_
+#define EXPERIMENTAL_ZX_TYPES_C_EXPERIMENTAL_ZX_TYPES_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -88,4 +88,4 @@ typedef struct {
 }
 #endif
 
-#endif  // FIDL_ZITHER_EXPERIMENTAL_ZX_TYPES_DATA_C_EXPERIMENTAL_ZX_TYPES_H_
+#endif  // EXPERIMENTAL_ZX_TYPES_C_EXPERIMENTAL_ZX_TYPES_H_
