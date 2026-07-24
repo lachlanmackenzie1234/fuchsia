@@ -147,7 +147,7 @@ __END_CDECLS
   do {                                                                                 \
     if (x)                                                                             \
       _ZIRCON_ASSERT_ATTRIBUTE_LIKELY { break; }                                       \
-    else {                                                                             \
+    else { /* NOLINT(readability-else-after-return) */                                 \
       ZX_PANIC("ASSERT FAILED at (%s:%d): %s" msg, __FILE__, __LINE__, #x, ##msgargs); \
     }                                                                                  \
   } while (0)
@@ -161,7 +161,7 @@ __END_CDECLS
     if (ZX_DEBUG_ASSERT_IMPLEMENTED) {                                          \
       if (x)                                                                    \
         _ZIRCON_ASSERT_ATTRIBUTE_LIKELY { break; }                              \
-      else {                                                                    \
+      else { /* NOLINT(readability-else-after-return) */                        \
         ZX_PANIC("DEBUG ASSERT FAILED at (%s:%d): %s", __FILE__, __LINE__, #x); \
       }                                                                         \
     }                                                                           \
@@ -176,7 +176,7 @@ __END_CDECLS
     if (ZX_DEBUG_ASSERT_IMPLEMENTED) {                                                         \
       if (x)                                                                                   \
         _ZIRCON_ASSERT_ATTRIBUTE_LIKELY { break; }                                             \
-      else {                                                                                   \
+      else { /* NOLINT(readability-else-after-return) */                                       \
         ZX_PANIC("DEBUG ASSERT FAILED at (%s:%d): %s" msg, __FILE__, __LINE__, #x, ##msgargs); \
       }                                                                                        \
     }                                                                                          \
