@@ -720,7 +720,7 @@ a local debugging feature and is not intended for production use.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:132
+From //zircon/kernel/params.gni:128
 
 ### check_output_dir_leaks
 
@@ -969,7 +969,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -3832,7 +3832,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:140
+From //zircon/kernel/params.gni:136
 
 ### enable_mdns_trace
 
@@ -4199,15 +4199,6 @@ If true, excludes syscalls with the [testonly] attribute.
 
 From //zircon/vdso/vdso.gni:9
 
-### experimental_channel_call_propagation_enabled
-
-Propagate bandwidth and enable run queue promotion for threads making
-channel calls.
-
-**Current value (from the default):** `true`
-
-From //zircon/kernel/params.gni:120
-
 ### experimental_continuous_per_vmo_attribution_enabled
 
 Add in-kernel support for querying a per-VMO populated bytes high-water
@@ -4268,7 +4259,7 @@ when unblocking once we solve races higher in the stack.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:128
+From //zircon/kernel/params.gni:124
 
 ### experimental_mem_enabled
 
@@ -5289,7 +5280,7 @@ memory profile.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/switch/BUILD.gn:27
+From //zircon/kernel/switch/BUILD.gn:28
 
 ### kernel_no_userabi
 
