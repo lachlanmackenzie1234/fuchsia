@@ -64,7 +64,11 @@ TEST(PidFdTest, ThreadCannotBeOpened) {
   std::thread([] {
     auto pid_fd = DoPidFdOpen(DoGetTid());
     ASSERT_FALSE(pid_fd.is_valid());
-    EXPECT_EQ(errno, EINVAL);
+    // Both Linux and Starnix return EINVAL when trying to open a secondary thread TID without
+    // PIDFD_THREAD, since pidfd_open only allows opening thread group leaders. However, newer Linux
+    // kernels using the pidfs filesystem may return ENOENT instead. Accept both to be compatible
+    // with different host kernels.
+    EXPECT_THAT(errno, testing::AnyOf(EINVAL, ENOENT));
   }).join();
 }
 
