@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/test.suspendcontrol/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/syslog/cpp/macros.h>
@@ -181,6 +183,29 @@ class TestTopologyServer : public fidl::Server<fuchsia_power_broker::Topology> {
 
 }  // namespace
 
+/// Minimal implementation of fuchsia_power_broker::ElementRunner for dummy or aggregator
+/// power elements (such as "fake-all-drivers") created during system integration testing.
+/// Responds synchronously to level modification requests.
+class BasicElementRunner : public fidl::Server<fuchsia_power_broker::ElementRunner> {
+ public:
+  explicit BasicElementRunner(fidl::ServerEnd<fuchsia_power_broker::ElementRunner> server_end)
+      : loop_(&kAsyncLoopConfigNoAttachToCurrentThread) {
+    loop_.StartThread("basic-element-runner");
+    fidl::BindServer(loop_.dispatcher(), std::move(server_end), this);
+  }
+
+  void SetLevel(SetLevelRequest& request, SetLevelCompleter::Sync& completer) override {
+    completer.Reply();
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+ private:
+  async::Loop loop_;
+};
+
 void Connector::Receive(ReceiveRequest& request, ReceiveCompleter::Sync& completer) {
   if (path_ == fidl::DiscoverableProtocolDefaultPath<fuchsia_power_broker::Topology>) {
     auto real_topology = component::Connect<fuchsia_power_broker::Topology>();
@@ -200,6 +225,9 @@ void Connector::Receive(ReceiveRequest& request, ReceiveCompleter::Sync& complet
     completer.Close(status);
   }
 }
+
+TestLoopBase::TestLoopBase() = default;
+TestLoopBase::~TestLoopBase() = default;
 
 zx::event TestLoopBase::GetCapturedToken(const std::string& element_name) {
   std::lock_guard<std::mutex> lock(g_tokens_mutex);
@@ -415,21 +443,26 @@ zx::result<std::string> TestLoopBase::GetPowerElementId(diagnostics::reader::Arc
         auto topology = datum.payload().value()->GetByPath(
             {"broker", "topology", "fuchsia.inspect.Graph", "topology"});
         if (topology == nullptr) {
-          FX_LOGS(INFO) << "No topology listing in Power Broker's inspect data.";
+          FX_LOGS(INFO) << "No topology listing in Power Broker's inspect data for moniker: "
+                        << datum.moniker();
           break;
         }
         for (const auto& child : topology->children()) {
-          auto name = datum
-                          .GetByPath({"root", "broker", "topology", "fuchsia.inspect.Graph",
-                                      "topology", child.name(), "meta", "name"})
-                          .GetString();
-          if (name == power_element_name) {
+          const auto& name_node =
+              datum.GetByPath({"root", "broker", "topology", "fuchsia.inspect.Graph", "topology",
+                               child.name(), "meta", "name"});
+          if (name_node.IsNull() || !name_node.IsString()) {
+            continue;
+          }
+          if (name_node.GetString() == power_element_name) {
             FX_LOGS(INFO) << "Power element '" << power_element_name << "' has ID '" << child.name()
                           << "'.";
             return zx::ok(child.name());
           }
         }
-        FX_LOGS(INFO) << "Did not find power element in Power Broker's topology listing.";
+        FX_LOGS(INFO) << "Did not find power element '" << power_element_name
+                      << "' in Power Broker's topology listing for moniker '" << datum.moniker()
+                      << "'.";
       }
     }
     FX_LOGS(INFO) << "Taking another snapshot.";
@@ -439,9 +472,20 @@ zx::result<std::string> TestLoopBase::GetPowerElementId(diagnostics::reader::Arc
 zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
                                           std::string_view driver_url_suffix, bool expect_new_koid,
                                           bool use_df_elements,
-                                          std::vector<CustomDictionaryEntry> custom_entries) {
+                                          std::vector<CustomDictionaryEntry> custom_entries,
+                                          std::vector<std::string> target_child_nodes) {
+  if (!use_df_elements && !target_child_nodes.empty()) {
+    ADD_FAILURE() << "target_child_nodes requires use_df_elements to be true.";
+    return {};
+  }
+
   // Find the node running our target driver.
-  FX_LOGS(INFO) << "Preparing driver '" << driver_url_suffix << "' for test...";
+  if (target_child_nodes.empty()) {
+    FX_LOGS(INFO) << "Preparing driver '" << driver_url_suffix << "' for test...";
+  } else {
+    FX_LOGS(INFO) << "Preparing driver '" << driver_url_suffix
+                  << "' with power token overrides for test...";
+  }
   std::optional<std::string> found = std::nullopt;
   uint64_t old_koid;
   while (!found) {
@@ -465,15 +509,29 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
     }
   }
 
-  FX_LOGS(INFO) << "restarting driver with test dictionary...";
   // Setup the power dictionary and restart the node with this dictionary.
+  if (target_child_nodes.empty()) {
+    FX_LOGS(INFO) << "restarting driver with test dictionary...";
+  } else {
+    FX_LOGS(INFO) << "restarting driver with test dictionary and child power token overrides...";
+  }
   auto dict_ref = CreateDictionaryForTest(std::move(custom_entries));
   zx::eventpair release_fence;
+
+  std::vector<fuchsia_power_broker::LevelDependency> level_deps;
+
   if (use_df_elements) {
     // Retrieve the CPU token to override.
     auto cpu_token_result = fidl::Call(cpu_element_manager_client_end_)->GetCpuDependencyToken();
     EXPECT_TRUE(cpu_token_result.is_ok());
-    EXPECT_TRUE(cpu_token_result->assertive_dependency_token().has_value());
+    if (cpu_token_result.is_error()) {
+      FX_LOGS(ERROR) << "Failed to call GetCpuDependencyToken: " << cpu_token_result.error_value();
+      return {};
+    }
+    if (!cpu_token_result->assertive_dependency_token().has_value()) {
+      FX_LOGS(ERROR) << "GetCpuDependencyToken response missing assertive_dependency_token";
+      return {};
+    }
 
     zx::event cpu_token_override;
     if (zx_status_t status = cpu_token_result->assertive_dependency_token()->duplicate(
@@ -483,9 +541,45 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
       return {};
     }
 
-    auto result = fidl::Call(driver_manager_client_end_)
-                      ->RestartWithDictionaryAndPowerDependencies(
-                          {*found, std::move(dict_ref), {}, std::move(cpu_token_override), {}});
+    std::vector<fuchsia_driver_development::NodePowerTokenOverride> node_token_overrides;
+
+    for (const auto& child_name : target_child_nodes) {
+      zx_status_t status = ZX_OK;
+      zx::event token_for_node, token_for_dep, token_for_dev_mgr;
+      if (status = zx::event::create(0, &token_for_node); status != ZX_OK) {
+        EXPECT_EQ(ZX_OK, status);
+        return {};
+      }
+      if (status = token_for_node.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_for_dep);
+          status != ZX_OK) {
+        EXPECT_EQ(ZX_OK, status);
+        return {};
+      }
+      if (status = token_for_node.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_for_dev_mgr);
+          status != ZX_OK) {
+        EXPECT_EQ(ZX_OK, status);
+        return {};
+      }
+
+      fuchsia_power_broker::LevelDependency level_dep;
+      level_dep.dependent_level(1);
+      level_dep.requires_token(std::move(token_for_dep));
+      level_dep.requires_level_by_preference(std::vector<uint8_t>{1});
+      level_deps.push_back(std::move(level_dep));
+
+      fuchsia_driver_development::NodePowerTokenOverride override_item;
+      override_item.target_node(child_name);
+      override_item.token(std::move(token_for_dev_mgr));
+      node_token_overrides.push_back(std::move(override_item));
+    }
+
+    auto result =
+        fidl::Call(driver_manager_client_end_)
+            ->RestartWithDictionaryAndPowerDependencies({*found,
+                                                         std::move(dict_ref),
+                                                         {},
+                                                         std::move(cpu_token_override),
+                                                         std::move(node_token_overrides)});
     EXPECT_EQ(true, result.is_ok());
 
     if (result.is_error()) {
@@ -534,9 +628,112 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
     }
   }
 
+  if (target_child_nodes.empty()) {
+    FX_LOGS(INFO) << "proceeding with test!";
+    return release_fence;
+  }
+
+  for (const auto& child_name : target_child_nodes) {
+    FX_LOGS(INFO) << "checking for target child node '" << child_name << "' to be up and bound...";
+    bool child_found = false;
+    while (!child_found) {
+      auto child_vec = GetNodeInfo(child_name);
+      for (auto& child_node : child_vec) {
+        std::string driver_url = child_node.bound_driver_url().has_value()
+                                     ? child_node.bound_driver_url().value()
+                                     : "<none>";
+        FX_LOGS(INFO) << "Found candidate child node '" << child_name << "' with moniker '"
+                      << child_node.moniker().value_or("<none>") << "' and driver URL '"
+                      << driver_url << "'";
+        if (child_node.bound_driver_url().has_value() &&
+            !child_node.bound_driver_url().value().empty() &&
+            child_node.bound_driver_url().value() != "unbound" &&
+            child_node.bound_driver_url().value() != "owned by composite(s)") {
+          FX_LOGS(INFO) << "child node '" << child_name << "' successfully bound to driver '"
+                        << child_node.bound_driver_url().value() << "'";
+          child_found = true;
+          break;
+        }
+      }
+      if (!child_found) {
+        RunLoopWithTimeout(zx::msec(10));
+      }
+    }
+  }
+
+  FX_LOGS(INFO)
+      << "all target child nodes are up! Creating 'fake-all-drivers' aggregator power element...";
+  auto [control_client, control_server] =
+      fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+  auto [runner_client, runner_server] =
+      fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+
+  test_all_drivers_runner_ = std::make_unique<BasicElementRunner>(std::move(runner_server));
+
+  fuchsia_power_broker::ElementSchema schema;
+  schema.element_name("fake-all-drivers");
+  schema.initial_current_level(1);
+  schema.valid_levels(std::vector<uint8_t>{0, 1});
+  schema.dependencies(std::move(level_deps));
+  schema.element_control(std::move(control_server));
+  schema.element_runner(std::move(runner_client));
+
+  auto topology_client = component::Connect<fuchsia_power_broker::Topology>();
+  EXPECT_TRUE(topology_client.is_ok());
+  if (topology_client.is_error()) {
+    FX_LOGS(ERROR) << "Failed to connect to Topology protocol: " << topology_client.status_string();
+    return {};
+  }
+  auto add_result = fidl::Call(*topology_client)->AddElement(std::move(schema));
+  EXPECT_TRUE(add_result.is_ok());
+  if (add_result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to add fake-all-drivers element: " << add_result.error_value();
+    return {};
+  }
+
+  zx::event element_token, token_dupe;
+  zx_status_t status = ZX_OK;
+  if (status = zx::event::create(0, &element_token); status != ZX_OK) {
+    EXPECT_EQ(ZX_OK, status);
+    return {};
+  }
+  if (status = element_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_dupe); status != ZX_OK) {
+    EXPECT_EQ(ZX_OK, status);
+    return {};
+  }
+
+  auto reg_result =
+      fidl::Call(control_client)->RegisterDependencyToken({{.token = std::move(token_dupe)}});
+  EXPECT_TRUE(reg_result.is_ok());
+  if (reg_result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to register dependency token: " << reg_result.error_value();
+    return {};
+  }
+
+  fuchsia_power_system::CpuElementManagerAddExecutionStateDependencyRequest add_dep_req;
+  add_dep_req.dependency_token(std::move(element_token));
+  add_dep_req.power_level(1);
+  auto add_dep_result = fidl::Call(cpu_element_manager_client_end_)
+                            ->AddExecutionStateDependency(std::move(add_dep_req));
+  EXPECT_TRUE(add_dep_result.is_ok());
+  if (add_dep_result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to add execution state dependency for fake-all-drivers: "
+                   << add_dep_result.error_value();
+    return {};
+  }
+
+  test_all_drivers_control_ = std::move(control_client);
+
   FX_LOGS(INFO) << "proceeding with test!";
-  // Return the release_fence for the caller to hold on to.
   return release_fence;
+}
+
+zx::eventpair TestLoopBase::PrepareDriverWithPowerTokenOverrides(
+    std::string_view node_filter, std::string_view driver_url_suffix, bool expect_new_koid,
+    const std::vector<std::string>& target_child_nodes,
+    std::vector<CustomDictionaryEntry> custom_entries) {
+  return PrepareDriver(node_filter, driver_url_suffix, expect_new_koid,
+                       /*use_df_elements=*/true, std::move(custom_entries), target_child_nodes);
 }
 
 fuchsia_component_sandbox::DictionaryRef TestLoopBase::CreateDictionaryForTest(
