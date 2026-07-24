@@ -447,6 +447,7 @@ class Dwc3 : public fdf::DriverBase2,
   [[nodiscard]] zx_status_t CheckHwVersion();
   [[nodiscard]] zx_status_t ResetHw();
   void StartEvents();
+  void StopEvents();
   void SetDeviceAddress(uint32_t address);
 
   // EP0 stuff
@@ -521,6 +522,9 @@ class Dwc3 : public fdf::DriverBase2,
   // `StopController()` was called most recently.
   bool controller_started_{false};
   bool power_on_{true};
+
+  // Returns true if PHY power is on and the controller has been started by the client.
+  bool is_active() const { return power_on_ && controller_started_; }
 
   // True if the EndTransfer core command can be polled via CmdAct instead of waiting on a
   // CommandComplete endpoint irq event. Only available to core versions >= 3.10a. Set during

@@ -317,6 +317,51 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
   EXPECT_EQ(nullptr, active_trbs);
 }
 
+TEST_F(ManagedTestFixture, TestStopEventsMasksInterrupts) {
+  auto evntintrptmask = std::make_shared<uint32_t>(0);
+  auto gevntcount = std::make_shared<uint32_t>(0);
+  auto gevntcount_reads = std::make_shared<uint32_t>(0);
+
+  dut_.RunInEnvironmentTypeContext(
+      [evntintrptmask, gevntcount, gevntcount_reads](Environment& env) {
+        auto& gevntsiz = env.reg_region()[GEVNTSIZ::Get(0).addr()];
+        gevntsiz.SetWriteCallback([evntintrptmask](uint64_t val) {
+          *evntintrptmask = GEVNTSIZ::Get(0).FromValue(static_cast<uint32_t>(val)).EVNTINTRPTMASK();
+        });
+
+        auto& gevntcount_reg = env.reg_region()[GEVNTCOUNT::Get(0).addr()];
+        gevntcount_reg.SetReadCallback([gevntcount_reads]() -> uint32_t {
+          // Simulate 32 bytes of pending events.
+          if (*gevntcount_reads == 0) {
+            (*gevntcount_reads)++;
+            return 32;
+          }
+          return 0;  // Return 0 on subsequent reads to exit while loop.
+        });
+        gevntcount_reg.SetWriteCallback([gevntcount](uint64_t val) {
+          // Capture the count that was written back to clear the pending events.
+          *gevntcount = GEVNTCOUNT::Get(0).FromValue(static_cast<uint32_t>(val)).EVNTCOUNT();
+        });
+      });
+
+  namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+  dut_.runtime().RunUntilIdle();
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok());
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  auto res = dci->StopController();
+  ASSERT_TRUE(res.ok());
+
+  // Wait for the operations on the driver thread to finish
+  dut_.runtime().RunUntilIdle();
+
+  EXPECT_EQ(*evntintrptmask, 1u);
+  EXPECT_EQ(*gevntcount, 32u);
+}
+
 TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoTooSmall) {
   namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 

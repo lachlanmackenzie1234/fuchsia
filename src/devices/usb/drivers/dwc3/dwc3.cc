@@ -1250,7 +1250,7 @@ void Dwc3::StartController(StartControllerCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::StartController");
   controller_started_ = true;
 
-  if (power_on_) {
+  if (is_active()) {
     StartPeripheralMode();
   }
 
@@ -1262,18 +1262,18 @@ void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
   controller_started_ = false;
   ResetEndpoints();
 
-  if (!power_on_) {
-    completer.Reply(zx::ok());
-    return;
+  if (power_on_) {
+    StopEvents();
+
+    zx_status_t status = ResetHw();
+    if (status != ZX_OK) {
+      fdf::error("Failed to reset hardware {}", zx_status_get_string(status));
+      completer.Reply(zx::error(status));
+      return;
+    }
+    zx::nanosleep(zx::deadline_after(zx::msec(50)));
   }
 
-  zx_status_t status = ResetHw();
-  if (status != ZX_OK) {
-    fdf::error("Failed to reset hardware {}", zx_status_get_string(status));
-    completer.Reply(zx::error(status));
-    return;
-  }
-  zx::nanosleep(zx::deadline_after(zx::msec(50)));
   completer.Reply(zx::ok());
 }
 
@@ -1610,7 +1610,7 @@ void Dwc3::OnConnectStatusChanged(
 
     SetDeviceState(fpolicy::DeviceState::kPowered);
 
-    if (controller_started_) {
+    if (is_active()) {
       StartPeripheralMode();
     }
 
@@ -1625,6 +1625,10 @@ void Dwc3::OnConnectStatusChanged(
 
     // Cancel all pending requests.
     ResetEndpoints();
+
+    if (controller_started_) {
+      StopEvents();
+    }
 
     SetDeviceState(fpolicy::DeviceState::kNotAttached);
 

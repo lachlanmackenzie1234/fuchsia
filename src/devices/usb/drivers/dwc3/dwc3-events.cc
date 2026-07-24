@@ -270,4 +270,27 @@ void Dwc3::StartEvents() {
       .WriteTo(mmio);
 }
 
+void Dwc3::StopEvents() {
+  if (!power_on_) {
+    return;
+  }
+
+  auto* mmio = get_mmio();
+
+  // Mask the event interrupt to prevent further interrupts.
+  GEVNTSIZ::Get(0).ReadFrom(mmio).set_EVNTINTRPTMASK(1).WriteTo(mmio);
+
+  // Clear GEVNTCOUNT to release any pending level-triggered interrupts.
+  uint32_t event_bytes;
+  while ((event_bytes = GEVNTCOUNT::Get(0).ReadFrom(mmio).EVNTCOUNT()) > 0) {
+    uint32_t event_count = event_bytes / sizeof(uint32_t);
+    event_fifo_.Advance(event_count);
+    GEVNTCOUNT::Get(0)
+        .FromValue(0)
+        .set_EVNT_HANDLER_BUSY(1)
+        .set_EVNTCOUNT(event_bytes)
+        .WriteTo(mmio);
+  }
+}
+
 }  // namespace dwc3
