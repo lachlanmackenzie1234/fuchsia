@@ -46,6 +46,13 @@ def generate_unit_tests(
     # meaning they will be either None or opaque select() values at runtime.
     kwargs["deps"] = (deps or []) + (test_deps or [])
 
+    # rules_rust's `rust_test()` requires using either `crate` or source attributes
+    # (`srcs`, `crate_root`), but not both. Since `crate = ":<name>"` is passed below,
+    # remove these source attributes inherited from the parent `rustc_library`/`rustc_binary`
+    # target `kwargs` to avoid mutually exclusive attribute errors.
+    kwargs.pop("srcs", None)
+    kwargs.pop("crate_root", None)
+
     if with_host_unit_tests:
         # Do not use host_rustc_test() since that one calls rustc_test() which
         # performs Fuchsia-specific changes that have already been performed by
