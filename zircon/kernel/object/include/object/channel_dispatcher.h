@@ -79,13 +79,7 @@ class ChannelDispatcher final
     void Deliver(MessagePacketPtr msg);
     void Cancel(zx_status_t status);
     fbl::RefPtr<ChannelDispatcher> get_channel() { return channel_; }
-    OwnedWaitQueue* get_wait_queue() {
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
-      return &wait_queue_;
-#else
-      return nullptr;
-#endif
-    }
+    OwnedWaitQueue* get_wait_queue() { return &wait_queue_; }
     zx_txid_t get_txid() const { return txid_; }
     void set_txid(zx_txid_t txid) { txid_ = txid; }
     zx_status_t Wait(const Deadline& deadline);
@@ -93,20 +87,14 @@ class ChannelDispatcher final
     zx_status_t EndWait(MessagePacketPtr* out);
 
    private:
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
     void Signal();
-#endif
 
     fbl::RefPtr<ChannelDispatcher> channel_;
     MessagePacketPtr msg_;
     // TODO(teisenbe/swetland): Investigate hoisting this outside to reduce
     // userthread size
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
     OwnedWaitQueue wait_queue_;
     bool signaled_ TA_GUARDED(wait_queue_.get_lock()) = false;
-#else
-    Event event_;
-#endif
     zx_txid_t txid_ = 0;
     zx_status_t status_ = ZX_ERR_BAD_STATE;
   };

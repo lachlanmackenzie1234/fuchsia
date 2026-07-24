@@ -650,9 +650,7 @@ ChannelDispatcher::MessageWaiter::~MessageWaiter() {
   if (unlikely(channel_)) {
     channel_->RemoveWaiter(this);
   }
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
   wait_queue_.ResetOwnerIfNoWaiters();
-#endif
   DEBUG_ASSERT(!InContainer());
 }
 
@@ -664,7 +662,6 @@ zx_status_t ChannelDispatcher::MessageWaiter::BeginWait(fbl::RefPtr<ChannelDispa
 
   status_ = ZX_ERR_TIMED_OUT;
   channel_ = ktl::move(channel);
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
   const auto do_transaction =
       [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
     ChainLockGuard guard(wait_queue_.get_lock());
@@ -674,13 +671,9 @@ zx_status_t ChannelDispatcher::MessageWaiter::BeginWait(fbl::RefPtr<ChannelDispa
   ChainLockTransaction::UntilDone(EagerReschedDisableAndIrqSaveOption,
                                   CLT_TAG("ChannelDispatcher::MessageWaiter::BeginWait"),
                                   do_transaction);
-#else
-  event_.Unsignal();
-#endif
   return ZX_OK;
 }
 
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
 void ChannelDispatcher::MessageWaiter::Signal() {
   // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
   auto& wake_hooks = OwnedWaitQueue::default_wake_hooks();
@@ -704,36 +697,26 @@ void ChannelDispatcher::MessageWaiter::Signal() {
                                   CLT_TAG("ChannelDispatcher::MessageWaiter::Signal"),
                                   do_transaction);
 }
-#endif
 
 void ChannelDispatcher::MessageWaiter::Deliver(MessagePacketPtr msg) {
   DEBUG_ASSERT(channel_);
 
   msg_ = ktl::move(msg);
   status_ = ZX_OK;
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
   Signal();
-#else
-  event_.Signal(ZX_OK);
-#endif
 }
 
 void ChannelDispatcher::MessageWaiter::Cancel(zx_status_t status) {
   DEBUG_ASSERT(!InContainer());
   DEBUG_ASSERT(channel_);
   status_ = status;
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
   Signal();
-#else
-  event_.Signal(status);
-#endif
 }
 
 zx_status_t ChannelDispatcher::MessageWaiter::Wait(const Deadline& deadline) {
   if (unlikely(!channel_)) {
     return ZX_ERR_BAD_STATE;
   }
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
   // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
   Thread* current_thread = Thread::Current::Get();
   const auto do_transaction =
@@ -766,9 +749,6 @@ zx_status_t ChannelDispatcher::MessageWaiter::Wait(const Deadline& deadline) {
     return status;
   }
   return status_;
-#else
-  return event_.Wait(deadline);
-#endif
 }
 
 // Returns any delivered message via out and the status.
@@ -778,11 +758,9 @@ zx_status_t ChannelDispatcher::MessageWaiter::EndWait(MessagePacketPtr* out) {
   }
   *out = ktl::move(msg_);
   channel_ = nullptr;
-#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
   // TODO(https://fxbug.dev/513440159): Resetting the owner due to an interrupted channel call
   // breaks the PI chain in a way that cannot be re-connected when the call is resumed. Figure out
   // a way to preserve the PI chain, while address https://fxbug.dev/512083099.
   wait_queue_.ResetOwnerIfNoWaiters();
-#endif
   return status_;
 }
