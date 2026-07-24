@@ -10,7 +10,6 @@
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
 #include <limits.h>
-#include <zircon/dlfcn.h>
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
 
@@ -77,9 +76,6 @@ TestProcessArgs& TestProcessArgs::AddThread(zx::unowned_thread thread) {
 }
 
 TestProcessArgs& TestProcessArgs::AddLdsvc(zx::channel ldsvc) {
-  if (!ldsvc) {
-    EXPECT_EQ(dl_clone_loader_service(ldsvc.reset_and_get_address()), ZX_OK);
-  }
   return AddHandle(PA_LDSVC_LOADER, std::move(ldsvc));
 }
 

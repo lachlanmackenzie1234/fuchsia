@@ -126,9 +126,8 @@ class TestProcessArgs {
   TestProcessArgs& AddProcess(zx::unowned_process process);
   TestProcessArgs& AddThread(zx::unowned_thread thread);
 
-  // Add a fuchsia.ldsvc.Loader channel handle.  If this is called with a null
-  // handle, it will clone the calling process's own loader service.
-  TestProcessArgs& AddLdsvc(zx::channel ldsvc = {});
+  // Add a fuchsia.ldsvc.Loader channel handle.
+  TestProcessArgs& AddLdsvc(zx::channel ldsvc);
 
   // Add the VMAR to use for allocation and loading.
   TestProcessArgs& AddAllocationVmar(zx::vmar vmar);
