@@ -7,6 +7,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 def fidlgentest_go_test(
         name,
         embed,
+        target_compatible_with,
         deps = [],
         data = [],
         args = [],
@@ -25,6 +26,7 @@ def fidlgentest_go_test(
     test_data_name = name + "_test_data"
 
     # TODO(https://fxbug.dev/442637596): Make this host_test_data() or similar.
+    # TODO(https://fxbug.dev/537348499): Use fidlc from the appropriate Bazel config.
     native.filegroup(
         name = test_data_name,
         srcs = [_fidlc_target],
@@ -42,7 +44,7 @@ def fidlgentest_go_test(
     args = args[:]
     args.extend([
         "--fidlc",
-        "$(execpath %s)" % _fidlc_target,
+        "$(rlocationpath %s)" % _fidlc_target,
     ])
     data.append(_fidlc_target)
 
@@ -52,6 +54,8 @@ def fidlgentest_go_test(
         args = args,
         data = data,
         deps = deps,
+        rundir = "..",
+        target_compatible_with = target_compatible_with,
         visibility = visibility,
         **kwargs
     )
