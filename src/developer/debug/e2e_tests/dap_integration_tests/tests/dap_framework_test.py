@@ -340,6 +340,17 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fut1.request_seq, 1)
         self.assertEqual(fut2.request_seq, 2)
 
+    async def test_require_skips_on_unmet_requirement(self) -> None:
+        case = DapTestCase("run")
+        with patch.dict(
+            "os.environ",
+            {"DAP_E2E_TESTS_BUILD_TYPE": "optimize=debug:target_cpu=arm64"},
+        ):
+            with self.assertRaises(unittest.SkipTest):
+                case.require("optimize=none")
+            with self.assertRaises(unittest.SkipTest):
+                case.require("target_cpu!=arm64")
+
 
 class TestDapTestCaseTeardown(unittest.TestCase):
     @patch("dap_test_framework.dap_test_framework.DapTestFramework")

@@ -19,6 +19,7 @@ from pydap.models import (
     LaunchArguments,
     SetBreakpointsArguments,
 )
+from zxdb_dap import ZxdbStackTraceArguments
 
 
 class TestDapSmoke(DapTestCase):
@@ -82,6 +83,8 @@ class TestDapDisconnect(DapTestCase):
 
 
 class TestDapBreakpoint(DapTestCase):
+    # currently we don't use optimize=none because this test only test if we can hit the breakpoint.
+    # if we need to check the file line of the breakpoint, then we should set optimize=none.
     async def test_breakpoint(self) -> None:
         crasher_path = get_dap_source_path(
             "src/developer/forensics/crasher/cpp/crasher.c"
@@ -120,6 +123,47 @@ class TestDapBreakpoint(DapTestCase):
         self.assertEqual(len(clear_resp["body"]["breakpoints"]), 0)
 
 
+class TestDapBreakpointLine(DapTestCase):
+    require_build_type = ["optimize=none"]
+
+    # It's possible to have different file lines to be mapped into a same address when compiling.
+    # Breakpoint is implemented based on replacing address of <file line> with a breakpoint trap.
+    # when we hit the address, it is impossible to tell whether we are running fileLine1 or fileLine2.
+    # To test against the line number, we set optimize=none.
+    async def test_breakpoint_line(self) -> None:
+        pretty_types_path = get_dap_source_path(
+            "src/developer/debug/e2e_tests/inferiors/pretty_types.cc"
+        )
+        line_number = 34
+        bp_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=pretty_types_path),
+                breakpoints=[SourceBreakpoint(line=line_number)],
+            )
+        )
+        self.assertTrue(bp_resp["success"])
+        self.assertEqual(len(bp_resp["body"]["breakpoints"]), 1)
+        bp_id = bp_resp["body"]["breakpoints"][0]["id"]
+
+        self.launch(
+            LaunchArguments(
+                process="fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/pretty_types.cm"
+            )
+        )
+        stopped_event = await self.on_event("stopped", timeout=120.0)
+        self.assertEqual(stopped_event["body"]["reason"], "breakpoint")
+        self.assertIn(bp_id, stopped_event["body"]["hitBreakpointIds"])
+
+        thread_id = stopped_event["body"]["threadId"]
+        stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+        frames = stack_resp["body"]["stackFrames"]
+        self.assertTrue(len(frames) > 0)
+
+        self.assertEqual(frames[0]["line"], line_number)
+
+
 class TestLaunch(DapTestCase):
     async def test_strong_attach(self) -> None:
         await self.avoid_racy_attach()
@@ -151,6 +195,11 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--DAP_E2E_TESTS_BUILD_TYPE",
+        help="the build_type string containing optimize/target_cpu/lto attributes",
+    )
+
+    parser.add_argument(
         "--dump-log",
         action="store_true",
         help="print DAP traffic history even if tests succeed",
@@ -165,6 +214,12 @@ def main() -> None:
 
     if args.DAP_E2E_TESTS_SYMBOL_DIR:
         os.environ["DAP_E2E_TESTS_SYMBOL_DIR"] = args.DAP_E2E_TESTS_SYMBOL_DIR
+
+    if args.DAP_E2E_TESTS_BUILD_TYPE:
+        os.environ["DAP_E2E_TESTS_BUILD_TYPE"] = args.DAP_E2E_TESTS_BUILD_TYPE
+        print(
+            "BUILD_TYPE = ", os.environ["DAP_E2E_TESTS_BUILD_TYPE"], flush=True
+        )
 
     if args.dump_log:
         os.environ["DAP_DUMP_LOG_ALWAYS"] = "1"

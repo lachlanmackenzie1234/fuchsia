@@ -40,7 +40,7 @@ from pydap.models import (
     SetBreakpointsArguments,
     StackTraceArguments,
 )
-from zxdb_dap import ZxdbDapClient
+from zxdb_dap import ZxdbDapClient, ZxdbStackTraceArguments
 
 
 class RequestFuture:
@@ -640,6 +640,9 @@ class DapTestFramework:
     def stack_trace(self, args: StackTraceArguments) -> RequestFuture:
         return self._send_wrapper("stackTrace", args)
 
+    def zxdb_stack_trace(self, args: ZxdbStackTraceArguments) -> RequestFuture:
+        return self._send_wrapper("stackTrace", args)
+
     def set_breakpoints(self, args: SetBreakpointsArguments) -> RequestFuture:
         return self._send_wrapper("setBreakpoints", args)
 
@@ -904,8 +907,53 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
     """Base class for DAP integration tests, handling server lifecycle fixtures."""
 
     auto_initialize: bool = True
+    require_build_type: Optional[List[str]] = None
+
+    def _get_build_type_map(self) -> Dict[str, str]:
+        """Returns build settings in key,value pair.
+        raw_build_type example:
+        optimize=size:target_cpu=arm64:is_lto=false:is_thinlto=false:is_asan=false:is_coverage=false
+        """
+        raw_build_type = os.environ.get("DAP_E2E_TESTS_BUILD_TYPE", "")
+
+        result: Dict[str, str] = {}
+        for item in raw_build_type.split(":"):
+            if "=" in item:
+                k, v = item.split("=", 1)
+                result[k.strip()] = v.strip()
+        return result
+
+    def require(self, requirement: str) -> None:
+        """Skips the test if the current DAP_E2E_TESTS_BUILD_TYPE key does not satisfy requirement (= or !=)."""
+        build_type_map = self._get_build_type_map()
+        if "!=" in requirement:
+            key, unexpected_val = requirement.split("!=", 1)
+            key = key.strip()
+            unexpected_val = unexpected_val.strip()
+            actual_val = build_type_map.get(key)
+            if actual_val == unexpected_val:
+                self.skipTest(
+                    f"Skipped because of unmet requirement '{requirement}' (current {key}='{actual_val}')"
+                )
+        elif "=" in requirement:
+            key, expected_val = requirement.split("=", 1)
+            key = key.strip()
+            expected_val = expected_val.strip()
+            actual_val = build_type_map.get(key)
+            if actual_val != expected_val:
+                self.skipTest(
+                    f"Skipped because of unmet requirement '{requirement}' (current {key}='{actual_val}')"
+                )
+        else:
+            raise ValueError(
+                f"Requirement must be in 'key=value' or 'key!=value' format, got '{requirement}'"
+            )
 
     async def asyncSetUp(self) -> None:
+        if self.require_build_type:
+            for req in self.require_build_type:
+                self.require(req)
+
         print(f"\n[TEST START] {self.id()}", flush=True)
         self.framework = DapTestFramework()
         self.port = portpicker.pick_unused_port()
@@ -998,6 +1046,9 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
 
     def stack_trace(self, args: StackTraceArguments) -> RequestFuture:
         return self.framework.stack_trace(args)
+
+    def zxdb_stack_trace(self, args: ZxdbStackTraceArguments) -> RequestFuture:
+        return self.framework.zxdb_stack_trace(args)
 
     def set_breakpoints(self, args: SetBreakpointsArguments) -> RequestFuture:
         return self.framework.set_breakpoints(args)
