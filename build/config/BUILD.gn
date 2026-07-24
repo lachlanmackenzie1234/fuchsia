@@ -163,7 +163,6 @@ config("compiler") {
     configs += [
       ":clang_defaults",
       ":embed_bitcode",
-      ":gnuc_version",
       ":ffp_contract",
     ]
   }
@@ -1665,20 +1664,4 @@ config("standalone") {
 # Enable LLD's balanced partitioning for ordering function sections.
 compiler_config("bp-compression-sort") {
   linker_flags = [ "--bp-compression-sort=function" ]
-}
-
-# Set __GNUC__ and related predefines as GCC does.  This doesn't control what
-# features Clang actually supports, just the predefines.  Clang doesn't support
-# quite all the same features and so its default value is quite low (4.2.1).
-# But it does support many, many features of newer GCC versions.  Also, Clang
-# does not set the predefine at all under -fms-compatibility (UEFI).
-config("gnuc_version") {
-  if (!is_gcc) {
-    gnuc_version = "16.1"
-    if (is_linux) {
-      # glibc headers expect GCC >= 7 means _Float32 et al are available.
-      gnuc_version = "6"
-    }
-    cflags = [ "-fgnuc-version=$gnuc_version" ]
-  }
 }

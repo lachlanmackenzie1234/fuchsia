@@ -272,7 +272,7 @@
              path="third_party/intel/libva"
              remote="https://fuchsia.googlesource.com/third_party/github.com/intel/libva"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="efe84d719a6b364cabe4b7e063df5f55626d03ed"/>
+             revision="235b15cd45a546edc5484f0535a17393dbff62c7"/>
     <project name="third_party/intel/libva-utils"
              path="third_party/intel/libva-utils"
              remote="https://fuchsia.googlesource.com/third_party/github.com/intel/libva-utils"

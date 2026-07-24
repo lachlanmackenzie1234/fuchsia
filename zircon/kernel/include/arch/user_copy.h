@@ -62,7 +62,7 @@ struct UserCopyCaptureFaultsResult {
 // Tell the compiler that the destination is fully (and only) written and the
 // source is fully (and only) read.  This helps its analysis about whether a
 // buffer might have been left uninitialized.
-#if __has_attribute(access)
+#if __GNUC__ >= 11
 #define ARCH_COPY_ACCESS [[gnu::access(write_only, 1, 3), gnu::access(read_only, 2, 3)]]
 #else
 #define ARCH_COPY_ACCESS  // Clang doesn't support this attribute.
