@@ -255,9 +255,8 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
       pc = reinterpret_cast<const iframe_t*>(gregs)->ip;
 #endif
 #ifdef __aarch64__
-      bt[frame_num++] = (reinterpret_cast<const iframe_t*>(gregs)->elr) - 4;
       fp = reinterpret_cast<const iframe_t*>(gregs)->r[29];
-      pc = (reinterpret_cast<const iframe_t*>(gregs)->lr) - 4;
+      pc = reinterpret_cast<const iframe_t*>(gregs)->elr - 4;
 #endif
 #ifdef __riscv
       fp = reinterpret_cast<const iframe_t*>(gregs)->regs.s0;
@@ -327,13 +326,11 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
     return zx::error(ZX_ERR_BAD_STATE);
   }
   percpu_writer::Buffer& cpu_state = token->Get();
-  constexpr fxt::StringRef<fxt::RefType::kId> empty_string{0};
   const fxt::ThreadRef current_thread{pid, tid};
 
   // Drop the record if we fail to write out.
-  zx_status_t _ = fxt::WriteLargeBlobRecordWithMetadata(&cpu_state, current_mono_ticks(),
-                                                        empty_string, empty_string, current_thread,
-                                                        bt, sizeof(uint64_t) * frame_num);
+  zx_status_t _ = fxt::WriteProfilerBacktraceRecord(
+      &cpu_state, current_mono_ticks(), current_thread, bt, sizeof(uint64_t) * frame_num);
   return zx::ok();
 }
 

@@ -115,15 +115,14 @@ zx::result<> ReadNRecordsContainingTid(zx_handle_t sampler, size_t buffer_size,
   zx::time deadline = zx::deadline_after(zx::sec(30));
   auto f = [&record_count, desired_tid](std::span<uint64_t> record_data) {
     ZX_ASSERT(fxt::RecordFields::Type::Get<size_t>(record_data[0]) ==
-              static_cast<size_t>(fxt::RecordType::kLargeRecord));
+              static_cast<size_t>(fxt::RecordType::kProfiler));
     ZX_ASSERT(record_data.size() >= 4);
     // Record format looks like
     // 0-7  : header
-    // 8-15 : metadata
-    // 16-23: ts
-    // 24-31: pid
-    // 32-40: tid
-    zx_koid_t tid = record_data[4];
+    // 8-15 : ts
+    // 16-23: pid
+    // 24-31: tid
+    zx_koid_t tid = record_data[3];
     if (tid == desired_tid) {
       record_count += 1;
     }

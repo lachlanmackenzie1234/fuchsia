@@ -197,33 +197,23 @@ zx::result<> profiler::KernelSampler::Stop() {
       });
 
   trace::TraceReader::RecordConsumer consume_record = [this, &profiled_threads](trace::Record rec) {
-    if (rec.type() != trace::RecordType::kLargeRecord) {
+    if (rec.type() != trace::RecordType::kProfiler) {
       FX_LOGS(WARNING) << "Unhandled record type: " << static_cast<uint64_t>(rec.type());
       return;
     }
-    const trace::LargeRecordData& large_record = rec.GetLargeRecord();
-    if (large_record.type() != trace::LargeRecordType::kBlob) {
-      FX_LOGS(WARNING) << "Unhandled large record type: "
-                       << static_cast<uint64_t>(large_record.type());
+    const trace::Record::Profiler& profiler = rec.GetProfiler();
+    if (profiler.type() != trace::ProfilerRecordType::kBacktrace) {
+      FX_LOGS(WARNING) << "Unhandled profiler record type: "
+                       << static_cast<uint64_t>(profiler.type());
       return;
     }
 
-    const trace::LargeRecordData::Blob& blob = large_record.GetBlob();
-    if (std::holds_alternative<trace::LargeRecordData::BlobAttachment>(blob)) {
-      FX_LOGS(WARNING) << "Unhandled large blob without metadata";
-      return;
-    }
-
-    const trace::LargeRecordData::BlobEvent& blob_event =
-        std::get<trace::LargeRecordData::BlobEvent>(blob);
-    // The blob we are given is an array of instruction pointers of size blob_size
-    const uint64_t* read_head = reinterpret_cast<const uint64_t*>(blob_event.blob);
-    std::vector<uint64_t> stack{read_head, read_head + (blob_event.blob_size / sizeof(uint64_t))};
-    const zx_koid_t pid = blob_event.process_thread.process_koid();
-    const zx_koid_t tid = blob_event.process_thread.thread_koid();
+    const trace::Record::Profiler::Backtrace& backtrace = profiler.backtrace();
+    const zx_koid_t pid = backtrace.process_thread.process_koid();
+    const zx_koid_t tid = backtrace.process_thread.thread_koid();
     if (profiled_threads.contains(tid)) {
       if (sample_cb_) {
-        sample_cb_({pid, tid, std::move(stack), zx::ticks::now(), {}});
+        sample_cb_({pid, tid, backtrace.backtrace, zx::ticks{backtrace.timestamp}, {}});
       }
     }
   };

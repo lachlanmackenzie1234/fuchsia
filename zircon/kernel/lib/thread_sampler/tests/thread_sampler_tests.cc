@@ -70,11 +70,9 @@ class TestThreadSampler {
       bt[i] = i;
     }
 
-    constexpr fxt::StringRef<fxt::RefType::kId> empty_string{0};
     const fxt::ThreadRef current_thread{pid, tid};
-    fxt::WriteLargeBlobRecordWithMetadata(&cpu_state, current_mono_ticks(), empty_string,
-                                          empty_string, current_thread, bt,
-                                          sizeof(uint64_t) * kMaxUserBacktraceSize);
+    fxt::WriteProfilerBacktraceRecord(&cpu_state, current_mono_ticks(), current_thread, bt,
+                                      sizeof(uint64_t) * kMaxUserBacktraceSize);
   }
 
   static bool RepeatStartStopTest() {
@@ -127,14 +125,16 @@ class TestThreadSampler {
       for (unsigned i = 0; i < num_cpus; ++i) {
         percpu_writer::Buffer& s = TestThreadSampler::get_per_cpu_buffers(test_state)[i];
 
-        // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
-        // tid + 1 blob size = 70
-        constexpr size_t num_words = 70;
-        // We should see a large blob
-        constexpr uint64_t large_blob_header =
-            fxt::MakeLargeHeader(fxt::LargeRecordType::kBlob, fxt::WordSize(num_words));
-        fxt::LargeBlobFields::BlobFormat::Make(ToUnderlyingType(fxt::LargeBlobFormat::kMetadata));
-        uint64_t record[71];
+        // num_words = 64 backtrace + 1 header + 1 ts + 1 pid + 1 tid = 68;
+        constexpr size_t num_words = 68;
+        const fxt::ThreadRef sample_thread{i, 1};
+        const uint64_t expected_header =
+            fxt::MakeHeader(fxt::RecordType::kProfiler, fxt::WordSize(num_words)) |
+            fxt::ProfilerRecordFields::ProfilerRecordType::Make(
+                ToUnderlyingType(fxt::ProfilerRecordType::kBacktrace)) |
+            fxt::ProfilerRecordFields::ThreadRef::Make(sample_thread.HeaderEntry()) |
+            fxt::ProfilerBacktraceRecordFields::BacktraceDataLength::Make(64);
+        uint64_t record[68];
         auto copy_fn = [&record](uint32_t offset,
                                  ktl::span<ktl::byte> data) mutable -> zx_status_t {
           ktl::ranges::copy(data, reinterpret_cast<ktl::byte*>(record) + offset);
@@ -143,24 +143,20 @@ class TestThreadSampler {
         zx::result<size_t> read_result = s.Read(copy_fn, sizeof(record));
         ASSERT_TRUE(read_result.is_ok());
         // We should only get the bytes of the record we wrote.
-        ASSERT_EQ(*read_result, size_t{70 * sizeof(uint64_t)});
+        ASSERT_EQ(*read_result, size_t{68 * sizeof(uint64_t)});
 
-        EXPECT_EQ(large_blob_header, record[0]);
-        // 0 arguments, inline thread ref, and empty name/category
-        EXPECT_EQ(uint64_t{0}, record[1]);
+        EXPECT_EQ(expected_header, record[0]);
 
         // timestamp
-        EXPECT_GE(record[2], static_cast<uint64_t>(before));
-        EXPECT_LE(record[2], static_cast<uint64_t>(after));
+        EXPECT_GE(record[1], static_cast<uint64_t>(before));
+        EXPECT_LE(record[1], static_cast<uint64_t>(after));
 
         // We wrote the cpu number as the pid
-        EXPECT_EQ(i, record[3]);
+        EXPECT_EQ(i, record[2]);
         // And 1 as the tid
-        EXPECT_EQ(uint64_t{1}, record[4]);
-        // Blob size
-        EXPECT_EQ(record[5], uint64_t{64} * sizeof(uint64_t));
+        EXPECT_EQ(uint64_t{1}, record[3]);
         for (unsigned frame = 0; frame < 64; frame++) {
-          EXPECT_EQ(record[6 + frame], frame);
+          EXPECT_EQ(record[4 + frame], frame);
         }
       }
       ASSERT_OK(test_state.Destroy().status_value());
@@ -616,13 +612,8 @@ class TestThreadSampler {
         nullptr);
     zx_instant_mono_ticks_t after = current_mono_ticks();
 
-    // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
-    // tid + 1 blob size = 70
-    constexpr size_t num_words = 70;
-    // We should see a large blob
-    constexpr uint64_t large_blob_header =
-        fxt::MakeLargeHeader(fxt::LargeRecordType::kBlob, fxt::WordSize(num_words));
-    fxt::LargeBlobFields::BlobFormat::Make(ToUnderlyingType(fxt::LargeBlobFormat::kMetadata));
+    // num_words = 64 backtrace + 1 header + 1 ts + 1 pid + 1 tid = 68;
+    constexpr size_t num_words = 68;
 
     auto [query_status, expected_size] = sampler.ReadUser(make_user_out_ptr<void>(nullptr), 0);
     ASSERT_OK(query_status);
@@ -631,28 +622,33 @@ class TestThreadSampler {
     ASSERT_OK(status);
 
     unsigned num_cpus_online = ktl::popcount(mp_get_online_mask());
-    ASSERT_EQ(num_cpus_online * size_t{70 * sizeof(uint64_t)}, bytes_read);
+    ASSERT_EQ(num_cpus_online * size_t{68 * sizeof(uint64_t)}, bytes_read);
 
     for (size_t i = 0; i < num_cpus_online; i++) {
-      uint64_t record[70];
+      uint64_t record[68];
       size_t record_size = sizeof(record);
       user->VmoRead(record, i * record_size, record_size);
-      EXPECT_EQ(large_blob_header, record[0]);
-      // 0 arguments, inline thread ref, and empty name/category
-      EXPECT_EQ(uint64_t{0}, record[1]);
+
+      const fxt::ThreadRef sample_thread{i, 1};
+      const uint64_t expected_header =
+          fxt::MakeHeader(fxt::RecordType::kProfiler, fxt::WordSize(num_words)) |
+          fxt::ProfilerRecordFields::ProfilerRecordType::Make(
+              ToUnderlyingType(fxt::ProfilerRecordType::kBacktrace)) |
+          fxt::ProfilerRecordFields::ThreadRef::Make(sample_thread.HeaderEntry()) |
+          fxt::ProfilerBacktraceRecordFields::BacktraceDataLength::Make(64);
+
+      EXPECT_EQ(expected_header, record[0]);
 
       // timestamp
-      EXPECT_GE(record[2], static_cast<uint64_t>(before));
-      EXPECT_LE(record[2], static_cast<uint64_t>(after));
+      EXPECT_GE(record[1], static_cast<uint64_t>(before));
+      EXPECT_LE(record[1], static_cast<uint64_t>(after));
 
       // We wrote the cpu number as the pid
-      EXPECT_EQ(i, record[3]);
+      EXPECT_EQ(i, record[2]);
       // And 1 as the tid
-      EXPECT_EQ(uint64_t{1}, record[4]);
-      // Blob size
-      EXPECT_EQ(record[5], uint64_t{64} * sizeof(uint64_t));
+      EXPECT_EQ(uint64_t{1}, record[3]);
       for (unsigned frame = 0; frame < 64; frame++) {
-        EXPECT_EQ(record[6 + frame], frame);
+        EXPECT_EQ(record[4 + frame], frame);
       }
     }
 
