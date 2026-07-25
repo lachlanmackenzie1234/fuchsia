@@ -123,7 +123,9 @@ fn generate_simple_bind_statements_excluding(
         }
     }
     if let Some(rules) = &bind.rules {
-        for (key, val) in rules {
+        let mut sorted_rules: Vec<_> = rules.iter().collect();
+        sorted_rules.sort_unstable_by_key(|&(key, _)| key);
+        for (key, val) in sorted_rules {
             content.push_str(&format!("{} == {};\n", key, format_bind_val(val)?));
         }
     }
@@ -488,7 +490,9 @@ pub fn generate_bind_file(
         for (parent_name, (capabilities, optional, parent_bind)) in grouped_parents {
             let prefix = if optional { "optional " } else { "" };
             content.push_str(&format!("{}parent \"{}\" {{\n", prefix, parent_name));
-            for (service_name, transport) in capabilities {
+            let mut sorted_capabilities: Vec<_> = capabilities.iter().collect();
+            sorted_capabilities.sort_unstable();
+            for (service_name, transport) in sorted_capabilities {
                 if let Some(rule) =
                     crate::workarounds::try_generate_init_step_bind_rule(&service_name)
                 {

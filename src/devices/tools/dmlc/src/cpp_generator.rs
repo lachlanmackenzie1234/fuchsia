@@ -390,7 +390,9 @@ namespace {{
     ));
 
     // Implement Parse for Structs
-    for (name, struct_def) in &schema.structs {
+    let mut sorted_structs: Vec<_> = schema.structs.iter().collect();
+    sorted_structs.sort_unstable_by_key(|&(name, _)| name);
+    for (name, struct_def) in sorted_structs {
         cc_code.push_str(&format!(
             "std::optional<{name}> {name}::Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix) {{\n"
         ));
