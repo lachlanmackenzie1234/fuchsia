@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Macros for defining a Fuchsia component and component manifest."""
+
 load(
     "@fuchsia_rules_common//components:component_manifest.bzl",
     "compile_component_manifest",
@@ -76,6 +78,9 @@ def _fx_component_impl(
         moniker = None,
         is_driver = False,
         is_test = False,
+
+        # Forward extra attributes.
+        **kwargs
     )
 
 fx_component = macro(
