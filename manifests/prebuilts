@@ -276,7 +276,7 @@
              path="prebuilt/third_party/ucd"/>
     <!--   Vulkan Runtime (for host builds) -->
     <package name="fuchsia/third_party/vulkan_runtime/${platform}"
-             version="build_config:ac2f8ba8ed2d607042d92d62aa72ba5b4bf4ef4bcd1f56322fb279780f27d6bc"
+             version="build_config:f1fd0a69570165cf54cd3d7079e8d149bd064ca3df4498da5d3180819fdaa269"
              path="prebuilt/third_party/vulkan_runtime/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
     <!-- WebM VP9 Canary Conformance Stream Tests -->
