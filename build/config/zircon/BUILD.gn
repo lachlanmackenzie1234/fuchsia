@@ -85,6 +85,7 @@ compiler_config("compiler") {
     configs += [
       "//build/config:clang_defaults",
       "//build/config:embed_bitcode",
+      "//build/config:gnuc_version",
     ]
   }
 

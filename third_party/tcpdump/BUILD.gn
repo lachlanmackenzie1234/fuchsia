@@ -199,6 +199,11 @@ if (is_fuchsia || is_linux) {
 
     defines = [ "HAVE_CONFIG_H" ]
 
+    if (!is_gcc) {
+      # Use Clang-compatible syntax even with higher __GNUC__ predefine.
+      defines += [ "no_sanitize_undefined=no_sanitize(\"undefined\")" ]
+    }
+
     if (is_fuchsia) {
       sources += [ "init.cc" ]
     }
