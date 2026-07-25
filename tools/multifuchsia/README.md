@@ -270,6 +270,10 @@ Please consider contributing aliases for your shell of choice.
     $ mv fuchsia to-delete && mv to-delete/* to-delete/.* ./ && rmdir to-delete
     ```
 
+    Note: If you are a Google employee, you need a security exception to run this
+    command. See the internal documentation [Get the source code][internal-setup-link]
+    for details.
+
 4.  Symlink the multifuchsia script to your root work dir:
 
     ```
@@ -383,3 +387,7 @@ Extra notes:
     `PATH` in your shell resource config file will lead to undesired side
     effects. As [recommended in the Fuchsia developer docs](https://fuchsia.dev/fuchsia-src/development/build/fx?hl=en#setting-up-fx)
     for `fx`, leveraging tools like `direnv` or `dotenv` is highly recommended.
+
+<!-- Reference links -->
+
+[internal-setup-link]: https://fuchsia.dev/internal/intree/development/fuchsia-source-setup/get-the-source-code#glinux-security-exception

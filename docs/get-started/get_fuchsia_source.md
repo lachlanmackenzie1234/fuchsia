@@ -76,7 +76,12 @@ To download the Fuchsia source, do the following:
     ```posix-terminal
     curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode | bash
     ```
+
     This script creates the `fuchsia` directory and downloads the source code.
+
+    Note: If you are a Google employee, you need a security exception to run this
+    command. See the internal documentation [Get the source code][internal-setup-link]
+    for details.
 
     If you see the `Invalid authentication credentials` error during the
     bootstrapping process, see [Authentication error](#authentication-error) for
@@ -279,3 +284,5 @@ do the following:
 [femu]: set_up_femu.md
 [tuntap]: https://en.wikipedia.org/wiki/TUN/TAP
 [tap-networking]: https://wiki.qemu.org/Documentation/Networking#Tap
+[internal-setup-link]: https://fuchsia.dev/internal/intree/development/fuchsia-source-setup/get-the-source-code#glinux-security-exception
+
