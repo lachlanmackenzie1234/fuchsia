@@ -20,7 +20,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsString};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuReadGuard};
+use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuReadGuard, RcuReadScope};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
@@ -1230,6 +1230,9 @@ impl Task {
     ///   - `EINVAL`: the task does not have a memory manager.
     #[track_caller]
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
+        // Retain an RCU read scope for the entire operation. This allows self.running_state() and
+        // mm.to_option_arc() to use cheaper nested RCU read locks.
+        let _scope = RcuReadScope::new();
         self.running_state()?.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
     }
 
