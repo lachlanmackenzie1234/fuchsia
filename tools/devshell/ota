@@ -117,9 +117,17 @@ function main {
     check-for-package-server || return 1
   fi
 
+  local total_start_time=$(date +%s)
+
   if $build; then
-    fx-info "Building/refreshing ${build_targets[@]}"
+    fx-info "$(date '+%Y-%m-%d %H:%M:%S') Starting build/refresh of ${build_targets[@]}..."
+    local build_start_time=$(date +%s)
+
     fx-command-run build "${build_targets[@]}" || return 1
+
+    local build_end_time=$(date +%s)
+    local build_duration=$((build_end_time - build_start_time))
+    fx-info "$(date '+%Y-%m-%d %H:%M:%S') Build completed in ${build_duration} seconds."
   fi
 
   # Note: the following command continues to run as the system goes into
@@ -129,17 +137,43 @@ function main {
   if $packageless; then
     ota_args+=("--packageless")
   fi
+
+  fx-info "$(date '+%Y-%m-%d %H:%M:%S') Starting OTA..."
+  local ota_start_time=$(date +%s)
+
   fx-command-run ffx target update force-install "${ota_args[@]}" || true
 
-  fx-command-run wait
+  local ota_end_time=$(date +%s)
+  local ota_duration=$((ota_end_time - ota_start_time))
 
+  # Assuming ffx prints its own byte counts in its progress bar, this measures the wall clock time.
+  fx-info "$(date '+%Y-%m-%d %H:%M:%S') OTA sequence completed in ${ota_duration} seconds."
+
+  fx-info "$(date '+%Y-%m-%d %H:%M:%S') Waiting for device to reboot..."
+  local wait_start_time=$(date +%s)
+  fx-command-run wait
+  local wait_end_time=$(date +%s)
+  local wait_duration=$((wait_end_time - wait_start_time))
+
+  fx-info "$(date '+%Y-%m-%d %H:%M:%S') Device rebooted in ${wait_duration} seconds."
+  fx-info "$(date '+%Y-%m-%d %H:%M:%S') Waiting for update to be committed..."
+
+  local commit_start_time=$(date +%s)
   fx-command-run shell update wait-for-commit
+  local commit_end_time=$(date +%s)
+  local commit_duration=$((commit_end_time - commit_start_time))
+
+  fx-info "$(date '+%Y-%m-%d %H:%M:%S') Committed in ${commit_duration} seconds."
 
   if needs-update; then
     fx-error "After update, system appears still out of date. OTA may have failed. Run 'fx log' for details."
     fx-error "Also ensure your firewall rules are up to date (e.g. fx setup-ufw)"
     return 1
   fi
+
+  local total_end_time=$(date +%s)
+  local total_duration=$((total_end_time - total_start_time))
+  fx-info "$(date '+%Y-%m-%d %H:%M:%S') Total OTA process took ${total_duration} seconds."
 }
 
 main "$@"
