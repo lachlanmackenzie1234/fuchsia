@@ -31,7 +31,7 @@ group("vulkan") {
   if (is_host && use_null_vulkan_on_host) {
     public_deps = [
       ":headers",
-      "//src/lib/vulkan/third_party/null_vulkan",
+      "//src/lib/vulkan/null_vulkan",
     ]
   }
 
