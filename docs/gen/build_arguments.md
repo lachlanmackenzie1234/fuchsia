@@ -4405,6 +4405,14 @@ removed: https://fxbug.dev/42068537
 
 From //src/developer/ffx/config.gni:19
 
+### fidl_api_coverage
+
+If true, generates API coverage comments inside FIDL bindings.
+
+**Current value (from the default):** `false`
+
+From //build/fidl/toolchain.gni:11
+
 ### flatland_verbose_logging
 
 If true, Flatland will log an excruciating amount of data.  For debugging.
