@@ -178,13 +178,18 @@ impl BssDescriptionCreator {
             }
         }
 
+        let (bandwidth, secondary80_num) = self.channel.cbw.to_fidl();
+        let secondary80 =
+            fidl_ieee80211::ChannelNumber { band: self.channel.band, number: secondary80_num };
         Ok(fidl_ieee80211::BssDescription {
             bssid: self.bssid,
             bss_type: self.bss_type,
             beacon_period: self.beacon_period,
             capability_info,
             ies: ies_updater.finalize(),
-            channel: self.channel.into(),
+            primary: self.channel.into(),
+            bandwidth,
+            vht_secondary_80_channel: secondary80,
             rssi_dbm: self.rssi_dbm,
             snr_db: self.snr_db,
         })
@@ -282,7 +287,7 @@ pub fn build_fake_bss_description_creator__(
         bssid: [0x07, 0x01, 0x02, 0x4d, 0x35, 0x08],
         bss_type: fidl_ieee80211::BssType::Infrastructure,
         beacon_period: 100,
-        channel: Channel::new(3, Cbw::Cbw40),
+        channel: Channel::new(3, Cbw::Cbw40, fidl_ieee80211::WlanBand::TwoGhz),
         rssi_dbm: 0,
         snr_db: 0,
 
@@ -346,7 +351,15 @@ pub fn build_random_bss_description_creator__(
         bss_type,
         beacon_period: rng.random::<u16>(),
         // TODO(https://fxbug.dev/42162492): Purely random valid channel values is not implemented.
-        channel: Channel::new(rng.random_range(1..255), Cbw::Cbw20),
+        channel: {
+            let primary = rng.random_range(1..255);
+            let band = if primary <= 14 {
+                fidl_ieee80211::WlanBand::TwoGhz
+            } else {
+                fidl_ieee80211::WlanBand::FiveGhz
+            };
+            Channel::new(primary, Cbw::Cbw20, band)
+        },
         rssi_dbm: rng.random::<i8>(),
         snr_db: rng.random::<i8>(),
 

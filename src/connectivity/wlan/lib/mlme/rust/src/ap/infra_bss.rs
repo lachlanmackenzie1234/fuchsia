@@ -10,6 +10,10 @@ use crate::device::{self, DeviceOps};
 use crate::error::Error;
 use anyhow::format_err;
 use fdf::ArenaStaticBox;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fuchsia_trace as trace;
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
 use log::error;
 use std::collections::{HashMap, VecDeque};
@@ -17,10 +21,6 @@ use std::fmt::Display;
 use wlan_common::mac::{self, CapabilityInfo, EthernetIIHdr};
 use wlan_common::{TimeUnit, ie, tim};
 use zerocopy::SplitByteSlice;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fidl_fuchsia_wlan_softmac as fidl_softmac, fuchsia_trace as trace,
-};
 
 pub struct InfraBss {
     pub ssid: Ssid,
@@ -30,6 +30,7 @@ pub struct InfraBss {
     pub capabilities: CapabilityInfo,
     pub rates: Vec<u8>,
     pub channel: u8,
+    pub band: fidl_ieee80211::WlanBand,
     pub clients: HashMap<MacAddr, RemoteClient>,
 
     group_buffered: VecDeque<BufferedFrame>,
@@ -62,6 +63,7 @@ impl InfraBss {
         capabilities: CapabilityInfo,
         rates: Vec<u8>,
         channel: u8,
+        band: fidl_ieee80211::WlanBand,
         rsne: Option<Vec<u8>>,
     ) -> Result<Self, Error> {
         let bss = Self {
@@ -72,6 +74,7 @@ impl InfraBss {
             rates,
             capabilities,
             channel,
+            band,
             clients: HashMap::new(),
 
             group_buffered: VecDeque::new(),
@@ -79,13 +82,11 @@ impl InfraBss {
         };
 
         ctx.device
-            .set_channel(fidl_ieee80211::WlanChannel {
-                primary: channel,
-
-                // TODO(https://fxbug.dev/42116942): Correctly support this.
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            })
+            .set_channel(
+                fidl_ieee80211::ChannelNumber { band, number: channel },
+                fidl_ieee80211::ChannelBandwidth::Cbw20,
+                fidl_ieee80211::ChannelNumber { band, number: 0 },
+            )
             .await
             .map_err(|s| Error::Status(format!("failed to set channel"), s))?;
 
@@ -215,7 +216,7 @@ impl InfraBss {
             .handle_mlme_assoc_resp(
                 ctx,
                 self.rsne.is_some(),
-                self.channel,
+                fidl_ieee80211::ChannelNumber { number: self.channel, band: self.band },
                 CapabilityInfo(resp.capability_info),
                 resp.result_code,
                 resp.association_id,
@@ -617,7 +618,8 @@ mod tests {
     use crate::ap::remote_client::ClientEvent;
     use crate::device::{FakeDevice, FakeDeviceConfig, FakeDeviceState};
     use assert_matches::assert_matches;
-    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz;
+    use fidl_fuchsia_wlan_ieee80211::{self as fidl_ieee80211};
     use fuchsia_sync::Mutex;
     use ieee80211::Bssid;
     use std::sync::{Arc, LazyLock};
@@ -648,6 +650,7 @@ mod tests {
             CapabilityInfo(0),
             vec![0b11111000],
             1,
+            TwoGhz,
             None,
         )
         .await
@@ -663,6 +666,7 @@ mod tests {
             CapabilityInfo(0),
             vec![0b11111000],
             1,
+            TwoGhz,
             Some(fake_wpa2_rsne()),
         )
         .await
@@ -681,19 +685,24 @@ mod tests {
             CapabilityInfo(0).with_ess(true),
             vec![0b11111000],
             1,
+            TwoGhz,
             None,
         )
         .await
         .expect("expected InfraBss::new ok");
 
-        assert_eq!(
-            fake_device_state.lock().wlan_channel,
-            fidl_ieee80211::WlanChannel {
-                primary: 1,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0
-            }
-        );
+        {
+            let state = fake_device_state.lock();
+            assert_eq!(
+                state.wlan_channel,
+                fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 1 }
+            );
+            assert_eq!(state.cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+            assert_eq!(
+                state.secondary80,
+                fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
+            );
+        }
 
         let beacon_tmpl = vec![
             // Mgmt header
@@ -878,6 +887,7 @@ mod tests {
             CapabilityInfo(0).with_short_preamble(true).with_ess(true),
             vec![0b11111000],
             1,
+            TwoGhz,
             None,
         )
         .await
@@ -1301,7 +1311,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1409,7 +1419,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1597,7 +1607,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1679,7 +1689,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 true,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1721,7 +1731,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 true,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1785,7 +1795,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 true,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1995,7 +2005,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -2126,6 +2136,7 @@ mod tests {
             mac::CapabilityInfo(33),
             vec![248],
             1,
+            TwoGhz,
             Some(vec![48, 2, 77, 88]),
         )
         .await
@@ -2178,6 +2189,7 @@ mod tests {
             CapabilityInfo(33),
             vec![0b11111000],
             1,
+            TwoGhz,
             Some(vec![48, 2, 77, 88]),
         )
         .await
@@ -2217,6 +2229,7 @@ mod tests {
             CapabilityInfo(33),
             vec![0b11111000],
             1,
+            TwoGhz,
             Some(vec![48, 2, 77, 88]),
         )
         .await
@@ -2281,6 +2294,7 @@ mod tests {
             CapabilityInfo(33),
             vec![0b11111000],
             1,
+            TwoGhz,
             Some(vec![48, 2, 77, 88]),
         )
         .await
@@ -2343,6 +2357,7 @@ mod tests {
             CapabilityInfo(33),
             vec![0b11111000],
             1,
+            TwoGhz,
             Some(vec![48, 2, 77, 88]),
         )
         .await
@@ -2389,7 +2404,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,

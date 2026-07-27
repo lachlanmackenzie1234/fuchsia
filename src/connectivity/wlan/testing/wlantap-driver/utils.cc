@@ -47,15 +47,13 @@ void ConvertTapPhyConfig(fuchsia_wlan_softmac::WlanSoftmacQueryResponse* resp,
               basic_rates.begin());
     softmac_band_cap.basic_rates(std::move(basic_rates));
 
-    auto operating_channel_count =
-        std::min<size_t>(tap_band_caps.operating_channels().size(),
+    auto primary_channel_count =
+        std::min<size_t>(tap_band_caps.primary_channels().size(),
                          fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS);
-    std::vector<uint8_t> operating_channels(operating_channel_count);
-    std::copy(tap_band_caps.operating_channels().begin(),
-              tap_band_caps.operating_channels().begin() + operating_channel_count,
-              operating_channels.begin());
-    softmac_band_cap.operating_channels(std::move(operating_channels));
-
+    std::vector<fuchsia_wlan_ieee80211::ChannelNumber> primary_channels(
+        tap_band_caps.primary_channels().begin(),
+        tap_band_caps.primary_channels().begin() + primary_channel_count);
+    softmac_band_cap.primary_channels(std::move(primary_channels));
     softmac_band_caps.push_back(std::move(softmac_band_cap));
   }
 

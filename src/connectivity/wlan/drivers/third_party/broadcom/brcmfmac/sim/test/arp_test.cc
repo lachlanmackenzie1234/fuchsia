@@ -142,7 +142,10 @@ void ArpTest::Init() {
 void ArpTest::TxAuthandAssocReq() {
   // Get the mac address of the SoftAP
   const common::MacAddr mac(kTheirMac);
-  simulation::WlanTxInfo tx_info = {.channel = SimInterface::kDefaultSoftApChannel};
+  simulation::WlanTxInfo tx_info = {
+      .channel = SimInterface::kDefaultSoftApChannelNum,
+      .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+      .secondary80 = {.band = SimInterface::kDefaultSoftApChannelNum.band, .number = 0}};
   simulation::SimAuthFrame auth_req_frame(mac, kOurMac, 1, simulation::AUTH_TYPE_OPEN,
                                           wlan_ieee80211::StatusCode::kSuccess);
   env_->Tx(auth_req_frame, tx_info, this);
@@ -171,7 +174,10 @@ void ArpTest::Tx(const std::vector<uint8_t>& ethFrame) {
   common::MacAddr dst(eth_hdr->h_dest);
   common::MacAddr src(eth_hdr->h_source);
   simulation::SimQosDataFrame dataFrame(true, false, dst, src, common::kBcastMac, 0, ethFrame);
-  simulation::WlanTxInfo tx_info = {.channel = SimInterface::kDefaultSoftApChannel};
+  simulation::WlanTxInfo tx_info = {
+      .channel = SimInterface::kDefaultSoftApChannelNum,
+      .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+      .secondary80 = {.band = SimInterface::kDefaultSoftApChannelNum.band, .number = 0}};
   env_->Tx(dataFrame, tx_info, this);
 }
 
@@ -246,7 +252,10 @@ TEST_F(ArpTest, ClientArpOffload) {
 
   // Start a fake AP
   simulation::FakeAp ap(env_.get(), kTheirMac, kDefaultSoftApSsid,
-                        SimInterface::kDefaultSoftApChannel);
+                        fuchsia_wlan_ieee80211::wire::ChannelNumber{
+                            .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+                            .number = SimInterface::kDefaultSoftApChannelNum.number},
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
 
   // Associate with fake AP
   sim_ifc_.AssociateWith(ap, zx::sec(1));
@@ -284,7 +293,10 @@ TEST_F(ArpTest, SoftAPStartStopDoesNotAffectArpOl) {
 
   // Start a fake AP
   simulation::FakeAp ap(env_.get(), kTheirMac, kDefaultSoftApSsid,
-                        SimInterface::kDefaultSoftApChannel);
+                        fuchsia_wlan_ieee80211::wire::ChannelNumber{
+                            .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+                            .number = SimInterface::kDefaultSoftApChannelNum.number},
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
 
   // Associate with fake AP
   sim_ifc_.AssociateWith(ap, zx::sec(1));
@@ -331,7 +343,10 @@ TEST_F(ArpTest, ClientArpOffloadNoSoftApFeat) {
 
   // Start a fake AP
   simulation::FakeAp ap(env_.get(), kTheirMac, kDefaultSoftApSsid,
-                        SimInterface::kDefaultSoftApChannel);
+                        fuchsia_wlan_ieee80211::wire::ChannelNumber{
+                            .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+                            .number = SimInterface::kDefaultSoftApChannelNum.number},
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
 
   // Associate with fake AP
   sim_ifc_.AssociateWith(ap, zx::sec(1));

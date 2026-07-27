@@ -105,6 +105,23 @@ impl ::std::convert::From<OnOffArg> for bool {
     }
 }
 
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum BandArg {
+    #[value(name = "2g")]
+    TwoGhz,
+    #[value(name = "5g")]
+    FiveGhz,
+}
+
+impl ::std::convert::From<BandArg> for fidl_ieee80211::WlanBand {
+    fn from(arg: BandArg) -> Self {
+        match arg {
+            BandArg::TwoGhz => fidl_ieee80211::WlanBand::TwoGhz,
+            BandArg::FiveGhz => fidl_ieee80211::WlanBand::FiveGhz,
+        }
+    }
+}
+
 #[derive(Parser, Debug, PartialEq)]
 pub enum Opt {
     #[command(subcommand, name = "phy")]
@@ -339,6 +356,8 @@ pub enum ApCmd {
         #[arg(short = 'c', long = "channel")]
         // TODO(porce): Expand to support PHY and CBW
         channel: u8,
+        #[arg(short = 'b', long = "band", value_enum, ignore_case = true)]
+        band: BandArg,
     },
     #[command(name = "stop")]
     Stop {

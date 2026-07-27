@@ -49,20 +49,34 @@ pub struct RadioConfig {
 
 impl From<RadioConfig> for fidl_sme::RadioConfig {
     fn from(radio_cfg: RadioConfig) -> fidl_sme::RadioConfig {
-        fidl_sme::RadioConfig { phy: radio_cfg.phy, channel: radio_cfg.channel.into() }
+        let (cbw, _) = radio_cfg.channel.cbw.to_fidl();
+        fidl_sme::RadioConfig {
+            phy: radio_cfg.phy,
+            primary: radio_cfg.channel.into(),
+            bandwidth: cbw,
+        }
     }
 }
 
 impl TryFrom<fidl_sme::RadioConfig> for RadioConfig {
     type Error = anyhow::Error;
     fn try_from(fidl_radio_cfg: fidl_sme::RadioConfig) -> Result<RadioConfig, Self::Error> {
-        Ok(RadioConfig { phy: fidl_radio_cfg.phy, channel: fidl_radio_cfg.channel.try_into()? })
+        let cbw = Cbw::from_fidl(fidl_radio_cfg.bandwidth, 0)?;
+        Ok(RadioConfig {
+            phy: fidl_radio_cfg.phy,
+            channel: Channel::new(fidl_radio_cfg.primary.number, cbw, fidl_radio_cfg.primary.band),
+        })
     }
 }
 
 impl RadioConfig {
-    pub fn new(phy: fidl_ieee80211::WlanPhyType, cbw: Cbw, primary_channel: u8) -> Self {
-        RadioConfig { phy, channel: Channel::new(primary_channel, cbw) }
+    pub fn new(
+        phy: fidl_ieee80211::WlanPhyType,
+        cbw: Cbw,
+        primary_channel: u8,
+        band: fidl_ieee80211::WlanBand,
+    ) -> Self {
+        RadioConfig { phy, channel: Channel::new(primary_channel, cbw, band) }
     }
 }
 

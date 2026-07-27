@@ -8,6 +8,7 @@ import(
 rust_wlan_integration_test("ethernet_tx_rx") {
   edition = "2024"
   binary_deps = [
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
     "//sdk/rust/zx",
     "//src/connectivity/lib/network-device/rust",

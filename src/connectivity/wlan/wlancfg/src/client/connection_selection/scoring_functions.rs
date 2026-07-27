@@ -227,12 +227,12 @@ mod test {
     async fn test_score_bss_prefers_less_short_connections() {
         let bss_worse = types::Bss {
             signal: types::Signal { rssi_dbm: -60, snr_db: 0 },
-            channel: generate_channel(3),
+            channel: generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
             ..generate_random_bss()
         };
         let bss_better = types::Bss {
             signal: types::Signal { rssi_dbm: -60, snr_db: 0 },
-            channel: generate_channel(3),
+            channel: generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
             ..generate_random_bss()
         };
         let mut internal_data = generate_random_saved_network_data();
@@ -259,12 +259,12 @@ mod test {
     async fn test_score_bss_prefers_less_failures() {
         let bss_worse = types::Bss {
             signal: types::Signal { rssi_dbm: -60, snr_db: 0 },
-            channel: generate_channel(3),
+            channel: generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
             ..generate_random_bss()
         };
         let bss_better = types::Bss {
             signal: types::Signal { rssi_dbm: -60, snr_db: 0 },
-            channel: generate_channel(3),
+            channel: generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
             ..generate_random_bss()
         };
         let mut internal_data = generate_random_saved_network_data();
@@ -289,12 +289,12 @@ mod test {
         // the 5 GHz network has a higher score.
         let bss_worse = types::Bss {
             signal: types::Signal { rssi_dbm: -35, snr_db: 0 },
-            channel: generate_channel(3),
+            channel: generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
             ..generate_random_bss()
         };
         let bss_better = types::Bss {
             signal: types::Signal { rssi_dbm: -35, snr_db: 0 },
-            channel: generate_channel(36),
+            channel: generate_channel(36, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz),
             ..generate_random_bss()
         };
         let mut internal_data = generate_random_saved_network_data();
@@ -318,12 +318,12 @@ mod test {
         // score.
         let bss_worse = types::Bss {
             signal: types::Signal { rssi_dbm: -30, snr_db: 0 },
-            channel: generate_channel(44),
+            channel: generate_channel(44, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz),
             ..generate_random_bss()
         };
         let bss_better = types::Bss {
             signal: types::Signal { rssi_dbm: -30, snr_db: 0 },
-            channel: generate_channel(44),
+            channel: generate_channel(44, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz),
             ..generate_random_bss()
         };
         let mut internal_data = generate_random_saved_network_data();
@@ -350,7 +350,7 @@ mod test {
     async fn score_many_penalties_do_not_cause_panic() {
         let bss = types::Bss {
             signal: types::Signal { rssi_dbm: -80, snr_db: 0 },
-            channel: generate_channel(1),
+            channel: generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
             ..generate_random_bss()
         };
         let mut internal_data = generate_random_saved_network_data();

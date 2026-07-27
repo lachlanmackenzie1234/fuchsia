@@ -27,14 +27,14 @@ type WlanSoftmacBandCapability = table {
     /// transmitting and receiving.
     10: basic_rates vector<uint8>:ieee80211.MAX_SUPPORTED_BASIC_RATES;
 
-    /// Set of valid operating channels per regulatory information as determined
-    /// by the device driver during iface creation. An operating channel refers
+    /// Set of valid primary channels per regulatory information as determined
+    /// by the device driver during iface creation. A primary channel refers
     /// to a channel on which APs may transmit beacon frames.
     ///
     /// The client must use this set to determine the efficacy of subsequent
     /// requests to scan a subset of channels using the iface or to determine
-    /// which operating channel to use when starting an AP.
-    11: operating_channels vector<uint8>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
+    /// which primary channel to use when starting an AP.
+    11: primary_channels vector<ieee80211.ChannelNumber>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
 };
 
 /// High-level information describing the state of a running softmac.
@@ -94,7 +94,11 @@ type WlanRxInfo = struct {
     /// The data rate of the device, measured in units of 0.5 Mb/s.
     data_rate uint32;
     /// The channel of the device at the time of the operation. This field must be included.
-    channel ieee80211.WlanChannel;
+    primary ieee80211.ChannelNumber;
+    /// The bandwidth of the channel at the time of the operation.
+    bandwidth ieee80211.ChannelBandwidth;
+    /// The secondary 80 MHz channel segment, if applicable.
+    vht_secondary_80_channel ieee80211.ChannelNumber;
     /// The modulation and coding scheme index of the device at the time of the operation. Depends
     /// on the PHY format and channel width.
     mcs uint8;
@@ -139,7 +143,7 @@ type WlanTxInfo = struct {
     // The PHY format to be used to transmit this packet.
     phy ieee80211.WlanPhyType;
     // The channel width to be used to transmit this packet.
-    channel_bandwidth ieee80211.ChannelBandwidth;
+    bandwidth ieee80211.ChannelBandwidth;
     /// The modulation and coding scheme index for this packet. Depends on the PHY format and
     /// channel width.
     mcs uint8;
@@ -201,7 +205,8 @@ type WlanTxPacket = struct {
 ///
 /// **This protocol is not implemented directly by any component.** It is composed into `WlanSoftmacIfc`
 /// and `WlanSoftmacIfcBridge`.
-closed protocol WlanSoftmacIfcBase {
+@available(added=HEAD)
+open protocol WlanSoftmacIfcBase {
     /// Reports the result of an attempted transmission.
     ///
     /// A device driver indicates support for `ReportTxResult()` using
@@ -235,7 +240,8 @@ closed protocol WlanSoftmacIfcBase {
 /// This protocol should always be available at HEAD since it's intended to be an in-tree only protocol.
 /// This protocol only exists because wlansoftmac cannot be implemented in Rust and must interact with
 /// the wlansoftmac-c, wlansoftmac-rust, and wlan-mlme Rust crates.
-closed protocol WlanSoftmacIfcBridge {
+@available(added=HEAD)
+open protocol WlanSoftmacIfcBridge {
     compose WlanSoftmacIfcBase;
 
     /// Stop the bridged driver.
@@ -330,7 +336,8 @@ closed protocol WlanTx {
 
 @discoverable
 @transport("Driver")
-closed protocol WlanSoftmacIfc {
+@available(added=HEAD)
+open protocol WlanSoftmacIfc {
     compose WlanSoftmacIfcBase;
 
     /// Forward up a packet received over the wireless medium.
@@ -348,7 +355,7 @@ type WlanSoftmacStartActiveScanRequest = table {
     /// number depends on the current regulatory region, and a SoftMAC driver cannot
     /// always determine the region setting. This is especially the case when
     /// firmware changes the region setting dynamically.
-    1: channels vector<uint8>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
+    1: channels vector<ieee80211.ChannelNumber>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
 
     /// List of SSIDs to scan for. For a list with a single SSID, the SSID will be placed in
     /// the SSID element in the Probe Request frame. For a list with more than one SSID,
@@ -416,7 +423,7 @@ type WlanAssociationConfig = table {
     2: aid uint16;
     3: listen_interval uint16;
     /// The channel on which we have associated with this peer.
-    4: channel ieee80211.WlanChannel;
+    4: primary ieee80211.ChannelNumber;
 
     /// QoS capable and parameters
     5: qos bool;
@@ -439,6 +446,8 @@ type WlanAssociationConfig = table {
     /// IEEE Std 802.11-2016, 9.4.2.158, 159
     11: vht_cap ieee80211.VhtCapabilities;
     12: vht_op ieee80211.VhtOperation;
+    13: bandwidth ieee80211.ChannelBandwidth;
+    14: vht_secondary_80_channel ieee80211.ChannelNumber;
 };
 
 /// `WlanSoftmacBase` is a template protocol intended to be composed into
@@ -504,7 +513,9 @@ open protocol WlanSoftmacBase {
     ///   ZX_ERR_NOT_SUPPORTED: The device cannot switch to the requested channel.
     @selector("fuchsia.wlan.softmac/WlanSoftmac.SetChannel")
     strict SetChannel(table {
-        1: channel ieee80211.WlanChannel;
+        1: primary ieee80211.ChannelNumber;
+        2: bandwidth ieee80211.ChannelBandwidth;
+        3: vht_secondary_80_channel ieee80211.ChannelNumber;
     }) -> () error zx.Status;
 
     /// Join a specific BSS in which we will participate.
@@ -607,7 +618,7 @@ open protocol WlanSoftmacBase {
         /// firmware changes the region setting dynamically.
         ///
         /// This is a required parameter.
-        1: channels vector<uint8>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
+        1: channels vector<ieee80211.ChannelNumber>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
 
         /// Minimum duration to spend on each channel during the scan.
         2: min_channel_time zx.Duration;

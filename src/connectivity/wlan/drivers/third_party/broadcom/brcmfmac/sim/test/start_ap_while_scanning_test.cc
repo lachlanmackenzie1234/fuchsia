@@ -7,8 +7,8 @@
 
 namespace wlan::brcmfmac {
 
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 constexpr uint64_t kFirstScanId = 0x112233;
 constexpr uint64_t kSecondScanId = 0x112234;
@@ -70,8 +70,9 @@ void ScanAndApStartTest::Init() {
   softap_ifc_.test_ = this;
 
   // Start a fake AP for scan.
-  ap_ = std::make_unique<simulation::FakeAp>(env_.get(), kDefaultBssid, kDefaultSsid,
-                                             kDefaultChannel);
+  ap_ = std::make_unique<simulation::FakeAp>(
+      env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+      fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_->EnableBeacon(zx::msec(60));
 
   StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc_);
@@ -112,9 +113,10 @@ void ScanAndApStartTest::StartAp() {
 TEST_F(ScanAndApStartTest, ScanApStartInterference) {
   Init();
 
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kFirstScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(10));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kFirstScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(10));
   env_->ScheduleNotification(std::bind(&ScanAndApStartTest::StartAp, this), zx::msec(200));
 
   static constexpr zx::duration kTestDuration = zx::sec(100);
@@ -141,9 +143,10 @@ TEST_F(ScanAndApStartTest, ScanAbortFailure) {
                                        client_ifc_.iface_id_);
   });
 
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kFirstScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(10));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kFirstScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(10));
   env_->ScheduleNotification(std::bind(&ScanAndApStartTest::StartAp, this), zx::msec(200));
 
   static constexpr zx::duration kFirstRunDuration = zx::sec(50);
@@ -159,9 +162,10 @@ TEST_F(ScanAndApStartTest, ScanAbortFailure) {
   EXPECT_EQ(softap_ifc_.stats_.start_confirmations.back().result_code(),
             wlan_fullmac_wire::StartResult::kSuccess);
 
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kSecondScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(10));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kSecondScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(10));
 
   // Run the test for another 50 seconds.
   static constexpr zx::duration kSecondRunDuration = zx::sec(50);
@@ -188,9 +192,10 @@ TEST_F(ScanAndApStartTest, ScanWhileApStart) {
   });
 
   env_->ScheduleNotification(std::bind(&ScanAndApStartTest::StartAp, this), zx::msec(10));
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kFirstScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(300));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kFirstScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(300));
 
   static constexpr zx::duration kTestDuration = zx::sec(50);
   env_->Run(kTestDuration);

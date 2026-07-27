@@ -147,10 +147,10 @@ mod tests {
         ifaces: Vec<u16>,
     ) {
         let req = exec.run_until_stalled(&mut req_stream.next());
-        let responder = assert_variant !(
+        let responder = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(DeviceMonitorRequest::ListIfaces{responder})))
-            => responder);
+            Poll::Ready(Some(Ok(DeviceMonitorRequest::ListIfaces { responder }))) => responder
+        );
         responder.send(&ifaces[..]).expect("fake query iface list response: send failed")
     }
 
@@ -161,10 +161,10 @@ mod tests {
         fake_mac_addr: Option<[u8; 6]>,
     ) {
         let req = exec.run_until_stalled(&mut req_stream.next());
-        let responder = assert_variant !(
+        let responder = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(DeviceMonitorRequest::QueryIface{iface_id : _, responder})))
-            => responder);
+            Poll::Ready(Some(Ok(DeviceMonitorRequest::QueryIface { iface_id: _, responder }))) => responder
+        );
         if let Some(mac) = fake_mac_addr {
             let response = fake_iface_query_response(mac, role);
             responder.send(Ok(&response)).expect("sending fake response with mac address");
@@ -179,15 +179,20 @@ mod tests {
         fake_response: Result<u16, i32>,
     ) {
         let req = exec.run_until_stalled(&mut req_stream.next());
-        let responder = assert_variant !(
+        let responder = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(DeviceMonitorRequest::CreateIface{responder, ..})))
-            => responder);
+            Poll::Ready(Some(Ok(DeviceMonitorRequest::CreateIface { responder, .. }))) => responder
+        );
 
-        let fake_response = fake_response.map_ok(|fake_iface_id| {
-            DeviceMonitorCreateIfaceResponse { iface_id: Some(fake_iface_id), ..Default::default() }
-        });
-        responder.send(fake_response).expect("sending fake response with iface id");
+        let fake_response = fake_response
+            .map(|fake_iface_id| DeviceMonitorCreateIfaceResponse {
+                iface_id: Some(fake_iface_id),
+                ..Default::default()
+            })
+            .map_err(|_| fidl_fuchsia_wlan_device_service::DeviceMonitorError::Internal);
+        responder
+            .send(fake_response.as_ref().map_err(|e| *e))
+            .expect("sending fake response with iface id");
     }
 
     #[test]
@@ -264,6 +269,6 @@ mod tests {
         respond_to_create_iface_request(&mut exec, &mut req_stream, Err(zx::sys::ZX_ERR_INTERNAL));
 
         let err = exec.run_singlethreaded(&mut iface_id_fut).expect_err("Should get an error");
-        assert!(format!("{}", err).contains("INTERNAL"));
+        assert!(format!("{}", err).contains("Internal"));
     }
 }

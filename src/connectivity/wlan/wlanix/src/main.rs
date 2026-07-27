@@ -11,6 +11,7 @@ use fidl_fuchsia_power_system as fsystem;
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_device_service as fidl_device_service;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_ieee80211::WlanBand;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
@@ -1107,8 +1108,14 @@ async fn handle_client_connect_transactions<C: ClientIface + 'static, P: PowerMa
                 iface.on_signal_report(ind);
             }
             Ok(fidl_sme::ConnectTransactionEvent::OnChannelSwitched { info }) => {
-                ctx.current_channel.primary = info.new_channel;
-                info!("Connection switching to channel {}", info.new_channel);
+                ctx.current_channel.primary = info.new_primary_channel.number;
+                ctx.current_channel.band = info.new_primary_channel.band;
+
+                match Cbw::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+                    Ok(cbw) => ctx.current_channel.cbw = cbw,
+                    Err(e) => warn!("CBW conversion failed: {}", e),
+                }
+                info!("Connection switching to channel {}", info.new_primary_channel.number);
             }
             Err(e) => {
                 error!("Error on connect transaction event stream: {}", e);
@@ -1656,29 +1663,37 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
             let (iface, _) = get_iface(iface_manager).await?;
             let result = match iface.get_signal_report().await {
                 Ok(report) => {
-                    let (tx_mbps, rx_mbps, rssi, freq_mhz) = report
-                        .connection_signal_report
-                        .map(|conn| {
-                            let tx = conn.tx_rate_500kbps.unwrap_or(0) / 2;
-                            // TODO(496331508): Rx rate is not sent up in get_signal_report yet.
-                            let rx = 0;
-                            let r = conn.rssi_dbm.unwrap_or(0) as i32;
-                            let f = conn
-                                .channel
-                                .map(|c| {
-                                    Channel::try_from(c)
-                                        .map(|chan| chan.get_center_freq().unwrap_or(0) as u32)
-                                        .unwrap_or(0)
-                                })
-                                .unwrap_or(0);
-                            (tx, rx, r, f)
-                        })
-                        .unwrap_or((0, 0, 0, 0));
+                    let (current_rssi_dbm, tx_bitrate_mbps, rx_bitrate_mbps, frequency_mhz) =
+                        report
+                            .connection_signal_report
+                            .map(|conn| {
+                                let tx_bitrate_mbps = conn.tx_rate_500kbps.unwrap_or(0) / 2;
+                                // TODO(496331508): Rx rate is not sent up in get_signal_report yet.
+                                let rx_bitrate_mbps = 0;
+                                let current_rssi_dbm = conn.rssi_dbm.unwrap_or(0) as i32;
+
+                                let frequency_mhz = match (conn.primary, conn.bandwidth) {
+                                    (Some(c), Some(cbw)) => {
+                                        let sec80 = conn.vht_secondary_80_channel.unwrap_or(
+                                            fidl_ieee80211::ChannelNumber {
+                                                number: 0,
+                                                band: c.band,
+                                            },
+                                        );
+                                        Channel::from_fidl(c, cbw, sec80)
+                                            .map(|chan| chan.get_center_freq().unwrap_or(0) as u32)
+                                            .unwrap_or(0)
+                                    }
+                                    _ => 0,
+                                };
+                                (current_rssi_dbm, tx_bitrate_mbps, rx_bitrate_mbps, frequency_mhz)
+                            })
+                            .unwrap_or((0, 0, 0, 0));
                     Ok(fidl_wlanix::SupplicantStaIfaceGetSignalPollResultsResponse {
-                        current_rssi_dbm: Some(rssi),
-                        tx_bitrate_mbps: Some(tx_mbps),
-                        rx_bitrate_mbps: Some(rx_mbps),
-                        frequency_mhz: Some(freq_mhz),
+                        current_rssi_dbm: Some(current_rssi_dbm),
+                        tx_bitrate_mbps: Some(tx_bitrate_mbps),
+                        rx_bitrate_mbps: Some(rx_bitrate_mbps),
+                        frequency_mhz: Some(frequency_mhz),
                         ..Default::default()
                     })
                 }
@@ -1861,19 +1876,32 @@ fn get_supported_frequencies() -> Vec<Vec<Nl80211FrequencyAttr>> {
     // TODO(b/316037008): Reevaluate this list later. This does not reflect
     // actual support. We should instead get supported frequencies from the phy.
     #[rustfmt::skip]
-    let channels = vec![
+    let two_ghz_channels: Vec<fidl_ieee80211::ChannelNumber> = [
         // 2.4 GHz
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+    ].iter().map(|c| fidl_ieee80211::ChannelNumber {
+        band: WlanBand::TwoGhz,
+        number: *c,
+    }).collect();
+
+    let five_ghz_channels: Vec<fidl_ieee80211::ChannelNumber> = [
         // 5 GHz
-        36, 40, 44, 48, 52, 56, 60, 64,
-        100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
+        36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
         149, 153, 157, 161, 165,
-    ];
+    ]
+    .iter()
+    .map(|c| fidl_ieee80211::ChannelNumber { band: WlanBand::FiveGhz, number: *c })
+    .collect();
+
+    let channels = [two_ghz_channels, five_ghz_channels].concat();
+
     channels
         .into_iter()
         .map(|channel_idx| {
             // We report the frequency of the beacon, which is always 20MHz on the primary channel.
-            let freq = Channel::new(channel_idx, Cbw::Cbw20).get_center_freq().unwrap();
+            let freq = Channel::new(channel_idx.number, Cbw::Cbw20, channel_idx.band)
+                .get_center_freq()
+                .unwrap();
             vec![Nl80211FrequencyAttr::Frequency(freq.into())]
         })
         .collect()
@@ -2477,7 +2505,13 @@ fn convert_scan_result(
     is_associated: bool,
 ) -> Result<Nl80211Attr, Error> {
     use crate::nl80211::{ChainSignalAttr, Nl80211BssAttr, Nl80211BssStatus};
-    let channel = Channel::new(result.bss_description.channel.primary, Cbw::Cbw20);
+
+    // Explicitly set cbw20 to find the center frequency of the primary channel.
+    let channel = Channel::new(
+        result.bss_description.primary.number,
+        Cbw::Cbw20,
+        result.bss_description.primary.band,
+    );
     let center_freq = match channel.get_center_freq() {
         Ok(freq) => freq.into(),
         Err(e) => {
@@ -5040,11 +5074,12 @@ mod tests {
             connection_signal_report: Some(fidl_fuchsia_wlan_stats::ConnectionSignalReport {
                 rssi_dbm: Some(-53),
                 tx_rate_500kbps: Some(300),
-                channel: Some(fidl_fuchsia_wlan_ieee80211::WlanChannel {
-                    primary: 36,
-                    cbw: fidl_fuchsia_wlan_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
+                primary: Some(fidl_fuchsia_wlan_ieee80211::ChannelNumber {
+                    band: fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz,
+                    number: 36,
                 }),
+                bandwidth: Some(fidl_fuchsia_wlan_ieee80211::ChannelBandwidth::Cbw20),
+                vht_secondary_80_channel: None,
                 ..Default::default()
             }),
             ..Default::default()
@@ -5535,6 +5570,8 @@ mod tests {
                 connection_signal_report: Some(fidl_fuchsia_wlan_stats::ConnectionSignalReport {
                     rssi_dbm: Some(rssi),
                     tx_rate_500kbps: Some(tx_rate_500kbps),
+                    bandwidth: Some(fidl_fuchsia_wlan_ieee80211::ChannelBandwidth::Cbw20),
+                    vht_secondary_80_channel: None,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -6485,12 +6522,12 @@ mod tests {
         let mut valid_scan = ifaces::test_utils::fake_scan_result();
         let valid_bssid = [1, 1, 1, 1, 1, 1];
         valid_scan.bss_description.bssid = valid_bssid;
-        valid_scan.bss_description.channel.primary = 1;
+        valid_scan.bss_description.primary.number = 1;
 
         let mut invalid_scan = ifaces::test_utils::fake_scan_result();
         invalid_scan.bss_description.bssid = [2, 2, 2, 2, 2, 2];
         // Channel 197 is invalid but could be a valid channel one day.
-        invalid_scan.bss_description.channel.primary = 197;
+        invalid_scan.bss_description.primary.number = 197;
 
         *client_iface.scan_results.lock() = vec![valid_scan, invalid_scan];
 

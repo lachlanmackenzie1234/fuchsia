@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 use crate::client::{ClientSmeStatus, ServingApInfo};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fuchsia_inspect::{
     BoolProperty, BytesProperty, Inspector, IntProperty, Node, Property, StringProperty,
     UintProperty,
@@ -13,10 +16,6 @@ use fuchsia_inspect_contrib::nodes::{BoundedListNode, MonotonicTimeProperty, Nod
 use fuchsia_sync::Mutex;
 use ieee80211::Ssid;
 use wlan_common::ie::{self, wsc};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_mlme as fidl_mlme,
-};
 
 /// These limits are set to capture roughly 5 to 10 recent connection attempts. An average
 /// successful connection attempt would generate about 5 state events and 7 supplicant events (this
@@ -79,13 +78,15 @@ impl SmeTree {
         inspect_insert!(node, device_support: {
             device_info: {
                 bands: InspectListClosure(&device_info.bands, |node, key, band| {
+                    let channels: Vec<u8> =
+                        band.primary_channels.iter().map(|c| c.number).collect();
                     inspect_insert!(node, var key: {
                         band: match band.band {
                             fidl_ieee80211::WlanBand::TwoGhz => "2.4Ghz",
                             fidl_ieee80211::WlanBand::FiveGhz => "5Ghz",
                             _ => "Unknown",
                         },
-                        operating_channels: InspectUintArray::new(&band.operating_channels),
+                        operating_channels: InspectUintArray::new(&channels),
                     });
                 }),
             },
@@ -275,13 +276,21 @@ pub struct ServingApInfoNode {
 
 impl ServingApInfoNode {
     fn new(node: Node, ap: &ServingApInfo) -> Self {
+        let (cbw, secondary80_num) = ap.channel.cbw.to_fidl();
+        let secondary80 =
+            fidl_ieee80211::ChannelNumber { band: ap.channel.band, number: secondary80_num };
         let mut serving_ap_info_node = Self {
             bssid: node.create_string("bssid", ap.bssid.to_string()),
             ssid: node.create_string("ssid", ap.ssid.to_string()),
             rssi_dbm: node.create_int("rssi_dbm", ap.rssi_dbm as i64),
             snr_db: node.create_int("snr_db", ap.snr_db as i64),
             signal_report_time: node.create_time_at("signal_report_time", ap.signal_report_time),
-            channel: ChannelNode::new(node.create_child("channel"), ap.channel.into()),
+            channel: ChannelNode::new(
+                node.create_child("channel"),
+                ap.channel.into(),
+                cbw,
+                secondary80,
+            ),
             protection: node.create_string("protection", format!("{}", ap.protection)),
 
             // Reuse update_* helper functions to fill this fields.
@@ -302,12 +311,15 @@ impl ServingApInfoNode {
     }
 
     fn update(&mut self, ap: &ServingApInfo) {
+        let (cbw, secondary80_num) = ap.channel.cbw.to_fidl();
+        let secondary80 =
+            fidl_ieee80211::ChannelNumber { band: ap.channel.band, number: secondary80_num };
         self.bssid.set(&ap.bssid.to_string());
         self.ssid.set(&ap.ssid.to_string());
         self.rssi_dbm.set(ap.rssi_dbm as i64);
         self.snr_db.set(ap.snr_db as i64);
         self.signal_report_time.set_at(ap.signal_report_time);
-        self.channel.update(ap.channel.into());
+        self.channel.update(ap.channel.into(), cbw, secondary80);
         self.protection.set(&format!("{}", ap.protection));
 
         self.update_ht_cap_node(ap);
@@ -376,23 +388,57 @@ impl ServingApInfoNode {
 
 pub struct ChannelNode {
     _node: Node,
-    primary: UintProperty,
+    primary_channel: UintProperty,
+    primary_band: StringProperty,
     cbw: StringProperty,
-    secondary80: UintProperty,
+    secondary80_channel: UintProperty,
+    secondary80_band: StringProperty,
 }
 
 impl ChannelNode {
-    pub fn new(node: Node, channel: fidl_ieee80211::WlanChannel) -> Self {
-        let primary = node.create_uint("primary", channel.primary as u64);
-        let cbw = node.create_string("cbw", format!("{:?}", channel.cbw));
-        let secondary80 = node.create_uint("secondary80", channel.secondary80 as u64);
-        Self { _node: node, primary, cbw, secondary80 }
+    pub fn new(
+        node: Node,
+        channel: fidl_ieee80211::ChannelNumber,
+        cbw: fidl_ieee80211::ChannelBandwidth,
+        secondary80: fidl_ieee80211::ChannelNumber,
+    ) -> Self {
+        let primary_channel = node.create_uint("primary_channel", channel.number as u64);
+        let primary_band =
+            node.create_string("primary_band", Self::band_from_wlan_band(channel.band));
+        let cbw = node.create_string("cbw", format!("{:?}", cbw));
+        let secondary80_channel =
+            node.create_uint("secondary80_channel", secondary80.number as u64);
+        let secondary80_band =
+            node.create_string("secondary80_band", Self::band_from_wlan_band(secondary80.band));
+        Self {
+            _node: node,
+            primary_channel,
+            primary_band,
+            cbw,
+            secondary80_channel,
+            secondary80_band,
+        }
     }
 
-    pub fn update(&mut self, channel: fidl_ieee80211::WlanChannel) {
-        self.primary.set(channel.primary as u64);
-        self.cbw.set(&format!("{:?}", channel.cbw));
-        self.secondary80.set(channel.secondary80 as u64);
+    pub fn update(
+        &mut self,
+        channel: fidl_ieee80211::ChannelNumber,
+        cbw: fidl_ieee80211::ChannelBandwidth,
+        secondary80: fidl_ieee80211::ChannelNumber,
+    ) {
+        self.primary_channel.set(channel.number as u64);
+        self.primary_band.set(Self::band_from_wlan_band(channel.band));
+        self.cbw.set(&format!("{:?}", cbw));
+        self.secondary80_channel.set(secondary80.number as u64);
+        self.secondary80_band.set(Self::band_from_wlan_band(secondary80.band));
+    }
+
+    fn band_from_wlan_band(band: fidl_ieee80211::WlanBand) -> &'static str {
+        match band {
+            fidl_ieee80211::WlanBand::TwoGhz => "2.4Ghz",
+            fidl_ieee80211::WlanBand::FiveGhz => "5Ghz",
+            _ => "Unknown",
+        }
     }
 }
 

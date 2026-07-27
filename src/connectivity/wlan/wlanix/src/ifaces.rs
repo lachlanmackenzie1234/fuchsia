@@ -1159,10 +1159,14 @@ pub mod test_utils {
                 beacon_period: 100,
                 capability_info: 123,
                 ies: vec![1, 2, 3, 2, 1],
-                channel: fidl_ieee80211::WlanChannel {
-                    primary: 1,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
+                primary: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 1,
+                },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
                 },
                 rssi_dbm: -40,
                 snr_db: -50,
@@ -1723,6 +1727,8 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+
+    use fidl_ieee80211::WlanBand::TwoGhz;
     use std::pin::pin;
 
     use super::test_utils::FAKE_IFACE_RESPONSE;
@@ -2624,7 +2630,7 @@ mod tests {
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
         );
-        let expected_channel = hidden_owe_bss.channel.primary;
+        let expected_channel = hidden_owe_bss.primary.number;
         assert_matches!(&scan_req, fidl_sme::ScanRequest::Active(active_scan_req) => {
             assert_eq!(active_scan_req.ssids, vec![Ssid::try_from(owe_ssid).unwrap().to_vec()]);
             assert_eq!(active_scan_req.channels, vec![expected_channel]);
@@ -3115,19 +3121,19 @@ mod tests {
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [1, 2, 3, 4, 5, 6],
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
                 rssi_dbm: -40,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [2, 3, 4, 5, 6, 7],
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
                 rssi_dbm: -30,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [3, 4, 5, 6, 7, 8],
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
                 rssi_dbm: -50,
             ),
         ],
@@ -3140,19 +3146,19 @@ mod tests {
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [1, 2, 3, 4, 5, 6],
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
                 rssi_dbm: -40,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [2, 3, 4, 5, 6, 7],
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
                 rssi_dbm: -30,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [3, 4, 5, 6, 7, 8],
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
                 rssi_dbm: -50,
             ),
         ],
@@ -3160,7 +3166,7 @@ mod tests {
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [2, 3, 4, 5, 6, 7],
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
                 rssi_dbm: -30,
             ),
             fidl_sme::ConnectResult {
@@ -3317,10 +3323,14 @@ mod tests {
                 rssi_dbm: Some(-53),
                 snr_db: Some(25),
                 tx_rate_500kbps: Some(300),
-                channel: Some(fidl_ieee80211::WlanChannel {
-                    primary: 36,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
+                primary: Some(fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 36,
+                }),
+                bandwidth: Some(fidl_ieee80211::ChannelBandwidth::Cbw20),
+                vht_secondary_80_channel: Some(fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 0,
                 }),
                 ..Default::default()
             }),

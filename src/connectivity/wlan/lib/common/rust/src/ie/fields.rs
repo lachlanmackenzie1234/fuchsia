@@ -984,6 +984,19 @@ pub struct ExtendedChannelSwitchAnnouncement {
     pub channel_switch_count: u8,
 }
 
+impl ExtendedChannelSwitchAnnouncement {
+    /// Returns the band associated with the operating class.
+    /// Mappings are defined in IEEE Std 802.11 Annex E, Table E-4.
+    pub fn get_band(&self) -> fidl_ieee80211::WlanBand {
+        match self.new_operating_class {
+            81..=84 => fidl_ieee80211::WlanBand::TwoGhz,
+            115..=130 => fidl_ieee80211::WlanBand::FiveGhz,
+            131..=137 // TODO: When available, this should map to SixGhz.
+            | _ => fidl_ieee80211::WlanBand::unknown(),
+        }
+    }
+}
+
 // IEEE Std 802.11-2016 9.4.2.161: Wide Bandwidth Channel Switch element
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug, IntoBytes, KnownLayout, FromBytes, Immutable)]

@@ -217,7 +217,7 @@ impl TxVector {
             .bits(),
             tx_vector_idx: self.to_idx().0,
             phy: self.phy,
-            channel_bandwidth: self.cbw,
+            bandwidth: self.cbw,
             mcs: self.mcs_idx,
         }
     }

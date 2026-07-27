@@ -53,8 +53,11 @@ use {
     fidl_fuchsia_wlan_sme as fidl_sme, hex,
 };
 
+use fidl_fuchsia_wlan_ieee80211::WlanBand::{FiveGhz, TwoGhz};
+
 pub const TEST_CLIENT_IFACE_ID: u16 = 42;
 pub const TEST_PHY_ID: u16 = 41;
+
 const RECOVERY_PROFILE_EMPTY_STRING: &str = "";
 const RECOVERY_PROFILE_THRESHOLDED_RECOVERY: &str = "thresholded_recovery";
 
@@ -663,7 +666,7 @@ fn save_and_connect(
             ssid: TEST_SSID.clone(),
             rssi_dbm: 10,
             snr_db: 100,
-            channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+            channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
         ),
     }];
     let next_sme_stream_req = run_while(
@@ -952,7 +955,7 @@ fn test_save_and_fail_to_connect(
                 ssid: TEST_SSID.clone(),
                 rssi_dbm: 10,
                 snr_db: 10,
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
             ),
         }];
         let sme_request = run_while(
@@ -1117,7 +1120,7 @@ fn test_connect_to_new_network() {
                 ssid: second_ssid.clone(),
                 rssi_dbm: -70,
                 snr_db: 20,
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
             ),
         },
         fidl_sme::ScanResult {
@@ -1131,7 +1134,7 @@ fn test_connect_to_new_network() {
                 ssid: second_ssid.clone(),
                 rssi_dbm: -40,
                 snr_db: 30,
-                channel: types::WlanChan::new(36, types::Cbw::Cbw40),
+                channel: types::WlanChan::new(36, types::Cbw::Cbw40, FiveGhz),
             ),
         },
     ];
@@ -1289,7 +1292,7 @@ fn test_autoconnect_to_saved_network() {
             ssid: TEST_SSID.clone(),
             rssi_dbm: 10,
             snr_db: 10,
-            channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+            channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
         ),
     }];
     let next_sme_stream_req = run_while(
@@ -1532,7 +1535,7 @@ fn test_autoconnect_to_hidden_saved_network_and_reconnect() {
                 ssid: TEST_SSID.clone(),
                 rssi_dbm: 10,
                 snr_db: 10,
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
             ),
         }];
 
@@ -2258,7 +2261,7 @@ fn test_connect_failure_recovery() {
             ssid: TEST_SSID.clone(),
             rssi_dbm: 10,
             snr_db: 10,
-            channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+            channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
         ),
     }];
 
@@ -3104,7 +3107,7 @@ fn assert_roam_request_expectation<F>(
             ssid: TEST_SSID.clone(),
             rssi_dbm: -10,
             snr_db: 80,
-            channel: types::WlanChan::new(36, types::Cbw::Cbw40),
+            channel: types::WlanChan::new(36, types::Cbw::Cbw40, FiveGhz),
         ),
     }];
 
@@ -3245,7 +3248,7 @@ fn test_roam_profile_obeys_max_roams_per_day<F>(
             ssid: TEST_SSID.clone(),
             rssi_dbm: 10,
             snr_db: 100,
-            channel: types::WlanChan::new(36, types::Cbw::Cbw40),
+            channel: types::WlanChan::new(36, types::Cbw::Cbw40, FiveGhz),
         ),
     }];
 
@@ -3345,7 +3348,7 @@ fn test_autconnect_starts_after_roam_error() {
             ssid: TEST_SSID.clone(),
             rssi_dbm: 10,
             snr_db: 100,
-            channel: types::WlanChan::new(36, types::Cbw::Cbw40),
+            channel: types::WlanChan::new(36, types::Cbw::Cbw40, FiveGhz),
         ),
     }];
 
@@ -3446,7 +3449,7 @@ fn test_autconnect_starts_after_roam_error() {
             ssid: TEST_SSID.clone(),
             rssi_dbm: 10,
             snr_db: 10,
-            channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+            channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
         ),
     }];
     let next_sme_stream_req = run_while(

@@ -19,21 +19,36 @@ struct ieee80211_hw* ieee80211_alloc_hw(size_t priv_data_len, const struct ieee8
   return nullptr;
 }
 
-bool ieee80211_is_valid_chan(uint8_t primary) {
-  fuchsia_wlan_ieee80211::wire::WlanChannel chan = {
-      .primary = primary,
+fuchsia_wlan_ieee80211::wire::WlanBand convert_wlan_band_to_fidl(wlan_band_t band) {
+  switch (band) {
+    case WLAN_BAND_TWO_GHZ:
+      return fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz;
+    case WLAN_BAND_FIVE_GHZ:
+      return fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz;
+    default:
+      return static_cast<fuchsia_wlan_ieee80211::wire::WlanBand>(band);
+  }
+}
+
+bool ieee80211_is_valid_chan(struct wlan_channel_number primary) {
+  wlan::common::Channel chan = {
+      .channel = {
+          .band = convert_wlan_band_to_fidl(primary.band),
+          .number = primary.number,
+      },
       .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
-      .secondary80 = 0,
   };
 
   return wlan::common::IsValidChan(chan);
 }
 
-uint16_t ieee80211_get_center_freq(uint8_t ch_num) {
-  fuchsia_wlan_ieee80211::wire::WlanChannel chan = {
-      .primary = ch_num,
+uint16_t ieee80211_get_center_freq(struct wlan_channel_number ch_num) {
+  wlan::common::Channel chan = {
+      .channel = {
+          .band = convert_wlan_band_to_fidl(ch_num.band),
+          .number = ch_num.number,
+      },
       .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
-      .secondary80 = 0,
   };
 
   return wlan::common::GetCenterFreq(chan);

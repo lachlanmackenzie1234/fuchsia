@@ -6,6 +6,7 @@ use anyhow::{Error, format_err};
 use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::{ArchiveReader, ComponentSelector};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::Bssid;
@@ -78,7 +79,7 @@ async fn verify_wlan_inspect() {
     let security_type = fidl_policy::SecurityType::None;
     {
         let phy = helper.proxy();
-        let channel = Channel::new(1, Cbw::Cbw20);
+        let channel = Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
         let protection = Protection::Open;
         let probes = [ProbeResponse {
             channel,

@@ -1449,9 +1449,9 @@ mod tests {
 
         // Prep the scan results
         let mutual_security_protocols_1 = [SecurityDescriptor::WPA3_PERSONAL];
-        let channel_1 = generate_channel(3);
+        let channel_1 = generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz);
         let mutual_security_protocols_2 = [SecurityDescriptor::WPA1];
-        let channel_2 = generate_channel(50);
+        let channel_2 = generate_channel(50, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz);
         let mock_passive_scan_results = vec![
             types::ScanResult {
                 ssid: test_id_1.ssid.clone(),

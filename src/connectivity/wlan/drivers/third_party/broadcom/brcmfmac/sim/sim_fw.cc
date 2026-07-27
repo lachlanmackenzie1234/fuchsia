@@ -679,9 +679,9 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
             softap_ifidx_ = ifidx;
 
             // Set the channel to the value specified in "chanspec" iovar
-            wlan_ieee80211_wire::WlanChannel channel;
-            chanspec_to_channel(&d11_inf_, iface_tbl_[ifidx].chanspec, &channel);
-            hw_.SetChannel(channel);
+            uint16_t chanspec = iface_tbl_[ifidx].chanspec;
+            auto channel_info = ExtractChannelInfo(chanspec);
+            hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
 
             // Set the auth_type of softap to OPEN.
             iface_tbl_[ifidx].auth_type = BRCMF_AUTH_MODE_OPEN;
@@ -722,14 +722,14 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
           }
 
           auto assoc_opts = std::make_unique<AssocOpts>();
-          wlan_ieee80211_wire::WlanChannel channel;
-
-          chanspec_to_channel(&d11_inf_, join_params->params_le.chanspec_list[0], &channel);
-          iface_tbl_[ifidx].chanspec = join_params->params_le.chanspec_list[0];
+          uint16_t chanspec = join_params->params_le.chanspec_list[0];
+          auto channel_info = ExtractChannelInfo(chanspec);
+          iface_tbl_[ifidx].chanspec = chanspec;
           memcpy(assoc_opts->bssid.byte, join_params->params_le.bssid, ETH_ALEN);
           assoc_opts->ssid.resize(join_params->ssid_le.SSID_len);
           memcpy(assoc_opts->ssid.data(), join_params->ssid_le.SSID, join_params->ssid_le.SSID_len);
-          AssocInit(std::move(assoc_opts), channel);
+          AssocInit(std::move(assoc_opts), channel_info.channel, channel_info.cbw,
+                    channel_info.secondary80);
           iface_tbl_[ifidx].is_up = 1;
 
           BRCMF_DBG(SIM, "Auth start from C_SET_SSID");
@@ -799,16 +799,19 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
         BRCMF_DBG(SIM, "REASSOC OK, target BSSID " FMT_MAC, FMT_MAC_ARGS(fw_params->bssid));
         auto reassoc_opts = std::make_unique<ReassocOpts>();
 
-        wlan_ieee80211_wire::WlanChannel target_bss_channel;
-        chanspec_to_channel(&d11_inf_, fw_params->chanspec_list[0], &target_bss_channel);
+        uint16_t target_chanspec = fw_params->chanspec_list[0];
+        auto target_channel_info = ExtractChannelInfo(target_chanspec);
         memcpy(reassoc_opts->bssid.byte, fw_params->bssid, ETH_ALEN);
 
         // Must remember which channel original BSS was on, for future communication with it.
-        wlan_ieee80211_wire::WlanChannel orig_bss_channel;
-        chanspec_to_channel(&d11_inf_, iface_tbl_[kClientIfidx].chanspec, &orig_bss_channel);
-        reassoc_opts->orig_bss_channel = orig_bss_channel;
+        uint16_t orig_chanspec = iface_tbl_[kClientIfidx].chanspec;
+        auto orig_channel_info = ExtractChannelInfo(orig_chanspec);
+        reassoc_opts->orig_bss_channel = orig_channel_info.channel;
+        reassoc_opts->orig_bss_cbw = orig_channel_info.cbw;
+        reassoc_opts->orig_bss_secondary80 = orig_channel_info.secondary80;
         reassoc_opts->firmware_initiated = false;
-        ReassocInit(std::move(reassoc_opts), target_bss_channel);
+        ReassocInit(std::move(reassoc_opts), target_channel_info.channel, target_channel_info.cbw,
+                    target_channel_info.secondary80);
       }
       break;
     }
@@ -1204,14 +1207,16 @@ void SimFirmware::HandleAssocReq(std::shared_ptr<const simulation::SimAssocReqFr
 }
 
 void SimFirmware::AssocInit(std::unique_ptr<AssocOpts> assoc_opts,
-                            wlan_ieee80211_wire::WlanChannel& channel) {
+                            const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                            fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                            fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80) {
   SetAssocState(AssocState::ASSOCIATING);
   assoc_state_.opts = std::move(assoc_opts);
   assoc_state_.num_attempts = 0;
 
-  uint16_t chanspec = channel_to_chanspec(&d11_inf_, &channel);
+  uint16_t chanspec = channel_to_chanspec(&d11_inf_, channel, cbw);
   SetIFChanspec(kClientIfidx, chanspec);
-  hw_.SetChannel(channel);
+  hw_.SetChannel(channel, cbw, secondary80);
   hw_.EnableRx();
 }
 
@@ -1266,7 +1271,7 @@ void SimFirmware::AssocScanDone(brcmf_fweh_event_status_t event_status) {
   if (scan_state_.opts->ssid)
     assoc_opts->ssid = scan_state_.opts->ssid.value();
 
-  AssocInit(std::move(assoc_opts), ap.channel);
+  AssocInit(std::move(assoc_opts), ap.channel, ap.cbw, ap.secondary80);
   // Send an event of the first scan result to driver when assoc scan is done.
   EscanResultSeen(ap);
 
@@ -1743,17 +1748,31 @@ int16_t SimFirmware::GetIfidxByMac(const common::MacAddr& addr) {
 }
 
 // Get channel of IF
-wlan_ieee80211_wire::WlanChannel SimFirmware::GetIfChannel(bool is_ap) {
-  wlan_ieee80211_wire::WlanChannel channel;
-
+fuchsia_wlan_ieee80211::wire::ChannelNumber SimFirmware::GetIfChannel(bool is_ap) {
   // Get chanspec
   ZX_ASSERT_MSG(iface_tbl_[kClientIfidx].allocated, "The client iface is not allocated!");
   uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
   ZX_ASSERT_MSG(chanspec != 0, "No chanspec assigned to client.");
 
-  // convert to channel
-  chanspec_to_channel(&d11_inf_, chanspec, &channel);
-  return channel;
+  return chanspec_to_operating_channel_number(&d11_inf_, chanspec);
+}
+
+fuchsia_wlan_ieee80211::wire::ChannelBandwidth SimFirmware::GetIfChannelBandwidth(bool is_ap) {
+  // Get chanspec
+  ZX_ASSERT_MSG(iface_tbl_[kClientIfidx].allocated, "The client iface is not allocated!");
+  uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
+  ZX_ASSERT_MSG(chanspec != 0, "No chanspec assigned to client.");
+
+  return chanspec_to_channel_bandwidth(&d11_inf_, chanspec);
+}
+
+fuchsia_wlan_ieee80211::wire::ChannelNumber SimFirmware::GetIfSecondary80(bool is_ap) {
+  // Get chanspec
+  ZX_ASSERT_MSG(iface_tbl_[kClientIfidx].allocated, "The client iface is not allocated!");
+  uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
+  ZX_ASSERT_MSG(chanspec != 0, "No chanspec assigned to client.");
+
+  return chanspec_to_secondary80(&d11_inf_, chanspec);
 }
 
 // This routine for now only handles Disassoc Request meant for the SoftAP IF.
@@ -2022,18 +2041,24 @@ void SimFirmware::RxBtmReqFrame(std::shared_ptr<const simulation::SimBtmReqFrame
   BRCMF_DBG(SIM, "Processing incoming BTM request frame.");
   auto reassoc_opts = std::make_unique<ReassocOpts>();
   // TODO(karlward) CBW is hard-coded here; add CBW to Sim reassoc handling.
-  wlan_ieee80211_wire::WlanChannel chan{.primary = candidate_list[0].channel_number,
-                                        .cbw = wlan_ieee80211_wire::ChannelBandwidth::kCbw20};
+  fuchsia_wlan_ieee80211::wire::ChannelNumber chan{
+      .band = (candidate_list[0].channel_number >= 36)
+                  ? fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz
+                  : fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+      .number = candidate_list[0].channel_number};
   memcpy(reassoc_opts->bssid.byte, candidate_list[0].bssid.byte, ETH_ALEN);
   // Must remember which channel original BSS was on, for future communication with it.
-  wlan_ieee80211_wire::WlanChannel orig_bss_channel;
-  chanspec_to_channel(&d11_inf_, iface_tbl_[kClientIfidx].chanspec, &orig_bss_channel);
-  reassoc_opts->orig_bss_channel = orig_bss_channel;
+  uint16_t orig_chanspec = iface_tbl_[kClientIfidx].chanspec;
+  auto orig_channel_info = ExtractChannelInfo(orig_chanspec);
+  reassoc_opts->orig_bss_channel = orig_channel_info.channel;
+  reassoc_opts->orig_bss_cbw = orig_channel_info.cbw;
+  reassoc_opts->orig_bss_secondary80 = orig_channel_info.secondary80;
 
   // In current brcmfmac implementation, only firmware is capable of roaming in response to a BTM
   // request frame. This may change in the future if we implement BTM in driver or upper layers.
   reassoc_opts->firmware_initiated = true;
-  ReassocInit(std::move(reassoc_opts), chan);
+  ReassocInit(std::move(reassoc_opts), chan, fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+              fuchsia_wlan_ieee80211::wire::ChannelNumber{.band = chan.band, .number = 0});
 }
 
 void SimFirmware::SetAssocState(AssocState::AssocStateName state) {
@@ -2057,7 +2082,9 @@ void SimFirmware::DisassocLocalClient(wlan_ieee80211_wire::ReasonCode reason) {
     // Restore the operating channel, in case reassociation attempt changed it.
     if (assoc_state_.state == AssocState::REASSOCIATING && assoc_state_.reassoc_opts) {
       BRCMF_DBG(SIM, "Changing channel before sending disassoc req frame");
-      hw_.SetChannel(assoc_state_.reassoc_opts->orig_bss_channel);
+      hw_.SetChannel(assoc_state_.reassoc_opts->orig_bss_channel,
+                     assoc_state_.reassoc_opts->orig_bss_cbw,
+                     assoc_state_.reassoc_opts->orig_bss_secondary80);
     }
 
     hw_.Tx(disassoc_req_frame);
@@ -2163,7 +2190,9 @@ void SimFirmware::SetTargetBssInfo(const brcmf_bss_info_le& bss_info, cpp20::spa
 }
 
 void SimFirmware::ReassocInit(std::unique_ptr<ReassocOpts> reassoc_opts,
-                              wlan_ieee80211_wire::WlanChannel& channel) {
+                              const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                              fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                              fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80) {
   if (assoc_state_.state != AssocState::ASSOCIATED) {
     BRCMF_DBG(SIM, "Cannot reassociate because STA is not associated");
     BRCMF_WARN("Cannot reassociate because STA is not associated");
@@ -2194,9 +2223,9 @@ void SimFirmware::ReassocInit(std::unique_ptr<ReassocOpts> reassoc_opts,
 
   SetAssocState(AssocState::REASSOCIATING);
 
-  const uint16_t chanspec = channel_to_chanspec(&d11_inf_, &channel);
+  const uint16_t chanspec = channel_to_chanspec(&d11_inf_, channel, cbw);
   SetIFChanspec(kClientIfidx, chanspec);
-  hw_.SetChannel(channel);
+  hw_.SetChannel(channel, cbw, secondary80);
   const auto kRoamPrepEventDelay = zx::msec(15);
 
   // The first REASSOC event status differs based on whether roam is firmware/user-initiated.
@@ -2247,7 +2276,9 @@ void SimFirmware::ReassocHandleFailure(wlan_ieee80211_wire::StatusCode status) {
     return;
   }
   const auto bssid = assoc_state_.reassoc_opts->bssid;
-  hw_.SetChannel(assoc_state_.reassoc_opts->orig_bss_channel);
+  hw_.SetChannel(assoc_state_.reassoc_opts->orig_bss_channel,
+                 assoc_state_.reassoc_opts->orig_bss_cbw,
+                 assoc_state_.reassoc_opts->orig_bss_secondary80);
   assoc_state_.reassoc_opts.reset();
   if (assoc_state_.state == AssocState::NOT_ASSOCIATED) {
     BRCMF_DBG(SIM, "Reassoc failed, STA is not associated");
@@ -3057,9 +3088,8 @@ zx_status_t SimFirmware::ScanStart(std::unique_ptr<ScanOpts> opts) {
 
   // Start scan
   uint16_t chanspec = scan_state_.opts->channels[scan_state_.channel_index++];
-  wlan_ieee80211_wire::WlanChannel channel;
-  chanspec_to_channel(&d11_inf_, chanspec, &channel);
-  hw_.SetChannel(channel);
+  auto channel_info = ExtractChannelInfo(chanspec);
+  hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
 
   // Do an active scan using random mac
   // TODO(https://fxbug.dev/42170664): SSIDs in scan request are ignored
@@ -3106,9 +3136,8 @@ void SimFirmware::ScanContinue() {
       } else {
         // Scan next channel
         uint16_t chanspec = scan_state_.opts->channels[scan_state_.channel_index++];
-        wlan_ieee80211_wire::WlanChannel channel;
-        chanspec_to_channel(&d11_inf_, chanspec, &channel);
-        hw_.SetChannel(channel);
+        auto channel_info = ExtractChannelInfo(chanspec);
+        hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
         BRCMF_DBG(SIM, "Continue scan - next chanspec: 0x%x", chanspec);
         if (scan_state_.opts->is_active) {
           scan_state_.active_scan_attempts = 1;
@@ -3134,9 +3163,9 @@ void SimFirmware::ScanComplete(brcmf_fweh_event_status_t status) {
   // Restore the operating channel since Scan is done. This applies
   // only if the scan was started when the IF is already associated
   if (iface_tbl_[kClientIfidx].chanspec) {
-    wlan_ieee80211_wire::WlanChannel channel;
-    chanspec_to_channel(&d11_inf_, iface_tbl_[kClientIfidx].chanspec, &channel);
-    hw_.SetChannel(channel);
+    uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
+    auto channel_info = ExtractChannelInfo(chanspec);
+    hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
   }
   scan_state_.opts->on_done_fn(status);
   scan_state_.opts = nullptr;
@@ -3258,13 +3287,15 @@ void SimFirmware::RxMgmtFrame(std::shared_ptr<const simulation::SimManagementFra
   switch (mgmt_frame->MgmtFrameType()) {
     case simulation::SimManagementFrame::FRAME_TYPE_BEACON: {
       auto beacon = std::static_pointer_cast<const simulation::SimBeaconFrame>(mgmt_frame);
-      RxBeacon(info->channel, beacon, info->signal_strength, info->noise_level);
+      RxBeacon(info->channel, info->cbw, info->secondary80, beacon, info->signal_strength,
+               info->noise_level);
       break;
     }
 
     case simulation::SimManagementFrame::FRAME_TYPE_PROBE_RESP: {
       auto probe_resp = std::static_pointer_cast<const simulation::SimProbeRespFrame>(mgmt_frame);
-      RxProbeResp(info->channel, probe_resp, info->signal_strength, info->noise_level);
+      RxProbeResp(info->channel, info->cbw, info->secondary80, probe_resp, info->signal_strength,
+                  info->noise_level);
       break;
     }
 
@@ -3402,14 +3433,16 @@ void SimFirmware::HandleBeaconTimeout() {
   AssocClearContext();
 }
 
-void SimFirmware::ConductChannelSwitch(const wlan_ieee80211_wire::WlanChannel& dst_channel,
-                                       uint8_t mode) {
+void SimFirmware::ConductChannelSwitch(
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& dst_channel,
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80, uint8_t mode) {
   // Change fw and hw channel
   uint16_t chanspec;
   ZX_ASSERT_MSG(iface_tbl_[kClientIfidx].allocated, "No client found!");
 
-  hw_.SetChannel(dst_channel);
-  chanspec = channel_to_chanspec(&d11_inf_, &dst_channel);
+  hw_.SetChannel(dst_channel, cbw, secondary80);
+  chanspec = channel_to_chanspec(&d11_inf_, dst_channel, cbw);
   SetIFChanspec(kClientIfidx, chanspec);
 
   // Send up CSA event to driver
@@ -3433,13 +3466,17 @@ int8_t SimFirmware::RssiDbmFromSignalStrength(double signal_strength) {
   return signal_strength;
 }
 
-void SimFirmware::RxBeacon(const wlan_ieee80211_wire::WlanChannel& channel,
+void SimFirmware::RxBeacon(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                           fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                           fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80,
                            std::shared_ptr<const simulation::SimBeaconFrame> frame,
                            double signal_strength, double noise_level) {
   if (scan_state_.state == ScanState::SCANNING && !scan_state_.opts->is_active) {
     int8_t rssi_dbm = RssiDbmFromSignalStrength(signal_strength);
     int8_t snr = sim_utils::SnrDbFromSignalStrength(rssi_dbm, noise_level);
     ScanResult scan_result = {.channel = channel,
+                              .cbw = cbw,
+                              .secondary80 = secondary80,
                               .bssid = frame->bssid_,
                               .rssi_dbm = rssi_dbm,
                               .snr = snr,
@@ -3461,17 +3498,17 @@ void SimFirmware::RxBeacon(const wlan_ieee80211_wire::WlanChannel& channel,
     auto csa_ie = std::static_pointer_cast<simulation::CsaInformationElement>(ie);
 
     // Get current chanspec of client ifidx and convert to channel.
-    wlan_ieee80211_wire::WlanChannel channel = GetIfChannel(false);
+    fuchsia_wlan_ieee80211::wire::ChannelNumber cur_channel = GetIfChannel(false);
 
     zx::duration SwitchDelay = frame->interval_ * (int64_t)csa_ie->channel_switch_count_;
 
     if (channel_switch_state_.state == ChannelSwitchState::HOME) {
       // If the destination channel is the same as current channel, just ignore it.
-      if (csa_ie->new_channel_number_ == channel.primary) {
+      if (csa_ie->new_channel_number_ == cur_channel.number) {
         return;
       }
 
-      channel.primary = csa_ie->new_channel_number_;
+      cur_channel.number = csa_ie->new_channel_number_;
       channel_switch_state_.new_channel = csa_ie->new_channel_number_;
 
       channel_switch_state_.state = ChannelSwitchState::SWITCHING;
@@ -3486,22 +3523,26 @@ void SimFirmware::RxBeacon(const wlan_ieee80211_wire::WlanChannel& channel,
 
       // If it's the same as current channel for this client before switching, just simply cancel
       // the switch event and clear state.
-      if (csa_ie->new_channel_number_ == channel.primary) {
+      if (csa_ie->new_channel_number_ == cur_channel.number) {
         channel_switch_state_.state = ChannelSwitchState::HOME;
         return;
       }
 
       // Schedule a new event when dst channel change.
-      channel.primary = csa_ie->new_channel_number_;
+      cur_channel.number = csa_ie->new_channel_number_;
     }
 
-    hw_.RequestCallback(
-        std::bind(&SimFirmware::ConductChannelSwitch, this, channel, csa_ie->channel_switch_mode_),
-        SwitchDelay, &channel_switch_state_.switch_timer_id);
+    auto cur_cbw = GetIfChannelBandwidth(false);
+    auto cur_secondary80 = GetIfSecondary80(false);
+    hw_.RequestCallback(std::bind(&SimFirmware::ConductChannelSwitch, this, cur_channel, cur_cbw,
+                                  cur_secondary80, csa_ie->channel_switch_mode_),
+                        SwitchDelay, &channel_switch_state_.switch_timer_id);
   }
 }
 
-void SimFirmware::RxProbeResp(const wlan_ieee80211_wire::WlanChannel& channel,
+void SimFirmware::RxProbeResp(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                              fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                              fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80,
                               std::shared_ptr<const simulation::SimProbeRespFrame> frame,
                               double signal_strength, double noise_level) {
   if (scan_state_.state != ScanState::SCANNING || !scan_state_.opts->is_active) {
@@ -3511,6 +3552,8 @@ void SimFirmware::RxProbeResp(const wlan_ieee80211_wire::WlanChannel& channel,
   int8_t rssi_dbm = SimFirmware::RssiDbmFromSignalStrength(signal_strength);
   int8_t snr = sim_utils::SnrDbFromSignalStrength(rssi_dbm, noise_level);
   ScanResult scan_result = {.channel = channel,
+                            .cbw = cbw,
+                            .secondary80 = secondary80,
                             .bssid = frame->src_addr_,
                             .rssi_dbm = rssi_dbm,
                             .snr = snr,
@@ -3571,7 +3614,7 @@ void SimFirmware::EscanResultSeen(const ScanResult& result_in) {
   // length of this record (includes IEs)
   bss_info->length = roundup(sizeof(brcmf_bss_info_le) + ie_buf.size(), 4);
   // channel
-  bss_info->chanspec = channel_to_chanspec(&d11_inf_, &result_in.channel);
+  bss_info->chanspec = channel_to_chanspec(&d11_inf_, result_in.channel, result_in.cbw);
   // capability
   bss_info->capability = result_in.bss_capability.val();
 
@@ -3711,12 +3754,12 @@ void SimFirmware::ResetSimFirmware() {
   hw_.RequestCallback(std::bind(&brcmf_sim_firmware_crash, simdev_), zx::sec(0));
 }
 
-void SimFirmware::convert_chanspec_to_channel(uint16_t chanspec,
-                                              wlan_ieee80211_wire::WlanChannel* channel) {
-  chanspec_to_channel(&d11_inf_, chanspec, channel);
-}
-uint16_t SimFirmware::convert_channel_to_chanspec(wlan_ieee80211_wire::WlanChannel* channel) {
-  return channel_to_chanspec(&d11_inf_, channel);
+SimFirmware::DerivedChannelInfo SimFirmware::ExtractChannelInfo(uint16_t chanspec) {
+  return {
+      .channel = chanspec_to_operating_channel_number(&d11_inf_, chanspec),
+      .cbw = chanspec_to_channel_bandwidth(&d11_inf_, chanspec),
+      .secondary80 = chanspec_to_secondary80(&d11_inf_, chanspec),
+  };
 }
 
 zx_status_t SimFirmware::BusSuspend() { return suspend_hook_ ? suspend_hook_() : ZX_OK; }

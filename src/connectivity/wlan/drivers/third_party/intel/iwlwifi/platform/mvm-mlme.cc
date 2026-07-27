@@ -149,19 +149,23 @@ void fill_band_cap_list(const struct iwl_nvm_data* nvm_data,
         fidl::VectorView<uint8_t>(arena, basic_rates.begin(), basic_rates.end()));
 
     // Fill the channel list of this band.
-    std::vector<uint8_t> operating_channels;
-    auto operating_channel_count = sband->n_channels;
+    std::vector<wlan_ieee80211_wire::ChannelNumber> primary_channels;
+    auto primary_channel_count = sband->n_channels;
     if (fuchsia_wlan_ieee80211::wire::kMaxUniqueChannelNumbers < sband->n_channels) {
-      operating_channel_count = fuchsia_wlan_ieee80211::wire::kMaxUniqueChannelNumbers;
-      IWL_WARN(mvmif, "Trimming operating channel count from %zu to %zu", sband->n_channels,
-               operating_channel_count);
+      primary_channel_count = fuchsia_wlan_ieee80211::wire::kMaxUniqueChannelNumbers;
+      IWL_WARN(mvmif, "Trimming primary channel count from %zu to %zu", sband->n_channels,
+               primary_channel_count);
     }
-    operating_channels.resize(operating_channel_count);
-    for (size_t ch_idx = 0; ch_idx < operating_channel_count; ++ch_idx) {
-      operating_channels[ch_idx] = sband->channels[ch_idx].ch_num;
+    primary_channels.resize(primary_channel_count);
+    for (size_t ch_idx = 0; ch_idx < primary_channel_count; ++ch_idx) {
+      primary_channels[ch_idx] = wlan_ieee80211_wire::ChannelNumber{
+          .band = band_id,
+          .number = static_cast<uint8_t>(sband->channels[ch_idx].ch_num),
+      };
     }
-    band_cap_builder.operating_channels(
-        fidl::VectorView<uint8_t>(arena, operating_channels.begin(), operating_channels.end()));
+    band_cap_builder.primary_channels(
+        fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>(
+            arena, primary_channels.begin(), primary_channels.end()));
 
     band_cap_list[band_idx] = band_cap_builder.Build();
   }
@@ -547,15 +551,26 @@ zx_status_t mac_notify_association_complete(
     return ZX_ERR_BAD_STATE;
   }
 
-  if (!assoc_cfg->has_channel() || !assoc_cfg->has_rates() || !assoc_cfg->has_listen_interval()) {
-    IWL_ERR(mvmif, "Fields channel(%d), rates(%d) and listen_interval(%d) are required.\n",
-            assoc_cfg->has_channel(), assoc_cfg->has_rates(), assoc_cfg->has_listen_interval());
+  if (!assoc_cfg->has_primary() || !assoc_cfg->has_bandwidth() || !assoc_cfg->has_rates() || !assoc_cfg->has_listen_interval()) {
+    IWL_ERR(mvmif, "Fields primary(%d), bandwidth(%d), rates(%d) and listen_interval(%d) are required.\n",
+            assoc_cfg->has_primary(), assoc_cfg->has_bandwidth(), assoc_cfg->has_rates(), assoc_cfg->has_listen_interval());
     return ZX_ERR_INVALID_ARGS;
   }
 
   // Save band info into interface struct for future usage.
-  mvmvif->phy_ctxt->band = iwl_mvm_get_channel_band(assoc_cfg->channel().primary);
-  switch (assoc_cfg->channel().cbw) {
+  switch (assoc_cfg->primary().band) {
+    case fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz:
+      mvmvif->phy_ctxt->band = WLAN_BAND_TWO_GHZ;
+      break;
+    case fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz:
+      mvmvif->phy_ctxt->band = WLAN_BAND_FIVE_GHZ;
+      break;
+    default:
+      IWL_ERR(mvmvif, "Unknown band: %d", fidl::ToUnderlying(assoc_cfg->primary().band));
+      return ZX_ERR_INVALID_ARGS;
+  }
+
+  switch (assoc_cfg->bandwidth()) {
     case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20:
       mvm_sta->bw = CHANNEL_BANDWIDTH_CBW20;
       break;
@@ -668,9 +683,15 @@ zx_status_t mac_start_passive_scan(
     return ZX_ERR_INVALID_ARGS;
   }
 
+  std::vector<uint8_t> channels;
+  channels.reserve(passive_scan_args->channels().size());
+  for (const auto& chan : passive_scan_args->channels()) {
+    channels.push_back(chan.number);
+  }
+
   struct iwl_mvm_scan_req scan_req = {
-      .channels_list = passive_scan_args->channels().data(),
-      .channels_count = passive_scan_args->channels().size(),
+      .channels_list = channels.data(),
+      .channels_count = channels.size(),
       .ssids = NULL,
       .ssids_count = 0,
       .mac_header_buffer = NULL,
@@ -694,9 +715,16 @@ zx_status_t mac_start_active_scan(
             active_scan_args->has_ies() ? "" : "ies", active_scan_args->has_ssids() ? "" : "ssids");
     return ZX_ERR_INVALID_ARGS;
   }
+
+  std::vector<uint8_t> channels;
+  channels.reserve(active_scan_args->channels().size());
+  for (const auto& chan : active_scan_args->channels()) {
+    channels.push_back(chan.number);
+  }
+
   struct iwl_mvm_scan_req scan_req = {
-      .channels_list = active_scan_args->channels().data(),
-      .channels_count = active_scan_args->channels().size(),
+      .channels_list = channels.data(),
+      .channels_count = channels.size(),
       .mac_header_buffer = active_scan_args->mac_header().data(),
       .mac_header_size = active_scan_args->mac_header().size(),
       .ies_buffer = active_scan_args->ies().data(),
@@ -1023,31 +1051,53 @@ void mac_ifc_recv(void* ctx, const wlan_rx_packet_t* rx_packet) {
       return;
   }
   fidl_info.data_rate = banjo_info.data_rate;
-  fidl_info.channel.primary = banjo_info.channel.primary;
+  fidl_info.primary.number = banjo_info.channel.primary;
+  switch (iwl_mvm_get_channel_band(banjo_info.channel.primary)) {
+    case WLAN_BAND_TWO_GHZ:
+      fidl_info.primary.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz;
+      break;
+    case WLAN_BAND_FIVE_GHZ:
+      fidl_info.primary.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz;
+      break;
+  }
+
   switch (banjo_info.channel.cbw) {
     case CHANNEL_BANDWIDTH_CBW20:
-      fidl_info.channel.cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20;
+      fidl_info.bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20;
       break;
     case CHANNEL_BANDWIDTH_CBW40:
-      fidl_info.channel.cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40;
+      fidl_info.bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40;
       break;
     case CHANNEL_BANDWIDTH_CBW40BELOW:
-      fidl_info.channel.cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below;
+      fidl_info.bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below;
       break;
     case CHANNEL_BANDWIDTH_CBW80:
-      fidl_info.channel.cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80;
+      fidl_info.bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80;
       break;
     case CHANNEL_BANDWIDTH_CBW160:
-      fidl_info.channel.cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw160;
+      fidl_info.bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw160;
       break;
     case CHANNEL_BANDWIDTH_CBW80P80:
-      fidl_info.channel.cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80P80;
+      fidl_info.bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80P80;
       break;
     default:
       IWL_ERR(nullptr, "Bandwidth is not supported, dropping the packet.");
       return;
   }
-  fidl_info.channel.secondary80 = banjo_info.channel.secondary80;
+
+  fidl_info.vht_secondary_80_channel.number = banjo_info.channel.secondary80;
+  if (banjo_info.channel.secondary80 != 0) {
+    switch (iwl_mvm_get_channel_band(banjo_info.channel.secondary80)) {
+      case WLAN_BAND_TWO_GHZ:
+        fidl_info.vht_secondary_80_channel.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz;
+        break;
+      case WLAN_BAND_FIVE_GHZ:
+        fidl_info.vht_secondary_80_channel.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz;
+        break;
+    }
+  } else {
+    fidl_info.vht_secondary_80_channel.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz;
+  }
   fidl_info.mcs = banjo_info.mcs;
   fidl_info.rssi_dbm = banjo_info.rssi_dbm;
   fidl_info.snr_dbh = banjo_info.snr_dbh;

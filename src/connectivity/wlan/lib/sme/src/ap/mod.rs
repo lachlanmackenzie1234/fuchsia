@@ -585,7 +585,13 @@ impl StartedState {
 
     fn handle_channel_switch(&mut self, info: fidl_internal::ChannelSwitchInfo) {
         info!("Channel switch for AP {:?}", info);
-        self.op_radio_cfg.channel.primary = info.new_channel;
+        self.op_radio_cfg.channel.primary = info.new_primary_channel.number;
+        self.op_radio_cfg.channel.band = info.new_primary_channel.band;
+
+        match Cbw::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+            Ok(cbw) => self.op_radio_cfg.channel.cbw = cbw,
+            Err(e) => warn!("Invalid CBW: {}", e),
+        }
     }
 
     fn handle_auth_ind(&mut self, ind: fidl_mlme::AuthenticateIndication) {
@@ -770,7 +776,7 @@ fn create_start_request(
         bss_type: fidl_ieee80211::BssType::Infrastructure,
         beacon_period: DEFAULT_BEACON_PERIOD,
         dtim_period: DEFAULT_DTIM_PERIOD,
-        channel: op_radio_cfg.channel.primary,
+        primary: op_radio_cfg.channel.into(),
         capability_info: capabilities.raw(),
         rates: op_radio_cfg.basic_rates.clone(),
         country: fidl_mlme::Country {
@@ -781,7 +787,7 @@ fn create_start_request(
         rsne: rsne_bytes,
         mesh_id: vec![],
         phy: op_radio_cfg.phy,
-        channel_bandwidth,
+        bandwidth: channel_bandwidth,
     })
 }
 
@@ -792,6 +798,7 @@ mod tests {
     use crate::{MlmeStream, Station};
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_mlme as fidl_mlme;
+    use fidl_ieee80211::WlanBand::{FiveGhz, TwoGhz};
     use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::channel::Cbw;
@@ -829,25 +836,29 @@ mod tests {
         0x11, 0x00, 0x0f, 0xac, 0x04, // group management cipher suite -- CCMP-128
     ];
 
-    fn radio_cfg(primary_channel: u8) -> RadioConfig {
-        RadioConfig::new(fidl_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, primary_channel)
-    }
-
     fn unprotected_config() -> Config {
-        Config { ssid: SSID.clone(), password: vec![], radio_cfg: radio_cfg(11) }
+        Config {
+            ssid: SSID.clone(),
+            password: vec![],
+            radio_cfg: RadioConfig::new(fidl_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 11, TwoGhz),
+        }
     }
 
     fn protected_config() -> Config {
         Config {
             ssid: SSID.clone(),
             password: vec![0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68],
-            radio_cfg: radio_cfg(11),
+            radio_cfg: RadioConfig::new(fidl_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 11, TwoGhz),
         }
     }
 
-    fn create_channel_switch_ind(channel: u8) -> MlmeEvent {
+    fn create_channel_switch_ind(channel: u8, band: fidl_ieee80211::WlanBand) -> MlmeEvent {
         MlmeEvent::OnChannelSwitched {
-            info: fidl_internal::ChannelSwitchInfo { new_channel: channel },
+            info: fidl_internal::ChannelSwitchInfo {
+                new_primary_channel: fidl_ieee80211::ChannelNumber { band, number: channel },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber { band, number: 0 },
+            },
         }
     }
 
@@ -862,7 +873,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(15, Cbw::Cbw20),
+            channel: Channel::new(15, Cbw::Cbw20, FiveGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "invalid US channel")]
@@ -870,7 +881,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(36, Cbw::Cbw20),
+            channel: Channel::new(36, Cbw::Cbw20, FiveGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "5 GHz channel and no DFS support")]
@@ -878,7 +889,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Dmg,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "DMG not supported")]
@@ -886,7 +897,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Tvht,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "TVHT not supported")]
@@ -894,7 +905,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::S1G,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "S1G not supported")]
@@ -902,7 +913,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Cdmg,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "CDMG not supported")]
@@ -910,7 +921,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Cmmg,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "CMMG not supported")]
@@ -918,7 +929,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::He,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "HE not supported")]
@@ -926,7 +937,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(36, Cbw::Cbw80),
+            channel: Channel::new(36, Cbw::Cbw80, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "invalid HT width")]
@@ -934,7 +945,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Erp,
-            channel: Channel::new(1, Cbw::Cbw40),
+            channel: Channel::new(1, Cbw::Cbw40, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "non-HT greater than 20 MHz")]
@@ -942,7 +953,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(36, Cbw::Cbw80),
+            channel: Channel::new(36, Cbw::Cbw80, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "HT greater than 40 MHz")]
@@ -950,7 +961,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::unknown(),
-            channel: Channel::new(36, Cbw::Cbw40),
+            channel: Channel::new(36, Cbw::Cbw40, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "Unknown PHY type")]
@@ -958,7 +969,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_ONLY)],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(44, Cbw::Cbw40),
+            channel: Channel::new(44, Cbw::Cbw40, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "HT 20 MHz only")]
@@ -966,7 +977,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(48, Cbw::Cbw40),
+            channel: Channel::new(48, Cbw::Cbw40, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "No HT capabilities")]
@@ -974,7 +985,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(36, Cbw::Cbw160),
+            channel: Channel::new(36, Cbw::Cbw160, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "160 MHz not supported")]
@@ -982,7 +993,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(36, Cbw::Cbw80P80 { secondary80: 106 }),
+            channel: Channel::new(36, Cbw::Cbw80P80 { secondary80: 106 }, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "80+80 MHz not supported")]
@@ -990,7 +1001,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "VHT 2.4 GHz not supported")]
@@ -998,7 +1009,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(149, Cbw::Cbw80),
+            channel: Channel::new(149, Cbw::Cbw80, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     }; "no VHT capabilities")]
@@ -1006,29 +1017,35 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht(), fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(1, Cbw::Cbw40),
+            channel: Channel::new(1, Cbw::Cbw40, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "no VHT capabilities on 2.4 GHz event when 5 GHz band capabilities provided")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fidl_mlme::BandCapability {
-            operating_channels: vec![2],
+            primary_channels: vec![fidl_ieee80211::ChannelNumber {
+                number: 2,
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+            }],
             ..fake_2ghz_band_capability_ht()
         }],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Hr,
-            channel: Channel::new(1, Cbw::Cbw40),
+            channel: Channel::new(1, Cbw::Cbw40, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "disallow non-operating 2.4 GHz channel")]
     #[test_case(false, ValidateRadioConfigArgs {
         bands: vec![fidl_mlme::BandCapability {
-            operating_channels: vec![40],
+            primary_channels: vec![fidl_ieee80211::ChannelNumber {
+                number: 40,
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+            }],
             ..fake_5ghz_band_capability_vht()
         }],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(36, Cbw::Cbw80),
+            channel: Channel::new(36, Cbw::Cbw80, FiveGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     }; "disallow non-operating 5 GHz channel")]
@@ -1036,7 +1053,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Hr,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     })]
@@ -1044,7 +1061,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Erp,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     })]
@@ -1052,7 +1069,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     })]
@@ -1060,7 +1077,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(1, Cbw::Cbw40),
+            channel: Channel::new(1, Cbw::Cbw40, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     })]
@@ -1068,7 +1085,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(11, Cbw::Cbw40Below),
+            channel: Channel::new(11, Cbw::Cbw40Below, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     })]
@@ -1076,7 +1093,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_ONLY)],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(36, Cbw::Cbw20),
+            channel: Channel::new(36, Cbw::Cbw20, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1084,7 +1101,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(36, Cbw::Cbw40),
+            channel: Channel::new(36, Cbw::Cbw40, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1092,7 +1109,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(40, Cbw::Cbw40Below),
+            channel: Channel::new(40, Cbw::Cbw40Below, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1100,7 +1117,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_ht(ChanWidthSet::TWENTY_FORTY)],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(36, Cbw::Cbw20),
+            channel: Channel::new(36, Cbw::Cbw20, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1108,7 +1125,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(36, Cbw::Cbw40),
+            channel: Channel::new(36, Cbw::Cbw40, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1116,7 +1133,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(40, Cbw::Cbw40Below),
+            channel: Channel::new(40, Cbw::Cbw40Below, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1124,7 +1141,7 @@ mod tests {
         bands: vec![fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(36, Cbw::Cbw80),
+            channel: Channel::new(36, Cbw::Cbw80, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1132,7 +1149,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht(), fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: Channel::new(1, Cbw::Cbw40),
+            channel: Channel::new(1, Cbw::Cbw40, TwoGhz),
         },
         spectrum_management_support: fake_spectrum_management_support_empty(),
     })]
@@ -1140,7 +1157,7 @@ mod tests {
         bands: vec![fake_2ghz_band_capability_ht(), fake_5ghz_band_capability_vht()],
         radio_cfg: RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel: Channel::new(36, Cbw::Cbw80),
+            channel: Channel::new(36, Cbw::Cbw80, FiveGhz),
         },
         spectrum_management_support: fake_dfs_supported(),
     })]
@@ -1208,8 +1225,8 @@ mod tests {
             assert_ne!(start_req.beacon_period, 0);
             assert_eq!(start_req.dtim_period, DEFAULT_DTIM_PERIOD);
             assert_eq!(
-                start_req.channel,
-                unprotected_config().radio_cfg.channel.primary,
+                start_req.primary,
+                unprotected_config().radio_cfg.channel.into(),
             );
             assert!(start_req.rsne.is_none());
         });
@@ -1253,7 +1270,7 @@ mod tests {
             }),
             sme.get_running_ap()
         );
-        sme.on_mlme_event(create_channel_switch_ind(6));
+        sme.on_mlme_event(create_channel_switch_ind(6, TwoGhz));
         // Check status
         assert_eq!(
             Some(fidl_sme::Ap { ssid: SSID.to_vec(), channel: 6, num_clients: 0 }),

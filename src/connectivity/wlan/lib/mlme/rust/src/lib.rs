@@ -58,7 +58,7 @@ impl WlanTxPacketExt for fidl_softmac::WlanTxPacket {
                 valid_fields: 0,
                 tx_vector_idx: 0,
                 phy: fidl_ieee80211::WlanPhyType::Dsss,
-                channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
                 mcs: 0,
             },
         }
@@ -441,7 +441,7 @@ pub mod test_utils {
     }
 
     pub(crate) fn fake_wlan_channel() -> channel::Channel {
-        channel::Channel { primary: 1, cbw: channel::Cbw::Cbw20 }
+        channel::Channel::new(1, channel::Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz)
     }
 
     #[derive(Copy, Clone, Debug)]
@@ -450,14 +450,16 @@ pub mod test_utils {
         pub valid_fields: fidl_softmac::WlanRxInfoValid,
         pub phy: fidl_ieee80211::WlanPhyType,
         pub data_rate: u32,
-        pub channel: fidl_ieee80211::WlanChannel,
+        pub channel: fidl_ieee80211::ChannelNumber,
         pub mcs: u8,
         pub rssi_dbm: i8,
         pub snr_dbh: i16,
+        pub bandwidth: fidl_ieee80211::ChannelBandwidth,
+        pub secondary80: fidl_ieee80211::ChannelNumber,
     }
 
     impl MockWlanRxInfo {
-        pub(crate) fn with_channel(channel: fidl_ieee80211::WlanChannel) -> Self {
+        pub(crate) fn with_channel(channel: fidl_ieee80211::ChannelNumber) -> Self {
             Self {
                 valid_fields: fidl_softmac::WlanRxInfoValid::CHAN_WIDTH
                     | fidl_softmac::WlanRxInfoValid::RSSI
@@ -472,6 +474,8 @@ pub mod test_utils {
                 phy: fidl_ieee80211::WlanPhyType::Dsss,
                 data_rate: 0,
                 mcs: 0,
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                secondary80: fidl_ieee80211::ChannelNumber { band: channel.band, number: 0 },
             }
         }
     }
@@ -483,10 +487,12 @@ pub mod test_utils {
                 valid_fields: mock_rx_info.valid_fields,
                 phy: mock_rx_info.phy,
                 data_rate: mock_rx_info.data_rate,
-                channel: mock_rx_info.channel,
+                primary: mock_rx_info.channel,
                 mcs: mock_rx_info.mcs,
                 rssi_dbm: mock_rx_info.rssi_dbm,
                 snr_dbh: mock_rx_info.snr_dbh,
+                bandwidth: mock_rx_info.bandwidth,
+                vht_secondary_80_channel: mock_rx_info.secondary80,
             }
         }
     }

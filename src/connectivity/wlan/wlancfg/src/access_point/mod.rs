@@ -306,14 +306,22 @@ fn derive_ap_config(
     };
 
     // TODO(https://fxbug.dev/42131511): Improve the channel selection algorithm.
-    let channel = match band {
-        fidl_policy::OperatingBand::Any => 11,
-        fidl_policy::OperatingBand::Only24Ghz => 11,
-        fidl_policy::OperatingBand::Only5Ghz => 36,
+    let (channel, wlan_band) = match band {
+        fidl_policy::OperatingBand::Any => (11, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        fidl_policy::OperatingBand::Only24Ghz => {
+            (11, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)
+        }
+        fidl_policy::OperatingBand::Only5Ghz => {
+            (36, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz)
+        }
     };
 
-    let radio_config =
-        RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, channel);
+    let radio_config = RadioConfig::new(
+        fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
+        Cbw::Cbw20,
+        channel,
+        wlan_band,
+    );
 
     Ok(state_machine::ApConfig {
         id: network_id.into(),

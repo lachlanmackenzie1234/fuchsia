@@ -236,7 +236,7 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
             //   - ChannelState currently has a main channel.
             //   - ClientMlme received the frame on the main channel.
             match self.channel_state.get_main_channel() {
-                Some(main_channel) if main_channel.primary == rx_info.channel.primary => {
+                Some(main_channel) if main_channel == rx_info.primary => {
                     sta.bind(&mut self.ctx, &mut self.scanner, &mut self.channel_state)
                         .handle_mac_frame_rx(bytes, rx_info, async_id)
                         .await;
@@ -249,7 +249,7 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
                 None => {
                     error!(
                         "Received MAC frame on channel {:?} while main channel is not set.",
-                        rx_info.channel
+                        rx_info.primary
                     );
                     wtrace::async_end_wlansoftmac_rx(async_id, "main channel not set");
                 }
@@ -342,9 +342,14 @@ impl<D> ClientMlme<D> {
 impl<D: DeviceOps> ClientMlme<D> {
     pub async fn set_main_channel(
         &mut self,
-        channel: fidl_ieee80211::WlanChannel,
+        channel: fidl_ieee80211::ChannelNumber,
+        cbw: fidl_ieee80211::ChannelBandwidth,
+        secondary80: fidl_ieee80211::ChannelNumber,
     ) -> Result<(), zx::Status> {
-        self.channel_state.bind(&mut self.ctx, &mut self.scanner).set_main_channel(channel).await
+        self.channel_state
+            .bind(&mut self.ctx, &mut self.scanner)
+            .set_main_channel(channel, cbw, secondary80)
+            .await
     }
 
     async fn on_sme_scan(&mut self, req: fidl_mlme::ScanRequest) {
@@ -431,7 +436,10 @@ impl<D: DeviceOps> ClientMlme<D> {
                 )
             })?;
 
-        self.set_main_channel(bss.channel.into())
+        let (cbw, secondary80_num) = bss.channel.cbw.to_fidl();
+        let secondary80 =
+            fidl_ieee80211::ChannelNumber { band: bss.channel.band, number: secondary80_num };
+        self.set_main_channel(bss.channel.into(), cbw, secondary80)
             .await
             .map_err(|status| Error::Status(format!("Error setting device channel"), status))?;
 
@@ -595,7 +603,7 @@ mod tests {
             owe_public_key: None,
         };
 
-        req.selected_bss.channel.cbw = fidl_fuchsia_wlan_ieee80211::ChannelBandwidth::unknown();
+        req.selected_bss.bandwidth = fidl_fuchsia_wlan_ieee80211::ChannelBandwidth::unknown();
         me.on_sme_connect(req)
             .await
             .expect_err("ConnectRequest with unknown channel should be rejected");
@@ -709,6 +717,7 @@ mod tests {
 
         // Receive beacon midway, so lost bss countdown is reset.
         // If this beacon is not received, the next timeout will trigger auto deauth.
+        let main_channel = mlme.channel_state.get_main_channel().unwrap();
         mlme.handle_mac_frame_rx(
             BEACON_FRAME,
             fidl_softmac::WlanRxInfo {
@@ -716,10 +725,15 @@ mod tests {
                 valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
                 phy: fidl_ieee80211::WlanPhyType::Dsss,
                 data_rate: 0,
-                channel: mlme.channel_state.get_main_channel().unwrap(),
+                primary: main_channel,
                 mcs: 0,
                 rssi_dbm: 0,
                 snr_dbh: 0,
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: main_channel.band,
+                    number: 0,
+                },
             },
             0.into(),
         )
@@ -852,7 +866,10 @@ mod tests {
         me.on_sme_scan(fidl_mlme::ScanRequest {
             txn_id: 1337,
             scan_type: fidl_mlme::ScanTypes::Passive,
-            channel_list: vec![6],
+            channel_list: vec![fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 6,
+            }],
             ssid_list: vec![Ssid::try_from("ssid").unwrap().into()],
             probe_delay: 0,
             min_channel_time: 300, // min > max
@@ -966,7 +983,7 @@ mod tests {
     async fn mlme_connect_unprotected_happy_path() {
         let mut m = MockObjects::new().await;
         let mut me = m.make_mlme().await;
-        let channel = Channel::new(6, Cbw::Cbw40);
+        let channel = Channel::new(6, Cbw::Cbw40, fidl_ieee80211::WlanBand::TwoGhz);
         let connect_req = fidl_mlme::ConnectRequest {
             selected_bss: fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("ssid").unwrap().into(),
@@ -1126,7 +1143,7 @@ mod tests {
     async fn mlme_connect_protected_happy_path() {
         let mut m = MockObjects::new().await;
         let mut me = m.make_mlme().await;
-        let channel = Channel::new(6, Cbw::Cbw40);
+        let channel = Channel::new(6, Cbw::Cbw40, fidl_ieee80211::WlanBand::TwoGhz);
         let connect_req = fidl_mlme::ConnectRequest {
             selected_bss: fake_fidl_bss_description!(Wpa2,
                 ssid: Ssid::try_from("ssid").unwrap().into(),
@@ -1320,7 +1337,7 @@ mod tests {
     async fn mlme_connect_vht() {
         let mut m = MockObjects::new().await;
         let mut me = m.make_mlme().await;
-        let channel = Channel::new(36, Cbw::Cbw40);
+        let channel = Channel::new(36, Cbw::Cbw40, fidl_ieee80211::WlanBand::FiveGhz);
         let connect_req = fidl_mlme::ConnectRequest {
             selected_bss: fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("ssid").unwrap().into(),

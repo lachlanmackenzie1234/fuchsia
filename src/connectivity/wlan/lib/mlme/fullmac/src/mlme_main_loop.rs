@@ -430,6 +430,7 @@ mod handle_mlme_request_tests {
     use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
     use fidl_fuchsia_wlan_internal as fidl_internal;
     use fidl_fuchsia_wlan_stats as fidl_stats;
+    use fidl_ieee80211::WlanBand::TwoGhz;
     use fuchsia_sync::Mutex;
     use std::sync::Arc;
     use test_case::test_case;
@@ -441,7 +442,7 @@ mod handle_mlme_request_tests {
         let fidl_req = wlan_sme::MlmeRequest::Scan(fidl_mlme::ScanRequest {
             txn_id: 1,
             scan_type: fidl_mlme::ScanTypes::Passive,
-            channel_list: vec![2],
+            channel_list: vec![fidl_ieee80211::ChannelNumber { number: 2, band: TwoGhz }],
             ssid_list: vec![vec![3u8; 4]],
             probe_delay: 5,
             min_channel_time: 6,
@@ -453,7 +454,13 @@ mod handle_mlme_request_tests {
         let driver_req = assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::StartScan { req })) => req);
         assert_eq!(driver_req.txn_id, Some(1));
         assert_eq!(driver_req.scan_type, Some(fidl_fullmac::WlanScanType::Passive));
-        assert_eq!(driver_req.channels, Some(vec![2]));
+        assert_eq!(
+            driver_req.channels,
+            Some(vec![fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 2
+            }])
+        );
         assert_eq!(driver_req.min_channel_time, Some(6));
         assert_eq!(driver_req.max_channel_time, Some(7));
         assert_eq!(driver_req.ssids, Some(vec![vec![3u8; 4]]));
@@ -465,7 +472,7 @@ mod handle_mlme_request_tests {
         let fidl_req = wlan_sme::MlmeRequest::Scan(fidl_mlme::ScanRequest {
             txn_id: 1,
             scan_type: fidl_mlme::ScanTypes::Active,
-            channel_list: vec![2],
+            channel_list: vec![fidl_ieee80211::ChannelNumber { number: 2, band: TwoGhz }],
             ssid_list: vec![],
             probe_delay: 5,
             min_channel_time: 6,
@@ -512,10 +519,14 @@ mod handle_mlme_request_tests {
                 beacon_period: 101,
                 capability_info: 102,
                 ies: vec![103u8, 104, 105],
-                channel: fidl_ieee80211::WlanChannel {
-                    primary: 106,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-                    secondary80: 0,
+                primary: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 106,
+                },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw40,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 0,
                 },
                 rssi_dbm: 107,
                 snr_db: 108,
@@ -559,11 +570,10 @@ mod handle_mlme_request_tests {
             assert_eq!(selected_bss.capability_info, 102);
             assert_eq!(selected_bss.ies, vec![103u8, 104, 105]);
             assert_eq!(
-                selected_bss.channel,
-                fidl_ieee80211::WlanChannel {
-                    primary: 106,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-                    secondary80: 0,
+                selected_bss.primary,
+                fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 106,
                 }
             );
             assert_eq!(selected_bss.rssi_dbm, 107);
@@ -706,14 +716,17 @@ mod handle_mlme_request_tests {
             bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 3,
             dtim_period: 4,
-            channel: 5,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 5,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw80,
             capability_info: 6,
             rates: vec![7, 8, 9],
             country: fidl_mlme::Country { alpha2: [10, 11], suffix: 12 },
             mesh_id: vec![13],
             rsne: Some(vec![14; RSNE_LEN]),
             phy: fidl_ieee80211::WlanPhyType::Vht,
-            channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw80,
         });
 
         h.mlme.handle_mlme_request(fidl_req).unwrap();
@@ -724,7 +737,13 @@ mod handle_mlme_request_tests {
         assert_eq!(driver_req.bss_type, Some(fidl_ieee80211::BssType::Infrastructure));
         assert_eq!(driver_req.beacon_period, Some(3));
         assert_eq!(driver_req.dtim_period, Some(4));
-        assert_eq!(driver_req.channel, Some(5));
+        assert_eq!(
+            driver_req.primary,
+            Some(fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 5
+            })
+        );
         assert_ne!(driver_req.rsne, Some(vec![14 as u8, RSNE_LEN as u8]));
         assert_eq!(driver_req.vendor_ie, Some(vec![]));
     }
@@ -1286,10 +1305,14 @@ mod handle_driver_event_tests {
             beacon_period: 1,
             capability_info: 2,
             ies: vec![3, 4, 5],
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 6,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 6,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
             },
             rssi_dbm: 7,
             snr_db: 8,
@@ -1753,7 +1776,17 @@ mod handle_driver_event_tests {
         let (mut h, mut test_fut) = TestHelper::set_up();
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
-        let channel_switch_info = fidl_fullmac::WlanFullmacChannelSwitchInfo { new_channel: 9 };
+        let channel_switch_info = fidl_fullmac::WlanFullmacChannelSwitchInfo {
+            new_primary_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 9,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
+            },
+        };
         assert_matches!(
             h.exec.run_until_stalled(
                 &mut h.fullmac_ifc_proxy.on_channel_switch(&channel_switch_info)
@@ -1764,7 +1797,20 @@ mod handle_driver_event_tests {
 
         let event = assert_matches!(h.mlme_event_receiver.try_next(), Ok(Some(ev)) => ev);
         let info = assert_matches!(event, fidl_mlme::MlmeEvent::OnChannelSwitched { info } => info);
-        assert_eq!(info, fidl_internal::ChannelSwitchInfo { new_channel: 9 });
+        assert_eq!(
+            info,
+            fidl_internal::ChannelSwitchInfo {
+                new_primary_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 9,
+                },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
+                },
+            }
+        );
     }
 
     #[test]

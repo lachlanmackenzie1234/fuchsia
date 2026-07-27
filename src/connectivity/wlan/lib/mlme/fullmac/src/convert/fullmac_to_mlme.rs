@@ -331,7 +331,11 @@ pub fn convert_eapol_confirm(
 pub fn convert_channel_switch_info(
     info: fidl_fullmac::WlanFullmacChannelSwitchInfo,
 ) -> fidl_internal::ChannelSwitchInfo {
-    fidl_internal::ChannelSwitchInfo { new_channel: info.new_channel }
+    fidl_internal::ChannelSwitchInfo {
+        new_primary_channel: info.new_primary_channel,
+        bandwidth: info.bandwidth,
+        vht_secondary_80_channel: info.vht_secondary_80_channel,
+    }
 }
 pub fn convert_signal_report_indication(
     ind: fidl_fullmac::WlanFullmacSignalReportIndication,
@@ -399,7 +403,7 @@ fn convert_band_cap(cap: fidl_fullmac::BandCapability) -> Result<fidl_mlme::Band
         basic_rates: cap.basic_rates.context("missing basic_rates")?,
         ht_cap: cap.ht_caps.map(Box::new),
         vht_cap: cap.vht_caps.map(Box::new),
-        operating_channels: cap.operating_channels.context("missing operating_channels")?,
+        primary_channels: cap.primary_channels.context("missing primary_channels")?,
     })
 }
 
@@ -563,7 +567,13 @@ mod tests {
             basic_rates: Some(vec![123; 3]),
             ht_caps: Some(fidl_ieee80211::HtCapabilities { bytes: [8; 26] }),
             vht_caps: Some(fidl_ieee80211::VhtCapabilities { bytes: [9; 12] }),
-            operating_channels: Some(vec![21; 45]),
+            primary_channels: Some(vec![
+                fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 21,
+                };
+                45
+            ]),
             ..Default::default()
         };
 
@@ -574,7 +584,13 @@ mod tests {
                 basic_rates: vec![123; 3],
                 ht_cap: Some(Box::new(fidl_ieee80211::HtCapabilities { bytes: [8; 26] })),
                 vht_cap: Some(Box::new(fidl_ieee80211::VhtCapabilities { bytes: [9; 12] })),
-                operating_channels: vec![21; 45],
+                primary_channels: vec![
+                    fidl_ieee80211::ChannelNumber {
+                        band: fidl_ieee80211::WlanBand::FiveGhz,
+                        number: 21,
+                    };
+                    45
+                ],
             }
         );
     }
@@ -586,7 +602,13 @@ mod tests {
             basic_rates: Some(vec![123; 3]),
             ht_caps: None,
             vht_caps: None,
-            operating_channels: Some(vec![21; 45]),
+            primary_channels: Some(vec![
+                fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 21,
+                };
+                45
+            ]),
             ..Default::default()
         };
 

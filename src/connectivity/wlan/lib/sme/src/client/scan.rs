@@ -309,7 +309,7 @@ fn maybe_insert_bss(
         hash_map::Entry::Occupied(mut entry) => {
             let (existing_bss, ies_merger) = entry.get_mut();
 
-            if (fidl_bss.channel.primary != existing_bss.channel.primary)
+            if (fidl_bss.primary != existing_bss.primary)
                 && (fidl_bss.rssi_dbm < existing_bss.rssi_dbm)
             {
                 // Assume `fidl_bss` is from an "echo" Beacon frame from the same BSSID
@@ -367,7 +367,7 @@ fn new_scan_request(
         scan_type: fidl_mlme::ScanTypes::Passive,
         probe_delay: 0,
         // TODO(https://fxbug.dev/42169913): SME silently ignores unsupported channels
-        channel_list: get_operating_channels_for_scan(
+        channel_list: get_primary_channels_for_scan(
             device_info,
             spectrum_management_support,
             &scan_request,
@@ -406,8 +406,8 @@ fn new_discovery_scan_request<T>(
 
 /// Returns channels at the intersection of
 ///
-///   - CANDIDATE_OPERATING_CHANNELS
-///   - This device's operating channels.
+///   - CANDIDATE_PRIMARY_CHANNELS
+///   - This device's primary channels.
 ///   - The requested channels (for an active scan only).
 ///
 /// When a device does not support DFS, 5 GHz channels are excluded for active scans.
@@ -418,23 +418,23 @@ fn new_discovery_scan_request<T>(
 /// is therefore a sensible place for this filter.
 ///
 /// TODO(https://fxbug.dev/42144530): Known quirks about this implementation.
-fn get_operating_channels_for_scan(
+fn get_primary_channels_for_scan(
     device_info: &fidl_mlme::DeviceInfo,
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
     scan_request: &fidl_sme::ScanRequest,
-) -> Vec<u8> {
-    let mut operating_channels: HashSet<u8> = HashSet::new();
+) -> Vec<fidl_ieee80211::ChannelNumber> {
+    let mut primary_channels: HashSet<u8> = HashSet::new();
     for band in &device_info.bands {
-        operating_channels.extend(&band.operating_channels);
+        primary_channels.extend(band.primary_channels.iter().map(|c| c.number));
     }
 
     let requested_channels = match scan_request {
         fidl_sme::ScanRequest::Active(options) => &options.channels[..],
         fidl_sme::ScanRequest::Passive(options) => &options.channels[..],
     };
-    let channels: Vec<u8> = CANDIDATE_OPERATING_CHANNELS
+    let channels: Vec<fidl_ieee80211::ChannelNumber> = CANDIDATE_PRIMARY_CHANNELS
         .iter()
-        .filter(|channel| operating_channels.contains(&channel.primary))
+        .filter(|channel| primary_channels.contains(&channel.primary))
         .filter(|channel| {
             // Avoid active scans on 5 GHz channels on a non-DFS device. There is no 5 GHz
             // channel that is valid in all regulatory domains.
@@ -457,7 +457,8 @@ fn get_operating_channels_for_scan(
             }
             true
         })
-        .map(|channel| channel.primary)
+        .copied()
+        .map(|channel| channel.into())
         .collect();
 
     if channels.is_empty() {
@@ -474,18 +475,22 @@ fn get_operating_channels_for_scan(
 // The following constructs the Channel list at runtime once and leaks its contents
 // as a static reference. Firmware will reject channels if they are not allowed by
 // the current regulatory region.
-static CANDIDATE_OPERATING_CHANNELS: LazyLock<&'static [Channel]> = LazyLock::new(|| {
-    #[rustfmt::skip]
-    let channels = vec![
-        // 2.4 GHz
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-        // 5 GHz
-        36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,
-        112, 116, 120, 124, 128, 132, 136, 140, 144,
+static CANDIDATE_PRIMARY_CHANNELS: LazyLock<&'static [Channel]> = LazyLock::new(|| {
+    let channels_two_ghz = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+    let channels_five_ghz = vec![
+        36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
         149, 153, 157, 161, 165,
     ];
 
-    channels.iter().map(|primary| Channel::new(*primary, Cbw::Cbw20)).collect::<Vec<_>>().leak()
+    let mut channels_to_scan = Vec::new();
+    for channel in channels_two_ghz {
+        channels_to_scan.push(Channel::new(channel, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz));
+    }
+    for channel in channels_five_ghz {
+        channels_to_scan.push(Channel::new(channel, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz));
+    }
+
+    channels_to_scan.leak()
 });
 
 #[cfg(test)]
@@ -493,6 +498,7 @@ mod tests {
     use super::*;
     use crate::test_utils;
     use assert_matches::assert_matches;
+    use fidl_ieee80211::WlanBand::{FiveGhz, TwoGhz};
     use fuchsia_inspect::Inspector;
 
     use ieee80211::MacAddr;
@@ -593,31 +599,31 @@ mod tests {
     ], vec![fake_bss_description!(Open, ssid: Ssid::try_from("baz").unwrap())] ;
                 "when latest BSS Description is new")]
     #[test_case(vec![
-        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Cbw::Cbw20)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(165, Cbw::Cbw20)),
-    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Cbw::Cbw20))] ;
+        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Cbw::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(165, Cbw::Cbw20, FiveGhz)),
+    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Cbw::Cbw20, FiveGhz))] ;
                 "when strong signal is first")]
     #[test_case(vec![
-        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Cbw::Cbw20)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Cbw::Cbw20)),
-    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20))];
+        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Cbw::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Cbw::Cbw20, FiveGhz)),
+    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz))];
                 "when strong signal is middle")]
     #[test_case(vec![
-        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Cbw::Cbw20)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Cbw::Cbw20)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20)),
-    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20))];
+        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Cbw::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Cbw::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz)),
+    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz))];
                 "when strong signal is last")]
     #[test_case(vec![
         fake_fidl_bss_description!(Open, rssi_dbm: -84, ssid: Ssid::try_from("bar").unwrap(),
-                                   channel: Channel::new(149, Cbw::Cbw20)),
+                                   channel: Channel::new(149, Cbw::Cbw20, FiveGhz)),
         fake_fidl_bss_description!(Open, rssi_dbm: -36, ssid: Ssid::try_from("bar").unwrap(),
-                                   channel: Channel::new(165, Cbw::Cbw20)),
+                                   channel: Channel::new(165, Cbw::Cbw20, FiveGhz)),
         fake_fidl_bss_description!(Open, rssi_dbm: -40, ssid: Ssid::try_from("baz").unwrap(),
-                                   channel: Channel::new(165, Cbw::Cbw20)),
+                                   channel: Channel::new(165, Cbw::Cbw20, FiveGhz)),
     ], vec![fake_bss_description!(Open, rssi_dbm: -40, ssid: Ssid::try_from("baz").unwrap(),
-                                  channel: Channel::new(165, Cbw::Cbw20))];
+                                  channel: Channel::new(165, Cbw::Cbw20, FiveGhz))];
                 "overwrite latest chosen channel")]
     fn deduplicate_by_bssid(
         bss_description_list_from_mlme: Vec<fidl_ieee80211::BssDescription>,
@@ -752,7 +758,7 @@ mod tests {
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
         assert_eq!(
             req.channel_list.into_iter().collect::<HashSet<_>>(),
-            CANDIDATE_OPERATING_CHANNELS.iter().map(|c| c.primary).collect::<HashSet<_>>()
+            CANDIDATE_PRIMARY_CHANNELS.iter().copied().map(|c| c.into()).collect::<HashSet<_>>()
         );
         assert_eq!(req.ssid_list, Vec::<Vec<u8>>::new());
         assert_eq!(req.probe_delay, 0);
@@ -760,9 +766,18 @@ mod tests {
         assert_eq!(req.max_channel_time, 200);
     }
 
-    #[test_case(true, HashSet::from([1, 36, 165]); "dfs_enabled")]
-    #[test_case(false, HashSet::from([1]); "dfs_disabled")]
-    fn test_active_discovery_scan_args_empty(dfs_supported: bool, expected_channels: HashSet<u8>) {
+    #[test_case(true, HashSet::from([
+        fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
+        fidl_ieee80211::ChannelNumber { number: 36, band: FiveGhz },
+        fidl_ieee80211::ChannelNumber { number: 165, band: FiveGhz },
+    ]); "dfs_enabled")]
+    #[test_case(false, HashSet::from([
+        fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
+    ]); "dfs_disabled")]
+    fn test_active_discovery_scan_args_empty(
+        dfs_supported: bool,
+        expected_channels: HashSet<fidl_ieee80211::ChannelNumber>,
+    ) {
         let device_info = device_info_with_channel(vec![1, 36, 165]);
         let mut spectrum_management = fake_spectrum_management_support_empty();
         if dfs_supported {
@@ -809,7 +824,10 @@ mod tests {
 
         assert_eq!(req.txn_id, 1);
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Active);
-        assert_eq!(req.channel_list, vec![1]);
+        assert_eq!(
+            req.channel_list,
+            vec![fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz }]
+        );
         assert_eq!(req.ssid_list, vec![ssid1, ssid2]);
         assert_eq!(req.probe_delay, 5);
         assert_eq!(req.min_channel_time, 75);
@@ -833,7 +851,13 @@ mod tests {
         assert_eq!(req.txn_id, 1);
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
         // Verify that only the requested channels are included.
-        assert_eq!(req.channel_list.into_iter().collect::<HashSet<_>>(), HashSet::from([1, 36]));
+        assert_eq!(
+            req.channel_list.into_iter().collect::<HashSet<_>>(),
+            HashSet::from([
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
+                fidl_ieee80211::ChannelNumber { number: 36, band: FiveGhz },
+            ])
+        );
         assert_eq!(req.ssid_list, Vec::<Vec<u8>>::new());
         assert_eq!(req.probe_delay, 0);
         assert_eq!(req.min_channel_time, 200);
@@ -858,7 +882,13 @@ mod tests {
         assert_eq!(req.txn_id, 1);
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
         // Verify that the unsupported channel 6 was filtered out.
-        assert_eq!(req.channel_list.into_iter().collect::<HashSet<_>>(), HashSet::from([1, 36]));
+        assert_eq!(
+            req.channel_list.into_iter().collect::<HashSet<_>>(),
+            HashSet::from([
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
+                fidl_ieee80211::ChannelNumber { number: 36, band: FiveGhz },
+            ])
+        );
     }
 
     #[test]
@@ -877,7 +907,10 @@ mod tests {
         assert_eq!(req.txn_id, 1);
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
         // Verify that the invalid channel 200 was filtered out and the valid channel is included.
-        assert_eq!(req.channel_list, vec![1]);
+        assert_eq!(
+            req.channel_list,
+            vec![fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz }]
+        );
     }
 
     #[test]
@@ -896,7 +929,11 @@ mod tests {
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
         assert_eq!(
             req.channel_list.into_iter().collect::<HashSet<_>>(),
-            HashSet::from([1, 36, 165])
+            HashSet::from([
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
+                fidl_ieee80211::ChannelNumber { number: 36, band: FiveGhz },
+                fidl_ieee80211::ChannelNumber { number: 165, band: FiveGhz },
+            ])
         );
     }
 
@@ -1152,7 +1189,13 @@ mod tests {
     fn device_info_with_channel(operating_channels: Vec<u8>) -> fidl_mlme::DeviceInfo {
         fidl_mlme::DeviceInfo {
             bands: vec![fidl_mlme::BandCapability {
-                operating_channels,
+                primary_channels: operating_channels
+                    .into_iter()
+                    .map(|n| fidl_ieee80211::ChannelNumber {
+                        number: n,
+                        band: fidl_ieee80211::WlanBand::FiveGhz,
+                    })
+                    .collect(),
                 ..fake_5ghz_band_capability()
             }],
             ..test_utils::fake_device_info(*CLIENT_ADDR)

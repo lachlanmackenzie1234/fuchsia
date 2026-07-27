@@ -44,7 +44,7 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
 
     common::MacAddr bssid;
     std::vector<uint8_t> ies;
-    wlan_ieee80211::WlanChannel channel;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
   };
 
   struct SoftApContext {
@@ -72,13 +72,13 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
   };
 
   // Default scan options
-  static const std::vector<uint8_t> kDefaultScanChannels;
+  static const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber> kDefaultScanChannels;
   static constexpr uint32_t kDefaultActiveScanDwellTimeMs = 40;
   static constexpr uint32_t kDefaultPassiveScanDwellTimeMs = 120;
 
   // SoftAP defaults
-  static constexpr wlan_ieee80211::WlanChannel kDefaultSoftApChannel = {
-      .primary = 11, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+  static constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultSoftApChannelNum = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11};
   static constexpr uint32_t kDefaultSoftApBeaconPeriod = 100;
   static constexpr uint32_t kDefaultSoftApDtimPeriod = 100;
 
@@ -152,30 +152,37 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
   // not interleaved association events (which I doubt are terribly useful, anyway). Note that for
   // the moment only non-authenticated associations are supported.
   void StartConnect(const common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
-                    const wlan_ieee80211::WlanChannel& channel);
+                    const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                    const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80);
   void AssociateWith(const simulation::FakeAp& ap,
                      std::optional<zx::duration> delay = std::nullopt);
 
   // Start a roam attempt with a fake AP. Note: like connect, only non-authenticated associations
   // are supported.
-  void StartRoam(const common::MacAddr& bssid, const wlan_ieee80211::WlanChannel& channel);
+  void StartRoam(const common::MacAddr& bssid,
+                 const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                 fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                 const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80);
 
   void DisassociateFrom(const common::MacAddr& bssid, wlan_ieee80211::ReasonCode reason);
   void DeauthenticateFrom(const common::MacAddr& bssid, wlan_ieee80211::ReasonCode reason);
 
   // Scan operations
-  void StartScan(uint64_t txn_id = 0, bool active = false,
-                 std::optional<const std::vector<uint8_t>> channels =
-                     std::optional<const std::vector<uint8_t>>{});
+  void StartScan(
+      uint64_t txn_id = 0, bool active = false,
+      std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>> channels =
+          std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{});
   std::optional<wlan_fullmac_wire::WlanScanResult> ScanResultCode(uint64_t txn_id);
   const std::list<fuchsia_wlan_fullmac::WlanFullmacImplIfcOnScanResultRequest>* ScanResultList(
       uint64_t txn_id);
 
   // SoftAP operation
-  void StartSoftAp(const fuchsia_wlan_ieee80211::Ssid& ssid = kDefaultSoftApSsid,
-                   const wlan_ieee80211::WlanChannel& channel = kDefaultSoftApChannel,
-                   uint32_t beacon_period = kDefaultSoftApBeaconPeriod,
-                   uint32_t dtim_period = kDefaultSoftApDtimPeriod);
+  void StartSoftAp(
+      const fuchsia_wlan_ieee80211::Ssid& ssid = kDefaultSoftApSsid,
+      const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel = kDefaultSoftApChannelNum,
+      uint32_t beacon_period = kDefaultSoftApBeaconPeriod,
+      uint32_t dtim_period = kDefaultSoftApDtimPeriod);
   void StopSoftAp();
 
   zx_status_t SetMulticastPromisc(bool enable);

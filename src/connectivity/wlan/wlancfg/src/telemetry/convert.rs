@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::client::roaming::lib::RoamReason;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use wlan_common::bss::Protection as BssProtection;
 use wlan_common::channel::Channel;
@@ -66,10 +67,13 @@ pub fn convert_security_type(
 }
 
 pub fn convert_channel_band(
-    primary_channel: u8,
+    band: fidl_ieee80211::WlanBand,
 ) -> metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand {
     use metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::*;
-    if primary_channel > 14 { Band5Ghz } else { Band2Dot4Ghz }
+    match band {
+        fidl_ieee80211::WlanBand::FiveGhz => Band5Ghz,
+        _ => Band2Dot4Ghz,
+    }
 }
 
 pub fn convert_rssi_bucket(rssi: i8) -> metrics::ConnectivityWlanMetricDimensionRssiBucket {

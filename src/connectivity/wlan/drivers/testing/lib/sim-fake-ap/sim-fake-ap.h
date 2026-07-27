@@ -65,10 +65,20 @@ class FakeAp final : public StationIfc {
   explicit FakeAp(Environment* environ) : environment_(environ) { environ->AddStation(this); }
 
   FakeAp(Environment* environ, const common::MacAddr& bssid,
-         const fuchsia_wlan_ieee80211::Ssid& ssid, const wlan_ieee80211::WlanChannel channel)
-      : environment_(environ), bssid_(bssid), ssid_(ssid) {
+         const fuchsia_wlan_ieee80211::Ssid& ssid,
+         const fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
+         fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+         fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80)
+      : environment_(environ),
+        channel_(channel),
+        cbw_(cbw),
+        secondary80_(secondary80),
+        bssid_(bssid),
+        ssid_(ssid) {
     environ->AddStation(this);
     tx_info_.channel = channel;
+    tx_info_.cbw = cbw;
+    tx_info_.secondary80 = secondary80;
     beacon_state_.beacon_frame_.bssid_ = bssid;
     beacon_state_.beacon_frame_.AddSsidIe(ssid);
     // By default, assume AP is part of an infrastructure network
@@ -76,21 +86,42 @@ class FakeAp final : public StationIfc {
     beacon_state_.beacon_frame_.capability_info_.set_ess(1);
   }
 
+  FakeAp(Environment* environ, const common::MacAddr& bssid,
+         const fuchsia_wlan_ieee80211::Ssid& ssid,
+         const fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
+         fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw, uint8_t secondary80_num)
+      : FakeAp(environ, bssid, ssid, channel, cbw,
+               fuchsia_wlan_ieee80211::wire::ChannelNumber{.band = channel.band,
+                                                           .number = secondary80_num}) {}
+
   ~FakeAp() { environment_->RemoveStation(this); }
 
-  void SetChannel(const wlan_ieee80211::WlanChannel& channel);
+  void SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                  const fuchsia_wlan_ieee80211::wire::ChannelBandwidth& cbw,
+                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80);
+
+  void SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                  const fuchsia_wlan_ieee80211::wire::ChannelBandwidth& cbw,
+                  const uint8_t& secondary80_num) {
+    SetChannel(channel, cbw,
+               fuchsia_wlan_ieee80211::wire::ChannelNumber{.band = channel.band,
+                                                           .number = secondary80_num});
+  }
+
   void SetBssid(const common::MacAddr& bssid);
   void SetSsid(const fuchsia_wlan_ieee80211::Ssid& ssid);
   void SetCsaBeaconInterval(zx::duration interval);
 
-  wlan_ieee80211::WlanChannel GetChannel() const { return tx_info_.channel; }
+  fuchsia_wlan_ieee80211::wire::ChannelNumber GetChannel() const { return channel_; }
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth GetChannelBandwidth() const { return cbw_; }
+  fuchsia_wlan_ieee80211::wire::ChannelNumber GetSecondary80() const { return secondary80_; }
 
   common::MacAddr GetBssid() const { return bssid_; }
   fuchsia_wlan_ieee80211::Ssid GetSsid() const { return ssid_; }
   uint32_t GetNumAssociatedClient() const;
 
   // Will we receive a message sent on the specified channel?
-  bool CanReceiveChannel(const wlan_ieee80211::WlanChannel& channel);
+  bool CanReceiveChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel);
 
   // When this is not called, the default is open network.
   zx_status_t SetSecurity(struct Security sec);
@@ -160,6 +191,9 @@ class FakeAp final : public StationIfc {
 
   // meta information needed for sending transmissions
   simulation::WlanTxInfo tx_info_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber channel_;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80_;
   common::MacAddr bssid_;
   fuchsia_wlan_ieee80211::Ssid ssid_;
   struct Security security_ = {.cipher_suite = IEEE80211_CIPHER_SUITE_NONE};
@@ -170,7 +204,9 @@ class FakeAp final : public StationIfc {
     // Are we waiting for the execution of scheduled channel switch announcement?
     bool is_switching_channel = false;
     // This is the channel AP about to change to
-    wlan_ieee80211::WlanChannel channel_after_csa;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber channel_after_csa;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw_after_csa;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80_after_csa;
 
     // Unique value that is associated with the next beacon event
     uint64_t beacon_notification_id;

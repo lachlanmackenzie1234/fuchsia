@@ -58,7 +58,7 @@ type ScanRequest = struct {
     /// Invalid channel numbers will be silently ignored. The validity of a channel
     /// number depends on the current regulatory region, and MLME does not control
     /// or know this setting.
-    channel_list vector<uint8>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
+    channel_list vector<ieee80211.ChannelNumber>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
     /// List of SSIDs to scan for. An empty list of ssids is the same as specifying
     /// a list containing only the wildcard SSID.
     ///
@@ -372,7 +372,7 @@ type StartRequest = struct {
     dtim_period uint8;
 
     // PHY parameter sets
-    channel uint8;
+    primary ieee80211.ChannelNumber;
 
     // Capability information.
     capability_info ieee80211.CapabilityInfo;
@@ -407,7 +407,7 @@ type StartRequest = struct {
     // - VHT Operation
     // - Extended Capabilities
     phy ieee80211.WlanPhyType;
-    channel_bandwidth ieee80211.ChannelBandwidth;
+    bandwidth ieee80211.ChannelBandwidth;
 };
 
 // MLME-START.confirm (IEEE Std 802.11-2016, 6.3.11.3)

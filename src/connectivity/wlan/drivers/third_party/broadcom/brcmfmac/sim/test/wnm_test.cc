@@ -17,10 +17,10 @@ namespace wlan::brcmfmac {
 
 // Some default AP and association request values
 
-constexpr wlan_ieee80211::WlanChannel kAp0Channel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
-constexpr wlan_ieee80211::WlanChannel kAp1Channel = {
-    .primary = 11, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kAp0Channel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kAp1Channel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11};
 const uint8_t kAp1OperatingClass = 101;
 
 const common::MacAddr kAp0Bssid("12:34:56:78:9a:bc");
@@ -108,8 +108,10 @@ void WnmTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
 TEST_F(WnmTest, IgnoreBtmReqWhenBtmUnsupported) {
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -123,7 +125,7 @@ TEST_F(WnmTest, IgnoreBtmReqWhenBtmUnsupported) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -145,8 +147,10 @@ TEST_F(WnmTest, RoamOnBtmReqWhenConfiguredToRoam) {
   PreInit();
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -160,7 +164,7 @@ TEST_F(WnmTest, RoamOnBtmReqWhenConfiguredToRoam) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -183,8 +187,10 @@ TEST_F(WnmTest, RoamOnBtmReqButTargetApIgnoresReassoc) {
   PreInit();
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   // This AP will ignore reassociation, to test roam failure.
@@ -200,7 +206,7 @@ TEST_F(WnmTest, RoamOnBtmReqButTargetApIgnoresReassoc) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -240,8 +246,10 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDeauthForTargetInterruptsRoam) {
   PreInit();
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   // This AP will ignore reassociation, to give this test time to send SME Disassoc.
@@ -257,7 +265,7 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDeauthForTargetInterruptsRoam) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -298,8 +306,10 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDisassocInterruptsRoam) {
   PreInit();
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   // This AP will ignore reassociation, to give this test time to send SME Disassoc.
@@ -315,7 +325,7 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDisassocInterruptsRoam) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -350,8 +360,10 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDeauthInterruptsRoam) {
   PreInit();
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   // This AP will ignore reassociation, to give this test time to send SME deauth.
@@ -367,7 +379,7 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDeauthInterruptsRoam) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -415,8 +427,10 @@ TEST_F(WnmTest, DisconnectOnBtmReqWhenTargetBssInfoUnsupported) {
                                          client_ifc_.iface_id_);
   });
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -430,7 +444,7 @@ TEST_F(WnmTest, DisconnectOnBtmReqWhenTargetBssInfoUnsupported) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -473,8 +487,10 @@ TEST_F(WnmTest, DisconnectOnBtmReqWhenTargetBssInfoIeBufferMalformed) {
                                          &malformed_ie_buf);
   });
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -488,7 +504,7 @@ TEST_F(WnmTest, DisconnectOnBtmReqWhenTargetBssInfoIeBufferMalformed) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
@@ -520,8 +536,10 @@ TEST_F(WnmTest, FwInitiatedRoamHeapBufferOverflow) {
   PreInit();
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -576,7 +594,7 @@ TEST_F(WnmTest, FwInitiatedRoamHeapBufferOverflow) {
   const simulation::SimNeighborReportElement neighbor{
       .bssid = kAp1Bssid,
       .operating_class = kAp1OperatingClass,
-      .channel_number = kAp1Channel.primary,
+      .channel_number = kAp1Channel.number,
   };
   const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
   const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);

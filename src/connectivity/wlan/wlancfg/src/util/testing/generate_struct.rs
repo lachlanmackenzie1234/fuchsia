@@ -34,23 +34,32 @@ pub fn generate_string() -> String {
 }
 
 pub fn generate_random_channel() -> Channel {
-    generate_channel(rand::random::<u8>())
+    let mut rng = rand::rng();
+    let band = if rng.random::<bool>() {
+        fidl_ieee80211::WlanBand::TwoGhz
+    } else {
+        fidl_ieee80211::WlanBand::FiveGhz
+    };
+    let channel = match band {
+        fidl_ieee80211::WlanBand::TwoGhz => rng.random_range(1..=14),
+        fidl_ieee80211::WlanBand::FiveGhz => rng.random_range(32..=177),
+        fidl_ieee80211::WlanBandUnknown!() => 36,
+    };
+    generate_channel(channel, band)
 }
 
-pub fn generate_channel(channel: u8) -> Channel {
+pub fn generate_channel(channel: u8, band: fidl_ieee80211::WlanBand) -> Channel {
     let mut rng = rand::rng();
-    Channel {
-        primary: channel,
-        cbw: match rng.random_range(0..5) {
-            0 => Cbw::Cbw20,
-            1 => Cbw::Cbw40,
-            2 => Cbw::Cbw40Below,
-            3 => Cbw::Cbw80,
-            4 => Cbw::Cbw160,
-            5 => Cbw::Cbw80P80 { secondary80: rng.random::<u8>() },
-            _ => panic!(),
-        },
-    }
+    let cbw = match rng.random_range(0..5) {
+        0 => Cbw::Cbw20,
+        1 => Cbw::Cbw40,
+        2 => Cbw::Cbw40Below,
+        3 => Cbw::Cbw80,
+        4 => Cbw::Cbw160,
+        5 => Cbw::Cbw80P80 { secondary80: rng.random::<u8>() },
+        _ => panic!(),
+    };
+    Channel::new(channel, cbw, band)
 }
 
 pub fn generate_random_sme_scan_result() -> fidl_sme::ScanResult {

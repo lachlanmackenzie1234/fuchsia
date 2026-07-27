@@ -35,6 +35,7 @@ use std::borrow::Cow;
 use std::pin::Pin;
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
+use wlan_common::channel::{Cbw, Channel};
 use wlan_common::sequestered::Sequestered;
 
 const MAX_CONNECTION_ATTEMPTS: u8 = 4; // arbitrarily chosen until we have some data
@@ -710,9 +711,25 @@ async fn connected_state(
                         fidl_sme::ConnectTransactionEvent::OnChannelSwitched { info } => {
                             info!(
                                 "OnChannelSwitch received. Previous channel: {:?}, new channel: {:?}.",
-                                options.ap_state.tracked.channel.primary, info.new_channel
+                                options.ap_state.tracked.channel.primary, info.new_primary_channel
                             );
-                            options.ap_state.tracked.channel.primary = info.new_channel;
+
+                            let cbw = match Cbw::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+                                Ok(cbw) => cbw,
+                                Err(e) => {
+                                    // In the event that the CBW is invalid, reuse the previous CBW
+                                    // in determining the client's channel to preserve any legacy
+                                    // behavior.
+                                    error!("Invalid CBW in ChannelSwitchInfo: {}", e);
+                                    options.ap_state.tracked.channel.cbw
+                                }
+                            };
+                            options.ap_state.tracked.channel = Channel::new(
+                                info.new_primary_channel.number,
+                                cbw,
+                                info.new_primary_channel.band
+                            );
+
                             // Re-initialize roam monitor for new channel
                             let (sender, roam_request_receiver) = mpsc::channel(ROAMING_CHANNEL_BUFFER_SIZE);
                             options.roam_request_receiver = roam_request_receiver;
@@ -3153,14 +3170,24 @@ mod tests {
         // Verify roam monitor request was sent.
         assert_matches!(test_values.roam_service_request_receiver.try_next(), Ok(Some(request)) => {
             assert_matches!(request, RoamServiceRequest::InitializeRoamMonitor { ap_state, .. } => {
-                assert_eq!(ap_state.tracked.channel.primary, bss_description.channel.primary)
+                assert_eq!(ap_state.tracked.channel.primary, bss_description.primary.number)
             });
         });
 
         // Run the state machine
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
 
-        let channel_switch_info = fidl_internal::ChannelSwitchInfo { new_channel: 10 };
+        let channel_switch_info = fidl_internal::ChannelSwitchInfo {
+            new_primary_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 10,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
+            },
+        };
         connect_txn_handle
             .send_on_channel_switched(&channel_switch_info)
             .expect("failed to send signal report");

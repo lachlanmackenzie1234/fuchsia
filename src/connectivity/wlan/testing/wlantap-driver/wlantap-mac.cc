@@ -86,15 +86,42 @@ void WlantapMac::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& comple
 
 void WlantapMac::SetChannel(SetChannelRequest& request, SetChannelCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  fuchsia_wlan_ieee80211::wire::WlanChannel wire_chan{
-      .primary = request.channel().value().primary(),
-      .cbw = request.channel().value().cbw(),
-      .secondary80 = request.channel().value().secondary80()};
-  if (!wlan::common::IsValidChan(wire_chan)) {
+  if (!request.primary().has_value()) {
     completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
     return;
   }
-  listener_->WlantapMacSetChannel(request.channel().value());
+  fuchsia_wlan_ieee80211::ChannelNumber channel_num = request.primary().value();
+
+  fuchsia_wlan_ieee80211::ChannelBandwidth cbw =
+      request.bandwidth().value_or(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20);
+
+  fuchsia_wlan_ieee80211::ChannelNumber secondary80 =
+      request.vht_secondary_80_channel().value_or(fuchsia_wlan_ieee80211::ChannelNumber{{
+          .band = channel_num.band(),
+          .number = 0,
+      }});
+
+  fuchsia_wlan_ieee80211::wire::ChannelNumber wire_channel_num{
+      .band = static_cast<fuchsia_wlan_ieee80211::wire::WlanBand>(channel_num.band()),
+      .number = channel_num.number(),
+  };
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth wire_cbw =
+      static_cast<fuchsia_wlan_ieee80211::wire::ChannelBandwidth>(cbw);
+  fuchsia_wlan_ieee80211::wire::ChannelNumber wire_secondary80{
+      .band = static_cast<fuchsia_wlan_ieee80211::wire::WlanBand>(secondary80.band()),
+      .number = secondary80.number(),
+  };
+
+  wlan::common::Channel channel = {
+      .channel = wire_channel_num,
+      .cbw = wire_cbw,
+      .secondary80 = wire_secondary80,
+  };
+  if (!wlan::common::IsValidChan(channel)) {
+    completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  listener_->WlantapMacSetChannel(channel_num, cbw, secondary80);
   completer.Reply(fit::ok());
 }
 

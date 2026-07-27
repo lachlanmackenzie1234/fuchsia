@@ -72,7 +72,8 @@ class WlanSoftmacDevice : public fdf::WireServer<fuchsia_wlan_softmac::WlanSoftm
   void NotifyScanComplete(zx_status_t status, uint64_t scan_id);
 
   // Helper function
-  bool IsValidChannel(const fuchsia_wlan_ieee80211::wire::WlanChannel* channel);
+  bool IsValidChannel(fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
+                      fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
 
   void ServiceConnectHandler(fdf_dispatcher_t* dispatcher,
                              fdf::ServerEnd<fuchsia_wlan_softmac::WlanSoftmac> server_end);

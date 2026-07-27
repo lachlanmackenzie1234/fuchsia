@@ -481,6 +481,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use fidl::endpoints::{ControlHandle, Responder, create_proxy};
+    use fidl_fuchsia_wlan_ieee80211::WlanBand::{FiveGhz, TwoGhz};
     use fidl_fuchsia_wlan_internal as fidl_internal;
     use fuchsia_async as fasync;
     use futures::future;
@@ -646,7 +647,7 @@ mod tests {
                 ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                 rssi_dbm: 0,
                 snr_db: 1,
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
             ),
         };
         let sme_result_2 = fidl_sme::ScanResult {
@@ -660,7 +661,7 @@ mod tests {
                 ssid: types::Ssid::try_from("unique ssid").unwrap(),
                 rssi_dbm: 7,
                 snr_db: 2,
-                channel: types::WlanChan::new(8, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
             ),
         };
         let sme_result_3 = fidl_sme::ScanResult {
@@ -675,7 +676,7 @@ mod tests {
                 ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                 rssi_dbm: 13,
                 snr_db: 3,
-                channel: types::WlanChan::new(11, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
             ),
         };
 
@@ -691,7 +692,7 @@ mod tests {
                         bssid: types::Bssid::from([0, 0, 0, 0, 0, 0]),
                         signal: types::Signal { rssi_dbm: 0, snr_db: 1 },
                         timestamp: zx::MonotonicInstant::from_nanos(sme_result_1.timestamp_nanos),
-                        channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                        channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
                         observation,
                         compatibility: Compatible::expect_ok([SecurityDescriptor::WPA3_PERSONAL]),
                         bss_description: sme_result_1.bss_description.clone().into(),
@@ -700,7 +701,7 @@ mod tests {
                         bssid: types::Bssid::from([7, 8, 9, 10, 11, 12]),
                         signal: types::Signal { rssi_dbm: 13, snr_db: 3 },
                         timestamp: zx::MonotonicInstant::from_nanos(sme_result_3.timestamp_nanos),
-                        channel: types::WlanChan::new(11, types::Cbw::Cbw20),
+                        channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
                         observation,
                         compatibility: Incompatible::unknown(),
                         bss_description: sme_result_3.bss_description.clone().into(),
@@ -715,7 +716,7 @@ mod tests {
                     bssid: types::Bssid::from([1, 2, 3, 4, 5, 6]),
                     signal: types::Signal { rssi_dbm: 7, snr_db: 2 },
                     timestamp: zx::MonotonicInstant::from_nanos(sme_result_2.timestamp_nanos),
-                    channel: types::WlanChan::new(8, types::Cbw::Cbw20),
+                    channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
                     observation,
                     compatibility: Compatible::expect_ok([SecurityDescriptor::WPA2_PERSONAL]),
                     bss_description: sme_result_2.bss_description.clone().into(),
@@ -1119,7 +1120,7 @@ mod tests {
                 ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                 rssi_dbm: 0,
                 snr_db: 1,
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
             ),
         };
         let second_result = fidl_sme::ScanResult {
@@ -1133,7 +1134,7 @@ mod tests {
                 bssid: [1, 2, 3, 4, 5, 6],
                 rssi_dbm: 101,
                 snr_db: 101,
-                channel: types::WlanChan::new(101, types::Cbw::Cbw40),
+                channel: types::WlanChan::new(101, types::Cbw::Cbw40, FiveGhz),
             ),
         };
 
@@ -1152,7 +1153,7 @@ mod tests {
                     ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                         rssi_dbm: 13,
                         snr_db: 3,
-                        channel: types::WlanChan::new(14, types::Cbw::Cbw20),
+                        channel: types::WlanChan::new(14, types::Cbw::Cbw20, TwoGhz),
                 ),
             },
         ];
@@ -1169,7 +1170,7 @@ mod tests {
                 bssid: types::Bssid::from([0, 0, 0, 0, 0, 0]),
                 signal: types::Signal { rssi_dbm: 0, snr_db: 1 },
                 timestamp: zx::MonotonicInstant::from_nanos(first_result.timestamp_nanos),
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20),
+                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
                 observation: types::ScanObservation::Passive,
                 compatibility: Compatible::expect_ok([SecurityDescriptor::WPA3_PERSONAL]),
                 bss_description: first_result.bss_description.clone().into(),
@@ -1178,7 +1179,7 @@ mod tests {
                 bssid: types::Bssid::from([1, 2, 3, 4, 5, 6]),
                 signal: types::Signal { rssi_dbm: 101, snr_db: 101 },
                 timestamp: zx::MonotonicInstant::from_nanos(second_result.timestamp_nanos),
-                channel: types::WlanChan::new(101, types::Cbw::Cbw40),
+                channel: types::WlanChan::new(101, types::Cbw::Cbw40, FiveGhz),
                 observation: types::ScanObservation::Passive,
                 compatibility: Compatible::expect_ok([SecurityDescriptor::WPA3_PERSONAL]),
                 bss_description: second_result.bss_description.clone().into(),
@@ -1369,7 +1370,7 @@ mod tests {
         let scan_req_fut1 = scan_requester.perform_scan(
             ScanReason::BssSelection,
             vec!["foo".try_into().unwrap()],
-            first_req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            vec![generate_channel(13, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)],
         );
         let mut scan_req_fut1 = pin!(scan_req_fut1);
         assert_matches!(exec.run_until_stalled(&mut scan_req_fut1), Poll::Pending);
@@ -1402,7 +1403,7 @@ mod tests {
         let scan_req_fut2 = scan_requester.perform_scan(
             ScanReason::BssSelection,
             vec!["foo".try_into().unwrap()],
-            second_req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            vec![generate_channel(55, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz)],
         );
         let mut scan_req_fut2 = pin!(scan_req_fut2);
         assert_matches!(exec.run_until_stalled(&mut scan_req_fut2), Poll::Pending);
@@ -1454,7 +1455,7 @@ mod tests {
         let scan_req_fut1 = scan_requester.perform_scan(
             ScanReason::BssSelection,
             vec!["foo".try_into().unwrap()],
-            first_req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            vec![generate_channel(13, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)],
         );
         let mut scan_req_fut1 = pin!(scan_req_fut1);
         assert_matches!(exec.run_until_stalled(&mut scan_req_fut1), Poll::Pending);
@@ -1478,7 +1479,7 @@ mod tests {
         let scan_req_fut2 = scan_requester.perform_scan(
             ScanReason::BssSelection,
             vec!["foo".try_into().unwrap()],
-            second_req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            vec![generate_channel(55, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz)],
         );
         let mut scan_req_fut2 = pin!(scan_req_fut2);
         assert_matches!(exec.run_until_stalled(&mut scan_req_fut2), Poll::Pending);
@@ -1736,7 +1737,7 @@ mod tests {
         let scan_req_fut = scan_requester.perform_scan(
             ScanReason::BssSelection,
             vec!["foo".try_into().unwrap()],
-            req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            vec![generate_channel(13, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)],
         );
         let mut scan_req_fut = pin!(scan_req_fut);
         assert_matches!(exec.run_until_stalled(&mut scan_req_fut), Poll::Pending);
@@ -1836,7 +1837,7 @@ mod tests {
         let scan_req_fut1 = scan_requester.perform_scan(
             ScanReason::BssSelection,
             vec!["foo".try_into().unwrap()],
-            first_req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            vec![generate_channel(13, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)],
         );
         let mut scan_req_fut1 = pin!(scan_req_fut1);
         assert_matches!(exec.run_until_stalled(&mut scan_req_fut1), Poll::Pending);
@@ -1859,7 +1860,7 @@ mod tests {
         let scan_req_fut2 = scan_requester.perform_scan(
             ScanReason::BssSelection,
             vec!["foo".try_into().unwrap()],
-            second_req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            vec![generate_channel(55, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz)],
         );
         let mut scan_req_fut2 = pin!(scan_req_fut2);
         assert_matches!(exec.run_until_stalled(&mut scan_req_fut2), Poll::Pending);

@@ -15,7 +15,12 @@ pub trait FromEvent<E>: Sized {
 
 impl FromEvent<fidl_tap::SetChannelArgs> for Channel {
     fn from_event(event: &fidl_tap::SetChannelArgs) -> Option<Self> {
-        Channel::try_from(&event.channel).ok()
+        let cbw = wlan_common::channel::Cbw::from_fidl(
+            event.bandwidth,
+            event.vht_secondary_80_channel.number,
+        )
+        .ok()?;
+        Some(Channel { primary: event.primary.number, cbw, band: event.primary.band })
     }
 }
 

@@ -222,8 +222,10 @@ type SignalReport = table {
 };
 
 type ConnectionSignalReport = table {
-    1: channel fuchsia.wlan.ieee80211.WlanChannel;
+    1: primary fuchsia.wlan.ieee80211.ChannelNumber;
     2: tx_rate_500kbps uint32;
     3: rssi_dbm int8;
     4: snr_db int8;
+    5: bandwidth fuchsia.wlan.ieee80211.ChannelBandwidth;
+    6: vht_secondary_80_channel fuchsia.wlan.ieee80211.ChannelNumber;
 };

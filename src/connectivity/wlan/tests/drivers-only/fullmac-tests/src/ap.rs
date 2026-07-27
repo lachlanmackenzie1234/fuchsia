@@ -72,18 +72,16 @@ async fn test_start_2ghz_bss_success() {
 
     // channel support is defined by fullmac driver config
     let driver_band_cap = &fullmac_driver.config.query_info.band_caps.as_ref().unwrap()[0];
-    let supported_channels = &driver_band_cap.operating_channels.as_ref().unwrap();
+    let supported_channels = &driver_band_cap.primary_channels.as_ref().unwrap();
 
+    let chosen_channel = *supported_channels.choose(&mut rand::rng()).unwrap();
     let sme_ap_config = fidl_sme::ApConfig {
         ssid: random_ssid(),
         password: random_password(),
         radio_cfg: fidl_sme::RadioConfig {
             phy: *phy_types.choose(&mut rand::rng()).unwrap(),
-            channel: fidl_ieee80211::WlanChannel {
-                primary: *supported_channels.choose(&mut rand::rng()).unwrap(),
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            },
+            primary: chosen_channel,
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         },
     };
 
@@ -124,7 +122,7 @@ async fn test_start_2ghz_bss_success() {
             bss_type: Some(fidl_ieee80211::BssType::Infrastructure),
             beacon_period: Some(100),
             dtim_period: Some(2),
-            channel: Some(sme_ap_config.radio_cfg.channel.primary),
+            primary: Some(sme_ap_config.radio_cfg.primary),
             rsne: Some(rsne::Rsne::wpa2_rsne_with_caps(rsne::RsnCapabilities(0)).into_bytes()),
             vendor_ie: Some(vec![]),
             ..Default::default()
@@ -149,7 +147,7 @@ async fn test_start_2ghz_bss_success() {
         running_ap.as_ref(),
         &fidl_sme::Ap {
             ssid: sme_ap_config.ssid.clone(),
-            channel: sme_ap_config.radio_cfg.channel.primary,
+            channel: sme_ap_config.radio_cfg.primary.number,
             num_clients: 0,
         }
     );
@@ -165,11 +163,11 @@ async fn test_start_bss_fail_non_ascii_password() {
         password: vec![1, 2, 3],
         radio_cfg: fidl_sme::RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ofdm,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 1,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 1,
             },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         },
     };
 
@@ -189,11 +187,11 @@ async fn test_start_bss_fail_bad_channel() {
         password: vec![],
         radio_cfg: fidl_sme::RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ofdm,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 27,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 27,
             },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         },
     };
 
@@ -303,7 +301,7 @@ async fn test_remote_client_connected_open() {
         running_ap.as_ref(),
         &fidl_sme::Ap {
             ssid: DEFAULT_OPEN_AP_CONFIG.ssid.clone(),
-            channel: DEFAULT_OPEN_AP_CONFIG.radio_cfg.channel.primary,
+            channel: DEFAULT_OPEN_AP_CONFIG.radio_cfg.primary.number,
             num_clients: 1,
         }
     );

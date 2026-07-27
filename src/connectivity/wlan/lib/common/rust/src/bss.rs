@@ -357,7 +357,7 @@ impl BssDescription {
             Standard::Dot11Ac
         } else if self.ht_cap().is_some() && self.ht_op().is_some() {
             Standard::Dot11N
-        } else if self.channel.primary <= 14 {
+        } else if self.channel.band == fidl_ieee80211::WlanBand::TwoGhz {
             if self.rates.iter().any(|r| match r.rate() {
                 12 | 18 | 24 | 36 | 48 | 72 | 96 | 108 => true,
                 _ => false,
@@ -531,12 +531,17 @@ impl BssDescription {
 
 impl From<BssDescription> for fidl_ieee80211::BssDescription {
     fn from(bss: BssDescription) -> fidl_ieee80211::BssDescription {
+        let (bandwidth, secondary80_num) = bss.channel.cbw.to_fidl();
+        let secondary80 =
+            fidl_ieee80211::ChannelNumber { band: bss.channel.band, number: secondary80_num };
         fidl_ieee80211::BssDescription {
             bssid: bss.bssid.to_array(),
             bss_type: bss.bss_type,
             beacon_period: bss.beacon_period,
             capability_info: bss.capability_info,
-            channel: bss.channel.into(),
+            primary: bss.channel.into(),
+            bandwidth,
+            vht_secondary_80_channel: secondary80,
             rssi_dbm: bss.rssi_dbm,
             snr_db: bss.snr_db,
             ies: bss.ies,
@@ -643,7 +648,11 @@ impl TryFrom<fidl_ieee80211::BssDescription> for BssDescription {
             bss_type: bss.bss_type,
             beacon_period: bss.beacon_period,
             capability_info: bss.capability_info,
-            channel: bss.channel.try_into()?,
+            channel: crate::channel::Channel::from_fidl(
+                bss.primary,
+                bss.bandwidth,
+                bss.vht_secondary_80_channel,
+            )?,
             rssi_dbm: bss.rssi_dbm,
             snr_db: bss.snr_db,
             ies: bss.ies,
@@ -726,7 +735,7 @@ mod tests {
 
     #[test_case(fake_bss_description!(
         Wpa1Wpa2,
-        channel: Channel::new(36, Cbw::Cbw80P80{ secondary80: 106 }),
+        channel: Channel::new(36, Cbw::Cbw80P80{ secondary80: 106 }, fidl_ieee80211::WlanBand::FiveGhz),
         rssi_dbm: -20,
         short_preamble: true,
         ies_overrides: IesOverrides::new()
@@ -734,7 +743,7 @@ mod tests {
     ))]
     #[test_case(fake_bss_description!(
         Open,
-        channel: Channel::new(1, Cbw::Cbw20),
+        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
         beacon_period: 110,
         short_preamble: true,
         radio_measurement: true,
@@ -945,7 +954,7 @@ mod tests {
     #[test]
     fn test_latest_standard_g() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             rates: vec![12],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)
@@ -959,7 +968,7 @@ mod tests {
     #[test]
     fn test_latest_standard_b() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             rates: vec![2],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)
@@ -973,7 +982,7 @@ mod tests {
     #[test]
     fn test_latest_standard_b_with_basic() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             rates: vec![ie::SupportedRate(2).with_basic(true).0],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)
@@ -987,7 +996,7 @@ mod tests {
     #[test]
     fn test_latest_standard_a() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(36, Cbw::Cbw20),
+            channel: Channel::new(36, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz),
             rates: vec![48],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)

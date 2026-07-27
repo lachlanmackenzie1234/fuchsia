@@ -14,6 +14,7 @@ use crate::client::{
 use crate::device::{FakeDevice, FakeDeviceConfig, FakeDeviceState};
 use crate::test_utils::{MockWlanRxInfo, fake_wlan_channel};
 use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use fuchsia_sync::Mutex;
@@ -55,7 +56,8 @@ pub const RSNE: &[u8] = &[
     0x00, 0x0f, 0xac, 0x02, //  akm suite list
     0xa8, 0x04, //  rsn capabilities
 ];
-pub const SCAN_CHANNEL_PRIMARY: u8 = 6;
+pub const SCAN_CHANNEL: fidl_ieee80211::ChannelNumber =
+    fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 6 };
 // Note: not necessarily valid beacon frame.
 #[rustfmt::skip]
 pub const BEACON_FRAME: &'static [u8] = &[
@@ -107,7 +109,11 @@ impl MockObjects {
         )
         .await
         .expect("Failed to create client MLME.");
-        mlme.set_main_channel(fake_wlan_channel().into())
+        let channel = fake_wlan_channel();
+        let (cbw, secondary80_num) = channel.cbw.to_fidl();
+        let secondary80 =
+            fidl_ieee80211::ChannelNumber { band: channel.band, number: secondary80_num };
+        mlme.set_main_channel(channel.into(), cbw, secondary80)
             .await
             .expect("unable to set main channel");
         mlme
@@ -118,7 +124,7 @@ pub fn scan_req() -> fidl_mlme::ScanRequest {
     fidl_mlme::ScanRequest {
         txn_id: 1337,
         scan_type: fidl_mlme::ScanTypes::Passive,
-        channel_list: vec![SCAN_CHANNEL_PRIMARY],
+        channel_list: vec![SCAN_CHANNEL],
         ssid_list: vec![Ssid::try_from("ssid").unwrap().into()],
         probe_delay: 0,
         min_channel_time: 100,

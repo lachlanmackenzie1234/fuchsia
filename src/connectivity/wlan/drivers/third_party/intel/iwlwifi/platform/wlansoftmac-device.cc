@@ -187,20 +187,23 @@ void WlanSoftmacDevice::QueueTx(QueueTxRequestView request, fdf::Arena& arena,
 }
 
 // Reject the request that firmware doesn't allow. See fxb/89911 for more context.
-bool WlanSoftmacDevice::IsValidChannel(const fuchsia_wlan_ieee80211::wire::WlanChannel* channel) {
-  if (channel->cbw == fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40 ||
-      channel->cbw == fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40Below) {
-    if (channel->primary >= 10 && channel->primary <= 14) {
+bool WlanSoftmacDevice::IsValidChannel(fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
+                                       fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw) {
+  if (cbw == fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40 ||
+      cbw == fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below) {
+    if (channel.band == fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz &&
+        channel.number >= 10 && channel.number <= 14) {
       IWL_WARN(mvmvif_, "The 40%sMHz bandwidth is not supported on the channel %d.\n",
-               channel->cbw == fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40Below ? "-" : "",
-               channel->primary);
+               cbw == fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below ? "-" : "",
+               channel.number);
       return false;
     }
   }
 
-  if (channel->primary <= 14 && channel->cbw >= fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80) {
+  if (channel.band == fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz &&
+      cbw >= fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80) {
     IWL_WARN(mvmvif_, "The 80+MHz bandwidth is not supported on the 2.4GHz band (channel %d).\n",
-             channel->primary);
+             channel.number);
     return false;
   }
 
@@ -213,20 +216,24 @@ void WlanSoftmacDevice::SetChannel(SetChannelRequestView request, fdf::Arena& ar
 
   CHECK_DELETE_IN_PROGRESS_WITH_ERRSYNTAX(mvmvif_);
 
-  if (!IsValidChannel(&request->channel())) {
+  if (!request->has_primary() || !request->has_bandwidth()) {
+    IWL_WARN(this, "Missing primary or bandwidth in SetChannel request.");
+    completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  if (!IsValidChannel(request->primary(), request->bandwidth())) {
     IWL_WARN(this, "Invalid channel.");
     completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
     return;
   }
 
-  // If the AP sta already exists, it probably was left from the previous association attempt.
-  // Remove it first.
   wlan_channel_t channel = {
-      .primary = request->channel().primary,
-      .secondary80 = request->channel().secondary80,
+      .primary = request->primary().number,
+      .secondary80 = request->has_vht_secondary_80_channel() ? request->vht_secondary_80_channel().number : static_cast<uint8_t>(0),
   };
 
-  switch (request->channel().cbw) {
+  switch (request->bandwidth()) {
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20:
       channel.cbw = CHANNEL_BANDWIDTH_CBW20;
       break;
@@ -247,7 +254,7 @@ void WlanSoftmacDevice::SetChannel(SetChannelRequestView request, fdf::Arena& ar
       break;
     default:
       IWL_ERR(this, "Bandwidth (%u) is not supported",
-              static_cast<uint32_t>(request->channel().cbw));
+               static_cast<uint32_t>(request->bandwidth()));
       completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
       return;
   }

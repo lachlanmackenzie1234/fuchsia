@@ -427,9 +427,14 @@ size_t ieee80211_get_header_len(const struct ieee80211_frame_header* fh);
 
 struct ieee80211_hw* ieee80211_alloc_hw(size_t priv_data_len, const struct ieee80211_ops* ops);
 
-bool ieee80211_is_valid_chan(uint8_t primary);
+struct wlan_channel_number {
+  wlan_band_t band;
+  uint8_t number;
+};
 
-uint16_t ieee80211_get_center_freq(uint8_t channel_num);
+bool ieee80211_is_valid_chan(struct wlan_channel_number primary);
+
+uint16_t ieee80211_get_center_freq(struct wlan_channel_number channel_num);
 
 bool ieee80211_has_protected(const struct ieee80211_frame_header* fh);
 

@@ -102,7 +102,9 @@ class SimFirmware {
   };
 
   struct ScanResult {
-    wlan_ieee80211_wire::WlanChannel channel;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
     common::MacAddr bssid;
     wlan::CapabilityInfo bss_capability;
     int8_t rssi_dbm;
@@ -156,7 +158,9 @@ class SimFirmware {
     brcmf_bss_info_le target_bss_info;
     uint8_t target_bss_info_ies[BSS_INFO_IES_MAX_LEN];
     // If we need to send disassoc during roam, we need to know the original BSS channel.
-    wlan_ieee80211_wire::WlanChannel orig_bss_channel;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber orig_bss_channel;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth orig_bss_cbw;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber orig_bss_secondary80;
     // Firmware-initiated and SME-initiated roams have slightly different behavior.
     bool firmware_initiated;
   };
@@ -354,10 +358,6 @@ class SimFirmware {
   zx_status_t IovarsGet(uint16_t ifidx, const char* name, void* value_out, size_t value_len,
                         bcme_status_t* fw_err);
 
-  // channel-chanspec helper functions
-  void convert_chanspec_to_channel(uint16_t chanspec, wlan_ieee80211_wire::WlanChannel* ch);
-  uint16_t convert_channel_to_chanspec(wlan_ieee80211_wire::WlanChannel* channel);
-
   // Bus operations: calls from driver
   zx_status_t BusPreinit();
   void BusStop();
@@ -534,7 +534,10 @@ class SimFirmware {
   void EscanComplete(brcmf_fweh_event_status_t event_status);
 
   // Association operations
-  void AssocInit(std::unique_ptr<AssocOpts> assoc_opts, wlan_ieee80211_wire::WlanChannel& channel);
+  void AssocInit(std::unique_ptr<AssocOpts> assoc_opts,
+                 const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                 fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                 fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80);
   void AssocScanResultSeen(const ScanResult& scan_result);
   void AssocScanDone(brcmf_fweh_event_status_t event_status);
   void AuthStart();  // Scan complete, start authentication process
@@ -553,7 +556,9 @@ class SimFirmware {
   // Get the Sim firmware ready for a target_bss_info iovar request.
   void SetTargetBssInfo(const brcmf_bss_info_le& bss_info, cpp20::span<uint8_t> ie_buf);
   void ReassocInit(std::unique_ptr<ReassocOpts> reassoc_opts,
-                   wlan_ieee80211_wire::WlanChannel& channel);
+                   const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                   fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                   fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80);
   void ReassocStart();
   void ReassocHandleFailure(wlan_ieee80211_wire::StatusCode status);
   zx_status_t ReassocToCurrentAp(std::shared_ptr<const simulation::SimReassocRespFrame> frame);
@@ -576,7 +581,9 @@ class SimFirmware {
   void RxDataFrame(std::shared_ptr<const simulation::SimDataFrame> data_frame,
                    std::shared_ptr<const simulation::WlanRxInfo> info);
   static int8_t RssiDbmFromSignalStrength(double signal_strength);
-  void RxBeacon(const wlan_ieee80211_wire::WlanChannel& channel,
+  void RxBeacon(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80,
                 std::shared_ptr<const simulation::SimBeaconFrame> frame, double signal_strength,
                 double noise_level);
   void RxAssocResp(std::shared_ptr<const simulation::SimAssocRespFrame> frame);
@@ -586,13 +593,17 @@ class SimFirmware {
   void RxActionFrame(std::shared_ptr<const simulation::SimActionFrame> action_frame);
   void RxWnmActionFrame(std::shared_ptr<const simulation::SimWnmActionFrame> wnm_frame);
   void RxBtmReqFrame(std::shared_ptr<const simulation::SimBtmReqFrame> btm_req_frame);
-  void RxProbeResp(const wlan_ieee80211_wire::WlanChannel& channel,
+  void RxProbeResp(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                   fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                   fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80,
                    std::shared_ptr<const simulation::SimProbeRespFrame> frame,
                    double signal_strength, double noise_level);
   void RxAuthFrame(std::shared_ptr<const simulation::SimAuthFrame> frame);
 
   // Handler for channel switch.
-  void ConductChannelSwitch(const wlan_ieee80211_wire::WlanChannel& dst_channel, uint8_t mode);
+  void ConductChannelSwitch(const fuchsia_wlan_ieee80211::wire::ChannelNumber& dst_channel,
+                            fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                            fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80, uint8_t mode);
   void RxDeauthReq(std::shared_ptr<const simulation::SimDeauthFrame> frame);
 
   void StopSoftAP(uint16_t ifidx);
@@ -627,7 +638,9 @@ class SimFirmware {
 
   // Get the channel of IF the parameter indicates whether we need to find softAP ifidx or client
   // ifidx.
-  wlan_ieee80211_wire::WlanChannel GetIfChannel(bool is_ap);
+  fuchsia_wlan_ieee80211::wire::ChannelNumber GetIfChannel(bool is_ap);
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth GetIfChannelBandwidth(bool is_ap);
+  fuchsia_wlan_ieee80211::wire::ChannelNumber GetIfSecondary80(bool is_ap);
 
   // Get IF idx of matching bsscfgidx.
   int16_t GetIfidxByBsscfgidx(int32_t bsscfgidx);
@@ -648,6 +661,13 @@ class SimFirmware {
 
   // Schedule an event to release and re-create itself.
   void ResetSimFirmware();
+
+  struct DerivedChannelInfo {
+    fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
+  };
+  DerivedChannelInfo ExtractChannelInfo(uint16_t chanspec);
 
   // This is the simulator object that represents the interface between the driver and the
   // firmware. We will use it to send back events.

@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <wlan/common/channel.h>
+
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_utils.h"
@@ -34,9 +36,12 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 }  // namespace
 
 // Some default AP and association request values
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
-constexpr simulation::WlanTxInfo kDefaultTxInfo = {.channel = kDefaultChannel};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
+constexpr simulation::WlanTxInfo kDefaultTxInfo = {
+    .channel = kDefaultChannel,
+    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
 const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 constexpr uint8_t kIes[] = {
     // SSID
@@ -168,7 +173,7 @@ class DataFrameTest : public SimTest {
   struct AssocContext {
     // Information about the BSS we are attempting to associate with. Used to generate the
     // appropriate MLME calls (Join => Auth => Assoc).
-    wlan_ieee80211::WlanChannel channel = kDefaultChannel;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber channel = kDefaultChannel;
     common::MacAddr bssid = kApBssid;
     fuchsia_wlan_ieee80211::Ssid ssid = kDefaultSsid;
     std::vector<uint8_t> ies = std::vector<uint8_t>(kIes, kIes + sizeof(kIes));
@@ -365,7 +370,7 @@ void DataFrameTest::StartConnect() {
   std::memcpy(bss.bssid.data(), assoc_context_.bssid.byte, ETH_ALEN);
   bss.ies =
       fidl::VectorView<uint8_t>::FromExternal(assoc_context_.ies.data(), assoc_context_.ies.size());
-  bss.channel = assoc_context_.channel;
+  bss.primary = assoc_context_.channel;
   builder.selected_bss(bss);
   builder.auth_type(wlan_fullmac_wire::WlanAuthType::kOpenSystem);
   builder.connect_failure_timeout(1000);  // ~1s (although value is ignored for now)
@@ -427,7 +432,8 @@ TEST_F(DataFrameTest, TxDataFrame) {
   Init();
 
   // Start up our fake APs
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(100));
   aps_.push_back(&ap);
 
@@ -475,7 +481,8 @@ TEST_F(DataFrameTest, TxMalformedDataFrame) {
   Init();
 
   // Start up our fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(100));
   aps_.push_back(&ap);
 
@@ -510,7 +517,8 @@ TEST_F(DataFrameTest, TxEapolFrame) {
   Init();
 
   // Start up our fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(100));
   aps_.push_back(&ap);
 
@@ -551,7 +559,8 @@ TEST_F(DataFrameTest, RxDataFrame) {
 
   zx::duration delay = zx::msec(1);
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   // Assoc driver with fake AP
@@ -590,7 +599,8 @@ TEST_F(DataFrameTest, RxMalformedDataFrame) {
   Init();
 
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   // Assoc driver with fake AP
@@ -620,7 +630,8 @@ TEST_F(DataFrameTest, RxEapolFrame) {
   Init();
 
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   // Assoc driver with fake AP
@@ -656,7 +667,8 @@ TEST_F(DataFrameTest, RxEapolFrameAfterAssoc) {
   zx::duration delay = zx::msec(1);
 
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   // Assoc driver with fake AP
@@ -691,7 +703,8 @@ TEST_F(DataFrameTest, RxUcastBeforeAssoc) {
   zx::duration delay = zx::msec(1);
 
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   // Assoc driver with fake AP
@@ -728,7 +741,8 @@ TEST_F(DataFrameTest, DeauthWhenRxFreeze) {
   Init();
 
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   assoc_context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
@@ -763,7 +777,8 @@ TEST_F(DataFrameTest, WmeRxErrorHighDeauthTest) {
   Init();
 
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   assoc_context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
@@ -821,7 +836,8 @@ TEST_F(DataFrameTest, WmeRxErrorHighResetTest) {
   Init();
 
   // Start a fake AP
-  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   aps_.push_back(&ap);
 
   assoc_context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);

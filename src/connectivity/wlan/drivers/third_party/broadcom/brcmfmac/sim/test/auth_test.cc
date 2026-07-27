@@ -5,6 +5,8 @@
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 #include <zircon/errors.h>
 
+#include <wlan/common/channel.h>
+
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/brcmu_wifi.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
@@ -15,8 +17,8 @@
 
 namespace wlan::brcmfmac {
 
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const common::MacAddr kWrongBssid({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 constexpr uint8_t kIes[] = {
@@ -105,7 +107,9 @@ class AuthInterface : public SimInterface {
 
 class AuthTest : public SimTest {
  public:
-  AuthTest() : ap_(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel) {
+  AuthTest()
+      : ap_(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+            wlan_ieee80211::ChannelBandwidth::kCbw20, 0) {
     // Redirect the handler function into this class.
     client_ifc_.on_scan_result_ = std::bind(&AuthTest::OnScanResult, this, std::placeholders::_1);
     client_ifc_.on_connect_confirm_ =
@@ -247,7 +251,7 @@ void AuthTest::StartConnect() {
 
   memcpy(bss.bssid.data(), kDefaultBssid.byte, ETH_ALEN);
   bss.ies = fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(kIes), sizeof(kIes));
-  bss.channel = kDefaultChannel;
+  bss.primary = kDefaultChannel;
   builder.selected_bss(bss);
   builder.connect_failure_timeout(1000);
 

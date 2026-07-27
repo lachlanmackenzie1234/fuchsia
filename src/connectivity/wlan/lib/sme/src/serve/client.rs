@@ -700,9 +700,19 @@ mod tests {
         });
 
         // Test sending OnChannelSwitched
-        let input_info = fidl_internal::ChannelSwitchInfo { new_channel: 8 };
+        let input_info = fidl_internal::ChannelSwitchInfo {
+            new_primary_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 8,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
+            },
+        };
         sme_proxy
-            .unbounded_send(ConnectTransactionEvent::OnChannelSwitched { info: input_info })
+            .unbounded_send(ConnectTransactionEvent::OnChannelSwitched { info: input_info.clone() })
             .expect("expect sending ConnectTransactionEvent to succeed");
         assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
         let event = assert_matches!(poll_stream_fut(&mut exec, &mut fidl_client_fut), Poll::Ready(Some(Ok(event))) => event);

@@ -168,7 +168,7 @@ async fn reconnect_to_wpa2_network() {
                 &phy,
                 &AP_SSID,
                 &bssid,
-                &Channel::new(1, Cbw::Cbw20),
+                &Channel::new(1, Cbw::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
                 &PROTECTION,
                 &mut control,
                 sender,

@@ -30,8 +30,8 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 struct ApInfo {
   explicit ApInfo(simulation::Environment* env, const common::MacAddr& bssid,
                   const fuchsia_wlan_ieee80211::Ssid& ssid,
-                  const wlan_ieee80211::WlanChannel& channel)
-      : ap_(env, bssid, ssid, channel) {}
+                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel)
+      : ap_(env, bssid, ssid, channel, fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0) {}
 
   simulation::FakeAp ap_;
   bool probe_resp_seen_ = false;
@@ -67,7 +67,7 @@ class ActiveScanTest : public SimTest {
   void SetUp() override;
 
   void StartFakeAp(const common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
-                   const wlan_ieee80211::WlanChannel& channel,
+                   const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                    zx::duration beacon_interval = kBeaconInterval);
 
   void StartScan(const wlan_fullmac_wire::WlanFullmacImplStartScanRequest* req);
@@ -92,7 +92,13 @@ class ActiveScanTest : public SimTest {
   ClientIfc client_ifc_;
 
   // The default active scan request
-  const uint8_t default_channels_list_[5] = {1, 2, 3, 4, 5};
+  const fuchsia_wlan_ieee80211::wire::ChannelNumber default_channels_list_[5] = {
+      {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 1},
+      {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 2},
+      {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 3},
+      {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 4},
+      {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 5},
+  };
 
   // Txn ID for the current scan
   uint64_t scan_txn_id_ = 0;
@@ -147,7 +153,7 @@ void ActiveScanTest::SetUp() {
 
 void ActiveScanTest::StartFakeAp(const common::MacAddr& bssid,
                                  const fuchsia_wlan_ieee80211::Ssid& ssid,
-                                 const wlan_ieee80211::WlanChannel& channel,
+                                 const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                                  zx::duration beacon_interval) {
   auto ap_info = std::make_unique<ApInfo>(env_.get(), bssid, ssid, channel);
   // Beacon is also enabled here to make sure this is not disturbing the correct result.
@@ -197,10 +203,10 @@ void ActiveScanTest::VerifyScanResults() {
         EXPECT_EQ(ssid, ssid_info);
 
         // Verify channel
-        wlan_ieee80211::WlanChannel channel = ap_info->ap_.GetChannel();
-        EXPECT_EQ(result.bss()->channel().primary(), channel.primary);
-        EXPECT_EQ(result.bss()->channel().cbw(), channel.cbw);
-        EXPECT_EQ(result.bss()->channel().secondary80(), channel.secondary80);
+        fuchsia_wlan_ieee80211::wire::ChannelNumber channel = ap_info->ap_.GetChannel();
+        EXPECT_EQ(result.bss()->primary().number(), channel.number);
+        EXPECT_EQ(result.bss()->bandwidth(), wlan_ieee80211::ChannelBandwidth::kCbw20);
+        EXPECT_EQ(result.bss()->vht_secondary_80_channel().number(), 0);
 
         // Verify has RSSI value
         ASSERT_LT(result.bss()->rssi_dbm(), 0);
@@ -258,8 +264,8 @@ void ActiveScanTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
 }
 
 // AP 1&2 on channel 2.
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel1 = {
-    .primary = 2, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel1 = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 2};
 const fuchsia_wlan_ieee80211::Ssid kAp1Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '1'};
 const common::MacAddr kAp1Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
@@ -268,8 +274,8 @@ const fuchsia_wlan_ieee80211::Ssid kAp2Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a'
 const common::MacAddr kAp2Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
 
 // AP 3 on channel 4.
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel2 = {
-    .primary = 4, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel2 = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 4};
 const fuchsia_wlan_ieee80211::Ssid kAp3Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '3'};
 const common::MacAddr kAp3Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbe});
@@ -286,8 +292,8 @@ TEST_F(ActiveScanTest, RandomMacThreeAps) {
       wlan_fullmac_wire::WlanFullmacImplStartScanRequest::Builder(client_ifc_.test_arena_);
   builder.txn_id(++scan_txn_id_);
   builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
-  builder.channels(
-      fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(default_channels_list_), 5));
+  builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+      const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(default_channels_list_), 5));
   builder.min_channel_time(kDwellTimeMs);
   builder.max_channel_time(kDwellTimeMs);
   auto scan_req = builder.Build();
@@ -311,8 +317,8 @@ TEST_F(ActiveScanTest, ScanTwice) {
       wlan_fullmac_wire::WlanFullmacImplStartScanRequest::Builder(client_ifc_.test_arena_);
   builder.txn_id(++scan_txn_id_);
   builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
-  builder.channels(
-      fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(default_channels_list_), 5));
+  builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+      const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(default_channels_list_), 5));
   builder.min_channel_time(kDwellTimeMs);
   builder.max_channel_time(kDwellTimeMs);
   auto scan_req = builder.Build();
@@ -342,8 +348,8 @@ TEST_F(ActiveScanTest, CheckNumProbeReqsSent) {
       wlan_fullmac_wire::WlanFullmacImplStartScanRequest::Builder(client_ifc_.test_arena_);
   builder.txn_id(++scan_txn_id_);
   builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
-  builder.channels(
-      fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(default_channels_list_), 1));
+  builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+      const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(default_channels_list_), 1));
   builder.min_channel_time(kDwellTimeMs);
   builder.max_channel_time(kDwellTimeMs);
   auto scan_req = builder.Build();
@@ -372,8 +378,8 @@ TEST_F(ActiveScanTest, EmptyChannelList) {
   builder.txn_id(++scan_txn_id_);
   builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
   // Keep the table entry but make the VectorView empty.
-  builder.channels(
-      fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(default_channels_list_), 0));
+  builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+      const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(default_channels_list_), 0));
   builder.min_channel_time(kDwellTimeMs);
   builder.max_channel_time(kDwellTimeMs);
   auto empty_channel_list_scan_req = builder.Build();
@@ -413,8 +419,8 @@ TEST_F(ActiveScanTest, SsidTooLong) {
   builder.txn_id(++scan_txn_id_);
   builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
   // Keep the table entry but make the VectorView empty.
-  builder.channels(
-      fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(default_channels_list_), 5));
+  builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+      const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(default_channels_list_), 5));
   builder.ssids(fidl::VectorView<fuchsia_wlan_ieee80211::wire::Ssid>(test_arena_, ssids_list));
   builder.min_channel_time(kDwellTimeMs);
   builder.max_channel_time(kDwellTimeMs);
@@ -441,8 +447,8 @@ TEST_F(ActiveScanTest, ScanWhenFirmwareBusy) {
   builder.txn_id(++scan_txn_id_);
   builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
   // Keep the table entry but make the VectorView empty.
-  builder.channels(
-      fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(default_channels_list_), 5));
+  builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+      const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(default_channels_list_), 5));
   builder.min_channel_time(kDwellTimeMs);
   builder.max_channel_time(kDwellTimeMs);
   auto scan_req = builder.Build();

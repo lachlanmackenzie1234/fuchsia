@@ -139,7 +139,9 @@ pub trait DeviceOps {
     }
     fn set_channel(
         &mut self,
-        channel: fidl_ieee80211::WlanChannel,
+        channel: fidl_ieee80211::ChannelNumber,
+        cbw: fidl_ieee80211::ChannelBandwidth,
+        secondary80: fidl_ieee80211::ChannelNumber,
     ) -> impl Future<Output = Result<(), zx::Status>>;
     fn set_mac_address(
         &mut self,
@@ -432,11 +434,15 @@ impl DeviceOps for Device {
 
     async fn set_channel(
         &mut self,
-        channel: fidl_ieee80211::WlanChannel,
+        channel: fidl_ieee80211::ChannelNumber,
+        cbw: fidl_ieee80211::ChannelBandwidth,
+        secondary80: fidl_ieee80211::ChannelNumber,
     ) -> Result<(), zx::Status> {
         self.wlan_softmac_bridge_proxy
             .set_channel(&fidl_softmac::WlanSoftmacBaseSetChannelRequest {
-                channel: Some(channel),
+                primary: Some(channel),
+                bandwidth: Some(cbw),
+                vht_secondary_80_channel: Some(secondary80),
                 ..Default::default()
             })
             .await
@@ -900,7 +906,9 @@ pub mod test_utils {
             Option<fidl::endpoints::ClientEnd<fidl_sme::UsmeBootstrapMarker>>,
         pub usme_bootstrap_server_end:
             Option<fidl::endpoints::ServerEnd<fidl_sme::UsmeBootstrapMarker>>,
-        pub wlan_channel: fidl_ieee80211::WlanChannel,
+        pub wlan_channel: fidl_ieee80211::ChannelNumber,
+        pub cbw: fidl_ieee80211::ChannelBandwidth,
+        pub secondary80: fidl_ieee80211::ChannelNumber,
         pub keys: Vec<fidl_softmac::WlanKeyConfiguration>,
         pub next_scan_id: u64,
         pub captured_passive_scan_request:
@@ -946,10 +954,14 @@ pub mod test_utils {
                 mlme_request_stream: Some(mlme_request_stream),
                 usme_bootstrap_client_end: Some(usme_bootstrap_client_end),
                 usme_bootstrap_server_end: Some(usme_bootstrap_server_end),
-                wlan_channel: fidl_ieee80211::WlanChannel {
-                    primary: 0,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
+                wlan_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
+                },
+                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                secondary80: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
                 },
                 next_scan_id: 0,
                 captured_passive_scan_request: None,
@@ -1105,9 +1117,14 @@ pub mod test_utils {
 
         async fn set_channel(
             &mut self,
-            wlan_channel: fidl_ieee80211::WlanChannel,
+            wlan_channel: fidl_ieee80211::ChannelNumber,
+            cbw: fidl_ieee80211::ChannelBandwidth,
+            secondary80: fidl_ieee80211::ChannelNumber,
         ) -> Result<(), zx::Status> {
-            self.state.lock().wlan_channel = wlan_channel;
+            let mut state = self.state.lock();
+            state.wlan_channel = wlan_channel;
+            state.cbw = cbw;
+            state.secondary80 = secondary80;
             Ok(())
         }
 
@@ -1258,7 +1275,14 @@ pub mod test_utils {
                 basic_rates: Some(vec![
                     0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
                 ]),
-                operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
+                primary_channels: Some(
+                    (1..=14)
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1277,7 +1301,15 @@ pub mod test_utils {
             fidl_softmac::WlanSoftmacBandCapability {
                 band: Some(fidl_ieee80211::WlanBand::FiveGhz),
                 basic_rates: Some(vec![0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f]),
-                operating_channels: Some(vec![36, 40, 44, 48, 149, 153, 157, 161]),
+                primary_channels: Some(
+                    [36, 40, 44, 48, 149, 153, 157, 161]
+                        .into_iter()
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::FiveGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1354,7 +1386,14 @@ mod tests {
                 basic_rates: Some(vec![
                     0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
                 ]),
-                operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
+                primary_channels: Some(
+                    (1..=14)
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1373,7 +1412,15 @@ mod tests {
             fidl_softmac::WlanSoftmacBandCapability {
                 band: Some(fidl_ieee80211::WlanBand::FiveGhz),
                 basic_rates: Some(vec![0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f]),
-                operating_channels: Some(vec![36, 40, 44, 48, 149, 153, 157, 161]),
+                primary_channels: Some(
+                    [36, 40, 44, 48, 149, 153, 157, 161]
+                        .into_iter()
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::FiveGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 ht_caps: Some(fidl_ieee80211::HtCapabilities {
                     bytes: [
                         0x63, 0x00, // HT capability info
@@ -1540,23 +1587,19 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn set_channel() {
         let (mut fake_device, fake_device_state) = FakeDevice::new().await;
+        let expected_channel =
+            fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 2 };
+        let expected_cbw = fidl_ieee80211::ChannelBandwidth::Cbw80P80;
+        let expected_secondary80 =
+            fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 4 };
         fake_device
-            .set_channel(fidl_ieee80211::WlanChannel {
-                primary: 2,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw80P80,
-                secondary80: 4,
-            })
+            .set_channel(expected_channel, expected_cbw, expected_secondary80)
             .await
             .expect("set_channel failed?");
         // Check the internal state.
-        assert_eq!(
-            fake_device_state.lock().wlan_channel,
-            fidl_ieee80211::WlanChannel {
-                primary: 2,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw80P80,
-                secondary80: 4
-            }
-        );
+        assert_eq!(fake_device_state.lock().wlan_channel, expected_channel);
+        assert_eq!(fake_device_state.lock().cbw, expected_cbw);
+        assert_eq!(fake_device_state.lock().secondary80, expected_secondary80);
     }
 
     #[fuchsia::test(allow_stalls = false)]
@@ -1585,7 +1628,15 @@ mod tests {
 
         let result = fake_device
             .start_passive_scan(&fidl_softmac::WlanSoftmacBaseStartPassiveScanRequest {
-                channels: Some(vec![1u8, 2, 3]),
+                channels: Some(
+                    [1, 2, 3]
+                        .into_iter()
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 min_channel_time: Some(zx::MonotonicDuration::from_millis(0).into_nanos()),
                 max_channel_time: Some(zx::MonotonicDuration::from_millis(200).into_nanos()),
                 min_home_time: Some(0),
@@ -1597,7 +1648,15 @@ mod tests {
         assert_eq!(
             fake_device_state.lock().captured_passive_scan_request,
             Some(fidl_softmac::WlanSoftmacBaseStartPassiveScanRequest {
-                channels: Some(vec![1, 2, 3]),
+                channels: Some(
+                    [1, 2, 3]
+                        .into_iter()
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 min_channel_time: Some(0),
                 max_channel_time: Some(200_000_000),
                 min_home_time: Some(0),
@@ -1612,7 +1671,15 @@ mod tests {
 
         let result = fake_device
             .start_active_scan(&fidl_softmac::WlanSoftmacStartActiveScanRequest {
-                channels: Some(vec![1u8, 2, 3]),
+                channels: Some(
+                    [1, 2, 3]
+                        .into_iter()
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 ssids: Some(vec![
                     ddk_converter::cssid_from_ssid_unchecked(
                         &Ssid::try_from("foo").unwrap().into(),
@@ -1646,7 +1713,15 @@ mod tests {
         assert_eq!(
             fake_device_state.lock().captured_active_scan_request,
             Some(fidl_softmac::WlanSoftmacStartActiveScanRequest {
-                channels: Some(vec![1, 2, 3]),
+                channels: Some(
+                    [1, 2, 3]
+                        .into_iter()
+                        .map(|c| fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: c,
+                        })
+                        .collect(),
+                ),
                 ssids: Some(vec![
                     ddk_converter::cssid_from_ssid_unchecked(
                         &Ssid::try_from("foo").unwrap().into()
@@ -1741,11 +1816,11 @@ mod tests {
                 bssid: Some([1, 2, 3, 4, 5, 6]),
                 aid: Some(1),
                 listen_interval: Some(2),
-                channel: Some(fidl_ieee80211::WlanChannel {
-                    primary: 3,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
+                primary: Some(fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 3,
                 }),
+                bandwidth: Some(fidl_ieee80211::ChannelBandwidth::Cbw20),
                 qos: Some(false),
                 wmm_params: None,
                 rates: None,
@@ -1778,11 +1853,11 @@ mod tests {
         let assoc_cfg = fidl_softmac::WlanAssociationConfig {
             bssid: Some([1, 2, 3, 4, 5, 6]),
             aid: Some(1),
-            channel: Some(fidl_ieee80211::WlanChannel {
-                primary: 149,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-                secondary80: 42,
+            primary: Some(fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 149,
             }),
+            bandwidth: Some(fidl_ieee80211::ChannelBandwidth::Cbw20),
             ..Default::default()
         };
 

@@ -212,7 +212,7 @@ mod tests {
 
         let time = zx::MonotonicInstant::get();
         let ssids = vec![generate_ssid("foo"), generate_ssid("bar")];
-        let channels = vec![types::WlanChan::new(3, types::Cbw::Cbw20)];
+        let channels = vec![generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)];
         queue.add_request(
             ScanReason::BssSelectionAugmentation,
             ssids.clone(),
@@ -254,11 +254,11 @@ mod tests {
 
     // As long as there's no SSID, expect a passive scan
     #[test_case(vec![], vec![], passive_sme_req())]
-    #[test_case(vec![], vec![generate_channel(3)], passive_sme_req())]
+    #[test_case(vec![], vec![generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)], passive_sme_req())]
     // If there's an SSID, expect an active scan
     #[test_case(vec![generate_ssid("foo")], vec![],
                 active_sme_req (vec!["foo"], vec![]))]
-    #[test_case(vec![generate_ssid("foo")], vec![generate_channel(1), generate_channel(2)],
+    #[test_case(vec![generate_ssid("foo")], vec![generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz), generate_channel(2, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz)],
                 active_sme_req (vec!["foo"], vec![1, 2]))]
     #[fuchsia::test(add_test_attr = false)]
     fn generate_combined_sme_request(
@@ -353,7 +353,10 @@ mod tests {
         let req = QueuedRequest {
             reason: ScanReason::BssSelectionAugmentation,
             ssids: vec![generate_ssid("foo"), generate_ssid(&WILDCARD_STR)],
-            channels: req_channels.iter().map(|c| generate_channel(*c)).collect(),
+            channels: req_channels
+                .iter()
+                .map(|c| generate_channel(*c, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz))
+                .collect(),
             responder: oneshot::channel().0,
             received_at: zx::MonotonicInstant::ZERO,
         };

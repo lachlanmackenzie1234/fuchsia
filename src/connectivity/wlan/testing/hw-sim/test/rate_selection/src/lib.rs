@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_softmac::{WlanTxResult, WlanTxResultCode, WlanTxResultEntry};
 use fidl_fuchsia_wlan_tap as fidl_tap;
@@ -244,7 +245,7 @@ async fn send_eth_beacons<'a>(
         {
             intervals_since_last_beacon = 0;
             Beacon {
-                channel: Channel::new(1, Cbw::Cbw20),
+                channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 bssid: *BSS_MINSTL,
                 ssid: AP_SSID.clone(),
                 protection: Protection::Open,

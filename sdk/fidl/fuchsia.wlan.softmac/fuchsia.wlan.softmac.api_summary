@@ -166,7 +166,7 @@ struct fuchsia.wlan.softmac/WlanSoftmac_UpdateWmmParams_Response
 union/member fuchsia.wlan.softmac/WlanSoftmac_UpdateWmmParams_Result.err int32
 union/member fuchsia.wlan.softmac/WlanSoftmac_UpdateWmmParams_Result.response fuchsia.wlan.softmac/WlanSoftmac_UpdateWmmParams_Response
 strict union fuchsia.wlan.softmac/WlanSoftmac_UpdateWmmParams_Result
-struct/member fuchsia.wlan.softmac/WlanTxInfo.channel_bandwidth fuchsia.wlan.common/ChannelBandwidth
+struct/member fuchsia.wlan.softmac/WlanTxInfo.bandwidth fuchsia.wlan.common/ChannelBandwidth
 struct/member fuchsia.wlan.softmac/WlanTxInfo.mcs uint8
 struct/member fuchsia.wlan.softmac/WlanTxInfo.phy fuchsia.wlan.common/WlanPhyType
 struct/member fuchsia.wlan.softmac/WlanTxInfo.tx_flags uint32

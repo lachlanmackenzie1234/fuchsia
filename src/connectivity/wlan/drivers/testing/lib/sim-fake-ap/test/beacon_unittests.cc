@@ -27,12 +27,21 @@ class BeaconTest : public ::testing::Test, public simulation::StationIfc {
  public:
   // We will use the Beacon structure to keep track of all beacons we receive
   struct Beacon {
-    Beacon(zx::time time, const wlan_ieee80211::WlanChannel& channel,
+    Beacon(zx::time time, const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+           fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+           const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80,
            const fuchsia_wlan_ieee80211::Ssid& ssid, const common::MacAddr& bssid)
-        : time_(time), channel_(channel), ssid_(ssid), bssid_(bssid) {}
+        : time_(time),
+          channel_(channel),
+          cbw_(cbw),
+          secondary80_(secondary80),
+          ssid_(ssid),
+          bssid_(bssid) {}
 
     zx::time time_;
-    wlan_ieee80211::WlanChannel channel_;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber channel_;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw_;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80_;
     // Using 0 as null value, so make sure not including 0 as the channel to switch to
     uint8_t channel_to_switch_ = 0;
     uint8_t channel_switch_count_ = 0;
@@ -48,7 +57,8 @@ class BeaconTest : public ::testing::Test, public simulation::StationIfc {
   void StartBeaconCallback();
   void UpdateBeaconCallback();
   void AssocCallback();
-  void ChannelSwitchCallback(wlan_ieee80211::WlanChannel& channel, zx::duration& interval);
+  void ChannelSwitchCallback(fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                             zx::duration& interval);
   void SetSecurityCallback(wlan::simulation::FakeAp::Security sec);
   void StopBeaconCallback();
 
@@ -61,10 +71,11 @@ class BeaconTest : public ::testing::Test, public simulation::StationIfc {
   void ValidateErrInjBeacon();
 
   void ScheduleCall(void (BeaconTest::*fn)(), zx::duration when);
-  void ScheduleChannelSwitchCall(void (BeaconTest::*fn)(wlan_ieee80211::WlanChannel& channel,
-                                                        zx::duration& interval),
-                                 zx::duration when, const wlan_ieee80211::WlanChannel& channel,
-                                 const zx::duration& interval);
+  void ScheduleChannelSwitchCall(
+      void (BeaconTest::*fn)(fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                             zx::duration& interval),
+      zx::duration when, const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+      const zx::duration& interval);
 
   void ScheduleSetSecurityCall(void (BeaconTest::*fn)(wlan::simulation::FakeAp::Security sec),
                                zx::duration when, ieee80211_cipher_suite cipher);
@@ -97,8 +108,8 @@ void BeaconTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
       beacon_frame->FindIe(simulation::InformationElement::IE_TYPE_SSID);
   ASSERT_THAT(ssid_generic_ie, NotNull());
   auto ssid_ie = std::static_pointer_cast<simulation::SsidInformationElement>(ssid_generic_ie);
-  beacons_received_.emplace_back(env_.GetTime(), info->channel, ssid_ie->ssid_,
-                                 beacon_frame->bssid_);
+  beacons_received_.emplace_back(env_.GetTime(), info->channel, info->cbw, info->secondary80,
+                                 ssid_ie->ssid_, beacon_frame->bssid_);
   beacons_received_.back().privacy = beacon_frame->capability_info_.privacy();
   auto csa_generic_ie = beacon_frame->FindIe(simulation::InformationElement::IE_TYPE_CSA);
   if (csa_generic_ie != nullptr) {
@@ -113,8 +124,12 @@ void BeaconTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
 constexpr zx::duration kStartTime = zx::msec(50);
 constexpr zx::duration kEndTime = zx::sec(3);
 constexpr zx::duration kBeaconPeriod = zx::msec(100);
-constexpr simulation::WlanTxInfo kDefaultTxInfo = {
-    .channel = {.primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0}};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
+const simulation::WlanTxInfo kDefaultTxInfo = {
+    .channel = kDefaultChannel,
+    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
 
 const fuchsia_wlan_ieee80211::Ssid kDefaultSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                    'F', 'a', 'k', 'e', ' ', 'A', 'P'};
@@ -127,8 +142,10 @@ void BeaconTest::ScheduleCall(void (BeaconTest::*fn)(), zx::duration when) {
 }
 
 void BeaconTest::ScheduleChannelSwitchCall(
-    void (BeaconTest::*fn)(wlan_ieee80211::WlanChannel& channel, zx::duration& interval),
-    zx::duration when, const wlan_ieee80211::WlanChannel& channel, const zx::duration& interval) {
+    void (BeaconTest::*fn)(fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                           zx::duration& interval),
+    zx::duration when, const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+    const zx::duration& interval) {
   env_.ScheduleNotification(std::bind(fn, this, channel, interval), when);
 }
 
@@ -147,7 +164,7 @@ void BeaconTest::ScheduleSetSecurityCall(
 // that information in the beacon (and timing between beacons) is as expected.
 
 void BeaconTest::StartBeaconCallback() {
-  ap_.SetChannel(kDefaultTxInfo.channel);
+  ap_.SetChannel(kDefaultTxInfo.channel, kDefaultTxInfo.cbw, kDefaultTxInfo.secondary80);
   ap_.SetSsid(kDefaultSsid);
   ap_.SetBssid(kDefaultBssid);
 
@@ -163,7 +180,7 @@ void BeaconTest::ValidateStartStopBeacons() {
     ASSERT_EQ(beacons_received_.empty(), false);
     Beacon received_beacon = beacons_received_.front();
     EXPECT_EQ(received_beacon.time_, next_event_time);
-    EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
+    EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
     EXPECT_EQ(received_beacon.ssid_, kDefaultSsid);
     EXPECT_EQ(received_beacon.bssid_, kDefaultBssid);
     beacons_received_.pop_front();
@@ -189,13 +206,14 @@ TEST_F(BeaconTest, StartStop) {
 
 constexpr zx::duration kUpdateTime = zx::sec(1);
 constexpr zx::duration kNewBeaconPeriod = zx::msec(42);
-constexpr wlan_ieee80211::WlanChannel kNewChannel = {
-    .primary = 136, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw80, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kNewChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 136};
 const fuchsia_wlan_ieee80211::Ssid kNewSsid = {'D', 'u', 'm', 'b', 'o'};
 const common::MacAddr new_bssid({0xcb, 0xa9, 0x87, 0x65, 0x43, 0x21});
 
 void BeaconTest::UpdateBeaconCallback() {
-  ap_.SetChannel(kNewChannel);
+  ap_.SetChannel(kNewChannel, wlan_ieee80211::ChannelBandwidth::kCbw20,
+                 {.band = kNewChannel.band, .number = 0});
   ap_.SetSsid(kNewSsid);
   ap_.SetBssid(new_bssid);
 
@@ -209,7 +227,7 @@ void BeaconTest::ValidateUpdateBeacons() {
     ASSERT_EQ(beacons_received_.empty(), false);
     Beacon received_beacon = beacons_received_.front();
     EXPECT_EQ(received_beacon.time_, next_event_time);
-    EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
+    EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
     EXPECT_EQ(received_beacon.ssid_, kDefaultSsid);
     EXPECT_EQ(received_beacon.bssid_, kDefaultBssid);
     beacons_received_.pop_front();
@@ -222,7 +240,7 @@ void BeaconTest::ValidateUpdateBeacons() {
     ASSERT_EQ(beacons_received_.empty(), false);
     Beacon received_beacon = beacons_received_.front();
     EXPECT_EQ(received_beacon.time_, next_event_time);
-    EXPECT_EQ(received_beacon.channel_.primary, kNewChannel.primary);
+    EXPECT_EQ(received_beacon.channel_.number, kNewChannel.number);
     EXPECT_EQ(received_beacon.ssid_, kNewSsid);
     EXPECT_EQ(received_beacon.bssid_, new_bssid);
     beacons_received_.pop_front();
@@ -252,15 +270,15 @@ constexpr zx::duration kAssocTime = zx::msec(60);
 constexpr zx::duration kSwitchTime = zx::sec(1);
 constexpr zx::duration kCsaBeaconInterval = zx::msec(120);
 constexpr zx::duration kLongCsaBeaconInterval = zx::msec(350);
-constexpr wlan_ieee80211::WlanChannel kFirstChannelSwitched = {
-    .primary = 10, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kFirstChannelSwitched = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10};
 const common::MacAddr kClientMacAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 
 // Used in OverlapTest
-constexpr wlan_ieee80211::WlanChannel kSecondChannelSwitched = {
-    .primary = 11, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
-constexpr wlan_ieee80211::WlanChannel kThirdChannelSwitched = {
-    .primary = 12, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kSecondChannelSwitched = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kThirdChannelSwitched = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 12};
 constexpr zx::duration kShortEndTime = zx::msec(500);
 constexpr zx::duration kFirstSetChannel = zx::msec(80);
 constexpr zx::duration kSecondSetChannel = zx::msec(180);
@@ -278,10 +296,11 @@ void BeaconTest::AssocCallback() {
   env_.Tx(assoc_req_frame, kDefaultTxInfo, this);
 }
 
-void BeaconTest::ChannelSwitchCallback(wlan_ieee80211::WlanChannel& channel,
+void BeaconTest::ChannelSwitchCallback(fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                                        zx::duration& interval) {
   ap_.SetCsaBeaconInterval(interval);
-  ap_.SetChannel(channel);
+  ap_.SetChannel(channel, wlan_ieee80211::ChannelBandwidth::kCbw20,
+                 {.band = channel.band, .number = 0});
 }
 
 void BeaconTest::ValidateChannelSwitchBeacons() {
@@ -298,14 +317,14 @@ void BeaconTest::ValidateChannelSwitchBeacons() {
     ASSERT_EQ(beacons_received_.empty(), false);
     Beacon received_beacon = beacons_received_.front();
     EXPECT_EQ(received_beacon.time_, next_event_time);
-    EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
+    EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
     EXPECT_EQ(received_beacon.ssid_, kDefaultSsid);
     EXPECT_EQ(received_beacon.bssid_, kDefaultBssid);
     EXPECT_EQ(received_beacon.channel_to_switch_,
-              (next_event_time > ABSOLUTE_TIME(kSwitchTime)) ? kFirstChannelSwitched.primary : 0);
+              (next_event_time > ABSOLUTE_TIME(kSwitchTime)) ? kFirstChannelSwitched.number : 0);
 
     if (next_event_time > ABSOLUTE_TIME(kSwitchTime)) {
-      EXPECT_EQ(received_beacon.channel_to_switch_, kFirstChannelSwitched.primary);
+      EXPECT_EQ(received_beacon.channel_to_switch_, kFirstChannelSwitched.number);
       EXPECT_EQ(received_beacon.channel_switch_count_, expect_CS_count);
       expect_CS_count--;
     } else {
@@ -321,7 +340,7 @@ void BeaconTest::ValidateChannelSwitchBeacons() {
     ASSERT_EQ(beacons_received_.empty(), false);
     Beacon received_beacon = beacons_received_.front();
     EXPECT_EQ(received_beacon.time_, next_event_time);
-    EXPECT_EQ(received_beacon.channel_.primary, kFirstChannelSwitched.primary);
+    EXPECT_EQ(received_beacon.channel_.number, kFirstChannelSwitched.number);
     EXPECT_EQ(received_beacon.ssid_, kDefaultSsid);
     EXPECT_EQ(received_beacon.bssid_, kDefaultBssid);
     EXPECT_EQ(received_beacon.channel_to_switch_, 0);
@@ -332,7 +351,7 @@ void BeaconTest::ValidateChannelSwitchBeacons() {
 
   EXPECT_EQ(beacons_received_.empty(), true);
   EXPECT_EQ(csa_beacon_count, (uint32_t)3);
-  EXPECT_EQ(ap_.GetChannel().primary, kFirstChannelSwitched.primary);
+  EXPECT_EQ(ap_.GetChannel().number, kFirstChannelSwitched.number);
 }
 
 TEST_F(BeaconTest, ChannelSwitch) {
@@ -358,37 +377,37 @@ TEST_F(BeaconTest, ChannelSwitch) {
 void BeaconTest::ValidateOverlapChannelSwitches() {
   ASSERT_EQ(beacons_received_.empty(), false);
   Beacon received_beacon = beacons_received_.front();
-  EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
+  EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
   EXPECT_EQ(received_beacon.channel_to_switch_, 0);
   beacons_received_.pop_front();
 
   ASSERT_EQ(beacons_received_.empty(), false);
   received_beacon = beacons_received_.front();
-  EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
-  EXPECT_EQ(received_beacon.channel_to_switch_, kFirstChannelSwitched.primary);
+  EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
+  EXPECT_EQ(received_beacon.channel_to_switch_, kFirstChannelSwitched.number);
   beacons_received_.pop_front();
 
   ASSERT_EQ(beacons_received_.empty(), false);
   received_beacon = beacons_received_.front();
-  EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
-  EXPECT_EQ(received_beacon.channel_to_switch_, kSecondChannelSwitched.primary);
+  EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
+  EXPECT_EQ(received_beacon.channel_to_switch_, kSecondChannelSwitched.number);
   beacons_received_.pop_front();
 
   ASSERT_EQ(beacons_received_.empty(), false);
   received_beacon = beacons_received_.front();
-  EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
-  EXPECT_EQ(received_beacon.channel_to_switch_, kThirdChannelSwitched.primary);
+  EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
+  EXPECT_EQ(received_beacon.channel_to_switch_, kThirdChannelSwitched.number);
   beacons_received_.pop_front();
 
   ASSERT_EQ(beacons_received_.empty(), false);
   received_beacon = beacons_received_.front();
-  EXPECT_EQ(received_beacon.channel_.primary, kThirdChannelSwitched.primary);
+  EXPECT_EQ(received_beacon.channel_.number, kThirdChannelSwitched.number);
   EXPECT_EQ(received_beacon.channel_to_switch_, 0);
   beacons_received_.pop_front();
 
   EXPECT_EQ(beacons_received_.empty(), true);
   EXPECT_EQ(csa_beacon_count, (uint32_t)3);
-  EXPECT_EQ(ap_.GetChannel().primary, kThirdChannelSwitched.primary);
+  EXPECT_EQ(ap_.GetChannel().number, kThirdChannelSwitched.number);
 }
 
 TEST_F(BeaconTest, OverlapTest) {
@@ -417,7 +436,7 @@ TEST_F(BeaconTest, SwitchWithoutBeaconing) {
   env_.Run(kEndTime);
   // Channel will be set immediately, no event should be scheduled
   EXPECT_GE(env_.GetTime(), ABSOLUTE_TIME(kFirstSetChannel));
-  EXPECT_EQ(ap_.GetChannel().primary, kFirstChannelSwitched.primary);
+  EXPECT_EQ(ap_.GetChannel().number, kFirstChannelSwitched.number);
 }
 
 // When AP stop beaconing during the period of time to notify stations about channel switch, it mean
@@ -432,7 +451,7 @@ TEST_F(BeaconTest, StopBeaconWhenSwitching) {
 
   // When beacon stops, everything stop immediately and channel will be updated.
   EXPECT_GE(env_.GetTime(), ABSOLUTE_TIME(kVeryShortEndTime));
-  EXPECT_EQ(ap_.GetChannel().primary, kFirstChannelSwitched.primary);
+  EXPECT_EQ(ap_.GetChannel().number, kFirstChannelSwitched.number);
 }
 
 /*** Set Security/AuthType test ***/
@@ -479,7 +498,7 @@ void BeaconTest::ValidateErrInjBeacon() {
     ASSERT_EQ(beacons_received_.empty(), false);
     Beacon received_beacon = beacons_received_.front();
     EXPECT_EQ(received_beacon.time_, next_event_time);
-    EXPECT_EQ(received_beacon.channel_.primary, kDefaultTxInfo.channel.primary);
+    EXPECT_EQ(received_beacon.channel_.number, kDefaultChannel.number);
     EXPECT_EQ(received_beacon.ssid_, kErrInjBeaconSsid);
     EXPECT_EQ(received_beacon.bssid_, kDefaultBssid);
     beacons_received_.pop_front();

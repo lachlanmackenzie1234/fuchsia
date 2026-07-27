@@ -37,7 +37,9 @@ class WlantapPhy : public fidl::Server<fuchsia_wlan_tap::WlantapPhy>, public Wla
   void WlantapMacStart(fdf::ClientEnd<fuchsia_wlan_softmac::WlanSoftmacIfc> ifc_client) override;
   void WlantapMacStop() override;
   void WlantapMacQueueTx(const fuchsia_wlan_softmac::WlanTxPacket& pkt) override;
-  void WlantapMacSetChannel(const fuchsia_wlan_ieee80211::WlanChannel& channel) override;
+  void WlantapMacSetChannel(const fuchsia_wlan_ieee80211::ChannelNumber& channel,
+                            fuchsia_wlan_ieee80211::ChannelBandwidth cbw,
+                            const fuchsia_wlan_ieee80211::ChannelNumber& secondary80) override;
   void WlantapMacJoinBss(const fuchsia_wlan_driver::JoinBssRequest& config) override;
   void WlantapMacStartScan(uint64_t scan_id) override;
   void WlantapMacSetKey(const fuchsia_wlan_softmac::WlanKeyConfiguration& key_config) override;

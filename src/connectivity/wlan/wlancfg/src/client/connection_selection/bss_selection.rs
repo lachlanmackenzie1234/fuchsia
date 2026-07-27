@@ -127,7 +127,7 @@ mod test {
             bss_description: fidl_fuchsia_wlan_ieee80211::BssDescription {
                 rssi_dbm: rssi,
                 snr_db,
-                channel: channel.into(),
+                primary: channel.into(),
                 ..random_fidl_bss_description!()
             }
             .into(),
@@ -151,8 +151,16 @@ mod test {
         let test_values = test_setup();
         let mut candidates = vec![];
 
-        candidates.push(generate_candidate_for_scoring(-35, 30, generate_channel(36)));
-        candidates.push(generate_candidate_for_scoring(-30, 30, generate_channel(1)));
+        candidates.push(generate_candidate_for_scoring(
+            -35,
+            30,
+            generate_channel(36, fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz),
+        ));
+        candidates.push(generate_candidate_for_scoring(
+            -30,
+            30,
+            generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
 
         // there's a network on 5G, it should get a boost and be selected
         let reason = generate_random_connect_reason();
@@ -168,8 +176,10 @@ mod test {
 
         // make the 5GHz network into a 2.4GHz network
         let mut modified_network = candidates[0].clone();
-        let modified_bss =
-            types::Bss { channel: generate_channel(6), ..modified_network.bss.clone() };
+        let modified_bss = types::Bss {
+            channel: generate_channel(6, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+            ..modified_network.bss.clone()
+        };
         modified_network.bss = modified_bss;
         candidates[0] = modified_network;
 
@@ -192,8 +202,16 @@ mod test {
         let test_values = test_setup();
         let mut candidates = vec![];
 
-        candidates.push(generate_candidate_for_scoring(-30, 30, generate_channel(1)));
-        candidates.push(generate_candidate_for_scoring(-35, 30, generate_channel(1)));
+        candidates.push(generate_candidate_for_scoring(
+            -30,
+            30,
+            generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
+        candidates.push(generate_candidate_for_scoring(
+            -35,
+            30,
+            generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
 
         // stronger network returned
         assert_eq!(
@@ -246,8 +264,16 @@ mod test {
         let mut candidates = vec![];
 
         // Add two BSSs, both compatible to start.
-        candidates.push(generate_candidate_for_scoring(-14, 30, generate_channel(1)));
-        candidates.push(generate_candidate_for_scoring(-90, 30, generate_channel(1)));
+        candidates.push(generate_candidate_for_scoring(
+            -14,
+            30,
+            generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
+        candidates.push(generate_candidate_for_scoring(
+            -90,
+            30,
+            generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
 
         // The stronger BSS is selected initially.
         assert_eq!(
@@ -298,9 +324,21 @@ mod test {
         let test_values = test_setup();
         let mut candidates = vec![];
 
-        candidates.push(generate_candidate_for_scoring(-50, 30, generate_channel(1)));
-        candidates.push(generate_candidate_for_scoring(-60, 30, generate_channel(3)));
-        candidates.push(generate_candidate_for_scoring(-30, 30, generate_channel(6)));
+        candidates.push(generate_candidate_for_scoring(
+            -50,
+            30,
+            generate_channel(1, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
+        candidates.push(generate_candidate_for_scoring(
+            -60,
+            30,
+            generate_channel(3, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
+        candidates.push(generate_candidate_for_scoring(
+            -30,
+            30,
+            generate_channel(6, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        ));
 
         // stronger network returned
         assert_eq!(

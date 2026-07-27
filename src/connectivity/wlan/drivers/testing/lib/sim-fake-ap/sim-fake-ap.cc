@@ -8,7 +8,9 @@
 
 namespace wlan::simulation {
 
-void FakeAp::SetChannel(const wlan_ieee80211::WlanChannel& channel) {
+void FakeAp::SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                        const fuchsia_wlan_ieee80211::wire::ChannelBandwidth& cbw,
+                        const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
   // Time until next beacon.
   zx::duration diff_to_next_beacon = beacon_state_.next_beacon_time - environment_->GetTime();
 
@@ -36,13 +38,20 @@ void FakeAp::SetChannel(const wlan_ieee80211::WlanChannel& channel) {
 
     beacon_state_.beacon_frame_.AddCsaIe(channel, cs_count);
     beacon_state_.channel_after_csa = channel;
+    beacon_state_.cbw_after_csa = cbw;
+    beacon_state_.secondary80_after_csa = secondary80;
 
     environment_->ScheduleNotification(std::bind(&FakeAp::HandleStopCsaBeaconNotification, this),
                                        csa_beacon_interval_,
                                        &beacon_state_.channel_switch_notification_id);
     beacon_state_.is_switching_channel = true;
   } else {
+    channel_ = channel;
+    cbw_ = cbw;
+    secondary80_ = secondary80;
     tx_info_.channel = channel;
+    tx_info_.cbw = cbw;
+    tx_info_.secondary80 = secondary80;
   }
 }
 
@@ -76,12 +85,6 @@ zx_status_t FakeAp::SetSecurity(struct Security sec) {
   }
 
   return ZX_OK;
-}
-
-bool FakeAp::CanReceiveChannel(const wlan_ieee80211::WlanChannel& channel) {
-  // For now, require an exact match
-  return ((channel.primary == tx_info_.channel.primary) && (channel.cbw == tx_info_.channel.cbw) &&
-          (channel.secondary80 == tx_info_.channel.secondary80));
 }
 
 void FakeAp::ScheduleNextBeacon() {
@@ -120,7 +123,12 @@ void FakeAp::DisableBeacon() {
   // If we stop beaconing when channel is switching, we cancel the channel switch event and directly
   // set channel to new channel.
   if (beacon_state_.is_switching_channel) {
+    channel_ = beacon_state_.channel_after_csa;
+    cbw_ = beacon_state_.cbw_after_csa;
+    secondary80_ = beacon_state_.secondary80_after_csa;
     tx_info_.channel = beacon_state_.channel_after_csa;
+    tx_info_.cbw = beacon_state_.cbw_after_csa;
+    tx_info_.secondary80 = beacon_state_.secondary80_after_csa;
     beacon_state_.is_switching_channel = false;
     CancelNotification(beacon_state_.channel_switch_notification_id);
   }
@@ -212,7 +220,7 @@ void FakeAp::ScheduleQosData(bool toDS, bool fromDS, const common::MacAddr& addr
 
 void FakeAp::Rx(std::shared_ptr<const SimFrame> frame, std::shared_ptr<const WlanRxInfo> info) {
   // Make sure we heard it
-  if (!CanReceiveChannel(info->channel)) {
+  if (info->channel.number != channel_.number || info->channel.band != channel_.band) {
     return;
   }
 
@@ -590,7 +598,12 @@ bool FakeAp::CheckIfErrInjBeaconEnabled() const { return beacon_state_.beacon_mu
 void FakeAp::HandleStopCsaBeaconNotification() {
   ZX_ASSERT(beacon_state_.is_beaconing);
   beacon_state_.beacon_frame_.RemoveIe(InformationElement::IE_TYPE_CSA);
+  channel_ = beacon_state_.channel_after_csa;
+  cbw_ = beacon_state_.cbw_after_csa;
+  secondary80_ = beacon_state_.secondary80_after_csa;
   tx_info_.channel = beacon_state_.channel_after_csa;
+  tx_info_.cbw = beacon_state_.cbw_after_csa;
+  tx_info_.secondary80 = beacon_state_.secondary80_after_csa;
   beacon_state_.is_switching_channel = false;
 }
 

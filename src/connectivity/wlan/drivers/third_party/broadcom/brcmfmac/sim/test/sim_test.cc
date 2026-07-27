@@ -16,6 +16,7 @@
 
 #include <bind/fuchsia/wlan/fullmac/cpp/bind.h>
 #include <fbl/string_buffer.h>
+#include <wlan/common/channel.h>
 
 #include "fidl/fuchsia.wlan.fullmac/cpp/wire_types.h"
 
@@ -27,9 +28,46 @@ fuchsia_wlan_ieee80211::Ssid Ssid(const void* ssid_data, uint8_t len) {
   return ssid;
 }
 // static
-const std::vector<uint8_t> SimInterface::kDefaultScanChannels = {
-    1,  2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  32,  36,  40,  44,  48,  52,  56, 60,
-    64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165};
+const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber> SimInterface::kDefaultScanChannels =
+    {
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 1},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 2},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 3},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 4},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 5},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 6},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 7},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 8},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 32},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 36},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 40},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 44},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 48},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 52},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 56},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 60},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 64},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 100},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 104},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 108},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 112},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 116},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 120},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 124},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 128},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 132},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 136},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 140},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 144},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 149},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 153},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 157},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 161},
+        {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 165},
+};
 
 SimInterface::SimInterface() : test_arena_(fdf::Arena('IFAC')) {}
 
@@ -341,7 +379,9 @@ void SimInterface::GetMacAddr(common::MacAddr* out_macaddr) {
 
 void SimInterface::StartConnect(const common::MacAddr& bssid,
                                 const fuchsia_wlan_ieee80211::Ssid& ssid,
-                                const wlan_ieee80211::WlanChannel& channel) {
+                                const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                                fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                                const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
   // This should only be performed on a Client interface
   ZX_ASSERT(role_ == wlan_common::WlanMacRole::kClient);
 
@@ -364,7 +404,9 @@ void SimInterface::StartConnect(const common::MacAddr& bssid,
   auto ies =
       std::vector<uint8_t>(assoc_ctx_.ies.data(), assoc_ctx_.ies.data() + assoc_ctx_.ies.size());
   bss.ies = fidl::VectorView(test_arena_, ies);
-  bss.channel = channel;
+  bss.primary = channel;
+  bss.bandwidth = cbw;
+  bss.vht_secondary_80_channel = secondary80;
   bss.bss_type = fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure;
   builder.selected_bss(bss);
   builder.auth_type(wlan_fullmac_wire::WlanAuthType::kOpenSystem);
@@ -380,18 +422,23 @@ void SimInterface::AssociateWith(const simulation::FakeAp& ap, std::optional<zx:
 
   common::MacAddr bssid = ap.GetBssid();
   fuchsia_wlan_ieee80211::Ssid ssid = ap.GetSsid();
-  wlan_ieee80211::WlanChannel channel = ap.GetChannel();
+  fuchsia_wlan_ieee80211::wire::ChannelNumber channel = ap.GetChannel();
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw = ap.GetChannelBandwidth();
+  auto secondary80 = ap.GetSecondary80();
 
   if (delay) {
-    env_->ScheduleNotification(std::bind(&SimInterface::StartConnect, this, bssid, ssid, channel),
-                               *delay);
+    env_->ScheduleNotification(
+        std::bind(&SimInterface::StartConnect, this, bssid, ssid, channel, cbw, secondary80),
+        *delay);
   } else {
-    StartConnect(ap.GetBssid(), ap.GetSsid(), ap.GetChannel());
+    StartConnect(ap.GetBssid(), ap.GetSsid(), channel, cbw, secondary80);
   }
 }
 
 void SimInterface::StartRoam(const common::MacAddr& bssid,
-                             const wlan_ieee80211::WlanChannel& channel) {
+                             const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                             fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                             const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
   // This should only be performed on a Client interface
   ZX_ASSERT(role_ == wlan_common::WlanMacRole::kClient);
   ++stats_.roam_attempts;
@@ -403,7 +450,9 @@ void SimInterface::StartRoam(const common::MacAddr& bssid,
   auto ies =
       std::vector<uint8_t>(assoc_ctx_.ies.data(), assoc_ctx_.ies.data() + assoc_ctx_.ies.size());
   bss.ies = fidl::VectorView(test_arena_, ies);
-  bss.channel = channel;
+  bss.primary = channel;
+  bss.bandwidth = cbw;
+  bss.vht_secondary_80_channel = secondary80;
   bss.bss_type = fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure;
   builder.selected_bss(bss);
   auto result = client_.buffer(test_arena_)->Roam(builder.Build());
@@ -440,19 +489,21 @@ void SimInterface::DeauthenticateFrom(const common::MacAddr& bssid,
   ZX_ASSERT(result.ok());
 }
 
-void SimInterface::StartScan(uint64_t txn_id, bool active,
-                             std::optional<const std::vector<uint8_t>> channels_arg) {
+void SimInterface::StartScan(
+    uint64_t txn_id, bool active,
+    std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>> channels_arg) {
   wlan_fullmac_wire::WlanScanType scan_type =
       active ? wlan_fullmac_wire::WlanScanType::kActive : wlan_fullmac_wire::WlanScanType::kPassive;
   uint32_t dwell_time = active ? kDefaultActiveScanDwellTimeMs : kDefaultPassiveScanDwellTimeMs;
-  const std::vector<uint8_t> channels =
+  const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber> channels =
       channels_arg.has_value() ? channels_arg.value() : kDefaultScanChannels;
 
   auto builder = wlan_fullmac_wire::WlanFullmacImplStartScanRequest::Builder(test_arena_);
 
   builder.txn_id(txn_id);
   builder.scan_type(scan_type);
-  builder.channels(fidl::VectorView(test_arena_, channels));
+  builder.channels(
+      fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>(test_arena_, channels));
   builder.min_channel_time(dwell_time);
   builder.max_channel_time(dwell_time);
 
@@ -485,8 +536,8 @@ SimInterface::ScanResultList(uint64_t txn_id) {
 }
 
 void SimInterface::StartSoftAp(const fuchsia_wlan_ieee80211::Ssid& ssid,
-                               const wlan_ieee80211::WlanChannel& channel, uint32_t beacon_period,
-                               uint32_t dtim_period) {
+                               const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                               uint32_t beacon_period, uint32_t dtim_period) {
   // This should only be performed on an AP interface
   ZX_ASSERT(role_ == wlan_common::WlanMacRole::kAp);
 
@@ -494,7 +545,7 @@ void SimInterface::StartSoftAp(const fuchsia_wlan_ieee80211::Ssid& ssid,
                      .bss_type(fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure)
                      .beacon_period(beacon_period)
                      .dtim_period(dtim_period)
-                     .channel(channel.primary)
+                     .primary(channel)
                      .ssid(ssid);
 
   // Send request to driver

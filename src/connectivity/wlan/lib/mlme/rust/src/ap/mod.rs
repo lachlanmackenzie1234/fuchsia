@@ -21,6 +21,7 @@ use ieee80211::{Bssid, MacAddr, Ssid};
 use log::{debug, error, info, trace, warn};
 use std::fmt;
 use wlan_common::TimeUnit;
+use wlan_common::channel::{Cbw, Channel};
 use wlan_common::mac::{self, CapabilityInfo};
 use wlan_common::timer::Timer;
 use wlan_trace as wtrace;
@@ -231,6 +232,10 @@ impl<D: DeviceOps> Ap<D> {
             return Ok(());
         }
 
+        let cbw = Cbw::from_fidl(req.bandwidth, 0).map_err(|e| {
+            Error::Status(format!("failed to parse cbw: {}", e), zx::Status::INVALID_ARGS)
+        })?;
+        let channel = Channel::new(req.primary.number, cbw, req.primary.band);
         self.bss.replace(
             InfraBss::new(
                 &mut self.ctx,
@@ -239,7 +244,8 @@ impl<D: DeviceOps> Ap<D> {
                 req.dtim_period,
                 CapabilityInfo(req.capability_info),
                 req.rates,
-                req.channel,
+                channel.primary,
+                channel.band,
                 req.rsne,
             )
             .await?,
@@ -413,7 +419,7 @@ impl<D: DeviceOps> Ap<D> {
         };
 
         // Rogue frames received from the wrong channel
-        if rx_info.channel.primary != bss.channel {
+        if rx_info.primary.number != bss.channel {
             wtrace::async_end_wlansoftmac_rx(async_id, "frame from wrong channel");
             return;
         }
@@ -456,6 +462,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_common as fidl_common;
     use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz;
     use fidl_fuchsia_wlan_softmac as fidl_softmac;
     use fuchsia_sync::Mutex;
     use ieee80211::MacAddrBytes;
@@ -504,23 +511,29 @@ mod tests {
         (Ap::new(fake_device, timer, *BSSID), fake_device_state, time_stream)
     }
 
+    async fn make_infra_bss(ctx: &mut Context<FakeDevice>, protected: bool) -> InfraBss {
+        InfraBss::new(
+            ctx,
+            Ssid::try_from("coolnet").unwrap(),
+            TimeUnit::DEFAULT_BEACON_INTERVAL,
+            2,
+            CapabilityInfo(0),
+            vec![0b11111000],
+            1,
+            TwoGhz,
+            match protected {
+                false => None,
+                true => Some(fake_wpa2_rsne()),
+            },
+        )
+        .await
+        .expect("expected InfraBss::new ok")
+    }
+
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_eth_frame() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         let client = ap.bss.as_mut().unwrap().clients.get_mut(&CLIENT_ADDR).unwrap();
@@ -532,7 +545,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ap.ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -570,20 +583,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_eth_frame_no_such_client() {
         let (mut ap, _, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.handle_eth_frame_tx(
             &make_eth_frame(*CLIENT_ADDR2, *CLIENT_ADDR, 0x1234, &[1, 2, 3, 4, 5][..]),
             0.into(),
@@ -591,10 +591,9 @@ mod tests {
     }
 
     fn mock_rx_info(ap: &Ap<FakeDevice>) -> fidl_softmac::WlanRxInfo {
-        let channel = fidl_ieee80211::WlanChannel {
-            primary: ap.bss.as_ref().unwrap().channel,
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-            secondary80: 0,
+        let channel = fidl_ieee80211::ChannelNumber {
+            band: fidl_ieee80211::WlanBand::TwoGhz,
+            number: ap.bss.as_ref().unwrap().channel,
         };
         MockWlanRxInfo::with_channel(channel).into()
     }
@@ -602,20 +601,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mac_frame() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.handle_mac_frame_rx(
             &[
                 // Mgmt header
@@ -653,20 +639,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mac_frame_ps_poll() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         let client = ap.bss.as_mut().unwrap().clients.get_mut(&CLIENT_ADDR).unwrap();
@@ -678,7 +651,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ap.ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 mac::CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -746,20 +719,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mac_frame_no_such_client() {
         let (mut ap, _, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.handle_mac_frame_rx(
             &[
                 // Mgmt header
@@ -783,20 +743,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mac_frame_bogus() {
         let (mut ap, _, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.handle_mac_frame_rx(
             &[0][..],
             fidl_softmac::WlanRxInfo {
@@ -804,14 +751,18 @@ mod tests {
                 valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
                 phy: fidl_ieee80211::WlanPhyType::Dsss,
                 data_rate: 0,
-                channel: fidl_ieee80211::WlanChannel {
-                    primary: 0,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
+                primary: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
                 },
                 mcs: 0,
                 rssi_dbm: 0,
                 snr_dbh: 0,
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
+                },
             },
             0.into(),
         )
@@ -821,20 +772,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mac_frame_wrong_channel_drop() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         let probe_req = [
             // Mgmt header
             0b01000000, 0b00000000, // Frame Control
@@ -851,14 +789,18 @@ mod tests {
             valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
             phy: fidl_ieee80211::WlanPhyType::Dsss,
             data_rate: 0,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 0,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
             },
             mcs: 0,
             rssi_dbm: 0,
             snr_dbh: 0,
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
+            },
         };
         ap.handle_mac_frame_rx(&probe_req[..], rx_info_wrong_channel.clone(), 0.into()).await;
 
@@ -867,10 +809,9 @@ mod tests {
 
         // Frame from the same channel must be processed and a probe response sent.
         let rx_info_same_channel = fidl_softmac::WlanRxInfo {
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 1,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 1,
             },
             ..rx_info_wrong_channel
         };
@@ -887,28 +828,34 @@ mod tests {
             bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 5,
             dtim_period: 1,
-            channel: 2,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 2,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
             capability_info: CapabilityInfo(0).raw(),
             rates: vec![0b11111000],
             country: fidl_mlme::Country { alpha2: *b"xx", suffix: fidl_mlme::COUNTRY_ENVIRON_ALL },
             mesh_id: vec![],
             rsne: None,
             phy: fidl_ieee80211::WlanPhyType::Erp,
-            channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         })
         .await
         .expect("expected Ap::handle_mlme_start_request OK");
 
         assert!(ap.bss.is_some());
-        assert_eq!(
-            fake_device_state.lock().wlan_channel,
-            fidl_ieee80211::WlanChannel {
-                primary: 2,
-                // TODO(https://fxbug.dev/42116942): Correctly support this.
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            }
-        );
+        {
+            let state = fake_device_state.lock();
+            assert_eq!(
+                state.wlan_channel,
+                fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 2 }
+            );
+            assert_eq!(state.cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+            assert_eq!(
+                state.secondary80,
+                fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
+            );
+        }
         assert_eq!(fake_device_state.lock().link_status, LinkStatus::UP);
 
         let msg = fake_device_state
@@ -924,34 +871,24 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_start_req_already_started() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
 
         ap.handle_mlme_start_req(fidl_mlme::StartRequest {
             ssid: Ssid::try_from("coolnet").unwrap().into(),
             bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 5,
             dtim_period: 1,
-            channel: 2,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 2,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
             capability_info: CapabilityInfo(0).raw(),
             rates: vec![],
             country: fidl_mlme::Country { alpha2: *b"xx", suffix: fidl_mlme::COUNTRY_ENVIRON_ALL },
             mesh_id: vec![],
             rsne: None,
             phy: fidl_ieee80211::WlanPhyType::Erp,
-            channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         })
         .await
         .expect("expected Ap::handle_mlme_start_request OK");
@@ -971,20 +908,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_stop_req() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
 
         ap.handle_mlme_stop_req(fidl_mlme::StopRequest {
             ssid: Ssid::try_from("coolnet").unwrap().into(),
@@ -1025,20 +949,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_setkeys_req() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                Some(fake_wpa2_rsne()),
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, true).await);
 
         ap.handle_mlme_setkeys_req(fidl_mlme::SetKeysRequest {
             keylist: vec![fidl_mlme::SetKeyDescriptor {
@@ -1094,20 +1005,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_setkeys_req_bss_no_rsne() {
         let (mut ap, _, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
 
         assert_matches!(
             ap.handle_mlme_setkeys_req(fidl_mlme::SetKeysRequest {
@@ -1131,20 +1029,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_req_handle_mlme_auth_resp() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::AuthResponse(fidl_mlme::AuthenticateResponse {
@@ -1196,20 +1081,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_req_handle_mlme_auth_resp_no_such_client() {
         let (mut ap, _, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
 
         assert_eq!(
             zx::Status::from(
@@ -1231,20 +1103,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_req_handle_mlme_deauth_req() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::Deauthenticate(
@@ -1275,20 +1134,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_req_handle_mlme_assoc_resp() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::AssocResponse(fidl_mlme::AssociateResponse {
@@ -1326,20 +1172,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_req_handle_mlme_disassoc_req() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::Disassociate(fidl_mlme::DisassociateRequest {
@@ -1368,20 +1201,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_req_handle_mlme_set_controlled_port_req() {
         let (mut ap, _, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                Some(fake_wpa2_rsne()),
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, true).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::AssocResponse(fidl_mlme::AssociateResponse {
@@ -1407,20 +1227,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn ap_handle_mlme_req_handle_mlme_eapol_req() {
         let (mut ap, fake_device_state, _) = make_ap().await;
-        ap.bss.replace(
-            InfraBss::new(
-                &mut ap.ctx,
-                Ssid::try_from("coolnet").unwrap(),
-                TimeUnit::DEFAULT_BEACON_INTERVAL,
-                2,
-                CapabilityInfo(0),
-                vec![0b11111000],
-                1,
-                None,
-            )
-            .await
-            .expect("expected InfraBss::new ok"),
-        );
+        ap.bss.replace(make_infra_bss(&mut ap.ctx, false).await);
         ap.bss.as_mut().unwrap().clients.insert(*CLIENT_ADDR, RemoteClient::new(*CLIENT_ADDR));
 
         ap.handle_mlme_req(wlan_sme::MlmeRequest::Eapol(fidl_mlme::EapolRequest {

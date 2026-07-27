@@ -38,16 +38,16 @@ type BandCapability = struct {
     ht_cap box<ieee80211.HtCapabilities>;
     vht_cap box<ieee80211.VhtCapabilities>;
 
-    /// A list of operating channels considered valid by hardware, in the context of
+    /// A list of primary channels considered valid by hardware, in the context of
     /// regulatory information known to the device driver, at the time of its
-    /// construction during iface creation. In this context, an operating channel
+    /// construction during iface creation. In this context, a primary channel
     /// means a channel which APs may transmit Beacon frames on in the current
     /// regulatory domain.
     ///
     /// This list should be used to determine efficacy of subsequent requests to
-    /// scan a subset of channels using the iface, or to determine which operating
+    /// scan a subset of channels using the iface, or to determine which primary
     /// channel to use when starting an AP.
-    operating_channels vector<uint8>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
+    primary_channels vector<ieee80211.ChannelNumber>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
 };
 
 type DeviceInfo = struct {
@@ -156,7 +156,7 @@ type CapturedFrameResult = struct {
 /// Non-IEEE custom structure to inform a SoftMAC device about the association negotiation outcome.
 // TODO(https://fxbug.dev/42119326): Remove if we are able to intersect the capabilities with beacon before associating
 type NegotiatedCapabilities = struct {
-    channel ieee80211.WlanChannel;
+    primary ieee80211.ChannelNumber;
     capability_info ieee80211.CapabilityInfo;
     rates vector<uint8>:internal.MAX_ASSOC_BASIC_RATES;
     wmm_param box<WmmParameter>;

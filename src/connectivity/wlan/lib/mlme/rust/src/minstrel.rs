@@ -742,11 +742,11 @@ mod tests {
             bssid: Some(TEST_MAC_ADDR.to_array()),
             aid: Some(42),
             listen_interval: Some(0),
-            channel: Some(fidl_ieee80211::WlanChannel {
-                primary: 149,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-                secondary80: 0,
+            primary: Some(fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 149,
             }),
+            bandwidth: Some(fidl_ieee80211::ChannelBandwidth::Cbw20),
             qos: Some(true),
             wmm_params: None,
             rates: Some(vec![

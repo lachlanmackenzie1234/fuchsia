@@ -15,8 +15,12 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 
 }  // namespace
 
-constexpr simulation::WlanTxInfo kDefaultTxInfo = {
-    .channel = {.primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0}};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
+const simulation::WlanTxInfo kDefaultTxInfo = {
+    .channel = kDefaultChannel,
+    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kApSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                               'F', 'a', 'k', 'e', ' ', 'A', 'P'};
 const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
@@ -26,7 +30,11 @@ constexpr auto kApDisassocReason = wlan_ieee80211::ReasonCode::kInvalidAuthentic
 
 class AssocTest : public ::testing::Test, public simulation::StationIfc {
  public:
-  AssocTest() : ap_(&env_, kApBssid, kApSsid, kDefaultTxInfo.channel) { env_.AddStation(this); }
+  AssocTest()
+      : ap_(&env_, kApBssid, kApSsid, kDefaultTxInfo.channel, kDefaultTxInfo.cbw,
+            kDefaultTxInfo.secondary80) {
+    env_.AddStation(this);
+  }
   void DisassocFromAp(const common::MacAddr& sta, wlan_ieee80211::ReasonCode reason);
   void FinishAuth();
   simulation::Environment env_;
@@ -43,10 +51,13 @@ class AssocTest : public ::testing::Test, public simulation::StationIfc {
           std::shared_ptr<const simulation::WlanRxInfo> info) override;
 };
 
-void validateChannel(const wlan_ieee80211::WlanChannel& channel) {
-  EXPECT_EQ(channel.primary, kDefaultTxInfo.channel.primary);
-  EXPECT_EQ(channel.cbw, kDefaultTxInfo.channel.cbw);
-  EXPECT_EQ(channel.secondary80, kDefaultTxInfo.channel.secondary80);
+void validateChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                     fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                     const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
+  EXPECT_EQ(channel.number, kDefaultTxInfo.channel.number);
+  EXPECT_EQ(cbw, kDefaultTxInfo.cbw);
+  EXPECT_EQ(secondary80.number, kDefaultTxInfo.secondary80.number);
+  EXPECT_EQ(secondary80.band, kDefaultTxInfo.secondary80.band);
 }
 
 void AssocTest::DisassocFromAp(const common::MacAddr& sta, wlan_ieee80211::ReasonCode reason) {
@@ -57,7 +68,7 @@ void AssocTest::DisassocFromAp(const common::MacAddr& sta, wlan_ieee80211::Reaso
 void AssocTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
                    std::shared_ptr<const simulation::WlanRxInfo> info) {
   ASSERT_EQ(frame->FrameType(), simulation::SimFrame::FRAME_TYPE_MGMT);
-  validateChannel(info->channel);
+  validateChannel(info->channel, info->cbw, info->secondary80);
   auto mgmt_frame = std::static_pointer_cast<const simulation::SimManagementFrame>(frame);
 
   // Ignore the authentication responses.
@@ -144,8 +155,9 @@ TEST_F(AssocTest, RefusedWrongSsid) {
 
 TEST_F(AssocTest, IgnoredRequests) {
   constexpr simulation::WlanTxInfo kWrongChannelTxInfo = {
-      .channel = {
-          .primary = 10, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0}};
+      .channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10},
+      .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+      .secondary80 = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 0}};
 
   static const common::MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
 

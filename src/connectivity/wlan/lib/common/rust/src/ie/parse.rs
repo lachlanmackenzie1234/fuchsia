@@ -45,8 +45,8 @@ simple_parse_func!(wmm_info);
 simple_parse_func!(wmm_param);
 simple_parse_func!(channel_switch_announcement);
 simple_parse_func!(extended_channel_switch_announcement);
-simple_parse_func!(sec_chan_offset);
 simple_parse_func!(wide_bandwidth_channel_switch);
+simple_parse_func!(sec_chan_offset);
 
 pub fn parse_ssid<B: SplitByteSlice>(raw_body: B) -> FrameParseResult<B> {
     validate!(raw_body.len() <= (fidl_ieee80211::MAX_SSID_BYTE_LEN as usize), "SSID is too long");
@@ -414,14 +414,31 @@ mod tests {
     }
 
     #[test]
-    pub fn extended_channel_switch_announcement() {
-        let raw_ecsa = [1, 20, 30, 40];
+    pub fn extended_channel_switch_announcement_valid_2g() {
+        let raw_ecsa = [1, 81, 30, 40];
         let ecsa = parse_extended_channel_switch_announcement(&raw_ecsa[..])
-            .expect("valid CSA should result in OK");
+            .expect("valid ECSA should result in OK");
         assert_eq!(ecsa.mode, 1);
-        assert_eq!(ecsa.new_operating_class, 20);
+        assert_eq!(ecsa.new_operating_class, 81);
         assert_eq!(ecsa.new_channel_number, 30);
         assert_eq!(ecsa.channel_switch_count, 40);
+        assert_eq!(ecsa.get_band(), fidl_ieee80211::WlanBand::TwoGhz);
+    }
+
+    #[test]
+    pub fn extended_channel_switch_announcement_valid_5g() {
+        let raw_ecsa = [1, 115, 30, 40];
+        let ecsa = parse_extended_channel_switch_announcement(&raw_ecsa[..])
+            .expect("valid ECSA should result in OK");
+        assert_eq!(ecsa.get_band(), fidl_ieee80211::WlanBand::FiveGhz);
+    }
+
+    #[test]
+    pub fn extended_channel_switch_announcement_invalid_op_class() {
+        let raw_ecsa = [1, 20, 30, 40];
+        let ecsa = parse_extended_channel_switch_announcement(&raw_ecsa[..])
+            .expect("valid ECSA should result in OK even with invalid op class");
+        assert_eq!(ecsa.get_band(), fidl_ieee80211::WlanBand::unknown());
     }
 
     #[test]

@@ -7,6 +7,10 @@ use crate::device::DeviceOps;
 use crate::disconnect::LocallyInitiated;
 use crate::error::Error;
 use fdf::ArenaStaticBox;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fuchsia_trace as trace;
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
 use log::warn;
 use std::collections::VecDeque;
@@ -16,11 +20,8 @@ use wlan_common::mac::{self, Aid, AuthAlgorithmNumber, FrameClass, ReasonCode};
 use wlan_common::timer::EventHandle;
 use wlan_common::{TimeUnit, ie};
 use wlan_statemachine::StateMachine;
+use wlan_trace as wtrace;
 use zerocopy::SplitByteSlice;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fidl_fuchsia_wlan_softmac as fidl_softmac, fuchsia_trace as trace, wlan_trace as wtrace,
-};
 
 /// dot11BssMaxIdlePeriod (IEEE Std 802.11-2016, 11.24.13 and Annex C.3): This attribute indicates
 /// that the number of 1000 TUs that pass before an AP disassociates an inactive non-AP STA. This
@@ -401,7 +402,7 @@ impl RemoteClient {
         &mut self,
         ctx: &mut Context<D>,
         is_rsn: bool,
-        channel: u8,
+        channel: fidl_ieee80211::ChannelNumber,
         capabilities: mac::CapabilityInfo,
         result_code: fidl_mlme::AssociateResultCode,
         aid: Aid,
@@ -435,11 +436,11 @@ impl RemoteClient {
                     bssid: Some(self.addr.to_array()),
                     aid: Some(aid),
                     listen_interval: None, // This field is not used for AP.
-                    channel: Some(fidl_ieee80211::WlanChannel {
-                        primary: channel,
-                        // TODO(https://fxbug.dev/42116942): Correctly support this.
-                        cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                        secondary80: 0,
+                    primary: Some(channel),
+                    bandwidth: Some(fidl_ieee80211::ChannelBandwidth::Cbw20),
+                    vht_secondary_80_channel: Some(fidl_ieee80211::ChannelNumber {
+                        band: channel.band,
+                        number: 0,
                     }),
 
                     qos: Some(false),
@@ -1087,6 +1088,7 @@ mod tests {
     use super::*;
     use crate::device::FakeDevice;
     use assert_matches::assert_matches;
+    use fidl_ieee80211::WlanBand::TwoGhz;
     use ieee80211::Bssid;
     use std::sync::LazyLock;
     use test_case::test_case;
@@ -1209,7 +1211,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 true,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1271,7 +1273,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 true,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1301,7 +1303,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 true,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1327,7 +1329,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::Success,
                 1,
@@ -1350,7 +1352,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::RefusedReasonUnspecified,
                 1, // This AID is ignored in the case of an error.
@@ -1385,7 +1387,7 @@ mod tests {
             .handle_mlme_assoc_resp(
                 &mut ctx,
                 false,
-                1,
+                fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz },
                 CapabilityInfo(0),
                 fidl_mlme::AssociateResultCode::RejectedEmergencyServicesNotSupported,
                 1, // This AID is ignored in the case of an error.

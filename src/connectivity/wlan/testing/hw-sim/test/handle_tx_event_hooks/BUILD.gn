@@ -8,6 +8,7 @@ import(
 rust_wlan_integration_test("handle_tx_event_hooks") {
   edition = "2024"
   binary_deps = [
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
     "//sdk/fidl/fuchsia.wlan.tap:fuchsia.wlan.tap_rust",
     "//sdk/rust/zx",

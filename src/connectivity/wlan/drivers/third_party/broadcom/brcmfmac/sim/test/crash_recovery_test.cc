@@ -15,13 +15,15 @@
 
 namespace wlan::brcmfmac {
 
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 class CrashRecoveryTest : public SimTest {
  public:
-  CrashRecoveryTest() : ap_(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel) {}
+  CrashRecoveryTest()
+      : ap_(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+            fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0) {}
 
   static constexpr zx::duration kTestDuration = zx::sec(50);
   void InitWithInterface();
@@ -187,9 +189,10 @@ TEST_F(CrashRecoveryTest, ConnectAfterCrashDuringScan) {
   constexpr uint64_t kScanId = 0x18c5f;
 
   InitWithInterface();
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(10));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(10));
   // Crash before the first scan result is sent up.
   ScheduleCrash(zx::msec(15));
   env_->ScheduleNotification(std::bind(&CrashRecoveryTest::RecreateClientIface, this),
@@ -251,9 +254,10 @@ TEST_F(CrashRecoveryTest, ScanAfterCrashAfterConnect) {
 
   env_->ScheduleNotification(std::bind(&CrashRecoveryTest::RecreateClientIface, this),
                              zx::msec(30));
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(40));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(40));
 
   env_->Run(kTestDuration);
 

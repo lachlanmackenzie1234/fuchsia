@@ -313,8 +313,9 @@ pub async fn passive_scan(
 mod tests {
     use super::*;
     use crate::*;
+    use assert_matches::assert_matches;
     use fidl::endpoints::RequestStream;
-    use fidl_fuchsia_wlan_common as fidl_common;
+
     use fidl_fuchsia_wlan_device_service::{
         self as wlan_service, DeviceMonitorMarker, DeviceMonitorProxy, DeviceMonitorRequest,
         DeviceMonitorRequestStream,
@@ -331,29 +332,24 @@ mod tests {
     use std::convert::{TryFrom, TryInto};
     use std::pin::pin;
     use wlan_common::channel::{Cbw, Channel};
+    use wlan_common::fake_fidl_bss_description;
     use wlan_common::scan::write_vmo;
-    use wlan_common::{assert_variant, fake_fidl_bss_description};
 
-    fn generate_random_wpa2_bss_description() -> fidl_fuchsia_wlan_internal::BssDescription {
+    fn generate_random_wpa2_bss_description() -> fidl_ieee80211::BssDescription {
         let mut rng = rand::rng();
-        fidl_fuchsia_wlan_internal::BssDescription {
-            bssid: (0..6).map(|_| rng.r#gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap(),
-            beacon_period: rng.r#gen::<u16>(),
-            rssi_dbm: rng.r#gen::<i8>(),
-            channel: fidl_ieee80211::WlanChannel {
-                primary: rng.r#gen::<u8>(),
-                cbw: match rng.r#gen_range(0..5) {
-                    0 => fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    1 => fidl_ieee80211::ChannelBandwidth::Cbw40,
-                    2 => fidl_ieee80211::ChannelBandwidth::Cbw40Below,
-                    3 => fidl_ieee80211::ChannelBandwidth::Cbw80,
-                    4 => fidl_ieee80211::ChannelBandwidth::Cbw160,
-                    5 => fidl_ieee80211::ChannelBandwidth::Cbw80P80,
-                    _ => panic!(),
+        fidl_ieee80211::BssDescription {
+            bssid: (0..6).map(|_| rng.random::<u8>()).collect::<Vec<u8>>().try_into().unwrap(),
+            beacon_period: rng.random::<u16>(),
+            rssi_dbm: rng.random::<i8>(),
+            channel: fidl_ieee80211::ChannelNumber {
+                number: rng.random::<u8>(),
+                band: if rng.random() {
+                    fidl_ieee80211::WlanBand::TwoGhz
+                } else {
+                    fidl_ieee80211::WlanBand::FiveGhz
                 },
-                secondary80: rng.r#gen::<u8>(),
             },
-            snr_db: rng.r#gen::<i8>(),
+            snr_db: rng.random::<i8>(),
             ..fake_fidl_bss_description!(Wpa2)
         }
     }
@@ -365,10 +361,11 @@ mod tests {
     ) -> fidl_sme::ClientSmeRequestStream {
         let req = exec.run_until_stalled(&mut req_stream.next());
 
-        let (responder, fake_sme_server) = assert_variant !(
+        let (responder, fake_sme_server) = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(DeviceMonitorRequest::GetClientSme{ iface_id:_, sme_server, responder})))
-            => (responder, sme_server));
+            Poll::Ready(Some(Ok(DeviceMonitorRequest::GetClientSme { iface_id: _, sme_server, responder })))
+            => (responder, sme_server)
+        );
 
         // now send the response back
         responder
@@ -388,10 +385,10 @@ mod tests {
     ) {
         let req = exec.run_until_stalled(&mut req_stream.next());
 
-        let responder = assert_variant !(
+        let responder = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(DeviceMonitorRequest::GetClientSme{ responder, ..})))
-            => responder);
+            Poll::Ready(Some(Ok(DeviceMonitorRequest::GetClientSme { responder, .. }))) => responder
+        );
 
         // now send the response back
         responder
@@ -404,10 +401,10 @@ mod tests {
         req_stream: &mut ClientSmeRequestStream,
     ) {
         let req = exec.run_until_stalled(&mut req_stream.next());
-        let responder = assert_variant !(
+        let responder = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(ClientSmeRequest::Disconnect{ responder, .. })))
-            => responder);
+            Poll::Ready(Some(Ok(ClientSmeRequest::Disconnect { responder, .. }))) => responder
+        );
 
         // now send the response back
         responder.send().expect("fake disconnect response: send failed")
@@ -419,10 +416,10 @@ mod tests {
         status: &StatusResponse,
     ) {
         let req = exec.run_until_stalled(&mut req_stream.next());
-        let responder = assert_variant !(
+        let responder = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(ClientSmeRequest::Status{ responder})))
-            => responder);
+            Poll::Ready(Some(Ok(ClientSmeRequest::Status { responder }))) => responder
+        );
 
         // Send appropriate status response
         match status {
@@ -1007,10 +1004,7 @@ mod tests {
             Poll::Pending => panic!("expected a request to be available"),
             _ => panic!("expected a Connect request"),
         };
-        let connect_transaction = responder
-            .into_stream()
-            .expect("failed to create a connect transaction stream")
-            .control_handle();
+        let connect_transaction = responder.into_stream().control_handle();
         connect_transaction
             .send_on_connect_result(&fidl_sme::ConnectResult {
                 code: connect_result,
@@ -1125,12 +1119,16 @@ mod tests {
             ssid: ssid.into(),
             rssi_dbm: -30,
             snr_db: 10,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 1,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                number: 1,
+                band: fidl_ieee80211::WlanBand::TwoGhz,
             },
             protection: Protection::Wpa2Personal,
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                number: 0,
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+            },
         }
     }
 
@@ -1172,18 +1170,18 @@ mod tests {
                 Ssid::try_from("foo").unwrap(),
                 -30,
                 20,
-                Channel::new(1, Cbw::Cbw20),
+                Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 Protection::Wpa2Personal,
-                Some(fidl_sme::Compatibility {
+                Some(fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
                     mutual_security_protocols: vec![fidl_internal::Protocol::Wpa2Personal],
-                }),
+                })),
             ),
             create_scan_result(
                 [1, 2, 3, 4, 5, 6],
                 Ssid::try_from("hello").unwrap(),
                 -60,
                 10,
-                Channel::new(2, Cbw::Cbw20),
+                Channel::new(2, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 Protection::Wpa2Personal,
                 None,
             ),
@@ -1271,7 +1269,9 @@ mod tests {
         compatibility: Option<fidl_sme::Compatibility>,
     ) -> fidl_sme::ScanResult {
         fidl_sme::ScanResult {
-            compatibility: compatibility.map(Box::new),
+            compatibility: compatibility.unwrap_or(fidl_sme::Compatibility::Compatible(
+                fidl_sme::Compatible { mutual_security_protocols: vec![] },
+            )),
             timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
             bss_description: fake_fidl_bss_description!(
                 protection => protection,

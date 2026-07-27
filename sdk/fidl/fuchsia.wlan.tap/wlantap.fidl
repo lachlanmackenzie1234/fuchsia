@@ -19,7 +19,7 @@ type BandInfo = struct {
     ht_caps box<ieee80211.HtCapabilities>;
     vht_caps box<ieee80211.VhtCapabilities>;
     rates vector<uint8>:MAX_NUM_RATES;
-    operating_channels vector<uint8>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
+    primary_channels vector<ieee80211.ChannelNumber>:ieee80211.MAX_UNIQUE_CHANNEL_NUMBERS;
 };
 
 /// Describes the capabilities of the fake wlantap-phy device to be created.
@@ -59,10 +59,12 @@ type WlanRxInfo = struct {
     valid_fields uint32;
     phy ieee80211.WlanPhyType;
     data_rate uint32;
-    channel ieee80211.WlanChannel;
+    primary ieee80211.ChannelNumber;
     mcs uint8;
     rssi_dbm int8;
     snr_dbh int16;
+    bandwidth ieee80211.ChannelBandwidth;
+    vht_secondary_80_channel ieee80211.ChannelNumber;
 };
 
 /// Instruction from generic WLAN driver on how to send a packet. One WlanTxInfo per packet.
@@ -185,7 +187,9 @@ type TxArgs = struct {
 
 type SetChannelArgs = struct {
     wlan_softmac_id uint16;
-    channel ieee80211.WlanChannel;
+    primary ieee80211.ChannelNumber;
+    bandwidth ieee80211.ChannelBandwidth;
+    vht_secondary_80_channel ieee80211.ChannelNumber;
 };
 
 type JoinBssArgs = struct {

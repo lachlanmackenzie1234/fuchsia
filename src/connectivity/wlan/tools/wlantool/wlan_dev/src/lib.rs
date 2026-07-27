@@ -514,7 +514,7 @@ async fn print_iface_status(iface_id: u16, monitor_proxy: DeviceMonitor) -> Resu
                         iface_id,
                         String::from_utf8_lossy(&serving_ap_info.ssid),
                         Bssid::from(serving_ap_info.bssid),
-                        serving_ap_info.channel,
+                        serving_ap_info.primary,
                         serving_ap_info.rssi_dbm,
                         serving_ap_info.snr_db,
                     );
@@ -618,18 +618,15 @@ fn print_wmm_ac_params(
 
 async fn do_ap(cmd: opts::ApCmd, monitor_proxy: DeviceMonitor) -> Result<(), Error> {
     match cmd {
-        opts::ApCmd::Start { iface_id, ssid, password, channel } => {
+        opts::ApCmd::Start { iface_id, ssid, password, channel, band } => {
             let sme = get_ap_sme(monitor_proxy, iface_id).await?;
             let config = fidl_sme::ApConfig {
                 ssid: ssid.as_bytes().to_vec(),
                 password: password.map_or(vec![], |p| p.as_bytes().to_vec()),
                 radio_cfg: fidl_sme::RadioConfig {
                     phy: PhyArg::Ht.into(),
-                    channel: fidl_ieee80211::WlanChannel {
-                        primary: channel,
-                        cbw: CbwArg::Cbw20.into(),
-                        secondary80: 0,
-                    },
+                    primary: fidl_ieee80211::ChannelNumber { band: band.into(), number: channel },
+                    bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
                 },
             };
             println!("{:?}", sme.start(&config).await?);

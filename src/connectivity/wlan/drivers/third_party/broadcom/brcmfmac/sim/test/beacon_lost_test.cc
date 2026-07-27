@@ -17,8 +17,8 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 }  // namespace
 
 // Some default AP and association request values
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const common::MacAddr kSecondBssid({0x12, 0x34, 0x56, 0x78, 0x9b, 0xbd});
 const common::MacAddr kMadeupClient({0xde, 0xad, 0xbe, 0xef, 0x00, 0x01});
@@ -86,7 +86,8 @@ TEST_F(BeaconLostTest, NoBeaconDisassocTest) {
   Init();
 
   // Start up fake AP
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(100));
 
   // Associate with fake AP
@@ -119,7 +120,8 @@ TEST_F(BeaconLostTest, BeaconTooFarDisassocTest) {
   Init();
 
   // Start up fake AP
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(100));
   aps_.push_back(&ap);
 
@@ -154,14 +156,16 @@ TEST_F(BeaconLostTest, WrongBeaconLossTest) {
   Init();
 
   // Start up fake AP
-  simulation::FakeAp ap1(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap1(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                         fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap1.EnableBeacon(zx::msec(100));
   const fuchsia_wlan_ieee80211::Ssid kWrongSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a',
                                                    ' ', 'F', 'a', 'k', 'e', ' ', 'A'};
   ASSERT_NE(kDefaultSsid.size(), kWrongSsid.size());
   env_->MoveStation(&ap1, -50, 0);
   aps_.push_back(&ap1);
-  simulation::FakeAp ap2(env_.get(), kSecondBssid, kWrongSsid, kDefaultChannel);
+  simulation::FakeAp ap2(env_.get(), kSecondBssid, kWrongSsid, kDefaultChannel,
+                         fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap2.EnableBeacon(zx::msec(100));
   env_->MoveStation(&ap2, 50, 0);
   aps_.push_back(&ap2);
@@ -199,7 +203,8 @@ TEST_F(BeaconLostTest, TempBeaconLossTest) {
   Init();
 
   // Start up fake AP
-  simulation::FakeAp ap1(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap1(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                         fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap1.EnableBeacon(zx::msec(100));
   const fuchsia_wlan_ieee80211::Ssid kWrongSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a',
                                                    ' ', 'F', 'a', 'k', 'e', ' ', 'A'};

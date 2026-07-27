@@ -34,7 +34,7 @@ WlanPktBuilder::WlanPkt::WlanPkt(const uint8_t* buf, size_t len)
   *wlan_pkt_ = {};
   wlan_pkt_->mac_frame = fidl::VectorView<uint8_t>::FromExternal(buf_.get(), len);
   wlan_pkt_->info.tx_flags = 0;
-  wlan_pkt_->info.channel_bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20;
+  wlan_pkt_->info.bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20;
   wlan_pkt_->info.phy = fuchsia_wlan_ieee80211::WlanPhyType::kDsss;
 }
 

@@ -980,12 +980,11 @@ static zx_status_t brcmf_escan_prep(
     return ZX_ERR_INVALID_ARGS;
   } else {
     for (uint32_t i = 0; i < n_channels; i++) {
-      fuchsia_wlan_ieee80211::WlanChannel wlan_chan;
-      wlan_chan.primary() = request->channels().data()[i];
-      wlan_chan.cbw() = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20;
-      wlan_chan.secondary80() = 0;
-      chanspec = channel_to_chanspec(&cfg->d11inf, &wlan_chan);
-      BRCMF_DBG(SCAN, "Chan : %d, Channel spec: %x", request->channels().data()[i], chanspec);
+      // Cbw20 is deliberately hard-coded for scanning purposes.
+      chanspec = channel_to_chanspec(&cfg->d11inf, request->channels().data()[i],
+                                     fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20);
+      BRCMF_DBG(SCAN, "Chan : %d, Channel spec: %x", request->channels().data()[i].number,
+                chanspec);
       params_le->channel_list[i] = chanspec;
     }
   }
@@ -1990,12 +1989,11 @@ void brcmf_return_roam_start(struct net_device* ndev) {
   std::copy(target_bss_info_bssid.begin(), target_bss_info_bssid.end(), selected_bss.bssid.begin());
 
   selected_bss.capability_info = target_bss_info->capability;
-  fuchsia_wlan_ieee80211_wire::WlanChannel chan;
-  chanspec_to_channel(&cfg->d11inf, target_bss_info->chanspec, &chan);
-
-  selected_bss.channel.cbw = chan.cbw;
-  selected_bss.channel.primary = chan.primary;
-  selected_bss.channel.secondary80 = chan.secondary80;
+  selected_bss.primary =
+      chanspec_to_operating_channel_number(&cfg->d11inf, target_bss_info->chanspec);
+  selected_bss.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, target_bss_info->chanspec);
+  selected_bss.vht_secondary_80_channel =
+      chanspec_to_secondary80(&cfg->d11inf, target_bss_info->chanspec);
 
   if (target_bss_info->ie_length > 0) {
     const auto& ie_ptr = cfg->target_bss_info_buf + target_bss_info->ie_offset;
@@ -2153,13 +2151,13 @@ std::vector<uint8_t> brcmf_find_ssid_in_ies(const uint8_t* ie, size_t ie_len) {
 // Note: bcmdhd functions do not handle this case correctly, hence this function.
 static zx::result<chanspec_t> bss_chanspec_2g_bw40(
     const fuchsia_wlan_ieee80211::BssDescription& bss) {
-  const auto& primary = bss.channel().primary();
+  const auto primary = bss.primary().number();
   if (primary > CH_MAX_2G_CHANNEL) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   chanspec_t chanspec = WL_CHANSPEC_BAND_2G;
 
-  const auto& cbw = bss.channel().cbw();
+  const auto& cbw = bss.bandwidth();
   using fuchsia_wlan_ieee80211::ChannelBandwidth;
 
   uint8_t center_channel = primary;
@@ -2191,11 +2189,11 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
 
   // Some scenarios require specific bandwidth overrides.
-  const fuchsia_wlan_ieee80211::WlanChannel channel =
-      override_wlan_channel_bandwidth(bss.channel());
+  const auto cbw_override =
+      override_wlan_channel_bandwidth(bss.primary().number(), bss.bandwidth());
 
   uint16_t bandwidth;
-  switch (channel.cbw()) {
+  switch (cbw_override) {
     case ChannelBandwidth::kCbw20:
       bandwidth = WL_CHANSPEC_BW_20;
       break;
@@ -2204,7 +2202,7 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
     case ChannelBandwidth::kCbw40Below:
       bandwidth = WL_CHANSPEC_BW_40;
       // Special case for 2.4 GHz 40 MHz channel, because channel2chanspec doesn't support it.
-      if (channel.primary() <= CH_MAX_2G_CHANNEL) {
+      if (bss.primary().number() <= CH_MAX_2G_CHANNEL) {
         return bss_chanspec_2g_bw40(bss);
       }
       break;
@@ -2214,16 +2212,24 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
     case ChannelBandwidth::kCbw160:
       bandwidth = WL_CHANSPEC_BW_160;
       break;
-    case ChannelBandwidth::kCbw80P80:
+    case ChannelBandwidth::kCbw80P80: {
       // Special case for 80+80 MHz channel, because channel2chanspec doesn't support it.
-      return channel_to_chanspec_bw8080(&cfg->d11inf, bss.channel());
+      const auto cbw_override =
+          override_wlan_channel_bandwidth(bss.primary().number(), bss.bandwidth());
+      const uint16_t chanspec = channel_to_chanspec(&cfg->d11inf, bss.primary(), cbw_override);
+
+      if (chspec_malformed(chanspec)) {
+        return zx::error(ZX_ERR_INTERNAL);
+      }
+      return zx::ok(chanspec);
+    }
     default:
       BRCMF_ERR("Unsupported channel bandwidth");
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   chanspec_t chanspec;
-  const auto chanspec_status = channel2chspec(channel.primary(), bandwidth, &chanspec);
+  const auto chanspec_status = channel2chspec(bss.primary().number(), bandwidth, &chanspec);
   if (chanspec_status != ZX_OK) {
     return zx::error(chanspec_status);
   }
@@ -2255,9 +2261,9 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
   }
 
   // TODO(https://fxbug.dev/42144507) - Remove this conversion, it is only for logging.
-  fuchsia_wlan_ieee80211::WlanChannel chan_override = ifp->connect_req.selected_bss()->channel();
-  chan_override.cbw() = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20;
-  const uint16_t old_chanspec = channel_to_chanspec(&cfg->d11inf, &chan_override);
+  const auto& selected_bss = ifp->connect_req.selected_bss().value();
+  const uint16_t old_chanspec = channel_to_chanspec(
+      &cfg->d11inf, selected_bss.primary(), fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20);
 
   const auto chanspec_result = bss_chanspec(ifp, req->selected_bss().value());
   if (chanspec_result.is_ok()) {
@@ -3207,8 +3213,7 @@ static void brcmf_iedump(uint8_t* ies, size_t total_len) {
   }
 }
 
-static void brcmf_return_scan_result(struct net_device* ndev, uint16_t channel,
-                                     fuchsia_wlan_ieee80211_wire::ChannelBandwidth chn_bw,
+static void brcmf_return_scan_result(struct net_device* ndev, uint16_t chanspec,
                                      const uint8_t* bssid, uint16_t capability, uint16_t interval,
                                      uint8_t* ie, size_t ie_len, int16_t rssi_dbm,
                                      uint16_t snr_db) {
@@ -3248,15 +3253,18 @@ static void brcmf_return_scan_result(struct net_device* ndev, uint16_t channel,
   bss.bss_type = bss_type;
   bss.beacon_period = 0;
   bss.capability_info = capability;
-  bss.channel.primary = static_cast<uint8_t>(channel);
-  bss.channel.cbw = chn_bw;
+
+  // The rest of the stack expects the control channel to be provided in the BssDescription.
+  bss.primary = chanspec_to_primary_channel_number(&cfg->d11inf, chanspec);
+  bss.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, chanspec);
+  bss.vht_secondary_80_channel = chanspec_to_secondary80(&cfg->d11inf, chanspec);
   bss.rssi_dbm = std::min<int16_t>(0, std::max<int16_t>(-255, rssi_dbm));
   bss.snr_db = static_cast<int8_t>(snr_db);
   bss.ies = ::fidl::VectorView<uint8_t>::FromExternal(ie, ie_len);
   scan_result_builder.bss(bss);
 
-  BRCMF_DBG(SCAN, "Returning scan result id: %lu, channel: %d, dbm: %d", ndev->scan_txn_id, channel,
-            bss.rssi_dbm);
+  BRCMF_DBG(SCAN, "Returning scan result id: %lu, channel: %d, dbm: %d", ndev->scan_txn_id,
+            bss.primary.number, bss.rssi_dbm);
 #if !defined(NDEBUG)
   auto ssid = brcmf_find_ssid_in_ies(bss.ies.data(), bss.ies.size());
   BRCMF_DBG(SCAN, "  ssid: " FMT_SSID, FMT_SSID_VECT(ssid));
@@ -3274,14 +3282,12 @@ static void brcmf_return_scan_result(struct net_device* ndev, uint16_t channel,
 
 static zx_status_t brcmf_inform_single_bss(struct net_device* ndev, struct brcmf_cfg80211_info* cfg,
                                            struct brcmf_bss_info_le* bi) {
-  struct brcmu_chan ch;
   uint16_t channel;
   uint16_t notify_capability;
   uint16_t notify_interval;
   uint8_t* notify_ie;
   size_t notify_ielen;
   int16_t notify_rssi_dbm;
-  fuchsia_wlan_ieee80211_wire::ChannelBandwidth notify_chn_bw;
   uint16_t notify_snr_db;
 
   if (bi->length > WL_BSS_INFO_MAX) {
@@ -3291,9 +3297,14 @@ static zx_status_t brcmf_inform_single_bss(struct net_device* ndev, struct brcmf
   }
 
   if (!bi->ctl_ch) {
-    ch.chspec = bi->chanspec;
-    cfg->d11inf.decchspec(&ch);
-    bi->ctl_ch = ch.control_ch_num;
+    bi->ctl_ch = chanspec_to_primary_channel_number(&cfg->d11inf, bi->chanspec).number;
+  } else {
+    uint16_t derived_channel =
+        chanspec_to_primary_channel_number(&cfg->d11inf, bi->chanspec).number;
+    if (bi->ctl_ch != derived_channel) {
+      BRCMF_WARN("Received channel (%3d) does not match derived channel (%3d).", bi->ctl_ch,
+                 derived_channel);
+    }
   }
   channel = bi->ctl_ch;
 
@@ -3303,27 +3314,6 @@ static zx_status_t brcmf_inform_single_bss(struct net_device* ndev, struct brcmf
   notify_ielen = bi->ie_length;
   notify_rssi_dbm = (int16_t)bi->RSSI;
   notify_snr_db = bi->SNR;
-  switch (bi->chanspec & WL_CHANSPEC_BW_MASK) {
-    case WL_CHANSPEC_BW_20:
-      notify_chn_bw = fuchsia_wlan_ieee80211_wire::ChannelBandwidth::kCbw20;
-      break;
-    case WL_CHANSPEC_BW_40:
-      notify_chn_bw = fuchsia_wlan_ieee80211_wire::ChannelBandwidth::kCbw40;
-      break;
-    case WL_CHANSPEC_BW_80:
-      notify_chn_bw = fuchsia_wlan_ieee80211_wire::ChannelBandwidth::kCbw80;
-      break;
-    case WL_CHANSPEC_BW_160:
-      notify_chn_bw = fuchsia_wlan_ieee80211_wire::ChannelBandwidth::kCbw160;
-      break;
-    case WL_CHANSPEC_BW_8080:
-      notify_chn_bw = fuchsia_wlan_ieee80211_wire::ChannelBandwidth::kCbw80P80;
-      break;
-    default:
-      BRCMF_WARN("Invalid channel BW in scan result chanspec: 0x%x", bi->chanspec);
-      // Should this be dropped?
-      notify_chn_bw = fuchsia_wlan_ieee80211_wire::ChannelBandwidth::kCbw20;
-  }
 
   BRCMF_DBG(CONN,
             "Scan result received  BSS: " FMT_MAC
@@ -3335,9 +3325,9 @@ static zx_status_t brcmf_inform_single_bss(struct net_device* ndev, struct brcmf
     brcmf_iedump(notify_ie, notify_ielen);
   }
 
-  brcmf_return_scan_result(ndev, (uint8_t)channel, notify_chn_bw, (const uint8_t*)bi->BSSID,
-                           notify_capability, notify_interval, notify_ie, notify_ielen,
-                           notify_rssi_dbm, notify_snr_db);
+  brcmf_return_scan_result(ndev, bi->chanspec, (const uint8_t*)bi->BSSID, notify_capability,
+                           notify_interval, notify_ie, notify_ielen, notify_rssi_dbm,
+                           notify_snr_db);
 
   return ZX_OK;
 }
@@ -3815,9 +3805,6 @@ static fuchsia_wlan_fullmac_wire::StartResult brcmf_cfg80211_start_ap(
   struct brcmf_if* ifp = ndev_to_if(ndev);
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
 
-  fuchsia_wlan_ieee80211::WlanChannel channel(req->channel(),
-                                              fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20, 0);
-
   if (brcmf_test_bit(brcmf_vif_status_bit_t::AP_CREATED, &ifp->vif->sme_state)) {
     BRCMF_ERR("AP already started");
     return fuchsia_wlan_fullmac_wire::StartResult::kBssAlreadyStartedOrJoined;
@@ -3854,7 +3841,7 @@ static fuchsia_wlan_fullmac_wire::StartResult brcmf_cfg80211_start_ap(
   BRCMF_DBG(TRACE,
             "ssid: " FMT_SSID "  beacon period: %d  dtim_period: %d  channel: %d  rsne_len: %zd",
             FMT_SSID_BYTES(req->ssid().data(), req->ssid().size()), req->beacon_period(),
-            req->dtim_period(), req->channel(), req->has_rsne() ? req->rsne().size() : 0);
+            req->dtim_period(), req->primary().number, req->has_rsne() ? req->rsne().size() : 0);
 
   uint16_t chanspec = 0;
   zx_status_t status;
@@ -3938,7 +3925,8 @@ static fuchsia_wlan_fullmac_wire::StartResult brcmf_cfg80211_start_ap(
     goto fail;
   }
 
-  chanspec = channel_to_chanspec(&cfg->d11inf, &channel);
+  chanspec = channel_to_chanspec(&cfg->d11inf, req->primary(),
+                                 fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20);
   status = brcmf_fil_iovar_int_set(ifp, "chanspec", chanspec, &fw_err);
   if (status != ZX_OK) {
     BRCMF_ERR("Set Channel failed: chspec=%d, status=%s, fw_err=%s", chanspec,
@@ -4181,7 +4169,7 @@ void brcmf_if_connect_req(net_device* ndev,
 #if !defined(NDEBUG)
   BRCMF_IFDBG(WLANIF, ndev, "  ssid: " FMT_SSID ", bssid: " FMT_MAC ", channel: %u",
               FMT_SSID_VECT(ssid), FMT_MAC_ARGS(req->selected_bss().bssid),
-              req->selected_bss().channel.primary);
+              req->selected_bss().primary.number);
 #endif /* !defined(NDEBUG) */
 
   // Once a connection attempt is in progress, no roam is possible. Erase anything about any
@@ -4482,18 +4470,18 @@ static void brcmf_ap_start_timeout(struct brcmf_cfg80211_info* cfg) {
 /* Start AP mode */
 void brcmf_if_start_req(net_device* ndev,
                         const fuchsia_wlan_fullmac_wire::WlanFullmacImplStartBssRequest* req) {
-  if (!req->has_ssid() || !req->has_dtim_period() || !req->has_channel() || !req->has_bss_type() ||
+  if (!req->has_ssid() || !req->has_dtim_period() || !req->has_primary() || !req->has_bss_type() ||
       !req->has_beacon_period()) {
     BRCMF_ERR(
         "Start BSS req does not have all required fields ssid: %d "
         "dtim: %d channel: %d bss type: %d beacon period: %d",
-        req->has_ssid(), req->has_dtim_period(), req->has_channel(), req->has_bss_type(),
+        req->has_ssid(), req->has_dtim_period(), req->has_primary(), req->has_bss_type(),
         req->has_beacon_period());
     brcmf_if_start_conf(ndev, fuchsia_wlan_fullmac_wire::StartResult::kNotSupported);
     return;
   }
   BRCMF_IFDBG(WLANIF, ndev, "Start AP request from SME. rsne_len: %zu, channel: %u",
-              req->has_rsne() ? req->rsne().size() : 0, req->channel());
+              req->has_rsne() ? req->rsne().size() : 0, req->primary().number);
 #if !defined(NDEBUG)
   BRCMF_DBG(WLANIF, "  ssid: " FMT_SSID, FMT_SSID_BYTES(req->ssid().data(), req->ssid().size()));
 #endif /* !defined(NDEBUG) */
@@ -4911,17 +4899,18 @@ static void brcmf_dump_if_band_cap(fuchsia_wlan_fullmac::BandCapability* band_ca
   }
   BRCMF_DBG_UNFILTERED("     basic_rates: %s", rates_str);
 
-  size_t num_operating_channels = band_cap->operating_channels()->size();
-  if (num_operating_channels > fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS) {
+  size_t num_primary_channels = band_cap->primary_channels()->size();
+  if (num_primary_channels > fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS) {
     BRCMF_DBG_UNFILTERED("Number of channels reported (%u) exceeds limit (%du), truncating",
-                         band_cap->operating_channels()->size(),
+                         band_cap->primary_channels()->size(),
                          fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS);
-    num_operating_channels = fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS;
+    num_primary_channels = fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS;
   }
   char channels_str[fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS * 4 + 1];
   str = channels_str;
-  for (unsigned i = 0; i < num_operating_channels; i++) {
-    str += sprintf(str, "%s%d", i > 0 ? " " : "", band_cap->operating_channels()->at(i));
+  for (unsigned i = 0; i < num_primary_channels; i++) {
+    str += sprintf(str, "%s%d", i > 0 ? " " : "",
+                   static_cast<int>(band_cap->primary_channels()->at(i).number()));
   }
   BRCMF_DBG_UNFILTERED("     channels: %s", channels_str);
 
@@ -5014,8 +5003,8 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
     fuchsia_wlan_fullmac::BandCapability* band_cap = &resp.band_caps()->at(i - 1);
     band_cap->basic_rates().emplace();
 
-    // MLME requires operating channels for each band capability.
-    band_cap->operating_channels().emplace();
+    // MLME requires primary channels for each band capability.
+    band_cap->primary_channels().emplace();
 
     if (bandlist[i] == WLC_BAND_2G) {
       band_cap->band(fuchsia_wlan_ieee80211::WlanBand::kTwoGhz);
@@ -5083,11 +5072,17 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
     // Fuchsia's wlan channels are simply the control channel (for now), whereas
     // brcm specifies each channel + bw + sb configuration individually. Until we
     // offer that level of resolution, just filter out duplicates.
-    if (std::find(band_cap->operating_channels()->begin(), band_cap->operating_channels()->end(),
-                  ch.control_ch_num) != band_cap->operating_channels()->end()) {
+    fuchsia_wlan_ieee80211::ChannelNumber new_chan;
+    new_chan.band(ch.band == BRCMU_CHAN_BAND_2G ? fuchsia_wlan_ieee80211::WlanBand::kTwoGhz
+                                                : fuchsia_wlan_ieee80211::WlanBand::kFiveGhz);
+    new_chan.number(ch.control_ch_num);
+    auto& op_chans = band_cap->primary_channels().value();
+    if (std::find_if(op_chans.begin(), op_chans.end(), [&](const auto& item) {
+          return item.number() == new_chan.number() && item.band() == new_chan.band();
+        }) != op_chans.end()) {
       continue;
     }
-    band_cap->operating_channels()->push_back(ch.control_ch_num);
+    band_cap->primary_channels()->push_back(new_chan);
   }
 
   // Parse HT/VHT information
@@ -6039,9 +6034,9 @@ zx_status_t brcmf_cfg80211_roam(struct net_device* ndev) {
   memcpy(&reassoc_params.bssid, ifp->roam_req->selected_bss()->bssid().data(), ETH_ALEN);
 
   // TODO(https://fxbug.dev/42144507) - Remove this override, it is only for logging.
-  auto chan_override = ifp->roam_req->selected_bss()->channel();
-  chan_override.cbw() = fuchsia_wlan_ieee80211_wire::ChannelBandwidth::kCbw20;
-  const auto old_chanspec = channel_to_chanspec(&cfg->d11inf, &chan_override);
+  const auto& selected_bss = ifp->roam_req->selected_bss().value();
+  const auto old_chanspec = channel_to_chanspec(&cfg->d11inf, selected_bss.primary(),
+                                                fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20);
 
   const auto chanspec_result = bss_chanspec(ifp, ifp->roam_req->selected_bss().value());
   if (chanspec_result.is_ok()) {
@@ -6522,7 +6517,9 @@ zx_status_t brcmf_notify_channel_switch(struct brcmf_if* ifp, const struct brcmf
   }
   BRCMF_DBG(CONN, "Channel switch ind IF: %d chanspec: 0x%x control channel: %d", ifp->ifidx,
             chanspec, ctl_chan);
-  info.new_channel = ctl_chan;
+  info.new_primary_channel = chanspec_to_primary_channel_number(&cfg->d11inf, chanspec);
+  info.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, chanspec);
+  info.vht_secondary_80_channel = chanspec_to_secondary80(&cfg->d11inf, chanspec);
 
   // Inform wlanif of the channel switch.
   auto arena = fdf::Arena::Create(0, 0);

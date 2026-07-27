@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use test_realm_helpers::constants::DEFAULT_CLIENT_STA_ADDR;
 use wlan_common::ie::fake_ht_capabilities;
 use zerocopy::IntoBytes;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 /// Contains all the configuration required for the fullmac driver.
 /// These are primarily used to respond to SME query requests.
@@ -113,7 +113,14 @@ fn default_fullmac_band_capability() -> fidl_fullmac::BandCapability {
         vht_caps: None,
         // By default, the fullmac fake driver supports 2 GHz channels in the US.
         // Specifically, channels 12-14 are avoided or not allowed in the US.
-        operating_channels: Some((1..11).collect()),
+        primary_channels: Some(
+            (1..11)
+                .map(|c| fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: c,
+                })
+                .collect(),
+        ),
         ..Default::default()
     }
 }

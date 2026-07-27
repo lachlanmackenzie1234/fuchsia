@@ -38,6 +38,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
+use wlan_common::channel::{Cbw, Channel};
 use wlan_metrics_registry as metrics;
 use wlan_telemetry::ThrottledErrorLogger;
 
@@ -1539,9 +1540,26 @@ impl Telemetry {
             }
             TelemetryEvent::OnChannelSwitched { info } => {
                 if let ConnectionState::Connected(state) = &mut self.connection_state {
-                    state.ap_state.tracked.channel.primary = info.new_channel;
+                    let cbw = match Cbw::from_fidl(
+                        info.bandwidth,
+                        info.vht_secondary_80_channel.number,
+                    ) {
+                        Ok(cbw) => cbw,
+                        Err(e) => {
+                            // In the event that the CBW is invalid, reuse the previous CBW
+                            // in determining the client's channel to preserve any legacy
+                            // behavior.
+                            error!("Invalid CBW in ChannelSwitchInfo: {}", e);
+                            state.ap_state.tracked.channel.cbw
+                        }
+                    };
+                    state.ap_state.tracked.channel = Channel::new(
+                        info.new_primary_channel.number,
+                        cbw,
+                        info.new_primary_channel.band,
+                    );
                     self.stats_logger
-                        .log_device_connected_channel_cobalt_metrics(info.new_channel)
+                        .log_device_connected_channel_cobalt_metrics(state.ap_state.tracked.channel)
                         .await;
                 }
             }
@@ -2115,7 +2133,7 @@ impl StatsLogger {
             .or_default()
             .increment(code);
 
-        let channel_band_dim = convert::convert_channel_band(ap_state.tracked.channel.primary);
+        let channel_band_dim = convert::convert_channel_band(ap_state.tracked.channel.band);
         self.last_1d_detailed_stats
             .connect_per_channel_band
             .entry(channel_band_dim)
@@ -2613,7 +2631,7 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
         let channel_band_dim =
-            convert::convert_channel_band(disconnect_info.ap_state.tracked.channel.primary);
+            convert::convert_channel_band(disconnect_info.ap_state.tracked.channel.band);
         metric_events.push(MetricEvent {
             metric_id: metrics::DISCONNECT_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
             event_codes: vec![channel_band_dim as u32],
@@ -2948,7 +2966,7 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        let channel_band_dim = convert::convert_channel_band(ap_state.tracked.channel.primary);
+        let channel_band_dim = convert::convert_channel_band(ap_state.tracked.channel.band);
         metric_events.push(MetricEvent {
             metric_id: metrics::SUCCESSFUL_CONNECT_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
             event_codes: vec![channel_band_dim as u32],
@@ -3084,7 +3102,7 @@ impl StatsLogger {
 
         append_device_connected_channel_cobalt_metrics(
             &mut metric_events,
-            ap_state.tracked.channel.primary,
+            ap_state.tracked.channel,
         );
 
         if network_is_likely_hidden {
@@ -3102,10 +3120,10 @@ impl StatsLogger {
         ));
     }
 
-    async fn log_device_connected_channel_cobalt_metrics(&mut self, primary_channel: u8) {
+    async fn log_device_connected_channel_cobalt_metrics(&mut self, channel: Channel) {
         let mut metric_events = vec![];
 
-        append_device_connected_channel_cobalt_metrics(&mut metric_events, primary_channel);
+        append_device_connected_channel_cobalt_metrics(&mut metric_events, channel);
 
         self.throttled_error_logger.throttle_error(log_cobalt_batch!(
             self.cobalt_proxy,
@@ -4362,15 +4380,15 @@ impl StatsLogger {
 
 fn append_device_connected_channel_cobalt_metrics(
     metric_events: &mut Vec<MetricEvent>,
-    primary_channel: u8,
+    channel: Channel,
 ) {
     metric_events.push(MetricEvent {
         metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
-        event_codes: vec![primary_channel as u32],
+        event_codes: vec![channel.primary as u32],
         payload: MetricEventPayload::Count(1),
     });
 
-    let channel_band_dim = convert::convert_channel_band(primary_channel);
+    let channel_band_dim = convert::convert_channel_band(channel.band);
     metric_events.push(MetricEvent {
         metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
         event_codes: vec![channel_band_dim as u32],
@@ -4650,6 +4668,7 @@ mod tests {
     };
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_metrics::{MetricEvent, MetricEventLoggerRequest, MetricEventPayload};
+    use fidl_fuchsia_wlan_ieee80211::WlanBand::{FiveGhz, TwoGhz};
     use fuchsia_inspect::reader;
     use futures::TryStreamExt;
     use futures::stream::FusedStream;
@@ -4662,7 +4681,6 @@ mod tests {
     use test_case::test_case;
     use test_util::assert_gt;
     use wlan_common::bss::BssDescription;
-    use wlan_common::channel::{Cbw, Channel};
     use wlan_common::ie::IeType;
     use wlan_common::test_utils::fake_stas::IesOverrides;
     use wlan_common::{random_bss_description, random_fidl_bss_description};
@@ -6952,7 +6970,7 @@ mod tests {
         test_helper.advance_by(zx::MonotonicDuration::from_hours(5), test_fut.as_mut());
 
         let primary_channel = 8;
-        let channel = Channel::new(primary_channel, Cbw::Cbw20);
+        let channel = Channel::new(primary_channel, Cbw::Cbw20, TwoGhz);
         let ap_state: client::types::ApState =
             random_bss_description!(Wpa2, channel: channel).into();
         let info = DisconnectInfo {
@@ -7310,7 +7328,7 @@ mod tests {
         let (mut test_helper, mut test_fut) = setup_test();
 
         let primary_channel = 8;
-        let channel = Channel::new(primary_channel, Cbw::Cbw20);
+        let channel = Channel::new(primary_channel, Cbw::Cbw20, TwoGhz);
         let ap_state = random_bss_description!(Wpa2,
             bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
             channel: channel,
@@ -7613,16 +7631,16 @@ mod tests {
         "breakdown_by_security_type"
     )]
     #[test_case(
-        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Cbw::Cbw20))),
-        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Cbw::Cbw40))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Cbw::Cbw20, TwoGhz))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Cbw::Cbw40, FiveGhz))),
         metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
         6,
         157;
         "breakdown_by_primary_channel"
     )]
     #[test_case(
-        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Cbw::Cbw20))),
-        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Cbw::Cbw40))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Cbw::Cbw20, TwoGhz))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Cbw::Cbw40, FiveGhz))),
         metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
         metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::Band2Dot4Ghz as u32,
         metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::Band5Ghz as u32;
@@ -7946,7 +7964,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x40
         ];
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(157, Cbw::Cbw40),
+            channel: Channel::new(157, Cbw::Cbw40, FiveGhz),
             ies_overrides: IesOverrides::new()
                 .remove(IeType::WMM_PARAM)
                 .set(IeType::WMM_INFO, wmm_info)
@@ -8146,7 +8164,7 @@ mod tests {
     fn test_log_device_connected_cobalt_metrics_on_channel_switched() {
         let (mut test_helper, mut test_fut) = setup_test();
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(4, Cbw::Cbw20),
+            channel: Channel::new(4, Cbw::Cbw20, TwoGhz),
         );
         test_helper.send_connected_event(bss_description);
         test_helper.drain_cobalt_events(&mut test_fut);
@@ -8175,7 +8193,17 @@ mod tests {
         test_helper.cobalt_events.clear();
 
         test_helper.telemetry_sender.send(TelemetryEvent::OnChannelSwitched {
-            info: fidl_internal::ChannelSwitchInfo { new_channel: 157 },
+            info: fidl_internal::ChannelSwitchInfo {
+                new_primary_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 157,
+                },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 0,
+                },
+            },
         });
         test_helper.drain_cobalt_events(&mut test_fut);
 
@@ -9997,24 +10025,23 @@ mod tests {
     fn test_log_bss_selection_metrics() {
         let (mut test_helper, mut test_fut) = setup_test();
 
-        // Send BSS selection result event with 3 candidate, multi-bss, one selected
         let selected_candidate_2g = client::types::ScannedCandidate {
             bss: client::types::Bss {
-                channel: client::types::WlanChan::new(1, wlan_common::channel::Cbw::Cbw20),
+                channel: Channel::new(1, wlan_common::channel::Cbw::Cbw20, TwoGhz),
                 ..generate_random_bss()
             },
             ..generate_random_scanned_candidate()
         };
         let candidate_2g = client::types::ScannedCandidate {
             bss: client::types::Bss {
-                channel: client::types::WlanChan::new(1, wlan_common::channel::Cbw::Cbw20),
+                channel: Channel::new(1, wlan_common::channel::Cbw::Cbw20, TwoGhz),
                 ..generate_random_bss()
             },
             ..generate_random_scanned_candidate()
         };
         let candidate_5g = client::types::ScannedCandidate {
             bss: client::types::Bss {
-                channel: client::types::WlanChan::new(36, wlan_common::channel::Cbw::Cbw40),
+                channel: Channel::new(36, wlan_common::channel::Cbw::Cbw40, FiveGhz),
                 ..generate_random_bss()
             },
             ..generate_random_scanned_candidate()

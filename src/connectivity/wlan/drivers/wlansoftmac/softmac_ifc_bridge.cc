@@ -169,4 +169,10 @@ void SoftmacIfcBridge::StopBridgedDriver(fit::callback<void()> stop_completer) {
       });
 }
 
+void SoftmacIfcBridge::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_wlan_softmac::WlanSoftmacIfc> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("SoftmacIfcBridge: Received unknown method with ordinal {}", metadata.method_ordinal);
+}
+
 }  // namespace wlan::drivers::wlansoftmac

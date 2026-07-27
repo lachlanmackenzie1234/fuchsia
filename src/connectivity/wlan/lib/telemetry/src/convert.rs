@@ -27,10 +27,13 @@ pub fn convert_security_type(
 }
 
 pub fn convert_channel_band(
-    primary_channel: u8,
+    band: fidl_fuchsia_wlan_ieee80211::WlanBand,
 ) -> metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand {
     use metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::*;
-    if primary_channel > 14 { Band5Ghz } else { Band2Dot4Ghz }
+    match band {
+        fidl_fuchsia_wlan_ieee80211::WlanBand::FiveGhz => Band5Ghz,
+        _ => Band2Dot4Ghz,
+    }
 }
 
 pub fn convert_rssi_bucket(rssi: i8) -> metrics::ConnectivityWlanMetricDimensionRssiBucket {

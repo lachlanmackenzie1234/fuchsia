@@ -23,12 +23,14 @@ TEST_F(SimTest, ScanWhileScanning) {
   SimInterface client_ifc;
   StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc);
 
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc, kFirstScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(10));
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc, kSecondScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(100));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc, kFirstScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(10));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc, kSecondScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(100));
 
   env_->Run(kSimulatedClockDuration);
 

@@ -1241,6 +1241,7 @@ mod tests {
                 fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
                 Cbw::Cbw20,
                 6,
+                fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz,
             ),
             mode: types::ConnectivityMode::Unrestricted,
             band: types::OperatingBand::Any,

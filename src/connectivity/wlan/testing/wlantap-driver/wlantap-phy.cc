@@ -47,7 +47,7 @@ fuchsia_wlan_tap::TxArgs ToTxArgs(const fuchsia_wlan_softmac::WlanTxPacket pkt) 
     ZX_PANIC("Unknown PHY in wlan_tx_packet_t: %u.", static_cast<uint32_t>(pkt.info().phy()));
   }
 
-  auto cbw = static_cast<uint32_t>(pkt.info().channel_bandwidth());
+  auto cbw = static_cast<uint32_t>(pkt.info().bandwidth());
   fuchsia_wlan_tap::WlanTxInfo tap_info = {{
       .tx_flags = pkt.info().tx_flags(),
       .valid_fields = pkt.info().valid_fields(),
@@ -123,7 +123,9 @@ void WlantapPhy::Rx(RxRequest& request, RxCompleter::Sync& completer) {
       .valid_fields = valid_fields,
       .phy = request.info().phy(),
       .data_rate = request.info().data_rate(),
-      .channel = request.info().channel(),
+      .primary = request.info().primary(),
+      .bandwidth = request.info().bandwidth(),
+      .vht_secondary_80_channel = request.info().vht_secondary_80_channel(),
       .mcs = request.info().mcs(),
       .rssi_dbm = request.info().rssi_dbm(),
       .snr_dbh = request.info().snr_dbh(),
@@ -237,15 +239,20 @@ void WlantapPhy::WlantapMacQueueTx(const fuchsia_wlan_softmac::WlanTxPacket& pkt
   }
 }
 
-void WlantapPhy::WlantapMacSetChannel(const fuchsia_wlan_ieee80211::WlanChannel& channel) {
+void WlantapPhy::WlantapMacSetChannel(const fuchsia_wlan_ieee80211::ChannelNumber& channel,
+                                      fuchsia_wlan_ieee80211::ChannelBandwidth cbw,
+                                      const fuchsia_wlan_ieee80211::ChannelNumber& secondary80) {
   WLAN_TRACE_DURATION();
   if (!phy_config_.quiet()) {
-    fdf::info("{}: WlantapMacSetChannel channel={}", name_, channel.primary());
+    fdf::info("{}: WlantapMacSetChannel channel={}", name_, channel.number());
   }
 
-  auto status = fidl::SendEvent(user_binding_)
-                    ->SetChannel(fuchsia_wlan_tap::WlantapPhySetChannelRequest{
-                        fuchsia_wlan_tap::SetChannelArgs{{.channel = channel}}});
+  auto status =
+      fidl::SendEvent(user_binding_)
+          ->SetChannel(fuchsia_wlan_tap::WlantapPhySetChannelRequest{
+              fuchsia_wlan_tap::SetChannelArgs{{.primary = channel,
+                                                .bandwidth = cbw,
+                                                .vht_secondary_80_channel = secondary80}}});
   if (status.is_error()) {
     fdf::error("{}: SetChannel() failed", status.error_value().status_string());
     return;

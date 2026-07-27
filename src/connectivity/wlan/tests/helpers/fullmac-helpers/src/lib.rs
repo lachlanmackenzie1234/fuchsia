@@ -4,14 +4,13 @@
 
 use assert_matches::assert_matches;
 use fidl::endpoints::{create_endpoints, create_proxy};
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_test_wlan_testcontroller as fidl_testcontroller;
 use futures::StreamExt;
 use std::sync::LazyLock;
 use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
 use wlan_common::{bss, fake_fidl_bss_description};
-use {
-    fidl_fuchsia_wlan_fullmac as fidl_fullmac, fidl_fuchsia_wlan_sme as fidl_sme,
-    fidl_test_wlan_testcontroller as fidl_testcontroller,
-};
 
 pub mod config;
 pub mod fake_ap;
@@ -23,7 +22,7 @@ pub mod recorded_request_stream;
 pub static COMPATIBLE_OPEN_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
     fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Open,
-        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20),
+        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
         rates: vec![2, 4, 11],
     )
     .try_into()
@@ -32,7 +31,7 @@ pub static COMPATIBLE_OPEN_BSS: LazyLock<bss::BssDescription> = LazyLock::new(||
 pub static COMPATIBLE_WPA2_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
     fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Wpa2,
-        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20),
+        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
         rates: vec![2, 4, 11],
     )
     .try_into()
@@ -41,7 +40,7 @@ pub static COMPATIBLE_WPA2_BSS: LazyLock<bss::BssDescription> = LazyLock::new(||
 pub static COMPATIBLE_WPA3_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
     fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Wpa3,
-        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20),
+        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
         rates: vec![2, 4, 11],
     )
     .try_into()

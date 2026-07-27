@@ -15,5 +15,7 @@ fidl_library(
     enable_hlcpp = True,
     enable_rust_next = True,
     visibility = ["//visibility:public"],
-    deps = [],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.ieee80211",
+    ],
 )

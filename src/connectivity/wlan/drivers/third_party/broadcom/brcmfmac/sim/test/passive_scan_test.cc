@@ -29,8 +29,8 @@ class PassiveScanTest;
 struct ApInfo {
   explicit ApInfo(simulation::Environment* env, const common::MacAddr& bssid,
                   const fuchsia_wlan_ieee80211::Ssid& ssid,
-                  const wlan_ieee80211::WlanChannel& channel)
-      : ap_(env, bssid, ssid, channel) {}
+                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel)
+      : ap_(env, bssid, ssid, channel, fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40, 0) {}
 
   simulation::FakeAp ap_;
   size_t beacons_seen_count_ = 0;
@@ -72,14 +72,14 @@ class PassiveScanTest : public SimTest {
 
   // Create a new AP with the specified parameters, and tell it to start beaconing.
   void StartFakeAp(const common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
-                   const wlan_ieee80211::WlanChannel& channel,
+                   const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                    zx::duration beacon_interval = kBeaconInterval);
 
   // Start a fake AP with a beacon mutator that will be applied to each beacon before it is sent.
   // The fake AP will begin beaconing immediately.
   void StartFakeApWithErrInjBeacon(
       const common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
-      const wlan_ieee80211::WlanChannel& channel,
+      const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
       std::function<SimBeaconFrame(const SimBeaconFrame&)> beacon_mutator,
       zx::duration beacon_interval = kBeaconInterval);
 
@@ -100,7 +100,7 @@ void PassiveScanTest::SetUp() {
 
 void PassiveScanTest::StartFakeAp(const common::MacAddr& bssid,
                                   const fuchsia_wlan_ieee80211::Ssid& ssid,
-                                  const wlan_ieee80211::WlanChannel& channel,
+                                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                                   zx::duration beacon_interval) {
   auto ap_info = std::make_unique<ApInfo>(env_.get(), bssid, ssid, channel);
   ap_info->ap_.EnableBeacon(beacon_interval);
@@ -109,7 +109,7 @@ void PassiveScanTest::StartFakeAp(const common::MacAddr& bssid,
 
 void PassiveScanTest::StartFakeApWithErrInjBeacon(
     const common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
-    const wlan_ieee80211::WlanChannel& channel,
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
     std::function<SimBeaconFrame(const SimBeaconFrame&)> beacon_mutator,
     zx::duration beacon_interval) {
   auto ap_info = std::make_unique<ApInfo>(env_.get(), bssid, ssid, channel);
@@ -140,8 +140,8 @@ void PassiveScanTestInterface::OnScanResult(OnScanResultRequestView request,
   VerifyScanResult(request);
 }
 
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw40, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 TEST_F(PassiveScanTest, BasicFunctionality) {
@@ -154,9 +154,10 @@ TEST_F(PassiveScanTest, BasicFunctionality) {
   StartFakeAp(kDefaultBssid, kDefaultSsid, kDefaultChannel);
 
   // // Request a future scan
-  env_->ScheduleNotification(std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId,
-                                       false, std::optional<const std::vector<uint8_t>>{}),
-                             kScanStartTime);
+  env_->ScheduleNotification(
+      std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      kScanStartTime);
 
   // The lambda arg will be run on each result, inside PassiveScanTestInterface::VerifyScanResults.
   client_ifc_.AddVerifierFunction(
@@ -166,7 +167,7 @@ TEST_F(PassiveScanTest, BasicFunctionality) {
         ASSERT_GT(result->timestamp_nanos(), test_start_timestamp_nanos);
 
         // Verify BSSID.
-        ASSERT_EQ(sizeof(result->bss().bssid.data()), sizeof(common::MacAddr::byte));
+        ASSERT_EQ(result->bss().bssid.size(), sizeof(common::MacAddr::byte));
         const common::MacAddr result_bssid(result->bss().bssid.data());
         EXPECT_EQ(result_bssid.Cmp(kDefaultBssid), 0);
 
@@ -175,9 +176,8 @@ TEST_F(PassiveScanTest, BasicFunctionality) {
         EXPECT_EQ(ssid, kDefaultSsid);
 
         // Verify channel
-        EXPECT_EQ(result->bss().channel.primary, kDefaultChannel.primary);
-        EXPECT_EQ(result->bss().channel.cbw, kDefaultChannel.cbw);
-        EXPECT_EQ(result->bss().channel.secondary80, kDefaultChannel.secondary80);
+        EXPECT_EQ(result->bss().primary.number, kDefaultChannel.number);
+        EXPECT_EQ(result->bss().primary.band, kDefaultChannel.band);
 
         // Verify has RSSI value
         ASSERT_LT(result->bss().rssi_dbm, 0);
@@ -199,9 +199,10 @@ TEST_F(PassiveScanTest, EmptyChannelList) {
   StartFakeAp(kDefaultBssid, kDefaultSsid, kDefaultChannel);
 
   // Request a future scan with an empty channel list
-  env_->ScheduleNotification(std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId,
-                                       false, std::optional<const std::vector<uint8_t>>{{}}),
-                             kScanStartTime);
+  env_->ScheduleNotification(
+      std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{{}}),
+      kScanStartTime);
 
   // The driver should exit early and return no scan results.
   client_ifc_.AddVerifierFunction(
@@ -231,9 +232,10 @@ TEST_F(PassiveScanTest, ScanWithMalformedBeaconMissingSsidInformationElement) {
   StartFakeApWithErrInjBeacon(kDefaultBssid, kDefaultSsid, kDefaultChannel, beacon_mutator);
 
   // Request a future scan
-  env_->ScheduleNotification(std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId,
-                                       false, std::optional<const std::vector<uint8_t>>{}),
-                             kScanStartTime);
+  env_->ScheduleNotification(
+      std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      kScanStartTime);
 
   client_ifc_.AddVerifierFunction(
       [&test_start_timestamp_nanos](
@@ -251,9 +253,7 @@ TEST_F(PassiveScanTest, ScanWithMalformedBeaconMissingSsidInformationElement) {
         EXPECT_EQ(ssid.size(), 0u);
 
         // Verify channel
-        EXPECT_EQ(result->bss().channel.primary, kDefaultChannel.primary);
-        EXPECT_EQ(result->bss().channel.cbw, kDefaultChannel.cbw);
-        EXPECT_EQ(result->bss().channel.secondary80, kDefaultChannel.secondary80);
+        EXPECT_EQ(result->bss().primary.number, kDefaultChannel.number);
 
         // Verify has RSSI value
         ASSERT_LT(result->bss().rssi_dbm, 0);
@@ -279,9 +279,10 @@ TEST_F(PassiveScanTest, ScanWhenFirmwareBusy) {
   });
 
   // Request a future scan
-  env_->ScheduleNotification(std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId,
-                                       false, std::optional<const std::vector<uint8_t>>{}),
-                             kScanStartTime);
+  env_->ScheduleNotification(
+      std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      kScanStartTime);
 
   env_->Run(kDefaultTestDuration);
 
@@ -303,9 +304,10 @@ TEST_F(PassiveScanTest, ScanWhileAssocInProgress) {
 
   client_ifc_.AssociateWith(aps_.front()->ap_, kAssocStartTime);
   // Request a future scan
-  env_->ScheduleNotification(std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId,
-                                       false, std::optional<const std::vector<uint8_t>>{}),
-                             kScanStartTime);
+  env_->ScheduleNotification(
+      std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      kScanStartTime);
 
   env_->Run(kDefaultTestDuration);
 
@@ -326,9 +328,10 @@ TEST_F(PassiveScanTest, ScanAbortedInFirmware) {
   StartFakeAp(kDefaultBssid, kDefaultSsid, kDefaultChannel);
 
   // Request a future scan
-  env_->ScheduleNotification(std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId,
-                                       false, std::optional<const std::vector<uint8_t>>{}),
-                             kScanStartTime);
+  env_->ScheduleNotification(
+      std::bind(&PassiveScanTestInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      kScanStartTime);
 
   // Request an association right after the scan
   client_ifc_.AssociateWith(aps_.front()->ap_, kAssocStartTime);

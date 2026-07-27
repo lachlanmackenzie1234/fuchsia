@@ -74,13 +74,18 @@ pub(crate) struct WlanChannelDef {
     pub secondary80: u8,
 }
 
-impl From<fidl_ieee80211::WlanChannel> for WlanChannelDef {
-    fn from(fidl_type: fidl_ieee80211::WlanChannel) -> Self {
-        Self {
-            primary: fidl_type.primary,
-            cbw: fidl_type.cbw.into(),
-            secondary80: fidl_type.secondary80,
-        }
+impl From<fidl_ieee80211::ChannelNumber> for WlanChannelDef {
+    fn from(fidl_type: fidl_ieee80211::ChannelNumber) -> Self {
+        // This struct is only used for getting the current channel information from the soft AP.
+        // Soft AP presently does not support higher than 20MHz channel bandwidth so it can be
+        // inferred that the update must be Cbw20.  The rest of the stack communicates a lack of
+        // secondary80 by zeroing the field.  The soft AP also does not support secondary80, so
+        // this can be inferred to be zero as well.
+        //
+        // This is ported as part of the migration from WlanChannel to ChannelNumber to support any
+        // legacy tests that are still being run.  All modern WLAN end-to-end tests have been
+        // migrated to Honeydew.  Please use Honeydew for any new end-to-end tests.
+        Self { primary: fidl_type.number, cbw: ChannelBandwidthDef::Cbw20, secondary80: 0 }
     }
 }
 
@@ -112,7 +117,11 @@ impl From<fidl_sme::ServingApInfo> for ServingApInfoDef {
             ssid: fidl_type.ssid,
             rssi_dbm: fidl_type.rssi_dbm,
             snr_db: fidl_type.snr_db,
-            channel: fidl_type.channel.into(),
+            channel: WlanChannelDef {
+                primary: fidl_type.primary.number,
+                cbw: fidl_type.bandwidth.into(),
+                secondary80: fidl_type.vht_secondary_80_channel.number,
+            },
             protection: fidl_type.protection,
         }
     }

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
@@ -52,21 +53,21 @@ async fn scan_contemporary_privacy() {
                 &phy,
                 [
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20),
+                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_WPA1,
                         ssid: SSID_WPA1.clone(),
                         protection: Protection::Wpa1,
                         rssi_dbm: -30,
                     },
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20),
+                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_WEP,
                         ssid: SSID_WEP.clone(),
                         protection: Protection::Wep,
                         rssi_dbm: -40,
                     },
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20),
+                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_MIXED,
                         ssid: SSID_MIXED.clone(),
                         protection: Protection::Wpa1Wpa2Personal,

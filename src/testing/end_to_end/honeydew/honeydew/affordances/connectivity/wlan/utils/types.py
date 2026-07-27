@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 import enum
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, Self
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_policy as f_wlan_policy
+import fidl_fuchsia_wlan_sme as f_wlan_sme
 from honeydew.typing.custom_types import MacAddress as _MacAddress
 
 MacAddress = _MacAddress
@@ -251,6 +253,56 @@ class ClientStateSummary:
         )
 
 
+class WlanBand(enum.StrEnum):
+    """Wlan band type."""
+
+    TWO_GHZ = "TwoGhz"
+    FIVE_GHZ = "FiveGhz"
+    UNKNOWN = "Unknown"
+
+    @staticmethod
+    def from_fidl(fidl: f_wlan_ieee80211.WlanBand) -> "WlanBand":
+        match fidl:
+            case f_wlan_ieee80211.WlanBand.TWO_GHZ:
+                return WlanBand.TWO_GHZ
+            case f_wlan_ieee80211.WlanBand.FIVE_GHZ:
+                return WlanBand.FIVE_GHZ
+            case _:
+                raise TypeError(f"Unknown WlanBand FIDL value: {fidl}")
+
+    def to_fidl(self) -> f_wlan_ieee80211.WlanBand:
+        match self:
+            case WlanBand.TWO_GHZ:
+                return f_wlan_ieee80211.WlanBand.TWO_GHZ
+            case WlanBand.FIVE_GHZ:
+                return f_wlan_ieee80211.WlanBand.FIVE_GHZ
+            case WlanBand.UNKNOWN:
+                raise TypeError("WlanBand.UNKNOWN doesn't have FIDL equivalent")
+
+
+@dataclass(frozen=True)
+class WlanChannel:
+    """Wlan channel information."""
+
+    number: int
+    band: WlanBand
+
+    @staticmethod
+    def from_fidl(fidl: f_wlan_ieee80211.ChannelNumber) -> "WlanChannel":
+        """Parse from a fuchsia.wlan.ieee80211/ChannelNumber."""
+        return WlanChannel(
+            number=fidl.number,
+            band=WlanBand.from_fidl(f_wlan_ieee80211.WlanBand(fidl.band)),
+        )
+
+    def to_fidl(self) -> f_wlan_ieee80211.ChannelNumber:
+        """Convert to a fuchsia.wlan.ieee80211/ChannelNumber."""
+        return f_wlan_ieee80211.ChannelNumber(
+            number=self.number,
+            band=self.band.to_fidl(),
+        )
+
+
 @dataclass(frozen=True)
 class WlanInterfaces:
     """WLAN interfaces separated by device type and keyed by MAC address."""
@@ -313,6 +365,72 @@ class BssDescriptionParser:
                     )
 
         return None
+
+
+# TODO(http://b/346424966): Only necessary because Python does not have static
+# typing for FIDL. Once these static types are available and the SL4F affordance
+# is removed, replace with the statically generated FIDL equivalent.
+class ClientStatusResponse(Protocol):
+    """WLAN client interface status."""
+
+    def status(self) -> str:
+        """Description of the client's status."""
+
+    @staticmethod
+    def from_fidl(
+        fidl: f_wlan_sme.ClientStatusResponse,
+    ) -> "ClientStatusResponse":
+        """Parse from a fuchsia.wlan.sme/ClientStatusResponse."""
+        if fidl.connected:
+            ap: f_wlan_sme.ServingApInfo = fidl.connected
+            return ClientStatusConnected(
+                bssid=list(ap.bssid),
+                ssid=list(ap.ssid),
+                rssi_dbm=ap.rssi_dbm,
+                snr_db=ap.snr_db,
+                channel=WlanChannel.from_fidl(ap.primary),
+                protection=f_wlan_sme.Protection(ap.protection),
+            )
+
+        if fidl.connecting:
+            return ClientStatusConnecting(ssid=fidl.connecting)
+
+        if fidl.idle:
+            return ClientStatusIdle()
+
+        raise TypeError(f"Unknown ClientStatusResponse FIDL value: {fidl}")
+
+
+@dataclass(frozen=True)
+class ClientStatusConnected(ClientStatusResponse):
+    """ServingApInfo, returned as a part of ClientStatusResponse.
+
+    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
+    """
+
+    bssid: list[int]
+    ssid: list[int]
+    rssi_dbm: int
+    snr_db: int
+    channel: WlanChannel
+    protection: f_wlan_sme.Protection
+
+    def status(self) -> str:
+        return "Connected"
+
+
+@dataclass(frozen=True)
+class ClientStatusConnecting(ClientStatusResponse):
+    ssid: Sequence[int]
+
+    def status(self) -> str:
+        return "Connecting"
+
+
+@dataclass(frozen=True)
+class ClientStatusIdle(ClientStatusResponse):
+    def status(self) -> str:
+        return "Idle"
 
 
 class CountryCode(enum.StrEnum):

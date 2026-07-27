@@ -55,6 +55,12 @@ constexpr size_t kWlanSoftmacBandCapabilityBufferSize =
 constexpr fuchsia_wlan_ieee80211::wire::BssType kDefaultBssType =
     fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure;
 
+struct TestChannel {
+  fuchsia_wlan_ieee80211::wire::WlanBand band;
+  uint8_t primary;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
+};
+
 class WlanSoftmacDeviceTest : public SingleApTest,
                               public fdf::WireServer<fuchsia_wlan_softmac::WlanSoftmacIfc> {
  public:
@@ -98,6 +104,11 @@ class WlanSoftmacDeviceTest : public SingleApTest,
                           NotifyScanCompleteCompleter::Sync& completer) override {
     // Overriding the virtual function, not being used at this point.
     completer.buffer(arena).Reply();
+  }
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_softmac::WlanSoftmacIfc> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    // Overriding the virtual function, not being used at this point.
   }
 
  protected:
@@ -174,9 +185,11 @@ TEST_F(WlanSoftmacDeviceTest, FillBandCapabilityList) {
   EXPECT_EQ(12, band_cap->basic_rates().size());
   EXPECT_EQ(2, band_cap->basic_rates()[0]);     // 1Mbps
   EXPECT_EQ(108, band_cap->basic_rates()[11]);  // 54Mbps
-  EXPECT_EQ(13, band_cap->operating_channels().size());
-  EXPECT_EQ(1, band_cap->operating_channels()[0]);
-  EXPECT_EQ(13, band_cap->operating_channels()[12]);
+  EXPECT_EQ(13, band_cap->primary_channels().size());
+  EXPECT_EQ(1, band_cap->primary_channels()[0].number);
+  EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kTwoGhz, band_cap->primary_channels()[0].band);
+  EXPECT_EQ(13, band_cap->primary_channels()[12].number);
+  EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kTwoGhz, band_cap->primary_channels()[12].band);
   // 5GHz
   band_cap = &band_cap_list[1];
   EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kFiveGhz, band_cap->band());
@@ -184,9 +197,11 @@ TEST_F(WlanSoftmacDeviceTest, FillBandCapabilityList) {
   EXPECT_EQ(8, band_cap->basic_rates().size());
   EXPECT_EQ(12, band_cap->basic_rates()[0]);   // 6Mbps
   EXPECT_EQ(108, band_cap->basic_rates()[7]);  // 54Mbps
-  EXPECT_EQ(25, band_cap->operating_channels().size());
-  EXPECT_EQ(36, band_cap->operating_channels()[0]);
-  EXPECT_EQ(165, band_cap->operating_channels()[24]);
+  EXPECT_EQ(25, band_cap->primary_channels().size());
+  EXPECT_EQ(36, band_cap->primary_channels()[0].number);
+  EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kFiveGhz, band_cap->primary_channels()[0].band);
+  EXPECT_EQ(165, band_cap->primary_channels()[24].number);
+  EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kFiveGhz, band_cap->primary_channels()[24].band);
 }
 
 TEST_F(WlanSoftmacDeviceTest, FillBandCapabilityListOnly5GHz) {
@@ -207,14 +222,16 @@ TEST_F(WlanSoftmacDeviceTest, FillBandCapabilityListOnly5GHz) {
   EXPECT_EQ(8, band_cap->basic_rates().size());
   EXPECT_EQ(12, band_cap->basic_rates()[0]);   // 6Mbps
   EXPECT_EQ(108, band_cap->basic_rates()[7]);  // 54Mbps
-  EXPECT_EQ(25, band_cap->operating_channels().size());
-  EXPECT_EQ(36, band_cap->operating_channels()[0]);
-  EXPECT_EQ(165, band_cap->operating_channels()[24]);
+  EXPECT_EQ(25, band_cap->primary_channels().size());
+  EXPECT_EQ(36, band_cap->primary_channels()[0].number);
+  EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kFiveGhz, band_cap->primary_channels()[0].band);
+  EXPECT_EQ(165, band_cap->primary_channels()[24].number);
+  EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kFiveGhz, band_cap->primary_channels()[24].band);
   // index 1 should be empty.
   band_cap = &band_cap_list[1];
   EXPECT_FALSE(band_cap->has_ht_caps());
   EXPECT_FALSE(band_cap->has_basic_rates());
-  EXPECT_FALSE(band_cap->has_operating_channels());
+  EXPECT_FALSE(band_cap->has_primary_channels());
 }
 
 TEST_F(WlanSoftmacDeviceTest, Query) {
@@ -231,6 +248,7 @@ TEST_F(WlanSoftmacDeviceTest, Query) {
   //   .band_cap_list[0]: fuchsia_wlan_ieee80211::WlanBand::kTwoGhz
   //   .band_cap_list[1]: fuchsia_wlan_ieee80211::WlanBand::kFiveGhz
   //
+  //
   ASSERT_EQ(2, info.band_caps().size());
   EXPECT_EQ(12, info.band_caps().data()[0].basic_rates().size());
   EXPECT_EQ(2, info.band_caps().data()[0].basic_rates()[0]);     // 1 Mbps
@@ -238,7 +256,8 @@ TEST_F(WlanSoftmacDeviceTest, Query) {
   EXPECT_EQ(108, info.band_caps().data()[0].basic_rates()[11]);  // 54 Mbps
   EXPECT_EQ(8, info.band_caps().data()[1].basic_rates().size());
   EXPECT_EQ(12, info.band_caps().data()[1].basic_rates()[0]);  // 6 Mbps
-  EXPECT_EQ(165, info.band_caps().data()[1].operating_channels()[24]);
+  EXPECT_EQ(165, info.band_caps().data()[1].primary_channels()[24].number);
+  EXPECT_EQ(fuchsia_wlan_ieee80211::WlanBand::kFiveGhz, info.band_caps().data()[1].primary_channels()[24].band);
 }
 
 TEST_F(WlanSoftmacDeviceTest, DiscoveryFeatureQuery) {
@@ -478,15 +497,26 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
   fp_send_cmd original_send_cmd;
 
  protected:
-  bool IsValidChannel(const fuchsia_wlan_ieee80211::wire::WlanChannel* channel) {
-    return device_->IsValidChannel(channel);
+  bool IsValidChannel(const TestChannel* channel) {
+    fuchsia_wlan_ieee80211::wire::ChannelNumber chan_num = {
+        .band = channel->band,
+        .number = channel->primary,
+    };
+    return device_->IsValidChannel(chan_num, channel->cbw);
   }
 
-  zx_status_t SetChannel(const fuchsia_wlan_ieee80211::wire::WlanChannel* channel) {
+  zx_status_t SetChannel(const TestChannel* channel) {
     fidl::Arena fidl_arena;
     auto builder =
         fuchsia_wlan_softmac::wire::WlanSoftmacBaseSetChannelRequest::Builder(fidl_arena);
-    builder.channel(*channel);
+
+    fuchsia_wlan_ieee80211::wire::ChannelNumber chan_num = {
+        .band = channel->band,
+        .number = channel->primary,
+    };
+    builder.primary(chan_num);
+    builder.bandwidth(channel->cbw);
+
     auto result = client_.buffer(test_arena_)->SetChannel(builder.Build());
     EXPECT_TRUE(result.ok());
     if (result->is_error()) {
@@ -516,10 +546,11 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
     fidl::Arena fidl_arena;
     auto builder = fuchsia_wlan_softmac::wire::WlanAssociationConfig::Builder(fidl_arena);
     builder.listen_interval(kListenInterval);
-    builder.channel(fuchsia_wlan_ieee80211::wire::WlanChannel{
-        .primary = 157,
-        .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80,
+    builder.primary(fuchsia_wlan_ieee80211::wire::ChannelNumber{
+        .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz,
+        .number = 157,
     });
+    builder.bandwidth(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80);
     builder.rates(fidl::VectorView(fidl_arena, std::vector<uint8_t>({140})));
 
     auto result = client_.buffer(test_arena_)->NotifyAssociationComplete(builder.Build());
@@ -534,10 +565,11 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
     fidl::Arena fidl_arena;
     auto builder = fuchsia_wlan_softmac::wire::WlanAssociationConfig::Builder(fidl_arena);
     builder.listen_interval(kListenInterval);
-    builder.channel(fuchsia_wlan_ieee80211::wire::WlanChannel{
-        .primary = 157,
-        .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80,
+    builder.primary(fuchsia_wlan_ieee80211::wire::ChannelNumber{
+        .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz,
+        .number = 157,
     });
+    builder.bandwidth(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80);
     builder.rates(fidl::VectorView(fidl_arena, std::vector<uint8_t>({
                                                    140,
                                                    18,
@@ -726,11 +758,15 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
   static constexpr size_t kFakeTkipKeyLen = 32;
 
   // Define it's own kChannel and override the one defined in SingleApTest.
-  static constexpr fuchsia_wlan_ieee80211::wire::WlanChannel kChannel = {
-      .primary = 11, .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20};
+  static constexpr TestChannel kChannel = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+      .primary = 11,
+      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20};
 
-  static constexpr fuchsia_wlan_ieee80211::wire::WlanChannel kChannel2 = {
-      .primary = 161, .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80};
+  static constexpr TestChannel kChannel2 = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz,
+      .primary = 161,
+      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80};
 
   static constexpr uint16_t kChannelSize = 4;
 };
@@ -738,28 +774,32 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
 TEST_F(MacInterfaceTest, TestIsValidChannel) {
   ExpectSendCmd(expected_cmd_id_list({}));
 
-  fuchsia_wlan_ieee80211::wire::WlanChannel ch10_20m = {
+  TestChannel ch10_20m = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 10,
       .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20,
   };
 
   EXPECT_TRUE(IsValidChannel(&ch10_20m));
 
-  fuchsia_wlan_ieee80211::wire::WlanChannel ch10_40m = {
+  TestChannel ch10_40m = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 10,
       .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40,
   };
 
   EXPECT_FALSE(IsValidChannel(&ch10_40m));
 
-  fuchsia_wlan_ieee80211::wire::WlanChannel ch13_40m_below = {
+  TestChannel ch13_40m_below = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 13,
       .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40Below,
   };
 
   EXPECT_FALSE(IsValidChannel(&ch13_40m_below));
 
-  fuchsia_wlan_ieee80211::wire::WlanChannel ch5_80m = {
+  TestChannel ch5_80m = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 5,
       .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80,
   };
@@ -1109,12 +1149,18 @@ TEST_F(MacInterfaceTest, AssocWithHtConfig) {
 TEST_F(MacInterfaceTest, StartPassiveScanTest) {
   fidl::Arena fidl_arena;
   // FromExternal() is not able to take const data.
-  uint8_t channels_to_scan[kChannelSize] = {7, 1, 40, 136};
+  wlan_ieee80211_wire::ChannelNumber channels_to_scan[kChannelSize] = {
+      {.band = wlan_ieee80211_wire::WlanBand::kTwoGhz, .number = 7},
+      {.band = wlan_ieee80211_wire::WlanBand::kTwoGhz, .number = 1},
+      {.band = wlan_ieee80211_wire::WlanBand::kFiveGhz, .number = 40},
+      {.band = wlan_ieee80211_wire::WlanBand::kFiveGhz, .number = 136},
+  };
   {
     // Passive scan with some random channels should pass.
     auto builder =
         fuchsia_wlan_softmac::wire::WlanSoftmacBaseStartPassiveScanRequest::Builder(fidl_arena);
-    builder.channels(fidl::VectorView<uint8_t>::FromExternal(&channels_to_scan[0], kChannelSize));
+    builder.channels(fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>::FromExternal(
+        &channels_to_scan[0], kChannelSize));
     auto passive_scan_args = builder.Build();
     ASSERT_EQ(ZX_OK, StartPassiveScan(&passive_scan_args));
   }
@@ -1131,14 +1177,20 @@ TEST_F(MacInterfaceTest, StartPassiveScanTest) {
 TEST_F(MacInterfaceTest, StartActiveScanTest) {
   fidl::Arena fidl_arena;
   // FromExternal() is not able to take const data.
-  uint8_t channels_to_scan[kChannelSize] = {7, 1, 40, 136};
+  wlan_ieee80211_wire::ChannelNumber channels_to_scan[kChannelSize] = {
+      {.band = wlan_ieee80211_wire::WlanBand::kTwoGhz, .number = 7},
+      {.band = wlan_ieee80211_wire::WlanBand::kTwoGhz, .number = 1},
+      {.band = wlan_ieee80211_wire::WlanBand::kFiveGhz, .number = 40},
+      {.band = wlan_ieee80211_wire::WlanBand::kFiveGhz, .number = 136},
+  };
   {
     // Active scan with args in which all of "channels", "ssids", "mac_header" and "ies" fields are
     // set will pass the argument check in mvm-mlme.cc.
     auto builder =
         fuchsia_wlan_softmac::wire::WlanSoftmacStartActiveScanRequest::Builder(fidl_arena);
 
-    builder.channels(fidl::VectorView<uint8_t>::FromExternal(&channels_to_scan[0], kChannelSize));
+    builder.channels(fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>::FromExternal(
+        &channels_to_scan[0], kChannelSize));
     builder.ssids(fidl::VectorView<fuchsia_wlan_ieee80211::wire::CSsid>());
     builder.mac_header(fidl::VectorView<uint8_t>());
     builder.ies(fidl::VectorView<uint8_t>());
@@ -1165,7 +1217,8 @@ TEST_F(MacInterfaceTest, StartActiveScanTest) {
     auto builder =
         fuchsia_wlan_softmac::wire::WlanSoftmacStartActiveScanRequest::Builder(fidl_arena);
 
-    builder.channels(fidl::VectorView<uint8_t>::FromExternal(&channels_to_scan[0], kChannelSize));
+    builder.channels(fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>::FromExternal(
+        &channels_to_scan[0], kChannelSize));
     builder.mac_header(fidl::VectorView<uint8_t>());
     builder.ies(fidl::VectorView<uint8_t>());
 
@@ -1178,7 +1231,8 @@ TEST_F(MacInterfaceTest, StartActiveScanTest) {
     auto builder =
         fuchsia_wlan_softmac::wire::WlanSoftmacStartActiveScanRequest::Builder(fidl_arena);
 
-    builder.channels(fidl::VectorView<uint8_t>::FromExternal(&channels_to_scan[0], kChannelSize));
+    builder.channels(fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>::FromExternal(
+        &channels_to_scan[0], kChannelSize));
     builder.ssids(fidl::VectorView<fuchsia_wlan_ieee80211::wire::CSsid>());
     builder.ies(fidl::VectorView<uint8_t>());
 
@@ -1191,7 +1245,8 @@ TEST_F(MacInterfaceTest, StartActiveScanTest) {
     auto builder =
         fuchsia_wlan_softmac::wire::WlanSoftmacStartActiveScanRequest::Builder(fidl_arena);
 
-    builder.channels(fidl::VectorView<uint8_t>::FromExternal(&channels_to_scan[0], kChannelSize));
+    builder.channels(fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>::FromExternal(
+        &channels_to_scan[0], kChannelSize));
     builder.ssids(fidl::VectorView<fuchsia_wlan_ieee80211::wire::CSsid>());
     builder.mac_header(fidl::VectorView<uint8_t>());
 

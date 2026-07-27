@@ -19,13 +19,17 @@ namespace wlan::brcmfmac {
 
 // Some default AP and association request values
 constexpr uint16_t kDefaultCh = 149;
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = kDefaultCh, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = kDefaultCh};
+
 // Chanspec value corresponding to kDefaultChannel with current d11 encoder.
 constexpr uint16_t kDefaultChanspec = 53397;
 constexpr uint16_t kTestChanspec = 0xd0a5;
 constexpr uint16_t kTest1Chanspec = 0xd095;
-constexpr simulation::WlanTxInfo kDefaultTxInfo = {.channel = kDefaultChannel};
+const simulation::WlanTxInfo kDefaultTxInfo = {
+    .channel = kDefaultChannel,
+    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const common::MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
 const char kFakeClientName[] = "fake-client-iface";
@@ -46,7 +50,9 @@ class DynamicIfTest : public SimTest {
   // How long an individual test will run for. We need an end time because tests run until no more
   // events remain and if ap's are beaconing the test will run indefinitely.
   static constexpr zx::duration kTestDuration = zx::sec(100);
-  DynamicIfTest() : ap_(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel) {}
+  DynamicIfTest()
+      : ap_(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+            fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0) {}
   void Init();
 
   // Force fail an attempt to stop the softAP
@@ -115,10 +121,11 @@ void DynamicIfTest::ChannelCheck() {
   EXPECT_EQ(softap_chanspec, client_chanspec);
   WithSimDevice([&](brcmfmac::SimDevice* device) {
     brcmf_simdev* sim = device->GetSim();
-    wlan_ieee80211::WlanChannel channel;
-    sim->sim_fw->convert_chanspec_to_channel(softap_chanspec, &channel);
+    fuchsia_wlan_ieee80211::wire::ChannelNumber channel =
+        chanspec_to_operating_channel_number(&sim->drvr->config->d11inf, softap_chanspec);
     EXPECT_GE(softap_ifc_.stats_.csa_indications.size(), 1U);
-    EXPECT_EQ(channel.primary, softap_ifc_.stats_.csa_indications.front().new_channel);
+    EXPECT_EQ(channel.number,
+              softap_ifc_.stats_.csa_indications.front().new_primary_channel.number);
   });
 }
 
@@ -980,9 +987,10 @@ TEST_F(DynamicIfTest, RejectScanWhenApStartReqIsPending) {
                                        kDefaultChannel, 100, 100),
                              zx::msec(30));
   // The timeout of AP start is 1000 msec, so a scan request before zx::msec(1030) will be rejected.
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(100));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(100));
 
   env_->Run(kTestDuration);
   // There will be no result received from firmware, because the fake external AP's channel number

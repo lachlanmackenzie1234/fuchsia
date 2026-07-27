@@ -12,13 +12,10 @@
 
 #include "fidl/fuchsia.wlan.common/cpp/wire_types.h"
 
-bool operator==(const fuchsia_wlan_ieee80211::wire::WlanChannel& lhs,
-                const fuchsia_wlan_ieee80211::wire::WlanChannel& rhs);
-bool operator!=(const fuchsia_wlan_ieee80211::wire::WlanChannel& lhs,
-                const fuchsia_wlan_ieee80211::wire::WlanChannel& rhs);
-
 namespace wlan {
 namespace common {
+
+struct Channel;
 
 typedef uint16_t Mhz;
 
@@ -31,29 +28,26 @@ typedef uint16_t Mhz;
 constexpr Mhz kBaseFreq2Ghz = 2407;
 constexpr Mhz kBaseFreq5Ghz = 5000;
 
-// TODO(porce): Replace all channel > 14 test throughout the codes
-bool Is5Ghz(uint8_t channel_number);
-bool Is2Ghz(uint8_t channel_number);
-bool Is5Ghz(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
-bool Is2Ghz(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
+bool Is5Ghz(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel);
+bool Is2Ghz(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel);
 
-bool IsValidChan2Ghz(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
-bool IsValidChan5Ghz(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
-bool IsValidChan(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
+fuchsia_wlan_ieee80211::wire::WlanBand GetWlanBand(
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel);
 
-Mhz GetCenterFreq(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
-uint8_t GetCenterChanIdx(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
+bool IsValidChan2Ghz(const Channel& channel);
+bool IsValidChan5Ghz(const Channel& channel);
+bool IsValidChan(const Channel& channel);
 
-std::string ChanStr(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
-std::string ChanStrLong(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel);
+Mhz GetCenterFreq(const Channel& channel);
+uint8_t GetCenterChanIdx(const Channel& channel);
+
+std::string ChanStr(const Channel& channel);
+std::string ChanStrLong(const Channel& channel);
 
 struct Channel {
-  fuchsia_wlan_ieee80211::wire::WlanChannel channel;
-  // TODO(porce): Validation
-  // TODO(porce): Notation string.
-  // TODO(porce): Center frequencies.
-  // Define the rule to translsate center frequency to/from channel numbering.
-  // See IEEE Std 802.11-2016 19.3.15
+  fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
 };
 
 const char* CbwSuffix(fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);

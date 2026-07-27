@@ -15,7 +15,19 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 }  // namespace
 
 constexpr uint64_t kScanTxnId = 0x4a65616e6e65;
-const uint8_t kDefaultChannelsList[11] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+const fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannelsList[11] = {
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 1},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 2},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 3},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 4},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 5},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 6},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 7},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 8},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10},
+    {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11},
+};
 
 // For this test, we don't want to use the default scan handlers provided by SimInterface
 class EscanArgsIfc : public SimInterface {
@@ -66,8 +78,8 @@ TEST_F(EscanArgsTest, BadScanArgs) {
 
     builder.txn_id(kScanTxnId);
     builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
-    builder.channels(
-        fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(kDefaultChannelsList), 11));
+    builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+        const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(kDefaultChannelsList), 11));
     builder.min_channel_time(0);
     builder.max_channel_time(0);
 
@@ -83,8 +95,8 @@ TEST_F(EscanArgsTest, BadScanArgs) {
 
     builder.txn_id(kScanTxnId);
     builder.scan_type(wlan_fullmac_wire::WlanScanType::kActive);
-    builder.channels(
-        fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(kDefaultChannelsList), 11));
+    builder.channels(fidl::VectorView<fuchsia_wlan_ieee80211::wire::ChannelNumber>::FromExternal(
+        const_cast<fuchsia_wlan_ieee80211::wire::ChannelNumber*>(kDefaultChannelsList), 11));
     builder.min_channel_time(SimInterface::kDefaultActiveScanDwellTimeMs + 1);
     builder.max_channel_time(SimInterface::kDefaultActiveScanDwellTimeMs);
 

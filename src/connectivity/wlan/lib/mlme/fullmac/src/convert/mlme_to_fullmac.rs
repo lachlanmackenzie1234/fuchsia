@@ -176,7 +176,7 @@ pub fn convert_start_bss_request(
         bss_type: Some(req.bss_type),
         beacon_period: Some(req.beacon_period as u32),
         dtim_period: Some(req.dtim_period as u32),
-        channel: Some(req.channel),
+        primary: Some(req.primary),
         rsne: req.rsne,
 
         // TODO(https://fxbug.dev/301104836): Consider removing this field or using None instead of Some(vec![]).
@@ -345,10 +345,14 @@ mod tests {
             beacon_period: 123u16,
             capability_info: 456u16,
             ies: vec![1, 2, 3, 4],
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 112,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 45,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 112,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 45,
             },
             rssi_dbm: -41i8,
             snr_db: -90i8,
@@ -473,14 +477,17 @@ mod tests {
             bss_type: fidl_ieee80211::BssType::Independent,
             beacon_period: 10000,
             dtim_period: 123,
-            channel: 12,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 12,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
             capability_info: 4321,
             rates: vec![10, 20, 30, 40],
             country: fidl_mlme::Country { alpha2: [1, 2], suffix: 45 },
             mesh_id: vec![6, 5, 6, 5],
             rsne: Some(vec![123; fidl_ieee80211::WLAN_IE_MAX_LEN as usize + 1]),
             phy: fidl_ieee80211::WlanPhyType::Ofdm,
-            channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         };
 
         assert!(convert_start_bss_request(mlme).is_err());

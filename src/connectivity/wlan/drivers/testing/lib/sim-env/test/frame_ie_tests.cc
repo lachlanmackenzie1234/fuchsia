@@ -20,8 +20,8 @@ const fuchsia_wlan_ieee80211::Ssid kDefaultSsid = {'F', 'u', 'c', 'h', 's', 'i',
                                                    'F', 'a', 'k', 'e', ' ', 'A', 'P'};
 const common::MacAddr kDefaultBssid{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc};
 const common::MacAddr kDefaultDest{0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa};
-constexpr wlan_ieee80211_wire::WlanChannel kDefaultChannel = {
-    .primary = 20, .cbw = wlan_ieee80211_wire::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 20};
 
 class FrameIeTest : public ::testing::Test {};
 
@@ -32,7 +32,7 @@ TEST_F(FrameIeTest, SsidIeType) {
 }
 
 TEST_F(FrameIeTest, CsaIeType) {
-  simulation::CsaInformationElement csa_ie(false, kDefaultChannel.primary, 0);
+  simulation::CsaInformationElement csa_ie(false, kDefaultChannel.number, 0);
   EXPECT_EQ(csa_ie.IeType(), InformationElement::IE_TYPE_CSA);
 }
 
@@ -187,7 +187,7 @@ TEST_F(FrameIeTest, CsaIeAddRemove) {
 
 TEST_F(FrameIeTest, CsaIeToRawIe) {
   const bool switch_mode = true;
-  const uint8_t new_channel = kDefaultChannel.primary;
+  const uint8_t new_channel = kDefaultChannel.number;
   const uint8_t switch_count = 5;
   simulation::CsaInformationElement csa_ie(switch_mode, new_channel, switch_count);
   const auto raw_ie = csa_ie.ToRawIe();

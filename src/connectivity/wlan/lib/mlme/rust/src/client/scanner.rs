@@ -443,24 +443,14 @@ fn supported_rates_for_band(
     let rates = band_cap_for_band(&query_response, band)
         .ok_or_else(|| format_err!("no capabilities found for band {:?}", band))?
         .basic_rates
-        .as_deref()
-        .map(From::from)
+        .clone()
         .ok_or_else(|| format_err!("no basic rates found for band capabilities"))?;
     Ok(rates)
 }
 
-// TODO(https://fxbug.dev/42172557): This is not correct. Channel numbers do not imply band.
-fn band_from_channel_number(channel_number: u8) -> fidl_ieee80211::WlanBand {
-    if channel_number > 14 {
-        fidl_ieee80211::WlanBand::FiveGhz
-    } else {
-        fidl_ieee80211::WlanBand::TwoGhz
-    }
-}
-
 fn active_scan_request_series(
     query_response: &fidl_softmac::WlanSoftmacQueryResponse,
-    channels: Vec<u8>,
+    channels: Vec<fidl_ieee80211::ChannelNumber>,
     ssids: Vec<fidl_ieee80211::CSsid>,
     mac_header: Vec<u8>,
     min_channel_time: zx::sys::zx_duration_t,
@@ -469,8 +459,6 @@ fn active_scan_request_series(
     min_probes_per_channel: u8,
     max_probes_per_channel: u8,
 ) -> Result<Vec<fidl_softmac::WlanSoftmacStartActiveScanRequest>, Error> {
-    // TODO(https://fxbug.dev/42172557): The fuchsia.wlan.mlme/MLME API assumes channels numbers imply bands
-    //                        and so partitioning channels must be done internally.
     struct BandChannels {
         band: fidl_ieee80211::WlanBand,
         channels: Vec<u8>,
@@ -482,8 +470,8 @@ fn active_scan_request_series(
         ],
         |mut band_channels_list, channel| {
             for band_channels in &mut band_channels_list {
-                if band_from_channel_number(channel) == band_channels.band {
-                    band_channels.channels.push(channel);
+                if channel.band == band_channels.band {
+                    band_channels.channels.push(channel.number);
                 }
             }
             band_channels_list
@@ -498,8 +486,10 @@ fn active_scan_request_series(
             continue;
         }
         let supported_rates = supported_rates_for_band(query_response, band)?;
+        let fidl_channels =
+            channels.iter().map(|&c| fidl_ieee80211::ChannelNumber { band, number: c }).collect();
         active_scan_request_series.push(fidl_softmac::WlanSoftmacStartActiveScanRequest {
-            channels: Some(channels),
+            channels: Some(fidl_channels),
             ssids: Some(ssids.clone()),
             mac_header: Some(mac_header.clone()),
             // Exclude the SSID IE because the device driver will generate using ssids_list.
@@ -556,6 +546,9 @@ mod tests {
     use wlan_common::sequence::SequenceManager;
     use wlan_common::timer::{self, Timer, create_timer};
 
+    use fidl_ieee80211::ChannelNumber;
+    use fidl_ieee80211::WlanBand::{FiveGhz, TwoGhz};
+
     static BSSID_FOO: LazyLock<Bssid> = LazyLock::new(|| [6u8; 6].into());
     const CAPABILITY_INFO_FOO: CapabilityInfo = CapabilityInfo(1);
     const BEACON_INTERVAL_FOO: u16 = 100;
@@ -582,10 +575,14 @@ mod tests {
             capability_info: CAPABILITY_INFO_FOO.0,
             ies: BEACON_IES_FOO.to_vec(),
             rssi_dbm: RX_INFO_FOO.rssi_dbm,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: RX_INFO_FOO.channel.primary,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: RX_INFO_FOO.primary.number,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
             },
             snr_db: 0,
         });
@@ -614,10 +611,14 @@ mod tests {
             capability_info: CAPABILITY_INFO_BAR.0,
             ies: BEACON_IES_BAR.to_vec(),
             rssi_dbm: RX_INFO_BAR.rssi_dbm,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: RX_INFO_BAR.channel.primary,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: RX_INFO_BAR.primary.number,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
             },
             snr_db: 0,
         });
@@ -628,7 +629,7 @@ mod tests {
         fidl_mlme::ScanRequest {
             txn_id: 1337,
             scan_type: fidl_mlme::ScanTypes::Passive,
-            channel_list: vec![6],
+            channel_list: vec![ChannelNumber { number: 6, band: TwoGhz }],
             ssid_list: vec![],
             probe_delay: 0,
             min_channel_time: 100,
@@ -636,7 +637,7 @@ mod tests {
         }
     }
 
-    fn active_scan_req(channel_list: &[u8]) -> fidl_mlme::ScanRequest {
+    fn active_scan_req(channel_list: &[ChannelNumber]) -> fidl_mlme::ScanRequest {
         fidl_mlme::ScanRequest {
             txn_id: 1337,
             scan_type: fidl_mlme::ScanTypes::Active,
@@ -745,7 +746,10 @@ mod tests {
         assert_eq!(
             m.fake_device_state.lock().captured_passive_scan_request,
             Some(fidl_softmac::WlanSoftmacBaseStartPassiveScanRequest {
-                channels: Some(vec![6]),
+                channels: Some(vec![fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 6,
+                }]),
                 min_channel_time: Some(102_400_000),
                 max_channel_time: Some(307_200_000),
                 min_home_time: Some(0),
@@ -779,13 +783,13 @@ mod tests {
     }
 
     struct ExpectedDynamicActiveScanRequest {
-        channels: Vec<u8>,
+        channels: Vec<ChannelNumber>,
         ies: Vec<u8>,
     }
 
-    #[test_case(&[6],
+    #[test_case(&[ChannelNumber { number: 6, band: TwoGhz }],
                 Some(ExpectedDynamicActiveScanRequest {
-                    channels: vec![6],
+                    channels: vec![ChannelNumber { number: 6, band: TwoGhz }],
                     ies: vec![ 0x01, // Element ID for Supported Rates
                                0x08, // Length
                                0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, // Supported Rates
@@ -794,9 +798,9 @@ mod tests {
                                0x30, 0x48, 0x60, 0x6c // Extended Supported Rates
                     ]}),
                 None; "single channel")]
-    #[test_case(&[1, 2, 3, 4, 5],
+    #[test_case(&[ChannelNumber { number: 1, band: TwoGhz }, ChannelNumber { number: 2, band: TwoGhz }, ChannelNumber { number: 3, band: TwoGhz }, ChannelNumber { number: 4, band: TwoGhz }, ChannelNumber { number: 5, band: TwoGhz }],
                 Some(ExpectedDynamicActiveScanRequest {
-                    channels: vec![1, 2, 3, 4, 5],
+                    channels: vec![ChannelNumber { number: 1, band: TwoGhz }, ChannelNumber { number: 2, band: TwoGhz }, ChannelNumber { number: 3, band: TwoGhz }, ChannelNumber { number: 4, band: TwoGhz }, ChannelNumber { number: 5, band: TwoGhz }],
                     ies: vec![ 0x01, // Element ID for Supported Rates
                                0x08, // Length
                                0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, // Supported Rates
@@ -805,18 +809,18 @@ mod tests {
                                0x30, 0x48, 0x60, 0x6c // Extended Supported Rates
                     ]}),
                 None; "multiple channels 2.4GHz band")]
-    #[test_case(&[36, 40, 100, 108],
+    #[test_case(&[ChannelNumber { number: 36, band: FiveGhz }, ChannelNumber { number: 40, band: FiveGhz }, ChannelNumber { number: 100, band: FiveGhz }, ChannelNumber { number: 108, band: FiveGhz }],
                 None,
                 Some(ExpectedDynamicActiveScanRequest {
-                    channels: vec![36, 40, 100, 108],
+                    channels: vec![ChannelNumber { number: 36, band: FiveGhz }, ChannelNumber { number: 40, band: FiveGhz }, ChannelNumber { number: 100, band: FiveGhz }, ChannelNumber { number: 108, band: FiveGhz }],
                     ies: vec![ 0x01, // Element ID for Supported Rates
                                0x08, // Length
                                0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f // Supported Rates
                     ],
                 }); "multiple channels 5GHz band")]
-    #[test_case(&[1, 2, 3, 4, 5, 36, 40, 100, 108],
+    #[test_case(&[ChannelNumber { number: 1, band: TwoGhz }, ChannelNumber { number: 2, band: TwoGhz }, ChannelNumber { number: 3, band: TwoGhz }, ChannelNumber { number: 4, band: TwoGhz }, ChannelNumber { number: 5, band: TwoGhz }, ChannelNumber { number: 36, band: FiveGhz }, ChannelNumber { number: 40, band: FiveGhz }, ChannelNumber { number: 100, band: FiveGhz }, ChannelNumber { number: 108, band: FiveGhz }],
                 Some(ExpectedDynamicActiveScanRequest {
-                    channels: vec![1, 2, 3, 4, 5],
+                    channels: vec![ChannelNumber { number: 1, band: TwoGhz }, ChannelNumber { number: 2, band: TwoGhz }, ChannelNumber { number: 3, band: TwoGhz }, ChannelNumber { number: 4, band: TwoGhz }, ChannelNumber { number: 5, band: TwoGhz }],
                     ies: vec![ 0x01, // Element ID for Supported Rates
                                0x08, // Length
                                0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, // Supported Rates
@@ -825,7 +829,7 @@ mod tests {
                                0x30, 0x48, 0x60, 0x6c // Extended Supported Rates
                     ]}),
                 Some(ExpectedDynamicActiveScanRequest {
-                    channels: vec![36, 40, 100, 108],
+                    channels: vec![ChannelNumber { number: 36, band: FiveGhz }, ChannelNumber { number: 40, band: FiveGhz }, ChannelNumber { number: 100, band: FiveGhz }, ChannelNumber { number: 108, band: FiveGhz }],
                     ies: vec![ 0x01, // Element ID for Supported Rates
                                0x08, // Length
                                0x02, 0x04, 0x0b, 0x16, 0x30, 0x60, 0x7e, 0x7f, // Supported Rates
@@ -833,7 +837,7 @@ mod tests {
                 }); "multiple bands")]
     #[fuchsia::test(allow_stalls = false)]
     async fn test_start_active_scan_success(
-        channel_list: &[u8],
+        channel_list: &[ChannelNumber],
         expected_two_ghz_dynamic_args: Option<ExpectedDynamicActiveScanRequest>,
         expected_five_ghz_dynamic_args: Option<ExpectedDynamicActiveScanRequest>,
     ) {
@@ -946,7 +950,10 @@ mod tests {
         let mut ctx = m.make_ctx();
         let mut scanner = Scanner::new(*IFACE_MAC);
 
-        let result = scanner.bind(&mut ctx).on_sme_scan(active_scan_req(&[6])).await;
+        let result = scanner
+            .bind(&mut ctx)
+            .on_sme_scan(active_scan_req(&[ChannelNumber { number: 6, band: TwoGhz }]))
+            .await;
         assert_matches!(
             result,
             Err(Error::ScanError(ScanError::StartOffloadScanFails(zx::Status::NOT_SUPPORTED)))
@@ -1011,7 +1018,7 @@ mod tests {
 
         scanner
             .bind(&mut ctx)
-            .on_sme_scan(active_scan_req(&[6]))
+            .on_sme_scan(active_scan_req(&[ChannelNumber { number: 6, band: TwoGhz }]))
             .await
             .expect("expect scan req accepted");
 

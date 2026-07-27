@@ -4,6 +4,8 @@
 
 use crate::completers::Completer;
 use fdf::{Arena, ArenaStaticBox, fdf_arena_t};
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fuchsia_trace as trace;
 use log::error;
 use std::ffi::c_void;
 use std::marker::{PhantomData, PhantomPinned};
@@ -11,7 +13,7 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 use std::{mem, slice};
 use wlan_fidl_ext::{TryUnpack, WithName};
-use {fidl_fuchsia_wlan_softmac as fidl_softmac, fuchsia_trace as trace, wlan_trace as wtrace};
+use wlan_trace as wtrace;
 
 // Defined as an opaque type as suggested by
 // https://doc.rust-lang.org/nomicon/ffi.html#representing-opaque-structs.

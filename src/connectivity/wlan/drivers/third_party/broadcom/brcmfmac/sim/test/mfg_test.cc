@@ -12,11 +12,14 @@
 namespace wlan::brcmfmac {
 
 constexpr uint16_t kDefaultCh = 149;
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = kDefaultCh, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = kDefaultCh};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const common::MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
-constexpr simulation::WlanTxInfo kDefaultTxInfo = {.channel = kDefaultChannel};
+const simulation::WlanTxInfo kDefaultTxInfo = {
+    .channel = kDefaultChannel,
+    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
 
 class MfgTest : public SimTest {
  public:
@@ -84,7 +87,9 @@ TEST_F(MfgTest, CheckConnections) {
   Init();
   CreateIF(wlan_common::WlanMacRole::kClient);
   // Start up our fake AP
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+                        {.band = kDefaultChannel.band, .number = 0});
 
   // Associate to FakeAp
   client_ifc_.AssociateWith(ap, zx::msec(10));

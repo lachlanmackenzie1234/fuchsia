@@ -12,8 +12,8 @@
 namespace wlan::brcmfmac {
 
 // Fake AP configuration
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 constexpr zx::duration kBeaconInterval = zx::msec(SimInterface::kDefaultPassiveScanDwellTimeMs - 1);
 
@@ -47,14 +47,16 @@ TEST_F(ScanTest, PassiveDwellTime) {
   Init();
 
   // Start up a single AP
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(kBeaconInterval);
 
   for (size_t scan_attempt = 0; scan_attempt < kTotalScanCount; scan_attempt++) {
     zx_time_t start_timestamp = zx::clock::get_monotonic().get();
-    env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, scan_attempt,
-                                         false, std::optional<const std::vector<uint8_t>>{}),
-                               kScanStartTime);
+    env_->ScheduleNotification(
+        std::bind(&SimInterface::StartScan, &client_ifc_, scan_attempt, false,
+                  std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+        kScanStartTime);
     env_->Run(kScanMaxTime);
 
     // Check scan result code
@@ -71,8 +73,7 @@ TEST_F(ScanTest, PassiveDwellTime) {
       EXPECT_EQ(kDefaultBssid, common::MacAddr(bss->bssid().data()));
       auto ssid = brcmf_find_ssid_in_ies(bss->ies().data(), bss->ies().size());
       EXPECT_EQ(kDefaultSsid, ssid);
-      EXPECT_EQ(kDefaultChannel.primary, bss->channel().primary());
-      EXPECT_EQ(kDefaultChannel.cbw, bss->channel().cbw());
+      EXPECT_EQ(kDefaultChannel.number, bss->primary().number());
       EXPECT_GT(scan_result.timestamp_nanos(), start_timestamp);
     }
   }

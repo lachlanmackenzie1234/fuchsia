@@ -245,7 +245,8 @@ closed protocol ScheduledScanTransaction {
 
 type RadioConfig = struct {
     phy ieee80211.WlanPhyType;
-    channel ieee80211.WlanChannel;
+    primary ieee80211.ChannelNumber;
+    bandwidth ieee80211.ChannelBandwidth;
 };
 
 /// Empty struct used for union variants with no associated data.
@@ -276,8 +277,10 @@ type ServingApInfo = struct {
     ssid ieee80211.Ssid;
     rssi_dbm int8;
     snr_db int8;
-    channel ieee80211.WlanChannel;
+    primary ieee80211.ChannelNumber;
     protection Protection;
+    bandwidth ieee80211.ChannelBandwidth;
+    vht_secondary_80_channel ieee80211.ChannelNumber;
 };
 
 type ClientStatusResponse = strict union {

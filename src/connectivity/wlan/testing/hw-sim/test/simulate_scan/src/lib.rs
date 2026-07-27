@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
@@ -61,42 +62,42 @@ async fn simulate_scan() {
                 &phy,
                 [
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20),
+                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_FOO,
                         ssid: SSID_FOO.clone(),
                         protection: Protection::Wpa2Personal,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(2, Cbw::Cbw20),
+                        channel: Channel::new(2, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_FOO_2,
                         ssid: SSID_FOO.clone(),
                         protection: Protection::Open,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(3, Cbw::Cbw20),
+                        channel: Channel::new(3, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_BAR,
                         ssid: SSID_BAR.clone(),
                         protection: Protection::Wpa2Personal,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(4, Cbw::Cbw20),
+                        channel: Channel::new(4, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_BAR_2,
                         ssid: SSID_BAR.clone(),
                         protection: Protection::Wpa2Personal,
                         rssi_dbm: -40,
                     },
                     Beacon {
-                        channel: Channel::new(5, Cbw::Cbw20),
+                        channel: Channel::new(5, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_BAZ,
                         ssid: SSID_BAZ.clone(),
                         protection: Protection::Open,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(6, Cbw::Cbw20),
+                        channel: Channel::new(6, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                         bssid: *BSS_BAZ_2,
                         ssid: SSID_BAZ.clone(),
                         protection: Protection::Wpa2Personal,

@@ -7,6 +7,7 @@
 #include <lib/inspect/cpp/inspect.h>
 #include <zircon/errors.h>
 
+#include <wlan/common/channel.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
@@ -28,8 +29,9 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 namespace wlan_ieee80211 = wlan_ieee80211;
 
 constexpr uint16_t kDefaultCh = 149;
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = kDefaultCh, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::WlanBand kDefaultBand =
+    fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz;
+
 const common::MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
 
 class CreateSoftAPTest;
@@ -113,7 +115,9 @@ class CreateSoftAPTest : public SimTest {
   common::MacAddr ind_expect_mac_ = kFakeMac;
 
  protected:
-  simulation::WlanTxInfo tx_info_ = {.channel = kDefaultChannel};
+  simulation::WlanTxInfo tx_info_ = {.channel = {.band = kDefaultBand, .number = kDefaultCh},
+                                     .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+                                     .secondary80 = {.band = kDefaultBand, .number = 0}};
   bool sec_enabled_ = false;
   SoftApInterface softap_ifc_;
 
@@ -264,7 +268,7 @@ zx_status_t CreateSoftAPTest::StartSoftAP() {
                      .bss_type(fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure)
                      .beacon_period(100)
                      .dtim_period(100)
-                     .channel(kDefaultCh)
+                     .primary({.band = kDefaultBand, .number = kDefaultCh})
                      .ssid(ssid);
 
   // If sec mode is requested, create a dummy RSNE IE (our SoftAP only
@@ -495,7 +499,7 @@ TEST_F(CreateSoftAPTest, CreateSoftAPMissingParams) {
                      .bss_type(fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure)
                      .beacon_period(100)
                      .dtim_period(100)
-                     .channel(kDefaultCh);
+                     .primary({.band = kDefaultBand, .number = kDefaultCh});
 
   auto result = softap_ifc_.client_.buffer(softap_ifc_.test_arena_)->StartBss(builder.Build());
   EXPECT_TRUE(result.ok());

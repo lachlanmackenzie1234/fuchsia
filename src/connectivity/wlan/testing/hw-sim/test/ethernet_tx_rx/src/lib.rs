@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::Bssid;
@@ -60,7 +61,7 @@ async fn verify_tx_and_rx(
                             sent_payload.clear();
                             sent_payload.extend_from_slice(llc_frame.body);
                             rx_wlan_data_frame(
-                                &Channel::new(1, Cbw::Cbw20),
+                                &Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                                 &CLIENT_MAC_ADDR,
                                 &(*BSS).into(),
                                 &ETH_DST_MAC,

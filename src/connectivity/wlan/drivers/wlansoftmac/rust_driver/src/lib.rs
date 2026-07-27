@@ -520,6 +520,9 @@ async fn serve_wlan_softmac_ifc_bridge(
                 }
                 return Ok(());
             }
+            fidl_softmac::WlanSoftmacIfcBridgeRequest::_UnknownMethod { .. } => {
+                warn!("Received unknown request on WlanSoftmacIfcBridge channel");
+            }
         }
     }
 }

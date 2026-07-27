@@ -292,6 +292,10 @@ static size_t iwl_init_channel_map(struct device *dev,
 
 	for (ch_idx = 0; ch_idx < num_of_ch; ch_idx++) {
 		bool is_5ghz = (ch_idx >= num_2ghz_channels);
+		struct wlan_channel_number chan_num = {
+			.band = is_5ghz ? WLAN_BAND_FIVE_GHZ : WLAN_BAND_TWO_GHZ,
+			.number = nvm_chan[ch_idx],
+		};
 
 		if (v4)
 			ch_flags = le32_to_cpup((const __le32 *)nvm_ch_flags +
@@ -315,7 +319,7 @@ static size_t iwl_init_channel_map(struct device *dev,
 		}
 
 		// TODO(fxbug.dev/69717): Remove this workaround for IWL_NVM_EXT.
-		if (!ieee80211_is_valid_chan(nvm_chan[ch_idx])) {
+		if (!ieee80211_is_valid_chan(chan_num)) {
 			continue;
 		}
 
@@ -338,7 +342,7 @@ static size_t iwl_init_channel_map(struct device *dev,
 		channel->band = is_5ghz ? WLAN_BAND_FIVE_GHZ :
 					  WLAN_BAND_TWO_GHZ;
 		channel->center_freq =
-			ieee80211_get_center_freq((uint8_t)channel->ch_num);
+			ieee80211_get_center_freq(chan_num);
 
 		/* Initialize regulatory-based run-time data */
 

@@ -15,11 +15,13 @@ namespace wlan::brcmfmac {
 
 // Some default AP and association request values
 
-const wlan_ieee80211::WlanChannel kAp0Channel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
-const wlan_ieee80211::WlanChannel kAp1Channel = {
-    .primary = 11, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
-const simulation::WlanTxInfo kAp0TxInfo = {.channel = kAp0Channel};
+const fuchsia_wlan_ieee80211::wire::ChannelNumber kAp0Channel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
+const fuchsia_wlan_ieee80211::wire::ChannelNumber kAp1Channel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11};
+const simulation::WlanTxInfo kAp0TxInfo = {.channel = kAp0Channel,
+                                           .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+                                           .secondary80 = {.band = kAp0Channel.band, .number = 0}};
 
 const common::MacAddr kAp0Bssid("12:34:56:78:9a:bc");
 const common::MacAddr kAp1Bssid("ff:ee:dd:cc:bb:aa");
@@ -61,8 +63,14 @@ void ReassocTest::ScheduleReassocResp(const simulation::SimReassocRespFrame& rea
 }
 
 void ReassocTest::ScheduleRoam(const simulation::FakeAp& ap, zx::duration when) {
-  env_->ScheduleNotification([this, ap] { client_ifc_.StartRoam(kAp1Bssid, ap.GetChannel()); },
-                             when, nullptr);
+  auto channel = ap.GetChannel();
+  auto cbw = ap.GetChannelBandwidth();
+  auto secondary80 = ap.GetSecondary80();
+  env_->ScheduleNotification(
+      [this, channel, cbw, secondary80] {
+        client_ifc_.StartRoam(kAp1Bssid, channel, cbw, secondary80);
+      },
+      when, nullptr);
 }
 
 void ReassocTest::GetIfaceStats(fuchsia_wlan_stats::wire::IfaceStats* out_stats,
@@ -81,8 +89,10 @@ void ReassocTest::GetIfaceStats(fuchsia_wlan_stats::wire::IfaceStats* out_stats,
 TEST_F(ReassocTest, RoamSucceeds) {
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -108,8 +118,10 @@ TEST_F(ReassocTest, RoamSucceeds) {
 TEST_F(ReassocTest, IgnoreSpuriousReassocResp) {
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -138,8 +150,10 @@ TEST_F(ReassocTest, IgnoreSpuriousReassocResp) {
 TEST_F(ReassocTest, RoamTimeoutWhenNoReassocResponseReceived) {
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   // This AP will ignore reassociation, to test roam failure.
@@ -166,8 +180,10 @@ TEST_F(ReassocTest, RoamTimeoutWhenNoReassocResponseReceived) {
 TEST_F(ReassocTest, DisconnectOnFirmwareReassocCommandFailure) {
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -200,8 +216,10 @@ TEST_F(ReassocTest, DisconnectOnFirmwareReassocCommandFailure) {
 TEST_F(ReassocTest, DisconnectOnRoamSuccessWhenDriverCannotSyncChannel) {
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);
@@ -233,8 +251,10 @@ TEST_F(ReassocTest, DisconnectOnRoamSuccessWhenDriverCannotSyncChannel) {
 TEST_F(ReassocTest, RoamSucceedsUpdatesConnectionId) {
   Init();
 
-  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
-  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap_0.EnableBeacon(zx::msec(60));
   ap_1.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap_0);

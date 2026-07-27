@@ -40,8 +40,12 @@ pub fn construct_bss_description(
     }
 
     let bss_type = get_bss_type(capability_info);
-    let channel =
-        derive_channel(rx_info.channel.primary, dsss_channel, parsed_ht_op, parsed_vht_op);
+    let wlan_chan = derive_channel(rx_info.primary, dsss_channel, parsed_ht_op, parsed_vht_op);
+    let band = rx_info.primary.band;
+    let channel = fidl_ieee80211::ChannelNumber { band, number: wlan_chan.primary };
+
+    let (channel_bandwidth, secondary80_num) = wlan_chan.cbw.to_fidl();
+    let secondary80 = fidl_ieee80211::ChannelNumber { band, number: secondary80_num };
 
     Ok(fidl_ieee80211::BssDescription {
         bssid: bssid.to_array(),
@@ -49,7 +53,9 @@ pub fn construct_bss_description(
         beacon_period: beacon_interval.0,
         capability_info: capability_info.raw(),
         ies: ies.to_vec(),
-        channel,
+        primary: channel,
+        bandwidth: channel_bandwidth,
+        vht_secondary_80_channel: secondary80,
         rssi_dbm: rx_info.rssi_dbm,
         snr_db: 0,
     })
@@ -78,10 +84,9 @@ mod tests {
     // Capability information: ESS, privacy, spectrum mgmt, radio msmt
     const CAPABILITY_INFO: CapabilityInfo = CapabilityInfo(0x1111);
     const RX_INFO: fidl_softmac::WlanRxInfo = fidl_softmac::WlanRxInfo {
-        channel: fidl_ieee80211::WlanChannel {
-            primary: 11,
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-            secondary80: 0,
+        primary: fidl_ieee80211::ChannelNumber {
+            band: fidl_ieee80211::WlanBand::FiveGhz,
+            number: 36,
         },
         rssi_dbm: -40,
         snr_dbh: 35,
@@ -92,6 +97,11 @@ mod tests {
         phy: fidl_ieee80211::WlanPhyType::Dsss,
         data_rate: 0,
         mcs: 0,
+        bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+        vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+            band: fidl_ieee80211::WlanBand::FiveGhz,
+            number: 0,
+        },
     };
 
     fn beacon_frame_ies() -> Vec<u8> {
@@ -182,10 +192,14 @@ mod tests {
                 capability_info: CAPABILITY_INFO.0,
                 ies,
                 rssi_dbm: RX_INFO.rssi_dbm,
-                channel: fidl_ieee80211::WlanChannel {
-                    primary: 140,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-                    secondary80: 0,
+                primary: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 140,
+                },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw40,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 0,
                 },
                 snr_db: 0,
             }

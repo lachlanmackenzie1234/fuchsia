@@ -5,37 +5,28 @@
 #include "channel.h"
 
 #include <zircon/assert.h>
-// #include <wlan/common/logging.h>
 
 namespace fwlan_ieee80211 = ::fuchsia_wlan_ieee80211::wire;
-
-bool operator==(const fwlan_ieee80211::WlanChannel& lhs, const fwlan_ieee80211::WlanChannel& rhs) {
-  // TODO(porce): Support 802.11ac Wave2 by lhs.secondary80 == rhs.secondary80
-  return (lhs.primary == rhs.primary && lhs.cbw == rhs.cbw);
-}
-
-bool operator!=(const fwlan_ieee80211::WlanChannel& lhs, const fwlan_ieee80211::WlanChannel& rhs) {
-  return !(lhs == rhs);
-}
 
 // TODO(porce): Look up constants from the operating class table.
 // No need to use constexpr in this prototype.
 namespace wlan {
 namespace common {
 
-bool Is5Ghz(uint8_t channel_number) {
-  // TODO(porce): Improve this humble function
-  return (channel_number > 14);
+bool Is5Ghz(const fwlan_ieee80211::ChannelNumber& channel) {
+  return channel.band == fwlan_ieee80211::WlanBand::kFiveGhz;
 }
 
-bool Is2Ghz(uint8_t channel_number) { return !Is5Ghz(channel_number); }
+bool Is2Ghz(const fwlan_ieee80211::ChannelNumber& channel) {
+  return channel.band == fwlan_ieee80211::WlanBand::kTwoGhz;
+}
 
-bool Is5Ghz(const fwlan_ieee80211::WlanChannel& channel) { return Is5Ghz(channel.primary); }
+bool IsValidChan2Ghz(const Channel& channel) {
+  if (channel.channel.band != fwlan_ieee80211::WlanBand::kTwoGhz) {
+    return false;
+  }
 
-bool Is2Ghz(const fwlan_ieee80211::WlanChannel& channel) { return !Is5Ghz(channel.primary); }
-
-bool IsValidChan2Ghz(const fwlan_ieee80211::WlanChannel& channel) {
-  uint8_t p = channel.primary;
+  uint8_t p = channel.channel.number;
 
   if (p < 1 || p > 14) {
     return false;
@@ -53,14 +44,12 @@ bool IsValidChan2Ghz(const fwlan_ieee80211::WlanChannel& channel) {
   }
 }
 
-bool IsValidChan5Ghz(const fwlan_ieee80211::WlanChannel& channel) {
-  uint8_t p = channel.primary;
-  uint8_t s = channel.secondary80;
+bool IsValidChan5Ghz(const Channel& channel) {
+  if (channel.channel.band != fwlan_ieee80211::WlanBand::kFiveGhz) {
+    return false;
+  }
 
-  // See IEEE Std 802.11-2016, Table 9-252, 9-253
-  // TODO(porce): Augment fwlan_ieee80211::WlanChannel to carry
-  // "channel width" subfield of VHT Operation Info of VHT Operation IE.
-  // Test the validity of CCFS1, and the relation to the CCFS0.
+  uint8_t p = channel.channel.number;
 
   if (p < 36 || p > 173) {
     return false;
@@ -103,6 +92,10 @@ bool IsValidChan5Ghz(const fwlan_ieee80211::WlanChannel& channel) {
       }
       break;
     case fwlan_ieee80211::ChannelBandwidth::kCbw80P80: {
+      if (channel.secondary80.band != channel.channel.band) {
+        return false;
+      }
+      uint8_t s = channel.secondary80.number;
       if (!(s == 42 || s == 58 || s == 106 || s == 122 || s == 138 || s == 155)) {
         return false;
       }
@@ -128,23 +121,16 @@ bool IsValidChan5Ghz(const fwlan_ieee80211::WlanChannel& channel) {
   return true;
 }
 
-bool IsValidChan(const fwlan_ieee80211::WlanChannel& channel) {
-  auto result = Is2Ghz(channel) ? IsValidChan2Ghz(channel) : IsValidChan5Ghz(channel);
-
-  // TODO(porce): Revisit if wlan library may have active logging
-  // Prefer logging in the caller only
-  if (!result) {
-    // errorf("invalid channel value: %s\n", ChanStr(channel).c_str());
-  }
-  return result;
+bool IsValidChan(const Channel& channel) {
+  return IsValidChan2Ghz(channel) || IsValidChan5Ghz(channel);
 }
 
-Mhz GetCenterFreq(const fwlan_ieee80211::WlanChannel& channel) {
+Mhz GetCenterFreq(const Channel& channel) {
   ZX_DEBUG_ASSERT(IsValidChan(channel));
 
   Mhz spacing = 5;
   Mhz channel_starting_frequency;
-  if (Is2Ghz(channel)) {
+  if (Is2Ghz(channel.channel)) {
     channel_starting_frequency = kBaseFreq2Ghz;
   } else {
     // 5 GHz
@@ -157,8 +143,8 @@ Mhz GetCenterFreq(const fwlan_ieee80211::WlanChannel& channel) {
 
 // Returns the channel index corresponding to the first frequency segment's
 // center frequency
-uint8_t GetCenterChanIdx(const fwlan_ieee80211::WlanChannel& channel) {
-  uint8_t p = channel.primary;
+uint8_t GetCenterChanIdx(const Channel& channel) {
+  uint8_t p = channel.channel.number;
   switch (channel.cbw) {
     case fwlan_ieee80211::ChannelBandwidth::kCbw20:
       return p;
@@ -197,7 +183,7 @@ uint8_t GetCenterChanIdx(const fwlan_ieee80211::WlanChannel& channel) {
         return p;
       }
     default:
-      return channel.primary;
+      return channel.channel.number;
   }
 }
 
@@ -240,23 +226,23 @@ const char* CbwStr(fwlan_ieee80211::ChannelBandwidth cbw) {
   }
 }
 
-std::string ChanStr(const fwlan_ieee80211::WlanChannel& channel) {
+std::string ChanStr(const Channel& channel) {
   char buf[8 + 1];
   if (channel.cbw != fwlan_ieee80211::ChannelBandwidth::kCbw80P80) {
-    std::snprintf(buf, sizeof(buf), "%u%s", channel.primary, CbwSuffix(channel.cbw));
+    std::snprintf(buf, sizeof(buf), "%u%s", channel.channel.number, CbwSuffix(channel.cbw));
   } else {
-    std::snprintf(buf, sizeof(buf), "%u+%u%s", channel.primary, channel.secondary80,
+    std::snprintf(buf, sizeof(buf), "%u+%u%s", channel.channel.number, channel.secondary80.number,
                   CbwSuffix(channel.cbw));
   }
   return std::string(buf);
 }
 
-std::string ChanStrLong(const fwlan_ieee80211::WlanChannel& channel) {
+std::string ChanStrLong(const Channel& channel) {
   char buf[16 + 1];
   if (channel.cbw != fwlan_ieee80211::ChannelBandwidth::kCbw80P80) {
-    std::snprintf(buf, sizeof(buf), "%u %s", channel.primary, CbwStr(channel.cbw));
+    std::snprintf(buf, sizeof(buf), "%u %s", channel.channel.number, CbwStr(channel.cbw));
   } else {
-    std::snprintf(buf, sizeof(buf), "%u+%u %s", channel.primary, channel.secondary80,
+    std::snprintf(buf, sizeof(buf), "%u+%u %s", channel.channel.number, channel.secondary80.number,
                   CbwStr(channel.cbw));
   }
   return std::string(buf);

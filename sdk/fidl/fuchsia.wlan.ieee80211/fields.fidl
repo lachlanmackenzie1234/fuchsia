@@ -163,7 +163,9 @@ type BssDescription = struct {
     ies vector<uint8>:MAX;
 
     /// Channel information for this BSS.
-    channel WlanChannel;
+    primary ChannelNumber;
+    bandwidth ChannelBandwidth;
+    vht_secondary_80_channel ChannelNumber;
     /// The running average of received signal strength indicator in units of dBm.
     rssi_dbm int8;
     /// The running average of snr in units of dB.

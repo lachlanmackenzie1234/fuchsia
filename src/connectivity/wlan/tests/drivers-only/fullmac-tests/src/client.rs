@@ -1069,14 +1069,34 @@ async fn test_channel_switch() {
 
     fullmac_driver
         .ifc_proxy
-        .on_channel_switch(&fidl_fullmac::WlanFullmacChannelSwitchInfo { new_channel: 11 })
+        .on_channel_switch(&fidl_fullmac::WlanFullmacChannelSwitchInfo {
+            new_primary_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 11,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
+            },
+        })
         .await
         .expect("Could not send OnChannelSwitch");
 
     assert_matches!(
         connect_txn_event_stream.next().await,
         Some(Ok(fidl_sme::ConnectTransactionEvent::OnChannelSwitched {
-            info: fidl_internal::ChannelSwitchInfo { new_channel: 11 }
+            info: fidl_internal::ChannelSwitchInfo {
+                new_primary_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 11,
+                },
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
+                },
+            }
         }))
     );
 }

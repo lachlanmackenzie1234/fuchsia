@@ -26,6 +26,7 @@ use ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid};
 use link_state::LinkState;
 use log::{error, info, warn};
 use wlan_common::bss::BssDescription;
+use wlan_common::channel::{Cbw, Channel};
 use wlan_common::ie::rsn::cipher;
 use wlan_common::ie::rsn::suite_selector::OUI;
 use wlan_common::ie::{self, IeSummaryIter};
@@ -923,8 +924,21 @@ impl Associated {
     }
 
     fn on_channel_switched(&mut self, info: fidl_internal::ChannelSwitchInfo) {
-        self.connect_txn_sink.send(ConnectTransactionEvent::OnChannelSwitched { info });
-        self.latest_ap_state.channel.primary = info.new_channel;
+        self.connect_txn_sink
+            .send(ConnectTransactionEvent::OnChannelSwitched { info: info.clone() });
+
+        let cbw = match Cbw::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+            Ok(cbw) => cbw,
+            Err(e) => {
+                // In the event that the CBW is invalid, reuse the previous CBW
+                // in determining the client's channel to preserve any legacy
+                // behavior.
+                error!("Invalid CBW in ChannelSwitchInfo: {}", e);
+                self.latest_ap_state.channel.cbw
+            }
+        };
+        self.latest_ap_state.channel =
+            Channel::new(info.new_primary_channel.number, cbw, info.new_primary_channel.band);
         self.last_channel_switch_time = Some(now());
     }
 
@@ -4259,10 +4273,14 @@ mod tests {
             beacon_period: 0,
             capability_info: 0,
             ies: Vec::new(),
-            channel: fidl_ieee80211::WlanChannel {
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                primary: 0,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
             },
             rssi_dbm: 0,
             snr_db: 0,
@@ -5313,12 +5331,22 @@ mod tests {
         *cmd.bss = fake_bss_description!(Open,
             ssid: Ssid::try_from("bar").unwrap(),
             bssid: [8; 6],
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
         );
         let state = link_up_state(cmd);
 
-        let input_info = fidl_internal::ChannelSwitchInfo { new_channel: 36 };
-        let switch_ind = MlmeEvent::OnChannelSwitched { info: input_info };
+        let input_info = fidl_internal::ChannelSwitchInfo {
+            new_primary_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 36,
+            },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 0,
+            },
+        };
+        let switch_ind = MlmeEvent::OnChannelSwitched { info: input_info.clone() };
 
         assert_matches!(&state, ClientState::Associated(state) => {
             assert_eq!(state.latest_ap_state.channel.primary, 1);

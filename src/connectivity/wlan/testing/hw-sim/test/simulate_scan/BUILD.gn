@@ -10,6 +10,7 @@ import(
 rust_wlan_integration_test("simulate-scan") {
   edition = "2024"
   binary_deps = [
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
     "//src/connectivity/wlan/lib/common/rust:wlan-common",
     "//src/connectivity/wlan/lib/ieee80211",

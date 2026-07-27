@@ -407,7 +407,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             ), "ScanResult.BssDescription is missing ies"
             scanned_ssid = read_ssid(bytes(scan_result.bss_description.ies))
             if scanned_ssid == ssid:
-                channel = scan_result.bss_description.channel.primary
+                channel = scan_result.bss_description.primary.number
                 if channel in hostapd_constants.US_CHANNELS_2G:
                     bss_desc_2g = scan_result.bss_description
                 elif channel in hostapd_constants.US_CHANNELS_5G:

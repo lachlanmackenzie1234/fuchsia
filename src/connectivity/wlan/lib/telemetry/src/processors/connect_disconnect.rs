@@ -290,7 +290,7 @@ impl ConnectDisconnectLogger {
 
         let security_type = convert_security_type(&bss.protection());
         let primary_channel = bss.channel.primary;
-        let channel_band = convert_channel_band(primary_channel);
+        let channel_band = convert_channel_band(bss.channel.band);
         let rssi_bucket = convert_rssi_bucket(bss.rssi_dbm);
         let snr_bucket = convert_snr_bucket(bss.snr_db);
         let is_owe_transition_dim = convert_is_owe_transition(is_owe_transition);
@@ -448,7 +448,7 @@ impl ConnectDisconnectLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        let channel_band_dim = convert_channel_band(bss.channel.primary);
+        let channel_band_dim = convert_channel_band(bss.channel.band);
         metric_events.push(MetricEvent {
             metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
             event_codes: vec![channel_band_dim as u32],
@@ -1161,7 +1161,7 @@ mod tests {
 
         // Generate BSS Description
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(157, Cbw::Cbw40),
+            channel: Channel::new(157, Cbw::Cbw40, fidl_ieee80211::WlanBand::FiveGhz),
             bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
         );
 
@@ -1465,7 +1465,7 @@ mod tests {
         );
 
         let mut bss = random_bss_description!(Wpa2);
-        bss.channel = Channel::new(6, Cbw::Cbw20); // primary channel 6 -> Band2Dot4Ghz
+        bss.channel = Channel::new(6, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz); // primary channel 6 -> Band2Dot4Ghz
         bss.rssi_dbm = -50; // rssi -50 -> From50To35 (event code 11)
         bss.snr_db = 15; // snr 15 -> From11To15 (event code 3)
 
@@ -1606,7 +1606,7 @@ mod tests {
 
         // Generate BSS Description
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(157, Cbw::Cbw40),
+            channel: Channel::new(157, Cbw::Cbw40, fidl_ieee80211::WlanBand::FiveGhz),
             bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
         );
 

@@ -175,23 +175,25 @@ struct brcmu_d11inf {
 };
 
 void brcmu_d11_attach(struct brcmu_d11inf* d11inf);
-// Conversion from natural type
-uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
-                             const fuchsia_wlan_ieee80211::WlanChannel* ch);
-// Conversion from wire type
-uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
-                             const fuchsia_wlan_ieee80211::wire::WlanChannel* ch);
-void chanspec_to_channel(const brcmu_d11inf* d11_inf, uint16_t chanspec,
-                         fuchsia_wlan_ieee80211::wire::WlanChannel* ch);
 
-// Override Fuchsia WLAN channel bandwidth, to account for driver/firmware limitations.
-fuchsia_wlan_ieee80211::WlanChannel override_wlan_channel_bandwidth(
-    const fuchsia_wlan_ieee80211::WlanChannel& wlan_channel);
+fuchsia_wlan_ieee80211::wire::ChannelNumber chanspec_to_operating_channel_number(
+    const brcmu_d11inf* d11_inf, uint16_t chanspec);
+fuchsia_wlan_ieee80211::wire::ChannelNumber chanspec_to_primary_channel_number(
+    const brcmu_d11inf* d11_inf, uint16_t chanspec);
+fuchsia_wlan_ieee80211::wire::ChannelBandwidth chanspec_to_channel_bandwidth(
+    const brcmu_d11inf* d11_inf, uint16_t chanspec);
+fuchsia_wlan_ieee80211::wire::ChannelNumber chanspec_to_secondary80(const brcmu_d11inf* d11_inf,
+                                                                    uint16_t chanspec);
 
-// Construct chanspec manually for 80+80 MHz channels.
-// Note: bcmdhd functions may exist for this case, but it's difficult to test with existing test
-// infra.
-zx::result<chanspec_t> channel_to_chanspec_bw8080(
-    brcmu_d11inf* d11inf, const fuchsia_wlan_ieee80211::WlanChannel& wlan_channel);
+fuchsia_wlan_ieee80211::wire::ChannelBandwidth override_wlan_channel_bandwidth(
+    uint8_t primary, fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
+
+uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
+                             const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
+                             fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
+
+uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
+                             const fuchsia_wlan_ieee80211::ChannelNumber& channel,
+                             fuchsia_wlan_ieee80211::ChannelBandwidth cbw);
 
 #endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_BRCMU_D11_H_

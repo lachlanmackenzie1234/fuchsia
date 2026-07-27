@@ -32,9 +32,10 @@ TEST_F(SimTest, ActiveScan) {
 
   BRCMF_SET_VALUE(getentropy, 1);
 
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc, kScanId, true,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::sec(1));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc, kScanId, true,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::sec(1));
   env_->Run(kSimulatedClockDuration);
 
   // Verify that scan completed successfully

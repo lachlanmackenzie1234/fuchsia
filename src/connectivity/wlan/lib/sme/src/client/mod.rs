@@ -621,13 +621,19 @@ pub struct ServingApInfo {
 
 impl From<ServingApInfo> for fidl_sme::ServingApInfo {
     fn from(ap: ServingApInfo) -> fidl_sme::ServingApInfo {
+        let (cbw, secondary80_num) = ap.channel.cbw.to_fidl();
         fidl_sme::ServingApInfo {
             bssid: ap.bssid.to_array(),
             ssid: ap.ssid.to_vec(),
             rssi_dbm: ap.rssi_dbm,
             snr_db: ap.snr_db,
-            channel: ap.channel.into(),
+            primary: ap.channel.into(),
             protection: ap.protection.into(),
+            bandwidth: cbw,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: ap.channel.band,
+                number: secondary80_num,
+            },
         }
     }
 }
@@ -1355,7 +1361,7 @@ mod tests {
             bssid: [0u8; 6],
             rssi_dbm: -30,
             snr_db: 0,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             ies_overrides: IesOverrides::new()
                 .set(IeType::HT_CAPABILITIES, fake_ht_cap_bytes().to_vec())
                 .set(IeType::VHT_CAPABILITIES, fake_vht_cap_bytes().to_vec()),
@@ -1385,7 +1391,7 @@ mod tests {
             bssid: [0u8; 6],
             rssi_dbm: -30,
             snr_db: 0,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             wmm_param: Some(wmm_param),
             ies_overrides: IesOverrides::new()
                 .set(IeType::HT_CAPABILITIES, fake_ht_cap_bytes().to_vec())
@@ -1413,7 +1419,7 @@ mod tests {
             bssid: [0u8; 6],
             rssi_dbm: -30,
             snr_db: 0,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             ies_overrides: IesOverrides::new()
                 .set(IeType::HT_CAPABILITIES, fake_ht_cap_bytes().to_vec())
                 .set(IeType::VHT_CAPABILITIES, fake_vht_cap_bytes().to_vec()),
@@ -1447,7 +1453,7 @@ mod tests {
             bssid: [0u8; 6],
             rssi_dbm: -30,
             snr_db: 0,
-            channel: Channel::new(1, Cbw::Cbw20),
+            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             ies_overrides: IesOverrides::new()
                 .set(IeType::HT_CAPABILITIES, fake_ht_cap_bytes().to_vec())
                 .set(IeType::VHT_CAPABILITIES, fake_vht_cap_bytes().to_vec()),

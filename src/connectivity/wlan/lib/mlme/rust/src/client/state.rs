@@ -357,7 +357,9 @@ impl Associating {
             // In the association request we sent out earlier, listen_interval is always set to 0,
             // indicating the client never enters power save mode.
             listen_interval: Some(0),
-            channel: Some(main_channel),
+            primary: Some(main_channel),
+            bandwidth: sta.channel_state.get_cbw(),
+            vht_secondary_80_channel: sta.channel_state.get_secondary80(),
             qos: Some(qos),
             wmm_params: None,
             rates: Some(negotiated_cap.rates.iter().map(|r| r.0).collect()),
@@ -1425,6 +1427,7 @@ mod tests {
     use akm::AkmAlgorithm;
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_driver as fidl_driver_common;
+    use fidl_ieee80211::WlanBand::TwoGhz;
     use fuchsia_sync::Mutex;
     use std::sync::{Arc, LazyLock};
     use test_case::test_case;
@@ -1470,16 +1473,26 @@ mod tests {
         }
 
         async fn make_ctx(&mut self) -> Context<FakeDevice> {
+            let channel = fake_wlan_channel();
             self.fake_device
-                .set_channel(fake_wlan_channel().into())
+                .set_channel(
+                    channel.into(),
+                    fidl_ieee80211::ChannelBandwidth::Cbw20,
+                    fidl_ieee80211::ChannelNumber { band: channel.band, number: 0 },
+                )
                 .await
                 .expect("fake device is obedient");
             self.make_base_ctx()
         }
 
         async fn make_ctx_with_bss(&mut self) -> Context<FakeDevice> {
+            let channel = fake_wlan_channel();
             self.fake_device
-                .set_channel(fake_wlan_channel().into())
+                .set_channel(
+                    channel.into(),
+                    fidl_ieee80211::ChannelBandwidth::Cbw20,
+                    fidl_ieee80211::ChannelNumber { band: channel.band, number: 0 },
+                )
                 .await
                 .expect("fake device is obedient");
             self.fake_device
@@ -1567,11 +1580,11 @@ mod tests {
         fidl_softmac::WlanAssociationConfig {
             bssid: Some(BSSID.to_array()),
             aid: Some(42),
-            channel: Some(fidl_ieee80211::WlanChannel {
-                primary: 149,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-                secondary80: 42,
+            primary: Some(fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                number: 149,
             }),
+            bandwidth: Some(fidl_ieee80211::ChannelBandwidth::Cbw20),
             rates: None,
             capability_info: None,
             ..Default::default()
@@ -3188,7 +3201,7 @@ mod tests {
                 .on_sme_scan(fidl_mlme::ScanRequest {
                     txn_id: 1337,
                     scan_type: fidl_mlme::ScanTypes::Passive,
-                    channel_list: vec![1],
+                    channel_list: vec![fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz }],
                     ssid_list: vec![],
                     probe_delay: 0,
                     min_channel_time: 100,
@@ -3246,11 +3259,17 @@ mod tests {
 
         sta.ctx
             .device
-            .set_channel(fidl_ieee80211::WlanChannel {
-                primary: 42,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            })
+            .set_channel(
+                fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 42,
+                },
+                fidl_ieee80211::ChannelBandwidth::Cbw20,
+                fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::FiveGhz,
+                    number: 0,
+                },
+            )
             .await
             .expect("fake device is obedient");
         let eth_frame = &[100; 14]; // An ethernet frame must be at least 14 bytes long.
@@ -3688,7 +3707,7 @@ mod tests {
                 .on_sme_scan(fidl_mlme::ScanRequest {
                     txn_id: 1337,
                     scan_type: fidl_mlme::ScanTypes::Passive,
-                    channel_list: vec![1],
+                    channel_list: vec![fidl_ieee80211::ChannelNumber { number: 1, band: TwoGhz }],
                     ssid_list: vec![],
                     probe_delay: 0,
                     min_channel_time: 100,
@@ -3758,10 +3777,8 @@ mod tests {
             1, 2, 3, 4, 5, 6, 7, 8, // payload
         ];
 
-        let mut rx_info = mock_rx_info(&sta);
-        // We deliberately ignore the cbw, since it isn't important and not all
-        // drivers report it consistently.
-        rx_info.channel.cbw = fidl_ieee80211::ChannelBandwidth::Cbw80;
+        let rx_info = mock_rx_info(&sta);
+
         state.on_mac_frame(&mut sta, &data_frame[..], rx_info, 0.into()).await;
         assert_eq!(m.fake_device_state.lock().eth_queue.len(), 1);
     }

@@ -12,12 +12,12 @@
 namespace wlan::brcmfmac {
 
 // Some default AP and association request values
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
-constexpr wlan_ieee80211::WlanChannel kSwitchedChannel = {
-    .primary = 20, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
-constexpr wlan_ieee80211::WlanChannel kSecondSwitchedChannel = {
-    .primary = 30, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kSwitchedChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 20};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kSecondSwitchedChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 30};
 const uint16_t kDefaultCSACount = 3;
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
@@ -30,10 +30,11 @@ class ChannelSwitchTest : public SimTest {
   void Init();
 
   // Schedule a future SetChannel event for the first AP in list
-  void ScheduleChannelSwitch(const wlan_ieee80211::WlanChannel& new_channel, zx::duration when);
+  void ScheduleChannelSwitch(const fuchsia_wlan_ieee80211::wire::ChannelNumber& new_channel,
+                             zx::duration when);
 
   // Send one fake CSA beacon using the identification consistent of default ssid and bssid.
-  void SendFakeCSABeacon(wlan_ieee80211::WlanChannel& dst_channel);
+  void SendFakeCSABeacon(const fuchsia_wlan_ieee80211::wire::ChannelNumber& dst_channel);
 
  protected:
   // Number of received assoc responses.
@@ -44,8 +45,12 @@ class ChannelSwitchTest : public SimTest {
   std::list<simulation::FakeAp*> aps_;
 };
 
-void ChannelSwitchTest::SendFakeCSABeacon(wlan_ieee80211::WlanChannel& dst_channel) {
-  constexpr simulation::WlanTxInfo kDefaultTxInfo = {.channel = kDefaultChannel};
+void ChannelSwitchTest::SendFakeCSABeacon(
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& dst_channel) {
+  const simulation::WlanTxInfo kDefaultTxInfo = {
+      .channel = kDefaultChannel,
+      .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
+      .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
 
   simulation::SimBeaconFrame fake_csa_beacon(kDefaultSsid, kDefaultBssid);
   fake_csa_beacon.AddCsaIe(dst_channel, kDefaultCSACount);
@@ -60,16 +65,20 @@ void ChannelSwitchTest::Init() {
 }
 
 // This function schedules a Setchannel() event for the first AP in AP list.
-void ChannelSwitchTest::ScheduleChannelSwitch(const wlan_ieee80211::WlanChannel& new_channel,
-                                              zx::duration when) {
-  env_->ScheduleNotification(std::bind(&simulation::FakeAp::SetChannel, aps_.front(), new_channel),
-                             when);
+void ChannelSwitchTest::ScheduleChannelSwitch(
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& new_channel, zx::duration when) {
+  env_->ScheduleNotification(
+      [ap = aps_.front(), new_channel] {
+        ap->SetChannel(new_channel, fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+      },
+      when);
 }
 
 TEST_F(ChannelSwitchTest, ChannelSwitch) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
@@ -79,7 +88,8 @@ TEST_F(ChannelSwitchTest, ChannelSwitch) {
 
   // Channel switch will only be triggered when associated.
   EXPECT_EQ(client_ifc_.stats_.csa_indications.size(), 1U);
-  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_channel, kSwitchedChannel.primary);
+  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_primary_channel.number,
+            kSwitchedChannel.number);
 }
 
 // This test case verifies that in a single CSA beacon interval, if AP want to switch back to old
@@ -87,7 +97,8 @@ TEST_F(ChannelSwitchTest, ChannelSwitch) {
 TEST_F(ChannelSwitchTest, SwitchBackInSingleInterval) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
@@ -105,7 +116,8 @@ TEST_F(ChannelSwitchTest, SwitchBackInSingleInterval) {
 TEST_F(ChannelSwitchTest, ChangeDstAddressWhenSwitching) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
@@ -116,7 +128,8 @@ TEST_F(ChannelSwitchTest, ChangeDstAddressWhenSwitching) {
   env_->Run(kTestDuration);
 
   EXPECT_EQ(client_ifc_.stats_.csa_indications.size(), 1U);
-  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_channel, kSecondSwitchedChannel.primary);
+  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_primary_channel.number,
+            kSecondSwitchedChannel.number);
 }
 
 // This test case verifies that two continuous channel switches will work as long as they are in two
@@ -124,7 +137,8 @@ TEST_F(ChannelSwitchTest, ChangeDstAddressWhenSwitching) {
 TEST_F(ChannelSwitchTest, SwitchBackInDiffInterval) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
@@ -137,15 +151,18 @@ TEST_F(ChannelSwitchTest, SwitchBackInDiffInterval) {
   env_->Run(kTestDuration);
 
   EXPECT_EQ(client_ifc_.stats_.csa_indications.size(), 2U);
-  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_channel, kSwitchedChannel.primary);
+  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_primary_channel.number,
+            kSwitchedChannel.number);
   client_ifc_.stats_.csa_indications.pop_front();
-  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_channel, kDefaultChannel.primary);
+  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_primary_channel.number,
+            kDefaultChannel.number);
 }
 
 TEST_F(ChannelSwitchTest, ChannelSwitchWithSpuriousReassocAndRoamEvents) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
@@ -161,7 +178,8 @@ TEST_F(ChannelSwitchTest, ChannelSwitchWithSpuriousReassocAndRoamEvents) {
   env_->Run(kTestDuration);
 
   EXPECT_EQ(client_ifc_.stats_.csa_indications.size(), 1U);
-  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_channel, kSwitchedChannel.primary);
+  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_primary_channel.number,
+            kSwitchedChannel.number);
   EXPECT_EQ(1U, client_ifc_.stats_.connect_attempts);
   EXPECT_EQ(0U, client_ifc_.stats_.roam_attempts);
   EXPECT_EQ(0U, client_ifc_.stats_.roam_result_indications.size());
@@ -180,11 +198,13 @@ TEST_F(ChannelSwitchTest, NotSwitchForDifferentAP) {
 
   Init();
 
-  simulation::FakeAp wrong_ap(env_.get(), kWrongBssid, kWrongSsid, kDefaultChannel);
+  simulation::FakeAp wrong_ap(env_.get(), kWrongBssid, kWrongSsid, kDefaultChannel,
+                              fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   wrong_ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&wrong_ap);
 
-  simulation::FakeAp right_ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp right_ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                              fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   right_ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&right_ap);
 
@@ -203,7 +223,8 @@ TEST_F(ChannelSwitchTest, NotSwitchForDifferentAP) {
 TEST_F(ChannelSwitchTest, StopStillSwitch) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
@@ -217,7 +238,8 @@ TEST_F(ChannelSwitchTest, StopStillSwitch) {
   env_->Run(kTestDuration);
 
   EXPECT_EQ(client_ifc_.stats_.csa_indications.size(), 1U);
-  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_channel, kSwitchedChannel.primary);
+  EXPECT_EQ(client_ifc_.stats_.csa_indications.front().new_primary_channel.number,
+            kSwitchedChannel.number);
 }
 
 // This test verifies that the CSA beacon will be ignored when its new channel is the same as
@@ -225,7 +247,8 @@ TEST_F(ChannelSwitchTest, StopStillSwitch) {
 TEST_F(ChannelSwitchTest, ChannelSwitchToSameChannel) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
@@ -245,16 +268,18 @@ TEST_F(ChannelSwitchTest, ChannelSwitchToSameChannel) {
 TEST_F(ChannelSwitchTest, ChannelSwitchWhileScanning) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(zx::msec(60));
   aps_.push_back(&ap);
 
   client_ifc_.AssociateWith(ap, zx::msec(10));
 
   constexpr uint32_t kScanStartTimeMs = 20;
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, 0, false,
-                                       std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(kScanStartTimeMs));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, 0, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(kScanStartTimeMs));
 
   constexpr uint32_t kCsaBeaconDelayMs =
       kScanStartTimeMs + (SimInterface::kDefaultPassiveScanDwellTimeMs / 2);

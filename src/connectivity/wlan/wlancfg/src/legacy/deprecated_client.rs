@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::legacy::IfaceRef;
+use fidl_fuchsia_wlan_product_deprecatedclient as deprecated;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use futures::prelude::*;
 use log::{debug, error};
-use {fidl_fuchsia_wlan_product_deprecatedclient as deprecated, fidl_fuchsia_wlan_sme as fidl_sme};
 
 const MAX_CONCURRENT_WLAN_REQUESTS: usize = 1000;
 
@@ -92,9 +93,10 @@ mod tests {
     use crate::legacy::Iface;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fuchsia_async as fasync;
     use futures::task::Poll;
     use std::pin::pin;
-    use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fuchsia_async as fasync};
 
     struct TestValues {
         iface: IfaceRef,
@@ -225,12 +227,16 @@ mod tests {
                         ssid: ssid.as_bytes().to_vec(),
                         rssi_dbm,
                         snr_db: 0,
-                        channel: fidl_ieee80211::WlanChannel {
-                            primary: 1,
-                            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                            secondary80: 0,
+                        primary: fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: 1,
                         },
                         protection: fidl_sme::Protection::Unknown,
+                        bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                        vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                            band: fidl_ieee80211::WlanBand::TwoGhz,
+                            number: 0,
+                        },
                     })).expect("could not send sme response")
             }
         );

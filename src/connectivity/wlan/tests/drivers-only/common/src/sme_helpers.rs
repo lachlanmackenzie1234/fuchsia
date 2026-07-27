@@ -14,11 +14,11 @@ pub static DEFAULT_OPEN_AP_CONFIG: LazyLock<fidl_sme::ApConfig> =
         password: vec![],
         radio_cfg: fidl_sme::RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ofdm,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 1,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 1,
             },
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         },
     });
 

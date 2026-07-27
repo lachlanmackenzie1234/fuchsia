@@ -13,8 +13,8 @@
 namespace wlan::brcmfmac {
 
 // Some default AP and association request values
-constexpr wlan_ieee80211::WlanChannel kDefaultChannel = {
-    .primary = 9, .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20, .secondary80 = 0};
+constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
+    .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
@@ -44,7 +44,8 @@ void TimeoutTest::Init() {
 TEST_F(TimeoutTest, ScanTimeout) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(kBeaconInterval);
 
   // Ignore scan request in sim-fw.
@@ -54,9 +55,10 @@ TEST_F(TimeoutTest, ScanTimeout) {
   });
 
   // Start a passive scan
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kDefaultScanTxnId,
-                                       false, std::optional<const std::vector<uint8_t>>{}),
-                             zx::msec(10));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kDefaultScanTxnId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::msec(10));
 
   env_->Run(kTestDuration);
 
@@ -76,7 +78,8 @@ TEST_F(TimeoutTest, ScanTimeout) {
 TEST_F(TimeoutTest, AssocTimeout) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
 
   // Ignore association req in sim-fw.
   WithSimDevice([this](brcmfmac::SimDevice* device) {
@@ -108,7 +111,8 @@ TEST_F(TimeoutTest, AssocTimeout) {
 TEST_F(TimeoutTest, DeauthTimeout) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(kBeaconInterval);
   client_ifc_.AssociateWith(ap, zx::msec(10));
 
@@ -137,7 +141,8 @@ TEST_F(TimeoutTest, DeauthTimeout) {
 TEST_F(TimeoutTest, ScanAfterAssocTimeout) {
   Init();
 
-  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel);
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
   ap.EnableBeacon(kBeaconInterval);
 
   // Ignore association req in sim-fw.
@@ -151,9 +156,10 @@ TEST_F(TimeoutTest, ScanAfterAssocTimeout) {
       std::bind(&SimInterface::DeauthenticateFrom, &client_ifc_, kDefaultBssid,
                 wlan_ieee80211::ReasonCode::kUnspecifiedReason),
       zx::sec(1));
-  env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kDefaultScanTxnId,
-                                       false, std::optional<const std::vector<uint8_t>>{}),
-                             zx::sec(3));
+  env_->ScheduleNotification(
+      std::bind(&SimInterface::StartScan, &client_ifc_, kDefaultScanTxnId, false,
+                std::optional<const std::vector<fuchsia_wlan_ieee80211::wire::ChannelNumber>>{}),
+      zx::sec(3));
 
   env_->Run(kTestDuration);
 

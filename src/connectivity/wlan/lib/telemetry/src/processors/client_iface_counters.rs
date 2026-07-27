@@ -312,8 +312,10 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
 
     async fn log_signal_report_inspect(&self, report: &fidl_stats::SignalReport) {
         if let Some(report) = &report.connection_signal_report {
-            if let Some(channel) = report.channel {
-                let channel = InspectWlanChannel::from(channel);
+            if let Some(channel) = report.primary {
+                let cbw = report.bandwidth.unwrap_or(fidl_ieee80211::ChannelBandwidth::Cbw20);
+                let secondary80 = report.vht_secondary_80_channel;
+                let channel = InspectWlanChannel::new(channel, cbw, secondary80);
                 let channel_id =
                     self.inspect_metadata_node.lock().await.wlan_channels.insert(channel) as u64;
                 self.signal_time_series.wlan_channels.fold_or_log_error(1 << channel_id);
@@ -679,16 +681,28 @@ impl SignalTimeSeries {
 #[derive(PartialEq, Eq, Unit, Hash)]
 struct InspectWlanChannel {
     primary: u8,
+    band: String,
     cbw: String,
-    secondary80: u8,
+    secondary80_number: u8,
+    secondary80_band: String,
 }
 
-impl From<fidl_ieee80211::WlanChannel> for InspectWlanChannel {
-    fn from(channel: fidl_ieee80211::WlanChannel) -> Self {
+impl InspectWlanChannel {
+    fn new(
+        channel: fidl_ieee80211::ChannelNumber,
+        cbw: fidl_ieee80211::ChannelBandwidth,
+        secondary80: Option<fidl_ieee80211::ChannelNumber>,
+    ) -> Self {
+        let (secondary80_number, secondary80_band) = match secondary80 {
+            Some(c) => (c.number, format!("{:?}", c.band)),
+            None => (0, "None".to_string()),
+        };
         Self {
-            primary: channel.primary,
-            cbw: format!("{:?}", channel.cbw),
-            secondary80: channel.secondary80,
+            primary: channel.number,
+            band: format!("{:?}", channel.band),
+            cbw: format!("{:?}", cbw),
+            secondary80_number,
+            secondary80_band,
         }
     }
 }
@@ -1072,10 +1086,14 @@ mod tests {
         );
         let signal_report = fidl_stats::SignalReport {
             connection_signal_report: Some(fidl_stats::ConnectionSignalReport {
-                channel: Some(fidl_ieee80211::WlanChannel {
-                    primary: 6,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
+                primary: Some(fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 6,
+                }),
+                bandwidth: Some(fidl_ieee80211::ChannelBandwidth::Cbw20),
+                vht_secondary_80_channel: Some(fidl_ieee80211::ChannelNumber {
+                    band: fidl_ieee80211::WlanBand::TwoGhz,
+                    number: 0,
                 }),
                 tx_rate_500kbps: Some(11),
                 rssi_dbm: Some(-40),
@@ -1116,8 +1134,10 @@ mod tests {
                             "@time": AnyNumericProperty,
                             "data": contains {
                                 primary: 6u64,
+                                band: "TwoGhz",
                                 cbw: "Cbw20",
-                                secondary80: 0u64,
+                                secondary80_number: 0u64,
+                                secondary80_band: "TwoGhz",
                             }
                         }
                     }

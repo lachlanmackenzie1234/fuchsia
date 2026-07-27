@@ -17,6 +17,7 @@
 #ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_SIM_SIM_HW_H_
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_SIM_SIM_HW_H_
 
+#include <fidl/fuchsia.wlan.ieee80211/cpp/wire.h>
 #include <lib/async/dispatcher.h>
 #include <net/ethernet.h>
 #include <zircon/status.h>
@@ -45,7 +46,13 @@ class SimHardware : public simulation::StationIfc {
   void EnableRx() { rx_enabled_ = true; }
   void DisableRx() { rx_enabled_ = false; }
 
-  void SetChannel(wlan_ieee80211_wire::WlanChannel channel) { channel_ = channel; }
+  void SetChannel(fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
+                  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
+                  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80) {
+    channel_ = channel;
+    cbw_ = cbw;
+    secondary80_ = secondary80;
+  }
 
   void GetRevInfo(brcmf_rev_info_le* rev_info);
 
@@ -62,7 +69,9 @@ class SimHardware : public simulation::StationIfc {
 
  private:
   bool rx_enabled_ = false;
-  wlan_ieee80211_wire::WlanChannel channel_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber channel_;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80_;
   simulation::Environment* env_;
   EventHandlers event_handlers_;
   std::list<uint64_t> scheduled_ids;

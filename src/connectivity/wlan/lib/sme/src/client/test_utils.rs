@@ -5,6 +5,9 @@
 use crate::client::rsn::Supplicant;
 use crate::client::{EstablishRsnaFailureReason, ServingApInfo};
 use assert_matches::assert_matches;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
@@ -16,10 +19,6 @@ use wlan_common::ie::fake_ies::{fake_ht_cap_bytes, fake_vht_cap_bytes};
 use wlan_fcg_crypto::sae::PweMethod;
 use wlan_rsn::rsna::UpdateSink;
 use wlan_rsn::{Error, auth, format_rsn_err, psk};
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_mlme as fidl_mlme,
-};
 
 pub fn fake_serving_ap_info() -> ServingApInfo {
     ServingApInfo {
@@ -28,7 +27,7 @@ pub fn fake_serving_ap_info() -> ServingApInfo {
         rssi_dbm: 0,
         snr_db: 0,
         signal_report_time: zx::MonotonicInstant::ZERO,
-        channel: channel::Channel { primary: 1, cbw: channel::Cbw::Cbw20 },
+        channel: channel::Channel::new(1, channel::Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
         protection: Protection::Wpa2Personal,
         ht_cap: Some(fidl_ieee80211::HtCapabilities { bytes: fake_ht_cap_bytes() }),
         vht_cap: Some(fidl_ieee80211::VhtCapabilities { bytes: fake_vht_cap_bytes() }),
@@ -41,7 +40,10 @@ pub fn fake_scan_request() -> fidl_mlme::ScanRequest {
     fidl_mlme::ScanRequest {
         txn_id: 1,
         scan_type: fidl_mlme::ScanTypes::Active,
-        channel_list: vec![11],
+        channel_list: vec![fidl_ieee80211::ChannelNumber {
+            number: 11,
+            band: fidl_ieee80211::WlanBand::TwoGhz,
+        }],
         ssid_list: vec![],
         probe_delay: 5,
         min_channel_time: 50,

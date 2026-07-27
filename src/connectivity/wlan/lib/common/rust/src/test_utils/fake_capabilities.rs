@@ -5,8 +5,9 @@
 use crate::capabilities::{ClientCapabilities, StaCapabilities};
 use crate::ie;
 use crate::mac::CapabilityInfo;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use zerocopy::IntoBytes;
-use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
 pub fn fake_ht_capabilities_cbw(chanwidth: ie::ChanWidthSet) -> ie::HtCapabilities {
     let mut ht_cap = ie::fake_ht_capabilities();
@@ -35,10 +36,16 @@ pub fn fake_5ghz_band_capability() -> fidl_mlme::BandCapability {
     fidl_mlme::BandCapability {
         band: fidl_ieee80211::WlanBand::FiveGhz,
         basic_rates: vec![0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c],
-        operating_channels: vec![
+        primary_channels: vec![
             36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140,
             144, 149, 153, 157, 161, 165,
-        ],
+        ]
+        .into_iter()
+        .map(|n| fidl_ieee80211::ChannelNumber {
+            number: n,
+            band: fidl_ieee80211::WlanBand::FiveGhz,
+        })
+        .collect(),
         ht_cap: None,
         vht_cap: None,
     }
@@ -74,7 +81,13 @@ pub fn fake_2ghz_band_capability() -> fidl_mlme::BandCapability {
     fidl_mlme::BandCapability {
         band: fidl_ieee80211::WlanBand::TwoGhz,
         basic_rates: vec![0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c],
-        operating_channels: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+        primary_channels: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            .into_iter()
+            .map(|n| fidl_ieee80211::ChannelNumber {
+                number: n,
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+            })
+            .collect(),
         ht_cap: None,
         vht_cap: None,
     }

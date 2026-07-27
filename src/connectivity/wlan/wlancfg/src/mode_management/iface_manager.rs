@@ -1861,8 +1861,12 @@ mod tests {
     }
 
     fn create_ap_config(ssid: &ap_types::Ssid, password: &str) -> ap_fsm::ApConfig {
-        let radio_config =
-            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config = RadioConfig::new(
+            fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
+            Cbw::Cbw20,
+            6,
+            fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz,
+        );
         ap_fsm::ApConfig {
             id: ap_types::NetworkIdentifier {
                 ssid: ssid.clone(),

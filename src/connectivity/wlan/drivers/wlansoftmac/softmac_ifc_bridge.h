@@ -37,6 +37,9 @@ class SoftmacIfcBridge : public fdf::WireServer<fuchsia_wlan_softmac::WlanSoftma
   void NotifyScanComplete(NotifyScanCompleteRequestView request, fdf::Arena& arena,
                           NotifyScanCompleteCompleter::Sync& completer) override;
   void StopBridgedDriver(fit::callback<void()> stop_completer);
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_softmac::WlanSoftmacIfc> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
  private:
   explicit SoftmacIfcBridge(const ethernet_tx_t* ethernet_tx, const wlan_rx_t* wlan_rx)

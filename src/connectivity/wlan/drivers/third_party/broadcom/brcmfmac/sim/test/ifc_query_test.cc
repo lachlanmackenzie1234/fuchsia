@@ -299,12 +299,12 @@ TEST_F(QueryTest, CheckOperatingChannels) {
 
   for (auto& band_cap : *ifc_query_result.band_caps()) {
     if (band_cap.band() == wlan_ieee80211::WlanBand::kTwoGhz) {
-      ASSERT_EQ(band_cap.operating_channels()->size(), 1);
-      EXPECT_EQ(band_cap.operating_channels()->at(0), kExpected2gChannel);
+      ASSERT_EQ(band_cap.primary_channels()->size(), 1);
+      EXPECT_EQ(band_cap.primary_channels()->at(0).number(), kExpected2gChannel);
       checked_2ghz_band = true;
     } else {
-      ASSERT_EQ(band_cap.operating_channels()->size(), 1);
-      EXPECT_EQ(band_cap.operating_channels()->at(0), kExpected5gChannel);
+      ASSERT_EQ(band_cap.primary_channels()->size(), 1);
+      EXPECT_EQ(band_cap.primary_channels()->at(0).number(), kExpected5gChannel);
       checked_5ghz_band = true;
     }
   }
@@ -313,7 +313,7 @@ TEST_F(QueryTest, CheckOperatingChannels) {
   EXPECT_TRUE(checked_5ghz_band);
 }
 
-// Verify that we send up an empty list of operating channels. The platform expects that operating
+// Verify that we send up an empty list of primary channels. The platform expects that primary
 // channels is always present.
 TEST_F(QueryTest, CheckOperatingChannelsPresentIfEmpty) {
   SimFirmware::CapabilityIovars iovars{};
@@ -326,10 +326,10 @@ TEST_F(QueryTest, CheckOperatingChannelsPresentIfEmpty) {
   bool checked_5ghz_band = false;
   for (auto& band_cap : *ifc_query_result.band_caps()) {
     if (band_cap.band() == wlan_ieee80211::WlanBand::kTwoGhz) {
-      ASSERT_EQ(band_cap.operating_channels()->size(), 0);
+      ASSERT_EQ(band_cap.primary_channels()->size(), 0);
       checked_2ghz_band = true;
     } else {
-      ASSERT_EQ(band_cap.operating_channels()->size(), 0);
+      ASSERT_EQ(band_cap.primary_channels()->size(), 0);
       checked_5ghz_band = true;
     }
   }

@@ -23,8 +23,11 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
+    ClientStatusConnected,
     CountryCode,
     InformationElementType,
+    WlanBand,
+    WlanChannel,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.errors import NotSupportedError
@@ -49,8 +52,12 @@ _TEST_BSS_DESC_1 = f_wlan_ieee80211.BssDescription(
     beacon_period=2,
     capability_info=3,
     ies=[InformationElementType.SSID, len(_TEST_SSID)] + _TEST_SSID_BYTES,
-    channel=f_wlan_ieee80211.WlanChannel(
-        primary=1, cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20, secondary80=3
+    primary=f_wlan_ieee80211.ChannelNumber(
+        band=f_wlan_ieee80211.WlanBand.TWO_GHZ, number=1
+    ),
+    bandwidth=f_wlan_ieee80211.ChannelBandwidth.CBW20,
+    vht_secondary_80_channel=f_wlan_ieee80211.ChannelNumber(
+        band=f_wlan_ieee80211.WlanBand.TWO_GHZ, number=3
     ),
     rssi_dbm=4,
     snr_db=5,
@@ -64,10 +71,12 @@ _TEST_BSS_DESC_2 = f_wlan_ieee80211.BssDescription(
     beacon_period=5,
     capability_info=4,
     ies=[InformationElementType.SSID, len(_TEST_SSID)] + _TEST_SSID_BYTES,
-    channel=f_wlan_ieee80211.WlanChannel(
-        primary=2,
-        cbw=f_wlan_ieee80211.ChannelBandwidth.CBW40,
-        secondary80=4,
+    primary=f_wlan_ieee80211.ChannelNumber(
+        band=f_wlan_ieee80211.WlanBand.TWO_GHZ, number=2
+    ),
+    bandwidth=f_wlan_ieee80211.ChannelBandwidth.CBW40,
+    vht_secondary_80_channel=f_wlan_ieee80211.ChannelNumber(
+        band=f_wlan_ieee80211.WlanBand.TWO_GHZ, number=4
     ),
     rssi_dbm=3,
     snr_db=2,
@@ -101,11 +110,21 @@ _TEST_SERVING_AP_INFO = f_wlan_sme.ServingApInfo(
     ssid=_TEST_SSID_BYTES,
     rssi_dbm=4,
     snr_db=5,
-    channel=f_wlan_ieee80211.WlanChannel(
-        primary=1,
-        cbw=f_wlan_ieee80211.ChannelBandwidth.CBW20,
-        secondary80=3,
+    primary=f_wlan_ieee80211.ChannelNumber(
+        band=f_wlan_ieee80211.WlanBand.TWO_GHZ, number=1
     ),
+    protection=f_wlan_sme.Protection.WPA2_PERSONAL,
+    bandwidth=f_wlan_ieee80211.ChannelBandwidth.CBW20,
+    vht_secondary_80_channel=f_wlan_ieee80211.ChannelNumber(
+        band=f_wlan_ieee80211.WlanBand.TWO_GHZ, number=0
+    ),
+)
+_TEST_CLIENT_STATUS_CONNECTED = ClientStatusConnected(
+    bssid=[1, 2, 3, 4, 5, 6],
+    ssid=_TEST_SSID_BYTES,
+    rssi_dbm=4,
+    snr_db=5,
+    channel=WlanChannel(number=1, band=WlanBand.TWO_GHZ),
     protection=f_wlan_sme.Protection.WPA2_PERSONAL,
 )
 

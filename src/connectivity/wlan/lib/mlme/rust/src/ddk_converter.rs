@@ -52,10 +52,10 @@ pub fn mlme_band_cap_from_softmac(
 
     Ok(fidl_mlme::BandCapability {
         band: required(band_cap.band, "band")?,
-        basic_rates: required(band_cap.basic_rates, "basic_rates")?,
-        operating_channels: required(band_cap.operating_channels, "operating_channels")?,
-        ht_cap: band_cap.ht_caps.map(Box::new),
-        vht_cap: band_cap.vht_caps.map(Box::new),
+        basic_rates: required(band_cap.basic_rates.clone(), "basic_rates")?.into(),
+        primary_channels: required(band_cap.primary_channels.clone(), "primary_channels")?,
+        ht_cap: band_cap.ht_caps.clone().map(Box::new),
+        vht_cap: band_cap.vht_caps.clone().map(Box::new),
     })
 }
 
@@ -120,14 +120,18 @@ mod tests {
             valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
             phy: fidl_ieee80211::WlanPhyType::Dsss,
             data_rate: 0,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: 0,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
+            primary: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
             },
             mcs: 0,
             rssi_dbm: 0,
             snr_dbh: 0,
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: 0,
+            },
         }
     }
 
@@ -168,7 +172,14 @@ mod tests {
             basic_rates: Some(vec![
                 0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
             ]),
-            operating_channels: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
+            primary_channels: Some(
+                (1..=14)
+                    .map(|c| fidl_ieee80211::ChannelNumber {
+                        band: fidl_ieee80211::WlanBand::TwoGhz,
+                        number: c,
+                    })
+                    .collect(),
+            ),
             ht_caps: Some(fidl_ieee80211::HtCapabilities {
                 bytes: [
                     0x63, 0x00, // HT capability info
@@ -196,10 +207,13 @@ mod tests {
             mlme_band_cap.basic_rates,
             vec![0x02, 0x04, 0x0b, 0x16, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c]
         );
-        assert_eq!(
-            mlme_band_cap.operating_channels,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-        );
+        let expected_channels: Vec<fidl_ieee80211::ChannelNumber> = (1..=14)
+            .map(|c| fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: c,
+            })
+            .collect();
+        assert_eq!(mlme_band_cap.primary_channels, expected_channels);
         assert!(mlme_band_cap.ht_cap.is_some());
         assert!(mlme_band_cap.vht_cap.is_some());
     }

@@ -16,7 +16,8 @@ use crate::ie::{
 };
 use crate::mac::CapabilityInfo;
 use anyhow::{Context as _, Error, format_err};
-use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 
 /// Capability Info is defined in IEEE Std 802.11-1026 9.4.1.4.
 /// Figure 9-68 indicates BSS and IBSS bits are reserved for client.
@@ -157,7 +158,9 @@ pub fn get_band_cap_for_channel(
     let target = channel.get_band().context("Failed to retrieve band capabilities")?;
     bands
         .iter()
-        .find(|b| b.band == target && b.operating_channels.contains(&channel.primary))
+        .find(|b| {
+            b.band == target && b.primary_channels.iter().any(|c| c.number == channel.primary)
+        })
         .ok_or_else(|| format_err!("No band capability for channel {channel:?}: {bands:?}"))
 }
 
@@ -255,7 +258,7 @@ mod tests {
             .with_tx_stbc(!OVERRIDE_HT_CAP_INFO_TX_STBC)
             .with_chan_width_set(ie::ChanWidthSet::TWENTY_FORTY);
         ht_cap.ht_cap_info = ht_cap_info;
-        let mut channel = Channel { primary: 153, cbw: Cbw::Cbw20 };
+        let mut channel = Channel::new(153, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz);
 
         let ht_cap_info = override_ht_capabilities(ht_cap, channel.cbw).ht_cap_info;
         assert_eq!(ht_cap_info.tx_stbc(), OVERRIDE_HT_CAP_INFO_TX_STBC);
@@ -271,7 +274,7 @@ mod tests {
         let mut vht_cap = ie::fake_vht_capabilities();
         let vht_cap_info = vht_cap.vht_cap_info.with_supported_cbw_set(2);
         vht_cap.vht_cap_info = vht_cap_info;
-        let mut channel = Channel { primary: 153, cbw: Cbw::Cbw20 };
+        let mut channel = Channel::new(153, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz);
 
         // CBW20, CBW40, CBW80 will set supported_cbw_set to 0
 
@@ -309,9 +312,12 @@ mod tests {
         };
         assert_eq!(
             fidl_ieee80211::WlanBand::FiveGhz,
-            get_band_cap_for_channel(&device_info.bands[..], Channel::new(36, Cbw::Cbw20))
-                .unwrap()
-                .band
+            get_band_cap_for_channel(
+                &device_info.bands[..],
+                Channel::new(36, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz)
+            )
+            .unwrap()
+            .band
         );
     }
 

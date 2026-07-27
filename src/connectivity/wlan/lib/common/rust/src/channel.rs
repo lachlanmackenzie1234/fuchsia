@@ -73,9 +73,9 @@ impl Cbw {
 ///  - //sdk/fidl/fuchsia.wlan.mlme/wlan_mlme.fidl |struct WlanChan|
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Channel {
-    // TODO(porce): Augment with country and band
     pub primary: u8,
     pub cbw: Cbw,
+    pub band: fidl_ieee80211::WlanBand,
 }
 
 // Fuchsia's short CBW notation. Not IEEE standard.
@@ -94,23 +94,24 @@ impl fmt::Display for Cbw {
 
 impl fmt::Display for Channel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.primary, self.cbw)
+        write!(f, "{}{} ({:?})", self.primary, self.cbw, self.band)
     }
 }
 
 impl Channel {
-    pub fn new(primary: u8, cbw: Cbw) -> Self {
-        Channel { primary, cbw }
+    pub const fn new(primary: u8, cbw: Cbw, band: fidl_ieee80211::WlanBand) -> Self {
+        Channel { primary, cbw, band }
     }
 
-    // TODO(https://fxbug.dev/42172557): Using channel number to determine band is incorrect.
     fn is_primary_2ghz(&self) -> bool {
-        let p = self.primary;
-        p >= 1 && p <= 14
+        self.band == fidl_ieee80211::WlanBand::TwoGhz
     }
 
-    // TODO(https://fxbug.dev/42172557): Using channel number to determine band is incorrect.
     fn is_primary_5ghz(&self) -> bool {
+        if self.band != fidl_ieee80211::WlanBand::FiveGhz {
+            return false;
+        }
+
         let p = self.primary;
         match p {
             36..=64 => (p - 36) % 4 == 0,
@@ -120,31 +121,25 @@ impl Channel {
         }
     }
 
-    // TODO(https://fxbug.dev/42172557): Using channel number to determine band is incorrect.
     pub fn get_band(&self) -> Result<fidl_ieee80211::WlanBand, anyhow::Error> {
-        if self.is_primary_2ghz() {
-            Ok(fidl_ieee80211::WlanBand::TwoGhz)
-        } else if self.is_primary_5ghz() {
-            Ok(fidl_ieee80211::WlanBand::FiveGhz)
-        } else {
-            Err(format_err!("cannot get band for channel {}", self))
-        }
+        Ok(self.band)
     }
 
     fn get_band_start_freq(&self) -> Result<MHz, anyhow::Error> {
-        if self.is_primary_2ghz() {
-            Ok(BASE_FREQ_2GHZ)
-        } else if self.is_primary_5ghz() {
-            Ok(BASE_FREQ_5GHZ)
-        } else {
-            Err(format_err!("cannot get band start freq for channel {}", self))
+        match self.band {
+            fidl_ieee80211::WlanBand::TwoGhz => Ok(BASE_FREQ_2GHZ),
+            fidl_ieee80211::WlanBand::FiveGhz => Ok(BASE_FREQ_5GHZ),
+            _ => Err(format_err!("cannot get band start freq for channel {}", self)),
         }
     }
 
-    // Note get_center_chan_idx() is to assist channel validity test.
-    // Return of Ok() does not imply the channel under test is valid.
     fn get_center_chan_idx(&self) -> Result<u8, anyhow::Error> {
-        if !(self.is_primary_2ghz() || self.is_primary_5ghz()) {
+        let is_valid = match self.band {
+            fidl_ieee80211::WlanBand::TwoGhz => self.primary <= 14,
+            fidl_ieee80211::WlanBand::FiveGhz => (36..=165).contains(&self.primary),
+            _ => false,
+        };
+        if !is_valid {
             return Err(format_err!(
                 "cannot get center channel index for an invalid primary channel {}",
                 self
@@ -202,12 +197,10 @@ impl Channel {
     /// frequency segment (Cbw80P80 only) are all consistent and meet regulatory requirements of
     /// the USA. TODO(https://fxbug.dev/42104247): Other countries.
     pub fn is_valid_in_us(&self) -> bool {
-        if self.is_primary_2ghz() {
-            self.is_valid_2ghz_in_us()
-        } else if self.is_primary_5ghz() {
-            self.is_valid_5ghz_in_us()
-        } else {
-            false
+        match self.band {
+            fidl_ieee80211::WlanBand::TwoGhz => self.is_valid_2ghz_in_us(),
+            fidl_ieee80211::WlanBand::FiveGhz => self.is_valid_5ghz_in_us(),
+            _ => false,
         }
     }
 
@@ -265,34 +258,28 @@ impl Channel {
     }
 }
 
-impl From<Channel> for fidl_ieee80211::WlanChannel {
-    fn from(channel: Channel) -> fidl_ieee80211::WlanChannel {
-        fidl_ieee80211::WlanChannel::from(&channel)
+impl Into<fidl_ieee80211::ChannelNumber> for Channel {
+    fn into(self) -> fidl_ieee80211::ChannelNumber {
+        fidl_ieee80211::ChannelNumber { band: self.band, number: self.primary }
     }
 }
-
-impl From<&Channel> for fidl_ieee80211::WlanChannel {
-    fn from(channel: &Channel) -> fidl_ieee80211::WlanChannel {
-        let (cbw, secondary80) = channel.cbw.to_fidl();
-        fidl_ieee80211::WlanChannel { primary: channel.primary, cbw, secondary80 }
-    }
-}
-
-impl TryFrom<fidl_ieee80211::WlanChannel> for Channel {
-    type Error = anyhow::Error;
-    fn try_from(fidl_channel: fidl_ieee80211::WlanChannel) -> Result<Channel, Self::Error> {
-        Channel::try_from(&fidl_channel)
-    }
-}
-
-impl TryFrom<&fidl_ieee80211::WlanChannel> for Channel {
-    type Error = anyhow::Error;
-
-    fn try_from(fidl_channel: &fidl_ieee80211::WlanChannel) -> Result<Channel, Self::Error> {
-        Ok(Channel {
-            primary: fidl_channel.primary,
-            cbw: Cbw::from_fidl(fidl_channel.cbw, fidl_channel.secondary80)?,
-        })
+impl Channel {
+    pub fn from_fidl(
+        fidl_channel: fidl_ieee80211::ChannelNumber,
+        fidl_cbw: fidl_ieee80211::ChannelBandwidth,
+        fidl_secondary80: fidl_ieee80211::ChannelNumber,
+    ) -> Result<Self, anyhow::Error> {
+        if fidl_cbw == fidl_ieee80211::ChannelBandwidth::Cbw80P80 {
+            if fidl_secondary80.band != fidl_channel.band {
+                return Err(format_err!(
+                    "secondary80 band ({:?}) does not match primary band ({:?})",
+                    fidl_secondary80.band,
+                    fidl_channel.band
+                ));
+            }
+        }
+        let cbw = Cbw::from_fidl(fidl_cbw, fidl_secondary80.number)?;
+        Ok(Channel::new(fidl_channel.number, cbw, fidl_channel.band))
     }
 }
 
@@ -303,22 +290,22 @@ impl TryFrom<&fidl_ieee80211::WlanChannel> for Channel {
 /// Primary channel is extracted from HT op, DSSS param set, or `rx_primary_channel`,
 /// in descending priority.
 pub fn derive_channel(
-    rx_primary_channel: u8,
+    rx_primary_channel: fidl_ieee80211::ChannelNumber,
     dsss_channel: Option<u8>,
     ht_op: Option<ie::HtOperation>,
     vht_op: Option<ie::VhtOperation>,
-) -> fidl_ieee80211::WlanChannel {
+) -> Channel {
     let primary = ht_op
         .as_ref()
         .map(|ht_op| ht_op.primary_channel)
         .or(dsss_channel)
-        .unwrap_or(rx_primary_channel);
+        .unwrap_or(rx_primary_channel.number);
 
     let ht_op_cbw = ht_op.map(|ht_op| ht_op.ht_op_info.sta_chan_width());
     let vht_cbw_and_segs =
         vht_op.map(|vht_op| (vht_op.vht_cbw, vht_op.center_freq_seg0, vht_op.center_freq_seg1));
 
-    let (cbw, secondary80) = match ht_op_cbw {
+    let cbw = match ht_op_cbw {
         // Inspect vht/ht op parameters to determine the channel width.
         Some(ie::StaChanWidth::ANY) => {
             // Safe to unwrap `ht_op` because `ht_op_cbw` is only Some(_) if `ht_op` has a value.
@@ -327,10 +314,9 @@ pub fn derive_channel(
         }
         // Default to Cbw20 if HT CBW field is set to 0 or not present.
         _ => Cbw::Cbw20,
-    }
-    .to_fidl();
+    };
 
-    fidl_ieee80211::WlanChannel { primary, cbw, secondary80 }
+    Channel::new(primary, cbw, rx_primary_channel.band)
 }
 
 /// Derive a CBW for a primary channel or channel switch.
@@ -353,8 +339,7 @@ pub fn derive_wide_channel_bandwidth(
             Cbw::Cbw80P80 { secondary80: seg1 }
         }
         // Use HT CBW if
-        // - VHT op is not present,
-        // - VHT op has deprecated parameters sets, or
+        // - VHT op is not present, or
         // - VHT CBW field is set to 0
         _ => match sec_chan_offset {
             ie::SecChanOffset::SECONDARY_ABOVE => Cbw::Cbw40,
@@ -392,95 +377,111 @@ pub fn primary_channel_from_freq(freq: u32) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_ieee80211::WlanBand::{FiveGhz, TwoGhz};
+
+    fn rx_channel(number: u8, band: fidl_ieee80211::WlanBand) -> fidl_ieee80211::ChannelNumber {
+        fidl_ieee80211::ChannelNumber { band, number }
+    }
 
     #[test]
     fn fmt_display() {
-        let mut c = Channel::new(100, Cbw::Cbw40);
-        assert_eq!(format!("{}", c), "100+");
+        let mut c = Channel::new(100, Cbw::Cbw40, FiveGhz);
+        assert_eq!(format!("{}", c), "100+ (FiveGhz)");
         c.cbw = Cbw::Cbw160;
-        assert_eq!(format!("{}", c), "100W");
+        assert_eq!(format!("{}", c), "100W (FiveGhz)");
         c.cbw = Cbw::Cbw80P80 { secondary80: 200 };
-        assert_eq!(format!("{}", c), "100+200P");
+        assert_eq!(format!("{}", c), "100+200P (FiveGhz)");
     }
 
     #[test]
     fn test_is_primary_2ghz_or_5ghz() {
         // Note Cbw is ignored in this test.
-        assert!(Channel::new(1, Cbw::Cbw160).is_primary_2ghz());
-        assert!(!Channel::new(1, Cbw::Cbw160).is_primary_5ghz());
+        assert!(Channel::new(1, Cbw::Cbw160, TwoGhz).is_primary_2ghz());
+        assert!(!Channel::new(1, Cbw::Cbw160, TwoGhz).is_primary_5ghz());
 
-        assert!(Channel::new(12, Cbw::Cbw160).is_primary_2ghz());
-        assert!(!Channel::new(12, Cbw::Cbw160).is_primary_5ghz());
+        assert!(Channel::new(12, Cbw::Cbw160, TwoGhz).is_primary_2ghz());
+        assert!(!Channel::new(12, Cbw::Cbw160, TwoGhz).is_primary_5ghz());
 
-        assert!(!Channel::new(36, Cbw::Cbw160).is_primary_2ghz());
-        assert!(Channel::new(36, Cbw::Cbw160).is_primary_5ghz());
+        assert!(!Channel::new(36, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
+        assert!(Channel::new(36, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
 
-        assert!(!Channel::new(37, Cbw::Cbw160).is_primary_2ghz());
-        assert!(!Channel::new(37, Cbw::Cbw160).is_primary_5ghz());
+        assert!(!Channel::new(37, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
+        assert!(!Channel::new(37, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
 
-        assert!(!Channel::new(165, Cbw::Cbw160).is_primary_2ghz());
-        assert!(Channel::new(165, Cbw::Cbw160).is_primary_5ghz());
+        assert!(!Channel::new(165, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
+        assert!(Channel::new(165, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
 
-        assert!(!Channel::new(166, Cbw::Cbw160).is_primary_2ghz());
-        assert!(!Channel::new(166, Cbw::Cbw160).is_primary_5ghz());
+        assert!(!Channel::new(166, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
+        assert!(!Channel::new(166, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
     }
 
     #[test]
     fn test_get_band() {
         assert_eq!(
             fidl_ieee80211::WlanBand::TwoGhz,
-            Channel::new(1, Cbw::Cbw20).get_band().unwrap()
+            Channel::new(1, Cbw::Cbw20, TwoGhz).get_band().unwrap()
         );
         assert_eq!(
             fidl_ieee80211::WlanBand::TwoGhz,
-            Channel::new(14, Cbw::Cbw40).get_band().unwrap()
+            Channel::new(14, Cbw::Cbw40, TwoGhz).get_band().unwrap()
         );
         assert_eq!(
             fidl_ieee80211::WlanBand::FiveGhz,
-            Channel::new(36, Cbw::Cbw80).get_band().unwrap()
+            Channel::new(36, Cbw::Cbw80, FiveGhz).get_band().unwrap()
         );
         assert_eq!(
             fidl_ieee80211::WlanBand::FiveGhz,
-            Channel::new(165, Cbw::Cbw160).get_band().unwrap()
+            Channel::new(165, Cbw::Cbw160, FiveGhz).get_band().unwrap()
         );
     }
 
     #[test]
     fn test_band_start_freq() {
-        assert_eq!(BASE_FREQ_2GHZ, Channel::new(1, Cbw::Cbw20).get_band_start_freq().unwrap());
-        assert_eq!(BASE_FREQ_5GHZ, Channel::new(100, Cbw::Cbw20).get_band_start_freq().unwrap());
-        assert!(Channel::new(15, Cbw::Cbw20).get_band_start_freq().is_err());
-        assert!(Channel::new(200, Cbw::Cbw20).get_band_start_freq().is_err());
+        assert_eq!(
+            BASE_FREQ_2GHZ,
+            Channel::new(1, Cbw::Cbw20, TwoGhz).get_band_start_freq().unwrap()
+        );
+        assert_eq!(
+            BASE_FREQ_5GHZ,
+            Channel::new(100, Cbw::Cbw20, FiveGhz).get_band_start_freq().unwrap()
+        );
     }
 
     #[test]
     fn test_get_center_chan_idx() {
-        assert!(Channel::new(1, Cbw::Cbw80).get_center_chan_idx().is_err());
-        assert_eq!(9, Channel::new(11, Cbw::Cbw40Below).get_center_chan_idx().unwrap());
-        assert_eq!(8, Channel::new(6, Cbw::Cbw40).get_center_chan_idx().unwrap());
-        assert_eq!(36, Channel::new(36, Cbw::Cbw20).get_center_chan_idx().unwrap());
-        assert_eq!(38, Channel::new(36, Cbw::Cbw40).get_center_chan_idx().unwrap());
-        assert_eq!(42, Channel::new(36, Cbw::Cbw80).get_center_chan_idx().unwrap());
-        assert_eq!(50, Channel::new(36, Cbw::Cbw160).get_center_chan_idx().unwrap());
+        assert!(Channel::new(1, Cbw::Cbw80, TwoGhz).get_center_chan_idx().is_err());
+        assert_eq!(9, Channel::new(11, Cbw::Cbw40Below, TwoGhz).get_center_chan_idx().unwrap());
+        assert_eq!(8, Channel::new(6, Cbw::Cbw40, TwoGhz).get_center_chan_idx().unwrap());
+        assert_eq!(36, Channel::new(36, Cbw::Cbw20, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(38, Channel::new(36, Cbw::Cbw40, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(42, Channel::new(36, Cbw::Cbw80, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(50, Channel::new(36, Cbw::Cbw160, FiveGhz).get_center_chan_idx().unwrap());
         assert_eq!(
             42,
-            Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }).get_center_chan_idx().unwrap()
+            Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz)
+                .get_center_chan_idx()
+                .unwrap()
         );
     }
 
     #[test]
     fn test_get_center_freq() {
-        assert_eq!(2412 as MHz, Channel::new(1, Cbw::Cbw20).get_center_freq().unwrap());
-        assert_eq!(2437 as MHz, Channel::new(6, Cbw::Cbw20).get_center_freq().unwrap());
-        assert_eq!(2447 as MHz, Channel::new(6, Cbw::Cbw40).get_center_freq().unwrap());
-        assert_eq!(2427 as MHz, Channel::new(6, Cbw::Cbw40Below).get_center_freq().unwrap());
-        assert_eq!(5180 as MHz, Channel::new(36, Cbw::Cbw20).get_center_freq().unwrap());
-        assert_eq!(5190 as MHz, Channel::new(36, Cbw::Cbw40).get_center_freq().unwrap());
-        assert_eq!(5210 as MHz, Channel::new(36, Cbw::Cbw80).get_center_freq().unwrap());
-        assert_eq!(5250 as MHz, Channel::new(36, Cbw::Cbw160).get_center_freq().unwrap());
+        assert_eq!(2412 as MHz, Channel::new(1, Cbw::Cbw20, TwoGhz).get_center_freq().unwrap());
+        assert_eq!(2437 as MHz, Channel::new(6, Cbw::Cbw20, TwoGhz).get_center_freq().unwrap());
+        assert_eq!(2447 as MHz, Channel::new(6, Cbw::Cbw40, TwoGhz).get_center_freq().unwrap());
+        assert_eq!(
+            2427 as MHz,
+            Channel::new(6, Cbw::Cbw40Below, TwoGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(5180 as MHz, Channel::new(36, Cbw::Cbw20, FiveGhz).get_center_freq().unwrap());
+        assert_eq!(5190 as MHz, Channel::new(36, Cbw::Cbw40, FiveGhz).get_center_freq().unwrap());
+        assert_eq!(5210 as MHz, Channel::new(36, Cbw::Cbw80, FiveGhz).get_center_freq().unwrap());
+        assert_eq!(5250 as MHz, Channel::new(36, Cbw::Cbw160, FiveGhz).get_center_freq().unwrap());
         assert_eq!(
             5210 as MHz,
-            Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }).get_center_freq().unwrap()
+            Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz)
+                .get_center_freq()
+                .unwrap()
         );
     }
 
@@ -509,132 +510,85 @@ mod tests {
 
     #[test]
     fn test_valid_us_combo() {
-        assert!(Channel::new(1, Cbw::Cbw20).is_valid_in_us());
-        assert!(Channel::new(1, Cbw::Cbw40).is_valid_in_us());
-        assert!(Channel::new(5, Cbw::Cbw40Below).is_valid_in_us());
-        assert!(Channel::new(6, Cbw::Cbw20).is_valid_in_us());
-        assert!(Channel::new(6, Cbw::Cbw40).is_valid_in_us());
-        assert!(Channel::new(6, Cbw::Cbw40Below).is_valid_in_us());
-        assert!(Channel::new(7, Cbw::Cbw40).is_valid_in_us());
-        assert!(Channel::new(11, Cbw::Cbw20).is_valid_in_us());
-        assert!(Channel::new(11, Cbw::Cbw40Below).is_valid_in_us());
+        assert!(Channel::new(1, Cbw::Cbw20, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(1, Cbw::Cbw40, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(5, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(6, Cbw::Cbw20, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(6, Cbw::Cbw40, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(6, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(7, Cbw::Cbw40, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(11, Cbw::Cbw20, TwoGhz).is_valid_in_us());
+        assert!(Channel::new(11, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
 
-        assert!(Channel::new(36, Cbw::Cbw20).is_valid_in_us());
-        assert!(Channel::new(36, Cbw::Cbw40).is_valid_in_us());
-        assert!(Channel::new(36, Cbw::Cbw160).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw20).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw40Below).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw160).is_valid_in_us());
-        assert!(Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw80P80 { secondary80: 155 }).is_valid_in_us());
-        assert!(Channel::new(161, Cbw::Cbw80P80 { secondary80: 42 }).is_valid_in_us());
+        assert!(Channel::new(36, Cbw::Cbw20, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(36, Cbw::Cbw40, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(36, Cbw::Cbw160, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(40, Cbw::Cbw20, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(40, Cbw::Cbw40Below, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(40, Cbw::Cbw160, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(40, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz).is_valid_in_us());
+        assert!(Channel::new(161, Cbw::Cbw80P80 { secondary80: 42 }, FiveGhz).is_valid_in_us());
     }
 
     #[test]
     fn test_invalid_us_combo() {
-        assert!(!Channel::new(1, Cbw::Cbw40Below).is_valid_in_us());
-        assert!(!Channel::new(4, Cbw::Cbw40Below).is_valid_in_us());
-        assert!(!Channel::new(8, Cbw::Cbw40).is_valid_in_us());
-        assert!(!Channel::new(11, Cbw::Cbw40).is_valid_in_us());
-        assert!(!Channel::new(6, Cbw::Cbw80).is_valid_in_us());
-        assert!(!Channel::new(6, Cbw::Cbw160).is_valid_in_us());
-        assert!(!Channel::new(6, Cbw::Cbw80P80 { secondary80: 155 }).is_valid_in_us());
+        assert!(!Channel::new(1, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
+        assert!(!Channel::new(4, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
+        assert!(!Channel::new(8, Cbw::Cbw40, TwoGhz).is_valid_in_us());
+        assert!(!Channel::new(11, Cbw::Cbw40, TwoGhz).is_valid_in_us());
+        assert!(!Channel::new(6, Cbw::Cbw80, TwoGhz).is_valid_in_us());
+        assert!(!Channel::new(6, Cbw::Cbw160, TwoGhz).is_valid_in_us());
+        assert!(!Channel::new(6, Cbw::Cbw80P80 { secondary80: 155 }, TwoGhz).is_valid_in_us());
 
-        assert!(!Channel::new(36, Cbw::Cbw40Below).is_valid_in_us());
-        assert!(!Channel::new(36, Cbw::Cbw80P80 { secondary80: 58 }).is_valid_in_us());
-        assert!(!Channel::new(40, Cbw::Cbw40).is_valid_in_us());
-        assert!(!Channel::new(40, Cbw::Cbw80P80 { secondary80: 42 }).is_valid_in_us());
+        assert!(!Channel::new(36, Cbw::Cbw40Below, FiveGhz).is_valid_in_us());
+        assert!(!Channel::new(36, Cbw::Cbw80P80 { secondary80: 58 }, FiveGhz).is_valid_in_us());
+        assert!(!Channel::new(40, Cbw::Cbw40, FiveGhz).is_valid_in_us());
+        assert!(!Channel::new(40, Cbw::Cbw80P80 { secondary80: 42 }, FiveGhz).is_valid_in_us());
 
-        assert!(!Channel::new(165, Cbw::Cbw80).is_valid_in_us());
-        assert!(!Channel::new(165, Cbw::Cbw80P80 { secondary80: 42 }).is_valid_in_us());
+        assert!(!Channel::new(165, Cbw::Cbw80, FiveGhz).is_valid_in_us());
+        assert!(!Channel::new(165, Cbw::Cbw80P80 { secondary80: 42 }, FiveGhz).is_valid_in_us());
     }
 
     #[test]
     fn test_is_2ghz_or_5ghz() {
-        assert!(Channel::new(1, Cbw::Cbw20).is_2ghz());
-        assert!(!Channel::new(1, Cbw::Cbw20).is_5ghz());
-        assert!(Channel::new(13, Cbw::Cbw20).is_2ghz());
-        assert!(!Channel::new(13, Cbw::Cbw20).is_5ghz());
-        assert!(Channel::new(36, Cbw::Cbw20).is_5ghz());
-        assert!(!Channel::new(36, Cbw::Cbw20).is_2ghz());
-    }
-
-    #[test]
-    fn test_convert_fidl_channel() {
-        let mut f = fidl_ieee80211::WlanChannel::from(Channel::new(1, Cbw::Cbw20));
-        assert!(
-            f.primary == 1
-                && f.cbw == fidl_ieee80211::ChannelBandwidth::Cbw20
-                && f.secondary80 == 0
-        );
-
-        f = Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }).into();
-        assert!(
-            f.primary == 36
-                && f.cbw == fidl_ieee80211::ChannelBandwidth::Cbw80P80
-                && f.secondary80 == 155
-        );
-
-        let mut c = Channel::try_from(fidl_ieee80211::WlanChannel {
-            primary: 11,
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw40Below,
-            secondary80: 123,
-        })
-        .unwrap();
-        assert!(c.primary == 11 && c.cbw == Cbw::Cbw40Below);
-        c = fidl_ieee80211::WlanChannel {
-            primary: 149,
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw80P80,
-            secondary80: 42,
-        }
-        .try_into()
-        .unwrap();
-        assert!(c.primary == 149 && c.cbw == Cbw::Cbw80P80 { secondary80: 42 });
-
-        let r = Channel::try_from(fidl_ieee80211::WlanChannel {
-            primary: 11,
-            cbw: fidl_ieee80211::ChannelBandwidth::unknown(),
-            secondary80: 123,
-        });
-        assert!(r.is_err());
+        assert!(Channel::new(1, Cbw::Cbw20, TwoGhz).is_2ghz());
+        assert!(!Channel::new(1, Cbw::Cbw20, TwoGhz).is_5ghz());
+        assert!(Channel::new(13, Cbw::Cbw20, TwoGhz).is_2ghz());
+        assert!(!Channel::new(13, Cbw::Cbw20, TwoGhz).is_5ghz());
+        assert!(Channel::new(36, Cbw::Cbw20, FiveGhz).is_5ghz());
+        assert!(!Channel::new(36, Cbw::Cbw20, FiveGhz).is_2ghz());
     }
 
     const RX_PRIMARY_CHAN: u8 = 11;
+    const RX_PRIMARY_CHAN_5GHZ: u8 = 36;
     const HT_PRIMARY_CHAN: u8 = 48;
 
     #[test]
     fn test_derive_channel_basic() {
-        let channel = derive_channel(RX_PRIMARY_CHAN, None, None, None);
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: RX_PRIMARY_CHAN,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            }
+        let channel = derive_channel(
+            fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN, band: TwoGhz },
+            None,
+            None,
+            None,
         );
+        assert_eq!(channel, Channel::new(RX_PRIMARY_CHAN, Cbw::Cbw20, TwoGhz));
     }
 
     #[test]
     fn test_derive_channel_with_dsss_param() {
-        let channel = derive_channel(RX_PRIMARY_CHAN, Some(6), None, None);
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: 6,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0
-            }
+        let channel = derive_channel(
+            fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN, band: TwoGhz },
+            Some(6),
+            None,
+            None,
         );
+        assert_eq!(channel, Channel::new(6, Cbw::Cbw20, TwoGhz));
     }
 
     #[test]
     fn test_derive_channel_with_ht_20mhz() {
-        let expected_channel = fidl_ieee80211::WlanChannel {
-            primary: HT_PRIMARY_CHAN,
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-            secondary80: 0,
-        };
+        let expected_channel = Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw20, FiveGhz);
 
         let test_params = [
             (ie::StaChanWidth::TWENTY_MHZ, ie::SecChanOffset::SECONDARY_NONE),
@@ -645,7 +599,12 @@ mod tests {
 
         for (ht_width, sec_chan_offset) in test_params.iter() {
             let ht_op = ht_op(HT_PRIMARY_CHAN, *ht_width, *sec_chan_offset);
-            let channel = derive_channel(RX_PRIMARY_CHAN, Some(6), Some(ht_op), None);
+            let channel = derive_channel(
+                fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN_5GHZ, band: FiveGhz },
+                Some(RX_PRIMARY_CHAN_5GHZ),
+                Some(ht_op),
+                None,
+            );
             assert_eq!(channel, expected_channel);
         }
     }
@@ -654,30 +613,26 @@ mod tests {
     fn test_derive_channel_with_ht_40mhz() {
         let ht_op =
             ht_op(HT_PRIMARY_CHAN, ie::StaChanWidth::ANY, ie::SecChanOffset::SECONDARY_ABOVE);
-        let channel = derive_channel(RX_PRIMARY_CHAN, Some(6), Some(ht_op), None);
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: HT_PRIMARY_CHAN,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-                secondary80: 0,
-            }
+        let channel = derive_channel(
+            fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN_5GHZ, band: FiveGhz },
+            Some(RX_PRIMARY_CHAN_5GHZ),
+            Some(ht_op),
+            None,
         );
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw40, FiveGhz));
     }
 
     #[test]
     fn test_derive_channel_with_ht_40mhz_below() {
         let ht_op =
             ht_op(HT_PRIMARY_CHAN, ie::StaChanWidth::ANY, ie::SecChanOffset::SECONDARY_BELOW);
-        let channel = derive_channel(RX_PRIMARY_CHAN, Some(6), Some(ht_op), None);
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: HT_PRIMARY_CHAN,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw40Below,
-                secondary80: 0,
-            }
+        let channel = derive_channel(
+            fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN_5GHZ, band: FiveGhz },
+            Some(RX_PRIMARY_CHAN_5GHZ),
+            Some(ht_op),
+            None,
         );
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw40Below, FiveGhz));
     }
 
     #[test]
@@ -685,15 +640,13 @@ mod tests {
         let ht_op =
             ht_op(HT_PRIMARY_CHAN, ie::StaChanWidth::ANY, ie::SecChanOffset::SECONDARY_ABOVE);
         let vht_op = vht_op(ie::VhtChannelBandwidth::CBW_80_160_80P80, 8, 0);
-        let channel = derive_channel(RX_PRIMARY_CHAN, Some(6), Some(ht_op), Some(vht_op));
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: HT_PRIMARY_CHAN,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw80,
-                secondary80: 0,
-            }
+        let channel = derive_channel(
+            fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN_5GHZ, band: FiveGhz },
+            Some(RX_PRIMARY_CHAN_5GHZ),
+            Some(ht_op),
+            Some(vht_op),
         );
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw80, FiveGhz));
     }
 
     #[test]
@@ -701,15 +654,13 @@ mod tests {
         let ht_op =
             ht_op(HT_PRIMARY_CHAN, ie::StaChanWidth::ANY, ie::SecChanOffset::SECONDARY_ABOVE);
         let vht_op = vht_op(ie::VhtChannelBandwidth::CBW_80_160_80P80, 0, 8);
-        let channel = derive_channel(RX_PRIMARY_CHAN, Some(6), Some(ht_op), Some(vht_op));
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: HT_PRIMARY_CHAN,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw160,
-                secondary80: 0,
-            }
+        let channel = derive_channel(
+            fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN_5GHZ, band: FiveGhz },
+            Some(RX_PRIMARY_CHAN_5GHZ),
+            Some(ht_op),
+            Some(vht_op),
         );
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw160, FiveGhz));
     }
 
     #[test]
@@ -717,41 +668,28 @@ mod tests {
         let ht_op =
             ht_op(HT_PRIMARY_CHAN, ie::StaChanWidth::ANY, ie::SecChanOffset::SECONDARY_ABOVE);
         let vht_op = vht_op(ie::VhtChannelBandwidth::CBW_80_160_80P80, 18, 1);
-        let channel = derive_channel(RX_PRIMARY_CHAN, Some(6), Some(ht_op), Some(vht_op));
+        let channel = derive_channel(
+            fidl_ieee80211::ChannelNumber { number: RX_PRIMARY_CHAN_5GHZ, band: FiveGhz },
+            Some(RX_PRIMARY_CHAN_5GHZ),
+            Some(ht_op),
+            Some(vht_op),
+        );
         assert_eq!(
             channel,
-            fidl_ieee80211::WlanChannel {
-                primary: HT_PRIMARY_CHAN,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw80P80,
-                secondary80: 1,
-            }
+            Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw80P80 { secondary80: 1 }, FiveGhz)
         );
     }
 
     #[test]
     fn test_derive_channel_none() {
-        let channel = derive_channel(8, None, None, None);
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: 8,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            }
-        );
+        let channel = derive_channel(rx_channel(8, TwoGhz), None, None, None);
+        assert_eq!(channel, Channel::new(8, Cbw::Cbw20, TwoGhz));
     }
 
     #[test]
     fn test_derive_channel_no_rx_primary() {
-        let channel = derive_channel(8, Some(6), None, None);
-        assert_eq!(
-            channel,
-            fidl_ieee80211::WlanChannel {
-                primary: 6,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            }
-        )
+        let channel = derive_channel(rx_channel(8, TwoGhz), Some(6), None, None);
+        assert_eq!(channel, Channel::new(6, Cbw::Cbw20, TwoGhz))
     }
 
     fn ht_op(

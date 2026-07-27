@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::format_err;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_tap as fidl_tap;
 use fidl_test_wlan_realm::WlanConfig;
@@ -131,7 +132,7 @@ async fn handle_tx_event_hooks() {
                 &phy,
                 &AP_SSID,
                 &bssid,
-                &Channel::new(1, Cbw::Cbw20),
+                &Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 &PROTECTION,
                 &mut control,
                 &mut trace,

@@ -87,6 +87,11 @@ fn create_2_4_ghz_band_info() -> wlantap::BandInfo {
         })),
         vht_caps: None,
         rates: vec![2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108],
-        operating_channels: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+        primary_channels: (1..=14)
+            .map(|c| fidl_ieee80211::ChannelNumber {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                number: c,
+            })
+            .collect(),
     }
 }

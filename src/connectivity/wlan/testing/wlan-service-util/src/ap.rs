@@ -54,17 +54,20 @@ pub async fn start(
     target_ssid: Ssid,
     target_pwd: Vec<u8>,
     channel: u8,
+    band: fidl_ieee80211::WlanBand,
 ) -> Result<fidl_sme::StartApResultCode, Error> {
     let config = fidl_sme::ApConfig {
         ssid: target_ssid.into(),
         password: target_pwd,
         radio_cfg: fidl_sme::RadioConfig {
             phy: fidl_ieee80211::WlanPhyType::Ht,
-            channel: fidl_ieee80211::WlanChannel {
-                primary: channel,
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: 0,
-            },
+            primary: wlan_common::channel::Channel::new(
+                channel,
+                wlan_common::channel::Cbw::Cbw20,
+                band,
+            )
+            .into(),
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         },
     };
     let start_ap_result_code = iface_sme_proxy.start(&config).await;
@@ -78,52 +81,54 @@ pub async fn start(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_device_service::{
         DeviceMonitorMarker, DeviceMonitorRequest, DeviceMonitorRequestStream,
     };
     use fidl_fuchsia_wlan_sme::{ApSmeMarker, ApSmeRequest, ApSmeRequestStream, StartApResultCode};
+    use fidl_ieee80211::WlanBand::TwoGhz;
     use fuchsia_async as fasync;
     use futures::stream::{StreamExt, StreamFuture};
     use futures::task::Poll;
     use ieee80211::Ssid;
     use std::pin::pin;
 
-    use wlan_common::assert_variant;
-
     #[test]
     fn start_ap_success_returns_true() {
-        let start_ap_result = test_ap_start("TestAp", "", 6, StartApResultCode::Success);
+        let start_ap_result = test_ap_start("TestAp", "", 6, TwoGhz, StartApResultCode::Success);
         assert!(start_ap_result == StartApResultCode::Success);
     }
 
     #[test]
     fn start_ap_already_started_returns_false() {
-        let start_ap_result = test_ap_start("TestAp", "", 6, StartApResultCode::AlreadyStarted);
+        let start_ap_result =
+            test_ap_start("TestAp", "", 6, TwoGhz, StartApResultCode::AlreadyStarted);
         assert!(start_ap_result == StartApResultCode::AlreadyStarted);
     }
 
     #[test]
     fn start_ap_internal_error_returns_false() {
-        let start_ap_result = test_ap_start("TestAp", "", 6, StartApResultCode::InternalError);
+        let start_ap_result =
+            test_ap_start("TestAp", "", 6, TwoGhz, StartApResultCode::InternalError);
         assert!(start_ap_result == StartApResultCode::InternalError);
     }
 
     #[test]
     fn start_ap_canceled_returns_false() {
-        let start_ap_result = test_ap_start("TestAp", "", 6, StartApResultCode::Canceled);
+        let start_ap_result = test_ap_start("TestAp", "", 6, TwoGhz, StartApResultCode::Canceled);
         assert!(start_ap_result == StartApResultCode::Canceled);
     }
 
     #[test]
     fn start_ap_timedout_returns_false() {
-        let start_ap_result = test_ap_start("TestAp", "", 6, StartApResultCode::TimedOut);
+        let start_ap_result = test_ap_start("TestAp", "", 6, TwoGhz, StartApResultCode::TimedOut);
         assert!(start_ap_result == StartApResultCode::TimedOut);
     }
 
     #[test]
     fn start_ap_in_progress_returns_false() {
         let start_ap_result =
-            test_ap_start("TestAp", "", 6, StartApResultCode::PreviousStartInProgress);
+            test_ap_start("TestAp", "", 6, TwoGhz, StartApResultCode::PreviousStartInProgress);
         assert!(start_ap_result == StartApResultCode::PreviousStartInProgress);
     }
 
@@ -131,6 +136,7 @@ mod tests {
         ssid: &str,
         password: &str,
         channel: u8,
+        band: fidl_ieee80211::WlanBand,
         result_code: StartApResultCode,
     ) -> StartApResultCode {
         let mut exec = fasync::TestExecutor::new();
@@ -144,15 +150,16 @@ mod tests {
             password: target_password.to_vec(),
             radio_cfg: fidl_sme::RadioConfig {
                 phy: fidl_ieee80211::WlanPhyType::Ht,
-                channel: fidl_ieee80211::WlanChannel {
-                    primary: channel,
-                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                    secondary80: 0,
-                },
+                channel: wlan_common::channel::Channel::new(
+                    channel,
+                    wlan_common::channel::Cbw::Cbw20,
+                    band,
+                )
+                .into(),
             },
         };
 
-        let fut = start(&ap_sme, target_ssid, target_password, channel);
+        let fut = start(&ap_sme, target_ssid, target_password, channel, band);
         let mut fut = pin!(fut);
         assert!(exec.run_until_stalled(&mut fut).is_pending());
 
@@ -215,10 +222,10 @@ mod tests {
     ) {
         let req = exec.run_until_stalled(&mut req_stream.next());
 
-        let responder = assert_variant !(
+        let responder = assert_matches!(
             req,
-            Poll::Ready(Some(Ok(DeviceMonitorRequest::GetApSme{ responder, ..})))
-            => responder);
+            Poll::Ready(Some(Ok(DeviceMonitorRequest::GetApSme { responder, .. }))) => responder
+        );
 
         // now send the response back
         responder

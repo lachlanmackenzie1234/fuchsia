@@ -38,14 +38,21 @@ SimHardware::~SimHardware() {
 
 void SimHardware::SetCallbacks(const EventHandlers& handlers) { event_handlers_ = handlers; }
 
-static bool ChannelsMatch(const wlan_ieee80211_wire::WlanChannel& c1,
-                          const wlan_ieee80211_wire::WlanChannel& c2) {
-  return (c1.primary == c2.primary) && (c1.cbw == c2.cbw) && (c1.secondary80 == c2.secondary80);
+static bool ChannelsMatch(const fuchsia_wlan_ieee80211::wire::ChannelNumber& c1,
+                          const fuchsia_wlan_ieee80211::wire::ChannelNumber& c2,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw1,
+                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw2,
+                          const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80_1,
+                          const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80_2) {
+  return (c1.number == c2.number) && (c1.band == c2.band) && (cbw1 == cbw2) &&
+         (secondary80_1.number == secondary80_2.number) &&
+         (secondary80_1.band == secondary80_2.band);
 }
 
 void SimHardware::Rx(std::shared_ptr<const simulation::SimFrame> frame,
                      std::shared_ptr<const simulation::WlanRxInfo> info) {
-  if (!rx_enabled_ || !ChannelsMatch(info->channel, channel_))
+  if (!rx_enabled_ ||
+      !ChannelsMatch(info->channel, channel_, info->cbw, cbw_, info->secondary80, secondary80_))
     return;
   // Simply transfer frame to firmware.
   event_handlers_.rx_handler(frame, info);
@@ -102,7 +109,11 @@ void SimHardware::CancelCallback(uint64_t id) {
 }
 
 void SimHardware::Tx(const simulation::SimFrame& frame) {
-  simulation::WlanTxInfo info = {.channel = channel_};
+  simulation::WlanTxInfo info = {
+      .channel = channel_,
+      .cbw = cbw_,
+      .secondary80 = secondary80_,
+  };
   env_->Tx(frame, info, this);
 }
 
