@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/fidl/fidl.gni")
-import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/tools/zither/zither_golden_files.gni")
 import("vdso.gni")
 
@@ -178,7 +178,8 @@ group("private") {
   metadata = barrier_metadata
 }
 
-kernel_rust_crate("syscall-signatures") {
+kernel_rust_mod("syscall-signatures") {
+  output_name = "syscall_signatures"
   visibility = [
     ":*",
     "//zircon/kernel/lib/syscalls/*",

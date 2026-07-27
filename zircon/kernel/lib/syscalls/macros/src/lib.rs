@@ -68,7 +68,7 @@ pub fn syscall(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[unsafe(no_mangle)]
         #vis extern "C" fn #fn_name(#inputs) #output #block
 
-        const _: ::syscall_signatures::#base_name = #fn_name;
+        const _: crate::syscalls_rs::syscall_signatures::#base_name = #fn_name;
     }
     .into()
 }
