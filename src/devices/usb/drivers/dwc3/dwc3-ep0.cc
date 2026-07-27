@@ -164,6 +164,28 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       zx_off_t transferred = ep0_.cur_transfer_len - TRB_BUFSIZ(trb.status);
       ep0_.in.total_transfers++;
       ep0_.in.total_bytes += transferred;
+
+      if (transferred < ep0_.cur_setup.w_length && (transferred % ep0_.in.max_packet_size) == 0 &&
+          transferred > 0) {
+        ep0_.state = Ep0::State::WaitZlpIn;
+        ep0_.cur_transfer_len = 0;
+        EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA, 0, 0);
+        break;
+      }
+
+      ep0_.state = Ep0::State::WaitNrdyOut;
+      break;
+    }
+    case Ep0::State::WaitZlpIn: {
+      if (ep_num != kEp0In) {
+        fdf::warn(
+            "host/target data direction disagreement in WaitZlpIn: expected EP0 IN ({}), got {}, request=0x{:02x}",
+            kEp0In, ep_num, ep0_.cur_setup.b_request);
+        Ep0EndAndStall(ep0_.in);
+        Ep0QueueSetup();
+        break;
+      }
+      ep0_.in.total_transfers++;
       ep0_.state = Ep0::State::WaitNrdyOut;
       break;
     }
@@ -237,6 +259,13 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
       if (ep_num == kEp0In) {
         EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_3, 0, 0);
         ep0_.state = Ep0::State::Status;
+      }
+      break;
+    case Ep0::State::WaitZlpIn:
+      if ((ep_num == kEp0Out) && (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA)) {
+        // End transfer and stall if we receive XferNotReady(Data) in the opposite direction.
+        Ep0EndAndStall(ep0_.in);
+        Ep0QueueSetup();
       }
       break;
     case Ep0::State::Status:

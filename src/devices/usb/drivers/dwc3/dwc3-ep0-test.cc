@@ -553,11 +553,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_MaxBufferSizeTransfer) {
 }
 
 // This test verifies that the driver handles a Control Read that requires a ZLP.
-// Note: This test reveals that the driver state machine is broken for Control Read.
-// It transitions from WaitFidl directly to Status, even though it just queued
-// a Data phase transfer. It also does not send a ZLP when required.
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_ZlpInTransferRequired) {
+TEST_F(UnmanagedTestFixture, ZlpInTransferRequired) {
   FakeUsbDciInterface fake_dci;
 
   SetUpAndPowerOnDriver();
@@ -599,11 +595,237 @@ TEST_F(UnmanagedTestFixture, DISABLED_ZlpInTransferRequired) {
 
     Dwc3TestHelper::SimulateDataInPhase(drv);
 
+    // Verification: State should be WaitZlpIn
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitZlpIn);
+
+    // Verify TransferNotReady event in WaitZlpIn is handled without altering state.
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 1, 2);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitZlpIn);
+
     // Simulate ZLP completion on EP0 IN!
     Dwc3TestHelper::SimulateDataInPhase(drv);
 
     // Verification: State should be WaitNrdyOut
     EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitNrdyOut);
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// This test verifies that if the device data length equals the Host wLength (and is a multiple of
+// MPS), no ZLP is required because the transfer is fully completed.
+TEST_F(UnmanagedTestFixture, ZlpInNotRequiredExactMatch) {
+  FakeUsbDciInterface fake_dci;
+
+  SetUpAndPowerOnDriver();
+
+  // Simulate device returning 512 bytes (MPS = 512)
+  std::vector<uint8_t> read_data(512, 0xAA);
+  fake_dci.SetReadData(read_data);
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+
+    // Setup packet with wLength = 512 (Exact match)
+    auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 512);
+
+    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
+    std::memcpy(buf, &setup, sizeof(setup));
+
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
+  });
+
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) { ready = !Dwc3TestHelper::IsFifoEmpty(drv); });
+        return ready;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SimulateDataInPhase(drv);
+
+    // Verification: State should be WaitNrdyOut directly (No ZLP required since transferred ==
+    // wLength)
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitNrdyOut);
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// This test verifies that if the device data length is less than wLength, but not a multiple of
+// MPS, no ZLP is required because the short packet acts as the terminator.
+TEST_F(UnmanagedTestFixture, ZlpInNotRequiredShortPacketTerminated) {
+  FakeUsbDciInterface fake_dci;
+
+  SetUpAndPowerOnDriver();
+
+  // Simulate device returning 200 bytes (not a multiple of MPS = 512)
+  std::vector<uint8_t> read_data(200, 0xAA);
+  fake_dci.SetReadData(read_data);
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+
+    // Setup packet with wLength = 1024
+    auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 1024);
+
+    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
+    std::memcpy(buf, &setup, sizeof(setup));
+
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
+  });
+
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) { ready = !Dwc3TestHelper::IsFifoEmpty(drv); });
+        return ready;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SimulateDataInPhase(drv);
+
+    // Verification: State should be WaitNrdyOut directly (No ZLP required since short packet is
+    // terminator)
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitNrdyOut);
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that receiving a Transfer Complete on the wrong endpoint while waiting for ZLP IN
+// aborts the transfer and resets to Setup.
+TEST_F(UnmanagedTestFixture, WaitZlpInTransferCompleteMismatch) {
+  FakeUsbDciInterface fake_dci;
+
+  SetUpAndPowerOnDriver();
+
+  std::vector<uint8_t> read_data(512, 0xAA);
+  fake_dci.SetReadData(read_data);
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::SetEpRsrcId(drv, 0, 1);
+    Dwc3TestHelper::SetEpRsrcId(drv, 1, 1);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+
+    auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 1024);
+    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
+    std::memcpy(buf, &setup, sizeof(setup));
+
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // Setup
+  });
+
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) { ready = !Dwc3TestHelper::IsFifoEmpty(drv); });
+        return ready;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SimulateDataInPhase(drv);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitZlpIn);
+
+    // Mismatch: Send Transfer Complete on EP0 OUT instead of IN
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is EP0 OUT
+
+    // Expectation: Stall and reset to Setup
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0InStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that receiving an XferNotReady on the wrong endpoint while waiting for ZLP IN
+// aborts the transfer and resets to Setup.
+TEST_F(UnmanagedTestFixture, WaitZlpInTransferNotReadyMismatch) {
+  FakeUsbDciInterface fake_dci;
+
+  SetUpAndPowerOnDriver();
+
+  std::vector<uint8_t> read_data(512, 0xAA);
+  fake_dci.SetReadData(read_data);
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::SetEpRsrcId(drv, 0, 1);
+    Dwc3TestHelper::SetEpRsrcId(drv, 1, 1);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+
+    auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 1024);
+    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
+    std::memcpy(buf, &setup, sizeof(setup));
+
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // Setup
+  });
+
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) { ready = !Dwc3TestHelper::IsFifoEmpty(drv); });
+        return ready;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SimulateDataInPhase(drv);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitZlpIn);
+
+    // Mismatch: Send Transfer Not Ready Data on EP0 OUT
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(
+        drv, 0, DEPEVT_XFER_NOT_READY_STAGE_DATA);  // 0 is EP0 OUT
+
+    // Expectation: Stall and reset to Setup
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0InStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
   });
 
   if (binding.has_value()) {

@@ -236,6 +236,7 @@ class Dwc3TestHelper {
   static void* GetEp0BufferVirt(Dwc3& drv) { return drv.ep0_.buffer->virt(); }
   static size_t GetEp0BufferSize(Dwc3& drv) { return drv.ep0_.buffer->size(); }
   static bool IsEp0OutStalled(Dwc3& drv) { return drv.ep0_.out.stalled; }
+  static bool IsEp0InStalled(Dwc3& drv) { return drv.ep0_.in.stalled; }
   static void SetEp0OutEnabled(Dwc3& drv, bool enabled) { drv.ep0_.out.enabled = enabled; }
   static void SetEp0InEnabled(Dwc3& drv, bool enabled) { drv.ep0_.in.enabled = enabled; }
   static void PushTrbToSharedFifo(Dwc3& drv, const dwc3_trb_t& trb) {

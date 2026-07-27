@@ -375,6 +375,7 @@ class Dwc3 : public fdf::DriverBase2,
       // XferNotReady(Status) for the given endpoint.
       DataOut,
       DataIn,
+      WaitZlpIn,
       WaitNrdyOut,  // Waiting on ep0.
       WaitNrdyIn,   // Waiting on ep1.
 
@@ -613,6 +614,9 @@ struct std::formatter<dwc3::Dwc3::Ep0::State> : std::formatter<std::string> {
         break;
       case dwc3::Dwc3::Ep0::State::DataIn:
         fmt = "DataIn";
+        break;
+      case dwc3::Dwc3::Ep0::State::WaitZlpIn:
+        fmt = "WaitZlpIn";
         break;
       case dwc3::Dwc3::Ep0::State::WaitNrdyOut:
         fmt = "WaitNrdyOut";
