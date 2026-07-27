@@ -9,7 +9,7 @@ use crate::task::{
     CurrentTask, Kernel, PidTable, ProcessGroup, RobustListHeadPtr, SeccompFilterContainer,
     SeccompState, Task, TaskBuilder, ThreadGroup, ThreadGroupParent, ThreadGroupWriteGuard,
 };
-use crate::vfs::{FdTable, FsContext};
+use crate::vfs::{FsContext, SharedFdTable};
 use starnix_sync::{RwLockWriteGuard, allow_subclass};
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -312,7 +312,7 @@ where
             pid,
             initial_name,
             thread_group,
-            FdTable::default(),
+            SharedFdTable::default(),
             memory_manager,
             root_fs,
             creds,
@@ -383,7 +383,7 @@ pub fn create_kernel_thread(
         pid,
         initial_name,
         system_task.thread_group().clone(),
-        FdTable::default(),
+        SharedFdTable::default(),
         mm,
         fs,
         system_task.clone_creds(),

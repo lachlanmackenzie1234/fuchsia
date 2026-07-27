@@ -200,7 +200,7 @@ impl CurrentTask {
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
         if let Ok(running_state) = self.task.running_state() {
-            running_state.files.release();
+            *running_state.files.lock() = None;
             running_state.mm.update(None);
         }
         self.running_state.update(None);
@@ -1037,7 +1037,7 @@ impl CurrentTask {
         //
         //   If the calling process was sharing its file descriptor table (via
         //   the use of CLONE_FILES with clone(2)), then this sharing is undone.
-        self.running_state().files.unshare();
+        self.running_state().unshare_files();
         self.files().exec();
 
         {
@@ -1463,10 +1463,11 @@ impl CurrentTask {
 
         let fs = if clone_fs { self.fs() } else { self.fs().fork() };
         let files = if clone_files {
-            self.running_state().files.clone()
+            self.running_state().share_files()
         } else {
-            self.running_state().files.fork()
-        };
+            self.running_state().fork_files()
+        }
+        .expect("Task must have FdTable");
 
         let kernel = self.kernel();
 

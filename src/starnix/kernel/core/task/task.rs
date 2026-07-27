@@ -18,7 +18,7 @@ use crate::task::{
     ThreadGroup, ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter,
     ZombieProcess,
 };
-use crate::vfs::{FdTable, FsContext, FsString};
+use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
 use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuReadGuard, RcuReadScope};
 use macro_rules_attribute::apply;
@@ -1085,7 +1085,7 @@ impl Task {
         tid: tid_t,
         command: TaskCommand,
         thread_group: Arc<ThreadGroup>,
-        files: FdTable,
+        files: SharedFdTable,
         mm: Option<Arc<MemoryManager>>,
         // The only case where fs should be None if when building the initial task that is the
         // used to build the initial FsContext.
@@ -1114,7 +1114,7 @@ impl Task {
                 thread_group,
                 running_state: RcuOptionArc::new(Some(Arc::new(TaskRunningState {
                     thread: Default::default(),
-                    files,
+                    files: Some(files).into(),
                     mm: RcuOptionArc::new(mm),
                     fs: RcuArc::new(fs),
                     abstract_socket_namespace,
@@ -1217,7 +1217,7 @@ impl Task {
     ///   - `ESRCH`: the task is dead and its live resources have been dropped.
     #[track_caller]
     pub fn files(&self) -> Result<FdTable, Errno> {
-        Ok(self.running_state()?.files())
+        self.running_state()?.files()
     }
 
     /// Returns the memory manager of the task, if it exists.
