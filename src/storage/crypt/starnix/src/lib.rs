@@ -547,7 +547,7 @@ mod tests {
 
         let plaintext: &[u8] = b"This is aligned sensitive data!!";
         let mut buf = device.allocate_buffer(4096).await;
-        buf.as_mut_slice()[..plaintext.len()].copy_from_slice(plaintext);
+        buf.subslice_mut(..plaintext.len()).copy_from_slice(plaintext);
         device
             .write_with_opts(
                 0,
@@ -567,7 +567,7 @@ mod tests {
             .read_with_opts(0, read_buf.as_mut(), ReadOptions::default())
             .await
             .expect("Read failed");
-        assert_ne!(&read_buf.as_slice()[..plaintext.len()], plaintext);
+        assert_ne!(&read_buf.to_vec()[..plaintext.len()], plaintext);
 
         // Reading using a different key than the one used for writing should also return garbage.
         // Cheat: we know the insecure inline encryption provider adds this to the next available
@@ -581,7 +581,7 @@ mod tests {
             )
             .await
             .expect("Read failed");
-        assert_ne!(&read_buf.as_slice()[..plaintext.len()], plaintext);
+        assert_ne!(&read_buf.to_vec()[..plaintext.len()], plaintext);
 
         // Should not be able to read from an unused key slot.
         device
@@ -602,7 +602,7 @@ mod tests {
             )
             .await
             .expect("Read failed");
-        assert_eq!(&read_buf.as_slice()[..plaintext.len()], plaintext);
+        assert_eq!(&read_buf.to_vec()[..plaintext.len()], plaintext);
     }
 
     #[fuchsia::test]
