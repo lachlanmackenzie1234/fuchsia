@@ -11,7 +11,7 @@ package(
 
 fuchsia_prebuilt_package(
     name = "skip-block",
-    archive = "@gn_targets//src/devices/nand/drivers/skip-block:package",
+    archive = "@gn_targets//src/devices/nand/drivers/skip-block:skip-block",
     drivers = [
         "meta/skip-block.cm",
     ],

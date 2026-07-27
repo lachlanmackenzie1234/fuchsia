@@ -207,7 +207,7 @@ fuchsia_test_package("paver-tests") {
     "//src/devices/nand/drivers/nand",
     "//src/devices/nand/drivers/nandpart",
     "//src/devices/nand/drivers/ram-nand",
-    "//src/devices/nand/drivers/skip-block",
+    "//src/devices/nand/drivers/skip-block:component",
   ]
   test_specs = {
     # Gives more timeout to reduce flake.(https://fxbug.dev/42182211)

@@ -7,28 +7,6 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
-fuchsia_cc_driver("skip-block-driver") {
-  legacy = true
-  output_name = "skip-block"
-  deps = [
-    ":common",
-    "//src/devices/lib/driver",
-  ]
-}
-
-fuchsia_driver_component("skip-block") {
-  component_name = "skip-block"
-  deps = [ ":skip-block-driver" ]
-  info = "meta/skip-block-info.json"
-  manifest = "meta/skip-block.cml"
-}
-
-fuchsia_driver_package("package") {
-  package_name = "skip-block"
-  export_to_bazel = true
-  driver_components = [ ":skip-block" ]
-}
-
 driver_bind_rules("skip-block-bind") {
   rules = "meta/skip-block.bind"
   bind_output = "skip-block.bindbc"
@@ -39,11 +17,12 @@ driver_bind_rules("skip-block-bind") {
 source_set("common") {
   sources = [
     "logical-to-physical-map.cc",
+    "logical-to-physical-map.h",
     "skip-block.cc",
+    "skip-block.h",
   ]
   deps = [
-    ":skip-block-bind",
-    "//sdk/lib/fidl",
+    "//src/lib/ddk:ddk_metadata",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
@@ -53,12 +32,37 @@ source_set("common") {
     "//sdk/banjo/fuchsia.hardware.badblock:fuchsia.hardware.badblock_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devfs/cpp",
     "//src/devices/lib/dev-operation",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zircon-internal",
   ]
+}
+
+fuchsia_cc_driver("driver") {
+  output_name = "skip-block"
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
+}
+
+fuchsia_driver_component("component") {
+  component_name = "skip-block"
+  deps = [
+    ":driver",
+    ":skip-block-bind",
+  ]
+  info = "meta/skip-block-info.json"
+  manifest = "meta/skip-block.cml"
+}
+
+fuchsia_driver_package("skip-block") {
+  package_name = "skip-block"
+  export_to_bazel = true
+  driver_components = [ ":component" ]
 }
 
 test("skip-block-test-bin") {
@@ -70,12 +74,13 @@ test("skip-block-test-bin") {
   include_dirs = [ "." ]
   deps = [
     ":common",
-    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/fdio",
-    "//src/devices/testing/mock-ddk",
+    "//src/lib/ddk:ddk_metadata",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 

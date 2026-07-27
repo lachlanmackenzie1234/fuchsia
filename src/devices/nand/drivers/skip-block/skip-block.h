@@ -8,13 +8,14 @@
 #include <fidl/fuchsia.hardware.skipblock/cpp/wire.h>
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
-#include <inttypes.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/node_offers.h>
+#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/operation/nand.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <zircon/types.h>
 
-#include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/array.h>
 #include <fbl/auto_lock.h>
 #include <fbl/macros.h>
@@ -36,21 +37,15 @@ struct PageRange {
   size_t page_count;
 };
 
-class SkipBlockDevice;
-using DeviceType =
-    ddk::Device<SkipBlockDevice, ddk::Messageable<fuchsia_hardware_skipblock::SkipBlock>::Mixin>;
-
-class SkipBlockDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_SKIP_BLOCK> {
+class SkipBlock : public fdf::DriverBase2,
+                  public fidl::WireServer<fuchsia_hardware_skipblock::SkipBlock> {
  public:
-  // Spawns device node based on parent node.
-  static zx_status_t Create(void*, zx_device_t* parent);
+  SkipBlock() : fdf::DriverBase2("skip_block") {}
 
-  zx_status_t Bind();
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  // Device protocol implementation.
-  void DdkRelease() { delete this; }
-
-  // skip-block fidl implementation.
+  // fidl::WireServer<fuchsia_hardware_skipblock::SkipBlock> implementation.
   void GetPartitionInfo(GetPartitionInfoCompleter::Sync& completer) override;
   void Read(ReadRequestView request, ReadCompleter::Sync& completer) override;
   void Write(WriteRequestView request, WriteCompleter::Sync& completer) override;
@@ -59,19 +54,13 @@ class SkipBlockDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL
                               WriteBytesWithoutEraseCompleter::Sync& completer) override;
 
  private:
-  explicit SkipBlockDevice(zx_device_t* parent, ddk::NandProtocolClient nand,
-                           ddk::BadBlockProtocolClient bad_block, uint32_t copy_count)
-      : DeviceType(parent), nand_(nand), bad_block_(bad_block), copy_count_(copy_count) {
-    nand_.Query(&nand_info_, &parent_op_size_);
+  uint64_t GetBlockSize() const {
+    return static_cast<uint64_t>(nand_info_.pages_per_block) * nand_info_.page_size;
   }
-
-  DISALLOW_COPY_ASSIGN_AND_MOVE(SkipBlockDevice);
-
-  uint64_t GetBlockSize() const { return nand_info_.pages_per_block * nand_info_.page_size; }
   uint32_t GetBlockCountLocked() const TA_REQ(lock_);
 
   // Helper to get bad block list in a more idiomatic container.
-  zx_status_t GetBadBlockList(fbl::Array<uint32_t>* bad_block_list) TA_REQ(lock_);
+  zx_status_t GetBadBlockList(fbl::Array<uint32_t>* bad_blocks) TA_REQ(lock_);
   // Helper to validate operation.
   zx_status_t ValidateOperationLocked(const ReadWriteOperation& op) const TA_REQ(lock_);
   zx_status_t ValidateOperationLocked(const WriteBytesOperation& op) const TA_REQ(lock_);
@@ -95,7 +84,16 @@ class SkipBlockDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL
 
   std::optional<NandOperation> nand_op_ __TA_GUARDED(lock_);
 
-  const uint32_t copy_count_;
+  uint32_t copy_count_;
+
+  void ServeDevfs(fidl::ServerEnd<fuchsia_hardware_skipblock::SkipBlock> request);
+
+  driver_devfs::Connector<fuchsia_hardware_skipblock::SkipBlock> devfs_connector_{
+      fit::bind_member<&SkipBlock::ServeDevfs>(this)};
+  compat::SyncInitializedDeviceServer compat_server_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+
+  fidl::ServerBindingGroup<fuchsia_hardware_skipblock::SkipBlock> bindings_;
 };
 
 }  // namespace nand

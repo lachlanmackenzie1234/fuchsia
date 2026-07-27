@@ -10,9 +10,13 @@
 
 #include <fbl/array.h>
 #include <fbl/vector.h>
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
+
+#include "src/lib/testing/predicates/status.h"
 
 namespace nand {
+
+namespace {
 
 void CheckMultiple(LogicalToPhysicalMap ltop_map, fbl::Vector<fbl::Vector<uint32_t>> expected) {
   for (uint32_t copy = 0; copy < expected.size(); copy++) {
@@ -78,7 +82,7 @@ TEST(LogicalToPhysicalMap, AllBadTest) {
   bad_blocks[2] = 2;
   LogicalToPhysicalMap ltop_map(1, 3, std::move(bad_blocks));
 
-  EXPECT_EQ(ltop_map.AvailableBlockCount(0), 0);
+  EXPECT_EQ(ltop_map.AvailableBlockCount(0), 0u);
   uint32_t physical;
   zx_status_t status = ltop_map.GetPhysical(0, 0, &physical);
   EXPECT_EQ(status, ZX_ERR_OUT_OF_RANGE);
@@ -114,5 +118,7 @@ TEST(LogicalToPhysicalMap, OverflowTest) {
   EXPECT_EQ(ltop_map.GetPhysical(0, 0x40000000, &physical), ZX_ERR_OUT_OF_RANGE);
   EXPECT_EQ(ltop_map.GetPhysical(1, 0xC0000000, &physical), ZX_ERR_OUT_OF_RANGE);
 }
+
+}  // namespace
 
 }  // namespace nand
