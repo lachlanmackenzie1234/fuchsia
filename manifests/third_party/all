@@ -95,7 +95,7 @@
     <project name="chromium-zucchini"
              path="third_party/chromium-zucchini/src"
              remote="https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromium/src/components/zucchini"
-             revision="c5695f0a5d0a912938e1fbe5db1d9e591cfdd769"/>
+             revision="80ea313bbbd6bef179fdef47ea1fdd8ea3e61200"/>
     <project name="third_party/crashpad"
              path="third_party/crashpad/src"
              remote="https://fuchsia.googlesource.com/third_party/crashpad"
