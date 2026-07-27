@@ -32,7 +32,6 @@ use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_sync};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect as inspect;
 use fuchsia_runtime as fruntime;
-use fuchsia_zbi as zbi;
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use serde::Deserialize;
@@ -551,7 +550,7 @@ async fn get_bootitems() -> Result<std::vec::Vec<u8>, Error> {
         connect_to_protocol::<fboot::ItemsMarker>().context("Failed to connect to boot items")?;
 
     let items_response = items
-        .get2(zbi::ZbiType::DeviceTree.into_raw(), None)
+        .get2(zbi::Type::Devicetree.into(), None)
         .await
         .context("FIDL: Failed to get devicetree item")?
         .map_err(|e| anyhow!("Failed to get devicetree item {:?}", e))?;
