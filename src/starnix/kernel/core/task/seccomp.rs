@@ -19,7 +19,6 @@ use ebpf::{
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
-use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{LockDepMutex, SeccompNotifierLock};
 use starnix_syscalls::decls::Syscall;
@@ -70,17 +69,17 @@ pub struct SeccompFilter {
     /// The BPF program associated with this filter.
     program: EbpfProgram<SeccompFilter>,
 
-    /// The unique-to-this-process id of thi1s filter.  SECCOMP_FILTER_FLAG_TSYNC only works if all
+    /// The unique-to-this-process id of this filter.  SECCOMP_FILTER_FLAG_TSYNC only works if all
     /// threads in this process have filters that are a prefix of the filters of the thread
     /// attempting to do the TSYNC. Identical filters attached in separate seccomp calls are treated
     /// as different from each other for this purpose, so we need a way of distinguishing them.
     unique_id: u64,
 
-    /// The next cookie (unique id for this syscall), as used by SECCOMP_RET_USER_NOTIF
-    cookie: AtomicCounter<u64>,
-
     // Whether to log the results of this filter
     log: bool,
+
+    /// The notifier associated with this filter, if it was created with SECCOMP_FILTER_FLAG_NEW_LISTENER
+    pub notifier: Option<SeccompNotifierHandle>,
 }
 
 /// The result of running a set of seccomp filters.
@@ -100,6 +99,7 @@ impl SeccompFilter {
         code: &Vec<sock_filter>,
         maybe_unique_id: u64,
         should_log: bool,
+        notifier: Option<SeccompNotifierHandle>,
     ) -> Result<Self, Errno> {
         for insn in code {
             // If an instruction loads from / stores to an absolute address, that address has to be
@@ -127,12 +127,7 @@ impl SeccompFilter {
             errno!(EINVAL)
         })?;
 
-        Ok(SeccompFilter {
-            program,
-            unique_id: maybe_unique_id,
-            cookie: AtomicCounter::<u64>::new(0),
-            log: should_log,
-        })
+        Ok(SeccompFilter { program, unique_id: maybe_unique_id, log: should_log, notifier })
     }
 
     pub fn run(&self, data: &seccomp_data) -> u32 {
@@ -176,30 +171,30 @@ pub struct SeccompFilterContainer {
     // instead of computed because we store seccomp filters in an
     // expanded form, and it is impossible to get the original length.
     pub provided_instructions: u16,
-
-    // Data needed by SECCOMP_RET_USER_NOTIF
-    pub notifier: Option<SeccompNotifierHandle>,
 }
 
 impl Clone for SeccompFilterContainer {
     fn clone(&self) -> Self {
-        if let Some(n) = &self.notifier {
-            n.lock().add_thread();
+        for filter in &self.filters {
+            if let Some(n) = &filter.notifier {
+                n.lock().add_thread();
+            }
         }
         SeccompFilterContainer {
             filters: self.filters.clone(),
             provided_instructions: self.provided_instructions,
-            notifier: self.notifier.clone(),
         }
     }
 }
 
 impl Drop for SeccompFilterContainer {
     fn drop(&mut self) {
-        if let Some(n) = &self.notifier {
-            // Notifier needs to send threads a HUP when there is no one left
-            // referencing it.
-            n.lock().remove_thread();
+        for filter in &self.filters {
+            if let Some(n) = &filter.notifier {
+                // Notifier needs to send threads a HUP when there is no one left
+                // referencing it.
+                n.lock().remove_thread();
+            }
         }
     }
 }
@@ -305,30 +300,33 @@ impl SeccompFilterContainer {
         r
     }
 
-    /// Creates a new listener for use by SECCOMP_RET_USER_NOTIF.  Returns its fd.
-    pub fn create_listener(current_task: &CurrentTask) -> Result<FdNumber, Errno> {
+    pub fn create_notifier() -> SeccompNotifierHandle {
+        SeccompNotifier::new()
+    }
+
+    pub fn register_listener(
+        current_task: &CurrentTask,
+        notifier: SeccompNotifierHandle,
+    ) -> Result<FdNumber, Errno> {
         // Create the `Anon` handle file before taking the write lock on the task, because
         // `Anon::new_file()` needs to read the `current_task` SID to label the file object.
-        let the_notifier = SeccompNotifier::new();
         let handle = Anon::new_file(
             current_task,
-            Box::new(SeccompNotifierFileObject { notifier: the_notifier.clone() }),
+            Box::new(SeccompNotifierFileObject { notifier: notifier.clone() }),
             OpenFlags::RDWR,
             "seccomp notify",
         )?;
 
-        // Take the write lock to check for an existing notifier, and initialize and store the new
-        // notifier otherwise.
+        // Take the write lock to check for an existing notifier.
         let filters = &mut current_task.write().seccomp_filters;
-        if filters.notifier.is_some() {
+        if filters.filters.iter().any(|f| f.notifier.is_some()) {
             return error!(EBUSY);
         }
         let fd = current_task.add_file(handle, FdFlags::CLOEXEC)?;
         {
-            let mut state = the_notifier.lock();
+            let mut state = notifier.lock();
             state.add_thread();
         }
-        filters.notifier = Some(the_notifier);
         Ok(fd)
     }
 }
@@ -511,29 +509,25 @@ impl SeccompState {
                 Some(Err(errno_from_code!(-(syscall.decl.number as i16))))
             }
             SeccompAction::UserNotif => {
-                if let Some(notifier) = current_task.get_seccomp_notifier() {
-                    let cookie = result.filter.as_ref().unwrap().cookie.next();
-                    let msg = seccomp_notif {
-                        id: cookie,
-                        pid: current_task.tid as u32,
-                        flags: 0,
-                        data: make_seccomp_data(
-                            current_task,
-                            syscall,
-                            current_task.thread_state.registers.instruction_pointer_register(),
-                        ),
-                    };
-                    // First, add a pending notification, and wake up the supervisor waiting for it.
+                if let Some(notifier) = result.filter.as_ref().and_then(|f| f.notifier.clone()) {
                     let waiter = Waiter::new();
+                    let cookie;
                     {
                         let mut notifier = notifier.lock();
                         if notifier.is_closed {
-                            // Someone explicitly close()d the fd with the notifier, which does not
-                            // clear the thread-local notifier.  Do it now.
-                            drop(notifier);
-                            current_task.set_seccomp_notifier(None);
                             return Some(error!(ENOSYS));
                         }
+                        cookie = notifier.next_cookie();
+                        let msg = seccomp_notif {
+                            id: cookie,
+                            pid: current_task.tid as u32,
+                            flags: 0,
+                            data: make_seccomp_data(
+                                current_task,
+                                syscall,
+                                current_task.thread_state.registers.instruction_pointer_register(),
+                            ),
+                        };
                         notifier.create_notification(cookie, msg);
                         notifier.waiters.wait_async_value(&waiter, cookie);
                     }
@@ -802,6 +796,8 @@ pub struct SeccompNotifier {
     // has fds referring to it, it will be closed, and the SeccompFilterContainers should stop
     // using it.
     pub is_closed: bool,
+
+    next_cookie: u64,
 }
 
 pub type SeccompNotifierHandle = Arc<LockDepMutex<SeccompNotifier, SeccompNotifierLock>>;
@@ -814,9 +810,16 @@ impl SeccompNotifier {
                 pending_notifications: HashMap::default(),
                 num_active_threads: 0,
                 is_closed: false,
+                next_cookie: 0,
             }
             .into(),
         )
+    }
+
+    fn next_cookie(&mut self) -> u64 {
+        let cookie = self.next_cookie;
+        self.next_cookie += 1;
+        cookie
     }
 
     fn add_thread(&mut self) {

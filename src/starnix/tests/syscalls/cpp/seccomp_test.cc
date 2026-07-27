@@ -534,6 +534,20 @@ TEST(SeccompTest, UserNotifBlocking) {
   });
 }
 
+TEST(SeccompTest, UserNotifNonListenerReturnsEnosysEvenWithOtherListener) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    int fd = install_filter_user_notif(kFilteredSyscall);
+    EXPECT_GT(fd, 0);
+
+    install_filter_block(__NR_getppid, SECCOMP_RET_USER_NOTIF);
+
+    EXPECT_EQ(-1, syscall(__NR_getppid));
+    EXPECT_EQ(ENOSYS, errno);
+  });
+}
+
 TEST(SeccompTest, UserNotifNonBlocking) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();

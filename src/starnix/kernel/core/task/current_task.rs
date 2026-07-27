@@ -12,8 +12,8 @@ use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
     CurrentTaskCredentialsWriteGuard, ExitStatus, PageFaultExceptionReport, RobustListHeadPtr,
-    RunState, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle, SeccompState,
-    SeccompStateValue, Task, TaskFlags, TaskRunningState, ThreadState, Waiter,
+    RunState, SeccompFilter, SeccompFilterContainer, SeccompState, SeccompStateValue, Task,
+    TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsStr, LookupContext,
@@ -1121,16 +1121,21 @@ impl CurrentTask {
         code: Vec<sock_filter>,
         flags: u32,
     ) -> Result<SyscallResult, Errno> {
+        let mut notifier = None;
+        if flags & SECCOMP_FILTER_FLAG_NEW_LISTENER != 0 {
+            notifier = Some(SeccompFilterContainer::create_notifier());
+        }
+
         let new_filter = Arc::new(SeccompFilter::from_cbpf(
             &code,
             self.thread_group().next_seccomp_filter_id.add(1),
             flags & SECCOMP_FILTER_FLAG_LOG != 0,
+            notifier.clone(),
         )?);
 
         let mut maybe_fd: Option<FdNumber> = None;
-
-        if flags & SECCOMP_FILTER_FLAG_NEW_LISTENER != 0 {
-            maybe_fd = Some(SeccompFilterContainer::create_listener(self)?);
+        if let Some(notifier) = notifier {
+            maybe_fd = Some(SeccompFilterContainer::register_listener(self, notifier)?);
         }
 
         // We take the process lock here because we can't change any of the threads
@@ -1274,15 +1279,6 @@ impl CurrentTask {
             curr_ptr = curr.next;
             entries_count += 1;
         }
-    }
-
-    /// Returns a ref to this thread's SeccompNotifier.
-    pub fn get_seccomp_notifier(&mut self) -> Option<SeccompNotifierHandle> {
-        self.task.write().seccomp_filters.notifier.clone()
-    }
-
-    pub fn set_seccomp_notifier(&mut self, notifier: Option<SeccompNotifierHandle>) {
-        self.task.write().seccomp_filters.notifier = notifier;
     }
 
     pub(crate) fn handle_page_fault(
