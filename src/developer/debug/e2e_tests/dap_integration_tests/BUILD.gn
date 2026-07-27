@@ -13,16 +13,16 @@ import("//src/developer/ffx/config.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":dap_framework_test($host_toolchain)" ]
+  deps = [
+    ":dap_framework_test($host_toolchain)",
+    ":dap_symbol_unittest($host_toolchain)",
+  ]
 }
 
 group("e2e_tests") {
   testonly = true
   if (has_board) {
-    deps = [
-      ":dap_integration_test($host_toolchain)",
-      ":dap_symbol_unittest($host_toolchain)",
-    ]
+    deps = [ ":dap_integration_test($host_toolchain)" ]
   }
 }
 

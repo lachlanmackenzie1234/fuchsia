@@ -166,7 +166,6 @@ class TestDapBreakpointLine(DapTestCase):
 
 class TestLaunch(DapTestCase):
     async def test_strong_attach(self) -> None:
-        await self.avoid_racy_attach()
         self.launch(
             LaunchArguments(
                 process="fuchsia-pkg://fuchsia.com/crasher#meta/cpp_crasher.cm"

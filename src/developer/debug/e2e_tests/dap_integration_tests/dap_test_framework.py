@@ -31,7 +31,7 @@ from async_utils.command import (
 )
 from ffx_cmd.lib import FfxCmd
 from portpicker import portpicker
-from pydap.dap_types import DapBaseModel, Source, SourceBreakpoint
+from pydap.dap_types import DapBaseModel
 from pydap.models import (
     DisconnectArguments,
     EvaluateArguments,
@@ -616,18 +616,6 @@ class DapTestFramework:
     def initialize(self, args: InitializeArguments) -> RequestFuture:
         return self._send_wrapper("initialize", args)
 
-    def avoid_racy_attach(self) -> RequestFuture:
-        """Sends a setBreakpoints request to avoid racy attach behavior."""
-        avoid_racy_path = str(
-            (get_build_root() / "this_can_be_any_name_to_avoid_racy").resolve()
-        )
-        return self.set_breakpoints(
-            SetBreakpointsArguments(
-                source=Source(path=avoid_racy_path),
-                breakpoints=[SourceBreakpoint(line=1)],
-            )
-        ).expect({"success": True})
-
     def launch(self, args: LaunchArguments) -> RequestFuture:
         return self._send_wrapper("launch", args)
 
@@ -1031,9 +1019,6 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
     # Delegation methods for cleaner test syntax
     def initialize(self, args: InitializeArguments) -> RequestFuture:
         return self.framework.initialize(args)
-
-    def avoid_racy_attach(self) -> RequestFuture:
-        return self.framework.avoid_racy_attach()
 
     def launch(self, args: LaunchArguments) -> RequestFuture:
         return self.framework.launch(args)
