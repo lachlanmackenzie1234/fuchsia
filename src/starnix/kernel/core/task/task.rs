@@ -1216,7 +1216,7 @@ impl Task {
     ///
     ///   - `ESRCH`: the task is dead and its live resources have been dropped.
     #[track_caller]
-    pub fn files(&self) -> Result<FdTable, Errno> {
+    pub fn files(&self) -> Result<Arc<FdTable>, Errno> {
         self.running_state()?.files()
     }
 

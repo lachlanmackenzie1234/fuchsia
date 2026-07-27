@@ -235,7 +235,7 @@ impl CurrentTask {
     /// Calling `files()` on a [`CurrentTask`] for which the [`Task`] has no file descriptor table
     /// (i.e. exited tasks) panics. However, such tasks should not have a `CurrentTask`.
     #[track_caller]
-    pub fn files(&self) -> FdTable {
+    pub fn files(&self) -> Arc<FdTable> {
         self.task.files().expect("CurrentTask must have FdTable")
     }
 

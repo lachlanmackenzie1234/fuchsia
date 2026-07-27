@@ -42,7 +42,7 @@ impl std::convert::From<FdFlags> for SyscallResult {
 pub struct FdTableId(usize);
 
 impl FdTableId {
-    fn new(id: *const FdTableInner) -> Self {
+    fn new(id: *const FdTable) -> Self {
         Self(id as usize)
     }
 
@@ -328,19 +328,19 @@ impl<'a> FdTableView<'a> {
 }
 
 struct FdTableWriteGuard<'a> {
-    store: &'a FdTableInner,
+    store: &'a FdTable,
     share_count: LockDepGuard<'a, usize>,
 }
 
 impl<'a> FdTableWriteGuard<'a> {
-    /// Increases the share count for this `FdTableInner`.
+    /// Increases the share count for this `FdTable`.
     fn share(&mut self) {
         assert!(*self.share_count > 0, "Cannot share unshared table");
         *self.share_count += 1;
     }
 
-    /// Decreases the share count for this `FdTableInner`. The table is cleared when the count
-    /// reaches zero.
+    /// Decreases the share count for this `FdTable`. The table is cleared when the count reaches
+    /// zero.
     fn unshare(mut self) {
         if *self.share_count > 0 {
             *self.share_count -= 1;
@@ -351,11 +351,11 @@ impl<'a> FdTableWriteGuard<'a> {
     }
 
     /// Creates a snapshot of the table with the same files but a separate share count.
-    fn fork(&self) -> FdTableInner {
+    fn fork(&self) -> FdTable {
         // THREAD SAFETY: Holding the `share_count` lock through `Self::share_count` ensures
         // coherence between `entries` and `next_fd` because they must only be modified while
         // holding the lock.
-        FdTableInner {
+        FdTable {
             entries: self.store.entries.clone(),
             next_fd: self.store.next_fd.clone(),
             share_count: LockDepMutex::new(1),
@@ -513,8 +513,8 @@ impl<'a> FdTableWriteGuard<'a> {
 
 /// An `FdNumber` that can be atomically updated.
 ///
-/// Used for the `next_fd` field of `FdTableInner`, which is only modified by the `FdTable` when
-/// holding the `writer_queue` lock.
+/// Used for the `next_fd` field of `FdTable`, which is only modified when holding the `share_count`
+/// lock.
 #[derive(Debug, Default)]
 struct AtomicFdNumber {
     /// The raw value of the `FdNumber`.
@@ -543,14 +543,14 @@ impl Clone for AtomicFdNumber {
     }
 }
 
-/// The inner state of a file descriptor table which is shared between tasks.
+/// A file descriptor table which is shared between tasks.
 ///
 /// # Thread Safety
 ///
 /// The table supports concurrent, lock-free reads via RCU. Writers serialize on the share count
 /// mutex independently from readers.
 #[derive(Debug)]
-struct FdTableInner {
+pub struct FdTable {
     /// The entries of the `FdTable`.
     ///
     /// # Thread Safety
@@ -571,7 +571,7 @@ struct FdTableInner {
     share_count: LockDepMutex<usize, FdTableShareCountLock>,
 }
 
-impl Default for FdTableInner {
+impl Default for FdTable {
     fn default() -> Self {
         Self {
             entries: Default::default(),
@@ -581,7 +581,7 @@ impl Default for FdTableInner {
     }
 }
 
-impl Clone for FdTableInner {
+impl Clone for FdTable {
     fn clone(&self) -> Self {
         // THREAD SAFETY: Holding the `share_count` lock ensures coherence between `entries` and
         // `next_fd` because they must only be modified while holding the lock.
@@ -594,7 +594,7 @@ impl Clone for FdTableInner {
     }
 }
 
-impl Drop for FdTableInner {
+impl Drop for FdTable {
     fn drop(&mut self) {
         let scope = RcuReadScope::new();
         let view = self.read(&scope);
@@ -604,112 +604,21 @@ impl Drop for FdTableInner {
     }
 }
 
-impl FdTableInner {
-    /// Returns the `FdTableId` of the `FdTableInner`.
-    fn id(&self) -> FdTableId {
+impl FdTable {
+    /// Returns the `FdTableId` of the `FdTable`.
+    pub fn id(&self) -> FdTableId {
         FdTableId::new(self as *const Self)
     }
 
-    /// Returns a `FdTableView` that provides read-only access to the state of the `FdTableInner`.
+    /// Returns a `FdTableView` that provides read-only access to the state of the `FdTable`.
     fn read<'a>(&self, scope: &'a RcuReadScope) -> FdTableView<'a> {
         let slice = self.entries.as_slice(scope);
         FdTableView { slice }
     }
 
-    /// Returns a `FdTableWriteGuard` that provides exclusive access to the state of the
-    /// `FdTableInner`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Err(ESRCH)`] if the table has no active sharers, indicating it is in the process
-    /// of being destroyed.
-    fn write(&self) -> Result<FdTableWriteGuard<'_>, Errno> {
-        let share_count = self.share_count.lock();
-        if *share_count == 0 {
-            return error!(ESRCH);
-        }
-        Ok(FdTableWriteGuard { store: self, share_count })
-    }
-}
-
-/// A wrapper around `FdTable` that manages the table's logical share count.
-///
-/// This type represents the primary reference to the file descriptor table held by a task. Cloning
-/// and dropping `SharedFdTable` increment and decrement the share count of the `FdTable`,
-/// respectively. When the last `SharedFdTable` for the table is dropped, the table is cleared.
-#[derive(Debug, Default)]
-pub struct SharedFdTable {
-    pub table: FdTable,
-}
-
-impl Clone for SharedFdTable {
-    fn clone(&self) -> Self {
-        self.table.inner.write().expect("FdTable must be writable").share();
-        Self { table: self.table.clone() }
-    }
-}
-
-impl std::ops::Deref for SharedFdTable {
-    type Target = FdTable;
-    fn deref(&self) -> &Self::Target {
-        &self.table
-    }
-}
-
-impl Drop for SharedFdTable {
-    fn drop(&mut self) {
-        if let Ok(guard) = self.table.inner.write() {
-            guard.unshare();
-        }
-    }
-}
-
-impl SharedFdTable {
-    pub fn new(table: FdTable) -> Self {
-        Self { table }
-    }
-
-    /// Replaces the wrapped table with a fork that has an independent share count.
-    pub fn unshare(&mut self) {
-        if let Ok(mut guard) = self.table.inner.clone().write() {
-            if *guard.share_count > 1 {
-                let inner = Arc::new(guard.fork());
-                *guard.share_count -= 1;
-                self.table = FdTable { inner };
-            }
-        }
-    }
-}
-
-/// An `FdTable` is a table of file descriptors.
-#[derive(Debug, Clone, Default)]
-pub struct FdTable {
-    /// The state of the `FdTable` that is shared between tasks.
-    inner: Arc<FdTableInner>,
-}
-
-/// The target `FdNumber` for a duplicated file descriptor.
-pub enum TargetFdNumber {
-    /// The duplicated `FdNumber` will be the smallest available `FdNumber`.
-    Default,
-
-    /// The duplicated `FdNumber` should be this specific `FdNumber`.
-    Specific(FdNumber),
-
-    /// The duplicated `FdNumber` should be greater than this `FdNumber`.
-    Minimum(FdNumber),
-}
-
-impl FdTable {
-    /// Returns the `FdTableId` of the `FdTable`.
-    pub fn id(&self) -> FdTableId {
-        self.inner.id()
-    }
-
     /// Returns new unshared `FdTable` that is a snapshot of the state of the `FdTable`.
-    pub fn fork(&self) -> FdTable {
-        let forked = (*self.inner).clone();
-        FdTable { inner: Arc::new(forked) }
+    pub fn fork(&self) -> Arc<Self> {
+        Arc::new(self.clone())
     }
 
     /// Trims close-on-exec file descriptors from the table.
@@ -726,7 +635,7 @@ impl FdTable {
     ) -> Result<(), Errno> {
         let flags = FdFlags::empty();
         let rlimit = current_task.thread_group().get_rlimit(Resource::NOFILE);
-        let guard = self.inner.write()?;
+        let guard = self.write()?;
         guard.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(())
     }
@@ -745,7 +654,7 @@ impl FdTable {
         flags: FdFlags,
     ) -> Result<FdNumber, Errno> {
         let rlimit = current_task.thread_group().get_rlimit(Resource::NOFILE);
-        let guard = self.inner.write()?;
+        let guard = self.write()?;
         let fd = guard.next_fd();
         guard.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(fd)
@@ -763,7 +672,7 @@ impl FdTable {
         flags: FdFlags,
     ) -> Result<FdNumber, Errno> {
         let rlimit = current_task.thread_group().get_rlimit(Resource::NOFILE);
-        let guard = self.inner.write()?;
+        let guard = self.write()?;
         let scope = RcuReadScope::new();
         let file = guard.get_file(&scope, oldfd).ok_or_else(|| errno!(EBADF))?;
 
@@ -810,7 +719,7 @@ impl FdTable {
         fd: FdNumber,
     ) -> Result<(FileHandle, FdFlags), Errno> {
         let scope = RcuReadScope::new();
-        let view = self.inner.read(&scope);
+        let view = self.read(&scope);
         view.get_entry(&scope, fd)
             .map(|entry| (entry.file, entry.flags))
             .ok_or_else(|| errno!(EBADF))
@@ -831,7 +740,7 @@ impl FdTable {
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn close(&self, fd: FdNumber) -> Result<(), Errno> {
-        let guard = self.inner.write()?;
+        let guard = self.write()?;
         let scope = RcuReadScope::new();
         if guard.remove_entry(&scope, &fd) { Ok(()) } else { error!(EBADF) }
     }
@@ -852,7 +761,7 @@ impl FdTable {
         fd: FdNumber,
         request: u32,
     ) -> Result<(), Errno> {
-        let guard = self.inner.write()?;
+        let guard = self.write()?;
         let scope = RcuReadScope::new();
         let file = guard.get_file(&scope, fd).ok_or_else(|| errno!(EBADF))?;
         if file.flags().contains(OpenFlags::PATH) {
@@ -873,7 +782,7 @@ impl FdTable {
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn set_fd_flags_allowing_opath(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
-        let guard = self.inner.write()?;
+        let guard = self.write()?;
         guard.set_fd_flags(&RcuReadScope::new(), fd, flags)
     }
 
@@ -886,7 +795,7 @@ impl FdTable {
     where
         F: Fn(FdNumber, &mut FdFlags) -> bool,
     {
-        if let Ok(guard) = self.inner.write() {
+        if let Ok(guard) = self.write() {
             guard.retain(&RcuReadScope::new(), predicate);
         }
     }
@@ -894,7 +803,7 @@ impl FdTable {
     /// Returns a vector of all current file descriptors in the table.
     pub fn get_all_fds(&self) -> Vec<FdNumber> {
         let scope = RcuReadScope::new();
-        let view = self.inner.read(&scope);
+        let view = self.read(&scope);
         view.slice
             .iter()
             .enumerate()
@@ -913,10 +822,85 @@ impl FdTable {
         _current_task: &CurrentTask,
         predicate: F,
     ) {
-        if let Ok(guard) = self.inner.write() {
+        if let Ok(guard) = self.write() {
             guard.remap(&RcuReadScope::new(), predicate);
         }
     }
+
+    /// Returns a `FdTableWriteGuard` that provides exclusive access to the state of the `FdTable`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Err(ESRCH)`] if the table has no active sharers, indicating it is in the process
+    /// of being destroyed.
+    fn write(&self) -> Result<FdTableWriteGuard<'_>, Errno> {
+        let share_count = self.share_count.lock();
+        if *share_count == 0 {
+            return error!(ESRCH);
+        }
+        Ok(FdTableWriteGuard { store: self, share_count })
+    }
+}
+
+/// A wrapper around `FdTable` that manages the table's logical share count.
+///
+/// This type represents the primary reference to the file descriptor table held by a task. Cloning
+/// and dropping `SharedFdTable` increment and decrement the share count of the `FdTable`,
+/// respectively. When the last `SharedFdTable` for the table is dropped, the table is cleared.
+#[derive(Debug, Default)]
+pub struct SharedFdTable {
+    pub table: Arc<FdTable>,
+}
+
+impl Clone for SharedFdTable {
+    fn clone(&self) -> Self {
+        self.table.write().expect("FdTable must be writable").share();
+        Self { table: self.table.clone() }
+    }
+}
+
+impl std::ops::Deref for SharedFdTable {
+    type Target = FdTable;
+    fn deref(&self) -> &Self::Target {
+        &self.table
+    }
+}
+
+impl Drop for SharedFdTable {
+    fn drop(&mut self) {
+        if let Ok(guard) = self.table.write() {
+            guard.unshare();
+        }
+    }
+}
+
+impl SharedFdTable {
+    pub fn new(table: Arc<FdTable>) -> Self {
+        Self { table }
+    }
+
+    /// Replaces the wrapped table with a fork that has an independent share count.
+    pub fn unshare(&mut self) {
+        if let Ok(mut guard) = self.table.clone().write() {
+            if *guard.share_count > 1 {
+                let table = Arc::new(guard.fork());
+                *guard.share_count -= 1;
+                self.table = table;
+            }
+        }
+    }
+}
+
+/// The target `FdNumber` for a duplicated file descriptor.
+pub enum TargetFdNumber {
+    /// The duplicated `FdNumber` will be the smallest available `FdNumber`.
+    Default,
+
+    /// The duplicated `FdNumber` should be this specific `FdNumber`.
+    Specific(FdNumber),
+
+    /// The duplicated `FdNumber` should be greater than this `FdNumber`.
+    Minimum(FdNumber),
 }
 
 #[cfg(test)]
@@ -1055,7 +1039,7 @@ mod test {
             let file = SyslogFile::new_file(&current_task);
 
             // Clone the underlying FdTable. This does not increment the share_count, but it does
-            // increment the Arc reference count of FdTableInner.
+            // increment the Arc reference count.
             let fd_table_clone = shared_files.table.clone();
 
             // Drop the SharedFdTable. This decrements share_count to 0, triggering a table clear.

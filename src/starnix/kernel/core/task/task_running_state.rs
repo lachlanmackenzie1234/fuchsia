@@ -49,7 +49,7 @@ pub struct TaskRunningState {
 
 impl TaskRunningState {
     #[track_caller]
-    pub fn files(&self) -> Result<FdTable, Errno> {
+    pub fn files(&self) -> Result<Arc<FdTable>, Errno> {
         self.files.lock().as_ref().map(|files| files.table.clone()).ok_or_else(|| errno!(ESRCH))
     }
 
