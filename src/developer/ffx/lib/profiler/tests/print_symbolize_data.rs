@@ -156,12 +156,12 @@ define_to_be_symbolized_function!(4);
 define_to_be_symbolized_function!(5);
 
 fn get_function_addr() -> Vec<u64> {
-    let mut result = vec![];
-    result.push(to_be_symbolized_1 as *const () as u64 + 1);
-    result.push(to_be_symbolized_2 as *const () as u64 + 1);
-    result.push(to_be_symbolized_3 as *const () as u64 + 1);
-    result.push(to_be_symbolized_4 as *const () as u64 + 1);
-    result.push(to_be_symbolized_5 as *const () as u64 + 1);
-    result.push(zx::sys::zx_channel_create as *const () as u64 + 1);
-    result
+    vec![
+        to_be_symbolized_1 as *const () as u64 + 1,
+        to_be_symbolized_2 as *const () as u64 + 1,
+        to_be_symbolized_3 as *const () as u64 + 1,
+        to_be_symbolized_4 as *const () as u64 + 1,
+        to_be_symbolized_5 as *const () as u64 + 1,
+        zx::sys::zx_channel_create as *const () as u64 + 1,
+    ]
 }
