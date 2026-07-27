@@ -579,3 +579,9 @@ kernel_rust_mod_attr("no_std") {
 
 kernel_rust_mod_attr("no_main") {
 }
+
+# TODO(https://fxbug.dev/539292628): Allow dead code during the initial Rust
+# conversion process.
+kernel_rust_mod_attr("allow_dead_code") {
+  output_name = "allow(dead_code)"
+}
