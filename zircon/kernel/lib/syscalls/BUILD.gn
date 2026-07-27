@@ -6,7 +6,7 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/zircon/zircon_cpu.gni")
-import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 library_headers("headers") {
@@ -129,8 +129,9 @@ group("boot_tests") {
   testonly = true
 }
 
-kernel_rust_crate("syscalls-rs") {
-  source_root = "lib.rs"
+kernel_rust_mod("syscalls-rs") {
+  output_name = "syscalls_rs"
+  source_root = "mod.rs"
   sources = [
     "counter.rs",
     "debuglog.rs",
