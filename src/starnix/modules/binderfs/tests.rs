@@ -6,8 +6,8 @@
 pub mod tests {
     use crate::binder::{BinderConnection, BinderDevice, BinderDriver, OperationContext};
     use crate::objects::{
-        BinderObject, BinderObjectFlags, Handle, LocalBinderObject, RefCountActions,
-        SerializedBinderObject, StrongRefGuard, TransactionData,
+        BinderObject, BinderObjectFlags, FlatBinderObject, Handle, LocalBinderObject,
+        RefCountActions, SerializedBinderObject, StrongRefGuard, TransactionData,
     };
     use crate::process::{BinderProcess, HandleTable};
     use crate::resource_accessor::{
@@ -15,7 +15,8 @@ pub mod tests {
     };
     use crate::shared_memory::{SharedMemory, TransactionBuffers};
     use crate::thread::{
-        BinderThread, Command, RegistrationState, TransactionError, TransactionRole,
+        BinderThread, Command, RegistrationState, SchedulerGuard, TransactionError,
+        TransactionRole, WeakBinderPeer,
     };
     use crate::user_memory_cursor::UserMemoryCursor;
     use assert_matches::assert_matches;
@@ -3790,6 +3791,126 @@ pub mod tests {
                 sender.thread.lock().command_queue.pop_front(),
                 Some(Command::FailedReply)
             );
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_process_queue_unhandled_command_stuck_during_synchronous_call() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc_a = BinderProcessFixture::new_current(current_task, &device);
+            let proc_b = BinderProcessFixture::new_current(current_task, &device);
+
+            // Register binder object on proc_b so proc_a can call proc_b synchronously.
+            const OBJECT_ADDR: UserAddress = UserAddress::const_from(0x01);
+            let (_, guard) =
+                register_binder_object(&proc_b.proc, OBJECT_ADDR, (OBJECT_ADDR + 1u64).unwrap());
+            let handle_b = proc_a
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+            // Create a second thread (looper_thread) in proc_a representing a binder looper thread.
+            let looper_task = create_task(current_task.kernel(), "looper_task");
+            let looper_thread = proc_a
+                .proc
+                .lock()
+                .find_or_register_thread(&looper_task.task)
+                .expect("register looper thread");
+
+            // Make looper_thread registered as Auxiliary looper and waiting for commands.
+            let looper_waiter = Waiter::new();
+            {
+                let mut looper_state = looper_thread.lock();
+                looper_state.registration = RegistrationState::Auxilliary;
+                looper_state.command_queue.waiters.wait_async(&looper_waiter);
+            }
+
+            // 1. proc_a.thread (main thread) sends synchronous transaction to proc_b.
+            let transaction_to_b = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: 100,
+                    target: binder_transaction_data__bindgen_ty_1 { handle: handle_b.into() },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_transaction(
+                    &proc_a.context(current_task),
+                    &mut Vec::new(),
+                    transaction_to_b,
+                )
+                .expect("handle_transaction to proc_b");
+
+            // 2. A process-directed command is enqueued on proc_a.
+            let oneway_to_a = Command::OnewayTransaction(TransactionData {
+                peer_pid: proc_b.proc.key.pid(),
+                peer_tid: proc_b.thread.tid,
+                peer_euid: current_task.current_creds().euid,
+                object: FlatBinderObject::Remote { handle: Handle::ContextManager },
+                code: 200,
+                flags: transaction_flags_TF_ONE_WAY,
+                buffers: TransactionBuffers::default(),
+            });
+            proc_a.proc.enqueue_command(oneway_to_a);
+
+            // 3. proc_b sends reply back to proc_a.thread.
+            let reply = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: 100,
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            {
+                let mut proc_b_thread_state = proc_b.thread.lock();
+                proc_b_thread_state.transactions.push(TransactionRole::Receiver(
+                    WeakBinderPeer::new(&proc_a.proc, &proc_a.thread),
+                    SchedulerGuard::default(),
+                ));
+            }
+            device
+                .handle_reply(&proc_b.context(current_task), &mut Vec::new(), reply)
+                .expect("handle_reply to proc_a");
+
+            // 4. proc_a.thread reads from driver once and receives BR_REPLY.
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            device
+                .handle_thread_read(
+                    &proc_a.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("proc_a.thread handle_thread_read");
+
+            // proc_a.thread returns to userspace. It will NOT call handle_thread_read again!
+            assert!(proc_a.thread.lock().transactions.is_empty());
+
+            // 5. Verify that looper_thread (which was waiting in available_threads) handles
+            // the process queue command without requiring proc_a.thread to re-enter handle_thread_read.
+            let looper_context = OperationContext {
+                current_task: &looper_task,
+                connection_security_state: &proc_a.connection_security_state,
+                binder_proc: &proc_a.proc,
+                binder_thread: &looper_thread,
+                memory_accessor: looper_task.as_memory_accessor().expect("as_memory_accessor"),
+            };
+            device
+                .handle_thread_read(
+                    &looper_context,
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("looper_thread handle_thread_read");
+
+            // Process command queue should now be empty and processed by looper_thread!
+            assert!(
+                proc_a.proc.lock().command_queue.is_empty(),
+                "The process queue command should be successfully handled and drained by the looper thread!"
+            );
+
+            looper_thread.release(current_task.kernel());
         })
         .await;
     }

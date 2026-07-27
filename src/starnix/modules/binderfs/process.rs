@@ -495,24 +495,11 @@ impl BinderProcess {
         // Handle oneway transactions explicitly. They should always target the process queue to
         // avoid accidentally handling them during an ongoing transaction.
         if matches!(command, Command::OnewayTransaction(_)) {
-            let mut state = self.lock();
-            state.command_queue.push_back(command);
-            self.process_waiters.notify_fd_events(starnix_uapi::vfs::FdEvents::POLLIN);
-            drop(state);
+            self.lock().command_queue.push_back(command);
 
             // Since OnewayTransactions are routed to the process queue, we must explicitly
-            // wake an available thread so it can grab the command, rather than letting it stall.
-            while let Some(weak_thread) = self.available_threads.pop() {
-                if let Some(thread) = weak_thread.upgrade() {
-                    let thread_guard = thread.lock();
-                    if thread_guard.is_available() {
-                        thread
-                            .command_queue_waiters
-                            .notify_fd_events_count(starnix_uapi::vfs::FdEvents::POLLIN, 1);
-                        break;
-                    }
-                }
-            }
+            // wake waiters and available threads so it can grab the command, rather than letting it stall.
+            self.wake_process_and_available_thread();
             return None;
         }
 
@@ -521,20 +508,40 @@ impl BinderProcess {
             match self.try_enqueue_on_available_thread(command) {
                 Ok(thread) => return Some(thread),
                 Err(c) => {
-                    let mut state = self.lock();
-                    // We must not call try_enqueue_on_available_thread while holding
-                    // the state lock, because that function acquires thread locks,
-                    // which causes a lock inversion against thread_read.
-                    if !self.available_threads.is_empty() {
-                        command = c;
-                        continue;
+                    {
+                        let mut state = self.lock();
+                        // We must not call try_enqueue_on_available_thread while holding
+                        // the state lock, because that function acquires thread locks,
+                        // which causes a lock inversion against thread_read.
+                        if !self.available_threads.is_empty() {
+                            command = c;
+                            continue;
+                        }
+                        state.command_queue.push_back(c);
                     }
-                    state.command_queue.push_back(c);
-                    self.process_waiters.notify_fd_events(starnix_uapi::vfs::FdEvents::POLLIN);
+                    self.wake_process_and_available_thread();
                     return None;
                 }
             }
         }
+    }
+
+    /// Wakes up process waiters and an available thread if any exists in `available_threads`.
+    /// Returns true if an available thread was woken up.
+    pub fn wake_process_and_available_thread(&self) -> bool {
+        self.process_waiters.notify_fd_events(starnix_uapi::vfs::FdEvents::POLLIN);
+        while let Some(weak_thread) = self.available_threads.pop() {
+            if let Some(thread) = weak_thread.upgrade() {
+                let thread_guard = thread.lock();
+                if thread_guard.is_available() {
+                    thread
+                        .command_queue_waiters
+                        .notify_fd_events_count(starnix_uapi::vfs::FdEvents::POLLIN, 1);
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// A binder thread is done reading a buffer allocated to a transaction. The binder

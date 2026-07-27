@@ -1336,7 +1336,7 @@ impl BinderDriver {
                 // Attempt to write the command to the thread's buffer.
                 let bytes_written =
                     command.write_to_memory(context.memory_accessor, read_buffer)?;
-                match command {
+                let has_pending_proc_commands = match command {
                     Command::Transaction { sender, scheduler_state, .. } => {
                         // The transaction is synchronous and we're expected to give a reply, so
                         // push the transaction onto the transaction stack.
@@ -1368,6 +1368,7 @@ impl BinderDriver {
                         })();
                         let tx = TransactionRole::Receiver(sender, scheduler_state);
                         thread_state.transactions.push(tx);
+                        false
                     }
                     Command::Reply(..) => {
                         // The sender got a reply, pop the sender entry from the transaction stack.
@@ -1383,6 +1384,7 @@ impl BinderDriver {
                             command,
                             thread_state.command_queue,
                         );
+                        !proc_state.command_queue.is_empty()
                     }
                     Command::TransactionComplete
                     | Command::OnewayTransaction(..)
@@ -1400,7 +1402,14 @@ impl BinderDriver {
                     | Command::ClearDeathNotificationDone(..)
                     | Command::SpawnLooper
                     | Command::FrozenBinder(..)
-                    | Command::ClearFreezeNotificationDone(..) => {}
+                    | Command::ClearFreezeNotificationDone(..) => false,
+                };
+
+                drop(thread_state);
+                drop(proc_state);
+
+                if has_pending_proc_commands {
+                    context.binder_proc.wake_process_and_available_thread();
                 }
 
                 return Ok(bytes_written);
