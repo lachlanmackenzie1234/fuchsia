@@ -8,6 +8,7 @@
 
 use std::marker::PhantomData;
 use std::pin::pin;
+use std::time::Duration;
 
 use assert_matches::assert_matches;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker as _};
@@ -27,6 +28,7 @@ use fidl_test_suspendcontrol as ftest_suspendcontrol;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use futures::stream::FusedStream;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, Stream, StreamExt as _};
+use log::info;
 use net_declare::{fidl_subnet, std_socket_addr_v6};
 use netemul::{RealmTcpStream as _, RealmUdpSocket as _};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
@@ -725,7 +727,7 @@ async fn wake_group_sockets<S: WakeupSocket>(name: &str, _socket_type: PhantomDa
     .await;
 
     // Subscribe to be woken up when data arrives.
-    let mut fut = pin!(fasync::OnSignals::new(&token, GROUP_WAKEUP_SIGNAL));
+    let mut fut = pin!(fasync::OnSignals::new(&token, GROUP_WAKEUP_SIGNAL).fuse());
     assert_matches!((&mut fut).now_or_never(), None);
 
     // If we send some data while the peer is awake, we will not be
@@ -738,10 +740,29 @@ async fn wake_group_sockets<S: WakeupSocket>(name: &str, _socket_type: PhantomDa
     wake_watcher_other
         .signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL)
         .expect("signal suspend");
-    setup.client_write().await;
 
-    let signals = fut.await.expect("wait for data");
-    assert_eq!(signals, GROUP_WAKEUP_SIGNAL);
+    // There's no explicit synchronization with the netstack. The netstack has
+    // to have observed our asleep signal for it to signal us, so we retry a few
+    // times to give it a chance to catch up.
+    let mut saw_wakeup = false;
+    for _ in 0..60 {
+        setup.client_write().await;
+
+        futures::select! {
+            signals = fut => {
+                assert_eq!(signals.expect("wait for data"), GROUP_WAKEUP_SIGNAL);
+                saw_wakeup = true;
+                break;
+            }
+            _ = fasync::Timer::new(Duration::from_secs(1)).fuse() => {
+                info!("Timed out waiting for wake signal after 1 second");
+            }
+        }
+    }
+
+    if !saw_wakeup {
+        panic!("Never saw wakeup signal from netstack");
+    }
 
     wake_watcher_other
         .signal_peer(WAITER_ASLEEP_SIGNAL, WAITER_AWAKE_SIGNAL)
