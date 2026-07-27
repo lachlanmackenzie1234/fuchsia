@@ -154,11 +154,6 @@ load(
     _fuchsia_structured_config_values = "fuchsia_structured_config_values",
 )
 load(
-    "//fuchsia/private:fuchsia_toolchains.bzl",
-    _FUCHSIA_TOOLCHAIN_DEFINITION = "FUCHSIA_TOOLCHAIN_DEFINITION",
-    _get_fuchsia_sdk_toolchain = "get_fuchsia_sdk_toolchain",
-)
-load(
     "//fuchsia/private:legacy_fuchsia_fidl_cc_library.bzl",
     _fuchsia_fidl_hlcpp_library = "fuchsia_fidl_hlcpp_library",  # buildifier: disable=deprecated-function
 )
@@ -225,7 +220,6 @@ fuchsia_wrap_rust_binary = _fuchsia_wrap_rust_binary
 get_component_manifests = _get_component_manifests
 get_driver_component_manifests = _get_driver_component_manifests
 get_fuchsia_api_levels = _get_fuchsia_api_levels
-get_fuchsia_sdk_toolchain = _get_fuchsia_sdk_toolchain
 variant_select = _variant_select
 # keep-sorted end
 
@@ -234,4 +228,3 @@ fuchsia_platforms = _fuchsia_platforms
 
 # Constants
 COMPATIBILITY = _COMPATIBILITY
-FUCHSIA_TOOLCHAIN_DEFINITION = _FUCHSIA_TOOLCHAIN_DEFINITION
