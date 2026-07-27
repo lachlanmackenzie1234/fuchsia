@@ -17,10 +17,6 @@
                     "src/starnix/lib/third_party/rust_netlink/netlink_packet_generic",
                     "src/starnix/lib/third_party/rust_netlink/netlink_packet_route",
                     "third_party/abseil-cpp",
-                    "tools/check-licenses/assets/readmes/prebuilt/third_party/llvm/fuchsia-arm64",
-                    "tools/check-licenses/assets/readmes/prebuilt/third_party/llvm/fuchsia-x64",
-                    "tools/check-licenses/assets/readmes/prebuilt/third_party/llvm/linux-arm64",
-                    "tools/check-licenses/assets/readmes/prebuilt/third_party/llvm/linux-x64",
                     "zircon/scripts"
                 ]
             },
@@ -38,18 +34,7 @@
                     "third_party/icu/latest",
                     "third_party/iperf",
                     "third_party/luci-go",
-                    "third_party/zlib",
-                    "tools/check-licenses/assets/readmes/prebuilt/starnix/linux-amd64",
-                    "tools/check-licenses/assets/readmes/prebuilt/starnix/linux-arm64",
-                    "tools/check-licenses/assets/readmes/prebuilt/test_data/media/third_party/webm_vp9_canary_conformance_stream",
-                    "tools/check-licenses/assets/readmes/prebuilt/tools/buildidtool/linux-x64",
-                    "tools/check-licenses/assets/readmes/prebuilt/tools/futility/linux-x64",
-                    "tools/check-licenses/assets/readmes/prebuilt/tools/ninjatrace/linux-x64",
-                    "tools/check-licenses/assets/readmes/third_party/icu/default",
-                    "tools/check-licenses/assets/readmes/third_party/icu/latest",
-                    "tools/check-licenses/assets/readmes/third_party/iperf",
-                    "tools/check-licenses/assets/readmes/third_party/luci-go",
-                    "tools/check-licenses/assets/readmes/third_party/zlib"
+                    "third_party/zlib"
                 ]
             }
         ]
