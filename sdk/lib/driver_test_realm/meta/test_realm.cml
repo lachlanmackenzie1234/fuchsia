@@ -162,7 +162,10 @@
             availability: "optional",
         },
         {
-            protocol: [ "fuchsia.driver.framework.CompositeNodeManager" ],
+            protocol: [
+                "fuchsia.driver.framework.CompositeNodeManager",
+                "fuchsia.driver.framework.NodeManager",
+            ],
             from: "#driver_manager",
             to: [
                 "#base-drivers",

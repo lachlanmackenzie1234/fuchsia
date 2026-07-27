@@ -135,6 +135,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
                 .capability(Capability::protocol_by_name(
                     "fuchsia.driver.framework.CompositeNodeManager",
                 ))
+                .capability(Capability::protocol_by_name("fuchsia.driver.framework.NodeManager"))
                 .capability(Capability::protocol_by_name(
                     "fuchsia.driver.registrar.DriverRegistrar",
                 ))
@@ -143,7 +144,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
                 .to(Ref::parent()),
         )
         .await?;
-        // LINT.ThenChange(/sdk/lib/driver_test_realm/realm_builder/cpp/lib.cc)
+        // LINT.ThenChange(/sdk/lib/driver_test_realm/realm_builder/cpp/builder.cc)
         Ok(&self)
     }
 

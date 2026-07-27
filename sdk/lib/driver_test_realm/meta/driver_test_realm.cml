@@ -40,6 +40,10 @@
             path: "/realm_builder_exposed_dir/fuchsia.driver.framework.CompositeNodeManager",
         },
         {
+            protocol: "fuchsia.driver.framework.NodeManager",
+            path: "/realm_builder_exposed_dir/fuchsia.driver.framework.NodeManager",
+        },
+        {
             protocol: "fuchsia.driver.registrar.DriverRegistrar",
             path: "/realm_builder_exposed_dir/fuchsia.driver.registrar.DriverRegistrar",
         },
@@ -146,6 +150,7 @@
             protocol: [
                 "fuchsia.driver.development.Manager",
                 "fuchsia.driver.framework.CompositeNodeManager",
+                "fuchsia.driver.framework.NodeManager",
                 "fuchsia.driver.registrar.DriverRegistrar",
                 "fuchsia.driver.test.Realm",
                 "fuchsia.system.state.Administrator",

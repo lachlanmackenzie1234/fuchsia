@@ -686,6 +686,7 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options 
                 Protocol{.name = "fuchsia.driver.registrar.DriverRegistrar"},
                 Protocol{.name = "fuchsia.driver.development.Manager"},
                 Protocol{.name = "fuchsia.driver.framework.CompositeNodeManager"},
+                Protocol{.name = "fuchsia.driver.framework.NodeManager"},
                 Protocol{.name = "fuchsia.system.state.Administrator"},
             },
         .source = {dtr_realm_ref},
