@@ -35,6 +35,18 @@ class TestCommitMessageChecker(unittest.TestCase):
             )
         )
 
+    def test_subject_line_too_long_exempt_revert(self) -> None:
+        long_subject = 'Revert "Subject that is extremely long and exceeds the typical 65 character limit normally"'
+        msg = f"{long_subject}\n\nBug: 1\nTest: 1"
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertEqual(findings, [])
+
+    def test_subject_line_too_long_exempt_reland(self) -> None:
+        long_subject = 'Reland "Subject that is extremely long and exceeds the typical 65 character limit normally"'
+        msg = f"{long_subject}\n\nBug: 1\nTest: 1"
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertEqual(findings, [])
+
     def test_body_line_too_long_ignores_urls(self) -> None:
         long_url = "https://fuchsia.dev/" + "a" * 80
         msg = f"Subject line\n\nSee {long_url} for details.\n\nBug: 1\nTest: 1"
