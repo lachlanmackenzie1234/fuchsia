@@ -61,6 +61,7 @@ sdk_molecule("all_atoms") {
   deps = [
     "//sdk:host_tools_for_configured_host_cpus",
     "//sdk:version_history_sdk($default_toolchain)",
+    "//sdk/lib/sys/testing:testing_sdk",
     "//src/developer/ffx/lib/symbol-index:symbol-index-sdk",
     "//zircon/system/ulib/trace-reader:trace-reader_sdk",
   ]

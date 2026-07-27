@@ -5,6 +5,7 @@ cc_source_library://pkg/stdcompat
 cc_source_library://pkg/trace-engine-headersonly
 cc_source_library://pkg/trace-reader
 data://data/config/symbol_index
+data://pkg/sys/testing/testing_sdk.json
 documentation://docs/metadata_schemas.json
 ffx_tool://tools/arm64/ffx_tools/ffx-assembly
 ffx_tool://tools/arm64/ffx_tools/ffx-audio
