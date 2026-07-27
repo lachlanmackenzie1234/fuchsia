@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::DispatcherOps;
+use super::handle::KernelHandle;
 use super::log_dispatcher::{LogDispatcher, LogDispatcherState};
-use crate::DispatcherOps;
-use crate::handle::KernelHandle;
 
 use zx_types::{ZX_LOG_READABLE, zx_rights_t, zx_status_t};
 
@@ -21,7 +21,7 @@ unsafe extern "C" {
 
 // Trampoline callbacks from C++ into Rust LogDispatcherState
 
-crate::impl_dispatcher_state_init!(LogDispatcher, LogDispatcherState, flags: u32);
+crate::object::dispatcher::impl_dispatcher_state_init!(LogDispatcher, LogDispatcherState, flags: u32);
 
 /// Trampoline callback for DlogReader notify.
 ///

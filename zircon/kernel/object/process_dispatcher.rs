@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::dispatcher::DispatcherOps;
-use crate::handle::{HandleValue, KernelHandle};
-use crate::process_dispatcher_ffi::{
+use super::dispatcher::DispatcherOps;
+use super::handle::{HandleValue, KernelHandle};
+use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_current, cpp_process_dispatcher_enforce_basic_policy,
     cpp_process_dispatcher_is_current, cpp_process_dispatcher_make_and_add_handle,
     cpp_process_dispatcher_resume, cpp_process_dispatcher_suspend,
@@ -14,7 +14,7 @@ use crate::process_dispatcher_ffi::{
 use zx_status::Status;
 use zx_types::zx_rights_t;
 
-crate::impl_dispatcher_facade!(
+crate::object::dispatcher::impl_dispatcher_facade!(
     pub struct ProcessDispatcher,
     zx_types::ZX_OBJ_TYPE_PROCESS
 );

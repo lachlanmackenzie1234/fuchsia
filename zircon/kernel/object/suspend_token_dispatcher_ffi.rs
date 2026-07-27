@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::handle::KernelHandle;
 use super::suspend_token_dispatcher::{SuspendTokenDispatcher, SuspendTokenDispatcherState};
-use crate::handle::KernelHandle;
 use zx_types::zx_status_t;
 
 // C++ FFI declarations
@@ -23,7 +23,10 @@ unsafe extern "C" {
 
 // Trampolines from C++ into Rust SuspendTokenDispatcher / SuspendTokenDispatcherState
 
-crate::impl_dispatcher_state_init!(SuspendTokenDispatcher, SuspendTokenDispatcherState);
+crate::object::dispatcher::impl_dispatcher_state_init!(
+    SuspendTokenDispatcher,
+    SuspendTokenDispatcherState
+);
 
 /// Trampoline called when all handles to `dispatcher` have closed.
 ///

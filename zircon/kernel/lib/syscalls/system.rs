@@ -6,7 +6,7 @@
 
 use core::mem::MaybeUninit;
 
-use object::{HandleValue, validate_system_resource};
+use crate::object::{HandleValue, validate_system_resource};
 use syscalls_macro::syscall;
 use user_copy::UserOutPtr;
 use zx_status::{ErrorStatus, Status};

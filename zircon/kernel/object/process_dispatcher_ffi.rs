@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::dispatcher::Dispatcher;
-use crate::handle::{HandleValue, KernelHandle};
-use crate::process_dispatcher::ProcessDispatcher;
+use super::dispatcher::Dispatcher;
+use super::handle::{HandleValue, KernelHandle};
+use super::process_dispatcher::ProcessDispatcher;
 use zx_types::{zx_rights_t, zx_status_t};
 
 unsafe extern "C" {

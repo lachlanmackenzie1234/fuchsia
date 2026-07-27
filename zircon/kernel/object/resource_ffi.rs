@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::handle::HandleValue;
+use super::handle::HandleValue;
 
 unsafe extern "C" {
     fn cpp_resource_validate_resource_kind_base(

@@ -16,8 +16,8 @@ use zx_types::{
     zx_sampler_config_t,
 };
 
-use crate::KernelHandle;
-use crate::sampler_dispatcher_ffi::cpp_sampler_dispatcher_create;
+use super::KernelHandle;
+use super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_create;
 
 use object_constants_rs as object_constants;
 
@@ -64,7 +64,7 @@ impl PinnedDrop for SamplerDispatcherState {
     }
 }
 
-crate::impl_dispatcher_facade_with_state!(
+crate::object::dispatcher::impl_dispatcher_facade_with_state!(
     pub struct SamplerDispatcher,
     SamplerDispatcherState,
     ZX_OBJ_TYPE_SAMPLER,
@@ -95,7 +95,7 @@ impl SamplerDispatcher {
     pub fn start(&self) -> Result<(), Status> {
         // SAFETY: `self` is a valid SamplerDispatcher pointer.
         let status = unsafe {
-            crate::sampler_dispatcher_ffi::cpp_sampler_dispatcher_start(self as *const _)
+            super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_start(self as *const _)
         };
         Status::ok(status)
     }
@@ -104,7 +104,7 @@ impl SamplerDispatcher {
     pub fn stop(&self) -> Result<(), Status> {
         // SAFETY: `self` is a valid SamplerDispatcher pointer.
         let status =
-            unsafe { crate::sampler_dispatcher_ffi::cpp_sampler_dispatcher_stop(self as *const _) };
+            unsafe { super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_stop(self as *const _) };
         Status::ok(status)
     }
 
@@ -119,7 +119,7 @@ impl SamplerDispatcher {
         // SAFETY: `self` is valid, `ptr` is a valid UserOutPtr buffer of `len` bytes, and
         // `actual` is a local out pointer.
         let status = unsafe {
-            crate::sampler_dispatcher_ffi::cpp_sampler_dispatcher_read_user(
+            super::sampler_dispatcher_ffi::cpp_sampler_dispatcher_read_user(
                 self as *const _,
                 ptr.as_ptr().cast(),
                 len,

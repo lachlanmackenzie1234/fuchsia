@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::object::{Dispatcher, HandleValue, ProcessDispatcher, SuspendTokenDispatcher};
 use debug::ltracef;
-use object::{Dispatcher, HandleValue, ProcessDispatcher, SuspendTokenDispatcher};
 use syscalls_macro::syscall;
 use zx_status::ErrorStatus;
 use zx_types::ZX_RIGHT_WRITE;

@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::thread_dispatcher::ThreadDispatcher;
+use super::thread_dispatcher::ThreadDispatcher;
 use zx_types::zx_status_t;
 
 unsafe extern "C" {
@@ -37,7 +37,7 @@ unsafe extern "C" {
     /// `profile` must point to a valid `SchedulerStateBaseProfile`.
     pub fn cpp_thread_dispatcher_set_base_profile(
         thread: *mut ThreadDispatcher,
-        profile: *const crate::thread_dispatcher::SchedulerStateBaseProfile,
+        profile: *const super::thread_dispatcher::SchedulerStateBaseProfile,
     ) -> zx_status_t;
 
     /// Calls into C++ implementation to set the soft affinity of a thread.

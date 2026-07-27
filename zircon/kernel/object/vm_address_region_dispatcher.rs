@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::vm_address_region_dispatcher_ffi::cpp_vmar_dispatcher_set_memory_priority;
+use super::vm_address_region_dispatcher_ffi::cpp_vmar_dispatcher_set_memory_priority;
 use zx_status::Status;
 
 #[repr(u32)]
@@ -14,7 +14,7 @@ pub enum MemoryPriority {
     High = 1,
 }
 
-crate::impl_dispatcher_facade!(
+crate::object::dispatcher::impl_dispatcher_facade!(
     pub struct VmAddressRegionDispatcher,
     zx_types::ZX_OBJ_TYPE_VMAR
 );

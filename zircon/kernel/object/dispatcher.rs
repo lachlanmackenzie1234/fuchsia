@@ -4,12 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::dispatcher_ffi::{
+use super::dispatcher_ffi::{
     cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_type, cpp_dispatcher_on_zero_handles,
     cpp_dispatcher_recycle, cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
 };
-use crate::handle::HandleValue;
-use crate::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
+use super::handle::HandleValue;
+use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use kalloc::AllocError;
@@ -54,51 +54,50 @@ pub trait DispatcherOps {
 
 /// Helper macro to declare facade structs and implement common facade traits for Dispatcher
 /// subtypes.
-#[macro_export]
 macro_rules! impl_dispatcher_facade {
     ($(#[$meta:meta])* $vis:vis struct $type:ident, $obj_type:expr) => {
-        $crate::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, ());
+        $crate::object::dispatcher::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, ());
     };
     ($(#[$meta:meta])* $vis:vis struct $type:ident, $obj_type:expr, $lock_class:ty) => {
         $(#[$meta])*
         #[repr(C)]
         $vis struct $type {
-            _facade: fbl::OpaqueRefCountedFacade<$crate::Dispatcher>,
+            _facade: fbl::OpaqueRefCountedFacade<$crate::object::Dispatcher>,
         }
 
         impl core::ops::Deref for $type {
-            type Target = $crate::Dispatcher;
+            type Target = $crate::object::Dispatcher;
             fn deref(&self) -> &Self::Target {
                 // SAFETY: `self` is a valid facade reference, and the base `Dispatcher`
                 // is part of the same allocation.
-                unsafe { &*<Self as $crate::DispatcherOps>::dispatcher(self) }
+                unsafe { &*<Self as $crate::object::DispatcherOps>::dispatcher(self) }
             }
         }
 
         // SAFETY: `$type` is a `#[repr(C)]` facade struct that starts with `Dispatcher`
         // at offset 0 and is layout-compatible with `Dispatcher`.
         unsafe impl fbl::IsOpaqueRefCounted for $type {
-            type TargetBase = $crate::Dispatcher;
+            type TargetBase = $crate::object::Dispatcher;
         }
 
-        impl $crate::DispatcherOps for $type {
+        impl $crate::object::DispatcherOps for $type {
             const TYPE: zx_types::zx_obj_type_t = $obj_type;
             type LockClass = $lock_class;
 
-            fn dispatcher(&self) -> *const $crate::Dispatcher {
-                self as *const Self as *const $crate::Dispatcher
+            fn dispatcher(&self) -> *const $crate::object::Dispatcher {
+                self as *const Self as *const $crate::object::Dispatcher
             }
         }
     };
 }
+pub(crate) use impl_dispatcher_facade;
 
 /// Helper macro to declare facade structs and implement common facade traits and state access
 /// methods for Dispatcher subtypes with state.
-#[macro_export]
 macro_rules! impl_dispatcher_facade_with_state {
     ($(#[$meta:meta])* $vis:vis struct $type:ident, $state:ident, $obj_type:expr, $offset_const:expr) => {
         paste::paste! {
-            $crate::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, [<$state LockClass>]);
+            $crate::object::dispatcher::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, [<$state LockClass>]);
 
             impl $type {
                 /// Returns a reference to the underlying state object.
@@ -150,9 +149,9 @@ macro_rules! impl_dispatcher_facade_with_state {
         }
     };
 }
+pub(crate) use impl_dispatcher_facade_with_state;
 
 /// Helper macro to generate standard `rust_<type>_state_init` FFI trampolines.
-#[macro_export]
 macro_rules! impl_dispatcher_state_init {
     (fallible $type:ident, $state:ident $(, $arg:ident : $arg_ty:ty)* $(,)?) => {
         paste::paste! {
@@ -205,6 +204,7 @@ macro_rules! impl_dispatcher_state_init {
         }
     };
 }
+pub(crate) use impl_dispatcher_state_init;
 
 /// Base facade type for kernel Dispatchers.
 #[repr(C)]

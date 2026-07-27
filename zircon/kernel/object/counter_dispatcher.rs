@@ -16,9 +16,9 @@ use zx_types::{
     ZX_RIGHT_WRITE, zx_rights_t,
 };
 
-use crate::counter_dispatcher_ffi::cpp_counter_dispatcher_create;
+use super::counter_dispatcher_ffi::cpp_counter_dispatcher_create;
 
-use crate::{DispatcherOps, KernelHandle};
+use super::{DispatcherOps, KernelHandle};
 
 use object_constants_rs as object_constants;
 
@@ -73,7 +73,7 @@ impl PinnedDrop for CounterDispatcherState {
     }
 }
 
-crate::impl_dispatcher_facade_with_state!(
+crate::object::dispatcher::impl_dispatcher_facade_with_state!(
     pub struct CounterDispatcher,
     CounterDispatcherState,
     ZX_OBJ_TYPE_COUNTER,

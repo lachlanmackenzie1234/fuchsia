@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::dispatcher::Dispatcher;
+use super::dispatcher::Dispatcher;
 
 unsafe extern "C" {
     pub(crate) fn cpp_dispatcher_on_zero_handles(dispatcher: *const Dispatcher);

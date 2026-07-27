@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::handle::KernelHandle;
 use super::sampler_dispatcher::{SamplerDispatcher, SamplerDispatcherState};
-use crate::handle::KernelHandle;
 use zx_types::{zx_sampler_config_t, zx_status_t};
 
 // C++ FFI declarations
@@ -42,4 +42,4 @@ pub fn sampler_enabled() -> bool {
 
 // Trampolines from C++ into Rust SamplerDispatcherState
 
-crate::impl_dispatcher_state_init!(SamplerDispatcher, SamplerDispatcherState);
+crate::object::dispatcher::impl_dispatcher_state_init!(SamplerDispatcher, SamplerDispatcherState);

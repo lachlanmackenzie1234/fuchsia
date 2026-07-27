@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use object::HandleValue;
+use crate::object::HandleValue;
 use syscalls_macro::syscall;
 use user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 use zx_status::{ErrorStatus, Status};

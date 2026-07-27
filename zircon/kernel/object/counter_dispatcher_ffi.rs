@@ -5,8 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 use super::counter_dispatcher::{CounterDispatcher, CounterDispatcherState};
-use crate::dispatcher::Dispatcher;
-use crate::handle::KernelHandle;
+use super::dispatcher::Dispatcher;
+use super::handle::KernelHandle;
 
 use zx_types::zx_status_t;
 

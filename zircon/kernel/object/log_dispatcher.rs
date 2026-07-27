@@ -17,8 +17,8 @@ use zx_types::{
     ZX_RIGHT_WRITE, zx_rights_t,
 };
 
-use crate::log_dispatcher_ffi::{cpp_log_dispatcher_create, rust_log_dispatcher_notify};
-use crate::{DispatcherOps, KernelHandle};
+use super::log_dispatcher_ffi::{cpp_log_dispatcher_create, rust_log_dispatcher_notify};
+use super::{DispatcherOps, KernelHandle};
 
 use object_constants_rs as object_constants;
 
@@ -102,7 +102,7 @@ impl PinnedDrop for LogDispatcherState {
     }
 }
 
-crate::impl_dispatcher_facade_with_state!(
+crate::object::dispatcher::impl_dispatcher_facade_with_state!(
     pub struct LogDispatcher,
     LogDispatcherState,
     ZX_OBJ_TYPE_DEBUGLOG,

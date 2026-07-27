@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::DispatcherOps;
+use super::DispatcherOps;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use zx_status::Status;
 use zx_types::{zx_handle_t, zx_rights_t};
@@ -45,8 +45,8 @@ where
     }
 
     /// Casts this handle to a generic Dispatcher handle.
-    pub fn cast(self) -> KernelHandle<crate::dispatcher::Dispatcher> {
-        let ptr = self.ptr.cast::<crate::dispatcher::Dispatcher>();
+    pub fn cast(self) -> KernelHandle<super::dispatcher::Dispatcher> {
+        let ptr = self.ptr.cast::<super::dispatcher::Dispatcher>();
         core::mem::forget(self);
         KernelHandle { ptr }
     }
@@ -75,7 +75,7 @@ where
     }
 
     pub fn make_and_add_handle(self, rights: zx_rights_t) -> Result<HandleValue, Status> {
-        crate::process_dispatcher::ProcessDispatcher::with_current(|up| {
+        super::process_dispatcher::ProcessDispatcher::with_current(|up| {
             up.make_and_add_handle(self, rights)
         })
     }

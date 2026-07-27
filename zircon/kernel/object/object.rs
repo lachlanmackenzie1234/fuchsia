@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 mod counter_dispatcher;
 mod counter_dispatcher_ffi;
 mod dispatcher;
@@ -36,7 +34,11 @@ pub use resource_ffi::{
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use sampler_dispatcher_ffi::*;
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
+#[allow(unused_imports)]
 pub use suspend_token_dispatcher_ffi::*;
+#[allow(unused_imports)]
 pub use thread_dispatcher::ThreadDispatcher;
+#[allow(unused_imports)]
 pub use thread_dispatcher_ffi::*;
+#[allow(unused_imports)]
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;

@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::thread_dispatcher_ffi::{
+use super::thread_dispatcher_ffi::{
     cpp_thread_dispatcher_is_current, cpp_thread_dispatcher_resume, cpp_thread_dispatcher_suspend,
 };
 use object_constants_rs as object_constants;
@@ -31,7 +31,7 @@ impl SchedulerStateBaseProfile {
     }
 }
 
-crate::impl_dispatcher_facade!(
+crate::object::dispatcher::impl_dispatcher_facade!(
     pub struct ThreadDispatcher,
     zx_types::ZX_OBJ_TYPE_THREAD
 );
@@ -65,7 +65,7 @@ impl ThreadDispatcher {
         // SAFETY: `self` is a valid `ThreadDispatcher` reference and `profile` points to
         // an opaque `SchedulerState::BaseProfile`.
         let status = unsafe {
-            crate::thread_dispatcher_ffi::cpp_thread_dispatcher_set_base_profile(
+            super::thread_dispatcher_ffi::cpp_thread_dispatcher_set_base_profile(
                 self as *const _ as *mut _,
                 profile.get() as *const _,
             )
@@ -77,7 +77,7 @@ impl ThreadDispatcher {
     pub fn set_soft_affinity(&self, mask: cpu_mask_t) -> Result<(), Status> {
         // SAFETY: `self` is a valid `ThreadDispatcher` reference.
         let status = unsafe {
-            crate::thread_dispatcher_ffi::cpp_thread_dispatcher_set_soft_affinity(
+            super::thread_dispatcher_ffi::cpp_thread_dispatcher_set_soft_affinity(
                 self as *const _ as *mut _,
                 mask,
             )

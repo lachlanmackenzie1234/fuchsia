@@ -154,7 +154,6 @@ kernel_rust_mod("syscalls-rs") {
     "//zircon/kernel/lib/debuglog:debuglog-rs",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/kernel/lib/user_copy:user-copy-rs",
-    "//zircon/kernel/object:object-rs",
     "//zircon/vdso:private",
     "//zircon/vdso:syscall-signatures",
   ]

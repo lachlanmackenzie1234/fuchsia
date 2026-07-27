@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::object::{Dispatcher, HandleValue, LogDispatcher, validate_resource_kind_base};
 use debug::ltracef;
 use debuglog_rs::{DLOG_MAX_DATA, ZX_LOG_FLAGS_MASK, dlog_record_t};
-use object::{Dispatcher, HandleValue, LogDispatcher, validate_resource_kind_base};
 use syscalls_macro::syscall;
 use user_copy::{UserInPtr, UserOutPtr};
 use zx_status::{ErrorStatus, Status};

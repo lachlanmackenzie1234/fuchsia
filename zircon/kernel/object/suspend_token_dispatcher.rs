@@ -12,11 +12,11 @@ use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{ZX_OBJ_TYPE_SUSPEND_TOKEN, ZX_RIGHT_INSPECT, ZX_RIGHT_TRANSFER, zx_rights_t};
 
-use crate::KernelHandle;
-use crate::dispatcher::Dispatcher;
-use crate::process_dispatcher::ProcessDispatcher;
-use crate::suspend_token_dispatcher_ffi::cpp_suspend_token_dispatcher_create;
-use crate::thread_dispatcher::ThreadDispatcher;
+use super::KernelHandle;
+use super::dispatcher::Dispatcher;
+use super::process_dispatcher::ProcessDispatcher;
+use super::suspend_token_dispatcher_ffi::cpp_suspend_token_dispatcher_create;
+use super::thread_dispatcher::ThreadDispatcher;
 
 use object_constants_rs as object_constants;
 
@@ -126,7 +126,7 @@ impl PinnedDrop for SuspendTokenDispatcherState {
     }
 }
 
-crate::impl_dispatcher_facade_with_state!(
+crate::object::dispatcher::impl_dispatcher_facade_with_state!(
     /// A SuspendTokenDispatcher suspends a process or thread when created and resumes it when
     /// destroyed.
     pub struct SuspendTokenDispatcher,

@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use debug::ltracef;
-use object::{
+use crate::object::{
     Dispatcher, HandleValue, ProcessDispatcher, SamplerDispatcher, validate_ranged_resource,
 };
+use debug::ltracef;
 use syscalls_macro::syscall;
 use user_copy::{UserInPtr, UserOutPtr};
 use zx_status::{ErrorStatus, Status};
@@ -19,7 +19,7 @@ use zx_types::{
 const LOCAL_TRACE: u32 = 0;
 
 fn check_sampler_supported() -> Result<(), Status> {
-    if !object::sampler_enabled() || !boot_options_rs::enable_debugging_syscalls() {
+    if !crate::object::sampler_enabled() || !boot_options_rs::enable_debugging_syscalls() {
         return Err(Status::NOT_SUPPORTED);
     }
     Ok(())
