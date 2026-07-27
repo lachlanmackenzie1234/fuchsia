@@ -372,6 +372,19 @@ mod tests {
         assert_eq!(&vec[..], &[1, 2, 3, 9, 9]);
     }
 
+    #[test]
+    fn test_vec_resize_non_power_of_two() {
+        let mut vec = StackVec::<i32, 3>::new();
+        assert_eq!(vec.capacity(), 0);
+
+        // Resizing directly to the maximum non-power-of-two capacity (3) triggers growth
+        // where the next power-of-two (4) exceeds storage capacity, falling back to exact capacity.
+        vec.try_resize(3, 42).unwrap();
+        assert_eq!(vec.len(), 3);
+        assert_eq!(vec.capacity(), 3);
+        assert_eq!(&vec[..], &[42, 42, 42]);
+    }
+
     mod proptests {
         use super::*;
         use proptest::prelude::*;

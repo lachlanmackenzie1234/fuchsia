@@ -55,6 +55,46 @@ impl<A: StorageFamily, T> RawVec<T, A> {
         self.grow_at_least(needed)
     }
 
+    /// Attempts to grow the buffer to at exactly `needed_capacity`.
+    ///
+    /// - If the current capacity is greater than `exact_capacity`, this will be a noop and return Ok(())
+    /// - Otherwise, this will be return Ok(()), only if growing the buffer to the exact required capacity succeeds
+    ///
+    /// Returns `Err(AllocError)` if the allocation fails.
+    pub fn grow_exactly(&mut self, exact_capacity: usize) -> Result<(), AllocError> {
+        if exact_capacity <= self.capacity {
+            return Ok(());
+        }
+        match self.get_handle() {
+            Some(handle) => {
+                let (new_handle, new_size) = unsafe {
+                    self.allocator.grow(
+                        Layout::array::<T>(self.capacity).map_err(|_| AllocError)?,
+                        Layout::array::<T>(exact_capacity).map_err(|_| AllocError)?,
+                        handle,
+                    )?
+                };
+                let element_size = size_of::<T>();
+                assert!(new_size >= element_size * exact_capacity);
+                self.capacity =
+                    if element_size == 0 { usize::MAX } else { new_size / element_size };
+                self.set_handle(new_handle);
+                Ok(())
+            }
+            None => {
+                let (new_handle, new_size) = self
+                    .allocator
+                    .allocate(Layout::array::<T>(exact_capacity).map_err(|_| AllocError)?)?;
+                let element_size = size_of::<T>();
+                assert!(new_size >= element_size * exact_capacity);
+                self.capacity =
+                    if element_size == 0 { usize::MAX } else { new_size / element_size };
+                self.set_handle(new_handle);
+                Ok(())
+            }
+        }
+    }
+
     /// Attempts to grow the buffer to at least `needed_capacity`.
     ///
     /// The new capacity will be the smallest power of 2 greater than or equal to `needed_capacity`.
@@ -64,36 +104,11 @@ impl<A: StorageFamily, T> RawVec<T, A> {
         if needed_capacity <= self.capacity {
             return Ok(());
         }
-        let new_capacity = needed_capacity.checked_next_power_of_two().ok_or(AllocError)?;
-
-        match self.get_handle() {
-            Some(handle) => {
-                let (new_handle, new_size) = unsafe {
-                    self.allocator.grow(
-                        Layout::array::<T>(self.capacity).map_err(|_| AllocError)?,
-                        Layout::array::<T>(new_capacity).map_err(|_| AllocError)?,
-                        handle,
-                    )?
-                };
-                let element_size = size_of::<T>();
-                assert!(new_size >= element_size * new_capacity);
-                self.capacity =
-                    if element_size == 0 { usize::MAX } else { new_size / element_size };
-                self.set_handle(new_handle);
-                Ok(())
-            }
-            None => {
-                let (new_handle, new_size) = self
-                    .allocator
-                    .allocate(Layout::array::<T>(new_capacity).map_err(|_| AllocError)?)?;
-                let element_size = size_of::<T>();
-                assert!(new_size >= element_size * new_capacity);
-                self.capacity =
-                    if element_size == 0 { usize::MAX } else { new_size / element_size };
-                self.set_handle(new_handle);
-                Ok(())
-            }
-        }
+        needed_capacity
+            .checked_next_power_of_two()
+            .ok_or(AllocError)
+            .and_then(|capacity| self.grow_exactly(capacity))
+            .or_else(|_| self.grow_exactly(needed_capacity))
     }
 
     fn set_handle(&mut self, handle: StorageHandle<T, A>) {
