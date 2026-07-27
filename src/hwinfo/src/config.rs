@@ -10,7 +10,6 @@ use fidl_fuchsia_factory::MiscFactoryStoreProviderProxy;
 use fidl_fuchsia_intl::{LocaleId, RegulatoryDomain};
 use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_protocol;
-use fuchsia_zbi::ZbiType;
 use serde::{Deserialize, Serialize};
 use std::borrow::BorrowMut;
 use std::fs::File;
@@ -53,7 +52,7 @@ async fn read_factory_file(
 async fn get_zbi_serial_number() -> Result<String, Error> {
     let boot: ItemsProxy = connect_to_protocol::<ItemsMarker>()?;
 
-    let (vmo, sn_len) = boot.get(ZbiType::SerialNumber as u32, 0).await?;
+    let (vmo, sn_len) = boot.get(zbi::Type::SerialNumber.into(), 0).await?;
 
     if sn_len == 0 {
         return Err(anyhow::anyhow!("Serial number has length 0"));
