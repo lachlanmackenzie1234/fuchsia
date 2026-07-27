@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::MemoryManager;
-use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace};
+use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask};
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, SharedFdTable};
 use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox};
 use starnix_sync::{LockDepMutex, TaskFilesLock};
@@ -61,9 +61,13 @@ impl TaskRunningState {
         self.files.lock().as_ref().map(|files| files.clone())
     }
 
-    pub fn unshare_files(&self) {
+    /// Unshares the file descriptor table for this task, if shared.
+    ///
+    /// Updates the [`Arc<FdTable>`] reference in both [`SharedFdTable`] and [`CurrentTask`].
+    pub fn unshare_files(&self, current_task: &CurrentTask) {
         if let Some(ref mut files) = *self.files.lock() {
             files.unshare();
+            *current_task.files.borrow_mut() = Some(files.table.clone());
         }
     }
 

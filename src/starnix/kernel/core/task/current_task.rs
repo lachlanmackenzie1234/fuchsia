@@ -122,6 +122,14 @@ pub struct CurrentTask {
 
     pub thread_state: ThreadState<RegisterStorageEnum>,
 
+    /// The cached file descriptor table of the task.
+    ///
+    /// Extracting `FdTable` from a generic `Task` is a heavy operation with multiple levels of
+    /// synchronization and reference counting. However, because `CurrentTask` always corresponds to
+    /// a running `Task`, and every running `Task` has an `FdTable`, the `CurrentTask` can safely
+    /// cache a reference to its `FdTable`.
+    pub files: RefCell<Option<Arc<FdTable>>>,
+
     /// The current subjective credentials of the task.
     // TODO(https://fxbug.dev/433548348): Avoid interior mutability here by passing a
     // &mut CurrentTask around instead of &CurrentTask.
@@ -177,9 +185,12 @@ impl fmt::Debug for CurrentTask {
 impl CurrentTask {
     pub fn new(task: Arc<Task>, thread_state: ThreadState<RegisterStorageEnum>) -> Self {
         let current_creds = RefCell::new(CurrentCreds::Cached(task.clone_creds()));
+        let files = task.files().ok();
+        debug_assert!(files.is_some(), "CurrentTask must have FdTable");
         Self {
             task,
             thread_state,
+            files: RefCell::new(files),
             current_creds,
             security_state: Default::default(),
             _local_marker: Default::default(),
@@ -199,6 +210,7 @@ impl CurrentTask {
         self.signal_vfork();
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
+        *self.files.borrow_mut() = None;
         if let Ok(running_state) = self.task.running_state() {
             *running_state.files.lock() = None;
             running_state.mm.update(None);
@@ -236,7 +248,7 @@ impl CurrentTask {
     /// (i.e. exited tasks) panics. However, such tasks should not have a `CurrentTask`.
     #[track_caller]
     pub fn files(&self) -> Arc<FdTable> {
-        self.task.files().expect("CurrentTask must have FdTable")
+        self.files.borrow().as_ref().expect("CurrentTask must have FdTable").clone()
     }
 
     pub fn fs(&self) -> Arc<FsContext> {
@@ -1037,7 +1049,7 @@ impl CurrentTask {
         //
         //   If the calling process was sharing its file descriptor table (via
         //   the use of CLONE_FILES with clone(2)), then this sharing is undone.
-        self.running_state().unshare_files();
+        self.running_state().unshare_files(self);
         self.files().exec();
 
         {
