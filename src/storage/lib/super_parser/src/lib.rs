@@ -656,11 +656,9 @@ mod tests {
         let offset = geometry.get_primary_metadata_offset(slot).unwrap();
 
         let mut buffer = device.allocate_buffer(geometry.metadata_max_size as usize).await;
-        buffer.as_mut_slice()[..std::mem::size_of::<MetadataHeader>()]
-            .copy_from_slice(header.as_bytes());
-        buffer.as_mut_slice()[std::mem::size_of::<MetadataHeader>()
-            ..std::mem::size_of::<MetadataHeader>() + tables.len()]
-            .copy_from_slice(&tables);
+        buffer.as_mut_ptr_slice().write(header);
+        let header_len = std::mem::size_of::<MetadataHeader>();
+        buffer.subslice_mut(header_len..header_len + tables.len()).copy_from_slice(&tables);
 
         device.write(offset, buffer.as_ref()).await.expect("failed to write metadata");
     }
@@ -672,8 +670,7 @@ mod tests {
         // Write geometry
         let geometry = create_geometry();
         let mut buffer = device.allocate_buffer(BLOCK_SIZE as usize).await;
-        buffer.as_mut_slice()[..std::mem::size_of::<MetadataGeometry>()]
-            .copy_from_slice(geometry.as_bytes());
+        buffer.as_mut_ptr_slice().write(geometry);
         device
             .write(PARTITION_RESERVED_BYTES as u64, buffer.as_ref())
             .await

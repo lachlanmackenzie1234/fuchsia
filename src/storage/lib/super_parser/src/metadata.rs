@@ -145,9 +145,10 @@ impl SuperMetadata {
         let mut buffer = device.allocate_buffer(buffer_len.try_into()?).await;
         let aligned_offset = round_up_to_alignment(offset, device.block_size() as u64)?;
         device.read(aligned_offset, buffer.as_mut()).await?;
-        let full_buffer = buffer.as_slice();
-        let (metadata_geometry, _remainder) = MetadataGeometry::read_from_prefix(full_buffer)
-            .map_err(|e| anyhow!("Failed to read metadata geometry: {e}"))?;
+        let metadata_geometry: MetadataGeometry = buffer
+            .as_ptr_slice()
+            .read()
+            .ok_or_else(|| anyhow!("Failed to read metadata geometry"))?;
         metadata_geometry.validate()?;
         Ok(metadata_geometry)
     }
@@ -259,8 +260,9 @@ impl Metadata {
             round_up_to_alignment(header_and_tables_size as u64, device.block_size() as u64)?;
         let mut buffer = device.allocate_buffer(buffer_len.try_into()?).await;
         device.read(offset, buffer.as_mut()).await?;
-        let tables_bytes = &buffer.as_slice()
-            [header.header_size.try_into()?..header_and_tables_size.try_into()?];
+        let data = buffer.to_vec();
+        let tables_bytes =
+            &data[header.header_size.try_into()?..header_and_tables_size.try_into()?];
 
         // Read tables to verify `table_checksum` in metadata_header.
         let computed_tables_checksum: [u8; 32] = sha2::Sha256::digest(tables_bytes).into();
@@ -347,9 +349,10 @@ impl Metadata {
         let mut buffer = device.allocate_buffer(buffer_len.try_into()?).await;
         device.read(offset, buffer.as_mut()).await?;
 
-        let full_buffer = buffer.as_slice();
-        let (mut metadata_header, _remainder) = MetadataHeader::read_from_prefix(full_buffer)
-            .map_err(|e| anyhow!("Failed to read metadata header: {e}"))?;
+        let mut metadata_header: MetadataHeader = buffer
+            .as_ptr_slice()
+            .read()
+            .ok_or_else(|| anyhow!("Failed to read metadata header"))?;
         // Validation will also check if the header is an older version, and if so, will zero the
         // fields in `MetadataHeader` that did not exist in the older version.
         metadata_header
@@ -589,7 +592,7 @@ mod tests {
             )
             .expect("failed to round to nearest block");
             let mut buf = device.allocate_buffer(buf_len as usize).await;
-            buf.as_mut_slice().fill(0xaa as u8);
+            buf.fill(0xaa);
             device.write(offset, buf.as_ref()).await.expect("failed to write to device");
         }
 
@@ -616,7 +619,7 @@ mod tests {
             )
             .expect("failed to round to nearest block");
             let mut buf = device.allocate_buffer(buf_len as usize).await;
-            buf.as_mut_slice().fill(0xaa as u8);
+            buf.fill(0xaa);
             device.write(offset, buf.as_ref()).await.expect("failed to write to device");
         }
 
@@ -660,7 +663,7 @@ mod tests {
             )
             .expect("failed to round to nearest block");
             let mut buf = device.allocate_buffer(buf_len as usize).await;
-            buf.as_mut_slice().fill(0xaa as u8);
+            buf.fill(0xaa);
             device.write(offset, buf.as_ref()).await.expect("failed to write to device");
         }
 
@@ -688,7 +691,7 @@ mod tests {
             )
             .expect("failed to round to nearest block");
             let mut buf = device.allocate_buffer(buf_len as usize).await;
-            buf.as_mut_slice().fill(0xaa as u8);
+            buf.fill(0xaa);
             device.write(offset, buf.as_ref()).await.expect("failed to write to device");
         }
 

@@ -100,12 +100,15 @@ fn main() -> Result<(), Error> {
             let partition_size = partition_device.size();
             let mut offset = 0u64;
             const CHUNK_SIZE: u64 = 1024 * 1024; // 1MB
+            let mut write_buf = vec![0u8; CHUNK_SIZE as usize];
 
             while offset < partition_size {
                 let bytes_to_read = std::cmp::min(CHUNK_SIZE, partition_size - offset);
                 let mut buffer = block_on(partition_device.allocate_buffer(bytes_to_read as usize));
                 block_on(partition_device.read(offset, buffer.as_mut()))?;
-                out_file.write_all(buffer.as_slice())?;
+                let write_slice = &mut write_buf[..bytes_to_read as usize];
+                buffer.copy_to_slice(write_slice);
+                out_file.write_all(write_slice)?;
                 offset += bytes_to_read;
             }
         }
