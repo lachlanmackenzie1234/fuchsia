@@ -32,6 +32,7 @@ void BindManager::TryBindAllAvailable(NodeBindingInfoResultCallback result_callb
 
   if (bind_resource_set_.NumOfAvailableResources() == 0) {
     result_callback(fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo>());
+    TryResolvePendingNodes(/* force= */ true);
     return;
   }
 
@@ -48,6 +49,7 @@ void BindManager::TryBindAllAvailable(NodeBindingInfoResultCallback result_callb
   std::shared_ptr<BindResultTracker> tracker = std::make_shared<BindResultTracker>(
       bind_resource_set_.NumOfAvailableResources(), std::move(next_attempt));
   TryBindAllAvailableInternal(tracker);
+  TryResolvePendingNodes(/* force= */ true);
 }
 
 void BindManager::Bind(Resource& resource, std::string_view driver_url_suffix,
@@ -63,6 +65,10 @@ void BindManager::Bind(Resource& resource, std::string_view driver_url_suffix,
   };
   if (bind_resource_set_.is_bind_ongoing()) {
     pending_bind_requests_.push_back(std::move(request));
+    if (!resource.is_self_resource()) {
+      has_provided_resource_change_ = true;
+    }
+    TryResolvePendingNodes(/* force= */ false);
     return;
   }
 
@@ -72,6 +78,10 @@ void BindManager::Bind(Resource& resource, std::string_view driver_url_suffix,
 
   auto next_attempt = [this]() mutable { ProcessPendingBindRequests(); };
   BindInternal(std::move(request), next_attempt);
+  if (!resource.is_self_resource()) {
+    has_provided_resource_change_ = true;
+  }
+  TryResolvePendingNodes(/* force= */ false);
 }
 
 void BindManager::TryBindAllAvailableInternal(std::shared_ptr<BindResultTracker> tracker) {
@@ -394,6 +404,7 @@ void BindManager::ProcessPendingBindRequests() {
   ZX_ASSERT(bind_resource_set_.is_bind_ongoing());
   if (pending_bind_requests_.empty() && pending_orphan_rebind_callbacks_.empty()) {
     bind_resource_set_.EndBindProcess();
+    TryResolvePendingNodes(/* force= */ false);
     return;
   }
 
@@ -404,10 +415,10 @@ void BindManager::ProcessPendingBindRequests() {
     }
   }
 
+  bool have_bind_all_orphans_request = !pending_orphan_rebind_callbacks_.empty();
   // Begin the next bind process.
   bind_resource_set_.StartNextBindProcess();
-
-  bool have_bind_all_orphans_request = !pending_orphan_rebind_callbacks_.empty();
+  TryResolvePendingNodes(have_bind_all_orphans_request);
   size_t bind_tracker_size =
       have_bind_all_orphans_request
           ? pending_bind_requests_.size() + bind_resource_set_.NumOfAvailableResources()
@@ -422,6 +433,7 @@ void BindManager::ProcessPendingBindRequests() {
     }
     pending_orphan_rebind_callbacks_.clear();
     bind_resource_set_.EndBindProcess();
+    TryResolvePendingNodes(/* force= */ true);
     return;
   }
 
@@ -452,6 +464,13 @@ void BindManager::ProcessPendingBindRequests() {
   // If there are any pending callbacks for TryBindAllAvailable(), begin a new attempt.
   if (have_bind_all_orphans_request) {
     TryBindAllAvailableInternal(tracker);
+  }
+}
+
+void BindManager::TryResolvePendingNodes(bool force) {
+  if (force || has_provided_resource_change_) {
+    has_provided_resource_change_ = false;
+    bridge_->TryResolvePendingNodes();
   }
 }
 

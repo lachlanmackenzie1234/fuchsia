@@ -41,6 +41,7 @@
 #include "src/devices/bin/driver_manager/memory_attribution.h"
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/offer_injection.h"
+#include "src/devices/bin/driver_manager/pending_node_manager.h"
 #include "src/devices/bin/driver_manager/runner.h"
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
 #include "src/devices/bin/driver_manager/shutdown/node_remover.h"
@@ -55,6 +56,7 @@ namespace driver_manager {
 class Resource;
 
 class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager>,
+                     public fidl::WireServer<fuchsia_driver_framework::NodeManager>,
                      public fidl::WireServer<fuchsia_driver_index::DriverNotifier>,
                      public fidl::WireServer<fuchsia_driver_crash::CrashIntrospect>,
                      public fidl::Server<fuchsia_driver_token::NodeBusTopology>,
@@ -100,6 +102,13 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   // fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager> interface
   void AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& completer) override;
+
+  // fidl::WireServer<fuchsia_driver_framework::NodeManager> interface
+  void AddNode(AddNodeRequestView request, AddNodeCompleter::Sync& completer) override;
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_driver_framework::NodeManager> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // fidl::WireServer<fuchsia_driver_index::DriverNotifier>
   void NewDriverAvailable(NewDriverAvailableCompleter::Sync& completer) override;
@@ -282,6 +291,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void DestroyDriverHostComponent(std::string_view driver_host_name_for_colocation,
                                   fit::callback<void(zx::result<>)> completion_cb) override;
   bool IsDriverHostValid(DriverHost* driver_host) const override;
+  void TryResolvePendingNodes() override;
 
   DictionaryUtil& dictionary_util() override { return dictionary_util_; }
   MemoryAttributor& memory_attributor() override { return memory_attributor_; }
@@ -298,6 +308,11 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void RequestMatchFromDriverIndex(
       fuchsia_driver_index::wire::MatchDriverArgs args,
       fit::callback<void(fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchDriver>&)>
+          match_callback) override;
+  void RequestMatchPendingNode(
+      fidl::VectorView<fuchsia_driver_framework::wire::ParentSpec2> dependencies,
+      fit::callback<
+          void(fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchPendingNode>&)>
           match_callback) override;
   void RequestRebindFromDriverIndex(std::string spec, std::optional<std::string> driver_url_suffix,
                                     fit::callback<void(zx::result<>)> callback) override;
@@ -334,6 +349,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   LoaderServiceFactory loader_service_factory_;
   DictionaryUtil dictionary_util_;
   fidl::ServerBindingGroup<fuchsia_driver_framework::CompositeNodeManager> manager_bindings_;
+  fidl::ServerBindingGroup<fuchsia_driver_framework::NodeManager> node_manager_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_crash::CrashIntrospect> crash_introspect_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_token::NodeBusTopology> bus_topo_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_index::DriverNotifier> driver_notifier_bindings_;
@@ -341,6 +357,9 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   fidl::ServerBindingGroup<fuchsia_power_system::CpuElementManager> cpu_element_server_;
   async_dispatcher_t* const dispatcher_;
   std::shared_ptr<Node> root_node_;
+
+  // Manages pending nodes.
+  PendingNodeManager pending_node_manager_;
 
   // Manages composite node specs.
   CompositeNodeSpecManager composite_node_spec_manager_;

@@ -29,6 +29,11 @@ type MatchDriverArgs = table {
     3: driver_url_suffix string:MAX;
 };
 
+type MatchPendingNodeResult = table {
+    /// Information for the matched composite driver.
+    1: driver fuchsia.driver.framework.CompositeDriverMatch;
+};
+
 /// This is served by the driver manager for the driver index to use to notify it of new
 /// drivers that are available on the driver index.
 ///
@@ -61,6 +66,13 @@ closed protocol DriverIndex {
         spec string:MAX;
         driver_url_suffix string:<MAX, optional>;
     }) -> () error zx.Status;
+
+    /// Match a pending node to a composite driver.
+    /// Since the driver-index doesn't store pending nodes, this only attempts
+    /// to match the pending node details against the registered composite drivers.
+    strict MatchPendingNode(struct {
+        dependencies vector<fuchsia.driver.framework.ParentSpec2>:MAX;
+    }) -> (MatchPendingNodeResult) error zx.Status;
 
     /// Sets the DriverNotifier which is used for reverse communication.
     strict SetNotifier(resource struct {

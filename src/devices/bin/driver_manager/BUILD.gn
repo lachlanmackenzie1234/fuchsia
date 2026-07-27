@@ -81,6 +81,8 @@ source_set("driver_runner") {
     "node_types.h",
     "offer_injection.cc",
     "offer_injection.h",
+    "pending_node_manager.cc",
+    "pending_node_manager.h",
     "pkg_utils.h",
     "resource.cc",
     "resource.h",

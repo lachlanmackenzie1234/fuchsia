@@ -9,7 +9,9 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 
 #include <cstdint>
+#include <format>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace driver_manager {
@@ -43,6 +45,10 @@ struct NodeOffer {
 
 fuchsia_driver_framework::Offer ToFidl(const NodeOffer& offer);
 
+fit::result<fuchsia_driver_framework::NodeError, NodeOffer> ProcessNodeOffer(
+    const fuchsia_driver_framework::Offer& add_offer, Collection source_collection,
+    std::string_view source_name);
+
 // This function creates a composite offer based on a service offer.
 NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_name,
                                bool primary_parent);
@@ -73,5 +79,19 @@ enum class NodeState : uint8_t {
 };
 
 }  // namespace driver_manager
+
+template <>
+struct std::formatter<driver_manager::OfferTransport> : std::formatter<std::string_view> {
+  auto format(const driver_manager::OfferTransport& transport, std::format_context& ctx) const {
+    switch (transport) {
+      // Dictionary maps to ZirconTransport.
+      case driver_manager::OfferTransport::ZirconTransport:
+      case driver_manager::OfferTransport::Dictionary:
+        return std::formatter<std::string_view>::format("ZirconTransport", ctx);
+      case driver_manager::OfferTransport::DriverTransport:
+        return std::formatter<std::string_view>::format("DriverTransport", ctx);
+    }
+  }
+};
 
 #endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_NODE_TYPES_H_

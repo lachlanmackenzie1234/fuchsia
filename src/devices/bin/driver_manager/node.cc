@@ -36,20 +36,6 @@
 #include "src/devices/lib/log/log.h"
 #include "src/lib/fxl/strings/join_strings.h"
 
-template <>
-struct std::formatter<driver_manager::OfferTransport> : std::formatter<std::string_view> {
-  auto format(const driver_manager::OfferTransport& transport, std::format_context& ctx) const {
-    switch (transport) {
-      case driver_manager::OfferTransport::ZirconTransport:
-        return std::formatter<std::string_view>::format("ZirconTransport", ctx);
-      case driver_manager::OfferTransport::DriverTransport:
-        return std::formatter<std::string_view>::format("DriverTransport", ctx);
-      case driver_manager::OfferTransport::Dictionary:
-        return std::formatter<std::string_view>::format("ZirconTransport", ctx);
-    }
-  }
-};
-
 namespace fdf {
 using namespace fuchsia_driver_framework;
 }  // namespace fdf
@@ -101,56 +87,58 @@ zx::result<> RegistrationErrorToResult(fuchsia_power_broker::RegisterDependencyT
   }
 }
 
+}  // namespace
+
 // Processes the offer by validating it has a source_name and adding a source ref to it.
-// Returns the offer back out.
-fit::result<fdf::NodeError, NodeOffer> ProcessNodeOffer(const fdf::Offer& add_offer,
-                                                        Collection source_collection,
-                                                        std::string_view source_name) {
+// Returns the offer back out if it succeeds.
+fit::result<fuchsia_driver_framework::NodeError, NodeOffer> ProcessNodeOffer(
+    const fuchsia_driver_framework::Offer& add_offer, Collection source_collection,
+    std::string_view source_name) {
   std::optional<OfferTransport> transport;
   std::optional<fdecl::Offer> fdecl_offer;
 
   switch (add_offer.Which()) {
-    case fdf::Offer::Tag::kZirconTransport:
+    case fuchsia_driver_framework::Offer::Tag::kZirconTransport:
       fdecl_offer.emplace(add_offer.zircon_transport().value());
       transport.emplace(OfferTransport::ZirconTransport);
       break;
-    case fdf::Offer::Tag::kDriverTransport:
+    case fuchsia_driver_framework::Offer::Tag::kDriverTransport:
       fdecl_offer.emplace(add_offer.driver_transport().value());
       transport.emplace(OfferTransport::DriverTransport);
       break;
-    case fdf::Offer::Tag::kDictionaryOffer:
+    case fuchsia_driver_framework::Offer::Tag::kDictionaryOffer:
       fdecl_offer.emplace(add_offer.dictionary_offer().value());
       transport.emplace(OfferTransport::Dictionary);
       break;
     default:
       fdf_log::error("Unknown offer transport type {}", static_cast<uint32_t>(add_offer.Which()));
-      return fit::error(fdf::NodeError::kInternal);
+      return fit::error(fuchsia_driver_framework::NodeError::kInternal);
   }
 
   auto service_offer = fdecl_offer->service();
   if (!service_offer.has_value()) {
-    return fit::as_error(fdf::NodeError::kUnsupportedArgs);
+    return fit::as_error(fuchsia_driver_framework::NodeError::kUnsupportedArgs);
   }
 
   if (!service_offer->source_name().has_value()) {
-    return fit::as_error(fdf::NodeError::kOfferSourceNameMissing);
+    return fit::as_error(fuchsia_driver_framework::NodeError::kOfferSourceNameMissing);
   }
 
   if (service_offer->target_name().has_value() &&
       service_offer->target_name().value() != service_offer->source_name().value()) {
-    return fit::as_error(fdf::NodeError::kUnsupportedArgs);
+    return fit::as_error(fuchsia_driver_framework::NodeError::kUnsupportedArgs);
   }
 
   if (service_offer->source().has_value() || service_offer->target().has_value()) {
-    return fit::as_error(fdf::NodeError::kOfferRefExists);
+    return fit::as_error(fuchsia_driver_framework::NodeError::kOfferRefExists);
   }
 
   if (!service_offer->source_instance_filter().has_value()) {
-    return fit::as_error(fdf::NodeError::kOfferSourceInstanceFilterMissing);
+    return fit::as_error(fuchsia_driver_framework::NodeError::kOfferSourceInstanceFilterMissing);
   }
 
   if (!service_offer->renamed_instances().has_value()) {
-    return fit::as_error(fdf::NodeError::kOfferRenamedInstancesMissing);
+    return fit::as_error(fuchsia_driver_framework::NodeError::kOfferRenamedInstancesMissing);
   }
 
   if (transport.value() == OfferTransport::Dictionary) {
@@ -167,6 +155,8 @@ fit::result<fdf::NodeError, NodeOffer> ProcessNodeOffer(const fdf::Offer& add_of
       .renamed_instances = service_offer->renamed_instances().value(),
   });
 }
+
+namespace {
 
 // Processes the offer by validating it has a source_name and adding a source ref to it.
 // Returns a tuple containing the offer as well as node property that provides transport
@@ -824,6 +814,20 @@ void Node::AddToParents() {
     }
     fdf_log::warn("Parent freed before child {} could be added to it", name());
   }
+}
+
+void Node::SetController(fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller) {
+  controller_ref_.emplace(dispatcher_, std::move(controller), this,
+                          [weak = weak_from_this()](fidl::UnbindInfo info) {
+                            std::shared_ptr self = weak.lock();
+                            if (self && self->controller_ref_) {
+                              self->controller_ref_.reset();
+                            }
+                          });
+}
+
+void Node::SetOwnedByParent(fidl::ServerEnd<fuchsia_driver_framework::Node> node_ref) {
+  state_.emplace<OwnedByParent>(std::move(node_ref), this);
 }
 
 NodeShutdownCoordinator& Node::GetNodeShutdownCoordinator() {

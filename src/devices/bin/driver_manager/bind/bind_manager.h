@@ -77,6 +77,8 @@ class BindManagerBridge {
           match_callback) = 0;
 
   virtual void OnBindingStateChanged() {}
+
+  virtual void TryResolvePendingNodes() {}
 };
 
 // This class is responsible for managing driver binding.
@@ -102,10 +104,9 @@ class BindManager {
 
   bool HasOngoingBind() const { return bind_resource_set_.is_bind_ongoing(); }
 
- protected:
-  // Exposed for testing.
   const BindResourceSet& bind_resource_set() const { return bind_resource_set_; }
 
+ protected:
   // Exposed for testing.
   std::vector<BindRequest> pending_bind_requests() const { return pending_bind_requests_; }
 
@@ -163,6 +164,20 @@ class BindManager {
   std::vector<BindRequest> pending_bind_requests_;
 
   BindResourceSet bind_resource_set_;
+
+  // Attempts to resolve pending nodes.
+  // If |force| is true, the resolution pass is triggered unconditionally. This is used
+  // during bulk bind requests (like TryBindAllAvailable) where multiple resources might
+  // be bound without individual tracking.
+  // If |force| is false, the resolution pass only runs if |has_provided_resource_change_|
+  // is true, which indicates that a non-self resource has changed.
+  void TryResolvePendingNodes(bool force);
+
+  // Set to true when a non-self resource is successfully bound (or queued for binding)
+  // via Bind(). Set to false in TryResolvePendingNodes() when a resolution pass is triggered.
+  // This tracks whether there are new provided resources since the last resolution pass,
+  // which is used to determine if a non-forced resolution pass is needed.
+  bool has_provided_resource_change_ = false;
 
   // Must outlive BindManager.
   BindManagerBridge* bridge_;

@@ -51,6 +51,8 @@ class TestDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
                             AddCompositeNodeSpecCompleter::Sync& completer) override;
   void RebindCompositeNodeSpec(RebindCompositeNodeSpecRequestView request,
                                RebindCompositeNodeSpecCompleter::Sync& completer) override;
+  void MatchPendingNode(MatchPendingNodeRequestView request,
+                        MatchPendingNodeCompleter::Sync& completer) override;
   void SetNotifier(fuchsia_driver_index::wire::DriverIndexSetNotifierRequest* request,
                    SetNotifierCompleter::Sync& completer) override;
 

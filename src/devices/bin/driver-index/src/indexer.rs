@@ -324,6 +324,56 @@ impl Indexer {
         }
     }
 
+    pub fn match_pending_node(
+        &self,
+        dependencies: Vec<fdf::ParentSpec2>,
+    ) -> Result<fdi::MatchPendingNodeResult, i32> {
+        let parents = dependencies;
+
+        let driver_list = self.list_drivers();
+        let composite_drivers = driver_list
+            .iter()
+            .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
+            .collect::<Vec<_>>();
+
+        let mut fallback = vec![];
+        let mut non_fallback = vec![];
+
+        for driver in composite_drivers {
+            let matched_composite_result =
+                crate::composite_helper::match_composite_properties(driver, &parents);
+            if let Ok(Some(matched_composite)) = matched_composite_result {
+                if driver.fallback {
+                    fallback.push(matched_composite);
+                } else {
+                    non_fallback.push(matched_composite);
+                }
+            }
+        }
+
+        let matched = match (non_fallback.len(), fallback.len()) {
+            (1, _) => Ok(non_fallback.pop().unwrap()),
+            (0, 1) => Ok(fallback.pop().unwrap()),
+            (0, 0) => Err(Status::NOT_FOUND.into_raw()),
+            (0, _) => {
+                log::error!(
+                    "Failed to match pending node: Encountered unsupported behavior: Zero non-fallback drivers and more than one fallback drivers were matched"
+                );
+                log::error!("Fallback drivers {:#?}", fallback);
+                Err(Status::NOT_SUPPORTED.into_raw())
+            }
+            _ => {
+                log::error!(
+                    "Failed to match pending node: Encountered unsupported behavior: Multiple non-fallback drivers were matched"
+                );
+                log::error!("Drivers {:#?}", non_fallback);
+                Err(Status::NOT_SUPPORTED.into_raw())
+            }
+        }?;
+
+        Ok(fdi::MatchPendingNodeResult { driver: Some(matched), ..Default::default() })
+    }
+
     pub fn add_composite_node_spec(&self, spec: fdf::CompositeNodeSpec) -> Result<(), i32> {
         let driver_list = self.list_drivers();
         let composite_drivers = driver_list

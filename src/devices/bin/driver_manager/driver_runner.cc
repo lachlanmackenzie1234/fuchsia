@@ -308,6 +308,7 @@ DriverRunner::DriverRunner(
       dictionary_util_(std::move(capability_store), dispatcher),
       dispatcher_(dispatcher),
       root_node_(std::make_shared<Node>(kRootDeviceName, std::weak_ptr<Node>{}, this, dispatcher)),
+      pending_node_manager_(this, dispatcher),
       composite_node_spec_manager_(this),
       bind_manager_(this, this, dispatcher),
       runner_(dispatcher, fidl::WireClient(std::move(realm), dispatcher),
@@ -1005,6 +1006,10 @@ void DriverRunner::PublishComponentRunner(component::OutgoingDirectory& outgoing
       manager_bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure));
   ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
 
+  result = outgoing.AddUnmanagedProtocol<fdf::NodeManager>(
+      node_manager_bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure));
+  ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
+
   result = outgoing.AddUnmanagedProtocol<fuchsia_driver_token::NodeBusTopology>(
       bus_topo_bindings_.CreateHandler(this, dispatcher_, [](fidl::UnbindInfo info) {
         if (info.is_user_initiated() || info.is_peer_closed()) {
@@ -1041,6 +1046,7 @@ void DriverRunner::StartDevfsDriver(std::shared_ptr<driver_manager::Devfs>& devf
 
 void DriverRunner::NewDriverAvailable(NewDriverAvailableCompleter::Sync& completer) {
   TryBindAllAvailable();
+  pending_node_manager_.MatchPendingNodesWithoutDriver();
 }
 
 void DriverRunner::TryBindAllAvailable(NodeBindingInfoResultCallback result_callback) {
@@ -1087,6 +1093,11 @@ void DriverRunner::Bind(Node& node, std::shared_ptr<BindResultTracker> result_tr
 
 void DriverRunner::Bind(Resource& resource, std::shared_ptr<BindResultTracker> result_tracker) {
   bind_manager_.Bind(resource, {}, std::move(result_tracker));
+}
+
+void DriverRunner::TryResolvePendingNodes() {
+  pending_node_manager_.TryResolvePendingNodes(
+      bind_manager_.bind_resource_set().CurrentMultibindResources());
 }
 
 void DriverRunner::BindToUrl(Node& node, std::string_view driver_url_suffix,
@@ -1488,6 +1499,14 @@ void DriverRunner::RequestMatchFromDriverIndex(
     fuchsia_driver_index::wire::MatchDriverArgs args,
     fit::callback<void(fidl::WireUnownedResult<fdi::DriverIndex::MatchDriver>&)> match_callback) {
   driver_index()->MatchDriver(args).Then(std::move(match_callback));
+}
+
+void DriverRunner::RequestMatchPendingNode(
+    fidl::VectorView<fuchsia_driver_framework::wire::ParentSpec2> dependencies,
+    fit::callback<
+        void(fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchPendingNode>&)>
+        match_callback) {
+  driver_index()->MatchPendingNode(dependencies).Then(std::move(match_callback));
 }
 
 void DriverRunner::RequestRebindFromDriverIndex(std::string spec,
@@ -1917,6 +1936,35 @@ void DriverRunner::RebootSystem() {
           }
         }
       });
+}
+
+void DriverRunner::AddNode(AddNodeRequestView request, AddNodeCompleter::Sync& completer) {
+  if (!request->node.has_name() || !request->node.has_dependencies() ||
+      request->node.dependencies().empty()) {
+    completer.Reply(fit::error(fuchsia_driver_framework::NodeError::kUnsupportedArgs));
+    return;
+  }
+
+  for (const auto& dep : request->node.dependencies()) {
+    if (!dep.has_selector()) {
+      completer.Reply(fit::error(fuchsia_driver_framework::NodeError::kUnsupportedArgs));
+      return;
+    }
+  }
+
+  auto result = pending_node_manager_.AddNode(
+      fidl::ToNatural(request->node), std::move(request->controller), std::move(request->node_ref));
+  if (result.is_error()) {
+    completer.Reply(fit::error(result.error_value()));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void DriverRunner::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_driver_framework::NodeManager> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf_log::warn("NodeManager received unknown method. Ordinal: {}", metadata.method_ordinal);
 }
 
 }  // namespace driver_manager

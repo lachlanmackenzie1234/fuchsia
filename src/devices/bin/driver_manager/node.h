@@ -131,6 +131,8 @@ class NodeManager {
   virtual void RebindComposite(std::string spec, std::optional<std::string> driver_url,
                                fit::callback<void(zx::result<>)> callback) {}
 
+  virtual void TryResolvePendingNodes() {}
+
   virtual bool IsTestShutdownDelayEnabled() const { return false; }
   virtual std::weak_ptr<std::mt19937> GetShutdownTestRng() const {
     return std::weak_ptr<std::mt19937>();
@@ -141,6 +143,14 @@ class NodeManager {
   virtual void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
                                 fit::callback<void(zx::result<uint64_t>)> callback) {
     callback(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  virtual void RequestMatchPendingNode(
+      fidl::VectorView<fuchsia_driver_framework::wire::ParentSpec2> dependencies,
+      fit::callback<
+          void(fidl::WireUnownedResult<fuchsia_driver_index::DriverIndex::MatchPendingNode>&)>
+          match_callback) {
+    ZX_PANIC("Unimplemented RequestMatchPendingNode");
   }
 
   // Create a power element where |element_token| is the access token for the newly created
@@ -188,6 +198,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
              public ComponentOwner {
   friend DriverHostConnection;
   friend ComponentControllerConnection;
+  friend class DriverRunner;
+  friend class PendingNodeManager;
 
  public:
   Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_manager,
@@ -256,6 +268,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Add this Node to its parents. This should be called when the node is created. Exposed for
   // testing.
   void AddToParents();
+
+  void SetController(fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller);
+  void SetOwnedByParent(fidl::ServerEnd<fuchsia_driver_framework::Node> node_ref);
 
   // Begins the process of restarting the node. Restarting a node includes stopping and removing
   // all children nodes, stopping the driver that is bound to the node, and asking the NodeManager

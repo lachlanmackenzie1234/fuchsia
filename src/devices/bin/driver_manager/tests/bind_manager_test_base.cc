@@ -41,6 +41,11 @@ void TestDriverIndex::RebindCompositeNodeSpec(RebindCompositeNodeSpecRequestView
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void TestDriverIndex::MatchPendingNode(MatchPendingNodeRequestView request,
+                                       MatchPendingNodeCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void TestDriverIndex::SetNotifier(
     fuchsia_driver_index::wire::DriverIndexSetNotifierRequest* request,
     SetNotifierCompleter::Sync& completer) {}

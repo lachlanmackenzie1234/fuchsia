@@ -2570,6 +2570,304 @@ TEST_P(DriverRunnerTest, ColocateAfterDriverHostTeardownFails) {
   EXPECT_TRUE(pending & ZX_CHANNEL_PEER_CLOSED);
 }
 
+TEST_P(DriverRunnerTest, NodeManagerAddNodeWithDependency) {
+  SetupDriverRunner();
+
+  // Start the root driver.
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  // 1. Provide a resource on the root node.
+  fuchsia_driver_framework::NodeProperty2 prop{{
+      .key = "my_key",
+      .value = fuchsia_driver_framework::NodePropertyValue::WithStringValue("my_val"),
+  }};
+  fuchsia_driver_framework::ResourceArgs resource_args({
+      .name = "my_resource",
+      .properties = std::vector<fuchsia_driver_framework::NodeProperty2>{std::move(prop)},
+      .offers = std::vector<fuchsia_driver_framework::Offer>(),
+  });
+
+  auto endpoints = fidl::Endpoints<fuchsia_driver_framework::ResourceController>::Create();
+  bool provide_resource_called = false;
+  root_driver->driver->node()
+      ->ProvideResource({std::move(resource_args), std::move(endpoints.server)})
+      .Then([&provide_resource_called](auto& result) {
+        ASSERT_TRUE(result.is_ok());
+        provide_resource_called = true;
+      });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  ASSERT_TRUE(provide_resource_called);
+
+  // 2. Connect to the NodeManager protocol.
+  fidl::Endpoints<fuchsia_driver_framework::NodeManager> nm_endpoints =
+      fidl::Endpoints<fuchsia_driver_framework::NodeManager>::Create();
+  fidl::BindServer(dispatcher(), std::move(nm_endpoints.server), &driver_runner());
+  auto nm_client = fidl::WireClient<fuchsia_driver_framework::NodeManager>(
+      std::move(nm_endpoints.client), dispatcher());
+
+  // 3. Construct a Node2 that depends on our provided resource.
+  fuchsia_driver_framework::ResourceProperty prop2(
+      "my_key", fuchsia_driver_framework::ResourcePropertyValue::WithStringValue("my_val"));
+
+  fuchsia_driver_framework::Selector selector;
+  selector.include_properties() =
+      std::vector<fuchsia_driver_framework::ResourceProperty>{std::move(prop2)};
+
+  fuchsia_driver_framework::Dependency dep;
+  dep.selector() = std::move(selector);
+
+  fuchsia_driver_framework::Node2 node2;
+  node2.name() = "composite_node_2";
+  node2.dependencies() = std::vector<fuchsia_driver_framework::Dependency>{std::move(dep)};
+
+  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto node_endpoints = fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+
+  fidl::Arena arena;
+  bool add_node_called = false;
+  nm_client
+      ->AddNode(fidl::ToWire(arena, node2), std::move(controller_endpoints.server),
+                std::move(node_endpoints.server))
+      .Then([&add_node_called](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_FALSE(result->is_error());
+        add_node_called = true;
+      });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  ASSERT_TRUE(add_node_called);
+
+  static_cast<driver_manager::NodeManager&>(driver_runner()).TryResolvePendingNodes();
+  RunLoopUntilIdle();
+
+  // 4. Verify that the composite node was instantiated in the topology as a child of the root node
+  // (owner of the resource).
+  bool found = false;
+  for (const auto& child : driver_runner().root_node()->children()) {
+    if (child->name() == "composite_node_2") {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST_P(DriverRunnerTest, NodeManagerAddNodeMatchedToDriver) {
+  FakeDriverIndex driver_index(
+      dispatcher(),
+      [](auto args) -> zx::result<FakeDriverIndex::MatchResult> {
+        return zx::error(ZX_ERR_NOT_FOUND);
+      },
+      [](fidl::AnyArena& arena,
+         auto args) -> zx::result<fuchsia_driver_framework::wire::CompositeDriverMatch> {
+        auto driver_info = fuchsia_driver_framework::wire::DriverInfo::Builder(arena)
+                               .url(arena, "fuchsia-boot:///#meta/composite-driver.cm")
+                               .colocate(true)
+                               .package_type(fdfw::DriverPackageType::kBoot)
+                               .Build();
+        auto composite_driver = fuchsia_driver_framework::wire::CompositeDriverInfo::Builder(arena)
+                                    .composite_name(arena, "test-composite")
+                                    .driver_info(driver_info)
+                                    .Build();
+
+        auto parent_names = fidl::VectorView<fidl::StringView>(arena, 1);
+        parent_names[0] = fidl::StringView(arena, "my_resource");
+
+        auto match = fuchsia_driver_framework::wire::CompositeDriverMatch::Builder(arena)
+                         .composite_driver(composite_driver)
+                         .parent_names(parent_names)
+                         .primary_parent_index(0)
+                         .Build();
+        return zx::ok(match);
+      });
+
+  SetupDriverRunner(std::move(driver_index));
+
+  // Start the root driver.
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  // 1. Provide a resource on the root node.
+  fuchsia_driver_framework::NodeProperty2 prop{{
+      .key = "my_key",
+      .value = fuchsia_driver_framework::NodePropertyValue::WithStringValue("my_val"),
+  }};
+  fuchsia_driver_framework::ResourceArgs resource_args({
+      .name = "my_resource",
+      .properties = std::vector<fuchsia_driver_framework::NodeProperty2>{std::move(prop)},
+      .offers = std::vector<fuchsia_driver_framework::Offer>(),
+  });
+
+  auto endpoints = fidl::Endpoints<fuchsia_driver_framework::ResourceController>::Create();
+  bool provide_resource_called = false;
+  root_driver->driver->node()
+      ->ProvideResource({std::move(resource_args), std::move(endpoints.server)})
+      .Then([&provide_resource_called](auto& result) {
+        ASSERT_TRUE(result.is_ok());
+        provide_resource_called = true;
+      });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  ASSERT_TRUE(provide_resource_called);
+
+  // 2. Connect to the NodeManager protocol.
+  fidl::Endpoints<fuchsia_driver_framework::NodeManager> nm_endpoints =
+      fidl::Endpoints<fuchsia_driver_framework::NodeManager>::Create();
+  fidl::BindServer(dispatcher(), std::move(nm_endpoints.server), &driver_runner());
+  auto nm_client = fidl::WireClient<fuchsia_driver_framework::NodeManager>(
+      std::move(nm_endpoints.client), dispatcher());
+
+  // 3. Construct a Node2 that depends on our provided resource.
+  fuchsia_driver_framework::ResourceProperty prop2(
+      "my_key", fuchsia_driver_framework::ResourcePropertyValue::WithStringValue("my_val"));
+
+  fuchsia_driver_framework::Selector selector;
+  selector.include_properties() =
+      std::vector<fuchsia_driver_framework::ResourceProperty>{std::move(prop2)};
+
+  fuchsia_driver_framework::Dependency dep;
+  dep.selector() = std::move(selector);
+
+  fuchsia_driver_framework::Node2 node2;
+  node2.name() = "composite_node_2";
+  node2.dependencies() = std::vector<fuchsia_driver_framework::Dependency>{std::move(dep)};
+
+  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+
+  PrepareRealmForDriverComponentStart("dev.composite_node_2",
+                                      "fuchsia-boot:///#meta/composite-driver.cm");
+
+  auto composite_driver_config = kDefaultCompositeDriverPkgConfig;
+  std::string binary = std::string(composite_driver_config.main_module.open_path);
+  StartDriverHandler start_handler = [this, binary](TestDriver* driver,
+                                                    fdfw::DriverStartArgs start_args) {
+    ValidateProgram(start_args.program(), binary, "true", "false", "false");
+  };
+
+  fidl::Arena arena;
+  bool add_node_called = false;
+  // Node ref is invalid so it matches a driver.
+  nm_client->AddNode(fidl::ToWire(arena, node2), std::move(controller_endpoints.server), {})
+      .Then([&add_node_called](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_FALSE(result->is_error());
+        add_node_called = true;
+      });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  ASSERT_TRUE(add_node_called);
+
+  auto composite_driver =
+      StartDriverWithConfig("dev.composite_node_2",
+                            {
+                                .url = "fuchsia-boot:///#meta/composite-driver.cm",
+                                .binary = binary,
+                                .colocate = true,
+                                .use_dynamic_linker = use_dynamic_linker(),
+                            },
+                            std::move(start_handler), composite_driver_config);
+  ServeStopListener(std::move(composite_driver.controller));
+
+  // 4. Verify that the composite node was instantiated in the topology as a child of the root node
+  // (owner of the resource).
+  bool found = false;
+  for (const auto& child : driver_runner().root_node()->children()) {
+    if (child->name() == "composite_node_2") {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST_P(DriverRunnerTest, NodeManagerAddNodeMissingSelector) {
+  SetupDriverRunner();
+
+  // Start the root driver.
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  // Connect to the NodeManager protocol.
+  fidl::Endpoints<fuchsia_driver_framework::NodeManager> nm_endpoints =
+      fidl::Endpoints<fuchsia_driver_framework::NodeManager>::Create();
+  fidl::BindServer(dispatcher(), std::move(nm_endpoints.server), &driver_runner());
+  auto nm_client = fidl::WireClient<fuchsia_driver_framework::NodeManager>(
+      std::move(nm_endpoints.client), dispatcher());
+
+  // Construct a Node2 that has a dependency but without a selector.
+  fuchsia_driver_framework::Dependency dep;
+  // Note: we do NOT set dep.selector().
+
+  fuchsia_driver_framework::Node2 node2;
+  node2.name() = "invalid_node";
+  node2.dependencies() = std::vector<fuchsia_driver_framework::Dependency>{std::move(dep)};
+
+  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto node_endpoints = fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+
+  fidl::Arena arena;
+  bool add_node_called = false;
+  nm_client
+      ->AddNode(fidl::ToWire(arena, node2), std::move(controller_endpoints.server),
+                std::move(node_endpoints.server))
+      .Then([&add_node_called](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(fuchsia_driver_framework::NodeError::kUnsupportedArgs, result->error_value());
+        add_node_called = true;
+      });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  ASSERT_TRUE(add_node_called);
+}
+
+TEST_P(DriverRunnerTest, NodeManagerAddNodeInvalidOffer) {
+  SetupDriverRunner();
+
+  // Start the root driver.
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  // Connect to the NodeManager protocol.
+  fidl::Endpoints<fuchsia_driver_framework::NodeManager> nm_endpoints =
+      fidl::Endpoints<fuchsia_driver_framework::NodeManager>::Create();
+  fidl::BindServer(dispatcher(), std::move(nm_endpoints.server), &driver_runner());
+  auto nm_client = fidl::WireClient<fuchsia_driver_framework::NodeManager>(
+      std::move(nm_endpoints.client), dispatcher());
+
+  // Construct a Node2 that has a dependency with an invalid offer (using Service with mismatched
+  // target/source name).
+  fuchsia_driver_framework::Offer offer = fuchsia_driver_framework::Offer::WithZirconTransport(
+      fuchsia_component_decl::Offer::WithService(fdecl::OfferService({
+          .source_name = "fuchsia.package.Service",
+          .target_name = "fuchsia.package.Renamed",
+      })));
+
+  fuchsia_driver_framework::Selector selector;
+  selector.offers() = std::vector<fuchsia_driver_framework::Offer>{std::move(offer)};
+
+  fuchsia_driver_framework::Dependency dep;
+  dep.selector() = std::move(selector);
+
+  fuchsia_driver_framework::Node2 node2;
+  node2.name() = "invalid_node";
+  node2.dependencies() = std::vector<fuchsia_driver_framework::Dependency>{std::move(dep)};
+
+  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto node_endpoints = fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+
+  fidl::Arena arena;
+  bool add_node_called = false;
+  nm_client
+      ->AddNode(fidl::ToWire(arena, node2), std::move(controller_endpoints.server),
+                std::move(node_endpoints.server))
+      .Then([&add_node_called](auto& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(fuchsia_driver_framework::NodeError::kUnsupportedArgs, result->error_value());
+        add_node_called = true;
+      });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  ASSERT_TRUE(add_node_called);
+}
+
 // The tests are parameterized on whether to use the dynamic linker or not.
 INSTANTIATE_TEST_SUITE_P(/* no prefix */, DriverRunnerTest, testing::Values(true, false),
                          [](const testing::TestParamInfo<bool>& info) {

@@ -24,9 +24,16 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
 
   using MatchCallback =
       fit::function<zx::result<MatchResult>(fuchsia_driver_index::wire::MatchDriverArgs args)>;
+  using MatchPendingNodeCallback =
+      fit::function<zx::result<fuchsia_driver_framework::wire::CompositeDriverMatch>(
+          fidl::AnyArena& arena,
+          fidl::VectorView<fuchsia_driver_framework::wire::ParentSpec2> dependencies)>;
 
-  FakeDriverIndex(async_dispatcher_t* dispatcher, MatchCallback match_callback)
-      : dispatcher_(dispatcher), match_callback_(std::move(match_callback)) {}
+  FakeDriverIndex(async_dispatcher_t* dispatcher, MatchCallback match_callback,
+                  MatchPendingNodeCallback match_pending_node_callback = nullptr)
+      : dispatcher_(dispatcher),
+        match_callback_(std::move(match_callback)),
+        match_pending_node_callback_(std::move(match_pending_node_callback)) {}
 
   fidl::ClientEnd<fuchsia_driver_index::DriverIndex> Connect() {
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_driver_index::DriverIndex>::Create();
@@ -60,6 +67,23 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
+  void MatchPendingNode(MatchPendingNodeRequestView request,
+                        MatchPendingNodeCompleter::Sync& completer) override {
+    if (!match_pending_node_callback_) {
+      completer.ReplyError(ZX_ERR_NOT_FOUND);
+      return;
+    }
+    fidl::Arena arena;
+    auto result = match_pending_node_callback_(arena, request->dependencies);
+    if (result.is_error()) {
+      completer.ReplyError(result.error_value());
+    } else {
+      completer.ReplySuccess(fuchsia_driver_index::wire::MatchPendingNodeResult::Builder(arena)
+                                 .driver(result.value())
+                                 .Build());
+    }
+  }
+
   void SetNotifier(fuchsia_driver_index::wire::DriverIndexSetNotifierRequest* request,
                    SetNotifierCompleter::Sync& completer) override {
     notifer_.Bind(std::move(request->notifier), dispatcher_);
@@ -72,6 +96,10 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
 
   void set_match_callback(MatchCallback match_callback) {
     match_callback_ = std::move(match_callback);
+  }
+
+  void set_match_pending_node_callback(MatchPendingNodeCallback match_pending_node_callback) {
+    match_pending_node_callback_ = std::move(match_pending_node_callback);
   }
 
   void disable_driver_url(std::string_view url) { disabled_driver_urls_.emplace(url); }
@@ -105,6 +133,7 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
 
   async_dispatcher_t* dispatcher_;
   MatchCallback match_callback_;
+  MatchPendingNodeCallback match_pending_node_callback_;
 
   fidl::WireClient<fuchsia_driver_index::DriverNotifier> notifer_;
 

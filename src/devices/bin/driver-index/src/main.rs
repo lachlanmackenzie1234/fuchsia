@@ -295,6 +295,13 @@ async fn run_index_server_with_timeout(
                         send_result.context("error responding to MatchDriver.")?;
                     }
                 }
+                DriverIndexRequest::MatchPendingNode { dependencies, responder } => {
+                    let match_result = indexer.match_pending_node(dependencies);
+                    responder
+                        .send(match_result.as_ref().map_err(|e| *e))
+                        .or_else(ignore_peer_closed)
+                        .context("error responding to MatchPendingNode")?;
+                }
                 DriverIndexRequest::AddCompositeNodeSpec { payload, responder } => {
                     responder
                         .send(indexer.add_composite_node_spec(payload))

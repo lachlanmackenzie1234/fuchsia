@@ -459,3 +459,15 @@ type Node2 = table {
     1: name string:MAX;
     2: dependencies vector<Dependency>:MAX;
 };
+
+/// Protocol through which a client can add a Node2 to the driver topology.
+@available(added=HEAD)
+@discoverable
+open protocol NodeManager {
+    /// Adds a Node2 to the driver framework.
+    flexible AddNode(resource struct {
+        node Node2;
+        controller server_end:NodeController;
+        node_ref server_end:<Node, optional>;
+    }) -> () error NodeError;
+};
