@@ -89,7 +89,10 @@ if (is_host) {
 }
 if (is_host) {
   go_library("v2_stages_validate") {
-    sources = [ "v2/stages/validate/validate.go" ]
+    sources = [
+      "v2/stages/validate/copyright.go",
+      "v2/stages/validate/validate.go",
+    ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       ":v2_config",
