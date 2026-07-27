@@ -109,10 +109,8 @@ fn test_state_non_utf8_handling() {
 #[test]
 fn test_shell_env() {
     let mut state = ShellState::new();
-    state.set_var(BStr::new("PATH"), BStr::new("/custom/bin:/another/bin"));
-    state.export_var(BStr::new("PATH"));
-    state.set_var(BStr::new("FOO"), BStr::new("bar"));
-    state.export_var(BStr::new("FOO"));
+    state.set_and_export_var(BStr::new("PATH"), BStr::new("/custom/bin:/another/bin"));
+    state.set_and_export_var(BStr::new("FOO"), BStr::new("bar"));
 
     let env = state.vars();
     assert_eq!(env.path().entries().count(), 2);

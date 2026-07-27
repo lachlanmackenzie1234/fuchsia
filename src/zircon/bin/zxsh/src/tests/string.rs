@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::string::{
-    bstr_to_cstring, bstrings_to_cstrings, cstrings_to_c_strs, parse_int, parse_mode_mask,
-    split_ifs_read, split_key_value,
+    LineChar, bstr_to_cstring, bstrings_to_cstrings, cstrings_to_c_strs, parse_int,
+    parse_mode_mask, parse_non_negative_int, split_ifs_read, split_ifs_read_bytes, split_key_value,
 };
 use bstr::{BStr, BString};
 
@@ -20,6 +20,20 @@ fn test_parse_int() {
     assert_eq!(parse_int::<i32>(b"12a3"), None);
     assert_eq!(parse_int::<i32>(b""), None);
     assert_eq!(parse_int::<i32>(b"   "), None);
+}
+
+#[test]
+fn test_parse_non_negative_int() {
+    assert_eq!(parse_non_negative_int(b"0"), Some(0));
+    assert_eq!(parse_non_negative_int(b" 123 "), Some(123));
+    assert_eq!(parse_non_negative_int(b"2147483647"), Some(i32::MAX));
+
+    // Negative numbers, overflow, or non-numeric inputs return None
+    assert_eq!(parse_non_negative_int(b"-1"), None);
+    assert_eq!(parse_non_negative_int(b"-123"), None);
+    assert_eq!(parse_non_negative_int(b"2147483648"), None);
+    assert_eq!(parse_non_negative_int(b"abc"), None);
+    assert_eq!(parse_non_negative_int(b""), None);
 }
 
 #[test]
@@ -57,14 +71,20 @@ fn test_parse_mode_mask_symbolic() {
     assert_eq!(parse_mode_mask(b"u=r", 0o000), Some(0o300)); // u=r (0400) -> perm=0477 -> mask=0300
 
     // '+' operator
-    assert_eq!(parse_mode_mask(b"a+w", 0o022), Some(0o000)); // perm 0o755 + a+w (0o222) = 0o777 -> mask 0o000
-    assert_eq!(parse_mode_mask(b"u+x", 0o022), Some(0o022)); // perm 0o755 + u+x (0o100) = 0o755 -> mask 0o022
-    assert_eq!(parse_mode_mask(b"g+w", 0o022), Some(0o002)); // perm 0o755 + g+w (0o020) = 0o775 -> mask 0o002
+    // perm 0o755 + a+w (0o222) = 0o777 -> mask 0o000
+    assert_eq!(parse_mode_mask(b"a+w", 0o022), Some(0o000));
+    // perm 0o755 + u+x (0o100) = 0o755 -> mask 0o022
+    assert_eq!(parse_mode_mask(b"u+x", 0o022), Some(0o022));
+    // perm 0o755 + g+w (0o020) = 0o775 -> mask 0o002
+    assert_eq!(parse_mode_mask(b"g+w", 0o022), Some(0o002));
 
     // '-' operator
-    assert_eq!(parse_mode_mask(b"u-w", 0o000), Some(0o200)); // perm 0o777 - u-w (0o200) = 0o577 -> mask 0o200
-    assert_eq!(parse_mode_mask(b"a-rwx", 0o000), Some(0o777)); // perm 0o777 - 0o777 = 0o000 -> mask 0o777
-    assert_eq!(parse_mode_mask(b"go-rx", 0o000), Some(0o055)); // perm 0o777 - go-rx (0o055) = 0o722 -> mask 0o055
+    // perm 0o777 - u-w (0o200) = 0o577 -> mask 0o200
+    assert_eq!(parse_mode_mask(b"u-w", 0o000), Some(0o200));
+    // perm 0o777 - 0o777 = 0o000 -> mask 0o777
+    assert_eq!(parse_mode_mask(b"a-rwx", 0o000), Some(0o777));
+    // perm 0o777 - go-rx (0o055) = 0o722 -> mask 0o055
+    assert_eq!(parse_mode_mask(b"go-rx", 0o000), Some(0o055));
 
     // Implicit 'all' who
     assert_eq!(parse_mode_mask(b"+w", 0o022), Some(0o000));
@@ -134,53 +154,59 @@ fn test_split_ifs_read() {
     let default_ifs = BStr::new(b" \t\n");
 
     // Default IFS, single variable (gets entire line, stripped leading/trailing IFS whitespace)
-    assert_eq!(split_ifs_read(b"hello world", default_ifs, 1), vec![BString::from("hello world")]);
     assert_eq!(
-        split_ifs_read(b"   hello   world   ", default_ifs, 1),
+        split_ifs_read_bytes(b"hello world", default_ifs, 1),
+        vec![BString::from("hello world")]
+    );
+    assert_eq!(
+        split_ifs_read_bytes(b"   hello   world   ", default_ifs, 1),
         vec![BString::from("hello   world")]
     );
 
     // Default IFS, multiple variables
     assert_eq!(
-        split_ifs_read(b"foo bar baz", default_ifs, 3),
+        split_ifs_read_bytes(b"foo bar baz", default_ifs, 3),
         vec![BString::from("foo"), BString::from("bar"), BString::from("baz")]
     );
     assert_eq!(
-        split_ifs_read(b"foo   bar   baz", default_ifs, 3),
+        split_ifs_read_bytes(b"foo   bar   baz", default_ifs, 3),
         vec![BString::from("foo"), BString::from("bar"), BString::from("baz")]
     );
 
     // More variables than input fields
     assert_eq!(
-        split_ifs_read(b"foo bar", default_ifs, 3),
+        split_ifs_read_bytes(b"foo bar", default_ifs, 3),
         vec![BString::from("foo"), BString::from("bar"), BString::from("")]
     );
 
     // Fewer variables than input fields (last variable receives remaining line)
     assert_eq!(
-        split_ifs_read(b"foo bar baz qux", default_ifs, 2),
+        split_ifs_read_bytes(b"foo bar baz qux", default_ifs, 2),
         vec![BString::from("foo"), BString::from("bar baz qux")]
     );
 
     // Non-whitespace IFS (e.g. colon delimiter)
     let colon_ifs = BStr::new(b":");
     assert_eq!(
-        split_ifs_read(b"foo:bar:baz", colon_ifs, 3),
+        split_ifs_read_bytes(b"foo:bar:baz", colon_ifs, 3),
         vec![BString::from("foo"), BString::from("bar"), BString::from("baz")]
     );
     assert_eq!(
-        split_ifs_read(b"foo::baz", colon_ifs, 3),
+        split_ifs_read_bytes(b"foo::baz", colon_ifs, 3),
         vec![BString::from("foo"), BString::from(""), BString::from("baz")]
     );
 
     // Empty input
-    assert_eq!(split_ifs_read(b"", default_ifs, 2), vec![BString::from(""), BString::from("")]);
+    assert_eq!(
+        split_ifs_read_bytes(b"", default_ifs, 2),
+        vec![BString::from(""), BString::from("")]
+    );
 }
 
 #[test]
 fn test_split_ifs_read_zero_vars() {
     let default_ifs = BStr::new(b" \t\n");
-    assert_eq!(split_ifs_read(b"foo bar", default_ifs, 0), Vec::<BString>::new());
+    assert_eq!(split_ifs_read_bytes(b"foo bar", default_ifs, 0), Vec::<BString>::new());
 }
 
 #[test]
@@ -188,17 +214,17 @@ fn test_split_ifs_read_mixed_delimiters() {
     let space_colon_ifs = BStr::new(b" :");
     // Space before colon and space after colon
     assert_eq!(
-        split_ifs_read(b"foo : bar", space_colon_ifs, 2),
+        split_ifs_read_bytes(b"foo : bar", space_colon_ifs, 2),
         vec![BString::from("foo"), BString::from("bar")]
     );
     // Space before colon, no space after
     assert_eq!(
-        split_ifs_read(b"foo :bar", space_colon_ifs, 2),
+        split_ifs_read_bytes(b"foo :bar", space_colon_ifs, 2),
         vec![BString::from("foo"), BString::from("bar")]
     );
     // Colon before space
     assert_eq!(
-        split_ifs_read(b"foo: bar", space_colon_ifs, 2),
+        split_ifs_read_bytes(b"foo: bar", space_colon_ifs, 2),
         vec![BString::from("foo"), BString::from("bar")]
     );
 }
@@ -207,7 +233,7 @@ fn test_split_ifs_read_mixed_delimiters() {
 fn test_split_ifs_read_no_delimiters_remaining() {
     let default_ifs = BStr::new(b" \t\n");
     assert_eq!(
-        split_ifs_read(b"foo", default_ifs, 3),
+        split_ifs_read_bytes(b"foo", default_ifs, 3),
         vec![BString::from("foo"), BString::from(""), BString::from("")]
     );
 }
@@ -217,23 +243,47 @@ fn test_split_ifs_read_trailing_non_whitespace_delimiter() {
     let colon_ifs = BStr::new(b":");
     // Single trailing non-whitespace delimiter (should pop trailing delimiter)
     assert_eq!(
-        split_ifs_read(b"foo:bar:", colon_ifs, 2),
+        split_ifs_read_bytes(b"foo:bar:", colon_ifs, 2),
         vec![BString::from("foo"), BString::from("bar")]
     );
     // Multiple non-whitespace delimiters in last field (should retain trailing delimiter)
     assert_eq!(
-        split_ifs_read(b"foo:bar:baz:", colon_ifs, 2),
+        split_ifs_read_bytes(b"foo:bar:baz:", colon_ifs, 2),
         vec![BString::from("foo"), BString::from("bar:baz:")]
     );
     // Single variable with trailing delimiter
-    assert_eq!(split_ifs_read(b"foo:", colon_ifs, 1), vec![BString::from("foo")]);
+    assert_eq!(split_ifs_read_bytes(b"foo:", colon_ifs, 1), vec![BString::from("foo")]);
 }
 
 #[test]
 fn test_split_ifs_read_tab_and_newline() {
     let tab_newline_ifs = BStr::new(b" \t\n");
     assert_eq!(
-        split_ifs_read(b"\t\n foo \t bar \n\t", tab_newline_ifs, 2),
+        split_ifs_read_bytes(b"\t\n foo \t bar \n\t", tab_newline_ifs, 2),
         vec![BString::from("foo"), BString::from("bar")]
+    );
+}
+
+#[test]
+fn test_split_ifs_read_escaped() {
+    let default_ifs = BStr::new(b" \t\n");
+
+    // Escaped space in "foo bar" should not be treated as IFS delimiter
+    let chars = vec![
+        LineChar::unescaped(b'f'),
+        LineChar::unescaped(b'o'),
+        LineChar::unescaped(b'o'),
+        LineChar { byte: b' ', escaped: true },
+        LineChar::unescaped(b'b'),
+        LineChar::unescaped(b'a'),
+        LineChar::unescaped(b'r'),
+        LineChar::unescaped(b' '),
+        LineChar::unescaped(b'b'),
+        LineChar::unescaped(b'a'),
+        LineChar::unescaped(b'z'),
+    ];
+    assert_eq!(
+        split_ifs_read(&chars, default_ifs, 2),
+        vec![BString::from("foo bar"), BString::from("baz")]
     );
 }

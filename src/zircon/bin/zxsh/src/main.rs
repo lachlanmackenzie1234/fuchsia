@@ -9,6 +9,7 @@ mod errors;
 mod eval;
 mod fd;
 mod parser;
+mod path;
 mod process;
 mod relative;
 mod repl;

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::io::{Read, Write};
+
 use crate::eval::{
     ClosedReader, ClosedWriter, EXIT_FAILURE, EXIT_SUCCESS, EvalOutcome, ExecutionContext,
     ShellState, VarName,
@@ -12,14 +14,14 @@ pub mod essential;
 
 #[derive(Clone, Copy)]
 enum BuiltinType {
-    Dot,
-    Colon,
     Alias,
     Break,
     Cd,
     Chdir,
+    Colon,
     Command,
     Continue,
+    Dot,
     Eval,
     Exec,
     Exit,
@@ -103,12 +105,12 @@ pub fn is_builtin(name: impl VarName) -> bool {
         .is_ok()
 }
 
-use std::io::{Read, Write};
-
-fn with_io_streams<R>(
+fn with_io(
     ctx: &mut ExecutionContext,
-    f: impl FnOnce(&mut dyn Read, &mut dyn Write, &mut dyn Write) -> R,
-) -> R {
+    args: &[BString],
+    state: &mut ShellState,
+    f: impl FnOnce(&[BString], &mut ShellState, &mut dyn Read, &mut dyn Write, &mut dyn Write) -> i32,
+) -> Result<EvalOutcome, String> {
     let mut default_in = ClosedReader;
     let mut default_out = ClosedWriter;
     let mut default_err = ClosedWriter;
@@ -128,16 +130,7 @@ fn with_io_streams<R>(
         Some(f) => f,
         None => &mut default_err,
     };
-    f(in_file, out_file, err_file)
-}
-
-fn with_io(
-    ctx: &mut ExecutionContext,
-    args: &[BString],
-    state: &mut ShellState,
-    f: impl FnOnce(&[BString], &mut ShellState, &mut dyn Read, &mut dyn Write, &mut dyn Write) -> i32,
-) -> Result<EvalOutcome, String> {
-    with_io_streams(ctx, |r, w, e| Ok(EvalOutcome::Code(f(args, state, r, w, e))))
+    Ok(EvalOutcome::Code(f(args, state, in_file, out_file, err_file)))
 }
 
 /// Executes an internal shell builtin command with the provided argument list and execution
@@ -154,24 +147,24 @@ pub fn run_builtin(
         .map_err(|_| format!("builtin not found: {}", name))?;
 
     match BUILTINS[idx].func {
+        BuiltinType::Alias => with_io(ctx, args, state, essential::builtin_alias),
+        BuiltinType::Break => essential::builtin_break(args, state, ctx),
+        BuiltinType::Cd | BuiltinType::Chdir => with_io(ctx, args, state, essential::builtin_cd),
+        BuiltinType::Colon | BuiltinType::True => Ok(EvalOutcome::Code(EXIT_SUCCESS)),
+        BuiltinType::Command => essential::builtin_command(args, state, ctx),
+        BuiltinType::Continue => essential::builtin_continue(args, state, ctx),
         BuiltinType::Dot => essential::builtin_dot(args, state, ctx),
         BuiltinType::Eval => essential::builtin_eval(args, state, ctx),
         BuiltinType::Exec => essential::builtin_exec(args, state, ctx),
-        BuiltinType::Command => essential::builtin_command(args, state, ctx),
-        BuiltinType::Colon | BuiltinType::True => Ok(EvalOutcome::Code(EXIT_SUCCESS)),
-        BuiltinType::False => Ok(EvalOutcome::Code(EXIT_FAILURE)),
-        BuiltinType::Break => essential::builtin_break(args, state, ctx),
-        BuiltinType::Continue => essential::builtin_continue(args, state, ctx),
-        BuiltinType::Return => essential::builtin_return(args, state, ctx),
         BuiltinType::Exit => essential::builtin_exit(args, state, ctx),
-        BuiltinType::Alias => with_io(ctx, args, state, essential::builtin_alias),
-        BuiltinType::Cd | BuiltinType::Chdir => with_io(ctx, args, state, essential::builtin_cd),
         BuiltinType::Export => with_io(ctx, args, state, essential::builtin_export),
+        BuiltinType::False => Ok(EvalOutcome::Code(EXIT_FAILURE)),
         BuiltinType::Getopts => with_io(ctx, args, state, essential::builtin_getopts),
         BuiltinType::Hash => with_io(ctx, args, state, essential::builtin_hash),
         BuiltinType::Local => with_io(ctx, args, state, essential::builtin_local),
         BuiltinType::Read => with_io(ctx, args, state, essential::builtin_read),
         BuiltinType::Readonly => with_io(ctx, args, state, essential::builtin_readonly),
+        BuiltinType::Return => essential::builtin_return(args, state, ctx),
         BuiltinType::Set => with_io(ctx, args, state, essential::builtin_set),
         BuiltinType::Shift => with_io(ctx, args, state, essential::builtin_shift),
         BuiltinType::Trap => with_io(ctx, args, state, essential::builtin_trap),
@@ -191,13 +184,29 @@ mod tests {
     #[test]
     fn test_builtins_sorted() {
         for i in 1..BUILTINS.len() {
+            let name1 = &BUILTINS[i - 1].name[..BUILTINS[i - 1].len as usize];
+            let name2 = &BUILTINS[i].name[..BUILTINS[i].len as usize];
             assert!(
-                &BUILTINS[i - 1].name[..BUILTINS[i - 1].len as usize]
-                    < &BUILTINS[i].name[..BUILTINS[i].len as usize],
+                name1 < name2,
                 "BUILTINS table is not sorted: {:?} vs {:?}",
-                std::str::from_utf8(&BUILTINS[i - 1].name[..BUILTINS[i - 1].len as usize]),
-                std::str::from_utf8(&BUILTINS[i].name[..BUILTINS[i].len as usize])
+                std::str::from_utf8(name1),
+                std::str::from_utf8(name2)
             );
         }
+    }
+
+    #[test]
+    fn test_make_entry_runtime() {
+        let name_bytes = vec![b'f', b'o', b'o'];
+        let entry = make_entry(&name_bytes, BuiltinType::Alias);
+        assert_eq!(entry.len, 3);
+        assert_eq!(&entry.name[..3], b"foo");
+    }
+
+    #[test]
+    #[should_panic(expected = "Builtin name too long")]
+    fn test_make_entry_too_long_panics() {
+        let long_name = vec![b'a'; 20];
+        let _ = make_entry(&long_name, BuiltinType::Alias);
     }
 }

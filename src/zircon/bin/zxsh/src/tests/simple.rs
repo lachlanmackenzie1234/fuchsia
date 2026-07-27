@@ -148,7 +148,7 @@ fn test_eval_simple_readonly_error() {
 
     let res = eval_simple(&mut builder, cmd_ptr, &mut state, &mut ctx);
     assert!(res.is_err());
-    assert!(res.unwrap_err().contains("readonly variable"));
+    assert!(res.unwrap_err().contains("is read only"));
 }
 
 #[test]

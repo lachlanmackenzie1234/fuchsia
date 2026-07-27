@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::serialization::{Deserialize, Serialize};
+use crate::sort::quick_sort;
 
 /// A flat map implemented using a vector of key-value pairs.
 ///
@@ -78,6 +79,7 @@ impl<K, V> FlatMap<K, V> {
     }
 
     /// Returns `true` if the map contains no elements.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -87,13 +89,16 @@ impl<K, V> FlatMap<K, V> {
         self.0.clear();
     }
 
-    /// Returns the entries sorted by key.
+    /// Returns a vector of references to key-value pairs sorted by key.
     pub fn sorted_entries(&self) -> Vec<(&K, &V)>
     where
         K: Ord,
     {
-        let mut entries: Vec<(&K, &V)> = self.0.iter().map(|(k, v)| (k, v)).collect();
-        entries.sort_by(|a, b| a.0.cmp(b.0));
+        let mut entries = Vec::with_capacity(self.0.len());
+        for (k, v) in &self.0 {
+            entries.push((k, v));
+        }
+        quick_sort(&mut entries, &|a, b| a.0.cmp(b.0));
         entries
     }
 }
@@ -181,9 +186,12 @@ impl<T> FlatSet<T> {
     where
         T: Ord,
     {
-        let mut items: Vec<&T> = self.0.iter().collect();
-        items.sort();
-        items
+        let mut elements = Vec::with_capacity(self.0.len());
+        for item in &self.0 {
+            elements.push(item);
+        }
+        quick_sort(&mut elements, &|a, b| a.cmp(b));
+        elements
     }
 }
 

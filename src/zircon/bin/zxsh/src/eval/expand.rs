@@ -376,7 +376,7 @@ pub fn expand_var_with_modifiers(
                         let expanded_word = parse_and_expand_modifier(word, state, ctx)?;
                         if state.is_readonly(var_name) {
                             return Err(format!(
-                                "{}: readonly variable",
+                                "{}: is read only",
                                 String::from_utf8_lossy(var_name.as_bytes())
                             ));
                         }

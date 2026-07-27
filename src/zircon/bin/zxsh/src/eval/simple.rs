@@ -53,7 +53,7 @@ pub fn apply_assignments<'a>(
         let expanded_val =
             expand_assignment_value(val_start, remaining, &mut *guard.state, ctx, builder)?;
         if guard.state.is_readonly(name) {
-            return Err(format!("{}: readonly variable", name));
+            return Err(format!("{}: is read only", name));
         }
         let old_val = guard.state.get_var(name);
         guard.backups.push((BString::from(name), old_val));
@@ -116,9 +116,11 @@ fn eval_function_call(
     let prev_args = std::mem::replace(&mut guard.state.args, args.to_vec());
     guard.state.frames.push(Frame { local_vars: FlatMap::new(), args: guard.state.args.clone() });
     let prev_script_name = std::mem::replace(&mut guard.state.script_name, cmd_name.clone());
+    let prev_loop_nest = std::mem::replace(&mut guard.state.loop_nest, 0);
 
     let res = eval_command(&mut func_builder, root_cmd_ptr, &mut *guard.state, ctx);
 
+    guard.state.loop_nest = prev_loop_nest;
     guard.state.frames.pop();
     guard.state.args = prev_args;
     guard.state.script_name = prev_script_name;
@@ -151,7 +153,7 @@ pub fn eval_simple(
             let (name, val_start, remaining) = split_assignment_flat(assoc, builder);
             let expanded_val = expand_assignment_value(val_start, remaining, state, ctx, builder)?;
             if state.is_readonly(name) {
-                return Err(format!("{}: readonly variable", name));
+                return Err(format!("{}: is read only", name));
             }
             state.set_var(name, &expanded_val);
         }

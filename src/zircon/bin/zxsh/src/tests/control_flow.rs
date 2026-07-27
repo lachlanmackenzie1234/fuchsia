@@ -149,7 +149,7 @@ fn test_control_flow_for_loop() {
     state.make_readonly("RO");
     let err = try_eval_str("for RO in a b; do :; done", &mut state, &mut ctx);
     assert!(err.is_err());
-    assert!(err.unwrap_err().contains("readonly variable"));
+    assert!(err.unwrap_err().contains("is read only"));
 }
 
 #[test]

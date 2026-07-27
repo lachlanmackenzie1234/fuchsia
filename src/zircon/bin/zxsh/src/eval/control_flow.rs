@@ -9,7 +9,7 @@ use crate::eval::expand::{
 };
 use crate::eval::glob::match_segment_glob;
 use crate::eval::spawn::spawn_pipeline_stage;
-use crate::eval::state::{BgJob, IgnoreErrGuard, ShellState};
+use crate::eval::state::{BgJob, IgnoreErrGuard, LoopNestGuard, ShellState};
 use crate::eval::{EvalOutcome, eval_command};
 use crate::parser::ast::{ASTBuilder, Command};
 use crate::relative;
@@ -78,6 +78,8 @@ pub fn eval_loop(
     ctx: &mut ExecutionContext,
     run_on_success: bool,
 ) -> Result<EvalOutcome, String> {
+    let mut loop_guard = LoopNestGuard::new(state);
+    let state = &mut *loop_guard;
     let mut last_code = 0;
     loop {
         if let Some(code) = ctx.signal_state.pending_exit_code() {
@@ -117,6 +119,8 @@ pub fn eval_for(
     state: &mut ShellState,
     ctx: &mut ExecutionContext,
 ) -> Result<EvalOutcome, String> {
+    let mut loop_guard = LoopNestGuard::new(state);
+    let state = &mut *loop_guard;
     let mut last_code = 0;
     let mut expanded_items = Vec::new();
     let items = builder.get_ref(cmd_ptr).for_items;
@@ -132,7 +136,7 @@ pub fn eval_for(
             return Ok(EvalOutcome::Code(code));
         }
         if state.is_readonly(&var_name) {
-            return Err(format!("{}: readonly variable", var_name));
+            return Err(format!("{}: is read only", var_name));
         }
         state.set_var(&var_name, &item);
         let then_ptr = builder.get_ref(cmd_ptr).then_branch;
@@ -254,7 +258,8 @@ pub fn eval_background(
         let raw_koid = koid.raw_koid();
         state.last_bg_pid = Some(raw_koid);
     }
-    state.bg_jobs.push(BgJob { process: proc });
+    let cmd = crate::eval::format::command_to_bstring(builder.get_ref(left_ptr), builder);
+    state.bg_jobs.push(BgJob { process: proc, cmd });
     Ok(EvalOutcome::Code(0))
 }
 

@@ -2,17 +2,52 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bstr::{BStr, BString, ByteSlice};
+use bstr::{BStr, BString, ByteSlice, ByteVec};
 use std::ffi::{CStr, CString, NulError};
+use std::path::{Path, PathBuf};
 
-/// Parse an integer from a byte slice, ignoring leading and trailing ASCII whitespace.
-/// Supports optional leading '+' or '-'.
+/// Converts a `PathBuf` into a `BString` without allocating a new buffer if possible.
+pub fn path_buf_to_bstring(path: PathBuf) -> Option<BString> {
+    Vec::from_path_buf(path).ok().map(BString::from)
+}
+
+/// Converts a `&Path` into a `BString`.
+#[allow(dead_code)]
+pub fn path_to_bstring(path: &Path) -> Option<BString> {
+    <[u8]>::from_path(path).map(BString::from)
+}
+
+/// Parse an integer of generic type `T` from a byte slice, ignoring leading and trailing ASCII
+/// whitespace. Supports optional leading '+' or '-'.
+///
+/// **When to use**: Use [`parse_int`] when parsing arbitrary signed or unsigned integer types
+/// (including negative numbers or types like `usize`/`u64`/`i32`). For validating shell
+/// numerical arguments where negative values or overflows above `i32::MAX` are forbidden, use
+/// [`parse_non_negative_int`].
 pub fn parse_int<T: std::str::FromStr>(bytes: &[u8]) -> Option<T> {
     let trimmed = bytes.trim_ascii();
     if trimmed.is_empty() {
         return None;
     }
     std::str::from_utf8(trimmed).ok()?.parse::<T>().ok()
+}
+
+/// Parse a non-negative 32-bit signed integer (in `0..=i32::MAX`) from a byte slice, ignoring
+/// leading and trailing ASCII whitespace.
+///
+/// **When to use**: Use [`parse_non_negative_int`] when parsing and validating non-negative
+/// numerical shell builtin arguments (such as for `exit`, `return`, `shift`, or `trap`).
+/// Unlike [`parse_int`], this function rejects negative numbers, overflow values greater than
+/// `i32::MAX`, empty inputs, or non-numeric strings.
+#[allow(dead_code)]
+pub fn parse_non_negative_int(bytes: &[u8]) -> Option<i32> {
+    let trimmed = bytes.trim_ascii();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let str_val = std::str::from_utf8(trimmed).ok()?;
+    let val = str_val.parse::<i64>().ok()?;
+    if (0..=i32::MAX as i64).contains(&val) { Some(val as i32) } else { None }
 }
 
 /// Parse a file mode mask (in octal or symbolic format) from a byte slice.
@@ -24,73 +59,91 @@ pub fn parse_mode_mask(bytes: &[u8], current_umask: u32) -> Option<u32> {
         return None;
     }
 
-    if trimmed.iter().all(|c| c.is_ascii_digit()) {
-        let s = std::str::from_utf8(trimmed).ok()?;
-        let val = u32::from_str_radix(s, 8).ok()?;
-        if val > 0o777 {
+    if trimmed[0].is_ascii_digit() {
+        let mut new_mask: u32 = 0;
+        for &b in trimmed {
+            if !(b'0'..=b'7').contains(&b) {
+                return None;
+            }
+            new_mask = (new_mask << 3) + u32::from(b - b'0');
+        }
+        if new_mask > 0o777 {
             return None;
         }
-        return Some(val);
+        return Some(new_mask);
     }
 
-    let str_val = std::str::from_utf8(trimmed).ok()?;
-    let mut perm = 0o777 & !current_umask;
-    for clause in str_val.split(',') {
-        let mut char_indices = clause.char_indices();
-        let mut op_char = None;
-        let mut op_byte_idx = None;
-        while let Some((idx, ch)) = char_indices.next() {
-            if ch == '+' || ch == '-' || ch == '=' {
-                op_char = Some(ch);
-                op_byte_idx = Some(idx);
+    let mask = 0o777 & !current_umask;
+    let mut new_mask = mask;
+    let mut idx = 0;
+    let mut positions = 0u32;
+
+    while idx < trimmed.len() {
+        while idx < trimmed.len() && matches!(trimmed[idx], b'a' | b'u' | b'g' | b'o') {
+            match trimmed[idx] {
+                b'a' => positions |= 0o111,
+                b'u' => positions |= 0o100,
+                b'g' => positions |= 0o010,
+                b'o' => positions |= 0o001,
+                _ => {}
+            }
+            idx += 1;
+        }
+        let pos = if positions == 0 { 0o111 } else { positions };
+        if idx >= trimmed.len() {
+            break;
+        }
+        let op = trimmed[idx];
+        if op != b'=' && op != b'+' && op != b'-' {
+            break;
+        }
+        idx += 1;
+
+        let mut new_val = 0u32;
+        while idx < trimmed.len()
+            && matches!(trimmed[idx], b'r' | b'w' | b'x' | b'u' | b'g' | b'o' | b'X' | b's')
+        {
+            match trimmed[idx] {
+                b'r' => new_val |= 0o4,
+                b'w' => new_val |= 0o2,
+                b'x' => new_val |= 0o1,
+                b'u' => new_val |= (mask >> 6) & 7,
+                b'g' => new_val |= (mask >> 3) & 7,
+                b'o' => new_val |= mask & 7,
+                b'X' => {
+                    if (mask & 0o111) != 0 {
+                        new_val |= 0o1;
+                    }
+                }
+                b's' => {}
+                _ => {}
+            }
+            idx += 1;
+        }
+
+        new_val = (new_val & 0o7) * pos;
+        match op {
+            b'-' => new_mask &= !new_val,
+            b'=' => new_mask = new_val | (new_mask & !(pos * 0o7)),
+            b'+' => new_mask |= new_val,
+            _ => unreachable!(),
+        }
+
+        if idx < trimmed.len() {
+            if trimmed[idx] == b',' {
+                positions = 0;
+                idx += 1;
+            } else if !matches!(trimmed[idx], b'=' | b'+' | b'-') {
                 break;
             }
         }
-        let (op, op_idx) = match (op_char, op_byte_idx) {
-            (Some(op_ch), Some(idx)) => (op_ch, idx),
-            _ => return None,
-        };
-        let who_str = &clause[..op_idx];
-        let perm_str = &clause[op_idx + op.len_utf8()..];
-
-        let who_mask = if who_str.is_empty() {
-            0o777
-        } else {
-            let mut who_bits = 0;
-            for ch in who_str.chars() {
-                match ch {
-                    'u' => who_bits |= 0o700,
-                    'g' => who_bits |= 0o070,
-                    'o' => who_bits |= 0o007,
-                    'a' => who_bits |= 0o777,
-                    _ => return None,
-                }
-            }
-            who_bits
-        };
-
-        let mut p_bits = 0;
-        for ch in perm_str.chars() {
-            match ch {
-                'r' => p_bits |= (0o400 | 0o040 | 0o004) & who_mask,
-                'w' => p_bits |= (0o200 | 0o020 | 0o002) & who_mask,
-                'x' => p_bits |= (0o100 | 0o010 | 0o001) & who_mask,
-                _ => return None,
-            }
-        }
-
-        match op {
-            '+' => perm |= p_bits,
-            '-' => perm &= !p_bits,
-            '=' => {
-                perm &= !who_mask;
-                perm |= p_bits;
-            }
-            _ => unreachable!(),
-        }
     }
 
-    Some(0o777 & !perm)
+    if idx != trimmed.len() {
+        return None;
+    }
+
+    Some(0o777 & !new_mask)
 }
 
 /// Converts a byte slice (e.g., `&BStr` or `&BString`) into a `CString` for FFI calls.
@@ -108,27 +161,92 @@ pub fn cstrings_to_c_strs(cstrings: &[CString]) -> Vec<&CStr> {
     cstrings.iter().map(|s| s.as_c_str()).collect()
 }
 
+/// Returns `true` if `name` is a valid shell variable name (a letter or underscore
+/// followed by zero or more letters, underscores, and digits).
+#[allow(dead_code)]
+pub fn is_valid_var_name(name: &BStr) -> bool {
+    let bytes = name.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let first = bytes[0];
+    if !(first.is_ascii_alphabetic() || first == b'_') {
+        return false;
+    }
+    bytes[1..].iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
 /// Splits a byte slice around the first `=` character into `(key, value)`.
 /// Returns `Some((&BStr, &BStr))` if `=` is present, or `None` if there is no `=`.
 pub fn split_key_value(bytes: &[u8]) -> Option<(&BStr, &BStr)> {
     bytes.find_byte(b'=').map(|idx| (BStr::new(&bytes[..idx]), BStr::new(&bytes[idx + 1..])))
 }
 
-/// Splits input bytes according to IFS rules for the shell `read` command into `num_vars` fields.
-pub fn split_ifs_read(input: &[u8], ifs: &BStr, num_vars: usize) -> Vec<BString> {
+/// Formats a byte string into a single-quoted string suitable for shell input,
+/// matching dash's `single_quote` function semantics.
+#[allow(dead_code)]
+pub fn single_quote(s: &BStr) -> BString {
+    let mut result = Vec::new();
+    let bytes = s.as_bytes();
+    let mut s_slice = bytes;
+    loop {
+        let len = s_slice.iter().position(|&b| b == b'\'').unwrap_or(s_slice.len());
+        result.push(b'\'');
+        result.extend_from_slice(&s_slice[..len]);
+        result.push(b'\'');
+        s_slice = &s_slice[len..];
+
+        let quote_len = s_slice.iter().take_while(|&&b| b == b'\'').count();
+        if quote_len == 0 {
+            break;
+        }
+        result.push(b'"');
+        result.extend_from_slice(&s_slice[..quote_len]);
+        result.push(b'"');
+        s_slice = &s_slice[quote_len..];
+
+        if s_slice.is_empty() {
+            break;
+        }
+    }
+    BString::from(result)
+}
+
+/// Represents a byte in an input line read by `read`, tracking whether it was escaped by a
+/// backslash.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LineChar {
+    pub byte: u8,
+    pub escaped: bool,
+}
+
+impl LineChar {
+    #[cfg(test)]
+    pub fn unescaped(byte: u8) -> Self {
+        Self { byte, escaped: false }
+    }
+}
+
+/// Splits input `LineChar`s according to IFS rules for the shell `read` command into
+/// `num_vars` fields.
+pub fn split_ifs_read(input: &[LineChar], ifs: &BStr, num_vars: usize) -> Vec<BString> {
     if num_vars == 0 {
         return Vec::new();
     }
 
-    let is_ifs_whitespace =
-        |c: u8| (c == b' ' || c == b'\t' || c == b'\n') && ifs.as_bytes().contains(&c);
-    let is_ifs_non_whitespace = |c: u8| !is_ifs_whitespace(c) && ifs.as_bytes().contains(&c);
+    let is_ifs_whitespace = |ch: &LineChar| {
+        !ch.escaped
+            && (ch.byte == b' ' || ch.byte == b'\t' || ch.byte == b'\n')
+            && ifs.as_bytes().contains(&ch.byte)
+    };
+    let is_ifs_non_whitespace =
+        |ch: &LineChar| !ch.escaped && !is_ifs_whitespace(ch) && ifs.as_bytes().contains(&ch.byte);
 
     let mut fields = Vec::new();
     let mut start = 0;
 
     // Skip leading IFS whitespace
-    while start < input.len() && is_ifs_whitespace(input[start]) {
+    while start < input.len() && is_ifs_whitespace(&input[start]) {
         start += 1;
     }
 
@@ -142,27 +260,27 @@ pub fn split_ifs_read(input: &[u8], ifs: &BStr, num_vars: usize) -> Vec<BString>
         let mut delim_end = None;
 
         while i < input.len() {
-            let c = input[i];
-            if is_ifs_whitespace(c) {
+            let ch = &input[i];
+            if is_ifs_whitespace(ch) {
                 if delim_start.is_none() {
                     delim_start = Some(i);
                 }
                 i += 1;
-                while i < input.len() && is_ifs_whitespace(input[i]) {
+                while i < input.len() && is_ifs_whitespace(&input[i]) {
                     i += 1;
                 }
-                if i < input.len() && is_ifs_non_whitespace(input[i]) {
+                if i < input.len() && is_ifs_non_whitespace(&input[i]) {
                     i += 1;
-                    while i < input.len() && is_ifs_whitespace(input[i]) {
+                    while i < input.len() && is_ifs_whitespace(&input[i]) {
                         i += 1;
                     }
                 }
                 delim_end = Some(i);
                 break;
-            } else if is_ifs_non_whitespace(c) {
+            } else if is_ifs_non_whitespace(ch) {
                 delim_start = Some(i);
                 i += 1;
-                while i < input.len() && is_ifs_whitespace(input[i]) {
+                while i < input.len() && is_ifs_whitespace(&input[i]) {
                     i += 1;
                 }
                 delim_end = Some(i);
@@ -173,30 +291,31 @@ pub fn split_ifs_read(input: &[u8], ifs: &BStr, num_vars: usize) -> Vec<BString>
         }
 
         if let (Some(ds), Some(de)) = (delim_start, delim_end) {
-            let field = BString::from(&input[start..ds]);
-            fields.push(field);
+            let field_bytes: Vec<u8> = input[start..ds].iter().map(|c| c.byte).collect();
+            fields.push(BString::from(field_bytes));
             start = de;
         } else {
-            let field = BString::from(&input[start..]);
-            fields.push(field);
+            let field_bytes: Vec<u8> = input[start..].iter().map(|c| c.byte).collect();
+            fields.push(BString::from(field_bytes));
             start = input.len();
         }
     }
 
     if start < input.len() {
         let mut end = input.len();
-        while end > start && is_ifs_whitespace(input[end - 1]) {
+        while end > start && is_ifs_whitespace(&input[end - 1]) {
             end -= 1;
         }
-        let mut last_field = input[start..end].to_vec();
+        let last_slice = &input[start..end];
         let ifs_non_whitespace_count =
-            last_field.iter().filter(|&&c| is_ifs_non_whitespace(c)).count();
+            last_slice.iter().filter(|c| is_ifs_non_whitespace(c)).count();
+        let mut last_bytes: Vec<u8> = last_slice.iter().map(|c| c.byte).collect();
         if ifs_non_whitespace_count == 1
-            && last_field.last().map_or(false, |&c| is_ifs_non_whitespace(c))
+            && last_slice.last().map_or(false, |c| is_ifs_non_whitespace(c))
         {
-            last_field.pop();
+            last_bytes.pop();
         }
-        fields.push(BString::from(last_field));
+        fields.push(BString::from(last_bytes));
     }
 
     while fields.len() < num_vars {
@@ -204,4 +323,11 @@ pub fn split_ifs_read(input: &[u8], ifs: &BStr, num_vars: usize) -> Vec<BString>
     }
 
     fields
+}
+
+/// Splits input bytes according to IFS rules for the shell `read` command into `num_vars` fields.
+#[cfg(test)]
+pub fn split_ifs_read_bytes(input: &[u8], ifs: &BStr, num_vars: usize) -> Vec<BString> {
+    let line_chars: Vec<LineChar> = input.iter().map(|&b| LineChar::unescaped(b)).collect();
+    split_ifs_read(&line_chars, ifs, num_vars)
 }

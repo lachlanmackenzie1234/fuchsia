@@ -6,7 +6,7 @@ use super::EvalOutcome;
 use crate::args::Args;
 use crate::collections::{FlatMap, FlatSet};
 use crate::serialization::{BStrExt, Deserialize, Serialize};
-use crate::string::parse_int;
+use crate::string::{parse_int, path_buf_to_bstring};
 use bstr::{BStr, BString, ByteSlice};
 use std::ffi::{CString, NulError};
 use std::io::Write;
@@ -19,6 +19,9 @@ const DEFAULT_SHELL_NAME: &str = "zxsh";
 pub struct BgJob {
     /// Handle to the underlying Zircon process.
     pub process: zx::Process,
+    /// Formatted command string.
+    #[allow(dead_code)]
+    pub cmd: BString,
 }
 
 /// A RAII guard that temporarily modifies variable state and restores the original values on drop.
@@ -79,6 +82,38 @@ impl<'a> std::ops::DerefMut for IgnoreErrGuard<'a> {
     }
 }
 
+/// A RAII scope guard that increments `ShellState::loop_nest` on creation
+/// and decrements it when dropped.
+pub struct LoopNestGuard<'a> {
+    pub state: &'a mut ShellState,
+}
+
+impl<'a> LoopNestGuard<'a> {
+    pub fn new(state: &'a mut ShellState) -> Self {
+        state.loop_nest += 1;
+        Self { state }
+    }
+}
+
+impl Drop for LoopNestGuard<'_> {
+    fn drop(&mut self) {
+        self.state.loop_nest -= 1;
+    }
+}
+
+impl<'a> std::ops::Deref for LoopNestGuard<'a> {
+    type Target = ShellState;
+    fn deref(&self) -> &ShellState {
+        self.state
+    }
+}
+
+impl<'a> std::ops::DerefMut for LoopNestGuard<'a> {
+    fn deref_mut(&mut self) -> &mut ShellState {
+        self.state
+    }
+}
+
 /// Represents a variable call stack frame (e.g. inside a shell function invocation).
 #[derive(Clone)]
 pub struct Frame {
@@ -97,12 +132,52 @@ pub struct HashEntry {
     pub hits: u32,
 }
 
+/// Represents resource limits (soft and hard limit).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rlimit {
+    pub soft: u64,
+    pub hard: u64,
+}
+
+impl Serialize for Rlimit {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        self.soft.serialize_into(buf);
+        self.hard.serialize_into(buf);
+    }
+}
+
+impl Deserialize for Rlimit {
+    fn deserialize(bytes: &[u8], offset: &mut usize) -> Result<Self, String> {
+        let soft = u64::deserialize(bytes, offset)?;
+        let hard = u64::deserialize(bytes, offset)?;
+        Ok(Self { soft, hard })
+    }
+}
+
+/// Resource limit constant for CPU time (`ulimit -t`).
+pub const RLIMIT_CPU: i32 = 0;
 /// Resource limit constant for maximum file size (`ulimit -f`).
 pub const RLIMIT_FSIZE: i32 = 1;
-/// Resource limit constant for maximum open file descriptors (`ulimit -n`).
-pub const RLIMIT_NOFILE: i32 = 2;
+/// Resource limit constant for data segment size (`ulimit -d`).
+pub const RLIMIT_DATA: i32 = 2;
+/// Resource limit constant for stack size (`ulimit -s`).
+pub const RLIMIT_STACK: i32 = 3;
 /// Resource limit constant for maximum core dump size (`ulimit -c`).
-pub const RLIMIT_CORE: i32 = 3;
+pub const RLIMIT_CORE: i32 = 4;
+/// Resource limit constant for resident set size (`ulimit -m`).
+pub const RLIMIT_RSS: i32 = 5;
+/// Resource limit constant for maximum processes (`ulimit -p` / `ulimit -u`).
+pub const RLIMIT_NPROC: i32 = 6;
+/// Resource limit constant for maximum open file descriptors (`ulimit -n`).
+pub const RLIMIT_NOFILE: i32 = 7;
+/// Resource limit constant for locked memory (`ulimit -l`).
+pub const RLIMIT_MEMLOCK: i32 = 8;
+/// Resource limit constant for virtual memory (`ulimit -v`).
+pub const RLIMIT_AS: i32 = 9;
+/// Resource limit constant for file locks (`ulimit -w`).
+pub const RLIMIT_LOCKS: i32 = 10;
+/// Resource limit constant for realtime priority (`ulimit -r`).
+pub const RLIMIT_RTPRIO: i32 = 11;
 /// Represents an unlimited resource limit threshold.
 pub const RLIM_INFINITY: u64 = u64::MAX;
 
@@ -176,8 +251,8 @@ pub struct ShellState {
     readonly: FlatSet<BString>,
     /// Cache of resolved binary command paths (`command_name -> HashEntry`).
     command_cache: FlatMap<BString, HashEntry>,
-    /// Table of configured resource limits (`resource_id -> value`).
-    rlimits: FlatMap<i32, u64>,
+    /// Table of configured resource limits (`resource_id -> Rlimit`).
+    rlimits: FlatMap<i32, Rlimit>,
     /// The name of the script currently executing (`$0`).
     pub script_name: BString,
     /// Global positional parameters (`$1`, `$2`, etc.).
@@ -214,6 +289,8 @@ pub struct ShellState {
     pub last_bg_pid: Option<u64>,
     /// Sub-option character index within a clustered option argument for `getopts`.
     pub optopt_offset: usize,
+    /// Counter tracking loop nesting depth for `break` and `continue`.
+    pub loop_nest: u32,
 }
 
 impl ShellState {
@@ -331,6 +408,7 @@ impl Deserialize for ShellState {
             bg_jobs: Vec::new(),
             last_bg_pid: None,
             optopt_offset,
+            loop_nest: 0,
         };
         state.set_options_from_string(options_str.as_ref());
 
@@ -371,7 +449,7 @@ impl ShellState {
 
         let cwd = std::env::current_dir()
             .ok()
-            .and_then(|p| <[u8]>::from_path(&p).map(BString::from))
+            .and_then(path_buf_to_bstring)
             .unwrap_or_else(|| BString::from("/"));
 
         if !vars.contains_key(BStr::new(b"PWD")) {
@@ -391,9 +469,18 @@ impl ShellState {
             readonly: FlatSet::new(),
             command_cache: FlatMap::new(),
             rlimits: FlatMap::from(vec![
-                (RLIMIT_FSIZE, RLIM_INFINITY),
-                (RLIMIT_NOFILE, 1024),
-                (RLIMIT_CORE, 0),
+                (RLIMIT_CPU, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_FSIZE, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_DATA, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_STACK, Rlimit { soft: 8192 * 1024, hard: RLIM_INFINITY }),
+                (RLIMIT_CORE, Rlimit { soft: 0, hard: RLIM_INFINITY }),
+                (RLIMIT_RSS, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_MEMLOCK, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_NPROC, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_NOFILE, Rlimit { soft: 1024, hard: 1024 }),
+                (RLIMIT_AS, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_LOCKS, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),
+                (RLIMIT_RTPRIO, Rlimit { soft: 0, hard: 0 }),
             ]),
             script_name,
             args: args.positional_args,
@@ -413,6 +500,7 @@ impl ShellState {
             bg_jobs: Vec::new(),
             last_bg_pid: None,
             optopt_offset: 1,
+            loop_nest: 0,
         };
 
         for opt in &args.options_to_set {
@@ -576,7 +664,6 @@ impl ShellState {
     fn prepare_var_mutation(&mut self, name: &BStr) -> bool {
         assert_valid_name(name);
         if self.is_readonly(name) {
-            let _ = writeln!(std::io::stderr(), "zxsh: {}: readonly variable", name);
             return false;
         }
         if name == b"OPTIND" {
@@ -604,6 +691,14 @@ impl ShellState {
         if self.opt_allexport {
             self.export_var(name);
         }
+    }
+
+    /// Sets the value of a variable and marks it for export to child environment processes.
+    #[allow(dead_code)]
+    pub fn set_and_export_var(&mut self, name: impl VarName, val: impl VarName) {
+        let name = name.to_bstr();
+        self.set_var(name, val);
+        self.export_var(name);
     }
 
     /// Sets the special status variable `?` to the given numerical exit code.
@@ -673,7 +768,7 @@ impl ShellState {
             b"nounset" => self.opt_nounset = enable,
             b"interactive" => self.opt_interactive = enable,
             b"ignoreeof" => self.opt_ignoreeof = enable,
-            b"monitor" | b"notify" | b"nolog" | b"debug" | b"vi" | b"emacs" => {}
+            b"monitor" | b"notify" | b"nolog" | b"debug" | b"vi" | b"emacs" | b"stdin" => {}
             _ => return Err(format!("unknown option: {}", name)),
         }
         Ok(())
@@ -692,6 +787,7 @@ impl ShellState {
             b'v' => self.opt_verbose = enable,
             b'x' => self.opt_xtrace = enable,
             b'I' => self.opt_ignoreeof = enable,
+            b'm' | b'b' | b's' | b'V' | b'E' => {}
             _ => return Err(()),
         }
         Ok(())
@@ -738,13 +834,13 @@ impl ShellState {
     }
 
     /// Returns the configured threshold for the specified resource limit ID.
-    pub fn get_rlimit(&self, resource: i32) -> Option<u64> {
+    pub fn get_rlimit(&self, resource: i32) -> Option<Rlimit> {
         self.rlimits.get(&resource).copied()
     }
 
     /// Configures the threshold for the specified resource limit ID.
-    pub fn set_rlimit(&mut self, resource: i32, value: u64) {
-        self.rlimits.insert(resource, value);
+    pub fn set_rlimit(&mut self, resource: i32, limit: Rlimit) {
+        self.rlimits.insert(resource, limit);
     }
 
     /// Returns `true` if execution is currently inside a function call stack frame.
@@ -773,6 +869,12 @@ impl ShellState {
         ShellEnv::new(res)
     }
 
+    /// Returns a reference to the set of exported variable names.
+    #[allow(dead_code)]
+    pub fn exported(&self) -> &FlatSet<BString> {
+        &self.exported
+    }
+
     /// Returns a reference to the table of all global shell variables.
     pub fn all_vars(&self) -> &FlatMap<BString, BString> {
         &self.vars
@@ -781,6 +883,13 @@ impl ShellState {
     /// Parses and returns the current `$PATH` environment variable as a `ShellPath` wrapper.
     pub fn path(&self) -> ShellPath {
         self.get_var(b"PATH").map(ShellPath::new).unwrap_or_default()
+    }
+
+    /// Parses and returns the current `$CDPATH` environment variable as a `ShellPath` wrapper if
+    /// set and non-empty.
+    #[allow(dead_code)]
+    pub fn cdpath(&self) -> Option<ShellPath> {
+        self.get_var(b"CDPATH").filter(|s| !s.is_empty()).map(ShellPath::new)
     }
 }
 

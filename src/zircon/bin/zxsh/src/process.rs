@@ -5,18 +5,16 @@
 use crate::errors::zx_status_str;
 use crate::eval::ShellEnv;
 use crate::fd::Fd;
-use bstr::BString;
+use bstr::{BStr, BString, ByteSlice};
 use std::fs::File;
 use std::io::Read;
 use std::os::fd::AsFd;
 
 pub use crate::string::{bstr_to_cstring, bstrings_to_cstrings, cstrings_to_c_strs};
 
-/// Spawns a new OS process given command arguments, environment variable state, and FD actions.
-///
-/// Resolves `argv[0]` against the `PATH` environment variable in `env` (or uses it directly
-/// if it contains a slash). Clones namespace, environment, and job by default.
-pub fn spawn_command(
+/// Spawns a new OS process given binary name, command arguments, environment variable state, and FD actions.
+pub fn spawn_command_with_path(
+    binary_name: &BStr,
     argv: &[BString],
     env: &ShellEnv,
     actions: &mut [fdio::SpawnAction<'_>],
@@ -25,7 +23,7 @@ pub fn spawn_command(
         return Err(zx::Status::INVALID_ARGS);
     }
 
-    let binary_path = env.path().resolve(argv[0].as_ref()).unwrap_or_else(|| argv[0].clone());
+    let binary_path = env.path().resolve(binary_name).unwrap_or_else(|| BString::from(binary_name));
     let path_cstr =
         bstr_to_cstring(binary_path.as_slice()).map_err(|_| zx::Status::INVALID_ARGS)?;
 
@@ -47,6 +45,21 @@ pub fn spawn_command(
             status
         },
     )
+}
+
+/// Spawns a new OS process given command arguments, environment variable state, and FD actions.
+///
+/// Resolves `argv[0]` against the `PATH` environment variable in `env` (or uses it directly
+/// if it contains a slash). Clones namespace, environment, and job by default.
+pub fn spawn_command(
+    argv: &[BString],
+    env: &ShellEnv,
+    actions: &mut [fdio::SpawnAction<'_>],
+) -> Result<zx::Process, zx::Status> {
+    if argv.is_empty() {
+        return Err(zx::Status::INVALID_ARGS);
+    }
+    spawn_command_with_path(argv[0].as_bstr(), argv, env, actions)
 }
 
 /// Creates a unidirectional inter-process communication pipe (`(read_file, write_file)`).

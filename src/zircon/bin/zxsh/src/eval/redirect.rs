@@ -5,11 +5,12 @@
 use std::os::unix::fs::OpenOptionsExt;
 
 use super::execution_context::ExecutionContext;
-use super::expand::{expand_argument, expand_string};
+use super::expand::{expand_argument, expand_string, get_literal_command_name};
+use super::simple::parse_simple_command_args;
 use super::state::ShellState;
 use super::{EvalOutcome, eval_command};
 use crate::errors::io_err_str;
-use crate::parser::ast::{ASTBuilder, Command, Redirect, RedirectTag, WordPart};
+use crate::parser::ast::{ASTBuilder, Command, CommandTag, Redirect, RedirectTag, WordPart};
 use crate::process::make_pipe;
 use crate::relative;
 use bstr::{BStr, BString, ByteSlice};
@@ -58,6 +59,27 @@ fn expand_redirection_path(
     Ok(ExpandedPath::Path(path, expanded_filename.clone()))
 }
 
+fn is_exec_command(builder: &ASTBuilder, mut cmd_ptr: relative::Ptr<Command>) -> bool {
+    loop {
+        let cmd = builder.get_ref(cmd_ptr);
+        match cmd.tag {
+            CommandTag::REDIRECT => {
+                cmd_ptr = cmd.left;
+            }
+            CommandTag::SIMPLE => {
+                let (_, cmd_args_refs) = parse_simple_command_args(builder, cmd_ptr);
+                if cmd_args_refs.is_empty() {
+                    return false;
+                }
+                let arg0 = builder.get_slice(cmd_args_refs[0]);
+                return get_literal_command_name(arg0, builder).as_deref().map(|v| v.as_slice())
+                    == Some(b"exec");
+            }
+            _ => return false,
+        }
+    }
+}
+
 pub fn eval_redirect(
     builder: &mut ASTBuilder,
     cmd_ptr: relative::Ptr<Command>,
@@ -69,9 +91,14 @@ pub fn eval_redirect(
         (cmd.left, cmd.redirects.as_slice(builder))
     };
 
+    let is_exec = is_exec_command(builder, sub_cmd_ptr);
     let mut new_context = ctx.try_clone()?;
     apply_redirects(redirects, state, &mut new_context, builder)?;
-    eval_command(builder, sub_cmd_ptr, state, &mut new_context)
+    let outcome = eval_command(builder, sub_cmd_ptr, state, &mut new_context)?;
+    if is_exec && matches!(outcome, EvalOutcome::Code(0)) {
+        *ctx = new_context;
+    }
+    Ok(outcome)
 }
 
 /// The maximum size of a write to a pipe that is guaranteed to be atomic and not block.

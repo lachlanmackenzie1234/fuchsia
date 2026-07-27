@@ -10,7 +10,7 @@ use crate::eval::{
 };
 use crate::fd::Fd;
 use crate::process::spawn_command;
-use crate::string::{parse_int, parse_mode_mask, split_ifs_read, split_key_value};
+use crate::string::{LineChar, parse_int, parse_mode_mask, split_ifs_read, split_key_value};
 use bstr::{BStr, BString, ByteSlice};
 use std::io::{Read, Write};
 
@@ -461,7 +461,9 @@ pub fn builtin_read(
     }
 
     let ifs = state.get_var(b"IFS").unwrap_or_else(|| BString::from(" \t\n"));
-    let fields = split_ifs_read(&line, ifs.as_ref(), vars.len());
+    let line_chars: Vec<LineChar> =
+        line.iter().map(|&byte| LineChar { byte, escaped: false }).collect();
+    let fields = split_ifs_read(&line_chars, ifs.as_ref(), vars.len());
 
     for (i, var) in vars.iter().enumerate() {
         if state.is_readonly(var) {
@@ -1106,10 +1108,10 @@ fn display_limit(
     let limit = state
         .get_rlimit(resource)
         .ok_or_else(|| format!("ulimit: failed to get limit for {}", label))?;
-    if limit == RLIM_INFINITY {
+    if limit.soft == RLIM_INFINITY {
         let _ = writeln!(out, "unlimited");
     } else {
-        let val = limit / unit_scale;
+        let val = limit.soft / unit_scale;
         let _ = writeln!(out, "{}", val);
     }
     Ok(())
@@ -1121,10 +1123,10 @@ fn display_all_limits(state: &ShellState, out: &mut dyn Write) -> Result<(), Str
             let limit = state
                 .get_rlimit(resource)
                 .ok_or_else(|| format!("ulimit: failed to get limit for {}", label))?;
-            if limit == RLIM_INFINITY {
+            if limit.soft == RLIM_INFINITY {
                 let _ = writeln!(out, "{:<30} (-{}) unlimited", label, flag);
             } else {
-                let val = limit / unit_scale;
+                let val = limit.soft / unit_scale;
                 let _ = writeln!(out, "{:<30} (-{}) {}", label, flag, val);
             }
             Ok(())
@@ -1142,13 +1144,14 @@ fn set_limit(
     val_str: &BStr,
     state: &mut ShellState,
 ) -> Result<(), String> {
-    let new_val = if val_str == "unlimited" {
+    let val_num = if val_str == "unlimited" {
         RLIM_INFINITY
     } else {
         let val = parse_int::<u64>(val_str.as_bytes())
             .ok_or_else(|| "ulimit: invalid limit value".to_string())?;
         val * unit_scale
     };
+    let new_val = crate::eval::Rlimit { soft: val_num, hard: val_num };
     state.set_rlimit(resource, new_val);
     Ok(())
 }

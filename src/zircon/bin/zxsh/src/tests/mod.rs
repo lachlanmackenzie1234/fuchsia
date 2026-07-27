@@ -13,6 +13,7 @@ pub mod expand;
 pub mod format;
 pub mod glob;
 pub mod parser;
+pub mod path;
 pub mod process;
 pub mod redirect;
 pub mod serialization;

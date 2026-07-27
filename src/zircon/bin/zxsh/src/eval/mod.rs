@@ -42,8 +42,10 @@ pub use format::command_to_bstring;
 pub use redirect::eval_redirect;
 pub use signals::{run_exit_trap, run_pending_traps};
 pub use state::{
-    EXIT_CANNOT_EXEC, EXIT_FAILURE, EXIT_NOT_FOUND, EXIT_SUCCESS, EXIT_SYNTAX_ERROR, RLIM_INFINITY,
-    RLIMIT_CORE, RLIMIT_FSIZE, RLIMIT_NOFILE, ShellEnv, ShellPath, ShellState, VarName,
+    BgJob, EXIT_CANNOT_EXEC, EXIT_FAILURE, EXIT_NOT_FOUND, EXIT_SUCCESS, EXIT_SYNTAX_ERROR,
+    RLIM_INFINITY, RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU, RLIMIT_DATA, RLIMIT_FSIZE, RLIMIT_LOCKS,
+    RLIMIT_MEMLOCK, RLIMIT_NOFILE, RLIMIT_NPROC, RLIMIT_RSS, RLIMIT_RTPRIO, RLIMIT_STACK, Rlimit,
+    ShellEnv, ShellPath, ShellState, VarName,
 };
 
 #[cfg(test)]
