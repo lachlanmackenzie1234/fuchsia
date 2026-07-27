@@ -9,7 +9,6 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_runtime;
 use futures::StreamExt;
 use futures::channel::mpsc as future_mpsc;
-use regex_lite::Regex;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -49,8 +48,6 @@ use crate::security::{self, TargetTaskType};
 use crate::task::Kernel;
 
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
-// Default buffer size to read from socket (for sampling data).
-const DEFAULT_CHUNK_SIZE: usize = 4096;
 // 4096 * 10, page size * 10.
 // If tests flake due to running out of buffer space, or if the profiling duration is
 // significantly increased, this buffer size may need further adjustment (expansion).
@@ -573,59 +570,6 @@ struct PerfRecordSample {
     ips: Vec<u64>,
 }
 
-// Parses a backtrace (bt) to obtain the params for a PerfRecordSample. Example:
-//
-// 1234                     pid
-// 5555                     tid
-// {{{bt:0:0x1111:pc}}}    {{{bt:frame_number:address:type}}}
-// {{{bt:1:0x2222:ra}}}
-// {{{bt:2:0x3333:ra}}}
-//
-// Results in:
-// PerfRecordSample { pid: 1234, tid: 5555, nr: 3, ips: [0x1111, 0x2222, 0x3333] }
-
-fn parse_perf_record_sample_format(backtrace: &str) -> Option<PerfRecordSample> {
-    let mut pid: Option<u32> = None;
-    let mut tid: Option<u32> = None;
-    let mut ips: Vec<u64> = Vec::new();
-    let mut numbers_found = 0;
-    track_stub!(TODO("https://fxbug.dev/437171287"), "[perf_event_open] handle regex nuances");
-    let backtrace_regex =
-        Regex::new(r"^\s*\{\{\{bt:\d+:((0x[0-9a-fA-F]+)):(?:pc|ra)\}\}\}\s*$").unwrap();
-
-    for line in backtrace.lines() {
-        let trimmed_line = line.trim();
-        // Try to parse as a raw number (for PID/TID).
-        if numbers_found < 2 {
-            if let Ok(num) = trimmed_line.parse::<u32>() {
-                if numbers_found == 0 {
-                    pid = Some(num);
-                } else {
-                    tid = Some(num);
-                }
-                numbers_found += 1;
-                continue;
-            }
-        }
-
-        // Try to parse as a backtrace line.
-        if let Some(parsed_bt) = backtrace_regex.captures(trimmed_line) {
-            let address_str = parsed_bt.get(1).unwrap().as_str();
-            if let Ok(ip_addr) = u64::from_str_radix(address_str.trim_start_matches("0x"), 16) {
-                ips.push(ip_addr);
-            }
-        }
-    }
-
-    if pid == None || tid == None || ips.is_empty() {
-        // This data chunk might've been an {{{mmap}}} chunk, and not a {{{bt}}}.
-        log_info!("No ips while getting PerfRecordSample");
-        None
-    } else {
-        Some(PerfRecordSample { pid: pid, tid: tid, ips: ips })
-    }
-}
-
 async fn set_up_profiler(
     sample_period: zx::MonotonicDuration,
 ) -> Result<(profiler::SessionProxy, fidl::AsyncSocket), Errno> {
@@ -736,93 +680,52 @@ async fn stop_and_collect_samples(
         }
     }
 
-    if bytes_read > 0 {
-        if bytes_read == 8 && header == FXT_MAGIC_BYTES {
-            // FXT format.
-            let header_cursor = Cursor::new(header);
-            let reader = header_cursor.chain(client);
-            let (mut stream, _task) = SessionParser::new_async(reader);
-            while let Some(record_result) = stream.next().await {
-                match record_result {
-                    Ok(TraceRecord::Profiler(ProfilerRecord::Backtrace(backtrace))) => {
-                        let ips: Vec<u64> = backtrace.data;
-                        let pid = Some(backtrace.process.0 as u32);
-                        let tid = Some(backtrace.thread.0 as u32);
-                        let perf_record_sample = PerfRecordSample { pid, tid, ips };
-                        let bytes_written = write_record_to_vmo(
-                            perf_record_sample,
-                            perf_data_vmo,
-                            sample_type,
-                            sample_id,
-                            sample_period,
-                            *vmo_write_offset,
-                        );
-                        // Update data_head after writing sample.
-                        if bytes_written > 0 {
-                            *vmo_write_offset += bytes_written;
-                            let mut metadata = seq_lock_wrapper.get();
-                            metadata.data_head = *vmo_write_offset;
-                            seq_lock_wrapper.set_value(metadata);
-                        }
-                    }
-                    Ok(_) => {
-                        // Ignore other records.
-                    }
-                    Err(e) => {
-                        log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
-                        break;
-                    }
+    if bytes_read != 8 || header != FXT_MAGIC_BYTES {
+        if bytes_read > 0 {
+            log_warn!(
+                "[perf_event_open] Received invalid or non-FXT sample data (bytes_read={})",
+                bytes_read
+            );
+        }
+        let reset_status = session_proxy.reset().await;
+        return match reset_status {
+            Ok(_) => Ok(()),
+            Err(e) => error!(EINVAL, e),
+        };
+    }
+
+    let header_cursor = Cursor::new(header);
+    let reader = header_cursor.chain(client);
+    let (mut stream, _task) = SessionParser::new_async(reader);
+    while let Some(record_result) = stream.next().await {
+        match record_result {
+            Ok(TraceRecord::Profiler(ProfilerRecord::Backtrace(backtrace))) => {
+                let ips: Vec<u64> = backtrace.data;
+                let pid = Some(backtrace.process.0 as u32);
+                let tid = Some(backtrace.thread.0 as u32);
+                let perf_record_sample = PerfRecordSample { pid, tid, ips };
+                let bytes_written = write_record_to_vmo(
+                    perf_record_sample,
+                    perf_data_vmo,
+                    sample_type,
+                    sample_id,
+                    sample_period,
+                    *vmo_write_offset,
+                );
+                // Update data_head after writing sample.
+                if bytes_written > 0 {
+                    *vmo_write_offset += bytes_written;
+                    let mut metadata = seq_lock_wrapper.get();
+                    metadata.data_head = *vmo_write_offset;
+                    seq_lock_wrapper.set_value(metadata);
                 }
             }
-        } else {
-            // Text format.
-            // Read chunks of sampling data from socket in this buffer temporarily. We will parse
-            // the data and write it into the output VMO (the one mmap points to).
-            let mut buffer = vec![0; DEFAULT_CHUNK_SIZE];
-
-            loop {
-                // Attempt to read data. This awaits until data is available, EOF, or error.
-                // Ignore the first 8 bytes as it's the {{{reset}}} marker.
-                let socket_data = client.read(&mut buffer).await;
-
-                match socket_data {
-                    Ok(0) => {
-                        // Peer closed the socket. This is the normal end of the stream.
-                        log_info!("[perf_event_open] Finished reading from socket.");
-                        break;
-                    }
-                    Ok(bytes_read) => {
-                        // Receive data in format {{{...}}}.
-                        let received_data = match std::str::from_utf8(&buffer[..bytes_read]) {
-                            Ok(data) => data,
-                            Err(e) => return error!(EINVAL, e),
-                        };
-                        // Parse data to PerfRecordSample struct.
-                        if let Some(perf_record_sample) =
-                            parse_perf_record_sample_format(received_data)
-                        {
-                            let bytes_written = write_record_to_vmo(
-                                perf_record_sample,
-                                perf_data_vmo,
-                                sample_type,
-                                sample_id,
-                                sample_period,
-                                *vmo_write_offset,
-                            );
-                            // Update data_head after writing sample.
-                            if bytes_written > 0 {
-                                *vmo_write_offset += bytes_written;
-                                let mut metadata = seq_lock_wrapper.get();
-                                metadata.data_head = *vmo_write_offset;
-                                seq_lock_wrapper.set_value(metadata);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log_warn!("[perf_event_open] Error reading from socket: {:?}", e);
-                        break;
-                    }
-                }
+            Ok(_) => {
+                // Ignore other records.
+            }
+            Err(e) => {
+                log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
+                break;
             }
         }
     }
