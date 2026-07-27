@@ -99,6 +99,7 @@ if (is_host) {
       "sapphire-async/src/global_index.rs",
       "sapphire-async/src/lib.rs",
       "sapphire-async/src/mpsc.rs",
+      "sapphire-async/src/mutex.rs",
       "sapphire-async/src/notification.rs",
       "sapphire-async/src/notification/intrusive_list.rs",
       "sapphire-async/src/rpc.rs",

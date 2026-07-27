@@ -9,6 +9,7 @@ pub mod broadcast;
 pub mod condition;
 pub mod executor;
 pub mod mpsc;
+pub mod mutex;
 pub mod notification;
 pub mod rpc;
 pub mod semaphore;

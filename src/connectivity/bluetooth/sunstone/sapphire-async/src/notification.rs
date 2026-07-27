@@ -59,30 +59,28 @@ impl<Mtx: RawMutex> Notification<Mtx> {
         }
     }
 
-    /// Asynchronously blocks the current task while releasing the provided `guard`.
+    /// Asynchronously blocks the current task and executes the provided closure.
     ///
-    /// Atomically releases the lock and registers the current task to block. Upon waking,
-    /// re-acquires the lock and returns a new `MutexGuard`.
-    pub async fn wait_locking<'a, ChannelMtx: RawMutex, T>(
-        &self,
-        guard: MutexGuard<'a, ChannelMtx, T>,
-    ) -> MutexGuard<'a, ChannelMtx, T> {
-        let mutex = guard.mutex();
+    /// The provided closure will be executed after linking the waiter to the notification
+    /// but before going to sleep.
+    pub async fn wait_and<F>(&self, fun: F)
+    where
+        F: FnOnce(),
+    {
         WaitFuture {
             notification: self,
             waiter: UnsafeCell::new(Waiter::new()),
             was_polled: false,
-            on_first_poll: Some(move || drop(guard)),
+            on_first_poll: Some(fun),
             _pinned: PhantomPinned,
         }
         .await;
-        mutex.lock()
     }
 
     /// Asynchronously blocks until the provided predicate closure `fun` evaluates to `Poll::Ready(R)`.
     ///
     /// Performs predicate checking in a loop: if `fun` returns `Poll::Pending`, it atomically
-    /// releases the lock and blocks via `wait_locking`. Wakes up on notification to re-evaluate.
+    /// releases the lock and blocks. Wakes up on notification to re-evaluate.
     pub async fn when<'a, F, ChannelMtx: RawMutex, T, R>(
         &self,
         mut lock: MutexGuard<'a, ChannelMtx, T>,
@@ -96,8 +94,10 @@ impl<Mtx: RawMutex> Notification<Mtx> {
             Poll::Pending => {}
         }
 
+        let mutex = lock.mutex();
         loop {
-            let mut guard = self.wait_locking(lock).await;
+            self.wait_and(move || drop(lock)).await;
+            let mut guard = mutex.lock();
             match fun(&mut *guard) {
                 Poll::Ready(out) => return out,
                 Poll::Pending => {
