@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Defines SHAC checks for Bazel and other Starlark files."""
+
 load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
 
 def _get_starlark_files(ctx):
@@ -95,11 +97,12 @@ def _buildifier_lint(ctx):
 
     for file_result in parsed.get("files", []):
         for warning in file_result.get("warnings", []):
-            # Ignore docstring-related warnings, they're not that important.
-            if "docstring" in warning["category"]:
-                continue
-
             level = "warning"
+
+            # docstring-related warnings are not that important, so treat them as notices.
+            if "docstring" in warning["category"]:
+                level = "notice"
+
             if warning["category"] == "load":
                 # Unused imports are completely unnecessary, so treat them as
                 # errors.
