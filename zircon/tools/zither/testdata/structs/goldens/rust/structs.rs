@@ -49,7 +49,7 @@ pub struct ArrayMembers {
 }
 
 #[repr(i32)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Enum {
     Zero = 0,
     One = 1,

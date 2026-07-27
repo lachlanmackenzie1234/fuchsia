@@ -30,7 +30,7 @@ pub type Uint64Alias = u64;
 pub const CONST_FROM_ALIAS: u8 = 0xff;
 
 #[repr(i16)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Enum {
     Member = 0,
 }
@@ -54,7 +54,7 @@ impl From<Enum> for i16 {
 pub type EnumAlias = Enum;
 
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Bits {
     One = 1,
 }

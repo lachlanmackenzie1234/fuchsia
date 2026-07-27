@@ -60,6 +60,9 @@ type traits struct {
 	// Whether std::cmp::Eq and std::cmp::PartialEq are supported.
 	eq bool
 
+	// Whether std::hash::Hash is supported.
+	hash bool
+
 	// Whether zerocopy::IntoBytes is supported (effectively whether instances
 	// are convertible to byte slices).
 	//
@@ -81,6 +84,9 @@ func (t traits) supported() []string {
 	}
 	if t.eq {
 		supported = append(supported, "Eq", "PartialEq")
+	}
+	if t.hash {
+		supported = append(supported, "Hash")
 	}
 	if t.intoBytes {
 		supported = append(supported, "IntoBytes")
@@ -107,10 +113,12 @@ func (gen Generator) DeclCallback(decl zither.Decl) {
 	case *zither.Enum:
 		t.debug = true
 		t.eq = true
+		t.hash = true
 		t.intoBytes = true
 	case *zither.Bits, *zither.Handle:
 		t.debug = true
 		t.eq = true
+		t.hash = true
 		t.intoBytes = true
 		t.fromBytes = true
 	case *zither.Struct:

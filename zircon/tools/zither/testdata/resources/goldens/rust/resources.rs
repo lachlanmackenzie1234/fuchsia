@@ -8,7 +8,7 @@
 use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Subtype {
     A = 0,
     B = 1,
