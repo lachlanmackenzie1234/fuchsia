@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
 use crate::task::{CurrentTask, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
@@ -10,7 +11,8 @@ use fuchsia_rcu::subtle::{RcuPtrRef, rcu_ptr_to_arc};
 use fuchsia_rcu::{RcuReadScope, rcu_drop};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
-use starnix_sync::{FdTableShareCountLock, LockDepGuard, LockDepMutex};
+use macro_rules_attribute::apply;
+use starnix_sync::{FdTableMutableStateLock, LockDepRwLock};
 use starnix_syscalls::SyscallResult;
 use starnix_types::ownership::Releasable;
 use starnix_uapi::errors::Errno;
@@ -19,7 +21,7 @@ use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::{errno, error};
 use static_assertions::const_assert;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -327,24 +329,31 @@ impl<'a> FdTableView<'a> {
     }
 }
 
-struct FdTableWriteGuard<'a> {
-    store: &'a FdTable,
-    share_count: LockDepGuard<'a, usize>,
+#[derive(Debug)]
+pub struct FdTableMutableState {
+    /// The number of shared references to this table.
+    ///
+    /// If the value is 0, the table is read-only and empty.
+    pub share_count: usize,
+
+    /// The next available `FdNumber`.
+    pub next_fd: FdNumber,
 }
 
-impl<'a> FdTableWriteGuard<'a> {
+#[apply(state_implementation!)]
+impl FdTableMutableState<Base = FdTable> {
     /// Increases the share count for this `FdTable`.
     fn share(&mut self) {
-        assert!(*self.share_count > 0, "Cannot share unshared table");
-        *self.share_count += 1;
+        assert!(self.share_count > 0, "Cannot share unshared table");
+        self.share_count += 1;
     }
 
     /// Decreases the share count for this `FdTable`. The table is cleared when the count reaches
     /// zero.
-    fn unshare(mut self) {
-        if *self.share_count > 0 {
-            *self.share_count -= 1;
-            if *self.share_count == 0 {
+    fn unshare(&mut self) {
+        if self.share_count > 0 {
+            self.share_count -= 1;
+            if self.share_count == 0 {
                 self.clear();
             }
         }
@@ -352,19 +361,18 @@ impl<'a> FdTableWriteGuard<'a> {
 
     /// Creates a snapshot of the table with the same files but a separate share count.
     fn fork(&self) -> FdTable {
-        // THREAD SAFETY: Holding the `share_count` lock through `Self::share_count` ensures
-        // coherence between `entries` and `next_fd` because they must only be modified while
-        // holding the lock.
         FdTable {
-            entries: self.store.entries.clone(),
-            next_fd: self.store.next_fd.clone(),
-            share_count: LockDepMutex::new(1),
+            entries: self.base.entries.clone(),
+            mutable_state: LockDepRwLock::new(FdTableMutableState {
+                share_count: 1,
+                next_fd: self.next_fd,
+            }),
         }
     }
 
     /// The lowest available `FdNumber`.
     fn next_fd(&self) -> FdNumber {
-        self.store.next_fd.get()
+        self.next_fd
     }
 
     /// Recalculates the lowest available FD >= minfd based on the contents of the map.
@@ -378,23 +386,23 @@ impl<'a> FdTableWriteGuard<'a> {
 
     // Returns the (possibly memoized) lowest available FD >= minfd in this map.
     fn get_lowest_available_fd(&self, scope: &RcuReadScope, minfd: FdNumber) -> FdNumber {
-        if minfd > self.store.next_fd.get() {
-            let view = self.store.read(scope);
+        if minfd > self.next_fd {
+            let view = self.base.read_entries(scope);
             return self.calculate_lowest_available_fd(&view, &minfd);
         }
-        self.store.next_fd.get()
+        self.next_fd
     }
 
     /// Returns the `FileHandle` for a given `FdNumber`, if any.
     fn get_file(&self, scope: &RcuReadScope, fd: FdNumber) -> Option<FileHandle> {
-        self.store.read(scope).get_file(scope, fd)
+        self.base.read_entries(scope).get_file(scope, fd)
     }
 
     /// Inserts a new entry into the `FdTable`.
     ///
     /// Returns whether the `FdTable` previously contained an entry for the given `FdNumber`.
     fn insert_entry(
-        &self,
+        &mut self,
         scope: &RcuReadScope,
         fd: FdNumber,
         rlimit: u64,
@@ -407,35 +415,34 @@ impl<'a> FdTableWriteGuard<'a> {
         if raw_fd as u64 >= rlimit {
             return error!(EMFILE);
         }
-        let mut view = self.store.read(scope);
-        if raw_fd == self.store.next_fd.get().raw() {
-            self.store
-                .next_fd
-                .set(self.calculate_lowest_available_fd(&view, &FdNumber::from_raw(raw_fd + 1)));
+        let mut view = self.base.read_entries(scope);
+        if raw_fd == self.next_fd.raw() {
+            self.next_fd =
+                self.calculate_lowest_available_fd(&view, &FdNumber::from_raw(raw_fd + 1));
         }
         let raw_fd = raw_fd as usize;
         if view.len() <= raw_fd {
             // SAFETY: The write guard excludes concurrent writers.
-            unsafe { self.store.entries.ensure_at_least(raw_fd + 1) };
-            view = self.store.read(scope);
+            unsafe { self.base.entries.ensure_at_least(raw_fd + 1) };
+            view = self.base.read_entries(scope);
         }
-        let id = self.store.id();
+        let id = self.base.id();
         Ok(view.slice[raw_fd].set_entry(id, entry))
     }
 
     /// Removes an entry from the `FdTable`.
     ///
     /// Returns whether the `FdTable` previously contained an entry for the given `FdNumber`.
-    fn remove_entry(&self, scope: &RcuReadScope, fd: &FdNumber) -> bool {
+    fn remove_entry(&mut self, scope: &RcuReadScope, fd: &FdNumber) -> bool {
         let raw_fd = fd.raw() as usize;
-        let view = self.store.read(scope);
+        let view = self.base.read_entries(scope);
         if raw_fd >= view.len() {
             return false;
         }
-        let id = self.store.id();
+        let id = self.base.id();
         let removed = view.slice[raw_fd].clear(id);
-        if removed && raw_fd < self.store.next_fd.get().raw() as usize {
-            self.store.next_fd.set(*fd);
+        if removed && raw_fd < self.next_fd.raw() as usize {
+            self.next_fd = *fd;
         }
         removed
     }
@@ -449,7 +456,7 @@ impl<'a> FdTableWriteGuard<'a> {
         fd: FdNumber,
         flags: FdFlags,
     ) -> Result<(), Errno> {
-        let view = self.store.read(scope);
+        let view = self.base.read_entries(scope);
         if view.is_none(fd) {
             return error!(EBADF);
         }
@@ -463,12 +470,12 @@ impl<'a> FdTableWriteGuard<'a> {
     /// The predicate is called with the `FdNumber` and a mutable reference to the `FdFlags` for
     /// each entry in the `FdTable`. If the predicate returns `false`, the entry is removed from
     /// the `FdTable`. Otherwise, the `FdFlags` are updated to the value modified by the predicate.
-    fn retain<F>(&self, scope: &RcuReadScope, mut predicate: F)
+    fn retain<F>(&mut self, scope: &RcuReadScope, mut predicate: F)
     where
         F: FnMut(FdNumber, &mut FdFlags) -> bool,
     {
-        let id = self.store.id();
-        let view = self.store.read(scope);
+        let id = self.base.id();
+        let view = self.base.read_entries(scope);
         for (index, encoded_entry) in view.slice.iter().enumerate() {
             let fd = FdNumber::from_raw(index as i32);
             if let Some(guard) = encoded_entry.read(scope) {
@@ -480,11 +487,11 @@ impl<'a> FdTableWriteGuard<'a> {
                 }
             }
         }
-        self.store.next_fd.set(self.calculate_lowest_available_fd(&view, &FdNumber::from_raw(0)));
+        self.next_fd = self.calculate_lowest_available_fd(&view, &FdNumber::from_raw(0));
     }
 
     /// Retain none of the entries in the table.
-    fn clear(&self) {
+    fn clear(&mut self) {
         self.retain(&RcuReadScope::new(), |_, _| false);
     }
 
@@ -498,8 +505,8 @@ impl<'a> FdTableWriteGuard<'a> {
     where
         F: Fn(&FileHandle) -> Option<FileHandle>,
     {
-        let id = self.store.id();
-        let view = self.store.read(scope);
+        let id = self.base.id();
+        let view = self.base.read_entries(scope);
         for encoded_entry in view.slice.iter() {
             if let Some(guard) = encoded_entry.read(scope) {
                 let file = guard.to_handle();
@@ -508,38 +515,6 @@ impl<'a> FdTableWriteGuard<'a> {
                 }
             }
         }
-    }
-}
-
-/// An `FdNumber` that can be atomically updated.
-///
-/// Used for the `next_fd` field of `FdTable`, which is only modified when holding the `share_count`
-/// lock.
-#[derive(Debug, Default)]
-struct AtomicFdNumber {
-    /// The raw value of the `FdNumber`.
-    value: AtomicI32,
-}
-
-impl AtomicFdNumber {
-    /// Returns the current value of the `FdNumber`.
-    ///
-    /// Uses `Ordering::Relaxed`.
-    fn get(&self) -> FdNumber {
-        FdNumber::from_raw(self.value.load(Ordering::Relaxed))
-    }
-
-    /// Sets the value of the `FdNumber`.
-    ///
-    /// Uses `Ordering::Relaxed`.
-    fn set(&self, value: FdNumber) {
-        self.value.store(value.raw(), Ordering::Relaxed);
-    }
-}
-
-impl Clone for AtomicFdNumber {
-    fn clone(&self) -> Self {
-        Self { value: AtomicI32::new(self.value.load(Ordering::Relaxed)) }
     }
 }
 
@@ -555,41 +530,34 @@ pub struct FdTable {
     ///
     /// # Thread Safety
     ///
-    /// Must only be modified while holding the `share_count` lock.
+    /// Must only be modified while holding the `mutable_state` lock.
     entries: RcuArray<EncodedEntry>,
 
-    /// The next available `FdNumber`.
-    ///
-    /// # Thread Safety
-    ///
-    /// Must only be modified while holding the `share_count` lock.
-    next_fd: AtomicFdNumber,
-
-    /// The number of shared references to this table, and the mutex that serializes writers.
-    ///
-    /// If the value is 0, the table is read-only and empty.
-    share_count: LockDepMutex<usize, FdTableShareCountLock>,
+    /// The mutable state of the `FdTable`.
+    mutable_state: LockDepRwLock<FdTableMutableState, FdTableMutableStateLock>,
 }
 
 impl Default for FdTable {
     fn default() -> Self {
         Self {
             entries: Default::default(),
-            next_fd: AtomicFdNumber::default(),
-            share_count: LockDepMutex::new(1),
+            mutable_state: LockDepRwLock::new(FdTableMutableState {
+                share_count: 1,
+                next_fd: FdNumber::from_raw(0),
+            }),
         }
     }
 }
 
 impl Clone for FdTable {
     fn clone(&self) -> Self {
-        // THREAD SAFETY: Holding the `share_count` lock ensures coherence between `entries` and
-        // `next_fd` because they must only be modified while holding the lock.
-        let _guard = self.share_count.lock();
+        let state = self.read();
         Self {
             entries: self.entries.clone(),
-            next_fd: self.next_fd.clone(),
-            share_count: LockDepMutex::new(1),
+            mutable_state: LockDepRwLock::new(FdTableMutableState {
+                share_count: 1,
+                next_fd: state.next_fd,
+            }),
         }
     }
 }
@@ -597,7 +565,7 @@ impl Clone for FdTable {
 impl Drop for FdTable {
     fn drop(&mut self) {
         let scope = RcuReadScope::new();
-        let view = self.read(&scope);
+        let view = self.read_entries(&scope);
         for entry in view.slice.iter() {
             assert!(entry.is_none());
         }
@@ -611,14 +579,14 @@ impl FdTable {
     }
 
     /// Returns a `FdTableView` that provides read-only access to the state of the `FdTable`.
-    fn read<'a>(&self, scope: &'a RcuReadScope) -> FdTableView<'a> {
+    fn read_entries<'a>(&self, scope: &'a RcuReadScope) -> FdTableView<'a> {
         let slice = self.entries.as_slice(scope);
         FdTableView { slice }
     }
 
     /// Returns new unshared `FdTable` that is a snapshot of the state of the `FdTable`.
     pub fn fork(&self) -> Arc<Self> {
-        Arc::new(self.clone())
+        Arc::new(self.read().fork())
     }
 
     /// Trims close-on-exec file descriptors from the table.
@@ -635,8 +603,8 @@ impl FdTable {
     ) -> Result<(), Errno> {
         let flags = FdFlags::empty();
         let rlimit = current_task.thread_group().get_rlimit(Resource::NOFILE);
-        let guard = self.write()?;
-        guard.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
+        let mut state = self.write_active()?;
+        state.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(())
     }
 
@@ -654,9 +622,9 @@ impl FdTable {
         flags: FdFlags,
     ) -> Result<FdNumber, Errno> {
         let rlimit = current_task.thread_group().get_rlimit(Resource::NOFILE);
-        let guard = self.write()?;
-        let fd = guard.next_fd();
-        guard.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
+        let mut state = self.write_active()?;
+        let fd = state.next_fd();
+        state.insert_entry(&RcuReadScope::new(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(fd)
     }
 
@@ -672,9 +640,9 @@ impl FdTable {
         flags: FdFlags,
     ) -> Result<FdNumber, Errno> {
         let rlimit = current_task.thread_group().get_rlimit(Resource::NOFILE);
-        let guard = self.write()?;
+        let mut state = self.write_active()?;
         let scope = RcuReadScope::new();
-        let file = guard.get_file(&scope, oldfd).ok_or_else(|| errno!(EBADF))?;
+        let file = state.get_file(&scope, oldfd).ok_or_else(|| errno!(EBADF))?;
 
         let fd = match target {
             TargetFdNumber::Specific(fd) => {
@@ -686,14 +654,14 @@ impl FdTable {
                     // when we're past the rlimit.
                     return error!(EBADF);
                 }
-                guard.remove_entry(&scope, &fd);
+                state.remove_entry(&scope, &fd);
                 fd
             }
-            TargetFdNumber::Minimum(fd) => guard.get_lowest_available_fd(&scope, fd),
-            TargetFdNumber::Default => guard.get_lowest_available_fd(&scope, FdNumber::from_raw(0)),
+            TargetFdNumber::Minimum(fd) => state.get_lowest_available_fd(&scope, fd),
+            TargetFdNumber::Default => state.get_lowest_available_fd(&scope, FdNumber::from_raw(0)),
         };
         let existing_entry =
-            guard.insert_entry(&scope, fd, rlimit, FdTableEntry { file, flags })?;
+            state.insert_entry(&scope, fd, rlimit, FdTableEntry { file, flags })?;
         assert!(!existing_entry);
         Ok(fd)
     }
@@ -719,7 +687,7 @@ impl FdTable {
         fd: FdNumber,
     ) -> Result<(FileHandle, FdFlags), Errno> {
         let scope = RcuReadScope::new();
-        let view = self.read(&scope);
+        let view = self.read_entries(&scope);
         view.get_entry(&scope, fd)
             .map(|entry| (entry.file, entry.flags))
             .ok_or_else(|| errno!(EBADF))
@@ -740,9 +708,9 @@ impl FdTable {
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn close(&self, fd: FdNumber) -> Result<(), Errno> {
-        let guard = self.write()?;
+        let mut state = self.write_active()?;
         let scope = RcuReadScope::new();
-        if guard.remove_entry(&scope, &fd) { Ok(()) } else { error!(EBADF) }
+        if state.remove_entry(&scope, &fd) { Ok(()) } else { error!(EBADF) }
     }
 
     /// Returns the flags associated with the given file descriptor.
@@ -761,9 +729,9 @@ impl FdTable {
         fd: FdNumber,
         request: u32,
     ) -> Result<(), Errno> {
-        let guard = self.write()?;
+        let state = self.write_active()?;
         let scope = RcuReadScope::new();
-        let file = guard.get_file(&scope, fd).ok_or_else(|| errno!(EBADF))?;
+        let file = state.get_file(&scope, fd).ok_or_else(|| errno!(EBADF))?;
         if file.flags().contains(OpenFlags::PATH) {
             return error!(EBADF);
         }
@@ -775,15 +743,15 @@ impl FdTable {
             }
         };
         security::check_file_ioctl_access(current_task, &file, request)?;
-        guard.set_fd_flags(&scope, fd, flags)
+        state.set_fd_flags(&scope, fd, flags)
     }
 
     /// Sets the flags associated with the given file descriptor.
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn set_fd_flags_allowing_opath(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
-        let guard = self.write()?;
-        guard.set_fd_flags(&RcuReadScope::new(), fd, flags)
+        let state = self.write_active()?;
+        state.set_fd_flags(&RcuReadScope::new(), fd, flags)
     }
 
     /// Retains only the FDs matching the given `predicate`.
@@ -795,15 +763,15 @@ impl FdTable {
     where
         F: Fn(FdNumber, &mut FdFlags) -> bool,
     {
-        if let Ok(guard) = self.write() {
-            guard.retain(&RcuReadScope::new(), predicate);
+        if let Ok(mut state) = self.write_active() {
+            state.retain(&RcuReadScope::new(), predicate);
         }
     }
 
     /// Returns a vector of all current file descriptors in the table.
     pub fn get_all_fds(&self) -> Vec<FdNumber> {
         let scope = RcuReadScope::new();
-        let view = self.read(&scope);
+        let view = self.read_entries(&scope);
         view.slice
             .iter()
             .enumerate()
@@ -822,24 +790,27 @@ impl FdTable {
         _current_task: &CurrentTask,
         predicate: F,
     ) {
-        if let Ok(guard) = self.write() {
-            guard.remap(&RcuReadScope::new(), predicate);
+        if let Ok(state) = self.write_active() {
+            state.remap(&RcuReadScope::new(), predicate);
         }
     }
 
-    /// Returns a `FdTableWriteGuard` that provides exclusive access to the state of the `FdTable`.
+    /// Returns a `FdTableWriteGuard` that provides exclusive access to the state of an active
+    /// `FdTable`.
     ///
     /// # Errors
     ///
     /// Returns [`Err(ESRCH)`] if the table has no active sharers, indicating it is in the process
     /// of being destroyed.
-    fn write(&self) -> Result<FdTableWriteGuard<'_>, Errno> {
-        let share_count = self.share_count.lock();
-        if *share_count == 0 {
+    fn write_active(&self) -> Result<FdTableWriteGuard<'_>, Errno> {
+        let state = self.write();
+        if state.share_count == 0 {
             return error!(ESRCH);
         }
-        Ok(FdTableWriteGuard { store: self, share_count })
+        Ok(state)
     }
+
+    state_accessor!(FdTable, mutable_state);
 }
 
 /// A wrapper around `FdTable` that manages the table's logical share count.
@@ -854,7 +825,8 @@ pub struct SharedFdTable {
 
 impl Clone for SharedFdTable {
     fn clone(&self) -> Self {
-        self.table.write().expect("FdTable must be writable").share();
+        let mut state = self.table.write_active().expect("FdTable must be active");
+        state.share();
         Self { table: self.table.clone() }
     }
 }
@@ -868,9 +840,7 @@ impl std::ops::Deref for SharedFdTable {
 
 impl Drop for SharedFdTable {
     fn drop(&mut self) {
-        if let Ok(guard) = self.table.write() {
-            guard.unshare();
-        }
+        self.table.write().unshare();
     }
 }
 
@@ -881,10 +851,10 @@ impl SharedFdTable {
 
     /// Replaces the wrapped table with a fork that has an independent share count.
     pub fn unshare(&mut self) {
-        if let Ok(mut guard) = self.table.clone().write() {
-            if *guard.share_count > 1 {
-                let table = Arc::new(guard.fork());
-                *guard.share_count -= 1;
+        if let Ok(mut state) = self.table.clone().write_active() {
+            if state.share_count > 1 {
+                let table = Arc::new(state.fork());
+                state.share_count -= 1;
                 self.table = table;
             }
         }
