@@ -14,9 +14,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include <fbl/string_printf.h>
-#include <fbl/vector.h>
-
 #include "src/lib/fsl/io/device_watcher.h"
 
 namespace device_enumeration {
@@ -26,7 +23,7 @@ void WaitForClassDeviceCount(const std::string& path_in_devfs, size_t count) {
 
   async::TaskClosure task([path_in_devfs, &count]() {
     // stdout doesn't show up in test logs.
-    fprintf(stderr, "still waiting for %zu devices in %s\n", count, path_in_devfs.c_str());
+    std::cerr << "still waiting for " << count << " devices in " << path_in_devfs << '\n';
   });
 
   ASSERT_OK(task.PostDelayed(loop.dispatcher(), zx::min(1)));
@@ -50,29 +47,29 @@ void WaitForClassDeviceCount(const std::string& path_in_devfs, size_t count) {
 }  // namespace device_enumeration
 
 DeviceEnumerationTest::Requirement DeviceEnumerationTest::AllOf(
-    cpp20::span<const char* const> node_monikers) {
+    std::span<const char* const> node_monikers) {
   std::vector<Requirement> children;
   for (const char* moniker : node_monikers) {
-    children.push_back({Requirement::Type::kNode, moniker, {}});
+    children.push_back({.type = Requirement::Type::kNode, .node = moniker, .children = {}});
   }
-  return {Requirement::Type::kAllOf, "", std::move(children)};
+  return {.type = Requirement::Type::kAllOf, .node = "", .children = std::move(children)};
 }
 
 DeviceEnumerationTest::Requirement DeviceEnumerationTest::OneOf(
-    cpp20::span<const char* const> node_monikers) {
+    std::span<const char* const> node_monikers) {
   std::vector<Requirement> children;
   for (const char* moniker : node_monikers) {
-    children.push_back({Requirement::Type::kNode, moniker, {}});
+    children.push_back({.type = Requirement::Type::kNode, .node = moniker, .children = {}});
   }
-  return {Requirement::Type::kOneOf, "", std::move(children)};
+  return {.type = Requirement::Type::kOneOf, .node = "", .children = std::move(children)};
 }
 
 DeviceEnumerationTest::Requirement DeviceEnumerationTest::AllOf(std::vector<Requirement> children) {
-  return {Requirement::Type::kAllOf, "", std::move(children)};
+  return {.type = Requirement::Type::kAllOf, .node = "", .children = std::move(children)};
 }
 
 DeviceEnumerationTest::Requirement DeviceEnumerationTest::OneOf(std::vector<Requirement> children) {
-  return {Requirement::Type::kOneOf, "", std::move(children)};
+  return {.type = Requirement::Type::kOneOf, .node = "", .children = std::move(children)};
 }
 
 DeviceEnumerationTest::MatchResult DeviceEnumerationTest::GetMatchedNodes(
@@ -120,11 +117,11 @@ DeviceEnumerationTest::MatchResult DeviceEnumerationTest::GetMatchedNodes(
   }
 }
 
-void DeviceEnumerationTest::Verify(Requirement requirement, bool fail_on_unexpected_nodes) {
+void DeviceEnumerationTest::Verify(const Requirement& requirement, bool fail_on_unexpected_nodes) {
   MatchResult result = GetMatchedNodes(requirement);
 
   if (result.is_error()) {
-    fprintf(stderr, "Requirement not satisfied: %s\n", result.error_value().c_str());
+    std::cerr << "Requirement not satisfied: " << result.error_value() << '\n';
   }
 
   std::unordered_set<std::string> matched_nodes;
@@ -140,9 +137,9 @@ void DeviceEnumerationTest::Verify(Requirement requirement, bool fail_on_unexpec
   }
 
   if (!leftover_nodes.empty()) {
-    fprintf(stderr, "Found %zu unexpected node(s):\n", leftover_nodes.size());
+    std::cerr << "Found " << leftover_nodes.size() << " unexpected node(s):\n";
     for (auto& [moniker, node] : leftover_nodes) {
-      fprintf(stderr, "     %s:\n", moniker.c_str());
+      std::cerr << "     " << moniker << ":\n";
     }
   }
 
@@ -152,12 +149,12 @@ void DeviceEnumerationTest::Verify(Requirement requirement, bool fail_on_unexpec
   }
 }
 
-void DeviceEnumerationTest::VerifyNodes(cpp20::span<const char*> node_monikers,
+void DeviceEnumerationTest::VerifyNodes(std::span<const char* const> node_monikers,
                                         bool fail_on_unexpected_nodes) {
   Verify(AllOf(node_monikers), fail_on_unexpected_nodes);
 }
 
-void DeviceEnumerationTest::VerifyOneOf(cpp20::span<const char*> node_monikers) {
+void DeviceEnumerationTest::VerifyOneOf(std::span<const char* const> node_monikers) {
   Verify(OneOf(node_monikers));
 }
 

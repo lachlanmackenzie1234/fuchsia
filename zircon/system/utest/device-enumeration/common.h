@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.driver.development/cpp/fidl.h>
 #include <lib/fit/result.h>
 
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -31,14 +32,15 @@ class DeviceEnumerationTest : public zxtest::Test {
     std::vector<Requirement> children;
   };
 
-  static Requirement AllOf(cpp20::span<const char* const> node_monikers);
-  static Requirement OneOf(cpp20::span<const char* const> node_monikers);
+  static Requirement AllOf(std::span<const char* const> node_monikers);
+  static Requirement OneOf(std::span<const char* const> node_monikers);
   static Requirement AllOf(std::vector<Requirement> children);
   static Requirement OneOf(std::vector<Requirement> children);
 
-  void Verify(Requirement requirement, bool fail_on_unexpected_nodes = false);
-  void VerifyNodes(cpp20::span<const char*> node_monikers, bool fail_on_unexpected_nodes = false);
-  void VerifyOneOf(cpp20::span<const char*> node_monikers);
+  void Verify(const Requirement& requirement, bool fail_on_unexpected_nodes = false);
+  void VerifyNodes(std::span<const char* const> node_monikers,
+                   bool fail_on_unexpected_nodes = false);
+  void VerifyOneOf(std::span<const char* const> node_monikers);
   bool HasNode(const std::string& node) const { return node_info_.contains(node); }
 
  private:
