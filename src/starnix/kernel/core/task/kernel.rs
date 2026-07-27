@@ -7,7 +7,7 @@ use crate::device::remote_block_device::RemoteBlockDeviceRegistry;
 use crate::device::{DeviceMode, DeviceRegistry};
 use crate::execution::CrashReporter;
 use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor, SharedFutexKey};
-use crate::power::SuspendResumeManagerHandle;
+use crate::power::{SuspendResumeManagerHandle, create_watcher_for_wake_events};
 use crate::ptrace::StopState;
 use crate::security::{self, AuditLogger};
 use crate::task::container_namespace::ContainerNamespace;
@@ -38,6 +38,8 @@ use fidl_fuchsia_component_runner::{ComponentControllerControlHandle, ComponentS
 use fidl_fuchsia_feedback::CrashReporterProxy;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_net_power as fnet_power;
+use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_time_external::AdjustSynchronousProxy;
 use fuchsia_async as fasync;
 use fuchsia_inspect::ArrayProperty;
@@ -411,6 +413,14 @@ pub struct Kernel {
     /// container. Used from syscalls.
     pub time_adjustment_proxy: Option<AdjustSynchronousProxy>,
 
+    /// A token for the wake group we have registered with the netstack to
+    /// receive wakeup notifications on incoming data while suspended.
+    ///
+    /// A value of `None` means we were unable to communicate with the netstack
+    /// to create the wake group. In that case, we assume something has gone
+    /// wrong with the netstack (failed to start, crash, etc) and won't retry.
+    pub netstack_wake_group: OnceLock<Option<fnet_resources::WakeGroupToken>>,
+
     /// Used to store tokens for sockets, particularly per-uid sharing domain sockets.
     pub socket_tokens_store: SocketTokensStore,
 
@@ -569,6 +579,7 @@ impl Kernel {
             ebpf_state: Default::default(),
             cgroups: Default::default(),
             time_adjustment_proxy,
+            netstack_wake_group: OnceLock::new(),
             socket_tokens_store: Default::default(),
             hwcaps,
             syscall_log_filters: Default::default(),
@@ -850,6 +861,60 @@ impl Kernel {
             );
             network_netlink
         })
+    }
+
+    /// Return a reference to the token representing our wake group registered
+    /// with the netstack.
+    ///
+    /// This function lazily initializes the wake group with the netstack and
+    /// the wake group as a wake source with the Starnix runner.
+    pub(crate) fn netstack_wake_group(&self) -> Option<&fnet_resources::WakeGroupToken> {
+        self.netstack_wake_group
+            .get_or_init(|| {
+                // The signal the netstack raises when it wants the container to
+                // wake up.
+                const GROUP_WAKEUP_SIGNAL: zx::Signals =
+                    zx::Signals::from_bits(fnet_power::GROUP_WAKEUP_SIGNAL).unwrap();
+
+                let provider = fuchsia_component::client::connect_to_protocol_sync::<
+                    fnet_power::WakeGroupProviderMarker,
+                >()
+                .expect("connect to WakeGroupProvider");
+
+                let (wake_watcher_waiter, wake_watcher_signaller) = zx::EventPair::create();
+                create_watcher_for_wake_events(wake_watcher_signaller);
+
+                let token = match provider.create_wake_group(
+                    &fnet_power::WakeGroupOptions {
+                        debug_name: Some(String::from("starnix")),
+                        ..Default::default()
+                    },
+                    wake_watcher_waiter,
+                    zx::Instant::INFINITE,
+                ) {
+                    Ok(fnet_power::CreateWakeGroupResponse { token, .. }) => token,
+                    Err(e) => {
+                        log_error!("failed to create wake group with the netstack: {e}");
+                        return None;
+                    }
+                };
+
+                let token = token.expect("netstack provides a wake group token");
+                let wake_source = token
+                    .token
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("duplicate handle to token");
+                self.suspend_resume_manager
+                    .add_external_wake_source(
+                        wake_source.into(),
+                        GROUP_WAKEUP_SIGNAL,
+                        "netstack-wake-group".into(),
+                    )
+                    .expect("add wake group as wake source");
+
+                Some(token)
+            })
+            .as_ref()
     }
 
     pub fn iptables(&self) -> &IpTables {

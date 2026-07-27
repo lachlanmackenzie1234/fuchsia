@@ -18,6 +18,7 @@ use byteorder::ByteOrder;
 use ebpf::convert_and_verify_cbpf;
 use ebpf_api::SOCKET_FILTER_CBPF_CONFIG;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
@@ -148,14 +149,25 @@ impl ZxioBackedSocket {
             _ => (),
         };
 
+        let wake_group = match current_task.kernel().netstack_wake_group() {
+            Some(fnet_resources::WakeGroupToken { token }) => token
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate handle to wake group"),
+            None => {
+                log_warn!("Netstack wake group not available. Failing socket creation");
+                // Make applications fail loudly because this shouldn't happen
+                // unless something is misconfigured or the netstack has died.
+                return error!(ENOTRECOVERABLE);
+            }
+        };
+
         let zxio = Zxio::new_socket::<SocketProviderServiceConnector>(
             domain.as_raw() as c_int,
             socket_type.as_raw() as c_int,
             protocol.as_raw() as c_int,
             ZxioSocketCreationOptions {
                 marks,
-                // TODO(https://fxbug.dev/434263247): register sockets in a wake group.
-                wake_group: ZxioWakeGroupToken::new(None),
+                wake_group: ZxioWakeGroupToken::new(Some(wake_group)),
             },
         )
         .map_err(|status| from_status_like_fdio!(status))?

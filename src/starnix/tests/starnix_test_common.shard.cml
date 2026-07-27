@@ -152,6 +152,7 @@
                 "fuchsia.net.ndp.RouterAdvertisementOptionWatcherProvider",
                 "fuchsia.net.neighbor.Controller",
                 "fuchsia.net.neighbor.View",
+                "fuchsia.net.power.WakeGroupProvider",
                 "fuchsia.net.root.Interfaces",
                 "fuchsia.net.routes.admin.RouteTableProviderV4",
                 "fuchsia.net.routes.admin.RouteTableProviderV6",
