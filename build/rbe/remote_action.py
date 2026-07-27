@@ -938,6 +938,17 @@ def download_from_stub_path(
     Returns:
       download exit status, or 0 if there is nothing to download.
     """
+    # If the directory where the stub resides is not writable, we cannot possibly
+    # replace the stub with a downloaded file, and the artifact is likely already
+    # a real file (or we cannot modify it). In this case, we can gracefully no-op.
+    stub_dir = (working_dir_abs / stub_path.parent).resolve()
+    if stub_dir.exists() and not os.access(stub_dir, os.W_OK):
+        if verbose:
+            msg(
+                f"    {stub_path} resides in a read-only directory; assuming it is already a real file"
+            )
+        return cl_utils.SubprocessResult(0)
+
     # Use lock file to safely handle potentially concurrent
     # download requests to the same artifact.
     # If there are concurrent requests to download the same stub,

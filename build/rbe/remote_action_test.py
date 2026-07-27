@@ -226,6 +226,31 @@ class DownloadFromStubPathTests(unittest.TestCase):
             )
         self.assertEqual(subprocess_result.returncode, 0)
 
+    def test_stub_in_read_only_directory_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            stub_dir = tdp / "read-only-dir"
+            stub_dir.mkdir()
+            stub_path = stub_dir / "stub-file"
+
+            # Mock os.access to return False (not writable) and verify we exit
+            # early with returncode 0 without attempting any download or locking.
+            with mock.patch.object(
+                os, "access", return_value=False
+            ) as mock_access:
+                with mock.patch.object(
+                    remote_action.DownloadStubInfo,
+                    "download",
+                ) as mock_download:
+                    subprocess_result = remote_action.download_from_stub_path(
+                        stub_path,
+                        downloader=_FAKE_DOWNLOADER,
+                        working_dir_abs=tdp,
+                    )
+            self.assertEqual(subprocess_result.returncode, 0)
+            mock_access.assert_called_once()
+            mock_download.assert_not_called()
+
 
 class UndownloadTests(unittest.TestCase):
     def test_undownload_non_stub_ignored(self) -> None:
