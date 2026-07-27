@@ -6,7 +6,8 @@
 # other .cmake files to define useful functions.
 #
 # Need support for CMAKE_C_COMPILER_TARGET
-cmake_minimum_required(VERSION 3.0)
+# Support for versions less than 3.5 was removed in 4.0.
+cmake_minimum_required(VERSION 3.5)
 
 # Set toolchain-related CMake variables in the cache or parent scope, according
 # to the following parameters:
