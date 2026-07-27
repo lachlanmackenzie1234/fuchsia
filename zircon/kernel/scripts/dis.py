@@ -251,7 +251,7 @@ def find_binaries(
                 # It's possible the build ID file doesn't exist; skip it.
                 continue
             if build_id == bin_spec:
-                return (binary["debug"], binary["label"])
+                return [(binary["debug"], binary["label"])]
         fail(f"No binary with build ID '{bin_spec}' found")
 
     matches = []
