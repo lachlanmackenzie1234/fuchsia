@@ -17,11 +17,6 @@ impl<K, V> FlatMap<K, V> {
         FlatMap(Vec::new())
     }
 
-    /// Creates a new empty `FlatMap` with the specified capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        FlatMap(Vec::with_capacity(capacity))
-    }
-
     /// Returns a reference to the value corresponding to the key.
     pub fn get<'a, Q>(&'a self, key: &Q) -> Option<&'a V>
     where
@@ -82,19 +77,9 @@ impl<K, V> FlatMap<K, V> {
         self.0.iter()
     }
 
-    /// Returns a slice containing the key-value pairs.
-    pub fn as_slice(&self) -> &[(K, V)] {
-        &self.0
-    }
-
     /// Returns `true` if the map contains no elements.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-
-    /// Returns the number of elements in the map.
-    pub fn len(&self) -> usize {
-        self.0.len()
     }
 
     /// Clears the map, removing all key-value pairs.
@@ -148,11 +133,6 @@ impl<T> FlatSet<T> {
         FlatSet(Vec::new())
     }
 
-    /// Creates a new empty `FlatSet` with the specified capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        FlatSet(Vec::with_capacity(capacity))
-    }
-
     /// Adds a value to the set.
     pub fn insert(&mut self, val: T)
     where
@@ -191,24 +171,9 @@ impl<T> FlatSet<T> {
         self.0.iter()
     }
 
-    /// Returns a slice containing all elements in the set.
-    pub fn as_slice(&self) -> &[T] {
-        &self.0
-    }
-
-    /// Returns `true` if the set contains no elements.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
     /// Returns the number of elements in the set.
     pub fn len(&self) -> usize {
         self.0.len()
-    }
-
-    /// Clears the set, removing all values.
-    pub fn clear(&mut self) {
-        self.0.clear();
     }
 
     /// Returns the elements sorted.

@@ -37,6 +37,10 @@ rustc_binary("bin") {
     "src/parser/tokenizer.rs",
     "src/process.rs",
     "src/relative.rs",
+    "src/repl/completion.rs",
+    "src/repl/linenoise.rs",
+    "src/repl/mod.rs",
+    "src/runner.rs",
     "src/serialization.rs",
     "src/sort.rs",
     "src/string.rs",
@@ -70,10 +74,12 @@ rustc_binary("bin") {
     "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:zerocopy",
+    "//zircon/third_party/ulib/linenoise",
   ]
 }
 

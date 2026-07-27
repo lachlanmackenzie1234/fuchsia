@@ -8,22 +8,18 @@ use crate::collections::{FlatMap, FlatSet};
 fn test_flat_map_behavior() {
     let mut map = FlatMap::new();
     assert!(map.is_empty());
-    assert_eq!(map.len(), 0);
 
     map.insert("key1".to_string(), "val1".to_string());
     assert!(!map.is_empty());
-    assert_eq!(map.len(), 1);
     assert!(map.contains_key("key1"));
     assert_eq!(map.get("key1"), Some(&"val1".to_string()));
 
     // Insert duplicate
     map.insert("key1".to_string(), "val1_new".to_string());
-    assert_eq!(map.len(), 1);
     assert_eq!(map.get("key1"), Some(&"val1_new".to_string()));
 
     // Insert another
     map.insert("key2".to_string(), "val2".to_string());
-    assert_eq!(map.len(), 2);
     assert_eq!(map.get("key2"), Some(&"val2".to_string()));
 
     // Mutate
@@ -34,7 +30,6 @@ fn test_flat_map_behavior() {
 
     // Remove
     assert_eq!(map.remove("key1"), Some("val1_new".to_string()));
-    assert_eq!(map.len(), 1);
     assert!(!map.contains_key("key1"));
 
     assert_eq!(map.remove("nonexistent"), None);
@@ -46,11 +41,9 @@ fn test_flat_map_behavior() {
 #[test]
 fn test_flat_set_behavior() {
     let mut set = FlatSet::new();
-    assert!(set.is_empty());
     assert_eq!(set.len(), 0);
 
     set.insert("val1".to_string());
-    assert!(!set.is_empty());
     assert_eq!(set.len(), 1);
     assert!(set.contains("val1"));
 
@@ -67,7 +60,4 @@ fn test_flat_set_behavior() {
     assert!(!set.contains("val1"));
 
     assert!(!set.remove("nonexistent"));
-
-    set.clear();
-    assert!(set.is_empty());
 }

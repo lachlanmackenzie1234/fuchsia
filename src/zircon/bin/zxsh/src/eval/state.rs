@@ -785,6 +785,7 @@ impl ShellState {
 }
 
 /// Helper structure wrapping a parsed `$PATH` variable for binary lookup.
+#[derive(Clone)]
 pub struct ShellPath {
     /// Raw string value of the `PATH` environment variable.
     path_val: BString,

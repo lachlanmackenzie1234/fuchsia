@@ -52,20 +52,6 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    /// Creates a mock execution context with explicit file handles for unit testing.
-    #[cfg(test)]
-    pub fn new_mock(stdin: File, stdout: File, stderr: File) -> Self {
-        Self {
-            stdin: Some(stdin),
-            stdout: Some(stdout),
-            stderr: Some(stderr),
-            extra_fds: FlatMap::new(),
-            active_aliases: FlatSet::new(),
-            pty_control: None,
-            signal_state: ShellSignalState::new(),
-        }
-    }
-
     /// Initializes the root execution context by duplicating the standard process file descriptors
     /// (0, 1, 2).
     pub fn initial() -> Result<Self, String> {
