@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 pub mod arch_vm_aspace;
 pub mod page;
 pub mod page_state;

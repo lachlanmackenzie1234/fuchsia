@@ -12,4 +12,3 @@ use counters_rs as _;
 use debug as _;
 use ksync as _;
 use platform_rs as _;
-use vm as _;

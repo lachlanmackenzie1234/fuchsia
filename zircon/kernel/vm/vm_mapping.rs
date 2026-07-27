@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::arch_vm_aspace::ArchMmuFlags;
-use crate::vm_object::VmObject;
+use super::arch_vm_aspace::ArchMmuFlags;
+use super::vm_object::VmObject;
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
 use fbl::RefPtr;

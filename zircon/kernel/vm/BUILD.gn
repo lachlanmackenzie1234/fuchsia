@@ -6,7 +6,7 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/rust/rustc_bindgen.gni")
-import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 source_set("vm") {
@@ -159,12 +159,12 @@ rustc_library("vm-constants-rs") {
   deps = [ ":vm-constants.bindgen" ]
 }
 
-kernel_rust_crate("vm-rs") {
-  crate_name = "vm"
-  source_root = "lib.rs"
+kernel_rust_mod("vm-rs") {
+  output_name = "vm"
+  source_root = "mod.rs"
   sources = [
     "arch_vm_aspace.rs",
-    "lib.rs",
+    "mod.rs",
     "page.rs",
     "page_state.rs",
     "vm.rs",
@@ -184,6 +184,7 @@ kernel_rust_crate("vm-rs") {
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/kernel:kernel-rs",
+    "//zircon/kernel/switch:allow_dead_code",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
 }

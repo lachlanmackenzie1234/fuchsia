@@ -169,7 +169,6 @@ if (toolchain_environment == "kernel") {
       "//zircon/kernel/lib/counters:counters-rs",
       "//zircon/kernel/lib/debug",
       "//zircon/kernel/platform:platform-rs",
-      "//zircon/kernel/vm:vm-rs",
     ]
   }
 

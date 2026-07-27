@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
-use crate::vm_address_region::VmAddressRegion;
+use super::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
+use super::vm_address_region::VmAddressRegion;
 use core::ffi::{CStr, c_char, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
