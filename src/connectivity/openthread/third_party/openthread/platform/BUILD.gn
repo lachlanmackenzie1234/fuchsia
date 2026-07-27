@@ -46,7 +46,7 @@ source_set("platform") {
     "//src/lib/files",
     "//src/lib/fsl",
     "//src/lib/json_parser",
-    "//third_party/modp_b64",
+    "//third_party/github.com/simdutf/simdutf",
     "//third_party/openthread:lib-ot-core",
     "//zircon/system/ulib/svc",
     "//zircon/system/ulib/zx",

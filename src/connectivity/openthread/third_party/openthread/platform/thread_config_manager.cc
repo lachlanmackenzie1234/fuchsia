@@ -4,6 +4,8 @@
 
 #include "thread_config_manager.h"
 
+#include <simdutf.h>
+
 #include <sstream>
 #include <string>
 
@@ -12,7 +14,6 @@
 #include "rapidjson/writer.h"
 #include "src/lib/files/file.h"
 #include "src/lib/json_parser/json_parser.h"
-#include "third_party/modp_b64/modp_b64.h"
 
 ThreadConfigManager::ThreadConfigManager(const std::string& path) : config_store_path_(path) {
   json::JSONParser json_parser_;
@@ -66,9 +67,11 @@ ThreadConfigMgrError ThreadConfigManager::AppendConfigValueBinArray(const std::s
                                                                     const uint8_t* value,
                                                                     size_t value_size) {
   // Create a json value from the bin data:
-  // - First create string from bin data:
-  std::string binary_string((const char*)value, value_size);
-  std::string encoded_string(modp_b64_encode(binary_string));
+  size_t encoded_len = simdutf::base64_length_from_binary(value_size);
+  std::string encoded_string(encoded_len, '\0');
+  size_t written = simdutf::binary_to_base64(reinterpret_cast<const char*>(value), value_size,
+                                             encoded_string.data());
+  encoded_string.resize(written);
   // - Now create the json string from encoded string
   rapidjson::Value string_value;
   {
@@ -126,7 +129,19 @@ ThreadConfigMgrError ThreadConfigManager::ReadConfigValueFromBinArray(const std:
   }
 
   std::string string_value(config_value[index].GetString());
-  const std::string decoded_value(modp_b64_decode(string_value));
+  size_t max_decoded_len =
+      simdutf::maximal_binary_length_from_base64(string_value.data(), string_value.size());
+  std::string decoded_value(max_decoded_len, '\0');
+  size_t decoded_len = max_decoded_len;
+  auto result = simdutf::base64_to_binary_safe(string_value.data(), string_value.size(),
+                                               decoded_value.data(), decoded_len);
+  if (!result.is_ok()) {
+    otPlatLog(OT_LOG_LEVEL_WARN, otLogRegion::OT_LOG_REGION_PLATFORM,
+              "Failed to decode base64 string for key: %s", key.c_str());
+    // Do not force lowpan to exit because of corrupted read value.
+    return kThreadConfigMgrErrorConfigNotFound;
+  }
+  decoded_value.resize(decoded_len);
   *actual_size = decoded_value.size();
 
   // Special case: a call with value == NULL means caller is interested in
