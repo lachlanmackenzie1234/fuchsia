@@ -70,7 +70,7 @@ openweave_adaptation_layer("adaptation") {
     "//src/lib/files",
     "//src/lib/fsl",
     "//src/lib/json_parser",
-    "//third_party/modp_b64",
+    "//third_party/github.com/simdutf/simdutf",
     "//third_party/openweave-core",
   ]
 }

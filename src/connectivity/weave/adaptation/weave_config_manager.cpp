@@ -5,6 +5,7 @@
 #include "weave_config_manager.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <simdutf.h>
 
 #include <vector>
 
@@ -15,7 +16,6 @@
 #include "rapidjson/writer.h"
 #include "src/lib/files/file.h"
 #include "src/lib/json_parser/json_parser.h"
-#include "third_party/modp_b64/modp_b64.h"
 #include "weave_device_platform_error.h"
 
 namespace nl::Weave::DeviceLayer::Internal {
@@ -127,15 +127,22 @@ WEAVE_ERROR WeaveConfigManager::ReadConfigValueBin(const std::string& key, uint8
     return WEAVE_DEVICE_PLATFORM_ERROR_CONFIG_TYPE_MISMATCH;
   }
   std::string string_value(config_value.GetString());
-  const std::string decoded_value(modp_b64_decode(string_value));
-  *out_size = decoded_value.size();
+  size_t max_len =
+      simdutf::maximal_binary_length_from_base64(string_value.data(), string_value.size());
+  std::vector<uint8_t> decoded_buf(max_len);
+  auto result = simdutf::base64_to_binary(string_value.data(), string_value.size(),
+                                          reinterpret_cast<char*>(decoded_buf.data()));
+  if (result.is_err()) {
+    return WEAVE_DEVICE_PLATFORM_ERROR_CONFIG_INVALID;
+  }
+  *out_size = result.count;
   if (value == nullptr) {
     return WEAVE_NO_ERROR;
   }
   if (value_size < *out_size) {
     return WEAVE_ERROR_BUFFER_TOO_SMALL;
   }
-  memcpy(value, decoded_value.c_str(), decoded_value.size());
+  memcpy(value, decoded_buf.data(), *out_size);
   return WEAVE_NO_ERROR;
 }
 
@@ -183,8 +190,11 @@ WEAVE_ERROR WeaveConfigManager::WriteConfigValueStr(const std::string& key, cons
 
 WEAVE_ERROR WeaveConfigManager::WriteConfigValueBin(const std::string& key, const uint8_t* value,
                                                     size_t value_size) {
-  std::string binary_string(reinterpret_cast<const char*>(value), value_size);
-  std::string encoded_string(modp_b64_encode(binary_string));
+  size_t encoded_len = simdutf::base64_length_from_binary(value_size);
+  std::string encoded_string(encoded_len, '\0');
+  size_t actual_written = simdutf::binary_to_base64(reinterpret_cast<const char*>(value),
+                                                    value_size, encoded_string.data());
+  encoded_string.resize(actual_written);
   return WriteConfigValueStr(key, encoded_string.c_str(), encoded_string.size());
 }
 

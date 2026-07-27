@@ -210,6 +210,19 @@ TEST_F(WeaveConfigManagerTest, ReadWriteBinary) {
   EXPECT_EQ(file_contents, kTestConfigStoreContents);
 }
 
+TEST_F(WeaveConfigManagerTest, ReadInvalidBinary) {
+  constexpr char kTestKeyInvalidBase64[] = "test-key-invalid-b64";
+  uint8_t read_value[256];
+  size_t read_value_size = 0;
+
+  EXPECT_EQ(
+      weave_config_manager().WriteConfigValueStr(kTestKeyInvalidBase64, "invalid_base64_!!!", 18),
+      WEAVE_NO_ERROR);
+  EXPECT_EQ(weave_config_manager().ReadConfigValueBin(kTestKeyInvalidBase64, read_value,
+                                                      sizeof(read_value), &read_value_size),
+            WEAVE_DEVICE_PLATFORM_ERROR_CONFIG_INVALID);
+}
+
 TEST_F(WeaveConfigManagerTest, Erasure) {
   constexpr char kTestKeyBool[] = "test-key-bool";
   constexpr char kTestKeyNonExistent[] = "test-nonexistent";
