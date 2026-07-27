@@ -356,28 +356,28 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
         |_if_id, _test_network, _interface_state, realm, _sandbox| {
             async move {
                 async fn update_dns(
-                    fake_socket_proxy: &fnp_testing::FakeSocketProxy_Proxy,
+                    socket_proxy: &fnp_socketproxy::NetworkRegistryProxy,
                     addresses: &[fnet::Ipv6Address],
                 ) {
-                    fake_socket_proxy
-                        .set_dns(&[fnp_socketproxy::DnsServerList {
-                            source_network_id: Some(TEST_NETWORK_ID),
-                            addresses: Some(
-                                addresses
-                                    .iter()
-                                    .map(|address| {
-                                        fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
-                                            address: address.clone(),
-                                            port: DEFAULT_DNS_PORT,
-                                            zone_index: 0,
-                                        })
-                                    })
-                                    .collect(),
-                            ),
+                    socket_proxy
+                        .update(&fnp_socketproxy::Network {
+                            network_id: Some(TEST_NETWORK_ID),
+                            dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                                v6: Some(addresses.to_vec()),
+                                v4: Some(vec![]),
+                                ..Default::default()
+                            }),
+                            info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                                fnp_socketproxy::StarnixNetworkInfo {
+                                    mark: Some(123),
+                                    ..Default::default()
+                                },
+                            )),
                             ..Default::default()
-                        }])
+                        })
                         .await
-                        .expect("fidl error");
+                        .expect("fidl error")
+                        .expect("protocol error");
                 }
 
                 let wait_for_netmgr = wait_for_component_stopped(
@@ -432,11 +432,6 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                 ]);
                 let mut last_dns_servers = None;
                 let mut seen_dns_servers = Vec::new();
-                let fake_socket_proxy = realm
-                    .connect_to_protocol_from_child::<fnp_testing::FakeSocketProxy_Marker>(
-                        realms::constants::fake_socket_proxy::COMPONENT_NAME,
-                    )
-                    .expect("Failed to connect to FakeSocketProxy");
 
                 'main: loop {
                     let () = futures::select! {
@@ -457,7 +452,7 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                                     // last. Wait until we see the previous
                                     // update.
                                     if list.len() - 1 == server_count {
-                                        update_dns(&fake_socket_proxy, &list).await;
+                                        update_dns(&socket_proxy, &list).await;
                                     } else {
                                         dns_sequence.push_front(list);
                                     }
