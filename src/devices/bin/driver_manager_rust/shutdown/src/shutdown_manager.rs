@@ -4,6 +4,11 @@
 
 use crate::node_remover::NodeRemover;
 use fidl::endpoints::ControlHandle;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fidl_fuchsia_system_state as fsystem_state;
+use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_sync};
 use fuchsia_component::server::{FidlService, ServiceFs, ServiceObjLocal};
 use futures::channel::oneshot;
@@ -11,10 +16,10 @@ use futures::prelude::*;
 use log::{error, info, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_kernel as fkernel,
-    fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_system_state as fsystem_state,
-    fuchsia_async as fasync,
+use zx::sys::{
+    ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT, ZX_SYSTEM_POWERCTL_REBOOT,
+    ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER, ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY,
+    ZX_SYSTEM_POWERCTL_SHUTDOWN,
 };
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -25,13 +30,6 @@ enum State {
     BootStopping,
     Stopped,
 }
-
-// Taken from //zircon/system/public/zircon/syscalls/system.h
-const ZX_SYSTEM_POWERCTL_REBOOT: u32 = 5;
-const ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER: u32 = 6;
-const ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY: u32 = 7;
-const ZX_SYSTEM_POWERCTL_SHUTDOWN: u32 = 8;
-const ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT: u32 = 9;
 
 struct LifecycleServer {
     on_stop: RefCell<Option<oneshot::Sender<oneshot::Sender<zx::Status>>>>,
