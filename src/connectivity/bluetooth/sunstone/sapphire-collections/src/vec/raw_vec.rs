@@ -135,7 +135,7 @@ impl<A: StorageFamily, T> RawVec<T, A> {
         }
     }
 
-    pub fn as_ptr_mut(&mut self) -> NonNull<[MaybeUninit<T>]> {
+    pub fn as_mut_ptr(&mut self) -> NonNull<[MaybeUninit<T>]> {
         match self.get_handle() {
             Some(handle) => {
                 let ptr = unsafe { self.allocator.resolve(handle).cast() };
@@ -152,7 +152,7 @@ impl<A: StorageFamily, T> RawVec<T, A> {
 
     /// Returns a mutable reference to the underlying buffer.
     pub fn buffer_mut(&mut self) -> &mut [MaybeUninit<T>] {
-        unsafe { self.as_ptr_mut().as_mut() }
+        unsafe { self.as_mut_ptr().as_mut() }
     }
 }
 
