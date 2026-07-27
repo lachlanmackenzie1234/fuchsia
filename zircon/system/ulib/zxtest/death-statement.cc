@@ -28,6 +28,22 @@ namespace zxtest {
 namespace internal {
 namespace {
 
+constexpr uint64_t kStackMask = ~uint64_t{15};
+#ifdef __x86_64__
+constexpr auto kPcReg = &zx_thread_state_general_regs_t::rip;
+constexpr auto kSpReg = &zx_thread_state_general_regs_t::rsp;
+#else
+constexpr auto kPcReg = &zx_thread_state_general_regs_t::pc;
+constexpr auto kSpReg = &zx_thread_state_general_regs_t::sp;
+constexpr auto kReturnAddressReg =
+#ifdef __aarch64__
+    &zx_thread_state_general_regs_t::lr
+#elifdef __riscv
+    &zx_thread_state_general_regs_t::ra
+#endif
+    ;
+#endif
+
 #define STRING(x) #x
 #define MAKE_MESSAGE(reason, line) \
   "Death Test Internal Error at " __FILE__ ":" STRING(line) " " reason
@@ -166,12 +182,15 @@ zx_status_t ExitExceptionThread(zx::exception exception, std::string* error_mess
     return status;
   }
 
-#if defined(__aarch64__) || defined(__riscv)
-  regs.pc = reinterpret_cast<uintptr_t>(thrd_exit_success);
-#elif defined(__x86_64__)
-  regs.rip = reinterpret_cast<uintptr_t>(thrd_exit_success);
+  // Warp the register state to call thrd_exit_success().
+  // Make sure the SP is correctly aligned for the call.
+  regs.*kPcReg = reinterpret_cast<uintptr_t>(thrd_exit_success);
+  regs.*kSpReg &= kStackMask;
+#ifdef __x86_64__
+  regs.rsp -= 8;  // On x86 calls push a return address _after_ SP is aligned.
+  *reinterpret_cast<uint64_t*>(static_cast<uintptr_t>(regs.rsp)) = 0;
 #else
-#error "what machine?"
+  regs.*kReturnAddressReg = 0;
 #endif
 
   status = thread.write_state(ZX_THREAD_STATE_GENERAL_REGS, &regs, sizeof(regs));
