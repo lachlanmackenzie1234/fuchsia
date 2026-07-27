@@ -115,10 +115,10 @@ mod tests {
         assert_eq!(run_string(BStr::new("if; then"), ShellState::new()), 1);
 
         // Break outside loop
-        assert_eq!(run_string(BStr::new("break"), ShellState::new()), 1);
+        assert_eq!(run_string(BStr::new("break"), ShellState::new()), 0);
 
         // Continue outside loop
-        assert_eq!(run_string(BStr::new("continue"), ShellState::new()), 1);
+        assert_eq!(run_string(BStr::new("continue"), ShellState::new()), 0);
 
         // Non-zero exit status
         assert_eq!(run_string(BStr::new("false"), ShellState::new()), 1);

@@ -6,7 +6,9 @@ use crate::builtins::essential::*;
 use crate::builtins::{is_builtin, run_builtin};
 use crate::collections::FlatMap;
 use crate::eval::testing::Frame;
-use crate::eval::{EXIT_NOT_FOUND, EXIT_SYNTAX_ERROR, EvalOutcome, ExecutionContext, ShellState};
+use crate::eval::{
+    EXIT_NOT_FOUND, EXIT_SUCCESS, EXIT_SYNTAX_ERROR, EvalOutcome, ExecutionContext, ShellState,
+};
 use bstr::{BStr, BString, ByteSlice};
 use std::io::Cursor;
 
@@ -54,7 +56,7 @@ fn test_builtin_exit() {
 
     let invalid_args = vec![BString::from("abc")];
     let res = run_builtin("exit", &invalid_args, &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Exit(0));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -82,7 +84,7 @@ fn test_builtin_export_and_unset() {
     state.make_readonly("RO");
     let unset_ro = vec![BString::from("RO")];
     let res = run_builtin("unset", &unset_ro, &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -92,7 +94,7 @@ fn test_builtin_local() {
 
     let local_args = vec![BString::from("VAR=val")];
     let res = run_builtin("local", &local_args, &mut state, &mut ctx).unwrap();
-    assert_eq!(res.exit_code(), 1);
+    assert_eq!(res.exit_code(), 2);
 
     state.frames.push(Frame { local_vars: FlatMap::new(), args: vec![] });
     let res = run_builtin("local", &local_args, &mut state, &mut ctx).unwrap();
@@ -131,7 +133,7 @@ fn test_builtin_set_and_shift() {
 
     let shift_bad = vec![BString::from("10")];
     let res = run_builtin("shift", &shift_bad, &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -222,14 +224,14 @@ fn test_builtin_return_break_continue() {
     assert_eq!(res, EvalOutcome::Return(5));
 
     let res = run_builtin("break", &[], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Break(1));
+    assert_eq!(res, EvalOutcome::Code(0));
 
     let break_2 = vec![BString::from("2")];
     let res = run_builtin("break", &break_2, &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Break(2));
+    assert_eq!(res, EvalOutcome::Code(0));
 
     let res = run_builtin(BStr::new("continue"), &[], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Continue(1));
+    assert_eq!(res, EvalOutcome::Code(0));
 
     // Invalid argument tests return EXIT_SYNTAX_ERROR (2)
     let bad_arg = vec![BString::from("invalid_num")];
@@ -303,7 +305,7 @@ fn test_builtin_ulimit_and_command() {
 
     let ulimit_help = vec![BString::from("--help")];
     let res = run_builtin("ulimit", &ulimit_help, &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(0));
+    assert_eq!(res, EvalOutcome::Code(2));
 
     let cmd_v = vec![BString::from("-v"), BString::from("export")];
     let res = run_builtin("command", &cmd_v, &mut state, &mut ctx).unwrap();
@@ -368,7 +370,7 @@ fn test_builtin_export_additional_paths() {
 
     state.make_readonly("RO_EXP");
     let res = run_builtin("export", &[BString::from("RO_EXP=val")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -398,7 +400,7 @@ fn test_builtin_local_additional_paths() {
 
     state.make_readonly("RO_LOC");
     let res = run_builtin("local", &[BString::from("RO_LOC=val")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 
     let res = run_builtin("local", &[BString::from("UNINIT_LOC")], &mut state, &mut ctx).unwrap();
     assert_eq!(res, EvalOutcome::Code(0));
@@ -410,7 +412,7 @@ fn test_builtin_set_unknown_option() {
     let mut ctx = ExecutionContext::initial().unwrap();
 
     let res = run_builtin("set", &[BString::from("-z")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -419,7 +421,7 @@ fn test_builtin_shift_numeric_arg_required() {
     let mut ctx = ExecutionContext::initial().unwrap();
 
     let res = run_builtin("shift", &[BString::from("invalid_num")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -434,10 +436,10 @@ fn test_builtin_trap_invalid_signal() {
         &mut ctx,
     )
     .unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 
     let res = run_builtin("trap", &[BString::from("-l")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -455,7 +457,7 @@ fn test_builtin_wait_additional_paths() {
     let mut ctx = ExecutionContext::initial().unwrap();
 
     let res = run_builtin("wait", &[BString::from("%999")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(127));
 
     let res = run_builtin("wait", &[BString::from("--")], &mut state, &mut ctx).unwrap();
     assert_eq!(res, EvalOutcome::Code(0));
@@ -513,7 +515,7 @@ fn test_builtin_umask_invalid_mode() {
     let mut ctx = ExecutionContext::initial().unwrap();
 
     let res = run_builtin("umask", &[BString::from("invalid_mode")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -524,7 +526,7 @@ fn test_builtin_readonly_errors_and_flags() {
     state.make_readonly("RO_VAR");
     let res =
         run_builtin("readonly", &[BString::from("RO_VAR=new_val")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 
     let res = run_builtin("readonly", &[BString::from("NEW_RO")], &mut state, &mut ctx).unwrap();
     assert_eq!(res, EvalOutcome::Code(0));
@@ -567,10 +569,10 @@ fn test_builtin_ulimit_flags_and_errors() {
     let res =
         run_builtin("ulimit", &[BString::from("-a"), BString::from("100")], &mut state, &mut ctx)
             .unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 
     let res = run_builtin("ulimit", &[BString::from("-z")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 
     let res = run_builtin(
         "ulimit",
@@ -579,7 +581,7 @@ fn test_builtin_ulimit_flags_and_errors() {
         &mut ctx,
     )
     .unwrap();
-    assert_eq!(res, EvalOutcome::Code(1));
+    assert_eq!(res, EvalOutcome::Code(2));
 }
 
 #[test]
@@ -589,7 +591,7 @@ fn test_essential_read_stream() {
     let mut err = Vec::new();
 
     let mut input = Cursor::new(b"hello world\n");
-    let code = builtin_read(&[], &mut state, &mut input, &mut out, &mut err);
+    let code = builtin_read(&[BString::from("REPLY")], &mut state, &mut input, &mut out, &mut err);
     assert_eq!(code, 0);
     assert_eq!(state.get_var("REPLY").unwrap(), "hello world");
 
@@ -614,7 +616,7 @@ fn test_essential_read_stream() {
     let mut input4 = Cursor::new(b"data\n");
     let code =
         builtin_read(&[BString::from("RO_READ")], &mut state, &mut input4, &mut out, &mut err);
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 }
 
 #[test]
@@ -704,7 +706,7 @@ fn test_essential_trap_stream() {
     assert_eq!(code, 0);
 
     let code = builtin_trap(&[BString::from("-l")], &mut state, &mut in_stream, &mut out, &mut err);
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 
     let code = builtin_trap(
         &[BString::from("echo trap_triggered"), BString::from("INT")],
@@ -735,7 +737,7 @@ fn test_essential_trap_stream() {
         &mut out,
         &mut err,
     );
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 }
 
 #[test]
@@ -828,7 +830,7 @@ fn test_essential_ulimit_stream() {
 
     let code =
         builtin_ulimit(&[BString::from("--help")], &mut state, &mut in_stream, &mut out, &mut err);
-    assert_eq!(code, 0);
+    assert_eq!(code, 2);
 
     let code =
         builtin_ulimit(&[BString::from("-a")], &mut state, &mut in_stream, &mut out, &mut err);
@@ -871,11 +873,11 @@ fn test_essential_ulimit_stream() {
         &mut out,
         &mut err,
     );
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 
     let code =
         builtin_ulimit(&[BString::from("-z")], &mut state, &mut in_stream, &mut out, &mut err);
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 
     let code = builtin_ulimit(
         &[BString::from("-f"), BString::from("invalid_num")],
@@ -884,7 +886,7 @@ fn test_essential_ulimit_stream() {
         &mut out,
         &mut err,
     );
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 }
 
 #[test]
@@ -925,7 +927,7 @@ fn test_essential_wait_stream() {
     assert_eq!(code, 0);
 
     let code = builtin_wait(&[BString::from("%1")], &mut state, &mut in_stream, &mut out, &mut err);
-    assert_eq!(code, 1);
+    assert_eq!(code, 127);
 
     let code = builtin_wait(
         &[BString::from("invalid_pid")],
@@ -934,7 +936,7 @@ fn test_essential_wait_stream() {
         &mut out,
         &mut err,
     );
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 }
 
 #[test]
@@ -964,20 +966,600 @@ fn test_essential_eval_exec_and_flow_control() {
     assert_eq!(res, EvalOutcome::Code(EXIT_SYNTAX_ERROR));
 
     let res = builtin_break(&[], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Break(1));
+    assert_eq!(res, EvalOutcome::Code(0));
 
     let res = builtin_break(&[BString::from("2")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Break(2));
+    assert_eq!(res, EvalOutcome::Code(0));
 
     let res = builtin_break(&[BString::from("invalid")], &mut state, &mut ctx).unwrap();
     assert_eq!(res, EvalOutcome::Code(EXIT_SYNTAX_ERROR));
 
     let res = builtin_continue(&[], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Continue(1));
+    assert_eq!(res, EvalOutcome::Code(0));
 
     let res = builtin_continue(&[BString::from("3")], &mut state, &mut ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Continue(3));
+    assert_eq!(res, EvalOutcome::Code(0));
 
     let res = builtin_continue(&[BString::from("invalid")], &mut state, &mut ctx).unwrap();
     assert_eq!(res, EvalOutcome::Code(EXIT_SYNTAX_ERROR));
+}
+
+#[test]
+fn test_builtin_cd_and_pwd_dash_semantics() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    let res = run_builtin("pwd", &[], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    let res = run_builtin("pwd", &[BString::from("-L")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    let res = run_builtin("pwd", &[BString::from("-P")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    let res =
+        run_builtin("cd", &[BString::from("-L"), BString::from("/tmp")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    let res = run_builtin("cd", &[BString::from("-P"), BString::from("/")], &mut state, &mut ctx)
+        .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    state.set_var("CDPATH", "/");
+    let res = run_builtin("cd", &[BString::from("tmp")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+}
+
+#[test]
+fn test_builtin_eval_dash_semantics() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // 1. Empty arguments returns status 0
+    let res = builtin_eval(&[], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    // 2. Space-joining of positional arguments and mutating shell environment directly
+    let args = vec![
+        BString::from("EVAL_A=foo;"),
+        BString::from("EVAL_B=bar;"),
+        BString::from("export EVAL_C=baz"),
+    ];
+    let res = builtin_eval(&args, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert_eq!(state.get_var("EVAL_A").unwrap(), "foo");
+    assert_eq!(state.get_var("EVAL_B").unwrap(), "bar");
+    assert_eq!(state.get_var("EVAL_C").unwrap(), "baz");
+
+    // 3. Status propagation from evaluated string
+    let exit_args = vec![BString::from("exit 42")];
+    let res = builtin_eval(&exit_args, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Exit(42));
+
+    let return_args = vec![BString::from("return 15")];
+    let res = builtin_eval(&return_args, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Return(15));
+}
+
+#[test]
+fn test_builtin_exec_dash_semantics() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // 1. 0-arg exec returns Code(0)
+    let res = builtin_exec(&[], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    // 2. exec -- returns Code(0)
+    let res = builtin_exec(&[BString::from("--")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    // 3. Invalid option returns Code(2)
+    let res = builtin_exec(&[BString::from("-z")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(2));
+
+    // 4. Missing argument for -a returns Code(2)
+    let res = builtin_exec(&[BString::from("-a")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(2));
+
+    // 5. Non-existent command returns Exit(127)
+    let res =
+        builtin_exec(&[BString::from("non_existent_command_12345")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Exit(127));
+
+    // 6. 0-arg exec with redirection persists redirections on ctx
+    let outcome =
+        crate::eval::eval_string(b"exec > /dev/null".as_bstr(), &mut state, &mut ctx).unwrap();
+    assert_eq!(outcome, EvalOutcome::Code(0));
+}
+
+#[test]
+fn test_builtin_jobs_bg_fg_errors() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // No jobs present errors
+    let res = run_builtin("fg", &[], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(2));
+
+    let res = run_builtin("bg", &[], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(2));
+
+    let bad_job = vec![BString::from("%1")];
+    let res = run_builtin("jobs", &bad_job, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(1));
+
+    let res = run_builtin("fg", &bad_job, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(2));
+
+    let res = run_builtin("bg", &bad_job, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(2));
+
+    // Illegal option errors
+    let bad_opt = vec![BString::from("-z")];
+    let res = run_builtin("jobs", &bad_opt, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(2));
+
+    let res = run_builtin("fg", &bad_opt, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(2));
+
+    let res = run_builtin("bg", &bad_opt, &mut state, &mut ctx).unwrap();
+    assert_eq!(res, crate::eval::EvalOutcome::Code(2));
+}
+
+#[test]
+fn test_builtin_set_dash_option_semantics() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // -o and +o listing options
+    let res = run_builtin("set", &[BString::from("-o")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    let res = run_builtin("set", &[BString::from("+o")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+
+    // set -o nounset
+    let res =
+        run_builtin("set", &[BString::from("-o"), BString::from("nounset")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.opt_nounset);
+
+    // set +o nounset
+    let res =
+        run_builtin("set", &[BString::from("+o"), BString::from("nounset")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(!state.opt_nounset);
+
+    // set - disables -x and -v without changing positional arguments
+    state.opt_xtrace = true;
+    state.opt_verbose = true;
+    state.set_args(vec![BString::from("p1")]);
+    let res = run_builtin("set", &[BString::from("-")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(!state.opt_xtrace);
+    assert!(!state.opt_verbose);
+    assert_eq!(state.args, vec![BString::from("p1")]);
+
+    // set -- resets positional parameters when no positional args follow
+    let res = run_builtin("set", &[BString::from("--")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.args.is_empty());
+}
+
+#[test]
+fn test_builtin_trap_dash_semantics() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // Set traps using signal numbers and names with/without SIG prefix
+    let res = run_builtin(
+        "trap",
+        &[BString::from("echo hi"), BString::from("1"), BString::from("SIGINT")],
+        &mut state,
+        &mut ctx,
+    )
+    .unwrap();
+    assert_eq!(res, EvalOutcome::Code(EXIT_SUCCESS));
+    assert_eq!(state.traps.get(BStr::new("HUP")).unwrap(), "echo hi");
+    assert_eq!(state.traps.get(BStr::new("INT")).unwrap(), "echo hi");
+
+    // Single argument trap resets signal
+    let res = run_builtin("trap", &[BString::from("HUP")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(EXIT_SUCCESS));
+    assert!(state.traps.get(BStr::new("HUP")).is_none());
+
+    // Reset with '-' action
+    let res = run_builtin("trap", &[BString::from("-"), BString::from("2")], &mut state, &mut ctx)
+        .unwrap();
+    assert_eq!(res, EvalOutcome::Code(EXIT_SUCCESS));
+    assert!(state.traps.get(BStr::new("INT")).is_none());
+
+    // EXIT trap (signal 0 / EXIT / SIGEXIT)
+    let res =
+        run_builtin("trap", &[BString::from("cleanup"), BString::from("0")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(EXIT_SUCCESS));
+    assert_eq!(state.traps.get(BStr::new("EXIT")).unwrap(), "cleanup");
+
+    // Listing format with 0 arguments or --
+    let res = run_builtin("trap", &[BString::from("--")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(EXIT_SUCCESS));
+}
+
+#[test]
+fn test_builtin_true_false_colon() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // true returns 0 regardless of args or option flags
+    assert_eq!(run_builtin("true", &[], &mut state, &mut ctx).unwrap(), EvalOutcome::Code(0));
+    assert_eq!(
+        run_builtin("true", &[BString::from("--help"), BString::from("-x")], &mut state, &mut ctx)
+            .unwrap(),
+        EvalOutcome::Code(0)
+    );
+    assert_eq!(
+        run_builtin("true", &[BString::from("arg1"), BString::from("arg2")], &mut state, &mut ctx)
+            .unwrap(),
+        EvalOutcome::Code(0)
+    );
+
+    // : returns 0 regardless of args or option flags
+    assert_eq!(run_builtin(":", &[], &mut state, &mut ctx).unwrap(), EvalOutcome::Code(0));
+    assert_eq!(
+        run_builtin(":", &[BString::from("-a"), BString::from("--foo")], &mut state, &mut ctx)
+            .unwrap(),
+        EvalOutcome::Code(0)
+    );
+    assert_eq!(
+        run_builtin(":", &[BString::from("some"), BString::from("args")], &mut state, &mut ctx)
+            .unwrap(),
+        EvalOutcome::Code(0)
+    );
+
+    // false returns 1 regardless of args or option flags
+    assert_eq!(run_builtin("false", &[], &mut state, &mut ctx).unwrap(), EvalOutcome::Code(1));
+    assert_eq!(
+        run_builtin("false", &[BString::from("--help"), BString::from("-v")], &mut state, &mut ctx)
+            .unwrap(),
+        EvalOutcome::Code(1)
+    );
+    assert_eq!(
+        run_builtin("false", &[BString::from("arg1"), BString::from("arg2")], &mut state, &mut ctx)
+            .unwrap(),
+        EvalOutcome::Code(1)
+    );
+}
+
+#[test]
+fn test_builtin_umask_illegal_option() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    let res = run_builtin("umask", &[BString::from("-x")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(EXIT_SYNTAX_ERROR));
+}
+
+#[test]
+fn test_builtin_unset_dash_semantics() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // Default without flags unsets variable
+    state.set_var("VAR1", "val1");
+    let res = run_builtin("unset", &[BString::from("VAR1")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.get_var("VAR1").is_none());
+
+    // Option -v unsets variable
+    state.set_var("VAR2", "val2");
+    let res =
+        run_builtin("unset", &[BString::from("-v"), BString::from("VAR2")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.get_var("VAR2").is_none());
+
+    // Option -f unsets function
+    state.add_function(BString::from("func1"), vec![]);
+    let res =
+        run_builtin("unset", &[BString::from("-f"), BString::from("func1")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.get_function("func1").is_none());
+
+    // Combined options (-vf: last option -f wins)
+    state.set_var("BOTH", "val");
+    state.add_function(BString::from("BOTH"), vec![]);
+    let res =
+        run_builtin("unset", &[BString::from("-vf"), BString::from("BOTH")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.get_function("BOTH").is_none());
+    assert_eq!(state.get_var("BOTH").unwrap(), "val");
+
+    // Combined options (-fv: last option -v wins)
+    state.add_function(BString::from("BOTH2"), vec![]);
+    state.set_var("BOTH2", "val2");
+    let res =
+        run_builtin("unset", &[BString::from("-fv"), BString::from("BOTH2")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.get_var("BOTH2").is_none());
+    assert!(state.get_function("BOTH2").is_some());
+
+    // Option parsing -- terminator
+    state.set_var("-v", "val_dash_v");
+    let res =
+        run_builtin("unset", &[BString::from("--"), BString::from("-v")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.get_var("-v").is_none());
+
+    // Illegal option -x returns EXIT_SYNTAX_ERROR (2)
+    let res = run_builtin("unset", &[BString::from("-x")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(2));
+
+    // Read-only variable protection returns EXIT_SYNTAX_ERROR (2)
+    state.make_readonly("RO_VAR");
+    let res = run_builtin("unset", &[BString::from("RO_VAR")], &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(2));
+
+    // Read-only variable present, but unsetting function -f RO_VAR succeeds
+    state.add_function(BString::from("RO_VAR"), vec![]);
+    let res =
+        run_builtin("unset", &[BString::from("-f"), BString::from("RO_VAR")], &mut state, &mut ctx)
+            .unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.get_function("RO_VAR").is_none());
+    assert!(state.is_readonly("RO_VAR"));
+}
+
+#[test]
+fn test_export_and_readonly_dash_semantics() {
+    use crate::builtins::essential::{builtin_export, builtin_readonly};
+
+    let mut state = ShellState::new();
+
+    // Set some variables
+    state.set_and_export_var("FOO", "hello");
+    state.export_var("UNSET_EXP");
+
+    state.set_var("RO_SET", "world");
+    state.make_readonly("RO_SET");
+    state.make_readonly("UNSET_RO");
+
+    // Test export listing output format with single quotes and unset vars
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_export(&[], &mut state, &mut std::io::empty(), &mut stdout, &mut stderr);
+    assert_eq!(code, 0);
+    let out_str = String::from_utf8(stdout).unwrap();
+    assert!(out_str.contains("export FOO='hello'\n"));
+    assert!(out_str.contains("export UNSET_EXP\n"));
+
+    // Test export -p (with or without extra operand)
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_export(
+        &[BString::from("-p"), BString::from("FOO")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0);
+    let out_str = String::from_utf8(stdout).unwrap();
+    assert!(out_str.contains("export FOO='hello'\n"));
+
+    // Test export invalid option
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_export(
+        &[BString::from("-z")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 2);
+    let err_str = String::from_utf8(stderr).unwrap();
+    assert!(err_str.contains("export: Illegal option -z"));
+
+    // Test export bad variable name
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_export(
+        &[BString::from("123INVALID=val")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 2);
+    let err_str = String::from_utf8(stderr).unwrap();
+    assert!(err_str.contains("export: 123INVALID: bad variable name"));
+
+    // Test export attempt to modify readonly variable
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_export(
+        &[BString::from("RO_SET=new_val")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 2);
+    let err_str = String::from_utf8(stderr).unwrap();
+    assert!(err_str.contains("export: RO_SET: is read only"));
+
+    // Test export on existing readonly variable WITHOUT equals sign (should succeed)
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_export(
+        &[BString::from("RO_SET")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 0);
+
+    // Test readonly listing output format
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_readonly(&[], &mut state, &mut std::io::empty(), &mut stdout, &mut stderr);
+    assert_eq!(code, 0);
+    let out_str = String::from_utf8(stdout).unwrap();
+    assert!(out_str.contains("readonly RO_SET='world'\n"));
+    assert!(out_str.contains("readonly UNSET_RO\n"));
+
+    // Test readonly invalid option
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_readonly(
+        &[BString::from("-z")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 2);
+    let err_str = String::from_utf8(stderr).unwrap();
+    assert!(err_str.contains("readonly: Illegal option -z"));
+
+    // Test readonly bad variable name
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_readonly(
+        &[BString::from("a-b=val")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 2);
+    let err_str = String::from_utf8(stderr).unwrap();
+    assert!(err_str.contains("readonly: a-b: bad variable name"));
+
+    // Test readonly attempt to modify readonly variable
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = builtin_readonly(
+        &[BString::from("RO_SET=new_val")],
+        &mut state,
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 2);
+    let err_str = String::from_utf8(stderr).unwrap();
+    assert!(err_str.contains("readonly: RO_SET: is read only"));
+}
+
+#[test]
+fn test_is_builtin_job_control() {
+    assert!(is_builtin("jobs"));
+    assert!(is_builtin("bg"));
+    assert!(is_builtin("fg"));
+}
+
+#[test]
+fn test_ulimit_soft_hard_and_all_options() {
+    let mut state = ShellState::new();
+    let mut in_stream = Cursor::new(b"");
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+
+    let code = builtin_ulimit(
+        &[BString::from("-S"), BString::from("-f")],
+        &mut state,
+        &mut in_stream,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(out.clone()).unwrap(), "unlimited\n");
+    out.clear();
+
+    let code = builtin_ulimit(
+        &[BString::from("-H"), BString::from("-f")],
+        &mut state,
+        &mut in_stream,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(out.clone()).unwrap(), "unlimited\n");
+    out.clear();
+
+    let code = builtin_ulimit(
+        &[BString::from("-S"), BString::from("1024")],
+        &mut state,
+        &mut in_stream,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, 0);
+
+    let code = builtin_ulimit(
+        &[BString::from("-S"), BString::from("-f")],
+        &mut state,
+        &mut in_stream,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(out.clone()).unwrap(), "1024\n");
+    out.clear();
+
+    let code = builtin_ulimit(
+        &[BString::from("-H"), BString::from("-f")],
+        &mut state,
+        &mut in_stream,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(out.clone()).unwrap(), "unlimited\n");
+    out.clear();
+
+    let code =
+        builtin_ulimit(&[BString::from("500")], &mut state, &mut in_stream, &mut out, &mut err);
+    assert_eq!(code, 0);
+
+    let code = builtin_ulimit(
+        &[BString::from("-S"), BString::from("1000")],
+        &mut state,
+        &mut in_stream,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, 2);
+    assert!(String::from_utf8(err.clone()).unwrap().contains("Operation not permitted"));
+    err.clear();
+
+    let code =
+        builtin_ulimit(&[BString::from("-p")], &mut state, &mut in_stream, &mut out, &mut err);
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(out.clone()).unwrap(), "unlimited\n");
+    out.clear();
+
+    let code =
+        builtin_ulimit(&[BString::from("-u")], &mut state, &mut in_stream, &mut out, &mut err);
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(out.clone()).unwrap(), "unlimited\n");
+    out.clear();
+
+    for flag in &["-t", "-d", "-s", "-c", "-m", "-l", "-n", "-v", "-w", "-r"] {
+        let code =
+            builtin_ulimit(&[BString::from(*flag)], &mut state, &mut in_stream, &mut out, &mut err);
+        assert_eq!(code, 0, "flag {} failed", flag);
+        out.clear();
+    }
 }

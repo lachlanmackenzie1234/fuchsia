@@ -20,7 +20,6 @@ pub struct BgJob {
     /// Handle to the underlying Zircon process.
     pub process: zx::Process,
     /// Formatted command string.
-    #[allow(dead_code)]
     pub cmd: BString,
 }
 
@@ -870,7 +869,6 @@ impl ShellState {
     }
 
     /// Returns a reference to the set of exported variable names.
-    #[allow(dead_code)]
     pub fn exported(&self) -> &FlatSet<BString> {
         &self.exported
     }
@@ -887,7 +885,6 @@ impl ShellState {
 
     /// Parses and returns the current `$CDPATH` environment variable as a `ShellPath` wrapper if
     /// set and non-empty.
-    #[allow(dead_code)]
     pub fn cdpath(&self) -> Option<ShellPath> {
         self.get_var(b"CDPATH").filter(|s| !s.is_empty()).map(ShellPath::new)
     }

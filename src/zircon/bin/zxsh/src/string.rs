@@ -163,7 +163,6 @@ pub fn cstrings_to_c_strs(cstrings: &[CString]) -> Vec<&CStr> {
 
 /// Returns `true` if `name` is a valid shell variable name (a letter or underscore
 /// followed by zero or more letters, underscores, and digits).
-#[allow(dead_code)]
 pub fn is_valid_var_name(name: &BStr) -> bool {
     let bytes = name.as_bytes();
     if bytes.is_empty() {
@@ -184,7 +183,6 @@ pub fn split_key_value(bytes: &[u8]) -> Option<(&BStr, &BStr)> {
 
 /// Formats a byte string into a single-quoted string suitable for shell input,
 /// matching dash's `single_quote` function semantics.
-#[allow(dead_code)]
 pub fn single_quote(s: &BStr) -> BString {
     let mut result = Vec::new();
     let bytes = s.as_bytes();

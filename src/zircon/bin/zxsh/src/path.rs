@@ -14,7 +14,6 @@ use bstr::{BStr, BString, ByteSlice};
 /// and resolving `.` and `..` components symbolically without consulting the filesystem.
 ///
 /// This matches the logical path processing in `zircon/third_party/uapp/dash` (`cd.c`).
-#[allow(dead_code)]
 pub fn canonicalize_logical_path(curdir: &BStr, dest: &BStr) -> BString {
     let mut full = Vec::new();
     if !dest.starts_with(b"/") {
