@@ -33,4 +33,10 @@ impl {{ UpperCamelCase . }} {
     }
 }
 
+impl From<{{ UpperCamelCase . }}> for {{ ScalarTypeName .Subtype }} {
+    fn from(val: {{ UpperCamelCase . }}) -> Self {
+        val as Self
+    }
+}
+
 {{ end }}

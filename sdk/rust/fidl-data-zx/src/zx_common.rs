@@ -149,4 +149,10 @@ impl ObjType {
     }
 }
 
+impl From<ObjType> for u32 {
+    fn from(val: ObjType) -> Self {
+        val as Self
+    }
+}
+
 pub type Handle = u32;

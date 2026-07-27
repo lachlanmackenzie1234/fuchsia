@@ -22,3 +22,9 @@ impl A {
         }
     }
 }
+
+impl From<A> for u32 {
+    fn from(val: A) -> Self {
+        val as Self
+    }
+}

@@ -41,6 +41,12 @@ impl Color {
     }
 }
 
+impl From<Color> for u8 {
+    fn from(val: Color) -> Self {
+        val as Self
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Uint8Limits {
@@ -57,6 +63,12 @@ impl Uint8Limits {
 
             _ => None,
         }
+    }
+}
+
+impl From<Uint8Limits> for u8 {
+    fn from(val: Uint8Limits) -> Self {
+        val as Self
     }
 }
 
@@ -79,6 +91,12 @@ impl Uint16Limits {
     }
 }
 
+impl From<Uint16Limits> for u16 {
+    fn from(val: Uint16Limits) -> Self {
+        val as Self
+    }
+}
+
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Uint32Limits {
@@ -95,6 +113,12 @@ impl Uint32Limits {
 
             _ => None,
         }
+    }
+}
+
+impl From<Uint32Limits> for u32 {
+    fn from(val: Uint32Limits) -> Self {
+        val as Self
     }
 }
 
@@ -117,6 +141,12 @@ impl Uint64Limits {
     }
 }
 
+impl From<Uint64Limits> for u64 {
+    fn from(val: Uint64Limits) -> Self {
+        val as Self
+    }
+}
+
 #[repr(i8)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Int8Limits {
@@ -133,6 +163,12 @@ impl Int8Limits {
 
             _ => None,
         }
+    }
+}
+
+impl From<Int8Limits> for i8 {
+    fn from(val: Int8Limits) -> Self {
+        val as Self
     }
 }
 
@@ -155,6 +191,12 @@ impl Int16Limits {
     }
 }
 
+impl From<Int16Limits> for i16 {
+    fn from(val: Int16Limits) -> Self {
+        val as Self
+    }
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Int32Limits {
@@ -171,6 +213,12 @@ impl Int32Limits {
 
             _ => None,
         }
+    }
+}
+
+impl From<Int32Limits> for i32 {
+    fn from(val: Int32Limits) -> Self {
+        val as Self
     }
 }
 
@@ -193,6 +241,12 @@ impl Int64Limits {
     }
 }
 
+impl From<Int64Limits> for i64 {
+    fn from(val: Int64Limits) -> Self {
+        val as Self
+    }
+}
+
 pub const FOUR: u16 = 0b100;
 
 #[repr(u16)]
@@ -211,6 +265,12 @@ impl EnumWithExpressions {
 
             _ => None,
         }
+    }
+}
+
+impl From<EnumWithExpressions> for u16 {
+    fn from(val: EnumWithExpressions) -> Self {
+        val as Self
     }
 }
 
@@ -240,6 +300,12 @@ impl EnumWithOneLineComment {
     }
 }
 
+impl From<EnumWithOneLineComment> for u8 {
+    fn from(val: EnumWithOneLineComment) -> Self {
+        val as Self
+    }
+}
+
 /// Enum
 ///
 ///     with a
@@ -258,6 +324,12 @@ impl EnumWithManyLineComment {
 
             _ => None,
         }
+    }
+}
+
+impl From<EnumWithManyLineComment> for u16 {
+    fn from(val: EnumWithManyLineComment) -> Self {
+        val as Self
     }
 }
 

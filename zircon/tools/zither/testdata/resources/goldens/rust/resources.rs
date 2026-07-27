@@ -26,6 +26,12 @@ impl Subtype {
     }
 }
 
+impl From<Subtype> for u32 {
+    fn from(val: Subtype) -> Self {
+        val as Self
+    }
+}
+
 /// This is a handle.
 pub type Handle = u32;
 

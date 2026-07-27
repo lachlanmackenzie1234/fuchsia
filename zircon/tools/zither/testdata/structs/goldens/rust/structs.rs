@@ -67,6 +67,12 @@ impl Enum {
     }
 }
 
+impl From<Enum> for i32 {
+    fn from(val: Enum) -> Self {
+        val as Self
+    }
+}
+
 #[repr(C)]
 #[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bits(u16);

@@ -45,6 +45,12 @@ impl Enum {
     }
 }
 
+impl From<Enum> for i16 {
+    fn from(val: Enum) -> Self {
+        val as Self
+    }
+}
+
 pub type EnumAlias = Enum;
 
 #[repr(u16)]
@@ -60,6 +66,12 @@ impl Bits {
 
             _ => None,
         }
+    }
+}
+
+impl From<Bits> for u16 {
+    fn from(val: Bits) -> Self {
+        val as Self
     }
 }
 
