@@ -60,6 +60,7 @@ pub type zx_processor_power_control_t = u64;
 pub type zx_system_memory_stall_type_t = u32;
 pub type zx_system_suspend_option_t = u64;
 pub type zx_system_wake_report_entry_flag_t = u32;
+pub type zx_system_powerctl_cmd_t = u32;
 
 macro_rules! const_assert {
     ($e:expr $(,)?) => {
@@ -2568,6 +2569,18 @@ multiconst!(u32, [
 // layout
 
 // source: zircon/system/public/zircon/syscalls/system.h
+multiconst!(zx_system_powerctl_cmd_t, [
+    ZX_SYSTEM_POWERCTL_ENABLE_ALL_CPUS               = 1;
+    ZX_SYSTEM_POWERCTL_DISABLE_ALL_CPUS_BUT_PRIMARY  = 2;
+    ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE       = 3;
+    ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1               = 4;
+    ZX_SYSTEM_POWERCTL_REBOOT                        = 5;
+    ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER             = 6;
+    ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY               = 7;
+    ZX_SYSTEM_POWERCTL_SHUTDOWN                      = 8;
+    ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT   = 9;
+]);
+
 #[repr(C)]
 pub struct zx_system_powerctl_arg_t {
     // rust can't express anonymous unions at this time
