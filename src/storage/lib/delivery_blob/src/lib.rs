@@ -51,6 +51,16 @@ pub fn generate_to(
     }
 }
 
+/// Returns the type of delivery blob represented by `data`.
+/// Returns an error if `data` is too short to contain a valid header.
+///
+/// **Note**: Only the header portion of the delivery blob needs to be present
+/// in `data` (the full payload is not required).
+pub fn delivery_blob_type(data: &[u8]) -> Result<DeliveryBlobType, DecompressError> {
+    let header = DeliveryBlobHeader::parse(data)?.ok_or(DecompressError::NeedMoreData)?;
+    Ok(header.delivery_type)
+}
+
 /// Returns the decompressed size of `delivery_blob`, delivery blob type is auto detected.
 pub fn decompressed_size(delivery_blob: &[u8]) -> Result<u64, DecompressError> {
     DeliveryBlob::decompressed_size(delivery_blob)
@@ -654,6 +664,34 @@ mod tests {
         let delivery_blob = Type1Blob::generate(&data, CompressionMode::Always);
         assert_eq!(decompressed_size(&delivery_blob).unwrap(), DATA_LEN as u64);
         assert_eq!(decompressed_size_from_reader(&delivery_blob[..]).unwrap(), DATA_LEN as u64);
+    }
+
+    #[test]
+    fn get_delivery_blob_type() {
+        let delivery_blob = Type1Blob::generate(&[], CompressionMode::Never);
+        assert_eq!(delivery_blob_type(&delivery_blob).unwrap(), DeliveryBlobType::Type1);
+    }
+
+    #[test]
+    fn get_delivery_blob_type_truncated() {
+        let delivery_blob = Type1Blob::generate(&[], CompressionMode::Never);
+        // Truncate the blob to 2 bytes, which is too short to contain a valid header.
+        assert!(matches!(
+            delivery_blob_type(&delivery_blob[..2]).unwrap_err(),
+            DecompressError::NeedMoreData
+        ));
+    }
+
+    #[test]
+    fn get_delivery_blob_type_corrupted() {
+        // Provide enough bytes to bypass the length check (64 bytes), but fill them with garbage.
+        let bad_data = vec![0xFF; 64];
+
+        // This should fail to parse the header (usually returning BadMagic or InvalidType).
+        assert!(matches!(
+            delivery_blob_type(&bad_data).unwrap_err(),
+            DecompressError::DeliveryBlob(_)
+        ));
     }
 
     #[test]
