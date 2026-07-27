@@ -13,6 +13,7 @@ group("tests") {
     "usb-hub:tests",
     "usb-peripheral:tests",
     "usb-virtual-bus:tests",
+    "usb-zero-function:tests",
     "xhci:tests",
   ]
   if (target_cpu == "arm64") {
