@@ -140,7 +140,7 @@ impl NetworkPropertyResponder {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, PartialEq, Default, Clone)]
 struct NetworkProperties {
     socket_marks: Option<fnet::Marks>,
     dns_servers: Vec<fnet_name::DnsServer_>,
@@ -280,32 +280,44 @@ impl RegisteredNetworks {
             (false, Entry::Vacant(_), _, _) => Err("update a non-added network"),
             (_, _, NetworkId::Fuchsia(_), Some(_)) => Err("have a fuchsia network with marks"),
             (_, _, NetworkId::Delegated(_), None) => Err("have a delegated network without marks"),
-            (_, _, NetworkId::Fuchsia(_), None) => Ok((
-                NetworkProperties {
-                    dns_servers: changed_dns_servers.unwrap_or_default(),
-                    ..Default::default()
-                },
-                added,
-            )),
+            (_, entry, NetworkId::Fuchsia(_), None) => {
+                let new_dns = changed_dns_servers.unwrap_or_default();
+                let changed_dns = match entry {
+                    Entry::Occupied(e) => e.get().dns_servers != new_dns,
+                    // When adding a new network, set `changed_dns` to true so responders receive
+                    // an explicit initial state.
+                    Entry::Vacant(_) => true,
+                };
+                Ok((
+                    NetworkProperties { dns_servers: new_dns, ..Default::default() },
+                    added,
+                    changed_dns,
+                ))
+            }
             (_, entry, NetworkId::Delegated(_), Some(socket_marks)) => {
-                let changed = if let Entry::Occupied(e) = entry {
-                    e.get().get_marks() != Some(&socket_marks)
-                } else {
-                    true
+                let new_dns = changed_dns_servers.unwrap_or_default();
+                let (changed_marks, changed_dns) = match entry {
+                    Entry::Occupied(e) => {
+                        (e.get().get_marks() != Some(&socket_marks), e.get().dns_servers != new_dns)
+                    }
+                    // When adding a new network, set both `changed_marks` and `changed_dns` to
+                    // true so responders receive an explicit initial state.
+                    Entry::Vacant(_) => (true, true),
                 };
                 Ok((
                     NetworkProperties {
                         socket_marks: Some(socket_marks),
-                        dns_servers: changed_dns_servers.unwrap_or_default(),
+                        dns_servers: new_dns,
                         ..Default::default()
                     },
-                    changed,
+                    changed_marks,
+                    changed_dns,
                 ))
             }
         };
 
         match result {
-            Ok((mut properties, changed_marks)) => {
+            Ok((mut properties, changed_marks, changed_dns)) => {
                 properties.connectivity_state = connectivity_state;
                 properties.network_type = network_type;
                 properties.name = name.clone();
@@ -314,6 +326,7 @@ impl RegisteredNetworks {
                     network_id,
                     added,
                     changed_marks,
+                    changed_dns,
                     name,
                     network_type,
                 }
@@ -535,6 +548,7 @@ enum UpdateApplied {
         network_id: NetworkId,
         added: bool,
         changed_marks: bool,
+        changed_dns: bool,
         name: Option<String>,
         network_type: Option<fnp_socketproxy::NetworkType>,
     },
@@ -1140,9 +1154,17 @@ impl NetpolNetworksService {
                 }
             };
 
-            if let UpdateApplied::NetworkChanged { network_id, changed_marks: true, .. } = event {
+            if let UpdateApplied::NetworkChanged {
+                network_id, changed_marks, changed_dns, ..
+            } = event
+            {
                 if network.network_id == network_id {
-                    updates.add_socket_marks(&self.network_registry, &network, &responder);
+                    if changed_marks {
+                        updates.add_socket_marks(&self.network_registry, &network, &responder);
+                    }
+                    if changed_dns {
+                        updates.add_dns(&self.network_registry, &network, &responder);
+                    }
                 }
             }
             if let UpdateApplied::DnsChanged = event {
@@ -1275,6 +1297,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use std::num::NonZeroU64;
+    use test_case::test_case;
+
     const ID_1: InterfaceId = InterfaceId(NonZeroU64::new(1).unwrap());
     const ID_2: InterfaceId = InterfaceId(NonZeroU64::new(2).unwrap());
     const NAME_1: &str = "testif1";
@@ -1285,8 +1309,96 @@ mod tests {
     const DELEGATED_ID_1: NetworkId = NetworkId::Delegated(ID_1);
     const DELEGATED_ID_2: NetworkId = NetworkId::Delegated(ID_2);
 
+    #[derive(Clone, Copy)]
+    struct TestNetwork {
+        id: NetworkId,
+        name: &'static str,
+        network_type: fnp_socketproxy::NetworkType,
+    }
+
+    #[derive(Default)]
+    struct AppliedChanges {
+        added: bool,
+        changed_marks: bool,
+        changed_dns: bool,
+    }
+
+    impl TestNetwork {
+        fn added(&self, added: bool) -> NetworkPropertiesChange {
+            NetworkPropertiesChange {
+                added,
+                name: Some(self.name.to_string()),
+                network_type: Some(self.network_type),
+                ..Default::default()
+            }
+        }
+
+        fn change_with(
+            &self,
+            added: bool,
+            marks: Option<fnet::Marks>,
+            dns_servers: Option<Vec<fnet_name::DnsServer_>>,
+            connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
+        ) -> NetworkPropertiesChange {
+            NetworkPropertiesChange {
+                added,
+                marks,
+                dns_servers,
+                connectivity_state,
+                name: Some(self.name.to_string()),
+                network_type: Some(self.network_type),
+            }
+        }
+
+        fn applied(&self, changes: AppliedChanges) -> UpdateApplied {
+            let AppliedChanges { added, changed_marks, changed_dns } = changes;
+            UpdateApplied::NetworkChanged {
+                network_id: self.id,
+                added,
+                changed_marks,
+                changed_dns,
+                name: Some(self.name.to_string()),
+                network_type: Some(self.network_type),
+            }
+        }
+    }
+
+    const DELEGATED_NET_1: TestNetwork = TestNetwork {
+        id: DELEGATED_ID_1,
+        name: NAME_1,
+        network_type: fnp_socketproxy::NetworkType::Ethernet,
+    };
+    const FUCHSIA_NET_1: TestNetwork = TestNetwork {
+        id: FUCHSIA_ID_1,
+        name: NAME_1,
+        network_type: fnp_socketproxy::NetworkType::Ethernet,
+    };
+    const FUCHSIA_NET_2: TestNetwork = TestNetwork {
+        id: FUCHSIA_ID_2,
+        name: NAME_2,
+        network_type: fnp_socketproxy::NetworkType::Wifi,
+    };
+
     fn test_marks() -> fnet::Marks {
         fnet::Marks { mark_1: Some(123), ..Default::default() }
+    }
+
+    fn test_marks_updated() -> fnet::Marks {
+        fnet::Marks { mark_1: Some(456), ..Default::default() }
+    }
+
+    fn test_dns_1() -> Vec<fnet_name::DnsServer_> {
+        vec![fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("192.0.2.1:53")),
+            ..Default::default()
+        }]
+    }
+
+    fn test_dns_2() -> Vec<fnet_name::DnsServer_> {
+        vec![fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("192.0.2.2:53")),
+            ..Default::default()
+        }]
     }
 
     fn delegated_properties() -> NetworkProperties {
@@ -1327,146 +1439,91 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_handle_changed_network_delegated() {
+    #[test_case(
+        DELEGATED_NET_1,
+        Some(test_marks()),
+        Some(test_marks_updated()); "delegated network"
+    )]
+    #[test_case(FUCHSIA_NET_2, None, None; "fuchsia network")]
+    fn test_handle_changed_network(
+        net: TestNetwork,
+        initial_marks: Option<fnet::Marks>,
+        updated_marks: Option<fnet::Marks>,
+    ) {
         let mut networks = RegisteredNetworks::default();
+        let dns1 = test_dns_1();
+        let dns2 = test_dns_2();
 
-        // Add a new delegated network
-        let marks = test_marks();
-        let event = NetworkPropertiesChange {
-            added: true,
-            marks: Some(marks.clone()),
-            dns_servers: None,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
+        // Adding network with DNS servers should have changed_marks=true and changed_dns=true.
+        let event = net.change_with(
+            true,
+            initial_marks.clone(),
+            Some(dns1.clone()),
+            Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+        );
         assert_eq!(
-            networks.handle_changed_network(DELEGATED_ID_1, event),
-            UpdateApplied::NetworkChanged {
-                network_id: DELEGATED_ID_1,
-                added: true,
-                changed_marks: true,
-                name: Some(NAME_1.to_string()),
-                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+            networks.handle_changed_network(net.id, event),
+            net.applied(AppliedChanges { added: true, changed_marks: true, changed_dns: true }),
+        );
+        assert_eq!(
+            networks.networks.get(&net.id).expect("network should be present"),
+            &NetworkProperties {
+                socket_marks: initial_marks.clone(),
+                dns_servers: dns1,
+                connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                name: Some(net.name.to_string()),
+                network_type: Some(net.network_type),
             }
         );
-        let properties = networks.networks.get(&DELEGATED_ID_1).expect("network should be present");
-        assert_eq!(properties.socket_marks, Some(marks.clone()));
+
+        // Updating with same marks and different DNS should have changed_marks=false and
+        // changed_dns=true.
+        let event = net.change_with(
+            false,
+            initial_marks.clone(),
+            Some(dns2.clone()),
+            Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+        );
         assert_eq!(
-            properties.connectivity_state,
-            Some(fnp_socketproxy::ConnectivityState::FullConnectivity)
+            networks.handle_changed_network(net.id, event),
+            net.applied(AppliedChanges { added: false, changed_marks: false, changed_dns: true }),
+        );
+        assert_eq!(
+            networks.networks.get(&net.id).expect("network should be present"),
+            &NetworkProperties {
+                socket_marks: initial_marks.clone(),
+                dns_servers: dns2.clone(),
+                connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+                name: Some(net.name.to_string()),
+                network_type: Some(net.network_type),
+            }
         );
 
-        // Update with different connectivity state but same marks
-        let event = NetworkPropertiesChange {
-            added: false,
-            marks: Some(marks.clone()),
-            dns_servers: None,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
+        // Updating marks (if delegated) with same DNS should have changed_dns=false.
+        let marks_changed = initial_marks != updated_marks;
+        let event = net.change_with(
+            false,
+            updated_marks.clone(),
+            Some(dns2.clone()),
+            Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+        );
         assert_eq!(
-            networks.handle_changed_network(DELEGATED_ID_1, event),
-            UpdateApplied::NetworkChanged {
-                network_id: DELEGATED_ID_1,
+            networks.handle_changed_network(net.id, event),
+            net.applied(AppliedChanges {
                 added: false,
-                changed_marks: false,
-                name: Some(NAME_1.to_string()),
-                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+                changed_marks: marks_changed,
+                changed_dns: false,
+            }),
+        );
+        assert_eq!(
+            networks.networks.get(&net.id).expect("network should be present"),
+            &NetworkProperties {
+                socket_marks: updated_marks,
+                dns_servers: dns2.clone(),
+                connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+                name: Some(net.name.to_string()),
+                network_type: Some(net.network_type),
             }
-        );
-
-        let properties = networks.networks.get(&DELEGATED_ID_1).expect("network should be present");
-        assert_eq!(properties.socket_marks, Some(marks.clone()));
-        assert_eq!(
-            properties.connectivity_state,
-            Some(fnp_socketproxy::ConnectivityState::NoConnectivity)
-        );
-
-        // Update with different marks
-        let new_marks = fnet::Marks { mark_1: Some(456), ..Default::default() };
-        let event = NetworkPropertiesChange {
-            added: false,
-            marks: Some(new_marks.clone()),
-            dns_servers: None,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
-        assert_eq!(
-            networks.handle_changed_network(DELEGATED_ID_1, event),
-            UpdateApplied::NetworkChanged {
-                network_id: DELEGATED_ID_1,
-                added: false,
-                changed_marks: true,
-                name: Some(NAME_1.to_string()),
-                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-            }
-        );
-        let properties = networks.networks.get(&DELEGATED_ID_1).expect("network should be present");
-        assert_eq!(properties.socket_marks, Some(new_marks));
-        assert_eq!(
-            properties.connectivity_state,
-            Some(fnp_socketproxy::ConnectivityState::NoConnectivity)
-        );
-    }
-
-    #[test]
-    fn test_handle_changed_network_fuchsia() {
-        let mut networks = RegisteredNetworks::default();
-
-        // Add a Fuchsia network
-        let event = NetworkPropertiesChange {
-            added: true,
-            marks: None,
-            dns_servers: None,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
-            name: Some(NAME_2.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-        };
-        assert_eq!(
-            networks.handle_changed_network(FUCHSIA_ID_2, event),
-            UpdateApplied::NetworkChanged {
-                network_id: FUCHSIA_ID_2,
-                added: true,
-                changed_marks: true,
-                name: Some(NAME_2.to_string()),
-                network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-            }
-        );
-        let properties = networks.networks.get(&FUCHSIA_ID_2).expect("network should be present");
-        assert_eq!(properties.socket_marks, None);
-        assert_eq!(
-            properties.connectivity_state,
-            Some(fnp_socketproxy::ConnectivityState::LocalConnectivity)
-        );
-
-        // Update Fuchsia network connectivity
-        let event = NetworkPropertiesChange {
-            added: false,
-            marks: None,
-            dns_servers: None,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
-            name: Some(NAME_2.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-        };
-        assert_eq!(
-            networks.handle_changed_network(FUCHSIA_ID_2, event),
-            UpdateApplied::NetworkChanged {
-                network_id: FUCHSIA_ID_2,
-                added: false,
-                changed_marks: false,
-                name: Some(NAME_2.to_string()),
-                network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-            }
-        );
-
-        let properties = networks.networks.get(&FUCHSIA_ID_2).expect("network should be present");
-        assert_eq!(
-            properties.connectivity_state,
-            Some(fnp_socketproxy::ConnectivityState::FullConnectivity)
         );
     }
 
@@ -1474,70 +1531,32 @@ mod tests {
     fn test_handle_changed_network_validation() {
         let mut networks = RegisteredNetworks::default();
         let marks = test_marks();
+        let net = DELEGATED_NET_1;
 
         // Update a non-added network
-        let event = NetworkPropertiesChange {
-            added: false,
-            marks: Some(marks.clone()),
-            dns_servers: None,
-            connectivity_state: None,
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
-        assert_eq!(networks.handle_changed_network(DELEGATED_ID_1, event), UpdateApplied::None);
+        let event = NetworkPropertiesChange { marks: Some(marks.clone()), ..net.added(false) };
+        assert_eq!(networks.handle_changed_network(net.id, event), UpdateApplied::None);
 
         // Add the network
-        let event = NetworkPropertiesChange {
-            added: true,
-            marks: Some(marks.clone()),
-            dns_servers: None,
-            connectivity_state: None,
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
+        let event = NetworkPropertiesChange { marks: Some(marks.clone()), ..net.added(true) };
         assert_eq!(
-            networks.handle_changed_network(DELEGATED_ID_1, event),
-            UpdateApplied::NetworkChanged {
-                network_id: DELEGATED_ID_1,
-                added: true,
-                changed_marks: true,
-                name: Some(NAME_1.to_string()),
-                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-            }
+            networks.handle_changed_network(net.id, event),
+            net.applied(AppliedChanges { added: true, changed_marks: true, changed_dns: true }),
         );
 
         // Add already added network
-        let event = NetworkPropertiesChange {
-            added: true,
-            marks: Some(marks.clone()),
-            dns_servers: None,
-            connectivity_state: None,
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
-        assert_eq!(networks.handle_changed_network(DELEGATED_ID_1, event), UpdateApplied::None);
+        let event = NetworkPropertiesChange { marks: Some(marks.clone()), ..net.added(true) };
+        assert_eq!(networks.handle_changed_network(net.id, event), UpdateApplied::None);
 
         // Fuchsia network with marks
-        let event = NetworkPropertiesChange {
-            added: true,
-            marks: Some(marks.clone()),
-            dns_servers: None,
-            connectivity_state: None,
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
-        assert_eq!(networks.handle_changed_network(FUCHSIA_ID_1, event), UpdateApplied::None);
+        let fuchsia_net = FUCHSIA_NET_1;
+        let event =
+            NetworkPropertiesChange { marks: Some(marks.clone()), ..fuchsia_net.added(true) };
+        assert_eq!(networks.handle_changed_network(fuchsia_net.id, event), UpdateApplied::None);
 
         // Delegated network without marks
-        let event = NetworkPropertiesChange {
-            added: true,
-            marks: None,
-            dns_servers: None,
-            connectivity_state: None,
-            name: Some(NAME_1.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-        };
-        assert_eq!(networks.handle_changed_network(DELEGATED_ID_1, event), UpdateApplied::None);
+        let event = net.added(true);
+        assert_eq!(networks.handle_changed_network(net.id, event), UpdateApplied::None);
     }
 
     // Unit tests the election algorithm directly by manipulating internal state.
