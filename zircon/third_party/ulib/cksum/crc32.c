@@ -181,17 +181,17 @@ static void write_table(out, table)
 #include "crc32.h"
 #endif /* DYNAMIC_CRC_TABLE */
 
+#ifdef DYNAMIC_CRC_TABLE
 /* =========================================================================
  * This function can be used by asm versions of crc32()
  */
-const uint32_t* ZEXPORT get_crc_table(void)
+static const uint32_t* get_crc_table(void)
 {
-#ifdef DYNAMIC_CRC_TABLE
     if (crc_table_empty)
         make_crc_table();
-#endif /* DYNAMIC_CRC_TABLE */
     return (const uint32_t*)crc_table;
 }
+#endif /* DYNAMIC_CRC_TABLE */
 
 /* ========================================================================= */
 #define DO1 crc = crc_table[0][(crc ^ (*buf++)) & 0xff] ^ (crc >> 8)
