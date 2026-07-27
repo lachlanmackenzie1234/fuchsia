@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::compression::{ChunkedArchiveError, CompressionAlgorithm, ThreadLocalDecompressor};
+use std::borrow::Borrow;
 use std::ops::Range;
 use storage_ptr_slice::MutPtrByteSlice;
 
@@ -185,46 +186,13 @@ impl CompressionInfo {
 
         Ok(())
     }
-
-    /// Returns a streaming decompressor and the block-aligned compressed range (`Range<u64>`)
-    /// that must be read from storage to decode `range` into `dest_buf`.
-    ///
-    /// `range.start` must be chunk aligned (a multiple of `chunk_size`).
-    pub fn streaming_decompressor<'a, B: DataBuffer>(
-        &'a self,
-        range: Range<u64>,
-        uncompressed_size: u64,
-        dest_buf: B,
-    ) -> Result<(StreamingDecompressor<'a, B>, Range<u64>), ChunkedArchiveError> {
-        const BLOCK_SIZE: u64 = 4096;
-        let compressed = self.compressed_range_for_uncompressed_range(&range)?;
-        let aligned = (compressed.start / BLOCK_SIZE) * BLOCK_SIZE
-            ..compressed.end.next_multiple_of(BLOCK_SIZE);
-
-        let chunk_size = self.chunk_size();
-        assert_eq!(range.start % chunk_size, 0, "range.start must be chunk aligned");
-        let chunk_index = (range.start / chunk_size) as usize;
-
-        let decompressor = StreamingDecompressor {
-            info: self,
-            dest_buf,
-            range,
-            uncompressed_size,
-            chunk_index,
-            accumulator: Vec::new(),
-            current_compressed_offset: aligned.start,
-            failed: false,
-        };
-
-        Ok((decompressor, aligned))
-    }
 }
 
 /// Stateful streaming decompressor that receives compressed block buffers
 /// and decompresses complete chunks into `dest_buf`.
-pub struct StreamingDecompressor<'a, B> {
-    /// Reference to the blob compression metadata.
-    info: &'a CompressionInfo,
+pub struct StreamingDecompressor<C, B> {
+    /// Reference or owned container for blob compression metadata.
+    info: C,
 
     /// Target destination buffer implementing `DataBuffer`.
     dest_buf: B,
@@ -249,7 +217,44 @@ pub struct StreamingDecompressor<'a, B> {
     failed: bool,
 }
 
-impl<'a, B: DataBuffer> StreamingDecompressor<'a, B> {
+impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
+    /// Creates a new streaming decompressor for `range` into `dest_buf`.
+    ///
+    /// Accepts any container `info` implementing `Borrow<CompressionInfo>` (e.g.
+    /// `&CompressionInfo` or `Arc<CompressionInfo>`).
+    /// Returns the decompressor and the block-aligned compressed byte range (`Range<u64>`) to
+    /// read from storage.
+    ///
+    /// `range.start` must be chunk aligned (a multiple of `chunk_size`).
+    pub fn new(
+        info: C,
+        range: Range<u64>,
+        uncompressed_size: u64,
+        dest_buf: B,
+    ) -> Result<(Self, Range<u64>), ChunkedArchiveError> {
+        const BLOCK_SIZE: u64 = 4096;
+        let compressed = info.borrow().compressed_range_for_uncompressed_range(&range)?;
+        let aligned = (compressed.start / BLOCK_SIZE) * BLOCK_SIZE
+            ..compressed.end.next_multiple_of(BLOCK_SIZE);
+
+        let chunk_size = info.borrow().chunk_size();
+        assert_eq!(range.start % chunk_size, 0, "range.start must be chunk aligned");
+        let chunk_index = (range.start / chunk_size) as usize;
+
+        let decompressor = StreamingDecompressor {
+            info,
+            dest_buf,
+            range,
+            uncompressed_size,
+            chunk_index,
+            accumulator: Vec::new(),
+            current_compressed_offset: aligned.start,
+            failed: false,
+        };
+
+        Ok((decompressor, aligned))
+    }
+
     /// Pushes a newly read compressed block buffer slice and decompresses any complete chunks.
     /// Fuses on error: if an error occurs or has previously occurred, returns `Err`.
     pub fn push(&mut self, buffer_slice: &[u8]) -> Result<(), ChunkedArchiveError> {
@@ -265,17 +270,16 @@ impl<'a, B: DataBuffer> StreamingDecompressor<'a, B> {
             ..self.current_compressed_offset + buffer_slice.len() as u64;
         self.current_compressed_offset = buffer.end;
 
-        let chunk_size = self.info.chunk_size();
+        let info = self.info.borrow();
+        let chunk_size = info.chunk_size();
 
         while self.range.start < self.range.end {
-            let chunk_start = self
-                .info
+            let chunk_start = info
                 .compressed_offset_for_chunk_index(self.chunk_index)
                 .ok_or(ChunkedArchiveError::OutOfRange)?;
-            let chunk_end = self
-                .info
+            let chunk_end = info
                 .compressed_offset_for_chunk_index(self.chunk_index + 1)
-                .unwrap_or_else(|| self.info.compressed_size());
+                .unwrap_or_else(|| info.compressed_size());
             let chunk = chunk_start..chunk_end;
 
             let decompress_chunk = |compressed_src: &[u8],
@@ -297,7 +301,7 @@ impl<'a, B: DataBuffer> StreamingDecompressor<'a, B> {
                 // points to uncommitted remaining memory of length `chunk_uncompressed_len`.
                 let dst_slice = unsafe { &mut *dest_buffer.as_raw_mut_slice_ptr() };
 
-                let decompressed_bytes = self.info.decompressor.decompress_into(
+                let decompressed_bytes = info.decompressor.decompress_into(
                     compressed_src,
                     dst_slice,
                     self.chunk_index,
@@ -543,7 +547,7 @@ mod tests {
 
         let buf = TestBuffer::new(32768);
         let (mut decompressor, aligned) =
-            info.streaming_decompressor(0..32768, 32768, buf).unwrap();
+            StreamingDecompressor::new(&info, 0..32768, 32768, buf).unwrap();
         assert_eq!(aligned, 0..4096);
 
         decompressor.push(&compressed_data).unwrap();
@@ -575,7 +579,8 @@ mod tests {
         .unwrap();
 
         let buf = TestBuffer::new(65536);
-        let (mut decompressor, _) = info.streaming_decompressor(0..65536, 65536, buf).unwrap();
+        let (mut decompressor, _) =
+            StreamingDecompressor::new(&info, 0..65536, 65536, buf).unwrap();
 
         for slice in compressed_data.chunks(10) {
             decompressor.push(slice).unwrap();
@@ -612,9 +617,13 @@ mod tests {
         let mut buf = TestBuffer::new(65536);
         buf.data.fill(0xFF);
 
-        let (mut decompressor, _) = info
-            .streaming_decompressor(0..uncompressed_size as u64, uncompressed_size as u64, buf)
-            .unwrap();
+        let (mut decompressor, _) = StreamingDecompressor::new(
+            &info,
+            0..uncompressed_size as u64,
+            uncompressed_size as u64,
+            buf,
+        )
+        .unwrap();
         decompressor.push(&compressed_data).unwrap();
 
         assert_eq!(&decompressor.dest_buf.data[..uncompressed_size], &uncompressed_data[..]);
@@ -625,14 +634,14 @@ mod tests {
     fn test_streaming_decompressor_unaligned_start_returns_err() {
         let info = CompressionInfo::new(4096, 500, &[0], CompressionAlgorithm::Zstd).unwrap();
         let buf = TestBuffer::new(4096);
-        assert!(info.streaming_decompressor(100..4096, 4096, buf).is_err());
+        assert!(StreamingDecompressor::new(&info, 100..4096, 4096, buf).is_err());
     }
 
     #[test]
     fn test_streaming_decompressor_fused_error() {
         let info = CompressionInfo::new(4096, 500, &[0], CompressionAlgorithm::Zstd).unwrap();
         let buf = TestBuffer::new(4096);
-        let (mut decompressor, _) = info.streaming_decompressor(0..4096, 4096, buf).unwrap();
+        let (mut decompressor, _) = StreamingDecompressor::new(&info, 0..4096, 4096, buf).unwrap();
 
         let invalid_compressed_data = vec![0xFFu8; 4096];
         assert!(decompressor.push(&invalid_compressed_data).is_err());

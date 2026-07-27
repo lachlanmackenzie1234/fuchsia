@@ -11,6 +11,7 @@ rustc_library("mapping") {
   with_unit_tests = true
 
   sources = [
+    "src/blob.rs",
     "src/extents.rs",
     "src/lib.rs",
     "src/reader.rs",
@@ -18,9 +19,11 @@ rustc_library("mapping") {
 
   deps = [
     "//src/lib/fuchsia-sync",
+    "//src/storage/lib/delivery_blob",
     "//src/storage/lib/storage_device",
     "//third_party/rust_crates:anyhow",
   ]
+  test_deps = [ "//src/storage/lib/ptr_slice" ]
 }
 
 fuchsia_unittest_package("mapping-tests") {

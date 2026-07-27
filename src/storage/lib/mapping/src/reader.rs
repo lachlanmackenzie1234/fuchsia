@@ -7,7 +7,7 @@ use anyhow::{Error, anyhow};
 use fuchsia_sync::Mutex;
 use std::cmp::{Ordering, Reverse, max, min};
 use std::collections::BinaryHeap;
-use std::ops::Range;
+use std::ops::{ControlFlow, Range};
 use std::sync::Arc;
 
 /// Maximum number of bytes to read per single storage buffer request (1 MiB).
@@ -66,7 +66,7 @@ impl Ord for BufferedChunk {
 /// allocations are delivered to `callback` in strict ascending logical order.
 struct ReadContext<F>
 where
-    F: FnMut(Result<OwnedBuffer, Error>) + Send + 'static,
+    F: FnMut(Result<OwnedBuffer, Error>) -> ControlFlow<()> + Send + 'static,
 {
     callback: Option<F>,
 
@@ -76,16 +76,13 @@ where
     /// Out-of-order successful completions waiting for earlier chunks to finish before delivery.
     buffered_chunks: BinaryHeap<Reverse<BufferedChunk>>,
 
-    /// Set `true` if any chunk fails, stopping future deliveries.
-    error_occurred: bool,
-
     /// Total number of buffers allocated across all iterations of `read_aligned_range`.
     total_chunks: Option<usize>,
 }
 
 impl<F> ReadContext<F>
 where
-    F: FnMut(Result<OwnedBuffer, Error>) + Send + 'static,
+    F: FnMut(Result<OwnedBuffer, Error>) -> ControlFlow<()> + Send + 'static,
 {
     /// Invoked when the asynchronous read for chunk sequence index `chunk_index` completes.
     ///
@@ -97,18 +94,17 @@ where
         res: Result<OwnedBuffer, Error>,
     ) {
         let mut guard = context.lock();
-        if guard.error_occurred || guard.callback.is_none() {
+        if guard.callback.is_none() {
             return;
         }
 
         let mut current_buf = match res {
             Ok(buf) => buf,
             Err(e) => {
-                guard.error_occurred = true;
                 guard.buffered_chunks.clear();
                 let mut cb = guard.callback.take().unwrap();
                 drop(guard);
-                cb(Err(e));
+                let _ = cb(Err(e));
                 return;
             }
         };
@@ -122,8 +118,11 @@ where
 
         loop {
             guard.next_expected_chunk += 1;
-            if let Some(callback) = guard.callback.as_mut() {
-                callback(Ok(current_buf));
+            let cb = guard.callback.as_mut().unwrap();
+            if cb(Ok(current_buf)).is_break() {
+                guard.buffered_chunks.clear();
+                guard.callback = None;
+                return;
             }
 
             if let Some(top) = guard.buffered_chunks.peek()
@@ -139,20 +138,18 @@ where
 
 impl<F> Drop for ReadContext<F>
 where
-    F: FnMut(Result<OwnedBuffer, Error>) + Send + 'static,
+    F: FnMut(Result<OwnedBuffer, Error>) -> ControlFlow<()> + Send + 'static,
 {
     fn drop(&mut self) {
-        if !self.error_occurred {
-            if let Some(mut callback) = self.callback.take() {
-                let incomplete = match self.total_chunks {
-                    Some(total) => {
-                        self.next_expected_chunk != total || !self.buffered_chunks.is_empty()
-                    }
-                    None => true,
-                };
-                if incomplete {
-                    callback(Err(anyhow!("ReadContext dropped before completion")));
+        if let Some(mut callback) = self.callback.take() {
+            let incomplete = match self.total_chunks {
+                Some(total) => {
+                    self.next_expected_chunk != total || !self.buffered_chunks.is_empty()
                 }
+                None => true,
+            };
+            if incomplete {
+                let _ = callback(Err(anyhow!("ReadContext dropped before completion")));
             }
         }
     }
@@ -177,7 +174,7 @@ pub fn read_aligned_range<F>(
     service: &(impl BlockService + ?Sized),
     mut callback: F,
 ) where
-    F: FnMut(Result<OwnedBuffer, Error>) + Send + 'static,
+    F: FnMut(Result<OwnedBuffer, Error>) -> ControlFlow<()> + Send + 'static,
 {
     let mut offset = range.start;
     let end = range.end;
@@ -193,7 +190,9 @@ pub fn read_aligned_range<F>(
     );
 
     if range.is_empty() {
-        callback(Err(anyhow!("read_aligned_range: range {range:?} must have a non-zero length")));
+        let _ = callback(Err(anyhow!(
+            "read_aligned_range: range {range:?} must have a non-zero length"
+        )));
         return;
     }
 
@@ -201,14 +200,13 @@ pub fn read_aligned_range<F>(
         callback: Some(callback),
         next_expected_chunk: 0,
         buffered_chunks: BinaryHeap::new(),
-        error_occurred: false,
         total_chunks: None,
     }));
 
     let mut next_chunk_index = 0usize;
 
     while offset < end {
-        if context.lock().error_occurred {
+        if context.lock().callback.is_none() {
             break;
         }
 
@@ -293,7 +291,7 @@ pub fn read_aligned_range<F>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::Extent;
     use std::cmp::min;
@@ -302,22 +300,26 @@ mod tests {
     use std::time::Duration;
     use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 
-    struct FakeBlockService {
+    pub(crate) struct FakeBlockService {
         allocator: Arc<BufferAllocator>,
         device_data: Mutex<Vec<u8>>,
         cap: Option<usize>,
     }
 
     impl FakeBlockService {
-        fn new(device_data: Vec<u8>) -> Self {
+        pub(crate) fn new(device_data: Vec<u8>) -> Self {
             Self::new_with_cap(device_data, None)
         }
 
-        fn new_with_cap(device_data: Vec<u8>, cap: Option<usize>) -> Self {
+        pub(crate) fn new_with_cap(device_data: Vec<u8>, cap: Option<usize>) -> Self {
             Self::new_with_pool_size(device_data, 1024 * 1024, cap)
         }
 
-        fn new_with_pool_size(device_data: Vec<u8>, pool_size: usize, cap: Option<usize>) -> Self {
+        pub(crate) fn new_with_pool_size(
+            device_data: Vec<u8>,
+            pool_size: usize,
+            cap: Option<usize>,
+        ) -> Self {
             let source = BufferSource::new(pool_size);
             let allocator = Arc::new(BufferAllocator::new(4096, source));
             Self { allocator, device_data: Mutex::new(device_data), cap }
@@ -369,7 +371,7 @@ mod tests {
         let encoded = Extents::encode_extents(&extents);
         let mappings = Extents::from_encoded(&encoded).unwrap();
 
-        read_aligned_range(&mappings, 1000..5000, &*service, |_| {});
+        read_aligned_range(&mappings, 1000..5000, &*service, |_| ControlFlow::Continue(()));
     }
 
     #[test]
@@ -385,6 +387,7 @@ mod tests {
         read_aligned_range(&mappings, 4096..4096, &service, move |res| {
             assert!(res.is_err());
             err_count_clone.fetch_add(1, Ordering::Relaxed);
+            ControlFlow::Continue(())
         });
         assert_eq!(err_count.load(Ordering::Relaxed), 1);
 
@@ -392,6 +395,7 @@ mod tests {
         read_aligned_range(&mappings, 8192..4096, &service, move |res| {
             assert!(res.is_err());
             err_count_clone2.fetch_add(1, Ordering::Relaxed);
+            ControlFlow::Continue(())
         });
         assert_eq!(err_count.load(Ordering::Relaxed), 2);
     }
@@ -410,6 +414,7 @@ mod tests {
             if res.is_err() {
                 err_occurred_clone.store(true, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
         assert!(err_occurred.load(Ordering::Relaxed));
     }
@@ -433,6 +438,7 @@ mod tests {
             assert_eq!(slice.len(), 4096);
             assert!(slice.iter().all(|&b| b == 42));
             completed_clone.store(true, Ordering::Relaxed);
+            ControlFlow::Continue(())
         });
 
         assert!(completed.load(Ordering::Relaxed));
@@ -461,6 +467,7 @@ mod tests {
                 assert!(received_bytes[4096..8192].iter().all(|&b| b == 2));
                 completed_clone.store(true, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
 
         assert!(completed.load(Ordering::Relaxed));
@@ -483,6 +490,7 @@ mod tests {
             assert_eq!(slice.len(), 4096);
             assert!(slice.iter().all(|&b| b == 0));
             completed_clone.store(true, Ordering::Relaxed);
+            ControlFlow::Continue(())
         });
 
         assert!(completed.load(Ordering::Relaxed));
@@ -515,6 +523,7 @@ mod tests {
                 assert!(received_bytes[4096..8192].iter().all(|&b| b == 2));
                 completed_clone.store(true, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
 
         assert!(completed.load(Ordering::Relaxed));
@@ -594,6 +603,7 @@ mod tests {
                 assert_eq!(received_chunks, vec![10, 20, 30]);
                 completed_clone.store(true, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
 
         assert!(completed.load(Ordering::Relaxed));
@@ -640,7 +650,7 @@ mod tests {
 
         // Pool size is only 8192 bytes, capped at 4096 bytes per buffer.
         // Requesting 16384 bytes will allocate buffers 0 and 1 (using all 8192 bytes of the pool),
-        // submit their reads right right away inside read_aligned_range's while loop, and then
+        // submit their reads right away inside read_aligned_range's while loop, and then
         // block when trying to allocate buffer 2 until background threads complete and free
         // buffer 0.
         let inner = FakeBlockService::new_with_pool_size(device_data, 8192, Some(4096));
@@ -664,6 +674,7 @@ mod tests {
                 assert!(received_bytes[12288..16384].iter().all(|&b| b == 4));
                 completed_clone.store(true, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
 
         // Wait briefly for background threads to finish completing all 4 chunks.
@@ -704,7 +715,9 @@ mod tests {
         let extents = vec![Extent::new(0..(MAX_READ_BUFFER_SIZE + 8192) as u64, Some(0))];
         let mappings = Extents::from_encoded(&Extents::encode_extents(&extents)).unwrap();
 
-        read_aligned_range(&mappings, 0..(MAX_READ_BUFFER_SIZE + 8192) as u64, &service, |_| {});
+        read_aligned_range(&mappings, 0..(MAX_READ_BUFFER_SIZE + 8192) as u64, &service, |_| {
+            ControlFlow::Continue(())
+        });
 
         assert_eq!(*service.requested_lens.lock(), vec![MAX_READ_BUFFER_SIZE, 8192]);
     }
@@ -734,6 +747,7 @@ mod tests {
         read_aligned_range(&mappings, 0..4096, &service, move |res| {
             assert!(res.is_err());
             err_clone.store(true, Ordering::Relaxed);
+            ControlFlow::Continue(())
         });
         assert!(err_received.load(Ordering::Relaxed));
     }
@@ -770,6 +784,7 @@ mod tests {
             if res.is_err() {
                 err_clone.fetch_add(1, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
         assert_eq!(err_count.load(Ordering::Relaxed), 1);
 
@@ -812,6 +827,7 @@ mod tests {
             if res.is_err() {
                 err_clone.fetch_add(1, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
         let mut delayed = service.delayed.lock();
         for cb in delayed.drain(..) {
@@ -847,6 +863,7 @@ mod tests {
             if let Err(e) = res {
                 *err_msg_clone.lock() = e.to_string();
             }
+            ControlFlow::Continue(())
         });
         service.0.lock().clear();
         assert_eq!(*err_msg.lock(), "ReadContext dropped before completion");
@@ -883,6 +900,7 @@ mod tests {
             if res.is_err() {
                 err_clone.store(true, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
         assert!(err_received.load(Ordering::Relaxed));
     }
@@ -899,6 +917,7 @@ mod tests {
             if res.is_ok() {
                 count_clone.fetch_add(1, Ordering::Relaxed);
             }
+            ControlFlow::Continue(())
         });
         assert_eq!(count.load(Ordering::Relaxed), 2);
     }
@@ -925,9 +944,27 @@ mod tests {
             assert!(buffer.as_slice()[0..4096].iter().all(|&b| b == 0xAA));
             assert!(buffer.as_slice()[4096..16384].iter().all(|&b| b == 0xBB));
             completed_clone.store(true, Ordering::Relaxed);
+            ControlFlow::Continue(())
         });
 
         assert_eq!(count.load(Ordering::Relaxed), 1);
         assert!(completed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_read_aligned_range_callback_error_propagation() {
+        let service = Arc::new(FakeBlockService::new(vec![0u8; 8192]));
+        let extents = vec![Extent::new(0..8192, Some(0))];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(&encoded).unwrap();
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+        read_aligned_range(&mappings, 0..8192, &*service, move |_res| {
+            call_count_clone.fetch_add(1, Ordering::Relaxed);
+            ControlFlow::Break(())
+        });
+
+        assert_eq!(call_count.load(Ordering::Relaxed), 1);
     }
 }
