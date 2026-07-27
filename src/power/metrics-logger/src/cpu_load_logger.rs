@@ -4,31 +4,28 @@
 
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
 use anyhow::{Result, format_err};
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_kernel as fkernel;
+use fidl_fuchsia_power_metrics as fmetrics;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::{self as inspect, Property};
-use fuchsia_zbi_abi::{ZbiTopologyEntityType, ZbiTopologyNode, ZbiType};
 use futures::stream::StreamExt;
 use log::{error, info};
-use num_traits::FromPrimitive;
 use std::cmp::max;
 use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::mem;
 use std::rc::Rc;
-use zerocopy::FromBytes;
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_kernel as fkernel,
-    fidl_fuchsia_power_metrics as fmetrics, fuchsia_async as fasync,
-};
+use zerocopy::TryFromBytes;
 
-pub const ZBI_TOPOLOGY_NODE_SIZE: usize = mem::size_of::<ZbiTopologyNode>();
+pub const ZBI_TOPOLOGY_NODE_SIZE: usize = size_of::<zbi::TopologyNode>();
 
 pub async fn generate_cpu_stats_driver() -> Result<CpuStatsDriver> {
     let items_proxy = connect_to_protocol::<fboot::ItemsMarker>()?;
     let proxy = connect_to_protocol::<fkernel::StatsMarker>()?;
 
-    match items_proxy.get(ZbiType::CpuTopology as u32, ZBI_TOPOLOGY_NODE_SIZE as u32).await {
+    match items_proxy.get(zbi::Type::CpuTopology.into(), ZBI_TOPOLOGY_NODE_SIZE as u32).await {
         Ok((Some(vmo), length)) => match vmo_to_topology(vmo, length) {
             Ok(topology) => Ok(CpuStatsDriver { proxy, topology: Some(topology) }),
             Err(err) => Err(format_err!("Parsing VMO failed with error {}", err)),
@@ -68,21 +65,18 @@ fn vmo_to_topology(vmo: zx::Vmo, length: u32) -> Result<Vec<Cluster>> {
                 e
             )
         })?;
-        let node = ZbiTopologyNode::read_from_bytes(&buffer as &[u8]).map_err(|_| {
-            format_err!(
-                "Reads a copy of ZbiTopologyNode (index {:?}) from VMO bytes failed.",
-                index
-            )
+        let node = zbi::TopologyNode::try_read_from_bytes(&buffer as &[u8]).map_err(|_| {
+            format_err!("Reads a copy of TopologyNode (index {:?}) from VMO bytes failed.", index)
         })?;
-        match ZbiTopologyEntityType::from_u8(node.entity_type) {
-            Some(ZbiTopologyEntityType::ZbiTopologyEntityCluster) => {
-                let performance_class: u8 = unsafe { node.entity.cluster.performance_class };
+        match node.entity {
+            zbi::TopologyEntity::Cluster(cluster) => {
+                let performance_class = cluster.performance_class;
                 max_performance_class = max(max_performance_class, performance_class);
                 clusters_to_cpus.insert(index as u16, Vec::new());
                 performance_classes.push(performance_class);
             }
-            Some(ZbiTopologyEntityType::ZbiTopologyEntityProcessor) => {
-                let logical_id = unsafe { node.entity.processor.logical_ids[0] };
+            zbi::TopologyEntity::Processor(processor) => {
+                let logical_id = processor.logical_ids[0];
                 clusters_to_cpus.get_mut(&node.parent_index).map(|c| c.push(logical_id));
             }
             _ => (),
@@ -344,59 +338,47 @@ pub mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use fidl_fuchsia_kernel::{CpuStats, PerCpuStats};
-    use fuchsia_zbi_abi::{
-        ArchitectureInfo, Entity, ZbiTopologyArchitecture, ZbiTopologyArm64Info,
-        ZbiTopologyCluster, ZbiTopologyProcessor,
-    };
     use futures::task::Poll;
     use futures::{FutureExt, TryStreamExt};
     use std::cell::Cell;
     use std::pin::Pin;
 
-    fn generate_cluster_node(performance_class: u8) -> ZbiTopologyNode {
-        const ZBI_TOPOLOGY_NO_PARENT: u16 = 0xFFFF;
-        ZbiTopologyNode {
-            entity_type: ZbiTopologyEntityType::ZbiTopologyEntityCluster as u8,
-            parent_index: ZBI_TOPOLOGY_NO_PARENT,
-            entity: Entity { cluster: ZbiTopologyCluster { performance_class } },
+    fn generate_cluster_node(performance_class: u8) -> zbi::TopologyNode {
+        zbi::TopologyNode {
+            entity: zbi::TopologyEntity::Cluster(zbi::TopologyCluster { performance_class }),
+            parent_index: zbi::TOPOLOGY_NO_PARENT,
         }
     }
 
-    fn generate_processor_node(parent_index: u16, logical_id: u16) -> ZbiTopologyNode {
-        ZbiTopologyNode {
-            entity_type: ZbiTopologyEntityType::ZbiTopologyEntityProcessor as u8,
-            parent_index: parent_index,
-            entity: Entity {
-                processor: ZbiTopologyProcessor {
-                    logical_ids: [logical_id, 0, 0, 0],
-                    logical_id_count: 1,
-                    flags: 0,
-                    architecture: ZbiTopologyArchitecture::ZbiTopologyArchArm64 as u8,
-                    architecture_info: ArchitectureInfo {
-                        arm64: ZbiTopologyArm64Info {
-                            cluster_1_id: 0,
-                            cluster_2_id: 0,
-                            cluster_3_id: 0,
-                            cpu_id: 0,
-                            gic_id: 0,
-                        },
-                    },
-                },
-            },
+    fn generate_processor_node(parent_index: u16, logical_id: u16) -> zbi::TopologyNode {
+        zbi::TopologyNode {
+            entity: zbi::TopologyEntity::Processor(zbi::TopologyProcessor {
+                architecture_info: zbi::TopologyArchitectureInfo::Arm64(zbi::TopologyArm64Info {
+                    cluster_1_id: 0,
+                    cluster_2_id: 0,
+                    cluster_3_id: 0,
+                    cpu_id: 0,
+                    gic_id: 0,
+                }),
+                flags: zbi::TopologyProcessorFlags::empty(),
+                logical_ids: [logical_id, 0, 0, 0],
+                logical_id_count: 1,
+            }),
+            parent_index,
         }
     }
 
-    // Write ZbiTopologyNode into a VMO buffer.
+    // Write TopologyNode into a VMO buffer.
     fn create_vmo_from_topology_nodes(
-        nodes: Vec<ZbiTopologyNode>,
+        nodes: Vec<zbi::TopologyNode>,
     ) -> Result<(zx::Vmo, u64), Error> {
         let vmo_size = (ZBI_TOPOLOGY_NODE_SIZE * nodes.len()) as u64;
         let vmo = zx::Vmo::create(vmo_size).unwrap();
         for (i, node) in nodes.into_iter().enumerate() {
             let bytes = unsafe {
-                std::mem::transmute::<ZbiTopologyNode, [u8; ZBI_TOPOLOGY_NODE_SIZE]>(node)
+                std::slice::from_raw_parts(&node as *const _ as *const u8, ZBI_TOPOLOGY_NODE_SIZE)
             };
-            vmo.write(&bytes, (i * ZBI_TOPOLOGY_NODE_SIZE) as u64)
+            vmo.write(bytes, (i * ZBI_TOPOLOGY_NODE_SIZE) as u64)
                 .map_err(|e| format_err!("Failed to write data to vmo: {}", e))?;
         }
         Ok((vmo, vmo_size))
