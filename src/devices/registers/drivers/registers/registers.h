@@ -192,7 +192,14 @@ zx::result<> Register<T>::WriteRegister(uint64_t offset, T mask, T value) {
 template <typename T>
 bool Register<T>::VerifyMask(T mask, const uint64_t offset) {
   auto it = masks_.upper_bound(offset);
-  if ((offset % sizeof(T)) || (it == masks_.begin())) {
+  if (offset % sizeof(T)) {
+    fdf::error("VerifyMask failed for '{}': offset 0x{:x} is not aligned to size {}", id_, offset,
+               sizeof(T));
+    return false;
+  }
+  if (it == masks_.begin()) {
+    fdf::error("VerifyMask failed for '{}': offset 0x{:x} is before first allowed register", id_,
+               offset);
     return false;
   }
   it--;
@@ -200,9 +207,21 @@ bool Register<T>::VerifyMask(T mask, const uint64_t offset) {
   auto base_address = it->first;
   auto reg_mask = it->second.first;
   auto reg_count = it->second.second;
-  return (((offset - base_address) / sizeof(T) < reg_count) &&
-          // Check that mask requested is covered by allowed mask.
-          ((mask | reg_mask) == reg_mask));
+
+  if ((offset - base_address) / sizeof(T) >= reg_count) {
+    fdf::error("VerifyMask failed for '{}': offset 0x{:x} is out of range for base 0x{:x} count {}",
+               id_, offset, base_address, reg_count);
+    return false;
+  }
+
+  if ((mask | reg_mask) != reg_mask) {
+    fdf::error(
+        "VerifyMask failed for '{}': requested mask 0x{:x} is not covered by allowed mask 0x{:x} at offset 0x{:x}",
+        id_, mask, reg_mask, offset);
+    return false;
+  }
+
+  return true;
 }
 
 class RegistersDevice : public fdf::DriverBase2 {

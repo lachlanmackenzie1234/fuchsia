@@ -4,6 +4,7 @@
 
 #include "registers.h"
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <lib/driver/component/cpp/internal/driver_server2.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/mock-mmio/cpp/region.h>
@@ -15,6 +16,72 @@
 #include "src/lib/testing/predicates/status.h"
 
 namespace registers {
+
+struct TestMaskEntry {
+  uint64_t offset;
+  uint32_t size;
+  std::optional<uint64_t> mask;
+  std::optional<uint32_t> count;
+  std::optional<bool> overlap_check;
+};
+
+struct TestRegisterEntry {
+  std::string name;
+  uint32_t mmio_id;
+  std::vector<TestMaskEntry> masks;
+};
+
+fuchsia_driver_metadata::Dictionary CreateRegistersMetadataDictionary(
+    const std::vector<TestRegisterEntry>& registers) {
+  std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
+
+  entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+      "registers._count",
+      fuchsia_driver_metadata::DictionaryValue::WithInt64(static_cast<int64_t>(registers.size()))));
+
+  for (size_t i = 0; i < registers.size(); ++i) {
+    const auto& reg = registers[i];
+    std::string reg_prefix = "registers." + std::to_string(i);
+
+    entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+        reg_prefix + ".name", fuchsia_driver_metadata::DictionaryValue::WithStr(reg.name)));
+    entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+        reg_prefix + ".mmio_id", fuchsia_driver_metadata::DictionaryValue::WithInt64(reg.mmio_id)));
+    entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+        reg_prefix + ".masks._count", fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                                          static_cast<int64_t>(reg.masks.size()))));
+
+    for (size_t j = 0; j < reg.masks.size(); ++j) {
+      const auto& mask = reg.masks[j];
+      std::string mask_prefix = reg_prefix + ".masks." + std::to_string(j);
+
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+          mask_prefix + ".offset",
+          fuchsia_driver_metadata::DictionaryValue::WithInt64(mask.offset)));
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+          mask_prefix + ".size", fuchsia_driver_metadata::DictionaryValue::WithInt64(mask.size)));
+      if (mask.mask) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            mask_prefix + ".mask",
+            fuchsia_driver_metadata::DictionaryValue::WithInt64(static_cast<int64_t>(*mask.mask))));
+      }
+      if (mask.count) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            mask_prefix + ".count",
+            fuchsia_driver_metadata::DictionaryValue::WithInt64(*mask.count)));
+      }
+      if (mask.overlap_check) {
+        entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+            mask_prefix + ".overlap_check",
+            fuchsia_driver_metadata::DictionaryValue::WithBoolean(*mask.overlap_check)));
+      }
+    }
+  }
+
+  fuchsia_driver_metadata::Dictionary dict;
+  dict.entries(std::move(entries));
+  return dict;
+}
 
 namespace {
 
@@ -28,7 +95,9 @@ class TestRegistersDevice : public RegistersDevice {
   TestRegistersDevice() = default;
   ~TestRegistersDevice() override {
     for (const auto& i : mock_mmio_) {
-      i->VerifyAll();
+      if (i) {
+        i->VerifyAll();
+      }
     }
   }
 
@@ -60,7 +129,7 @@ class RegistersDeviceTestEnvironment : fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     zx::result result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
-        pdev_.GetInstanceHandler(fdf::Dispatcher::GetCurrent()->async_dispatcher()));
+        pdev_.GetInstanceHandler(fdf::Dispatcher::GetCurrent()->async_dispatcher()), "pdev");
     if (result.is_error()) {
       return result.take_error();
     }
@@ -74,6 +143,10 @@ class RegistersDeviceTestEnvironment : fdf_testing::Environment {
     ASSERT_OK(metadata);
     ASSERT_OK(pdev_.AddFidlMetadata(fuchsia_hardware_registers::Metadata::kSerializableName,
                                     metadata.value()));
+  }
+
+  void Init(fuchsia_driver_metadata::Dictionary metadata) {
+    ASSERT_OK(pdev_.AddFidlMetadata("fuchsia.hardware.registers.Metadata", metadata));
   }
 
  private:
@@ -98,6 +171,18 @@ class RegistersDeviceTest : public ::testing::Test {
   template <typename T>
   void Init(std::span<const fidl_metadata::registers::Register<T>> registers) {
     ASSERT_OK(TryInit(registers));
+  }
+
+  zx::result<> TryInit(fuchsia_driver_metadata::Dictionary metadata) {
+    driver_test().RunInEnvironmentTypeContext(
+        [metadata = std::move(metadata)](RegistersDeviceTestEnvironment& env) mutable {
+          env.Init(std::move(metadata));
+        });
+    return driver_test().StartDriver();
+  }
+
+  void Init(fuchsia_driver_metadata::Dictionary metadata) {
+    ASSERT_OK(TryInit(std::move(metadata)));
   }
 
   fidl::ClientEnd<fuchsia_hardware_registers::Device> GetRegisterClient(std::string_view reg_id) {
@@ -531,6 +616,89 @@ TEST_F(RegistersDeviceTest, Write64Test) {
     ASSERT_TRUE(result.ok());
     EXPECT_TRUE(result->is_ok());
   };
+}
+
+TEST_F(RegistersDeviceTest, GenericMetadataSuccess) {
+  auto dict = CreateRegistersMetadataDictionary({
+      {
+          .name = "test0",
+          .mmio_id = 0,
+          .masks =
+              {
+                  {
+                      .offset = 0,
+                      .size = 4,
+                      .mask = 0xFFFFFFFF,
+                  },
+              },
+      },
+  });
+
+  Init(std::move(dict));
+
+  auto test0 = fidl::WireSyncClient<fuchsia_hardware_registers::Device>(GetRegisterClient("test0"));
+
+  driver_test().RunInDriverContext(
+      [](TestRegistersDevice& driver) { (*(driver.mock_mmio_[0]))[0x0].ExpectRead(0x12341234); });
+  {
+    auto result = test0->ReadRegister32(/* offset: */ 0x0, /* mask: */ 0xFFFFFFFF);
+    EXPECT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->value, 0x12341234U);
+  };
+}
+
+TEST_F(RegistersDeviceTest, GenericMetadataUnsupportedSize) {
+  auto dict = CreateRegistersMetadataDictionary({
+      {
+          .name = "test0",
+          .mmio_id = 0,
+          .masks =
+              {
+                  {
+                      .offset = 0,
+                      .size = 3,  // Unsupported size
+                      .mask = 0xFFFFFFFF,
+                  },
+              },
+      },
+  });
+
+  ASSERT_TRUE(TryInit(std::move(dict)).is_error());
+}
+
+TEST_F(RegistersDeviceTest, GenericMetadataEmptyRegisters) {
+  auto dict = CreateRegistersMetadataDictionary({});
+  ASSERT_TRUE(TryInit(std::move(dict)).is_error());
+}
+
+TEST_F(RegistersDeviceTest, GenericMetadataRegisterWithNoMasks) {
+  auto dict = CreateRegistersMetadataDictionary({
+      {
+          .name = "test0",
+          .mmio_id = 0,
+          .masks = {},
+      },
+  });
+  ASSERT_TRUE(TryInit(std::move(dict)).is_error());
+}
+
+TEST_F(RegistersDeviceTest, GenericMetadataMaskWithNoValue) {
+  auto dict = CreateRegistersMetadataDictionary({
+      {
+          .name = "test0",
+          .mmio_id = 0,
+          .masks =
+              {
+                  {
+                      .offset = 0,
+                      .size = 4,
+                      .mask = std::nullopt,
+                  },
+              },
+      },
+  });
+  ASSERT_TRUE(TryInit(std::move(dict)).is_error());
 }
 
 }  // namespace registers

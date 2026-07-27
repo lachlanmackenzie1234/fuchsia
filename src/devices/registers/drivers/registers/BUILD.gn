@@ -7,11 +7,21 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("registers-dml") {
+  dml = "meta/registers.dml"
+  driver_name = "registers"
+}
+
+fuchsia_driver_dml_parser("registers-metadata") {
+  dml_label = ":registers-dml"
+}
+
 driver_bind_rules("registers_bind") {
-  rules = "meta/registers.bind"
+  dml_label = ":registers-dml"
   bind_output = "registers.bindbc"
   tests = "meta/tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
   ]
@@ -25,8 +35,8 @@ fuchsia_cc_driver("registers-driver") {
 fuchsia_driver_component("registers") {
   info = "meta/registers-info.json"
   component_name = "registers"
+  dml_label = ":registers-dml"
   deps = [ ":registers-driver" ]
-  manifest = "meta/registers.cml"
 }
 
 fuchsia_driver_package("package") {
@@ -53,8 +63,10 @@ source_set("common") {
     "registers.cc",
     "registers.h",
   ]
+  deps = [ ":registers-metadata" ]
   public_deps = [
     ":registers_bind",
+    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
     "//sdk/lib/driver/compat/cpp",

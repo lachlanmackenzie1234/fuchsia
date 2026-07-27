@@ -14,6 +14,8 @@
 #include <bind/fuchsia/register/cpp/bind.h>
 #include <fbl/auto_lock.h>
 
+#include "registers_parser.h"
+
 namespace registers {
 
 namespace {
@@ -99,28 +101,42 @@ zx::result<> ValidateMetadata(const fuchsia_hardware_registers::Metadata& metada
                               const std::map<uint32_t, std::shared_ptr<MmioInfo>>& mmios) {
   if (!metadata.registers().has_value()) {
     fdf::error("Metadata missing registers field");
-    return zx::error(ZX_ERR_INTERNAL);
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  bool begin = true;
-  fuchsia_hardware_registers::Mask::Tag tag;
   const auto& registers = metadata.registers().value();
+  if (registers.empty()) {
+    fdf::error("Registers list is empty");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  bool begin = true;
+  fuchsia_hardware_registers::Mask::Tag tag = fuchsia_hardware_registers::Mask::Tag::kR32;
   for (size_t i = 0; i < registers.size(); ++i) {
     const auto& reg = registers[i];
     if (!reg.name().has_value()) {
       fdf::error("Register {} missing name field", i);
-      return zx::error(ZX_ERR_INTERNAL);
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
     if (!reg.mmio_id().has_value()) {
       fdf::error("Register {} missing mmio_id field", i);
-      return zx::error(ZX_ERR_INTERNAL);
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
     if (!reg.masks().has_value()) {
       fdf::error("Register {} missing masks field", i);
-      return zx::error(ZX_ERR_INTERNAL);
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
     const auto& masks = reg.masks().value();
+    if (masks.empty()) {
+      fdf::error("Register {} has no masks", i);
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+
     if (begin) {
+      if (!masks.begin()->mask().has_value()) {
+        fdf::error("First mask of first register missing mask value");
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
       tag = masks.begin()->mask().value().Which();
       begin = false;
     }
@@ -129,25 +145,25 @@ zx::result<> ValidateMetadata(const fuchsia_hardware_registers::Metadata& metada
       const auto& mask = masks[j];
       if (!mask.mask().has_value()) {
         fdf::error("Mask {} of register {} missing mask field", j, i);
-        return zx::error(ZX_ERR_INTERNAL);
+        return zx::error(ZX_ERR_INVALID_ARGS);
       }
       if (!mask.mmio_offset().has_value()) {
         fdf::error("Mask {} of register {} missing mmio_offset field", j, i);
-        return zx::error(ZX_ERR_INTERNAL);
+        return zx::error(ZX_ERR_INVALID_ARGS);
       }
       if (!mask.count().has_value()) {
         fdf::error("Mask {} of register {} missing count field", j, i);
-        return zx::error(ZX_ERR_INTERNAL);
+        return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
       if (mask.mask().value().Which() != tag) {
         fdf::error("Width of registers don't match up.");
-        return zx::error(ZX_ERR_INTERNAL);
+        return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
       if (mask.mmio_offset().value() % SWITCH_BY_TAG(tag, GetSize)) {
         fdf::error("Mask with offset 0x{:x} is not aligned", mask.mmio_offset().value());
-        return zx::error(ZX_ERR_INTERNAL);
+        return zx::error(ZX_ERR_INVALID_ARGS);
       }
     }
   }
@@ -228,7 +244,7 @@ zx::result<> RegistersDevice::Create(
 }
 
 zx::result<> RegistersDevice::MapMmio(fuchsia_hardware_registers::Mask::Tag& tag) {
-  zx::result result = incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  zx::result result = incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (result.is_error()) {
     fdf::error("Failed to open pdev service: {}", result);
     return result.take_error();
@@ -278,23 +294,114 @@ zx::result<> RegistersDevice::MapMmio(fuchsia_hardware_registers::Mask::Tag& tag
   return zx::ok();
 }
 
+static zx::result<fuchsia_hardware_registers::Metadata> ConvertMetadata(
+    const registers_metadata::RegistersMetadata& generic) {
+  fuchsia_hardware_registers::Metadata metadata;
+  std::vector<fuchsia_hardware_registers::RegistersMetadataEntry> registers;
+
+  for (const auto& r : generic.registers) {
+    fuchsia_hardware_registers::RegistersMetadataEntry entry;
+    entry.name(r.name);
+    entry.mmio_id(r.mmio_id);
+
+    std::vector<fuchsia_hardware_registers::MaskEntry> masks;
+    for (const auto& m : r.masks) {
+      fuchsia_hardware_registers::MaskEntry mask_entry;
+      mask_entry.mmio_offset(m.offset);
+      mask_entry.count(m.count.value_or(1));
+      if (m.overlap_check) {
+        mask_entry.overlap_check_on(*m.overlap_check);
+      }
+
+      zx::result<fuchsia_hardware_registers::Mask> fidl_mask_res =
+          [&]() -> zx::result<fuchsia_hardware_registers::Mask> {
+        switch (m.size) {
+          case 1:
+            return zx::ok(fuchsia_hardware_registers::Mask::WithR8(static_cast<uint8_t>(m.mask)));
+          case 2:
+            return zx::ok(fuchsia_hardware_registers::Mask::WithR16(static_cast<uint16_t>(m.mask)));
+          case 4:
+            return zx::ok(fuchsia_hardware_registers::Mask::WithR32(static_cast<uint32_t>(m.mask)));
+          case 8:
+            return zx::ok(fuchsia_hardware_registers::Mask::WithR64(m.mask));
+          default:
+            fdf::error("Unsupported register size: {}", m.size);
+            return zx::error(ZX_ERR_INVALID_ARGS);
+        }
+      }();
+      if (fidl_mask_res.is_error()) {
+        return fidl_mask_res.take_error();
+      }
+      mask_entry.mask(std::move(fidl_mask_res.value()));
+      masks.push_back(std::move(mask_entry));
+    }
+    entry.masks(std::move(masks));
+    registers.push_back(std::move(entry));
+  }
+
+  metadata.registers(std::move(registers));
+  return zx::ok(metadata);
+}
+
 zx::result<> RegistersDevice::Start(fdf::DriverContext context) {
   node_name_ = context.node_name().value_or("");
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
   // Get metadata.
-  zx::result pdev_client = incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  zx::result pdev_client =
+      incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client.value())};
-  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_registers::Metadata>();
-  if (metadata_result.is_error()) {
-    fdf::error("Failed to get metadata: {}", metadata_result);
-    return metadata_result.take_error();
+
+  fuchsia_hardware_registers::Metadata metadata;
+  {
+    // Try to get generic metadata first
+    zx::result generic_res = pdev.GetFidlMetadata<fuchsia_driver_metadata::Dictionary>(
+        "fuchsia.hardware.registers.Metadata");
+    if (generic_res.is_ok()) {
+      auto parsed = registers_metadata::RegistersMetadata::Parse(generic_res.value());
+      if (parsed) {
+        auto converted = ConvertMetadata(*parsed);
+        if (converted.is_ok()) {
+          metadata = std::move(converted.value());
+        } else {
+          fdf::error("Failed to convert generic Registers metadata: {}", converted.status_string());
+          return converted.take_error();
+        }
+      } else {
+        fdf::error("Failed to parse generic Registers metadata");
+        return zx::error(ZX_ERR_INTERNAL);
+      }
+    }
+
+    if (!metadata.registers().has_value()) {
+      // Fall back to old metadata
+      zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_registers::Metadata>();
+      if (metadata_result.is_error()) {
+        fdf::error("Failed to get metadata: {}", metadata_result);
+        return metadata_result.take_error();
+      }
+      metadata = std::move(metadata_result.value());
+    }
   }
-  const auto& metadata = metadata_result.value();
+
+  if (!metadata.registers().has_value() || metadata.registers().value().empty()) {
+    fdf::error("Metadata missing registers or registers list is empty");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  if (!metadata.registers().value()[0].masks().has_value() ||
+      metadata.registers().value()[0].masks().value().empty()) {
+    fdf::error("First register missing masks or masks list is empty");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  if (!metadata.registers().value()[0].masks().value()[0].mask().has_value()) {
+    fdf::error("First mask missing mask value");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   auto tag = metadata.registers().value()[0].masks().value()[0].mask().value().Which();
 
   // Get mmio.
