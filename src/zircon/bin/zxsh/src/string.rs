@@ -329,3 +329,67 @@ pub fn split_ifs_read_bytes(input: &[u8], ifs: &BStr, num_vars: usize) -> Vec<BS
     let line_chars: Vec<LineChar> = input.iter().map(|&b| LineChar::unescaped(b)).collect();
     split_ifs_read(&line_chars, ifs, num_vars)
 }
+
+/// Returns the byte value for a standard escape character if valid.
+pub fn parse_standard_escape(c: u8) -> Option<u8> {
+    match c {
+        b'a' => Some(b'\x07'),
+        b'b' => Some(b'\x08'),
+        b'f' => Some(b'\x0c'),
+        b'n' => Some(b'\n'),
+        b'r' => Some(b'\r'),
+        b't' => Some(b'\t'),
+        b'v' => Some(b'\x0b'),
+        b'\\' => Some(b'\\'),
+        _ => None,
+    }
+}
+
+/// Parses up to `max_digits` octal digits (`0`..=`7`) from `slice` and returns `(val, num_digits)`.
+pub fn parse_octal_digits(slice: &[u8], max_digits: usize) -> (u8, usize) {
+    let mut val: u16 = 0;
+    let mut count = 0;
+    while count < max_digits && count < slice.len() && (b'0'..=b'7').contains(&slice[count]) {
+        val = (val << 3) + (slice[count] - b'0') as u16;
+        count += 1;
+    }
+    (val as u8, count)
+}
+
+/// Processes escape sequences in `arg` (e.g. for `echo -e` and `printf %b`).
+/// Returns the processed bytes and a boolean indicating whether execution should halt (`\c`).
+pub fn process_escape_bytes(arg: &[u8]) -> (Vec<u8>, bool) {
+    let mut out = Vec::with_capacity(arg.len());
+    let mut i = 0;
+    while i < arg.len() {
+        if arg[i] == b'\\' {
+            if i + 1 < arg.len() {
+                let next = arg[i + 1];
+                if next == b'c' {
+                    return (out, true);
+                } else if let Some(b) = parse_standard_escape(next) {
+                    out.push(b);
+                    i += 2;
+                } else if next == b'0' && i + 2 < arg.len() && (b'0'..=b'7').contains(&arg[i + 2]) {
+                    let (val, count) = parse_octal_digits(&arg[i + 2..], 3);
+                    out.push(val);
+                    i += 2 + count;
+                } else if (b'0'..=b'7').contains(&next) {
+                    let (val, count) = parse_octal_digits(&arg[i + 1..], 3);
+                    out.push(val);
+                    i += 1 + count;
+                } else {
+                    out.push(b'\\');
+                    i += 1;
+                }
+            } else {
+                out.push(b'\\');
+                i += 1;
+            }
+        } else {
+            out.push(arg[i]);
+            i += 1;
+        }
+    }
+    (out, false)
+}

@@ -4,7 +4,8 @@
 
 use crate::string::{
     LineChar, bstr_to_cstring, bstrings_to_cstrings, cstrings_to_c_strs, parse_int,
-    parse_mode_mask, parse_non_negative_int, split_ifs_read, split_ifs_read_bytes, split_key_value,
+    parse_mode_mask, parse_non_negative_int, parse_octal_digits, parse_standard_escape,
+    process_escape_bytes, split_ifs_read, split_ifs_read_bytes, split_key_value,
 };
 use bstr::{BStr, BString};
 
@@ -286,4 +287,65 @@ fn test_split_ifs_read_escaped() {
         split_ifs_read(&chars, default_ifs, 2),
         vec![BString::from("foo bar"), BString::from("baz")]
     );
+}
+
+#[test]
+fn test_parse_standard_escape() {
+    assert_eq!(parse_standard_escape(b'a'), Some(b'\x07'));
+    assert_eq!(parse_standard_escape(b'b'), Some(b'\x08'));
+    assert_eq!(parse_standard_escape(b'f'), Some(b'\x0c'));
+    assert_eq!(parse_standard_escape(b'n'), Some(b'\n'));
+    assert_eq!(parse_standard_escape(b'r'), Some(b'\r'));
+    assert_eq!(parse_standard_escape(b't'), Some(b'\t'));
+    assert_eq!(parse_standard_escape(b'v'), Some(b'\x0b'));
+    assert_eq!(parse_standard_escape(b'\\'), Some(b'\\'));
+
+    assert_eq!(parse_standard_escape(b'c'), None);
+    assert_eq!(parse_standard_escape(b'0'), None);
+    assert_eq!(parse_standard_escape(b'x'), None);
+    assert_eq!(parse_standard_escape(b'z'), None);
+}
+
+#[test]
+fn test_parse_octal_digits() {
+    assert_eq!(parse_octal_digits(b"0", 3), (0, 1));
+    assert_eq!(parse_octal_digits(b"7", 3), (7, 1));
+    assert_eq!(parse_octal_digits(b"12", 3), (10, 2));
+    assert_eq!(parse_octal_digits(b"101", 3), (b'A', 3));
+    assert_eq!(parse_octal_digits(b"777", 3), (255, 3));
+
+    // Limit to max_digits
+    assert_eq!(parse_octal_digits(b"1015", 3), (b'A', 3));
+    assert_eq!(parse_octal_digits(b"1234", 2), (10, 2));
+
+    // Non-octal character terminates parsing
+    assert_eq!(parse_octal_digits(b"128", 3), (10, 2));
+    assert_eq!(parse_octal_digits(b"89", 3), (0, 0));
+
+    // Empty input
+    assert_eq!(parse_octal_digits(b"", 3), (0, 0));
+}
+
+#[test]
+fn test_process_escape_bytes() {
+    // Plain text without escapes
+    assert_eq!(process_escape_bytes(b"hello world"), (b"hello world".to_vec(), false));
+
+    // Standard escapes
+    assert_eq!(
+        process_escape_bytes(r"\a\b\f\n\r\t\v\\".as_bytes()),
+        (vec![7, 8, 12, 10, 13, 9, 11, b'\\'], false)
+    );
+
+    // Halt on \c
+    assert_eq!(process_escape_bytes(r"hello\cworld".as_bytes()), (b"hello".to_vec(), true));
+
+    // Octal with leading 0
+    assert_eq!(process_escape_bytes(r"\0101".as_bytes()), (vec![b'A'], false));
+
+    // Octal without leading 0
+    assert_eq!(process_escape_bytes(r"\102".as_bytes()), (vec![b'B'], false));
+
+    // Trailing backslash and unrecognized escape
+    assert_eq!(process_escape_bytes(r"foo\zbar\".as_bytes()), (b"foo\\zbar\\".to_vec(), false));
 }

@@ -10,7 +10,9 @@ use crate::eval::{
 };
 use bstr::{BString, ByteSlice};
 
+pub mod echo;
 pub mod essential;
+pub mod printf;
 
 #[derive(Clone, Copy)]
 enum BuiltinType {
@@ -23,6 +25,7 @@ enum BuiltinType {
     Command,
     Continue,
     Dot,
+    Echo,
     Eval,
     Exec,
     Exit,
@@ -34,6 +37,7 @@ enum BuiltinType {
     Jobs,
     Local,
     Pwd,
+    Printf,
     Read,
     Readonly,
     Return,
@@ -79,6 +83,7 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"chdir", BuiltinType::Chdir),
     make_entry(b"command", BuiltinType::Command),
     make_entry(b"continue", BuiltinType::Continue),
+    make_entry(b"echo", BuiltinType::Echo),
     make_entry(b"eval", BuiltinType::Eval),
     make_entry(b"exec", BuiltinType::Exec),
     make_entry(b"exit", BuiltinType::Exit),
@@ -89,6 +94,7 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"hash", BuiltinType::Hash),
     make_entry(b"jobs", BuiltinType::Jobs),
     make_entry(b"local", BuiltinType::Local),
+    make_entry(b"printf", BuiltinType::Printf),
     make_entry(b"pwd", BuiltinType::Pwd),
     make_entry(b"read", BuiltinType::Read),
     make_entry(b"readonly", BuiltinType::Readonly),
@@ -163,6 +169,7 @@ pub fn run_builtin(
         BuiltinType::Command => essential::builtin_command(args, state, ctx),
         BuiltinType::Continue => essential::builtin_continue(args, state, ctx),
         BuiltinType::Dot => essential::builtin_dot(args, state, ctx),
+        BuiltinType::Echo => with_io(ctx, args, state, echo::builtin_echo),
         BuiltinType::Eval => essential::builtin_eval(args, state, ctx),
         BuiltinType::Exec => essential::builtin_exec(args, state, ctx),
         BuiltinType::Exit => essential::builtin_exit(args, state, ctx),
@@ -174,6 +181,7 @@ pub fn run_builtin(
         BuiltinType::Jobs => with_io(ctx, args, state, essential::builtin_jobs),
         BuiltinType::Local => with_io(ctx, args, state, essential::builtin_local),
         BuiltinType::Pwd => with_io(ctx, args, state, essential::builtin_pwd),
+        BuiltinType::Printf => with_io(ctx, args, state, printf::builtin_printf),
         BuiltinType::Read => with_io(ctx, args, state, essential::builtin_read),
         BuiltinType::Readonly => with_io(ctx, args, state, essential::builtin_readonly),
         BuiltinType::Return => essential::builtin_return(args, state, ctx),
