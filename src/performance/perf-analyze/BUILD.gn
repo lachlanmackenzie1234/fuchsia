@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/host.gni")
+import("//build/python/python_binary.gni")
+
+python_binary("perf_analyze_bin") {
+  main_source = "perf_analyze.py"
+  output_name = "perf-analyze.pyz"
+}
+
+# Rename the resulting .pyz for the host tool
+copy("copy_perf_analyze") {
+  deps = [ ":perf_analyze_bin" ]
+  sources = [ "${target_out_dir}/perf-analyze.pyz" ]
+  outputs = [ "${root_out_dir}/perf-analyze" ]
+}
+
+install_host_tools("perf-analyze") {
+  deps = [ ":copy_perf_analyze" ]
+  outputs = [ "perf-analyze" ]
+}
