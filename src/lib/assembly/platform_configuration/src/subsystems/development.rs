@@ -45,26 +45,8 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             builder.kernel_arg(KernelArg::NetsvcNetboot(true));
         };
 
-        match (context.feature_set_level, context.build_type) {
-            // Tracing is always enabled on standard eng.
-            (FeatureSetLevel::Standard, BuildType::Eng) => {
-                builder.platform_bundle("tracing")?;
-            }
-
-            // Tracing is enabled on userdebug or eng for other feature set levels
-            // if the user explicitly requests it.
-            (_, BuildType::UserDebug | BuildType::Eng) => {
-                if config.tracing_enabled() {
-                    builder.platform_bundle("tracing")?;
-                }
-            }
-
-            // Tracing is never enabled on user.
-            (_, BuildType::User) => {
-                if config.tracing_enabled() {
-                    anyhow::bail!("tracing can't be included in user builds");
-                }
-            }
+        if config.tracing_enabled(*context.feature_set_level, *context.build_type)? {
+            builder.platform_bundle("tracing")?;
         }
 
         if matches!(context.build_type, BuildType::Eng | BuildType::UserDebug) {

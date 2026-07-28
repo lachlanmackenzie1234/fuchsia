@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{BuildType, FeatureSetLevel};
+use anyhow::Result;
 use assembly_container::WalkPaths;
 use camino::Utf8PathBuf;
 use schemars::JsonSchema;
@@ -202,7 +204,28 @@ impl HeapdumpConfig {
 
 impl DevelopmentSupportConfig {
     /// Tells if at least one program will have tracing enabled.
-    pub fn tracing_enabled(&self) -> bool {
-        self.include_tracing || matches!(self.tracing, TracingConfig::Enabled { .. })
+    pub fn tracing_enabled(
+        &self,
+        feature_set_level: FeatureSetLevel,
+        build_type: BuildType,
+    ) -> Result<bool> {
+        let option_enabled =
+            self.include_tracing || matches!(self.tracing, TracingConfig::Enabled { .. });
+        match (feature_set_level, build_type) {
+            // Tracing is always enabled on standard eng.
+            (FeatureSetLevel::Standard, BuildType::Eng) => Ok(true),
+
+            // Tracing is enabled on userdebug or eng for other feature set levels
+            // if the user explicitly requests it.
+            (_, BuildType::UserDebug | BuildType::Eng) => Ok(option_enabled),
+
+            // Tracing is never enabled on user.
+            (_, BuildType::User) => {
+                if option_enabled {
+                    anyhow::bail!("tracing can't be included in user builds");
+                }
+                Ok(false)
+            }
+        }
     }
 }

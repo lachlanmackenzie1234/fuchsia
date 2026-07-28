@@ -56,7 +56,10 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         // Select the component manager bundle to use.
         if heapdump_config.component_manager {
             builder.platform_bundle("component_manager_with_tracing_and_heapdump")?;
-        } else if config.development_support.tracing_enabled() {
+        } else if config
+            .development_support
+            .tracing_enabled(*context.feature_set_level, *context.build_type)?
+        {
             builder.platform_bundle("component_manager_with_tracing")?;
         } else {
             builder.platform_bundle("component_manager")?;
