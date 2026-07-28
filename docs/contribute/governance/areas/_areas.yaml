@@ -111,7 +111,7 @@
 
 - name: 'FIDL'
   api_primary: 'ianloic@google.com'
-  api_secondary: ''
+  api_secondary: 'hjfreyer@google.com'
   description: |
     Since most APIs are expressed in FIDL, the FIDL area is cross-cutting with
     the goal to both support all other areas, and leverage their experience to
