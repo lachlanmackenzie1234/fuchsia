@@ -7,33 +7,46 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROFILE_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROFILE_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <zircon/rights.h>
 #include <zircon/syscalls/profile.h>
 #include <zircon/types.h>
 
+#include <kernel/scheduler_state.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class ProfileDispatcher final
-    : public SoloDispatcher<ProfileDispatcher, ZX_DEFAULT_PROFILE_RIGHTS> {
+extern "C" {
+zx_status_t cpp_profile_dispatcher_create(const zx_profile_info_t* info,
+                                          KernelHandle<ProfileDispatcher>* handle_out);
+zx_status_t cpp_profile_dispatcher_validate_and_create_profile(
+    const zx_profile_info_t* info, SchedulerState::BaseProfile* profile_out);
+}
+
+zx::result<SchedulerState::BaseProfile> validate_and_create_profile(const zx_profile_info_t& info);
+
+class ProfileDispatcher final : public Dispatcher {
  public:
-  static zx_status_t Create(const zx_profile_info_t& info, KernelHandle<ProfileDispatcher>* handle,
-                            zx_rights_t* rights);
-
+  explicit ProfileDispatcher(const zx_profile_info_t& info);
   ~ProfileDispatcher() final;
-  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_PROFILE; }
 
-  zx_status_t ApplyProfile(fbl::RefPtr<ThreadDispatcher> thread);
-  zx_status_t ApplyProfile(fbl::RefPtr<VmAddressRegionDispatcher> vmar);
+  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_PROFILE; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return false; }
+
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  explicit ProfileDispatcher(const ktl::optional<SchedulerState::BaseProfile>& profile,
-                             const ktl::optional<cpu_mask_t>& cpu_mask,
-                             const ktl::optional<VmAddressRegion::MemoryPriority>& memory_priority);
-
-  const ktl::optional<SchedulerState::BaseProfile> profile_;
-  const ktl::optional<cpu_mask_t> cpu_mask_;
-  const ktl::optional<VmAddressRegion::MemoryPriority> memory_priority_;
+  OpaqueStorage<kProfileDispatcherStateSize, kProfileDispatcherStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROFILE_DISPATCHER_H_

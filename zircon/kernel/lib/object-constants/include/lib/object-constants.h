@@ -28,6 +28,11 @@ constexpr size_t kLogDispatcherStateOffset = 48;
 constexpr size_t kDlogReaderStorageSize = 48;
 constexpr size_t kDlogReaderStorageAlign = 8;
 
+// Size and alignment for ProfileDispatcherState.
+constexpr size_t kProfileDispatcherStateSize = 96;
+constexpr size_t kProfileDispatcherStateAlign = 8;
+constexpr size_t kProfileDispatcherStateOffset = 48;
+
 // Size and alignment for SamplerDispatcherState.
 constexpr size_t kSamplerDispatcherStateSize = 64;
 constexpr size_t kSamplerDispatcherStateAlign = 8;

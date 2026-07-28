@@ -6,6 +6,7 @@
 
 mod counter;
 mod debuglog;
+mod profile;
 mod restricted;
 mod sampler;
 mod system;

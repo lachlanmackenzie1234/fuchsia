@@ -345,7 +345,7 @@ _ZX_SYSCALL_DECL(object_get_property, zx_status_t, /* no attributes */, 4,
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t property,
                   void* value, size_t value_size))
 
-_ZX_SYSCALL_DECL(object_set_profile, zx_status_t, /* no attributes */, 3,
+_ZX_SYSCALL_DECL(object_set_profile, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
                  (handle, profile, options),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle,
                   _ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t profile, uint32_t options))
@@ -459,7 +459,7 @@ _ZX_SYSCALL_DECL(process_write_memory, zx_status_t, /* no attributes */, 5,
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, zx_vaddr_t vaddr,
                   const void* buffer, size_t buffer_size, size_t* actual))
 
-_ZX_SYSCALL_DECL(profile_create, zx_status_t, /* no attributes */, 4,
+_ZX_SYSCALL_DECL(profile_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
                  (profile_rsrc, options, profile, out),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t profile_rsrc,
                   uint32_t options, const zx_profile_info_t* profile,

@@ -13,6 +13,8 @@ mod log_dispatcher;
 mod log_dispatcher_ffi;
 mod process_dispatcher;
 mod process_dispatcher_ffi;
+mod profile_dispatcher;
+mod profile_dispatcher_ffi;
 mod resource_ffi;
 mod sampler_dispatcher;
 mod sampler_dispatcher_ffi;
@@ -28,6 +30,7 @@ pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use handle::{HandleValue, KernelHandle};
 pub use log_dispatcher::*;
 pub use process_dispatcher::ProcessDispatcher;
+pub use profile_dispatcher::ProfileDispatcher;
 pub use resource_ffi::{
     validate_ranged_resource, validate_resource_kind_base, validate_system_resource,
 };

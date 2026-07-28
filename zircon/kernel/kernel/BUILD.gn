@@ -121,6 +121,7 @@ rustc_library("kernel-rs") {
   name = "kernel"
   source_root = "lib.rs"
   sources = [
+    "bits.rs",
     "lib.rs",
     "relaxed_atomic.rs",
     "restricted_state.rs",

@@ -153,32 +153,6 @@ pub(crate) use impl_dispatcher_facade_with_state;
 
 /// Helper macro to generate standard `rust_<type>_state_init` FFI trampolines.
 macro_rules! impl_dispatcher_state_init {
-    (fallible $type:ident, $state:ident $(, $arg:ident : $arg_ty:ty)* $(,)?) => {
-        paste::paste! {
-            /// Initializes a `$state` in-place using `$state::init(dispatcher, ...)`.
-            ///
-            /// # Safety
-            ///
-            /// `ptr` must point to uninitialized memory of at least `size_of::<$state>()`
-            /// bytes, and `dispatcher` must point to the enclosing `$type`.
-            #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn [<rust_ $type:snake _state_init>](
-                ptr: *mut $state,
-                dispatcher: *const $type,
-                $( $arg : $arg_ty ),*
-            ) -> zx_types::zx_status_t {
-                // SAFETY: `ptr` points to uninitialized memory allocated for `$state`.
-                unsafe {
-                    let init = match $state::init(dispatcher, $( $arg ),*) {
-                        Ok(init) => init,
-                        Err(status) => return status.into_raw(),
-                    };
-                    let _ = pin_init::PinInit::__pinned_init(init, ptr);
-                    zx_types::ZX_OK
-                }
-            }
-        }
-    };
     ($type:ident, $state:ident $(, $arg:ident : $arg_ty:ty)* $(,)?) => {
         paste::paste! {
             /// Initializes a `$state` in-place using `$state::init(dispatcher, ...)`.

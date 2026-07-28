@@ -2443,6 +2443,7 @@ closed protocol Object {
     ///  - [`zx_profile_create()`]
     ///
     /// [`zx_profile_create()`]: profile_create.md
+    @rust
     strict SetProfile(resource struct {
         handle Handle;
         profile Handle:PROFILE;
