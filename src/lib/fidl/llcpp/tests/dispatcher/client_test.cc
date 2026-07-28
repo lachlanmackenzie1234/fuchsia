@@ -150,7 +150,7 @@ TEST(ClientBindingTestCase, ForgetAsyncTxn) {
   EXPECT_TRUE(spy.IsPending(context.Txid()));
 
   // Forget the transaction.
-  spy.ForgetAsyncTxn(&context);
+  spy.ForgetAsyncTxn(context.Txid(), &context);
   EXPECT_EQ(0, spy.GetTxidCount());
 }
 

@@ -278,5 +278,28 @@ REGISTER_TYPED_TEST_SUITE_P(ClientUnbindTest, UnbindMaybeGetEndpoint, UnbindAfte
                             UnbindAfterACompletedTwoWayCall);
 using ClientTypes = testing::Types<fidl::Client<Constraint>, fidl::WireClient<Constraint>>;
 INSTANTIATE_TYPED_TEST_SUITE_P(TestPrefix, ClientUnbindTest, ClientTypes);
+TEST(SharedClient, UafRaceOnWriteErrorDuringTeardown) {
+  // Execute a multi-threaded loop to trigger the race condition between
+  // Write error handling (ForgetAsyncTxn) and unbinding (ReleaseResponseContexts).
+  for (int i = 0; i < 500; ++i) {
+    auto [local, remote] = fidl::Endpoints<Values>::Create();
+    async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+    ASSERT_OK(loop.StartThread("test-dispatcher-thread"));
+
+    fidl::SharedClient client(std::move(local), loop.dispatcher());
+
+    std::thread thread_call([&] {
+      client->Echo({"foo"}).ThenExactlyOnce([](fidl::Result<Values::Echo>& result) {
+        // Callback may or may not run depending on teardown timing.
+      });
+    });
+
+    std::thread thread_teardown([&] { client.AsyncTeardown(); });
+
+    thread_call.join();
+    thread_teardown.join();
+    loop.Shutdown();
+  }
+}
 
 }  // namespace

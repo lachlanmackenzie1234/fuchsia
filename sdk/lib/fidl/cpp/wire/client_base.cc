@@ -68,25 +68,35 @@ ClientBase::AsyncTeardownResult ClientBase::AsyncTeardown() {
   return std::visit(matchers, binding_.lock_or_error());
 }
 
-void ClientBase::PrepareAsyncTxn(ResponseContext* context) {
+zx_txid_t ClientBase::PrepareAsyncTxn(ResponseContext* context) {
   std::scoped_lock lock(lock_);
 
   // Generate the next txid. Verify that it doesn't overlap with any outstanding txids.
   do {
     do {
       context->txid_ = ++txid_base_ & kUserspaceTxidMask;  // txid must be within mask.
-    } while (unlikely(!context->txid_));                   // txid must be non-zero.
+    } while (unlikely(!context->txid_));  // txid must be non-zero.
   } while (unlikely(!contexts_.insert_or_find(context)));
 
   list_add_tail(&delete_list_, context);
+
+  return context->txid_;
 }
 
-void ClientBase::ForgetAsyncTxn(ResponseContext* context) {
+bool ClientBase::ForgetAsyncTxn(zx_txid_t txid, ResponseContext* context) {
   std::scoped_lock lock(lock_);
 
-  ZX_ASSERT(context->InContainer());
-  contexts_.erase(*context);
-  list_delete(static_cast<list_node_t*>(context));
+  auto it = contexts_.find(txid);
+  // We make sure that the returned iterator matches the context before removing
+  // from the list. If the txid of the transaction is reused then the context
+  // may not match (txids are currently only reused on wraparound, which is very
+  // unlikely).
+  if (it != contexts_.end() && &*it == context) {
+    contexts_.erase(it);
+    list_delete(static_cast<list_node_t*>(context));
+    return true;
+  }
+  return false;
 }
 
 void ClientBase::ReleaseResponseContexts(fidl::UnbindInfo info) {
@@ -113,16 +123,18 @@ void ClientBase::SendTwoWay(fidl::OutgoingMessage& message, ResponseContext* con
                             fidl::WriteOptions write_options) {
   auto matchers = MatchVariant{
       [&](std::shared_ptr<AnyTransport>&& transport) {
+        zx_txid_t txid = 0;
         {
           std::shared_ptr scoped_transport = std::move(transport);
-          PrepareAsyncTxn(context);
-          message.set_txid(context->Txid());
+          txid = PrepareAsyncTxn(context);
+          message.set_txid(txid);
           message.Write(*scoped_transport, std::move(write_options));
         }
         // Handle error without holding onto the transport.
         if (!message.ok()) {
-          ForgetAsyncTxn(context);
-          TryAsyncDeliverError(message.error(), context);
+          if (ForgetAsyncTxn(txid, context)) {
+            TryAsyncDeliverError(message.error(), context);
+          }
           HandleSendError(message.error());
         }
       },

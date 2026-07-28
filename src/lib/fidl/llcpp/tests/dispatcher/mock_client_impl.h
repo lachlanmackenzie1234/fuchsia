@@ -51,12 +51,12 @@ class ClientBaseSpy {
     txids_.insert(context->Txid());
   }
 
-  void ForgetAsyncTxn(fidl::internal::ResponseContext* context) {
+  void ForgetAsyncTxn(zx_txid_t txid, fidl::internal::ResponseContext* context) {
     {
       std::unique_lock lock(lock_);
-      txids_.erase(context->Txid());
+      txids_.erase(txid);
     }
-    client_base_->ForgetAsyncTxn(context);
+    client_base_->ForgetAsyncTxn(txid, context);
   }
 
   void EraseTxid(fidl::internal::ResponseContext* context) {

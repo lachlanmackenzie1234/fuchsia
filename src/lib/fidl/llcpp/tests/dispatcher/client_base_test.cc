@@ -70,7 +70,7 @@ class FakeClientImpl {
   size_t GetTransactionCount() { return client_base_->GetTransactionCount(); }
 
   void ForgetAsyncTxn(fidl::internal::ResponseContext* context) {
-    return client_base_->ForgetAsyncTxn(context);
+    return (void)client_base_->ForgetAsyncTxn(context->Txid(), context);
   }
 
   fidl::ServerEnd<TestProtocol>& server_end() { return server_end_; }

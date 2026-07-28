@@ -308,10 +308,15 @@ class ClientBase final : public std::enable_shared_from_this<ClientBase> {
   }
 
   // Stores the given asynchronous transaction response context, setting the txid field.
-  void PrepareAsyncTxn(ResponseContext* context);
+  //
+  // Returns the value of the txid field.
+  zx_txid_t PrepareAsyncTxn(ResponseContext* context);
 
   // Forget the transaction associated with the given context. Used when zx_channel_write() fails.
-  void ForgetAsyncTxn(ResponseContext* context);
+  //
+  // Returns true if the transaction was forgotten. This method may return false
+  // if forgetting the transaction races with client teardown.
+  bool ForgetAsyncTxn(zx_txid_t txid, ResponseContext* context);
 
   // Releases all outstanding |ResponseContext|s. Invoked when binding has torn
   // down.
