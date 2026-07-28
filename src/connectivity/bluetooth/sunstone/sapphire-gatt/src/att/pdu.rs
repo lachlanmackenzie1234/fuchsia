@@ -41,6 +41,7 @@ pub enum Opcode {
     PrepareWriteRsp = 0x17,
     ExecuteWriteReq = 0x18,
     ExecuteWriteRsp = 0x19,
+    HandleValueNtf = 0x1B,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -578,6 +579,25 @@ pub struct ExecuteWriteReq {
 #[repr(C, packed)]
 pub struct ExecuteWriteRsp {}
 
+/// Handle Value Notification Header (Opcode = 0x1B).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct HandleValueNtfHeader {
+    pub attribute_handle: U16,
+}
+
+/// Handle Value Notification PDU (Opcode = 0x1B).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[repr(C)]
+pub struct HandleValueNtf {
+    pub header: HandleValueNtfHeader,
+    pub attribute_value: [u8],
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -827,5 +847,13 @@ mod tests {
         let req_bytes = [0x01]; // Flags: WriteAll
         let parsed = ExecuteWriteReq::read_from_bytes(&req_bytes[..]).unwrap();
         assert_eq!(parsed.flags, ExecuteWriteFlags::WriteAll as u8);
+    }
+
+    #[test]
+    fn test_handle_value_ntf() {
+        let ntf_bytes = [0x05, 0x00, 0xAA, 0xBB];
+        let parsed = HandleValueNtf::try_ref_from_bytes(&ntf_bytes[..]).unwrap();
+        assert_eq!(parsed.header.attribute_handle.get(), 5);
+        assert_eq!(parsed.attribute_value, [0xAA, 0xBB]);
     }
 }

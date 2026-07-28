@@ -236,27 +236,6 @@ impl MockL2cap {
             Err(e) => Err(e),
         }
     }
-
-    /// Sets up a loopback L2CAP channel pair using this mock coordinator and returns the endpoints.
-    pub fn setup_channel<'runtime, 'env>(
-        &self,
-        executor: &BoundedExecutor<'runtime, 'env, TestExecutor>,
-    ) -> (L2CapChannel<MockTx, MockRx>, MockTx, MockRx) {
-        let mut link = self.l2cap();
-
-        let mut app_handle = executor.spawn(async move {
-            link.claim_fixed_channel(FixedCid::ATTRIBUTE_PROTOCOL).await.unwrap()
-        });
-        let l2cap_mock_clone = self.clone();
-        let mut test_handle = executor.spawn(async move {
-            l2cap_mock_clone.expect_channel_claimed(FixedCid::ATTRIBUTE_PROTOCOL).await.unwrap()
-        });
-        executor.run_until_stalled();
-
-        let app_channel = app_handle.get().unwrap();
-        let (test_tx, test_rx) = test_handle.get().unwrap();
-        (app_channel, test_tx, test_rx)
-    }
 }
 
 impl L2CapLogicalLink for MockL2CapLink {
@@ -320,10 +299,12 @@ impl L2CapLogicalLink for MockL2CapLink {
 }
 
 /// Public test helper to set up a loopback L2CAP channel pair using the Mock coordinator.
-pub fn setup_mock_channel<'runtime, 'env>(
-    executor: &BoundedExecutor<'runtime, 'env, TestExecutor>,
-) -> (L2CapChannel<MockTx, MockRx>, MockTx, MockRx) {
-    MockL2cap::new().setup_channel(executor)
+pub fn setup_mock_channel() -> (L2CapChannel<MockTx, MockRx>, MockTx, MockRx) {
+    let shared = MockL2cap::new().shared;
+    let (app_tx, test_rx) = mock_channel(shared.clone());
+    let (test_tx, app_rx) = mock_channel(shared);
+    let app_channel = L2CapChannel { sender: app_tx, receiver: app_rx };
+    (app_channel, test_tx, test_rx)
 }
 
 #[cfg(test)]
@@ -335,7 +316,7 @@ mod tests {
     #[test]
     fn test_mock_l2cap_rendezvous_claim_first() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (mut app_channel, mut peer_tx, mut peer_rx) = setup_mock_channel(executor);
+            let (mut app_channel, mut peer_tx, mut peer_rx) = setup_mock_channel();
 
             // 3. Drive dynamic loopback using concurrent spawned tasks to verify asynchrony
             let mut send_handle = executor.spawn(async move {
@@ -361,7 +342,7 @@ mod tests {
         let send_packet = b"hello attenuation";
 
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, _test_tx, mut rx) = setup_mock_channel(executor);
+            let (app_channel, _test_tx, mut rx) = setup_mock_channel();
             let mut tx = app_channel.sender;
 
             // 1. Spawn a concurrent receiver task awaiting bytes
@@ -393,7 +374,9 @@ mod tests {
     fn test_mock_channel_recv_and_close() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let l2cap_mock = MockL2cap::new();
-            let (app_channel, _test_tx, mut test_rx) = l2cap_mock.setup_channel(executor);
+            let (app_tx, _test_rx) = mock_channel(l2cap_mock.shared.clone());
+            let (_test_tx, app_rx) = mock_channel(l2cap_mock.shared.clone());
+            let app_channel = L2CapChannel { sender: app_tx, receiver: app_rx };
 
             // 1. Spawn a concurrent receiver task awaiting bytes on the app channel
             let mut recv_handle = executor.spawn(async move {

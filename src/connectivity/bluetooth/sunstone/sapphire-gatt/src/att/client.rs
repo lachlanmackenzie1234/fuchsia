@@ -4,19 +4,22 @@
 
 use crate::att::AttributeHandle;
 use crate::att::bearer::{
-    BearerRecvError, BearerRx, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_SUPPORTED_MTU,
+    BearerRecvError, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_SUPPORTED_MTU,
 };
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, ExecuteWriteFlags,
     ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReqHeader, FindInformationReq,
-    FindInformationRsp, HandlesInformation, Header, InformationData16, InformationData128, Opcode,
-    Packet, PacketBuilder, PrepareWriteHeader, ReadBlobReq, ReadByGroupTypeReqHeader,
-    ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader, ReadByTypeReqHeader, ReadByTypeRsp, ReadReq,
-    UuidFormat, WriteCmdHeader, WriteReqHeader,
+    FindInformationRsp, HandleValueNtf, HandlesInformation, Header, InformationData16,
+    InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteHeader, ReadBlobReq,
+    ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
+    ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteCmdHeader, WriteReqHeader,
 };
+use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
+
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
+use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
@@ -214,19 +217,24 @@ impl<'a> Iterator for ReadByGroupTypeIter<'a> {
 }
 
 /// ATT Client protocol wrapper.
-pub struct Client<Tx, Rx> {
+pub struct Client<'a, Tx, Rx, Mtx = SingleThreadMutex> {
     bearer_tx: BearerTx<Tx>,
-    bearer_rx: BearerRx<Rx>,
+    bearer_rx: BearerRxHandle<'a, Rx, Mtx>,
     preferred_mtu: u16,
 }
 
-impl<Tx, Rx> Client<Tx, Rx>
+impl<'a, Tx, Rx, Mtx> Client<'a, Tx, Rx, Mtx>
 where
     Tx: L2CapChannelTx,
     Rx: L2CapChannelRx,
+    Mtx: RawMutex,
 {
     /// Creates a new ATT Client instance.
-    pub fn new(bearer_tx: BearerTx<Tx>, bearer_rx: BearerRx<Rx>, preferred_mtu: u16) -> Self {
+    pub fn new(
+        bearer_tx: BearerTx<Tx>,
+        bearer_rx: BearerRxHandle<'a, Rx, Mtx>,
+        preferred_mtu: u16,
+    ) -> Self {
         Self { bearer_tx, bearer_rx, preferred_mtu }
     }
 
@@ -240,13 +248,13 @@ where
     ///    - If it is an `ErrorRsp` and corresponds to our request, the specific
     ///      `ErrorCode` is parsed and returned as a `ClientError::ErrorResponse`.
     ///    - Otherwise, returns `ClientError::UnexpectedOpcode`.
-    async fn transaction<'a>(
+    async fn transaction<'b>(
         &mut self,
         req_opcode: Opcode,
         req_packet: &Packet,
-        rx_buf: &'a mut [MaybeUninit<u8>],
+        rx_buf: &'b mut [MaybeUninit<u8>],
         expected_rsp_opcode: Opcode,
-    ) -> Result<&'a mut Packet, ClientError> {
+    ) -> Result<&'b mut Packet, ClientError> {
         // Verify the provided buffer is large enough to hold any valid packet under the negotiated MTU.
         assert!(
             rx_buf.len() >= usize::from(self.bearer_tx.mtu()),
@@ -335,12 +343,12 @@ where
     /// The returned zero-copy data slice borrow-maps directly over the provided `rx_buf`.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3).
-    pub async fn find_information<'a>(
+    pub async fn find_information<'b>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
-        rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<DiscoveredInformation<'a>, ClientError> {
+        rx_buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<DiscoveredInformation<'b>, ClientError> {
         // Build and transmit the Find Information Request packet.
         let builder = PacketBuilder {
             header: Header { opcode: Opcode::FindInformationReq },
@@ -386,14 +394,14 @@ where
     /// to discover the range of a specific service type (e.g. Heart Rate service).
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
-    pub async fn find_by_type_value<'a>(
+    pub async fn find_by_type_value<'b>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
         attribute_type: u16, // 16-bit UUID only
         attribute_value: &[u8],
-        rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a [HandlesInformation], ClientError> {
+        rx_buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<&'b [HandlesInformation], ClientError> {
         let header_builder = PacketBuilder {
             header: Header { opcode: Opcode::FindByTypeValueReq },
             payload: FindByTypeValueReqHeader {
@@ -422,11 +430,11 @@ where
     /// Sends a Read Request and awaits a Read Response.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.1 & 3.4.4.2)
-    pub async fn read<'a>(
+    pub async fn read<'b>(
         &mut self,
         handle: AttributeHandle,
-        rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], ClientError> {
+        rx_buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<&'b mut [u8], ClientError> {
         // Construct the Read Request payload.
         let req = ReadReq { attribute_handle: U16::new(handle.value()) };
         let builder = PacketBuilder { header: Header { opcode: Opcode::ReadReq }, payload: req };
@@ -442,12 +450,12 @@ where
     /// Sends a Read Blob Request and awaits a Read Blob Response.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.3 & 3.4.4.4)
-    pub async fn read_blob<'a>(
+    pub async fn read_blob<'b>(
         &mut self,
         handle: AttributeHandle,
         offset: u16,
-        rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], ClientError> {
+        rx_buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<&'b mut [u8], ClientError> {
         // Construct the Read Blob Request payload.
         let req = ReadBlobReq {
             attribute_handle: U16::new(handle.value()),
@@ -477,13 +485,13 @@ where
     /// attribute type (UUID).
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7 & 3.4.4.8).
-    pub async fn read_by_type<'a>(
+    pub async fn read_by_type<'b>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
         attribute_type: &Uuid,
-        rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<ReadByTypeResults<'a>, ClientError> {
+        rx_buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<ReadByTypeResults<'b>, ClientError> {
         // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_type.as_bytes();
         let header_builder = PacketBuilder {
@@ -529,13 +537,13 @@ where
     /// attribute group type (UUID).
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.9 & 3.4.4.10).
-    pub async fn read_by_group_type<'a>(
+    pub async fn read_by_group_type<'b>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
         attribute_group_type: &Uuid,
-        rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<ReadByGroupTypeResults<'a>, ClientError> {
+        rx_buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<ReadByGroupTypeResults<'b>, ClientError> {
         // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_group_type.as_bytes();
         let header_builder = PacketBuilder {
@@ -565,11 +573,11 @@ where
     /// Initiates a Write Request procedure to write the value of an attribute.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1 & 3.4.5.2).
-    pub async fn write<'a>(
+    pub async fn write<'b>(
         &mut self,
         attribute_handle: AttributeHandle,
         attribute_value: &[u8],
-        rx_buf: &'a mut [MaybeUninit<u8>],
+        rx_buf: &'b mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
         let header_builder = PacketBuilder {
             header: Header { opcode: Opcode::WriteReq },
@@ -616,12 +624,12 @@ where
     /// Initiates a Prepare Write procedure to write a part of an attribute value.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.1).
-    pub async fn prepare_write<'a>(
+    pub async fn prepare_write<'b>(
         &mut self,
         attribute_handle: AttributeHandle,
         value_offset: u16,
         part_attribute_value: &[u8],
-        rx_buf: &'a mut [MaybeUninit<u8>],
+        rx_buf: &'b mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
         let header_builder = PacketBuilder {
             header: Header { opcode: Opcode::PrepareWriteReq },
@@ -656,10 +664,10 @@ where
     /// to reuse their existing buffer without stack duplication.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
-    pub async fn execute_write<'a>(
+    pub async fn execute_write<'b>(
         &mut self,
         flags: ExecuteWriteFlags,
-        rx_buf: &'a mut [MaybeUninit<u8>],
+        rx_buf: &'b mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
         let builder = PacketBuilder {
             header: Header { opcode: Opcode::ExecuteWriteReq },
@@ -678,9 +686,50 @@ where
     }
 }
 
+/// An asynchronous stream consumption API for consuming unsolicited Handle Value Notifications
+/// pushed from the remote server endpoint.
+#[derive(Debug)]
+pub struct NotificationStream<'a, Rx, Mtx = SingleThreadMutex> {
+    rx_handle: BearerRxHandle<'a, Rx, Mtx>,
+}
+
+impl<'a, Rx: L2CapChannelRx, Mtx: RawMutex> NotificationStream<'a, Rx, Mtx> {
+    pub fn new(router: &'a BearerRouter<Rx, Mtx>) -> Option<Self> {
+        let rx_handle = router.route_to(RouteFilter::Notifications)?;
+        Some(Self { rx_handle })
+    }
+
+    /// Awaits the next Handle Value Notification frame from the network.
+    /// Returns the parsed, zero-copy `HandleValueNtf` struct reference
+    /// backed by the caller's provided buffer.
+    pub async fn next<'b>(
+        &mut self,
+        buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<&'b HandleValueNtf, ClientError> {
+        let packet = self.rx_handle.next_packet(buf).await.map_err(|e| match e {
+            BearerRecvError::LinkClosed => ClientError::LinkClosed,
+            BearerRecvError::BufferTooSmall => {
+                panic!(
+                    "Programming error: provided buffer size is smaller than the negotiated MTU."
+                );
+            }
+            BearerRecvError::InvalidOpcode(_) => {
+                panic!("Programming error: rx_handle returned an invalid opcode.");
+            }
+            BearerRecvError::HeaderTooShort | BearerRecvError::PacketTooLarge { .. } => {
+                ClientError::InvalidIncomingData
+            }
+        })?;
+        let ntf = HandleValueNtf::try_ref_from_bytes(&packet.data)
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+        Ok(ntf)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::att::bearer::BearerRx;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
         DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, PrepareWriteHeader,
@@ -698,12 +747,12 @@ mod tests {
 
     #[test]
     fn test_client_exchange_mtu_success() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -743,12 +792,12 @@ mod tests {
 
     #[test]
     fn test_client_exchange_mtu_unsupported_fallback() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -789,12 +838,12 @@ mod tests {
 
     #[test]
     fn test_client_exchange_mtu_hard_error() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -837,12 +886,12 @@ mod tests {
 
     #[test]
     fn test_client_find_information_success() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -911,12 +960,12 @@ mod tests {
 
     #[test]
     fn test_client_find_information_error() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -955,12 +1004,12 @@ mod tests {
 
     #[test]
     fn test_client_find_by_type_value_success() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1013,12 +1062,12 @@ mod tests {
 
     #[test]
     fn test_client_find_by_type_value_error() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1056,12 +1105,12 @@ mod tests {
 
     #[test]
     fn test_client_read_success() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1102,12 +1151,12 @@ mod tests {
 
     #[test]
     fn test_client_read_error() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1143,12 +1192,12 @@ mod tests {
 
     #[test]
     fn test_client_read_blob_success() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1190,12 +1239,12 @@ mod tests {
 
     #[test]
     fn test_client_read_blob_error() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1232,12 +1281,12 @@ mod tests {
     #[test]
     fn test_client_read_by_type_success() {
         use crate::att::pdu::ReadByTypeReq;
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1321,12 +1370,12 @@ mod tests {
 
     #[test]
     fn test_client_read_by_type_error() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1364,12 +1413,12 @@ mod tests {
     #[test]
     fn test_client_read_by_group_type_success() {
         use crate::att::pdu::ReadByGroupTypeReq;
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1442,12 +1491,12 @@ mod tests {
 
     #[test]
     fn test_client_read_by_group_type_error() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1485,12 +1534,12 @@ mod tests {
 
     #[test]
     fn test_client_write_success() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1529,12 +1578,12 @@ mod tests {
 
     #[test]
     fn test_client_write_error() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1580,12 +1629,12 @@ mod tests {
 
     #[test]
     fn test_client_write_command_success() {
+        let (app_channel, _test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, _test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1613,12 +1662,12 @@ mod tests {
 
     #[test]
     fn test_client_write_command_link_closed() {
+        let (app_channel, _test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, _test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1638,12 +1687,12 @@ mod tests {
 
     #[test]
     fn test_client_prepare_write_success() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1685,12 +1734,12 @@ mod tests {
 
     #[test]
     fn test_client_prepare_write_error() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1730,12 +1779,12 @@ mod tests {
 
     #[test]
     fn test_client_prepare_write_invalid_echo() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1775,12 +1824,12 @@ mod tests {
 
     #[test]
     fn test_client_execute_write_success() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -1814,11 +1863,12 @@ mod tests {
 
     #[test]
     fn test_client_execute_write_error() {
+        let (app_channel, _test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, _test_tx, test_rx) = setup_mock_channel(executor);
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
             drop(test_rx); // Simulates LinkClosed

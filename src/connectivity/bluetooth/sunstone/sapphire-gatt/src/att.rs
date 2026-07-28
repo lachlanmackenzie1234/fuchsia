@@ -11,6 +11,7 @@ pub mod pdu;
 pub mod attribute;
 pub mod client;
 pub mod database;
+pub mod router;
 pub mod server;
 
 /// A valid, non-zero ATT Attribute Handle (0x0001 - 0xFFFF).
@@ -51,13 +52,14 @@ impl From<AttributeHandle> for u16 {
 mod tests {
     use super::*;
     use crate::att::attribute::testing::MockAttribute;
-    use crate::att::bearer::{BearerRx, BearerTx};
-    use crate::att::client::{Client, DiscoveredInformation};
+    use crate::att::bearer::{BearerRx, BearerTx, MAX_SUPPORTED_MTU};
+    use crate::att::client::{Client, DiscoveredInformation, NotificationStream};
     use crate::att::database::Database;
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
     use crate::att::pdu::ExecuteWriteFlags;
+    use crate::att::router::{BearerRouter, RouteFilter};
     use crate::att::server::{PrepareQueue, Server, ServerError};
     use core::cmp::min;
     use core::mem::MaybeUninit;
@@ -115,12 +117,12 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_handshake() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
-
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -156,9 +158,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_find_information() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"); // handle 1
             let custom_uuid =
@@ -169,7 +171,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -238,9 +240,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_find_by_type_value() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             // Group 1: handles 1 to 5. Type 0x2800 (Primary Service), value 0x180D (Heart Rate Service)
             let svc1 = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0D, 0x18], 5);
@@ -254,7 +256,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -307,9 +309,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_read() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             let long_val = b"012345678901234567890123456789"; // 30 bytes
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
@@ -326,7 +328,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -359,9 +361,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_read_entire_value() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             let short_val = b"Sunstone"; // 8 bytes
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), short_val);
@@ -378,7 +380,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -413,9 +415,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_read_blob() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             let long_val = b"012345678901234567890123456789"; // 30 bytes
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
@@ -431,7 +433,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -463,9 +465,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_read_blob_truncated() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             let long_val = b"0123456789012345678901234567890123456789"; // 40 bytes
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
@@ -481,7 +483,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -519,9 +521,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_read_by_type() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
             db.insert(h(4), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sapphire"));
@@ -538,7 +540,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -580,9 +582,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_read_by_group_type() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             // Primary service declarations (grouping type 0x2800)
             db.insert(h(1), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"\x01\x18", 5)); // Service 0x1801 (Generic Attribute), ends at handle 5
@@ -599,7 +601,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -644,9 +646,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_write() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -660,7 +662,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -696,9 +698,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_write_command() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -712,7 +714,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -748,9 +750,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_execute_write_commit() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -764,7 +766,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -810,9 +812,9 @@ mod tests {
 
     #[test]
     fn test_client_server_integration_execute_write_cancel() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -826,7 +828,7 @@ mod tests {
 
             let mut client = Client::new(
                 BearerTx::new(app_channel.sender),
-                BearerRx::new(app_channel.receiver),
+                client_router.route_to(RouteFilter::Responses).unwrap(),
                 CLIENT_PREFERRED_MTU,
             );
 
@@ -853,6 +855,65 @@ mod tests {
             assert!(client_handle.is_finished());
         });
     }
+
+    #[test]
+    fn test_client_server_integration_with_router() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
+        let client_router_ref = &client_router;
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let mut db = MockDb::new();
+            let long_val = b"Sunstone Router Integration Test Value";
+            let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), long_val);
+            let handle_1 = h(1);
+            db.insert(handle_1, name_attr);
+
+            let client_app_tx_bearer = BearerTx::new(app_channel.sender);
+            let server_tx_bearer = BearerTx::new(server_tx);
+
+            let client_rx_handle = client_router_ref.route_to(RouteFilter::Responses).unwrap();
+            let mut notification_stream =
+                NotificationStream::new(client_router_ref).expect("notification stream created");
+
+            let mut client =
+                Client::new(client_app_tx_bearer, client_rx_handle, CLIENT_PREFERRED_MTU);
+
+            let mut server = new_server(
+                PeerId::new(1).unwrap(),
+                server_tx_bearer,
+                BearerRx::new(server_rx),
+                SMALL_TEST_MTU,
+                db,
+            );
+
+            let client_proc_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
+                let result = client.read(handle_1, &mut rx_buf).await.unwrap();
+                let expected_len = (SMALL_TEST_MTU - 1) as usize;
+                assert_eq!(result, &long_val[..min(long_val.len(), expected_len)]);
+            });
+
+            let notification_listener_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
+                let ntf = notification_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(ntf.header.attribute_handle.get(), 0x1234);
+                assert_eq!(&ntf.attribute_value[..], b"some value data");
+            });
+
+            let mut notifier = server.notifier();
+            let server_proc_handle = executor.spawn(async move {
+                let _ = server.handle_request().await;
+                notifier.notify(0x1234, b"some value data").await.unwrap();
+            });
+
+            executor.run_until_stalled();
+
+            assert!(client_proc_handle.is_finished());
+            assert!(notification_listener_handle.is_finished());
+            assert!(server_proc_handle.is_finished());
+        });
+    }
+
     mod proptests {
         use super::*;
         use crate::att::attribute::Attribute;
@@ -911,8 +972,9 @@ mod tests {
             fn test_find_information_invalid_handles_zero(
                 handle in 1..=0xFFFFu16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -926,7 +988,7 @@ mod tests {
                     let client_handle = executor.spawn(async move {
                         let mut rx_buf = [MaybeUninit::uninit(); 512];
                         let mut client_tx_bearer = BearerTx::new(app_channel.sender);
-                        let mut client_rx_bearer = BearerRx::new(app_channel.receiver);
+                        let mut client_rx_bearer = client_router.route_to(RouteFilter::Responses).unwrap();
 
                         // Test starting handle = 0
                         let builder = PacketBuilder {
@@ -970,9 +1032,10 @@ mod tests {
                     (Just(AttributeHandle::new(s).unwrap()), (1..s).prop_map(|e| AttributeHandle::new(e).unwrap()))
                 })
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1000,9 +1063,10 @@ mod tests {
                 start in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
                 end in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1035,9 +1099,10 @@ mod tests {
                     (Just(AttributeHandle::new(s).unwrap()), (s..=0xFFFFu16).prop_map(|e| AttributeHandle::new(e).unwrap()))
                 })
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1096,9 +1161,10 @@ mod tests {
                 target_value in prop::collection::vec(any::<u8>(), 0..20),
             ) {
                 let target_value: Vec<u8> = target_value;
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1130,9 +1196,10 @@ mod tests {
                 target_value in prop::collection::vec(any::<u8>(), 0..20),
             ) {
                 let target_value: Vec<u8> = target_value;
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1170,9 +1237,10 @@ mod tests {
                 random_value in prop::collection::vec(any::<u8>(), 0..20),
             ) {
                 let random_value: Vec<u8> = random_value;
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1244,9 +1312,10 @@ mod tests {
                 }),
                 random_uuid_16 in 0..=0xFFFFu16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1277,9 +1346,10 @@ mod tests {
                 end in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
                 random_uuid_16 in 0..=0xFFFFu16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1318,9 +1388,10 @@ mod tests {
                 use_existing in proptest::bool::weighted(0.5),
                 random_uuid_16 in 0..=0xFFFFu16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1394,9 +1465,10 @@ mod tests {
                 }),
                 random_uuid_16 in 0..=0xFFFFu16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1427,9 +1499,10 @@ mod tests {
                 end in (1..=0xFFFFu16).prop_map(|v| AttributeHandle::new(v).unwrap()),
                 random_uuid_16 in 0..=0xFFFFu16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1474,9 +1547,10 @@ mod tests {
                 use_existing in proptest::bool::weighted(0.5),
                 random_uuid_16 in 0..=0xFFFFu16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
-                    let mut client = Client::new(BearerTx::new(app_channel.sender), BearerRx::new(app_channel.receiver), CLIENT_PREFERRED_MTU);
+                    let mut client = Client::new(BearerTx::new(app_channel.sender), client_router.route_to(RouteFilter::Responses).unwrap(), CLIENT_PREFERRED_MTU);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1563,8 +1637,9 @@ mod tests {
                 data in prop::collection::vec(any::<u8>(), 0..60),
                 mtu in 23..=256u16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1574,7 +1649,7 @@ mod tests {
                     );
                     let mut client = Client::new(
                         BearerTx::new(app_channel.sender),
-                        BearerRx::new(app_channel.receiver),
+                        client_router.route_to(RouteFilter::Responses).unwrap(),
                         mtu,
                     );
 
@@ -1640,8 +1715,9 @@ mod tests {
                 flags in prop::sample::select(vec![ExecuteWriteFlags::CancelAll, ExecuteWriteFlags::WriteAll]),
                 mtu in 23..=256u16,
             ) {
+                let (app_channel, server_tx, server_rx) = setup_mock_channel();
+                let client_router = BearerRouter::<_>::new(app_channel.receiver);
                 BoundedExecutor::new(TestExecutor::new(), |executor| {
-                    let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
                     let mut server = new_server(
                         PeerId::new(1).unwrap(),
                         BearerTx::new(server_tx),
@@ -1651,7 +1727,7 @@ mod tests {
                     );
                     let mut client = Client::new(
                         BearerTx::new(app_channel.sender),
-                        BearerRx::new(app_channel.receiver),
+                        client_router.route_to(RouteFilter::Responses).unwrap(),
                         mtu,
                     );
 

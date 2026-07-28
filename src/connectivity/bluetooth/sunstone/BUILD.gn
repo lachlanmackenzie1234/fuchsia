@@ -53,6 +53,7 @@ if (is_host) {
       "sapphire-gatt/src/att/l2cap/cid.rs",
       "sapphire-gatt/src/att/l2cap/mock.rs",
       "sapphire-gatt/src/att/pdu.rs",
+      "sapphire-gatt/src/att/router.rs",
       "sapphire-gatt/src/att/server.rs",
       "sapphire-gatt/src/gatt.rs",
       "sapphire-gatt/src/gatt/client.rs",

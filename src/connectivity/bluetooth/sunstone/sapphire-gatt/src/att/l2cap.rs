@@ -60,7 +60,7 @@ pub struct L2CapChannel<Tx, Rx> {
 }
 
 /// Sender end to an L2CAP channel
-pub trait L2CapChannelTx {
+pub trait L2CapChannelTx: Clone {
     /// Sends the given SDU to the channel
     async fn send(&mut self, sdu: &[u8]) -> Result<(), L2CapSendError>;
 }

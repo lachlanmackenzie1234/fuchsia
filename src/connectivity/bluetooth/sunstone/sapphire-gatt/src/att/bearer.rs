@@ -3,10 +3,14 @@
 // found in the LICENSE file.
 
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx, L2CapRecvError, L2CapSendError};
-use crate::att::pdu::{Header, Packet};
-use core::mem::MaybeUninit;
+use crate::att::pdu::{Header, Opcode, Packet};
+use core::fmt;
+use core::mem::{self, MaybeUninit};
 use thiserror::Error;
 use zerocopy::{IntoBytes, TryFromBytes};
+
+use sapphire_collections::storage::ArrayStorage;
+use sapphire_collections::vec::Vec;
 
 /// The default starting ATT MTU size defined by the BT Core Spec
 ///
@@ -66,6 +70,7 @@ impl From<L2CapSendError> for BearerSendError {
 }
 
 /// The transmitting handle wrapper of our ATT Bearer.
+#[derive(Debug, Clone)]
 pub struct BearerTx<Tx> {
     channel_tx: Tx,
     mtu: u16,
@@ -106,6 +111,29 @@ where
 pub struct BearerRx<Rx> {
     channel_rx: Rx,
     mtu: u16,
+    staged_buf: Vec<u8, ArrayStorage<MAX_SUPPORTED_MTU>>,
+}
+
+impl<Rx> BearerRx<Rx> {
+    /// Returns the currently staged ATT opcode if a packet is staged in the buffer.
+    ///
+    /// Returns:
+    /// - `None` if no packet is currently staged in the buffer.
+    /// - `Some(Ok(opcode))` if a valid ATT opcode is staged.
+    /// - `Some(Err(raw_opcode))` if a packet is staged but its raw opcode byte is invalid.
+    pub fn staged_opcode(&self) -> Option<Result<Opcode, u8>> {
+        let raw = *self.staged_buf.first()?;
+        Some(Opcode::from_repr(raw).ok_or(raw))
+    }
+}
+
+impl<Rx> fmt::Debug for BearerRx<Rx> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BearerRx")
+            .field("mtu", &self.mtu)
+            .field("staged_opcode", &self.staged_opcode())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<Rx> BearerRx<Rx>
@@ -114,53 +142,113 @@ where
 {
     /// Constructor wrapping a concrete L2Cap receiver socket.
     pub fn new(channel_rx: Rx) -> Self {
-        Self { channel_rx, mtu: DEFAULT_STARTING_MTU }
+        let mut staged_buf = Vec::new();
+        staged_buf.try_resize(MAX_SUPPORTED_MTU, 0).expect("MTU fits in inline storage");
+        staged_buf.clear();
+        Self { channel_rx, mtu: DEFAULT_STARTING_MTU, staged_buf }
+    }
+
+    /// Peeks the incoming packet's ATT opcode without consuming the payload.
+    ///
+    /// Runs in a loop until a valid packet is staged from the physical L2CAP channel
+    /// and returns the parsed opcode.
+    pub async fn peek_opcode(&mut self) -> Opcode {
+        loop {
+            if let Ok(packet) = self.stage_next_sdu().await {
+                return packet.header.opcode;
+            }
+        }
+    }
+
+    async fn stage_next_sdu(&mut self) -> Result<&Packet, BearerRecvError> {
+        if !self.staged_buf.is_empty() {
+            return Ok(self.staged_packet().expect("staged_buf contains valid ATT packet"));
+        }
+
+        self.staged_buf.clear();
+
+        // SAFETY: `as_mut_ptr` points to `staged_buf`'s allocated capacity of 519 bytes.
+        let uninit_slice = unsafe {
+            core::slice::from_raw_parts_mut(
+                self.staged_buf.as_mut_ptr().cast::<MaybeUninit<u8>>(),
+                self.staged_buf.capacity(),
+            )
+        };
+
+        let sdu_len = match self.channel_rx.recv(uninit_slice).await {
+            Ok(sdu) => sdu.len(),
+            Err(L2CapRecvError::LinkClosed) => {
+                self.staged_buf.clear();
+                return Err(BearerRecvError::LinkClosed);
+            }
+            Err(L2CapRecvError::BufferTooSmall) => {
+                self.staged_buf.clear();
+                return Err(BearerRecvError::PacketTooLarge { opcode: 0x00 });
+            }
+        };
+
+        if sdu_len < mem::size_of::<Header>() {
+            self.staged_buf.clear();
+            return Err(BearerRecvError::HeaderTooShort);
+        }
+
+        // SAFETY: `channel_rx.recv` initialized `sdu_len` bytes of `staged_buf`.
+        unsafe {
+            self.staged_buf.set_len(sdu_len);
+        }
+
+        if sdu_len > usize::from(self.mtu) {
+            let raw_opcode = self.staged_buf[0];
+            self.staged_buf.clear();
+            return Err(BearerRecvError::PacketTooLarge { opcode: raw_opcode });
+        }
+
+        let raw_opcode = self.staged_buf[0];
+        if Packet::try_ref_from_bytes(&self.staged_buf).is_err() {
+            self.staged_buf.clear();
+            return Err(BearerRecvError::InvalidOpcode(raw_opcode));
+        }
+
+        Ok(self.staged_packet().expect("staged_buf contains valid ATT packet"))
     }
 
     /// Updates the negotiated ATT MTU boundary.
     pub fn set_mtu(&mut self, mtu: u16) {
         self.mtu = mtu;
     }
+
+    /// Returns a structured reference to the currently staged ATT Packet, if one is staged.
+    pub fn staged_packet(&self) -> Option<&Packet> {
+        if self.staged_buf.is_empty() {
+            return None;
+        }
+        Some(
+            Packet::try_ref_from_bytes(&self.staged_buf)
+                .expect("staged_buf contains valid ATT packet"),
+        )
+    }
+
+    /// Clears the staged buffer after consuming its payload.
+    pub fn clear_staged_buf(&mut self) {
+        self.staged_buf.clear();
+    }
+
     /// Pulls the next incoming SDU from the channel, validates the header invariants,
     /// and returns a structured zero-copy reference to the parsed ATT Packet.
     pub async fn next_packet<'a>(
         &mut self,
         buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut Packet, BearerRecvError> {
-        let buf_len = buf.len();
-        // 1. Wait for raw SDU bytes from L2CAP receiver half
-        let sdu = match self.channel_rx.recv(buf).await {
-            Ok(sdu) => sdu,
-            Err(L2CapRecvError::LinkClosed) => return Err(BearerRecvError::LinkClosed),
-            Err(L2CapRecvError::BufferTooSmall) => {
-                if buf_len < usize::from(self.mtu) {
-                    // Our fault (programming error: buffer provided is smaller than the negotiated MTU)
-                    return Err(BearerRecvError::BufferTooSmall);
-                } else {
-                    // TODO(https://fxbug.dev/530174753): Extract opcode once L2CAP Trait is
-                    // Finalized
-                    //
-                    // Peer's fault (protocol violation: packet size exceeds negotiated MTU / buffer size)
-                    return Err(BearerRecvError::PacketTooLarge { opcode: 0x00 });
-                }
-            }
-        };
+        self.stage_next_sdu().await?;
 
-        // 2. Minimum Length Validation (must cover at least the header)
-        if sdu.len() < core::mem::size_of::<Header>() {
-            return Err(BearerRecvError::HeaderTooShort);
+        if buf.len() < self.staged_buf.len() {
+            return Err(BearerRecvError::BufferTooSmall);
         }
 
-        // 3. MTU Validation (Peer protocol violation check):
-        if sdu.len() > self.mtu.into() {
-            return Err(BearerRecvError::PacketTooLarge { opcode: sdu[0] });
-        }
-
-        // 4. Validate and parse the structured ATT packet header.
-        let raw_opcode = sdu[0];
-        let packet = Packet::try_mut_from_bytes(sdu)
-            .map_err(|_| BearerRecvError::InvalidOpcode(raw_opcode))?;
-
+        let initialized = buf[..self.staged_buf.len()].write_copy_of_slice(&self.staged_buf);
+        self.staged_buf.clear();
+        let packet =
+            Packet::try_mut_from_bytes(initialized).expect("staged_buf contains valid ATT packet");
         Ok(packet)
     }
 }
@@ -178,7 +266,7 @@ mod tests {
     #[test]
     fn test_bearer_tx_sends_to_channel() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, _test_tx, mut test_rx) = setup_mock_channel(executor);
+            let (app_channel, _test_tx, mut test_rx) = setup_mock_channel();
 
             let send_handle = executor.spawn(async move {
                 let mut bearer_tx = BearerTx::new(app_channel.sender);
@@ -203,7 +291,7 @@ mod tests {
     #[test]
     fn test_bearer_rx_receives_from_channel() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel(executor);
+            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel();
 
             let verify_handle = executor.spawn(async move {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
@@ -227,7 +315,7 @@ mod tests {
     #[test]
     fn test_bearer_rx_rejects_empty_packet() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel(executor);
+            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel();
 
             let verify_handle = executor.spawn(async move {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
@@ -249,7 +337,7 @@ mod tests {
     #[test]
     fn test_bearer_rx_rejects_invalid_opcode() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel(executor);
+            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel();
 
             let verify_handle = executor.spawn(async move {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
@@ -272,7 +360,7 @@ mod tests {
     #[test]
     fn test_bearer_rx_handles_link_closure() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, _test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, _test_rx) = setup_mock_channel();
 
             let verify_handle = executor.spawn(async move {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);
@@ -294,7 +382,7 @@ mod tests {
     #[test]
     fn test_bearer_tx_rejects_exceeding_mtu() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, _test_tx, _test_rx) = setup_mock_channel(executor);
+            let (app_channel, _test_tx, _test_rx) = setup_mock_channel();
 
             let mut bearer_tx = BearerTx::new(app_channel.sender);
 
@@ -316,7 +404,7 @@ mod tests {
     #[test]
     fn test_bearer_rx_rejects_exceeding_mtu() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel(executor);
+            let (app_channel, mut test_tx, _test_rx) = setup_mock_channel();
 
             let verify_handle = executor.spawn(async move {
                 let mut bearer_rx = BearerRx::new(app_channel.receiver);

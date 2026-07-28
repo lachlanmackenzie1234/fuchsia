@@ -13,10 +13,10 @@ use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, ExecuteWriteFlags,
     ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReq, FindInformationReq,
-    FindInformationRspHeader, HandlesInformation, Header, InformationData, InformationData16,
-    InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteReq, ReadBlobReq,
-    ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat,
-    WriteCmd, WriteReq, WriteRsp,
+    FindInformationRspHeader, HandleValueNtfHeader, HandlesInformation, Header, InformationData,
+    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteReq,
+    ReadBlobReq, ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq,
+    UuidFormat, WriteCmd, WriteReq, WriteRsp,
 };
 use core::cmp::{max, min};
 use core::convert::Infallible;
@@ -1052,12 +1052,73 @@ where
         self.send_packet(tx_packet).await
     }
 
+    /// Obtains a concurrent ServerNotifier handle sharing the underlying BearerTx.
+    pub fn notifier(&self) -> ServerNotifier<Tx> {
+        ServerNotifier::new(self.bearer_tx.clone())
+    }
+
     pub fn mtu(&self) -> u16 {
         self.bearer_tx.mtu()
     }
 
     fn effective_mtu(&self) -> usize {
         usize::try_from(self.mtu()).unwrap_or(usize::MAX)
+    }
+}
+
+/// A concurrent, statically dispatched server notification handle driving unsolicited Server Notifications
+/// side-by-side with an actively running Server instance.
+#[derive(Clone, Debug)]
+pub struct ServerNotifier<Tx> {
+    bearer_tx: BearerTx<Tx>,
+}
+
+impl<Tx> ServerNotifier<Tx>
+where
+    Tx: L2CapChannelTx,
+{
+    pub fn new(bearer_tx: BearerTx<Tx>) -> Self {
+        Self { bearer_tx }
+    }
+
+    fn effective_mtu(&self) -> usize {
+        usize::from(self.bearer_tx.mtu())
+    }
+
+    /// Sends a Handle Value Notification asynchronously down the shared BearerTx link.
+    ///
+    /// Panics if the notification payload size exceeds the currently
+    /// negotiated ATT MTU boundary.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
+    pub async fn notify(&mut self, handle: u16, value: &[u8]) -> Result<(), ServerError> {
+        let required_capacity =
+            size_of::<Header>() + size_of::<HandleValueNtfHeader>() + value.len();
+
+        assert!(
+            required_capacity <= self.effective_mtu(),
+            "Programming error: Handle Value Notification payload size ({}) exceeds effective MTU ({}).",
+            required_capacity,
+            self.effective_mtu()
+        );
+
+        let header = PacketBuilder {
+            header: Header { opcode: Opcode::HandleValueNtf },
+            payload: HandleValueNtfHeader { attribute_handle: U16::new(handle) },
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, self.effective_mtu());
+        builder.extend_from_slice(value).expect("Failed to extend notification payload");
+
+        let tx_packet = builder.as_packet();
+        match self.bearer_tx.send(tx_packet).await {
+            Ok(()) => Ok(()),
+            Err(BearerSendError::LinkClosed) => Err(ServerError::LinkClosed),
+            Err(BearerSendError::PacketTooLarge) => {
+                panic!("Programming error: outgoing packet size exceeds the negotiated MTU.");
+            }
+        }
     }
 }
 
@@ -1079,13 +1140,14 @@ fn to_handle(val: u16, opcode: Opcode) -> Result<AttributeHandle, TransactionErr
 mod tests {
     use super::*;
     use crate::att::attribute::testing::MockAttribute;
+    use crate::att::bearer::BearerRx;
     use crate::att::client::ReadByGroupTypeResults;
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        FindByTypeValueReqHeader, FindInformationRsp, InformationData16, PrepareWriteHeader,
-        PrepareWriteRsp, ReadByGroupTypeReqHeader, ReadByTypeReqHeader, WriteCmdHeader,
-        WriteReqHeader,
+        FindByTypeValueReqHeader, FindInformationRsp, HandleValueNtf, InformationData16,
+        PrepareWriteHeader, PrepareWriteRsp, ReadByGroupTypeReqHeader, ReadByTypeReqHeader,
+        WriteCmdHeader, WriteReqHeader,
     };
 
     use core::mem::size_of;
@@ -1116,20 +1178,13 @@ mod tests {
         Rx: L2CapChannelRx,
         DB: Database,
     {
-        Server {
-            peer_id,
-            bearer_tx,
-            bearer_rx,
-            server_rx_mtu,
-            database,
-            prepare_storage: PrepareQueue::new(),
-        }
+        Server::new(peer_id, bearer_tx, bearer_rx, server_rx_mtu, database, PrepareQueue::new())
     }
 
     #[test]
     fn test_server_handle_mtu_exchange_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut server = new_server(
                 PeerId::new(1).unwrap(),
@@ -1178,7 +1233,7 @@ mod tests {
     #[test]
     fn test_server_handles_unsupported_request_and_continues() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut server = new_server(
                 PeerId::new(1).unwrap(),
@@ -1238,7 +1293,7 @@ mod tests {
     #[test]
     fn test_server_handles_invalid_payload_and_continues() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut server = new_server(
                 PeerId::new(1).unwrap(),
@@ -1281,7 +1336,7 @@ mod tests {
     #[test]
     fn test_server_handles_large_packet_and_continues() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut server = new_server(
                 PeerId::new(1).unwrap(),
@@ -1337,7 +1392,7 @@ mod tests {
     #[test]
     fn test_server_handles_invalid_opcode() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut server = new_server(
                 PeerId::new(1).unwrap(),
@@ -1377,7 +1432,7 @@ mod tests {
     #[test]
     fn test_server_handles_exceeding_mtu_packet() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut server = new_server(
                 PeerId::new(1).unwrap(),
@@ -1419,7 +1474,7 @@ mod tests {
     #[test]
     fn test_server_handle_find_information_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"); // handle 1
@@ -1502,7 +1557,7 @@ mod tests {
     #[test]
     fn test_server_handle_find_information_errors() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"); // handle 1
@@ -1588,7 +1643,7 @@ mod tests {
     #[test]
     fn test_server_handle_find_by_type_value_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             // Handle 1: Primary Service (0x2800) with value 0x180D (Heart Rate), ends at 5
@@ -1652,7 +1707,7 @@ mod tests {
     #[test]
     fn test_server_handle_find_by_type_value_errors() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let svc_attr = MockAttribute::new_grouped(Uuid::from_u16(0x2800), &[0x0D, 0x18], 5);
@@ -1710,7 +1765,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
@@ -1757,7 +1812,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_invalid_handle() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
@@ -1806,7 +1861,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_attribute_not_found() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
@@ -1855,7 +1910,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_truncated() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             // 30-byte long value
@@ -1905,7 +1960,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_blob_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
@@ -1955,7 +2010,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_blob_invalid_offset() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let name_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone");
@@ -2007,7 +2062,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_blob_truncated() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             // 30-byte long value
@@ -2062,7 +2117,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_by_type_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
@@ -2134,7 +2189,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_by_type_errors() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             db.insert(h(2), MockAttribute::new(Uuid::from_u16(0x2A00), b"Sunstone"));
@@ -2215,7 +2270,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_by_group_type_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             db.insert(h(2), MockAttribute::new_grouped(Uuid::from_u16(0x2800), b"Service1", 5));
@@ -2303,7 +2358,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_by_group_type_errors() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             // Match but non-grouping type! (returns None for group_end_handle)
@@ -2361,7 +2416,7 @@ mod tests {
     #[test]
     fn test_server_handle_read_by_group_type_mixed_lengths() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             // Attribute 1 has value of length 8
@@ -2446,7 +2501,7 @@ mod tests {
     #[test]
     fn test_server_handle_write_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
@@ -2509,7 +2564,7 @@ mod tests {
     #[test]
     fn test_server_handle_write_errors() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"Val");
@@ -2567,7 +2622,7 @@ mod tests {
     #[test]
     fn test_server_handle_write_cmd_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+            let (app_channel, server_tx, server_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
@@ -2625,7 +2680,7 @@ mod tests {
     #[test]
     fn test_server_handle_write_cmd_errors_ignored() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, server_tx, server_rx) = setup_mock_channel(executor);
+            let (app_channel, server_tx, server_rx) = setup_mock_channel();
 
             let mut db = MockDb::new();
             let readonly_attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
@@ -2700,7 +2755,7 @@ mod tests {
     #[test]
     fn test_server_handle_prepare_write_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -2760,7 +2815,7 @@ mod tests {
     #[test]
     fn test_server_handle_prepare_write_invalid_offset() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue")); // Length 12
 
@@ -2815,7 +2870,7 @@ mod tests {
     #[test]
     fn test_server_handle_prepare_write_queue_full() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -2876,7 +2931,7 @@ mod tests {
     #[test]
     fn test_server_handle_execute_write_commit_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -2946,7 +3001,7 @@ mod tests {
     #[test]
     fn test_server_handle_execute_write_cancel_success() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
             let mut db = MockDb::new();
             db.insert(h(10), MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue"));
 
@@ -3006,7 +3061,7 @@ mod tests {
     #[test]
     fn test_server_handle_execute_write_failure_discards_rest() {
         BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let (app_channel, test_tx, test_rx) = setup_mock_channel(executor);
+            let (app_channel, test_tx, test_rx) = setup_mock_channel();
             let mut db = MockDb::new();
             let attr = MockAttribute::new(Uuid::from_u16(0x2A00), b"InitialValue");
             attr.set_write_error(ErrorCode::WriteNotPermitted);
@@ -3059,6 +3114,39 @@ mod tests {
             executor.run_until_stalled();
             assert!(client_handle.is_finished());
             assert!(server_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_notify_success() {
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let (app_channel, _test_tx, mut test_rx) = setup_mock_channel();
+            use crate::att::l2cap::L2CapChannelRx;
+            let server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(app_channel.sender),
+                BearerRx::new(app_channel.receiver),
+                SERVER_MTU,
+                MockDb::new(),
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
+                let sdu = test_rx.recv(&mut rx_buf).await.unwrap();
+                let packet = Packet::try_ref_from_bytes(sdu).unwrap();
+                assert_eq!(packet.header.opcode, Opcode::HandleValueNtf);
+                let ntf = HandleValueNtf::try_ref_from_bytes(&packet.data).unwrap();
+                assert_eq!(ntf.header.attribute_handle.get(), 0x1234);
+                assert_eq!(ntf.attribute_value, [0xAA, 0xBB, 0xCC]);
+            });
+
+            executor.block_on(async {
+                let mut notifier = server.notifier();
+                notifier.notify(0x1234, &[0xAA, 0xBB, 0xCC]).await.unwrap();
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
         });
     }
 }
