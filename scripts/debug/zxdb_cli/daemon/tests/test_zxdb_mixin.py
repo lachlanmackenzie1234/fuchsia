@@ -17,14 +17,11 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
                 self._send_request = AsyncMock()
 
         client = MockClient()
-        writer = Mock()
         args = ZxdbDetachArguments(pid=1234)
 
-        await client.zxdb_detach(writer, args)
+        await client.zxdb_detach(args)
 
-        client._send_request.assert_called_once_with(
-            writer, "zxdb.Detach", args
-        )
+        client._send_request.assert_called_once_with("zxdb.Detach", args)
 
 
 class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
@@ -45,7 +42,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             mock_detach.assert_called_once()
             self.assertIsNotNone(mock_detach.call_args)
             assert mock_detach.call_args is not None
-            args = mock_detach.call_args[0][1]
+            args = mock_detach.call_args[0][0]
             self.assertTrue(args.detach_all)
 
             # Verify state side-effects
@@ -75,7 +72,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             mock_detach.assert_called_once()
             self.assertIsNotNone(mock_detach.call_args)
             assert mock_detach.call_args is not None
-            args = mock_detach.call_args[0][1]
+            args = mock_detach.call_args[0][0]
             self.assertEqual(args.pid, 1234)
 
             # Verify state side-effects

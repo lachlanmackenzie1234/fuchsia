@@ -22,7 +22,7 @@ async def handle(daemon: Daemon, _req: ThreadsRequest) -> Response:
         )
 
     try:
-        resp = await daemon.dap_client.threads(daemon.zxdb_writer)
+        resp = await daemon.dap_client.threads()
         body = resp.body.model_dump(by_alias=True) if resp.body else None
         return Response(
             success=True,

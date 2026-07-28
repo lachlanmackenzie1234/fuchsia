@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import Daemon
+from pydap.client import READER_STOPPED_EVENT
 from shared.protocol import Response
 from shared.protocol.wait_for_event import WaitForEventRequest
 
@@ -159,6 +160,23 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(1234, daemon.active_processes)
         self.assertEqual(daemon.active_processes[1234], "test_process")
+
+    async def test_reader_stopped_event_logs_warning(self) -> None:
+        daemon = Daemon(port=None)
+        err = RuntimeError("Connection forcibly closed by peer")
+        await daemon.event_queue.put(
+            {"type": READER_STOPPED_EVENT, "exception": err}
+        )
+
+        with self.assertLogs("daemon.daemon", level="WARNING") as cm:
+            await daemon._process_events()
+
+        self.assertTrue(
+            any(
+                "DAP reader background task stopped with error" in log
+                for log in cm.output
+            )
+        )
 
 
 if __name__ == "__main__":

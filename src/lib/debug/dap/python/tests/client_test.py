@@ -10,7 +10,20 @@ from typing import Any
 
 from pydap.client import DapClient, DapError
 from pydap.dap_types import Source, SourceBreakpoint
-from pydap.models import *
+from pydap.models import (
+    AttachRequestArguments,
+    ContinueArguments,
+    ContinueResponse,
+    DisconnectArguments,
+    EvaluateArguments,
+    InitializeArguments,
+    LaunchArguments,
+    PauseArguments,
+    ScopesArguments,
+    SetBreakpointsArguments,
+    StackTraceArguments,
+    VariablesArguments,
+)
 
 
 class MockWriter:
@@ -19,6 +32,14 @@ class MockWriter:
 
     def write(self, data: bytes) -> None:
         self.buffer.write(data)
+
+    async def drain(self) -> None:
+        pass
+
+
+class FailingWriter:
+    def write(self, data: bytes) -> None:
+        raise OSError("Connection reset by peer")
 
     async def drain(self) -> None:
         pass
@@ -33,32 +54,41 @@ def feed_dap_response(
 
 
 class TestDapClient(unittest.IsolatedAsyncioTestCase):
-    def _start_client(self, client: DapClient) -> asyncio.StreamReader:
+    def _start_client(
+        self, client: DapClient
+    ) -> tuple[asyncio.StreamReader, MockWriter]:
         reader = asyncio.StreamReader()
+        writer = MockWriter()
         event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        asyncio.create_task(client.run(reader, event_queue))
-        return reader
+        client.run(reader, writer, event_queue)
+        return reader, writer
 
-    # shouldn't send request before run the client.
+    # Should not send request before running the client.
     async def test_not_running_error(self) -> None:
         client = DapClient()
-        writer = MockWriter()
         with self.assertRaises(DapError) as cm:
-            client._send_request_future(writer, "initialize")
+            client._send_request_future("initialize")
         self.assertIn("DapClient is not running", str(cm.exception))
 
     async def test_run(self) -> None:
         client = DapClient()
         reader = asyncio.StreamReader()
+        writer = MockWriter()
         event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        run_task = asyncio.create_task(client.run(reader, event_queue))
-        await asyncio.sleep(0)
+        client.run(reader, writer, event_queue)
         self.assertTrue(client.is_running)
 
         reader.feed_eof()
-        await run_task
+        await client.close()
         self.assertFalse(client.is_running)
+
+    async def test_already_running_error(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+        with self.assertRaises(DapError) as cm:
+            client.run(reader, writer, asyncio.Queue())
+        self.assertIn("DapClient is already running", str(cm.exception))
 
     async def test_read_message(self) -> None:
         data = b'Content-Length: 26\r\n\r\n{"seq":1,"type":"request"}'
@@ -88,13 +118,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test__send_request(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
-
-        send_task = asyncio.create_task(
-            client._send_request(writer, "initialize")
-        )
+        send_task = asyncio.create_task(client._send_request("initialize"))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -120,11 +146,10 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_initialize(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
         args = InitializeArguments(adapter_id="test")
-        send_task = asyncio.create_task(client.initialize(writer, args))
+        send_task = asyncio.create_task(client.initialize(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -149,11 +174,10 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_disconnect(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
         args = DisconnectArguments(terminate_debuggee=True)
-        send_task = asyncio.create_task(client.disconnect(writer, args))
+        send_task = asyncio.create_task(client.disconnect(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -178,11 +202,10 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_stack_trace(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
         args = StackTraceArguments(thread_id=1)
-        send_task = asyncio.create_task(client.stack_trace(writer, args))
+        send_task = asyncio.create_task(client.stack_trace(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -208,11 +231,10 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_continue_thread(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
         args = ContinueArguments(thread_id=1)
-        send_task = asyncio.create_task(client.continue_thread(writer, args))
+        send_task = asyncio.create_task(client.continue_thread(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -268,11 +290,10 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_pause_thread(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
         args = PauseArguments(thread_id=1)
-        send_task = asyncio.create_task(client.pause_thread(writer, args))
+        send_task = asyncio.create_task(client.pause_thread(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -297,10 +318,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_threads(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
-        send_task = asyncio.create_task(client.threads(writer))
+        send_task = asyncio.create_task(client.threads())
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -333,13 +353,12 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_attach(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
+        reader, writer = self._start_client(client)
 
-        writer = MockWriter()
         args = AttachRequestArguments(
             restart=True, extra_fields={"process": "my_process"}
         )
-        send_task = asyncio.create_task(client.attach(writer, args))
+        send_task = asyncio.create_task(client.attach(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -366,10 +385,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_launch(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = LaunchArguments(process="my_process", launch_command="run")
-        send_task = asyncio.create_task(client.launch(writer, args))
+        send_task = asyncio.create_task(client.launch(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -396,12 +414,11 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_evaluate(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = EvaluateArguments(
             expression="1 + 1", context="repl", frame_id=42
         )
-        send_task = asyncio.create_task(client.evaluate(writer, args))
+        send_task = asyncio.create_task(client.evaluate(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -437,10 +454,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_scopes(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = ScopesArguments(frame_id=42)
-        send_task = asyncio.create_task(client.scopes(writer, args))
+        send_task = asyncio.create_task(client.scopes(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -479,10 +495,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = VariablesArguments(variables_reference=100)
-        send_task = asyncio.create_task(client.variables(writer, args))
+        send_task = asyncio.create_task(client.variables(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -525,10 +540,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables_with_start_only(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = VariablesArguments(variables_reference=100, start=5)
-        send_task = asyncio.create_task(client.variables(writer, args))
+        send_task = asyncio.create_task(client.variables(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -557,10 +571,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables_with_count_only(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = VariablesArguments(variables_reference=100, count=10)
-        send_task = asyncio.create_task(client.variables(writer, args))
+        send_task = asyncio.create_task(client.variables(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -589,10 +602,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_variables_with_start_and_count(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = VariablesArguments(variables_reference=100, start=5, count=10)
-        send_task = asyncio.create_task(client.variables(writer, args))
+        send_task = asyncio.create_task(client.variables(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -621,13 +633,12 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_breakpoints(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = SetBreakpointsArguments(
             source=Source(path="/path/to/file.rs"),
             breakpoints=[SourceBreakpoint(line=12)],
         )
-        send_task = asyncio.create_task(client.set_breakpoints(writer, args))
+        send_task = asyncio.create_task(client.set_breakpoints(args))
 
         await asyncio.sleep(0)
         await client._write_queue.join()
@@ -669,11 +680,10 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_error_response(self) -> None:
         client = DapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = SetBreakpointsArguments(source=Source(path="relative.rs"))
 
-        send_task = asyncio.create_task(client.set_breakpoints(writer, args))
+        send_task = asyncio.create_task(client.set_breakpoints(args))
         await asyncio.sleep(0)
         await client._write_queue.join()
         buffer_val = writer.buffer.getvalue()
@@ -697,3 +707,67 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "SetBreakpointsRequest path must be absolute!", str(cm.exception)
         )
+
+    async def test_reader_failure_fails_pending_futures(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        seq, sent_fut, data_fut = client._send_request_future("initialize")
+        await asyncio.sleep(0)
+        await client._write_queue.join()
+
+        # Feed corrupted header length to cause _read_message to raise DapError
+        reader.feed_data(b"Content-Length: invalid\r\n\r\n")
+
+        with self.assertRaises(DapError):
+            await data_fut
+
+        self.assertEqual(len(client._pending_requests), 0)
+        self.assertFalse(client.is_running)
+
+    async def test_writer_failure_fails_pending_future(self) -> None:
+        client = DapClient()
+        reader = asyncio.StreamReader()
+        writer = FailingWriter()
+        event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        client.run(reader, writer, event_queue)
+
+        seq, sent_fut, data_fut = client._send_request_future("initialize")
+
+        with self.assertRaises(OSError) as cm_sent:
+            await sent_fut
+        self.assertIn("Connection reset by peer", str(cm_sent.exception))
+
+        with self.assertRaises(OSError) as cm_data:
+            await data_fut
+        self.assertIn("Connection reset by peer", str(cm_data.exception))
+
+    async def test_close_cancels_write_queue_futures(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        seq, sent_fut, data_fut = client._send_request_future("initialize")
+
+        await client.close()
+
+        self.assertTrue(sent_fut.cancelled())
+        self.assertTrue(data_fut.cancelled())
+        self.assertFalse(client.is_running)
+
+    async def test_caller_cancelled_data_fut_cancels_sent_fut(self) -> None:
+        client = DapClient()
+        reader = asyncio.StreamReader()
+        writer = MockWriter()
+        event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        client.run(reader, writer, event_queue)
+        seq, sent_fut, data_fut = client._send_request_future("initialize")
+        # Cancel data_fut before client processes the write queue
+        data_fut.cancel()
+
+        await client._write_queue.join()
+
+        self.assertTrue(sent_fut.cancelled())
+        # Verify nothing was written to writer
+        self.assertEqual(len(writer.buffer.getvalue()), 0)
+        await client.close()

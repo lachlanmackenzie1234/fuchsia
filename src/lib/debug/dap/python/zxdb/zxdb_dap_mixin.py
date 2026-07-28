@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import asyncio
 from typing import Any, Protocol
 
 from pydantic import Field, model_validator
@@ -43,7 +42,6 @@ class ZxdbDetachArguments(DapBaseModel):
 class SupportsSendRequest(Protocol):
     async def _send_request(
         self,
-        writer: asyncio.StreamWriter,
         command: str,
         arguments: DapBaseModel | None = None,
         timeout: float = 5.0,
@@ -56,17 +54,15 @@ class ZxdbDapMixin:
 
     async def zxdb_detach(
         self: SupportsSendRequest,
-        writer: asyncio.StreamWriter,
         args: ZxdbDetachArguments,
     ) -> dict[str, Any]:
         """Sends a custom zxdb detach request."""
-        return await self._send_request(writer, "zxdb.Detach", args)
+        return await self._send_request("zxdb.Detach", args)
 
     async def zxdb_stack_trace(
         self: SupportsSendRequest,
-        writer: asyncio.StreamWriter,
         args: ZxdbStackTraceArguments,
     ) -> StackTraceResponse:
         """Sends a custom zxdb stackTrace request."""
-        resp = await self._send_request(writer, "stackTrace", args)
+        resp = await self._send_request("stackTrace", args)
         return StackTraceResponse.model_validate(resp)

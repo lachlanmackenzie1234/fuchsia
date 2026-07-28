@@ -27,7 +27,7 @@ async def handle(daemon: Daemon, req: DetachRequest) -> Response:
             args = ZxdbDetachArguments(all=True)
         else:
             args = ZxdbDetachArguments(pid=req.pid)
-        resp = await daemon.dap_client.zxdb_detach(daemon.zxdb_writer, args)
+        resp = await daemon.dap_client.zxdb_detach(args)
         if not resp.get("success"):
             return Response(
                 success=False,

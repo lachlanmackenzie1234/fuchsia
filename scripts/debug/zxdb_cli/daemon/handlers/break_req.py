@@ -38,7 +38,7 @@ async def handle(daemon: Daemon, req: BreakRequest) -> Response:
             source=Source(path=req.file),
             breakpoints=[SourceBreakpoint(line=line) for line in sorted(lines)],
         )
-        resp = await daemon.dap_client.set_breakpoints(daemon.zxdb_writer, args)
+        resp = await daemon.dap_client.set_breakpoints(args)
         if resp.success:
             daemon.active_breakpoints[req.file] = lines
             return Response(success=True, body=resp.body.dump_dap())

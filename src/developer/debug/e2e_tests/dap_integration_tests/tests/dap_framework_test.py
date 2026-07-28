@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from async_utils.command import StderrEvent, StdoutEvent, TerminationEvent
 from dap_test_framework import DapTestCase, DapTestFramework, RequestFuture
-from pydap.client import DapClient
+from pydap.client import READER_STOPPED_EVENT, DapClient
 from zxdb_dap import ZxdbDapClient
 
 
@@ -24,7 +24,7 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         self.framework.client._seq_counter = 1
         self.framework._writer = Mock()
         self.framework._writer.wait_closed = AsyncMock()
-        self.framework._process_task = asyncio.create_task(
+        self.framework._event_processor_task = asyncio.create_task(
             self.framework._event_processor_loop()
         )
 
@@ -182,6 +182,18 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.TimeoutError):
             await fut
 
+    async def test_reader_stopped_event_fails_pending_expectations(
+        self,
+    ) -> None:
+        fut = self.framework.on_event("initialized", timeout=5.0)
+        custom_exc = RuntimeError("Socket connection reset")
+        await self.framework.event_queue.put(
+            {"type": READER_STOPPED_EVENT, "exception": custom_exc}
+        )
+        with self.assertRaises(RuntimeError) as cm:
+            await fut
+        self.assertEqual(str(cm.exception), "Socket connection reset")
+
     async def test_server_log_captured_on_exception(self) -> None:
         class FakeProc:
             def __init__(self) -> None:
@@ -301,10 +313,9 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         self.framework._writer = Mock(spec=asyncio.StreamWriter)
         self.framework._writer.wait_closed = AsyncMock()
         reader = asyncio.StreamReader()
-        asyncio.create_task(
-            self.framework.client.run(reader, self.framework.event_queue)
+        self.framework.client.run(
+            reader, self.framework._writer, self.framework.event_queue
         )
-        await asyncio.sleep(0)
 
         execution_order: list[str] = []
 
@@ -332,7 +343,6 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         fut1 = self.framework._send_wrapper("cmd1")
         fut2 = self.framework._send_wrapper("cmd2")
 
-        await asyncio.sleep(0)
         await self.framework.client._write_queue.join()
         await asyncio.gather(fut1, fut2)
 

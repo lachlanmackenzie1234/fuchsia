@@ -32,19 +32,21 @@ def feed_dap_response(
 
 
 class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
-    def _start_client(self, client: ZxdbDapClient) -> asyncio.StreamReader:
+    def _start_client(
+        self, client: ZxdbDapClient
+    ) -> tuple[asyncio.StreamReader, MockWriter]:
         reader = asyncio.StreamReader()
+        writer = MockWriter()
         event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        asyncio.create_task(client.run(reader, event_queue))
-        return reader
+        client.run(reader, writer, event_queue)
+        return reader, writer
 
     async def test_zxdb_detach_pid(self) -> None:
         client = ZxdbDapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = ZxdbDetachArguments(pid=1234)
 
-        send_task = asyncio.create_task(client.zxdb_detach(writer, args))
+        send_task = asyncio.create_task(client.zxdb_detach(args))
 
         await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
 
@@ -71,11 +73,10 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
 
     async def test_zxdb_detach_all(self) -> None:
         client = ZxdbDapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = ZxdbDetachArguments(detach_all=True)
 
-        send_task = asyncio.create_task(client.zxdb_detach(writer, args))
+        send_task = asyncio.create_task(client.zxdb_detach(args))
 
         await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
 
@@ -108,11 +109,10 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
 
     async def test_zxdb_stack_trace(self) -> None:
         client = ZxdbDapClient()
-        reader = self._start_client(client)
-        writer = MockWriter()
+        reader, writer = self._start_client(client)
         args = ZxdbStackTraceArguments(thread_id=5678, remote_unwind=True)
 
-        send_task = asyncio.create_task(client.zxdb_stack_trace(writer, args))
+        send_task = asyncio.create_task(client.zxdb_stack_trace(args))
 
         await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
 

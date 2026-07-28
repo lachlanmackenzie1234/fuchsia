@@ -27,7 +27,7 @@ async def handle(daemon: Daemon, req: ContinueRequest) -> Response:
     )
 
     try:
-        resp = await daemon.dap_client.continue_thread(daemon.zxdb_writer, args)
+        resp = await daemon.dap_client.continue_thread(args)
         return Response(success=True, body=resp.dump_dap())
     except Exception as e:
         return Response(success=False, message=f"Failed to continue: {e}")

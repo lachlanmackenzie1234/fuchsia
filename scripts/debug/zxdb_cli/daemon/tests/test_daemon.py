@@ -261,6 +261,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         mock_dap_client = mock_dap_client_class.return_value
         mock_dap_client.zxdb_detach = AsyncMock()
+        mock_dap_client.close = AsyncMock()
 
         daemon = Daemon(port=15678)
         daemon.connect_to_existing = True
@@ -286,7 +287,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         # Verify zxdb_detach was called with all=True
         mock_dap_client.zxdb_detach.assert_called_once()
         args, kwargs = mock_dap_client.zxdb_detach.call_args
-        self.assertTrue(args[1].detach_all)
+        self.assertTrue(args[0].detach_all)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_variables_success(
@@ -462,7 +463,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             )
             mock_set_breakpoints.assert_called_once()
             args, _ = mock_set_breakpoints.call_args
-            dap_args = args[1]
+            dap_args = args[0]
             self.assertEqual(len(dap_args.breakpoints), 2)
             self.assertEqual(dap_args.breakpoints[0].line, 12)
             self.assertEqual(dap_args.breakpoints[1].line, 24)
@@ -491,7 +492,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             )
             mock_set_breakpoints.assert_called_once()
             args, _ = mock_set_breakpoints.call_args
-            dap_args = args[1]
+            dap_args = args[0]
             self.assertEqual(len(dap_args.breakpoints), 1)
             self.assertEqual(dap_args.breakpoints[0].line, 24)
 

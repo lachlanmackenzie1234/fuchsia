@@ -30,7 +30,7 @@ async def handle(daemon: Daemon, req: AttachRequest) -> Response:
     )
 
     try:
-        resp = await daemon.dap_client.attach(daemon.zxdb_writer, attach_args)
+        resp = await daemon.dap_client.attach(attach_args)
         return Response(success=True, body=resp.dump_dap())
     except Exception as e:
         return Response(success=False, message=f"Failed to attach: {e}")

@@ -36,7 +36,6 @@ async def handle(daemon: Daemon, req: EvaluateRequest) -> Response:
         # TODO(https://fxbug.dev/524209338): Paginate stack_trace call to avoid unbounded IPC.
         # Retrieve stack trace to get the frameId at the requested frame_index
         stack_resp = await daemon.dap_client.stack_trace(
-            daemon.zxdb_writer,
             StackTraceArguments(
                 thread_id=req.thread_id,
             ),
@@ -60,7 +59,6 @@ async def handle(daemon: Daemon, req: EvaluateRequest) -> Response:
 
         # Execute evaluation
         eval_resp = await daemon.dap_client.evaluate(
-            daemon.zxdb_writer,
             EvaluateArguments(
                 expression=req.expression,
                 context="repl",

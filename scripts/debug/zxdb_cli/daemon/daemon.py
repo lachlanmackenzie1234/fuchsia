@@ -5,6 +5,7 @@
 import asyncio
 import contextlib
 import functools
+import logging
 import os
 import signal
 import uuid
@@ -31,6 +32,7 @@ from daemon.handlers import (
     wait_for_event,
 )
 from ffx_cmd.lib import FfxCmd
+from pydap.client import READER_STOPPED_EVENT
 from pydap.models import InitializeArguments, PauseArguments
 from shared.protocol import (
     BaseRequest,
@@ -40,6 +42,8 @@ from shared.protocol import (
 )
 from shared.protocol.start import StartRequest
 from zxdb_dap import ZxdbDapClient, ZxdbDetachArguments
+
+logger = logging.getLogger(__name__)
 
 # Constants imported from daemon.constants
 MAX_EVENT_HISTORY_SIZE: Final[int] = 100
@@ -190,7 +194,7 @@ class Daemon:
 
         with self.event_waiter.wait_for_thread_stop(thread_id) as fut:
             await self.dap_client.pause_thread(
-                self.zxdb_writer, PauseArguments(threadId=thread_id)
+                PauseArguments(threadId=thread_id)
             )
             try:
                 await asyncio.wait_for(fut, timeout=10.0)
@@ -309,7 +313,7 @@ class Daemon:
         if self.connect_to_existing and self.zxdb_writer:
             try:
                 args = ZxdbDetachArguments(all=True)
-                await self.dap_client.zxdb_detach(self.zxdb_writer, args)
+                await self.dap_client.zxdb_detach(args)
             except Exception:
                 pass
 
@@ -320,6 +324,8 @@ class Daemon:
             )
             for task in pending:
                 task.cancel()
+
+        await self.dap_client.close()
 
         for task in self.background_tasks:
             task.cancel()
@@ -377,19 +383,13 @@ class Daemon:
         assert self.zxdb_writer is not None
 
         # Run DAP client
-        self.background_tasks.add(
-            asyncio.create_task(
-                self.dap_client.run(self.zxdb_reader, self.event_queue)
-            )
+        self.dap_client.run(
+            self.zxdb_reader, self.zxdb_writer, self.event_queue
         )
 
         self.background_tasks.add(asyncio.create_task(self._process_events()))
 
-        # So tasks(including dap_client.run) are executed before we send requests.
-        await asyncio.sleep(0)
-
         await self.dap_client.initialize(
-            self.zxdb_writer,
             InitializeArguments(adapterID="zxdb"),
         )
 
@@ -480,6 +480,14 @@ class Daemon:
         }
         while True:
             event = await self.event_queue.get()
+
+            if event.get("type") == READER_STOPPED_EVENT:
+                exc = event.get("exception")
+                if exc is not None:
+                    logger.warning(
+                        f"DAP reader background task stopped with error: {exc}"
+                    )
+                break
 
             # Internal daemon actions on all events
             if event.get("event") == "initialized":

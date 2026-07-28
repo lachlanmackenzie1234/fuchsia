@@ -25,9 +25,7 @@ async def handle(daemon: Daemon, req: StackTraceRequest) -> Response:
     try:
         await daemon.ensure_stopped(req.thread_id)
 
-        # Now thread is paused, get stack trace
         stack_resp = await daemon.dap_client.stack_trace(
-            daemon.zxdb_writer,
             StackTraceArguments(
                 threadId=req.thread_id,
             ),

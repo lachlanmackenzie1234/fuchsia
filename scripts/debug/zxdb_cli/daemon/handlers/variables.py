@@ -31,7 +31,6 @@ async def handle(daemon: Daemon, req: VariablesRequest) -> Response:
 
         # Retrieve stacktrace
         stack_resp = await daemon.dap_client.stack_trace(
-            daemon.zxdb_writer,
             StackTraceArguments(
                 thread_id=req.thread_id,
             ),
@@ -55,7 +54,6 @@ async def handle(daemon: Daemon, req: VariablesRequest) -> Response:
 
         # Get scopes for that frame
         scopes_resp = await daemon.dap_client.scopes(
-            daemon.zxdb_writer,
             ScopesArguments(frame_id=frame.id),
         )
 
@@ -64,7 +62,6 @@ async def handle(daemon: Daemon, req: VariablesRequest) -> Response:
             for scope in scopes_resp.body.scopes:
                 if scope.name in ("Locals", "Arguments"):
                     vars_resp = await daemon.dap_client.variables(
-                        daemon.zxdb_writer,
                         VariablesArguments(
                             variables_reference=scope.variables_reference
                         ),

@@ -31,6 +31,7 @@ from async_utils.command import (
 )
 from ffx_cmd.lib import FfxCmd
 from portpicker import portpicker
+from pydap.client import READER_STOPPED_EVENT
 from pydap.dap_types import DapBaseModel
 from pydap.models import (
     DisconnectArguments,
@@ -107,60 +108,18 @@ class EventFuture:
 
     def __await__(self) -> Any:
         async def _wait() -> Dict[str, Any]:
-            # 1. Check if expectations are already satisfied by past history
+            # Check if expectations are already satisfied by past history
             self.framework._check_event_expectations_against_history()
 
             if self.fut.done():
                 return self.fut.result()
 
-            # 2. Await future or wake up immediately if background tasks crash
-            tasks = [self.fut]
-            if self.framework._client_reader_task:
-                tasks.append(self.framework._client_reader_task)
-            if self.framework._process_task:
-                tasks.append(self.framework._process_task)
-
-            done, _pending = await asyncio.wait(
-                tasks,
-                timeout=self.timeout,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-
-            if not done:
+            try:
+                return await asyncio.wait_for(self.fut, timeout=self.timeout)
+            except asyncio.TimeoutError:
                 raise asyncio.TimeoutError(
                     f"Timed out waiting for DAP event '{self.event_name}' after {self.timeout}s"
                 )
-
-            if self.fut in done:
-                return self.fut.result()
-
-            # 3. Check if background tasks crashed
-            if (
-                self.framework._client_reader_task
-                and self.framework._client_reader_task in done
-            ):
-                if self.framework._client_reader_task.cancelled():
-                    raise RuntimeError(
-                        "DAP client reader background task was cancelled"
-                    )
-                exc = self.framework._client_reader_task.exception()
-                raise RuntimeError(
-                    f"DAP client reader background task stopped: {exc}"
-                )
-            if (
-                self.framework._process_task
-                and self.framework._process_task in done
-            ):
-                if self.framework._process_task.cancelled():
-                    raise RuntimeError(
-                        "DAP event processor background task was cancelled"
-                    )
-                exc = self.framework._process_task.exception()
-                raise RuntimeError(
-                    f"DAP event processor background task stopped: {exc}"
-                )
-
-            return await self.fut
 
         return _wait().__await__()
 
@@ -227,8 +186,7 @@ class DapTestFramework:
         self.event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
         self.traffic_history: List[Dict[str, Any]] = []
         self.unmatched_events: List[Dict[str, Any]] = []
-        self._client_reader_task: Optional[asyncio.Task[None]] = None
-        self._process_task: Optional[asyncio.Task[None]] = None
+        self._event_processor_task: Optional[asyncio.Task[None]] = None
         self.request_timeout: float = 5.0
         self._request_tasks: set[asyncio.Task[Any]] = set()
         self.proc: Optional[AsyncCommand] = None
@@ -353,12 +311,10 @@ class DapTestFramework:
         reader, writer = await asyncio.open_connection("localhost", port)
         self._writer = writer
         # Start background tasks for protocol and event handling.
-        self._client_reader_task = asyncio.create_task(
-            self.client.run(reader, self.event_queue)
+        self.client.run(reader, writer, self.event_queue)
+        self._event_processor_task = asyncio.create_task(
+            self._event_processor_loop()
         )
-        self._process_task = asyncio.create_task(self._event_processor_loop())
-        # So tasks(including client.run) are executed before we send requests.
-        await asyncio.sleep(0)
 
     def _send_wrapper(
         self,
@@ -371,12 +327,8 @@ class DapTestFramework:
             command: DAP command string.
             arguments: Optional command arguments model.
         """
-        assert (
-            self._writer is not None
-        ), "DAP client socket writer is not initialized."
-
         seq, sent_fut, data_fut = self.client._send_request_future(
-            self._writer, command, arguments
+            command, arguments
         )
 
         req_fut = RequestFuture(self, command, seq)
@@ -452,6 +404,20 @@ class DapTestFramework:
         while True:
             try:
                 event = await self.event_queue.get()
+                # Handle synthetic reader termination event sent by DapClient._run_reader_task
+                if event.get("type") == READER_STOPPED_EVENT:
+                    exc = event.get("exception")
+                    if exc is None:
+                        exc = RuntimeError(
+                            "DAP client reader background task was cancelled"
+                        )
+                    # Fail all pending event expectations immediately with the underlying exception
+                    for exp in list(self.event_expectations):
+                        if not exp.fut.done():
+                            exp.fut.set_exception(exc)
+                    self.event_expectations.clear()
+                    break
+
                 self.traffic_history.append(event)
 
                 matched = False
@@ -793,16 +759,11 @@ class DapTestFramework:
                     pass
         self._request_tasks.clear()
 
-        if self._client_reader_task:
-            self._client_reader_task.cancel()
+        await self.client.close()
+        if self._event_processor_task:
+            self._event_processor_task.cancel()
             try:
-                await self._client_reader_task
-            except asyncio.CancelledError:
-                pass
-        if self._process_task:
-            self._process_task.cancel()
-            try:
-                await self._process_task
+                await self._event_processor_task
             except asyncio.CancelledError:
                 pass
 
