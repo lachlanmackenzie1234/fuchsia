@@ -6,6 +6,7 @@ use crate::model::actions::{Action, ActionKey, ActionsManager};
 use crate::model::component::instance::{InstanceState, ResolvedInstanceState};
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use async_trait::async_trait;
+use cm_types::LongName;
 use errors::{ActionError, ShutdownActionError};
 use futures::prelude::*;
 use log::*;
@@ -15,7 +16,6 @@ use std::sync::Arc;
 
 use cm_graph::DependencyNode;
 use directed_graph::DirectedGraph;
-use fidl_fuchsia_component_decl as fdecl;
 use fuchsia_async as fasync;
 
 /// Shuts down all component instances in this component (stops them and guarantees they will never
@@ -94,8 +94,8 @@ async fn shutdown_component(
 struct ShutdownJob {
     /// The type of shutdown being performed. For debug purposes.
     shutdown_type: ShutdownType,
-    /// The declaration of the component being shut down.
-    component_decl: fdecl::Component,
+    /// The names of the static children of the component being shut down.
+    static_child_names: Vec<LongName>,
     /// A reference-counted pointer to the component instance being shut down.
     instance: Arc<ComponentInstance>,
     /// A map of the live children of the `instance`.
@@ -114,8 +114,17 @@ impl ShutdownJob {
         state: &ResolvedInstanceState,
         shutdown_type: ShutdownType,
     ) -> ShutdownJob {
-        let component_decl: fdecl::Component = state.decl().to_owned().into();
         let dependencies = state.resolved_component.dependencies.clone();
+        let static_child_names = state
+            .children
+            .keys()
+            .filter(|k| k.collection().is_none())
+            .filter_map(|v| {
+                LongName::new(&v)
+                    .inspect_err(|e| log::warn!("child name not convertible to long name: {e}"))
+                    .ok()
+            })
+            .collect();
         let children = state
             .children
             .iter()
@@ -123,7 +132,7 @@ impl ShutdownJob {
             .collect();
         let new_job = ShutdownJob {
             shutdown_type,
-            component_decl,
+            static_child_names,
             instance: instance.clone(),
             children,
             dependencies,
@@ -139,7 +148,7 @@ impl ShutdownJob {
             .filter_map(|key| key.collection().map(|coll| (key.name().as_str(), coll.as_str())))
             .collect();
         process_deps(
-            &self.component_decl,
+            &self.static_child_names,
             &dynamic_children,
             Arc::make_mut(&mut self.dependencies),
         );
@@ -247,24 +256,19 @@ pub async fn do_shutdown(
 /// component itself and its children. A directed graph of these dependencies is
 /// returned.
 fn process_deps(
-    decl: &fdecl::Component,
+    static_child_names: &Vec<LongName>,
     dynamic_children: &[(&str, &str)],
     strong_dependencies: &mut DirectedGraph<DependencyNode>,
 ) {
     let self_dep_closure = strong_dependencies.get_closure(&DependencyNode::Self_);
 
-    let static_child_count = decl.children.as_ref().map(|c| c.len()).unwrap_or(0);
-    let max_edges = static_child_count + dynamic_children.len();
+    let max_edges = static_child_names.len() + dynamic_children.len();
 
     let mut edges_to_add: Vec<(DependencyNode, DependencyNode)> = Vec::with_capacity(max_edges);
-    if let Some(children) = decl.children.as_ref() {
-        for child in children {
-            if let Some(child_name) = child.name.as_ref() {
-                let dependency_node = DependencyNode::Child(child_name.into(), None);
-                if !self_dep_closure.contains(&&dependency_node) {
-                    edges_to_add.push((DependencyNode::Self_, dependency_node));
-                }
-            }
+    for child_name in static_child_names {
+        let dependency_node = DependencyNode::Child(child_name.clone().into(), None);
+        if !self_dep_closure.contains(&&dependency_node) {
+            edges_to_add.push((DependencyNode::Self_, dependency_node));
         }
     }
 
@@ -321,7 +325,18 @@ mod tests {
     ) -> DirectedGraph<DependencyNode> {
         let mut dependencies = dynamic_offers.iter().cloned().collect::<Box<[_]>>().into();
         cm_graph::generate_dependency_graph(&mut dependencies, decl, dynamic_children);
-        process_deps(decl, dynamic_children, &mut dependencies);
+        let static_child_names = decl
+            .children
+            .as_ref()
+            .map(|children| {
+                children
+                    .iter()
+                    .filter_map(|child| child.name.clone())
+                    .filter_map(|name| LongName::new(name).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        process_deps(&static_child_names, dynamic_children, &mut dependencies);
         dependencies
     }
 
