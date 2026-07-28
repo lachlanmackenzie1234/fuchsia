@@ -33,14 +33,13 @@ async fn handle_items_request(mut stream: ItemsRequestStream) {
     while let Some(event) = stream.try_next().await.expect("failed to serve items service") {
         match event {
             ItemsRequest::Get { type_, extra, responder } => {
-                let (result, len) =
-                    if type_ != zbi::zbi_format::ZBI_TYPE_DRV_MAC_ADDRESS || extra != 0 {
-                        (None, 0)
-                    } else {
-                        let vmo = zx::Vmo::create(6).unwrap();
-                        vmo.write(&[0x45, 0x67, 0x89, 0xab, 0xcd, 0xef], 0).unwrap();
-                        (Some(vmo), 6)
-                    };
+                let (result, len) = if type_ != zbi::Type::DrvMacAddress as u32 || extra != 0 {
+                    (None, 0)
+                } else {
+                    let vmo = zx::Vmo::create(6).unwrap();
+                    vmo.write(&[0x45, 0x67, 0x89, 0xab, 0xcd, 0xef], 0).unwrap();
+                    (Some(vmo), 6)
+                };
                 responder.send(result, len).unwrap();
             }
             ItemsRequest::Get2 { responder, .. } => {

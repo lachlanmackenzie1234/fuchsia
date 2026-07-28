@@ -11,8 +11,8 @@ rustc_binary("bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+    "//sdk/rust/zbi",
     "//sdk/rust/zx",
-    "//src/firmware/lib/zbi-rs",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
