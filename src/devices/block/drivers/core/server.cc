@@ -57,33 +57,77 @@ block_command_t OpcodeAndFlagsToCommand(BlockFifoCommand command) {
 
 }  // namespace
 
-OffsetMap::OffsetMap(fuchsia_storage_block::wire::BlockOffsetMapping mapping) : mapping_(mapping) {}
+OffsetMap::OffsetMap(std::vector<fuchsia_storage_block::wire::BlockOffsetMapping> mappings)
+    : mappings_(std::move(mappings)) {}
 
 zx::result<std::unique_ptr<OffsetMap>> OffsetMap::Create(
-    fuchsia_storage_block::wire::BlockOffsetMapping initial_mapping, uint64_t block_count) {
-  if (initial_mapping.length == 0) {
+    std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings,
+    uint64_t block_count) {
+  if (mappings.empty()) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  auto target_end = safemath::CheckAdd(initial_mapping.target_block_offset, initial_mapping.length);
-  if (!target_end.IsValid() || (block_count > 0 && target_end.ValueOrDie() > block_count)) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  uint64_t total_length = 0;
+  for (const auto& mapping : mappings) {
+    if (mapping.length == 0) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    auto target_end = safemath::CheckAdd(mapping.target_block_offset, mapping.length);
+    if (!target_end.IsValid() || (block_count > 0 && target_end.ValueOrDie() > block_count)) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    auto total_end = safemath::CheckAdd(total_length, mapping.length);
+    if (!total_end.IsValid()) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    total_length = total_end.ValueOrDie();
   }
-  auto map = std::unique_ptr<OffsetMap>(new OffsetMap(initial_mapping));
+
+  std::vector<fuchsia_storage_block::wire::BlockOffsetMapping> coalesced;
+  coalesced.reserve(mappings.size());
+  for (const auto& m : mappings) {
+    if (!coalesced.empty()) {
+      auto& last = coalesced.back();
+      if (last.target_block_offset + last.length == m.target_block_offset) {
+        last.length += m.length;
+        continue;
+      }
+    }
+    coalesced.push_back(m);
+  }
+
+  auto map = std::unique_ptr<OffsetMap>(new OffsetMap(std::move(coalesced)));
   return zx::ok(std::move(map));
 }
 
+zx::result<std::pair<uint64_t, uint32_t>> OffsetMap::Map(uint64_t logical_offset,
+                                                         uint32_t length) const {
+  if (length == 0) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  uint64_t current_logical_start = 0;
+  for (const auto& mapping : mappings_) {
+    uint64_t current_logical_end = current_logical_start + mapping.length;
+    if (logical_offset < current_logical_end) {
+      if (logical_offset < current_logical_start) {
+        return zx::error(ZX_ERR_OUT_OF_RANGE);
+      }
+      uint64_t delta = logical_offset - current_logical_start;
+      uint64_t dev_offset = mapping.target_block_offset + delta;
+      uint64_t remaining_in_extent = current_logical_end - logical_offset;
+      uint32_t chunk_len = static_cast<uint32_t>(std::min<uint64_t>(length, remaining_in_extent));
+      return zx::ok(std::make_pair(dev_offset, chunk_len));
+    }
+    current_logical_start = current_logical_end;
+  }
+  return zx::error(ZX_ERR_OUT_OF_RANGE);
+}
+
 bool OffsetMap::AdjustRequest(BlockFifoRequest& request) const {
-  if (request.length == 0) {
+  auto res = Map(request.dev_offset, request.length);
+  if (res.is_error() || res->second < request.length) {
     return false;
   }
-  auto end = safemath::CheckAdd(request.dev_offset, request.length);
-  if (!end.IsValid() || end.ValueOrDie() > mapping_.length) {
-    return false;
-  }
-  // NB: This assumes there is only one mapping which starts at logical offset 0.  This is true now
-  // and this library is slated for removal soon (https://fxbug.dev/470140477) so it is safe to
-  // assume.
-  request.dev_offset += mapping_.target_block_offset;
+  request.dev_offset = res->first;
   return true;
 }
 
@@ -217,14 +261,14 @@ void Server::TxnEnd() {
 
 zx::result<std::unique_ptr<Server>> Server::Create(
     ddk::BlockProtocolClient* bp,
-    std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping) {
+    std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings) {
   block_info_t info;
   size_t block_op_size;
   bp->Query(&info, &block_op_size);
 
   std::unique_ptr<OffsetMap> map;
-  if (mapping) {
-    zx::result result = OffsetMap::Create(*mapping, info.block_count);
+  if (!mappings.empty()) {
+    zx::result result = OffsetMap::Create(mappings, info.block_count);
     if (result.is_error()) {
       return result.take_error();
     }
@@ -269,6 +313,104 @@ void Server::GetFifo(GetFifoCompleter::Sync& completer) {
   completer.ReplySuccess(std::move(fifo.value()));
 }
 
+zx::result<std::vector<std::pair<uint64_t, uint32_t>>> Server::SplitRequest(
+    const BlockFifoRequest& request, std::optional<uint32_t> max_transfer_blocks) const {
+  uint32_t len_remaining = request.length;
+  uint64_t logical_offset = request.dev_offset;
+  std::vector<std::pair<uint64_t, uint32_t>> chunks;
+  if (auto end = safemath::CheckAdd(request.dev_offset, request.length); !end.IsValid()) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
+  while (len_remaining > 0) {
+    uint64_t chunk_dev_offset = logical_offset;
+    uint32_t chunk_len = len_remaining;
+    if (offset_map_) {
+      auto res = offset_map_->Map(logical_offset, len_remaining);
+      if (res.is_error()) {
+        zxlogf(WARNING, "SplitRequest: Invalid request range %" PRIu32 "@%" PRIu64 ", failing",
+               request.length, request.dev_offset);
+        return res.take_error();
+      }
+      chunk_dev_offset = res->first;
+      chunk_len = res->second;
+    }
+    if (max_transfer_blocks && *max_transfer_blocks > 0) {
+      chunk_len = std::min(chunk_len, *max_transfer_blocks);
+    }
+    ZX_DEBUG_ASSERT(chunk_len > 0);
+    chunks.emplace_back(chunk_dev_offset, chunk_len);
+    logical_offset += chunk_len;
+    len_remaining -= chunk_len;
+  }
+  return zx::ok(std::move(chunks));
+}
+
+zx_status_t Server::SubmitSplitRequest(BlockFifoRequest* request,
+                                       const std::vector<std::pair<uint64_t, uint32_t>>& chunks,
+                                       bool do_postflush, CreateMessageFn create_message_fn) {
+  const uint32_t sub_txns = static_cast<uint32_t>(chunks.size());
+
+  // For groups, we simply add extra (uncounted) messages to the existing MessageGroup,
+  // but for ungrouped messages we create a oneshot MessageGroup.
+  // The oneshot group has to be shared, since there might be multiple Messages.
+  // A copy will be passed into each Message's completion callback, so the group is deallocated
+  // once all Messages are complete.
+  std::shared_ptr<MessageGroup> oneshot_group = nullptr;
+  MessageGroup* transaction_group = nullptr;
+
+  if (request->group == kNoGroup) {
+    oneshot_group = std::make_shared<MessageGroup>(*this);
+    ZX_ASSERT(oneshot_group->ExpectResponses(sub_txns, 1, request->reqid) == ZX_OK);
+    transaction_group = oneshot_group.get();
+  } else {
+    transaction_group = groups_[request->group].get();
+    // If != ZX_OK, it means that we've just received a response to an earlier request that
+    // failed.  It should happen rarely because we called ExpectedResponses just prior to this
+    // function and it returned ZX_OK.  It's safe to continue at this point and just assume things
+    // are OK; it's not worth trying to handle this as a special case.
+    [[maybe_unused]] zx_status_t status =
+        transaction_group->ExpectResponses(sub_txns - 1, 0, std::nullopt);
+  }
+
+  for (const auto& [dev_offset, length] : chunks) {
+    // We'll be using a new Message for each sub-component.
+    // Take a copy of the |oneshot_group| shared_ptr into each completer, so oneshot_group is
+    // deallocated after all messages complete.
+    auto completer = [this, oneshot_group, transaction_group, do_postflush](
+                         zx_status_t status, BlockFifoRequest& request) mutable {
+      TRACE_DURATION("storage", "FinishTransactionGroup");
+      if (request.trace_flow_id) {
+        TRACE_FLOW_STEP("storage", "BlockOp", request.trace_flow_id);
+      }
+      if (do_postflush && transaction_group->StatusOkPendingLastOp() && status == ZX_OK) {
+        // Issue (Post)Flush command when last sub transaction completed.
+        auto postflush_completer = [transaction_group](zx_status_t postflush_status,
+                                                       BlockFifoRequest& request) {
+          transaction_group->Complete(postflush_status);
+        };
+        if (zx_status_t status =
+                IssueFlushCommand(&request, std::move(postflush_completer), /*internal_cmd=*/true);
+            status != ZX_OK) {
+          zxlogf(ERROR, "SubmitSplitRequest: (Post)Flush command issue has failed, %s",
+                 zx_status_get_string(status));
+          transaction_group->Complete(status);
+        }
+      } else {
+        transaction_group->Complete(status);
+      }
+    };
+
+    zx::result<std::unique_ptr<Message>> message =
+        create_message_fn(dev_offset, length, std::move(completer));
+    if (message.is_error()) {
+      return message.error_value();
+    }
+    Enqueue(std::move(message.value()));
+  }
+  return ZX_OK;
+}
+
 zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
   if (request->command.flags & BLOCK_IO_FLAG_DECOMPRESS_WITH_ZSTD) {
     if (request->command.opcode == BLOCK_OPCODE_READ) {
@@ -305,150 +447,102 @@ zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
   if (!request->length) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (offset_map_ && !offset_map_->AdjustRequest(*request)) {
-    zxlogf(WARNING,
-           "ProcessReadWriteRequest: Invalid request range %" PRIu32 "@%" PRIu64 ", failing",
-           request->length, request->dev_offset);
-    return ZX_ERR_OUT_OF_RANGE;
+
+  uint64_t bsz = info_.block_size;
+  std::optional<uint32_t> max_transfer_blocks;
+  if (info_.max_transfer_size > 0) {
+    max_transfer_blocks = static_cast<uint32_t>(info_.max_transfer_size / bsz);
   }
+  auto chunks_res = SplitRequest(*request, max_transfer_blocks);
+  if (chunks_res.is_error()) {
+    return chunks_res.error_value();
+  }
+  const auto& chunks = chunks_res.value();
 
   // Hack to ensure that the vmo is valid.
   // In the future, this code will be responsible for pinning VMO pages,
   // and the completion will be responsible for un-pinning those same pages.
-  uint64_t bsz = info_.block_size;
-  zx_status_t status = iobuf->ValidateVmoHack(bsz * request->length, bsz * request->vmo_offset);
+  auto vmo_offset_bytes = safemath::CheckMul(request->vmo_offset, bsz);
+  auto length_bytes = safemath::CheckMul(request->length, bsz);
+  if (!vmo_offset_bytes.IsValid() || !length_bytes.IsValid()) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  zx_status_t status =
+      iobuf->ValidateVmoHack(length_bytes.ValueOrDie(), vmo_offset_bytes.ValueOrDie());
   if (status != ZX_OK) {
     return status;
   }
 
-  const uint32_t max_xfer = info_.max_transfer_size / bsz;
-  if (max_xfer != 0 && max_xfer < request->length) {
-    // If the request is larger than the maximum transfer size,
+  if (chunks.size() > 1) {
+    // If the request is larger than the maximum transfer size or spans multiple mapping extents,
     // split it up into a collection of smaller block messages.
-    uint32_t len_remaining = request->length;
     uint64_t vmo_offset = request->vmo_offset;
-    uint64_t dev_offset = request->dev_offset;
     uint32_t dun = request->dun;
-    uint32_t sub_txns = fbl::round_up(len_remaining, max_xfer) / max_xfer;
-
-    // For groups, we simply add extra (uncounted) messages to the existing MessageGroup,
-    // but for ungrouped messages we create a oneshot MessageGroup.
-    // The oneshot group has to be shared, since there might be multiple Messages.
-    // A copy will be passed into each Message's completion callback, so the group is deallocated
-    // once all Messages are complete.
-    std::shared_ptr<MessageGroup> oneshot_group = nullptr;
-    MessageGroup* transaction_group = nullptr;
-
-    if (request->group == kNoGroup) {
-      oneshot_group = std::make_shared<MessageGroup>(*this);
-      ZX_ASSERT(oneshot_group->ExpectResponses(sub_txns, 1, request->reqid) == ZX_OK);
-      transaction_group = oneshot_group.get();
-    } else {
-      transaction_group = groups_[request->group].get();
-      // If != ZX_OK, it means that we've just received a response to an earlier request that
-      // failed.  It should happen rarely because we called ExpectedResponses just prior to this
-      // function and it returned ZX_OK.  It's safe to continue at this point and just assume things
-      // are OK; it's not worth trying to handle this as a special case.
-      [[maybe_unused]] zx_status_t status =
-          transaction_group->ExpectResponses(sub_txns - 1, 0, std::nullopt);
-    }
-
-    uint32_t sub_txn_idx = 0;
-
-    while (sub_txn_idx != sub_txns) {
-      // We'll be using a new BlockMsg for each sub-component.
-      // Take a copy of the |oneshot_group| shared_ptr into each completer, so oneshot_group is
-      // deallocated after all messages complete.
-      auto completer = [this, oneshot_group, transaction_group, do_postflush](
-                           zx_status_t status, BlockFifoRequest& req) mutable {
-        TRACE_DURATION("storage", "FinishTransactionGroup");
-        if (req.trace_flow_id) {
-          TRACE_FLOW_STEP("storage", "BlockOp", req.trace_flow_id);
-        }
-        if (do_postflush && transaction_group->StatusOkPendingLastOp() && status == ZX_OK) {
-          // Issue (Post)Flush command when last sub transaction completed.
-          auto postflush_completer = [transaction_group](zx_status_t postflush_status,
-                                                         BlockFifoRequest& req) {
-            transaction_group->Complete(postflush_status);
-          };
-          if (zx_status_t status =
-                  IssueFlushCommand(&req, std::move(postflush_completer), /*internal_cmd=*/true);
+    return SubmitSplitRequest(
+        request, chunks, do_postflush,
+        [this, request, iobuf, &vmo_offset, &dun](
+            uint64_t dev_offset, uint32_t length,
+            MessageCompleter completer) -> zx::result<std::unique_ptr<Message>> {
+          std::unique_ptr<Message> message;
+          if (zx_status_t status = Message::Create(iobuf, this, request, block_op_size_,
+                                                   std::move(completer), &message);
               status != ZX_OK) {
-            zxlogf(ERROR, "ProcessReadWriteRequest: (Post)Flush command issue has failed, %s",
-                   zx_status_get_string(status));
-            transaction_group->Complete(status);
+            return zx::error(status);
           }
-        } else {
-          transaction_group->Complete(status);
-        }
-      };
-
-      std::unique_ptr<Message> msg;
-      if (zx_status_t status =
-              Message::Create(iobuf, this, request, block_op_size_, std::move(completer), &msg);
-          status != ZX_OK) {
-        return status;
-      }
-
-      uint32_t length = std::min(len_remaining, max_xfer);
-      len_remaining -= length;
-
-      *msg->Op() = block_op{.rw = {
-                                .command = OpcodeAndFlagsToCommand(request->command),
-                                .vmo = iobuf->vmo(),
-                                .length = length,
-                                .offset_dev = dev_offset,
-                                .offset_vmo = vmo_offset,
-                                .slot = request->slot,
-                                .dun = dun,
-                            }};
-      Enqueue(std::move(msg));
-      vmo_offset += length;
-      dev_offset += length;
-      dun += length;
-      sub_txn_idx++;
-    }
-    ZX_DEBUG_ASSERT(len_remaining == 0);
+          *message->Op() = block_op{.rw = {
+                                        .command = OpcodeAndFlagsToCommand(request->command),
+                                        .vmo = iobuf->vmo(),
+                                        .length = length,
+                                        .offset_dev = dev_offset,
+                                        .offset_vmo = vmo_offset,
+                                        .slot = request->slot,
+                                        .dun = dun,
+                                    }};
+          vmo_offset += length;
+          dun += length;
+          return zx::ok(std::move(message));
+        });
   } else {
-    auto completer = [this, do_postflush](zx_status_t status, BlockFifoRequest& req) {
+    request->dev_offset = chunks[0].first;
+    auto completer = [this, do_postflush](zx_status_t status, BlockFifoRequest& request) {
       TRACE_DURATION("storage", "FinishTransaction");
-      if (req.trace_flow_id) {
-        TRACE_FLOW_STEP("storage", "BlockOp", req.trace_flow_id);
+      if (request.trace_flow_id) {
+        TRACE_FLOW_STEP("storage", "BlockOp", request.trace_flow_id);
       }
       if (do_postflush && status == ZX_OK) {
         // Issue (Post)Flush command
-        auto postflush_completer = [this](zx_status_t postflush_status, BlockFifoRequest& req) {
-          FinishTransaction(postflush_status, req.reqid, req.group);
+        auto postflush_completer = [this](zx_status_t postflush_status, BlockFifoRequest& request) {
+          FinishTransaction(postflush_status, request.reqid, request.group);
         };
         if (zx_status_t status =
-                IssueFlushCommand(&req, std::move(postflush_completer), /*internal_cmd=*/true);
+                IssueFlushCommand(&request, std::move(postflush_completer), /*internal_cmd=*/true);
             status != ZX_OK) {
           zxlogf(ERROR, "ProcessReadWriteRequest: (Post)Flush command issue failed, %s",
                  zx_status_get_string(status));
-          FinishTransaction(status, req.reqid, req.group);
+          FinishTransaction(status, request.reqid, request.group);
         }
       } else {
-        FinishTransaction(status, req.reqid, req.group);
+        FinishTransaction(status, request.reqid, request.group);
       }
     };
 
-    std::unique_ptr<Message> msg;
+    std::unique_ptr<Message> message;
     if (zx_status_t status =
-            Message::Create(iobuf, this, request, block_op_size_, std::move(completer), &msg);
+            Message::Create(iobuf, this, request, block_op_size_, std::move(completer), &message);
         status != ZX_OK) {
       return status;
     }
 
-    *msg->Op() = block_op{.rw = {
-                              .command = OpcodeAndFlagsToCommand(request->command),
-                              .vmo = iobuf->vmo(),
-                              .length = request->length,
-                              .offset_dev = request->dev_offset,
-                              .offset_vmo = request->vmo_offset,
-                              .slot = request->slot,
-                              .dun = request->dun,
-                          }};
-    Enqueue(std::move(msg));
+    *message->Op() = block_op{.rw = {
+                                  .command = OpcodeAndFlagsToCommand(request->command),
+                                  .vmo = iobuf->vmo(),
+                                  .length = request->length,
+                                  .offset_dev = request->dev_offset,
+                                  .offset_vmo = request->vmo_offset,
+                                  .slot = request->slot,
+                                  .dun = request->dun,
+                              }};
+    Enqueue(std::move(message));
   }
   return ZX_OK;
 }
@@ -497,25 +591,47 @@ zx_status_t Server::ProcessTrimRequest(BlockFifoRequest* request) {
   if (!request->length) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (offset_map_ && !offset_map_->AdjustRequest(*request)) {
-    zxlogf(WARNING, "ProcessTrimRequest: Invalid request range %" PRIu32 "@%" PRIu64 ", failing",
-           request->length, request->dev_offset);
-    return ZX_ERR_OUT_OF_RANGE;
+
+  auto chunks_res = SplitRequest(*request);
+  if (chunks_res.is_error()) {
+    return chunks_res.error_value();
+  }
+  const auto& chunks = chunks_res.value();
+
+  if (chunks.size() > 1) {
+    // If the request spans multiple mapping extents, split it up into a collection of smaller
+    // block messages.
+    return SubmitSplitRequest(
+        request, chunks, /*do_postflush=*/false,
+        [this, request](uint64_t dev_offset, uint32_t length,
+                        MessageCompleter completer) -> zx::result<std::unique_ptr<Message>> {
+          std::unique_ptr<Message> message;
+          if (zx_status_t status = Message::Create(nullptr, this, request, block_op_size_,
+                                                   std::move(completer), &message);
+              status != ZX_OK) {
+            return zx::error(status);
+          }
+          message->Op()->command = OpcodeAndFlagsToCommand(request->command);
+          message->Op()->trim.length = length;
+          message->Op()->trim.offset_dev = dev_offset;
+          return zx::ok(std::move(message));
+        });
   }
 
-  std::unique_ptr<Message> msg;
-  auto completer = [this](zx_status_t result, BlockFifoRequest& req) {
-    FinishTransaction(result, req.reqid, req.group);
+  request->dev_offset = chunks[0].first;
+  std::unique_ptr<Message> message;
+  auto completer = [this](zx_status_t result, BlockFifoRequest& request) {
+    FinishTransaction(result, request.reqid, request.group);
   };
   zx_status_t status =
-      Message::Create(nullptr, this, request, block_op_size_, std::move(completer), &msg);
+      Message::Create(nullptr, this, request, block_op_size_, std::move(completer), &message);
   if (status != ZX_OK) {
     return status;
   }
-  msg->Op()->command = OpcodeAndFlagsToCommand(request->command);
-  msg->Op()->trim.length = request->length;
-  msg->Op()->trim.offset_dev = request->dev_offset;
-  Enqueue(std::move(msg));
+  message->Op()->command = OpcodeAndFlagsToCommand(request->command);
+  message->Op()->trim.length = request->length;
+  message->Op()->trim.offset_dev = request->dev_offset;
+  Enqueue(std::move(message));
   return ZX_OK;
 }
 

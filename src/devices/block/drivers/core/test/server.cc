@@ -182,25 +182,31 @@ TEST_F(ServerTestFixture, SplitRequestAfterFailedRequestReturnsFailure) {
 TEST(OffsetMap, InvalidMapping) {
   // Zero-length
   ASSERT_NOT_OK(OffsetMap::Create(
-      fuchsia_storage_block::wire::BlockOffsetMapping{
-          .target_block_offset = 1000,
-          .length = 0,
+      std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
+          {
+              .target_block_offset = 1000,
+              .length = 0,
+          },
       },
       10000));
 
   // Target overflow
   ASSERT_NOT_OK(OffsetMap::Create(
-      fuchsia_storage_block::wire::BlockOffsetMapping{
-          .target_block_offset = std::numeric_limits<uint64_t>::max(),
-          .length = 100,
+      std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
+          {
+              .target_block_offset = std::numeric_limits<uint64_t>::max(),
+              .length = 100,
+          },
       },
       10000));
 
   // Target extends beyond device block_count
   ASSERT_EQ(OffsetMap::Create(
-                fuchsia_storage_block::wire::BlockOffsetMapping{
-                    .target_block_offset = 500,
-                    .length = 600,
+                std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
+                    {
+                        .target_block_offset = 500,
+                        .length = 600,
+                    },
                 },
                 1000)
                 .status_value(),
@@ -209,9 +215,11 @@ TEST(OffsetMap, InvalidMapping) {
 
 TEST(OffsetMap, RemapRequests) {
   zx::result map = OffsetMap::Create(
-      fuchsia_storage_block::wire::BlockOffsetMapping{
-          .target_block_offset = 1000,
-          .length = 100,
+      std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
+          {
+              .target_block_offset = 1000,
+              .length = 100,
+          },
       },
       10000);
   ASSERT_OK(map);
@@ -251,6 +259,74 @@ TEST(OffsetMap, RemapRequests) {
   AssertUnchangedExceptOffset(request);
 }
 
+TEST(OffsetMap, MultipleMappings) {
+  fuchsia_storage_block::wire::BlockOffsetMapping mappings[] = {
+      {.target_block_offset = 100, .length = 50},
+      {.target_block_offset = 150, .length = 30},
+      {.target_block_offset = 250, .length = 20},
+  };
+  zx::result map = OffsetMap::Create(mappings, 1000);
+  ASSERT_OK(map);
+
+  BlockFifoRequest request{
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .reqid = 1,
+      .group = 2,
+      .vmoid = 3,
+      .length = 10,
+      .vmo_offset = 0x2000,
+  };
+  const BlockFifoRequest orig_request = request;
+
+  auto TestRemap = [&orig_request, &map](uint64_t dev_offset, uint32_t length,
+                                         bool expected_success, uint64_t expected_dev_offset) {
+    BlockFifoRequest request = orig_request;
+    request.dev_offset = dev_offset;
+    request.length = length;
+    ASSERT_EQ(map->AdjustRequest(request), expected_success);
+    if (expected_success) {
+      ASSERT_EQ(request.dev_offset, expected_dev_offset);
+    }
+    request.dev_offset = orig_request.dev_offset;
+    request.length = orig_request.length;
+    ASSERT_BYTES_EQ(&request, &orig_request, sizeof(request));
+  };
+
+  // Falls in first extent (logical 0..50 -> physical 100..150)
+  TestRemap(10, 20, true, 110);
+
+  // Falls in second extent which was coalesced with the first (logical 50..80 -> physical 150..180)
+  TestRemap(55, 25, true, 155);
+
+  // Spans across the boundary of mapping 1 and mapping 2 (which are not contiguous)
+  TestRemap(70, 15, false, 0);
+
+  // Falls in third extent (logical 80..100 -> physical 250..270)
+  TestRemap(85, 10, true, 255);
+
+  // Past the end of all mappings
+  TestRemap(95, 10, false, 0);
+}
+
+TEST(OffsetMap, MultipleMappingsInvalid) {
+  // One mapping has 0 length
+  {
+    fuchsia_storage_block::wire::BlockOffsetMapping mappings[] = {
+        {.target_block_offset = 100, .length = 50},
+        {.target_block_offset = 150, .length = 0},
+    };
+    ASSERT_EQ(OffsetMap::Create(mappings, 1000).status_value(), ZX_ERR_INVALID_ARGS);
+  }
+  // Sum of lengths overflows uint64_t
+  {
+    fuchsia_storage_block::wire::BlockOffsetMapping mappings[] = {
+        {.target_block_offset = 100, .length = std::numeric_limits<uint64_t>::max() - 10},
+        {.target_block_offset = 200, .length = 20},
+    };
+    ASSERT_EQ(OffsetMap::Create(mappings, 0).status_value(), ZX_ERR_INVALID_ARGS);
+  }
+}
+
 TEST_F(ServerTestFixture, InvalidGroupId) {
   zx::result fifo_result = server_->GetFifo();
   ASSERT_OK(fifo_result);
@@ -282,6 +358,91 @@ TEST_F(ServerTestFixture, InvalidGroupId) {
   EXPECT_EQ(response.status, ZX_ERR_IO);
   EXPECT_EQ(response.reqid, 200);
   EXPECT_EQ(response.group, invalid_group);
+}
+
+TEST_F(ServerTestFixture, CreateServerWithMultipleMappings) {
+  fuchsia_storage_block::wire::BlockOffsetMapping mappings[] = {
+      {.target_block_offset = 0, .length = 10},
+      {.target_block_offset = 20, .length = 10},
+  };
+  zx::result server = Server::Create(&client_, mappings);
+  ASSERT_OK(server);
+}
+
+TEST(OffsetMap, MapMethod) {
+  fuchsia_storage_block::wire::BlockOffsetMapping mappings[] = {
+      {.target_block_offset = 100, .length = 50},
+      {.target_block_offset = 200, .length = 30},
+  };
+  zx::result map = OffsetMap::Create(mappings, 1000);
+  ASSERT_OK(map);
+
+  auto res1 = map->Map(40, 20);
+  ASSERT_OK(res1);
+  EXPECT_EQ(res1->first, 140u);
+  EXPECT_EQ(res1->second, 10u);
+
+  auto res2 = map->Map(50, 20);
+  ASSERT_OK(res2);
+  EXPECT_EQ(res2->first, 200u);
+  EXPECT_EQ(res2->second, 20u);
+
+  auto res3 = map->Map(80, 10);
+  EXPECT_TRUE(res3.is_error());
+}
+
+TEST_F(ServerTestFixture, RequestSpanningMultipleMappings) {
+  fuchsia_storage_block::wire::BlockOffsetMapping mappings[] = {
+      {.target_block_offset = 100, .length = 10},
+      {.target_block_offset = 500, .length = 10},
+  };
+  zx::result server = Server::Create(&client_, mappings);
+  ASSERT_OK(server);
+  server_ = std::move(server.value());
+
+  zx::result fifo_result = server_->GetFifo();
+  ASSERT_OK(fifo_result);
+  fzl::fifo<BlockFifoRequest, BlockFifoResponse> fifo(std::move(fifo_result.value()));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096 * 10, 0, &vmo));
+  zx::result vmoid = server_->AttachVmo(std::move(vmo));
+  ASSERT_OK(vmoid);
+
+  CreateThread();
+  auto cleanup = fit::defer([&] {
+    server_->Shutdown();
+    JoinThread();
+  });
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
+      .reqid = 300,
+      .group = 0,
+      .vmoid = vmoid.value(),
+      .length = 15,
+      .vmo_offset = 0,
+      .dev_offset = 5,
+  };
+
+  size_t actual_count = 0;
+  ASSERT_OK(fifo.write(&request, 1, &actual_count));
+  ASSERT_EQ(actual_count, 1);
+
+  BlockFifoResponse response;
+  zx_signals_t seen;
+  ASSERT_OK(fifo.wait_one(ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED, zx::time::infinite(), &seen));
+  ASSERT_OK(fifo.read_one(&response));
+
+  EXPECT_OK(response.status);
+  EXPECT_EQ(response.reqid, 300);
+
+  const auto& ops = blkdev_.GetOperationSequence();
+  ASSERT_EQ(ops.size(), 2u);
+  EXPECT_EQ(ops[0].rw.offset_dev, 105u);
+  EXPECT_EQ(ops[0].rw.length, 5u);
+  EXPECT_EQ(ops[1].rw.offset_dev, 500u);
+  EXPECT_EQ(ops[1].rw.length, 10u);
 }
 
 }  // namespace

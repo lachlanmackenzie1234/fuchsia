@@ -17,7 +17,10 @@
 
 #include <atomic>
 #include <new>
+#include <optional>
+#include <span>
 #include <utility>
+#include <vector>
 
 #include <ddktl/device.h>
 #include <fbl/condition_variable.h>
@@ -34,19 +37,25 @@
 // Remaps the dev_offset of block requests based on an internal map.
 class OffsetMap {
  public:
-  // Creates an OffsetMap from a single mapping.  `block_count` is the total size of the device,
-  // used to bounds-check the mapping.
+  // Creates an OffsetMap from one or more mappings.  `block_count` is the total size of the device,
+  // used to bounds-check the mappings.
   static zx::result<std::unique_ptr<OffsetMap>> Create(
-      fuchsia_storage_block::wire::BlockOffsetMapping mapping, uint64_t block_count);
+      std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings,
+      uint64_t block_count);
 
   // Adjusts `request` by applying the map to dev_offset.
   // Returns false if the request would exceed the range known to OffsetMap.
   bool AdjustRequest(BlockFifoRequest& request) const;
 
- private:
-  explicit OffsetMap(fuchsia_storage_block::wire::BlockOffsetMapping mapping);
+  // Maps logical_offset to physical device offset and max remaining contiguous length (up to
+  // length).
+  // Returns zx::error(ZX_ERR_OUT_OF_RANGE) if logical_offset is not within any mapping.
+  zx::result<std::pair<uint64_t, uint32_t>> Map(uint64_t logical_offset, uint32_t length) const;
 
-  fuchsia_storage_block::wire::BlockOffsetMapping mapping_;
+ private:
+  explicit OffsetMap(std::vector<fuchsia_storage_block::wire::BlockOffsetMapping> mappings);
+
+  std::vector<fuchsia_storage_block::wire::BlockOffsetMapping> mappings_;
 };
 
 class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
@@ -54,7 +63,7 @@ class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
   // Creates a new Server.
   static zx::result<std::unique_ptr<Server>> Create(
       ddk::BlockProtocolClient* bp,
-      std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping = std::nullopt);
+      std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings = {});
 
   // This will block until all outstanding messages have been processed.
   ~Server() override;
@@ -98,6 +107,17 @@ class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
   zx_status_t ProcessCloseVmoRequest(BlockFifoRequest* request);
   zx_status_t ProcessFlushRequest(BlockFifoRequest* request);
   zx_status_t ProcessTrimRequest(BlockFifoRequest* request);
+
+  using CreateMessageFn = fit::function<zx::result<std::unique_ptr<Message>>(
+      uint64_t dev_offset, uint32_t length, MessageCompleter completer)>;
+  // Splits `request` based on the stored offset mappings (if set), and the max_transfer_blocks (if
+  // set).  Validates the range of the request.
+  zx::result<std::vector<std::pair<uint64_t, uint32_t>>> SplitRequest(
+      const BlockFifoRequest& request,
+      std::optional<uint32_t> max_transfer_blocks = std::nullopt) const;
+  zx_status_t SubmitSplitRequest(BlockFifoRequest* request,
+                                 const std::vector<std::pair<uint64_t, uint32_t>>& chunks,
+                                 bool do_postflush, CreateMessageFn create_message_fn);
 
   zx_status_t IssueFlushCommand(BlockFifoRequest* request, MessageCompleter completer,
                                 bool internal_cmd);

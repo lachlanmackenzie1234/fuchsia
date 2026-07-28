@@ -137,15 +137,9 @@ void BlockDevice::OpenSessionWithOptions(OpenSessionWithOptionsRequestView reque
 void BlockDevice::CreateSession(
     fidl::ServerEnd<fuchsia_storage_block::Session> session,
     fidl::VectorView<fuchsia_storage_block::wire::BlockOffsetMapping> mappings) {
-  std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping;
-  if (mappings.size() > 1) {
-    session.Close(ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-  if (!mappings.empty()) {
-    mapping = mappings[0];
-  }
-  zx::result server = Server::Create(&self_protocol_, mapping);
+  std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings_span(mappings.data(),
+                                                                                 mappings.size());
+  zx::result server = Server::Create(&self_protocol_, mappings_span);
   if (server.is_error()) {
     session.Close(server.error_value());
     return;

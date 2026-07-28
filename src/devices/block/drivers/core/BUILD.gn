@@ -131,6 +131,8 @@ rustc_test("block_driver_integration_test") {
   sources = [ "test/integration/src/main.rs" ]
   source_root = "test/integration/src/main.rs"
   deps = [
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/storage/lib/block_client/rust",
     "//src/storage/lib/ramdevice_client",
