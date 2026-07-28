@@ -27,7 +27,7 @@
 //! 1.  **Copy data out** of the shared region into private, allocator-managed memory (e.g., via
 //!     `copy_to_slice` or `to_vec`). Once copied, the private data is safe from concurrent
 //!     modification and can be safely represented as standard Rust slices.
-//! 2.  **Perform structured access** (e.g., via `chunks` or `chunks_mut`) only when the underlying
+//! 2.  **Perform structured access** (e.g., via `iter_as` or `iter_as_mut`) only when the underlying
 //!     types guarantee that arbitrary byte patterns are valid (via `FromBytes`) and we accept that
 //!     the values might change (though we must still be careful about Time-of-Check to Time-of-Use
 //!     (TOCTOU) vulnerabilities).
@@ -183,13 +183,13 @@ impl<'a> PtrByteSlice<'a> {
         }
     }
 
-    /// Returns an iterator over read-only chunks of type `T`.
+    /// Returns an iterator over read-only typed elements `T`.
     ///
     /// # Panics
     ///
     /// Panics if the slice is not aligned to `T` or if its length in bytes is not a multiple of
     /// `size_of::<T>()`.
-    pub fn chunks<T: Copy + FromBytes>(&self) -> Chunks<'_, T> {
+    pub fn iter_as<T: Copy + FromBytes>(&self) -> IterAs<'_, T> {
         let size = std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>();
         assert!(size > 0, "Chunk size must be greater than 0");
@@ -201,7 +201,17 @@ impl<'a> PtrByteSlice<'a> {
         // - The end pointer is calculated within the bounds of the original slice.
         // - Pointer arithmetic within the same allocated object is safe.
         let end = unsafe { (self.slice as *const T).add(self.len() / size) };
-        Chunks { ptr: self.slice as *const T, end, _marker: PhantomData }
+        IterAs { ptr: self.slice as *const T, end, _marker: PhantomData }
+    }
+
+    /// Returns an iterator over byte chunks of up to `chunk_size` bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `chunk_size` is 0.
+    pub fn chunks(&self, chunk_size: usize) -> Chunks<'_> {
+        assert!(chunk_size > 0, "chunk_size must be > 0");
+        Chunks { slice: *self, chunk_size, offset: 0 }
     }
 }
 
@@ -421,13 +431,13 @@ impl<'a> MutPtrByteSlice<'a> {
         }
     }
 
-    /// Returns an iterator over mutable chunks of type `T`.
+    /// Returns an iterator over mutable typed elements `T`.
     ///
     /// # Panics
     ///
     /// Panics if the slice is not aligned to `T` or if its length in bytes is not a multiple of
     /// `size_of::<T>()`.
-    pub fn chunks_mut<T: Copy + FromBytes>(&mut self) -> ChunksMut<'_, T> {
+    pub fn iter_as_mut<T: Copy + FromBytes>(&mut self) -> IterAsMut<'_, T> {
         let size = std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>();
         assert!(size > 0, "Chunk size must be greater than 0");
@@ -439,7 +449,17 @@ impl<'a> MutPtrByteSlice<'a> {
         // - The end pointer is calculated within the bounds of the original slice.
         // - Pointer arithmetic within the same allocated object is safe.
         let end = unsafe { (self.slice as *mut T).add(self.len() / size) };
-        ChunksMut { ptr: self.slice as *mut T, end, _marker: PhantomData }
+        IterAsMut { ptr: self.slice as *mut T, end, _marker: PhantomData }
+    }
+
+    /// Returns an iterator over mutable byte chunks of up to `chunk_size` bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `chunk_size` is 0.
+    pub fn chunks_mut(&mut self, chunk_size: usize) -> ChunksMut<'_> {
+        assert!(chunk_size > 0, "chunk_size must be > 0");
+        ChunksMut { slice: self.reborrow(), chunk_size, offset: 0 }
     }
 }
 
@@ -495,15 +515,15 @@ impl<'a> From<&'a mut Vec<u8>> for MutPtrByteSlice<'a> {
     }
 }
 
-/// An iterator over read-only chunks of a pointer slice.
-pub struct Chunks<'a, T> {
+/// An iterator over read-only typed elements of a pointer slice.
+pub struct IterAs<'a, T> {
     ptr: *const T,
     end: *const T,
     _marker: PhantomData<&'a T>,
 }
 
-impl<'a, T: Copy + FromBytes> Iterator for Chunks<'a, T> {
-    type Item = Chunk<'a, T>;
+impl<'a, T: Copy + FromBytes> Iterator for IterAs<'a, T> {
+    type Item = Elem<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.ptr == self.end {
@@ -513,19 +533,19 @@ impl<'a, T: Copy + FromBytes> Iterator for Chunks<'a, T> {
             // SAFETY: `self.ptr` is less than `self.end` (checked), so adding 1 is within the
             // bounds of the allocation.
             self.ptr = unsafe { self.ptr.add(1) };
-            Some(Chunk { ptr: current, _marker: PhantomData })
+            Some(Elem { ptr: current, _marker: PhantomData })
         }
     }
 }
 
-/// A read-only chunk of a pointer slice.
-pub struct Chunk<'a, T> {
+/// A read-only typed element of a pointer slice.
+pub struct Elem<'a, T> {
     ptr: *const T,
     _marker: PhantomData<&'a T>,
 }
 
-impl<T: Copy + FromBytes> Chunk<'_, T> {
-    /// Reads the value from the chunk.
+impl<T: Copy + FromBytes> Elem<'_, T> {
+    /// Reads the value from the element.
     ///
     /// Since alignment and validity were verified once when the iterator was created,
     /// this access is safe and fast.
@@ -535,15 +555,15 @@ impl<T: Copy + FromBytes> Chunk<'_, T> {
     }
 }
 
-/// An iterator over mutable chunks of a pointer slice.
-pub struct ChunksMut<'a, T> {
+/// An iterator over mutable typed elements of a pointer slice.
+pub struct IterAsMut<'a, T> {
     ptr: *mut T,
     end: *mut T,
     _marker: PhantomData<&'a mut T>,
 }
 
-impl<'a, T: Copy + FromBytes> Iterator for ChunksMut<'a, T> {
-    type Item = ChunkMut<'a, T>;
+impl<'a, T: Copy + FromBytes> Iterator for IterAsMut<'a, T> {
+    type Item = ElemMut<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.ptr == self.end {
@@ -553,19 +573,19 @@ impl<'a, T: Copy + FromBytes> Iterator for ChunksMut<'a, T> {
             // SAFETY: `self.ptr` is less than `self.end` (checked), so adding 1 is within the
             // bounds of the allocation.
             self.ptr = unsafe { self.ptr.add(1) };
-            Some(ChunkMut { ptr: current, _marker: PhantomData })
+            Some(ElemMut { ptr: current, _marker: PhantomData })
         }
     }
 }
 
-/// A mutable chunk of a pointer slice.
-pub struct ChunkMut<'a, T> {
+/// A mutable typed element of a pointer slice.
+pub struct ElemMut<'a, T> {
     ptr: *mut T,
     _marker: PhantomData<&'a mut T>,
 }
 
-impl<T: Copy + FromBytes> ChunkMut<'_, T> {
-    /// Reads the value from the chunk.
+impl<T: Copy + FromBytes> ElemMut<'_, T> {
+    /// Reads the value from the element.
     ///
     /// Since alignment and validity were verified once when the iterator was created,
     /// this access is safe and fast.
@@ -574,13 +594,57 @@ impl<T: Copy + FromBytes> ChunkMut<'_, T> {
         unsafe { std::ptr::read(self.ptr) }
     }
 
-    /// Writes a value to the chunk.
+    /// Writes a value to the element.
     ///
     /// Since alignment and validity were verified once when the iterator was created,
     /// this access is safe and fast.
     pub fn write(&self, val: T) {
         // SAFETY: The pointer is guaranteed to be valid and aligned.
         unsafe { std::ptr::write(self.ptr, val) }
+    }
+}
+
+/// An iterator over read-only byte chunks of a pointer slice.
+pub struct Chunks<'a> {
+    slice: PtrByteSlice<'a>,
+    chunk_size: usize,
+    offset: usize,
+}
+
+impl<'a> Iterator for Chunks<'a> {
+    type Item = PtrByteSlice<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset >= self.slice.len() {
+            None
+        } else {
+            let len = std::cmp::min(self.chunk_size, self.slice.len() - self.offset);
+            let chunk = self.slice.subslice(self.offset..self.offset + len);
+            self.offset += len;
+            Some(chunk)
+        }
+    }
+}
+
+/// An iterator over mutable byte chunks of a pointer slice.
+pub struct ChunksMut<'a> {
+    slice: MutPtrByteSlice<'a>,
+    chunk_size: usize,
+    offset: usize,
+}
+
+impl<'a> Iterator for ChunksMut<'a> {
+    type Item = MutPtrByteSlice<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset >= self.slice.len() {
+            None
+        } else {
+            let len = std::cmp::min(self.chunk_size, self.slice.len() - self.offset);
+            let chunk = self.slice.subslice_mut(self.offset..self.offset + len);
+            self.offset += len;
+            Some(chunk)
+        }
     }
 }
 
@@ -629,59 +693,77 @@ mod tests {
     struct Aligned4(u32);
 
     #[test]
-    fn test_chunks_success() {
+    fn test_iter_as_success() {
         let bytes = [0u8; 16];
         let slice = PtrByteSlice::from(&bytes[..]);
-        let chunks = slice.chunks::<Aligned4>();
-        assert_eq!(chunks.count(), 4);
+        let elems = slice.iter_as::<Aligned4>();
+        assert_eq!(elems.count(), 4);
     }
 
     #[test]
-    #[should_panic]
-    fn test_chunks_unaligned_panic() {
+    #[should_panic(expected = "Slice is not aligned to T")]
+    fn test_iter_as_unaligned_panic() {
         #[repr(C, align(4))]
         struct AligningBuffer {
             buffer: [u8; 17],
         }
         let aligned = AligningBuffer { buffer: [0u8; 17] };
         let slice = PtrByteSlice::from(&aligned.buffer[1..17]);
-        let _ = slice.chunks::<Aligned4>();
+        let _ = slice.iter_as::<Aligned4>();
     }
 
     #[test]
     #[should_panic]
-    fn test_chunks_missized_panic() {
+    fn test_iter_as_missized_panic() {
         let bytes = [0u8; 15];
         let slice = PtrByteSlice::from(&bytes[..]);
-        let _ = slice.chunks::<Aligned4>();
+        let _ = slice.iter_as::<Aligned4>();
     }
 
     #[test]
-    fn test_chunks_mut_success() {
+    fn test_iter_as_mut_success() {
         let mut bytes = [0u8; 16];
         let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
-        let chunks = slice.chunks_mut::<Aligned4>();
-        assert_eq!(chunks.count(), 4);
+        let elems = slice.iter_as_mut::<Aligned4>();
+        assert_eq!(elems.count(), 4);
     }
 
     #[test]
-    #[should_panic]
-    fn test_chunks_mut_unaligned_panic() {
+    #[should_panic(expected = "Slice is not aligned to T")]
+    fn test_iter_as_mut_unaligned_panic() {
         #[repr(C, align(4))]
         struct AligningBuffer {
             buffer: [u8; 17],
         }
         let mut aligned = AligningBuffer { buffer: [0u8; 17] };
         let mut slice = MutPtrByteSlice::from(&mut aligned.buffer[1..17]);
-        let _ = slice.chunks_mut::<Aligned4>();
+        let _ = slice.iter_as_mut::<Aligned4>();
     }
 
     #[test]
     #[should_panic]
-    fn test_chunks_mut_missized_panic() {
+    fn test_iter_as_mut_missized_panic() {
         let mut bytes = [0u8; 15];
         let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
-        let _ = slice.chunks_mut::<Aligned4>();
+        let _ = slice.iter_as_mut::<Aligned4>();
+    }
+
+    #[test]
+    fn test_byte_chunks() {
+        let bytes = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let slice = PtrByteSlice::from(&bytes[..]);
+        let chunks: Vec<_> = slice.chunks(4).map(|c| c.to_vec()).collect();
+        assert_eq!(chunks, vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10]]);
+    }
+
+    #[test]
+    fn test_byte_chunks_mut() {
+        let mut bytes = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
+        for mut chunk in slice.chunks_mut(4) {
+            chunk.fill(0);
+        }
+        assert_eq!(bytes, [0u8; 10]);
     }
 
     #[test]

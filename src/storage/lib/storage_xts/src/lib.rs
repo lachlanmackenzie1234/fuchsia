@@ -67,8 +67,8 @@ impl BlockSizeUser for XtsProcessor<'_, '_> {
 impl BlockCipherEncClosure for XtsProcessor<'_, '_> {
     fn call<B: BlockCipherEncBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
         let Self { mut tweak, src, mut dst } = self;
-        let src_chunks = src.chunks::<u128>();
-        let dst_chunks = dst.chunks_mut::<u128>();
+        let src_chunks = src.iter_as::<u128>();
+        let dst_chunks = dst.iter_as_mut::<u128>();
 
         for (src_chunk, dst_chunk) in src_chunks.zip(dst_chunks) {
             let mut val = src_chunk.read();
@@ -92,8 +92,8 @@ impl BlockCipherEncClosure for XtsProcessor<'_, '_> {
 impl BlockCipherDecClosure for XtsProcessor<'_, '_> {
     fn call<B: BlockCipherDecBackend<BlockSize = Self::BlockSize>>(self, backend: &B) {
         let Self { mut tweak, src, mut dst } = self;
-        let src_chunks = src.chunks::<u128>();
-        let dst_chunks = dst.chunks_mut::<u128>();
+        let src_chunks = src.iter_as::<u128>();
+        let dst_chunks = dst.iter_as_mut::<u128>();
 
         for (src_chunk, dst_chunk) in src_chunks.zip(dst_chunks) {
             let mut val = src_chunk.read();
