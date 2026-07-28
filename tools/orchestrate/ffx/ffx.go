@@ -525,7 +525,7 @@ func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 		}
 	}
 
-	logDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	logDir := utils.GetOutputsDir()
 	if logDir != "" {
 		cmd := []string{"config", "set", "log.dir", logDir}
 		if _, err := f.RunCmdSync(ctx, cmd...); err != nil {

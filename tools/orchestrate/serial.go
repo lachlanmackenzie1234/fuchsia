@@ -10,11 +10,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+
+	utils "go.fuchsia.dev/fuchsia/tools/orchestrate/utils"
 )
 
 var (
-	serialLog    = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "serial.log")
-	serialSymLog = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "serial.symbolized.log")
+	serialLog    = filepath.Join(utils.GetOutputsDir(), "serial.log")
+	serialSymLog = filepath.Join(utils.GetOutputsDir(), "serial.symbolized.log")
 )
 
 // SerialLogging holds information about logging the serial from the device.

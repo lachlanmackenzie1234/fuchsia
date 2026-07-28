@@ -8,6 +8,7 @@ package orchestrate
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -67,4 +68,13 @@ func PrependPath(environ []string, dirs ...string) []string {
 		result = append(result, fmt.Sprintf("PATH=%s", strings.Join(dirs, ":")))
 	}
 	return result
+}
+
+// GetOutputsDir returns the directory to write test outputs to,
+// respecting TEST_UNDECLARED_OUTPUTS_DIR and falling back to ISOLATED_OUTDIR.
+func GetOutputsDir() string {
+	if dir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); dir != "" {
+		return dir
+	}
+	return os.Getenv("ISOLATED_OUTDIR")
 }

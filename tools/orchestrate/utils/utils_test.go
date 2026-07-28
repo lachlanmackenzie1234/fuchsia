@@ -128,3 +128,55 @@ func TestPrependingToPath(t *testing.T) {
 		})
 	}
 }
+
+func TestGetOutputsDir(t *testing.T) {
+	testCases := []struct {
+		name    string
+		env     map[string]string
+		wantDir string
+	}{
+		{
+			name: "BothSetPreferUndeclared",
+			env: map[string]string{
+				"TEST_UNDECLARED_OUTPUTS_DIR": "/foo/undeclared",
+				"ISOLATED_OUTDIR":             "/bar/isolated",
+			},
+			wantDir: "/foo/undeclared",
+		},
+		{
+			name: "OnlyUndeclaredSet",
+			env: map[string]string{
+				"TEST_UNDECLARED_OUTPUTS_DIR": "/foo/undeclared",
+			},
+			wantDir: "/foo/undeclared",
+		},
+		{
+			name: "OnlyIsolatedSet",
+			env: map[string]string{
+				"ISOLATED_OUTDIR": "/bar/isolated",
+			},
+			wantDir: "/bar/isolated",
+		},
+		{
+			name:    "NeitherSet",
+			env:     map[string]string{},
+			wantDir: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TEST_UNDECLARED_OUTPUTS_DIR", "")
+			t.Setenv("ISOLATED_OUTDIR", "")
+
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			got := GetOutputsDir()
+			if got != tc.wantDir {
+				t.Errorf("GetOutputsDir() = %q, want %q", got, tc.wantDir)
+			}
+		})
+	}
+}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	ffx "go.fuchsia.dev/fuchsia/tools/orchestrate/ffx"
+	utils "go.fuchsia.dev/fuchsia/tools/orchestrate/utils"
 )
 
 // mockFFXClient is a mock implementation of the FFXClient interface.
@@ -56,7 +57,7 @@ func (m *mockFFXClient) ApplyEnv(env []string) ([]string, error) {
 	if call.retErr != nil {
 		return nil, call.retErr
 	}
-	if val := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); val != "" {
+	if val := utils.GetOutputsDir(); val != "" {
 		env = append(env, fmt.Sprintf("FFX_ISOLATE_DIR=%s", val))
 	}
 	if m.defaultTarget != nil {

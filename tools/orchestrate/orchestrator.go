@@ -59,12 +59,12 @@ type TestOrchestrator struct {
 }
 
 var (
-	ffxDaemonLog  = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "ffx_daemon.log")
-	ffxConfigDump = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "ffx_config.txt")
-	subrunnerLog  = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "subrunner.log")
-	targetLog     = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "target.log")
-	targetSymLog  = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "target.symbolized.log")
-	summaryPath   = filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "summary.json")
+	ffxDaemonLog  = filepath.Join(utils.GetOutputsDir(), "ffx_daemon.log")
+	ffxConfigDump = filepath.Join(utils.GetOutputsDir(), "ffx_config.txt")
+	subrunnerLog  = filepath.Join(utils.GetOutputsDir(), "subrunner.log")
+	targetLog     = filepath.Join(utils.GetOutputsDir(), "target.log")
+	targetSymLog  = filepath.Join(utils.GetOutputsDir(), "target.symbolized.log")
+	summaryPath   = filepath.Join(utils.GetOutputsDir(), "summary.json")
 )
 
 // NewTestOrchestrator creates a TestOrchestrator with default dependencies.
@@ -89,7 +89,7 @@ func (r *TestOrchestrator) instantiateFfx(ctx context.Context, in *RunInput) err
 		return fmt.Errorf("resolving ffx path: %w", err)
 	}
 
-	outputsDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	outputsDir := utils.GetOutputsDir()
 	if in.HasExperiment("orchestrate-ffx-strict") {
 		client, err := NewFFXStrictClient(ctx, ffxPath, outputsDir, r.repoName)
 		if err != nil {
@@ -417,7 +417,7 @@ func (r *TestOrchestrator) test(ctx context.Context, testCmd []string, in *RunIn
 	if in.IsTarget() {
 		snapshotCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		if err := r.ffx.TargetSnapshot(snapshotCtx, os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")); err != nil {
+		if err := r.ffx.TargetSnapshot(snapshotCtx, utils.GetOutputsDir()); err != nil {
 			fmt.Printf("target snapshot: %v\n", err)
 		}
 	}

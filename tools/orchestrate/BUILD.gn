@@ -51,6 +51,7 @@ go_library("main") {
   ]
   deps = [
     ":lib",
+    ":utils",
     "//third_party/golibs:github.com/google/subcommands",
   ]
 }

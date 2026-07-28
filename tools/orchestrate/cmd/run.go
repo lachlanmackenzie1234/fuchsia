@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/subcommands"
 	"go.fuchsia.dev/fuchsia/tools/orchestrate"
+	utils "go.fuchsia.dev/fuchsia/tools/orchestrate/utils"
 )
 
 type runCmd struct {
@@ -101,18 +102,20 @@ func (r *runCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcomm
 }
 
 func initTestArtifactsDir() error {
-	if os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR") == "" {
-		fmt.Printf("Environment variable TEST_UNDECLARED_OUTPUTS_DIR is not set, test artifacts will be written to the current working directory.\n")
+	dir := utils.GetOutputsDir()
+	if dir == "" {
+		fmt.Printf("Neither TEST_UNDECLARED_OUTPUTS_DIR nor ISOLATED_OUTDIR is set, test artifacts will be written to the current working directory.\n")
 		return nil
 	}
-	if err := os.MkdirAll(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("os.Mkdir: %w", err)
 	}
 	return nil
 }
 
 func dumpEnv() error {
-	logFile, err := os.Create(filepath.Join(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), "env.dump.txt"))
+	dir := utils.GetOutputsDir()
+	logFile, err := os.Create(filepath.Join(dir, "env.dump.txt"))
 	if err != nil {
 		return fmt.Errorf("os.Create: %w", err)
 	}
