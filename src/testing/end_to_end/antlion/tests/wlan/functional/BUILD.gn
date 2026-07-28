@@ -16,16 +16,6 @@ antlion_host_test("soft_ap_test") {
   environments = []
 }
 
-antlion_host_test("wlan_driver_restart_test") {
-  main_source = "WlanDriverRestartTest.py"
-  environments = [
-    nuc7_env,
-    nuc11_env,
-  ]
-  test_data_deps =
-      [ "//src/developer/ffx/tools/driver:ffx_driver_tool_test_data" ]
-}
-
 antlion_host_test("wlan_policy_initiated_roam_test") {
   main_source = "WlanPolicyInitiatedRoamTest.py"
   environments = wlan_ap_envs
@@ -113,7 +103,6 @@ group("e2e_tests") {
 group("e2e_tests_quick") {
   testonly = true
   public_deps = [
-    ":wlan_driver_restart_test",
     ":wlan_reboot_ap_test_quick",
     ":wlan_reboot_dut_test_quick",
   ]

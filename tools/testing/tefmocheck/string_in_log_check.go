@@ -717,6 +717,11 @@ func fuchsiaLogChecks() []FailureModeCheck {
 	}
 
 	oopsExceptBlocks := []*logBlock{
+		// Forced PCIe driver restarts (e.g. via killall) intentionally trigger DMA quarantine OOPS warnings.
+		{
+			startString: "Started executing 'test_driver_host_restart'",
+			endString:   "Finished executing 'test_driver_host_restart'",
+		},
 		{startString: " lock_dep_dynamic_analysis_tests ", endString: " lock_dep_static_analysis_tests "},
 		{startString: "RUN   TestKillCriticalProcess", endString: ": TestKillCriticalProcess"},
 		{startString: "RUN   TestKernelLockupDetectorCriticalSection", endString: ": TestKernelLockupDetectorCriticalSection"},

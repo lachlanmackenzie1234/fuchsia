@@ -50,6 +50,7 @@ core_tests_for_postsubmit = [
 # above.
 core_tests_for_fyi = [
   "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
+  "//src/connectivity/wlan/tests/core:wlan_driver_restart_test",
   "//src/connectivity/wlan/tests/core:wlan_scan_test",
 ]
 

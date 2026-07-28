@@ -18,8 +18,28 @@ class WlanDriverRestartTest(base_test.CoreBaseTestClass):
     async def test_driver_host_restart(self) -> None:
         # TODO(b/494309251): If a driver debug side channel is created, use that to query out the
         # KOID and kill that instead.
-        logger.info("Killing driver-host-#wlan...")
-        self.dut.ffx.run_ssh_cmd("killall driver-host-#wlan")
+        logger.info("Restarting WLAN driver...")
+        processes = self.dut.ffx.run_ssh_cmd("ps")
+        wlan_driver_process = None
+        keywords = ["iwlwifi", "realtek", "brcmfmac"]
+        for line in processes.splitlines():
+            if any(k in line for k in keywords):
+                # The process name is exactly the last token, e.g. "iwlwifi.cm"
+                wlan_driver_process = line.split()[-1]
+                break
+
+        if wlan_driver_process:
+            logger.info(
+                f"Detected running DFv2 WLAN process: {wlan_driver_process}. Killing via SSH..."
+            )
+            self.dut.ffx.run_ssh_cmd(f"killall {wlan_driver_process}")
+        elif "driver-host-#wlan" in processes:
+            logger.info("Detected legacy DFv1 driver host. Killing via SSH...")
+            self.dut.ffx.run_ssh_cmd("killall driver-host-#wlan")
+        else:
+            raise RuntimeError(
+                "Could not find any running WLAN driver process to restart!"
+            )
 
         logger.info("Polling for PHY to be removed")
         phy_removal_timeout = 10
