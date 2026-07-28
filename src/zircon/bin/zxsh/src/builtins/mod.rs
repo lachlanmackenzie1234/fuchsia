@@ -10,11 +10,15 @@ use crate::eval::{
 };
 use bstr::{BString, ByteSlice};
 
+pub mod dump;
 pub mod echo;
 pub mod essential;
 pub mod file_utils;
+pub mod list;
+pub mod msleep;
 pub mod printf;
 pub mod test;
+pub mod times;
 
 #[derive(Clone, Copy)]
 enum BuiltinType {
@@ -28,6 +32,7 @@ enum BuiltinType {
     Continue,
     Cp,
     Dot,
+    Dump,
     Echo,
     Eval,
     Exec,
@@ -38,10 +43,12 @@ enum BuiltinType {
     Getopts,
     Hash,
     Jobs,
+    List,
     LeftBracket,
     Local,
     Ls,
     Mkdir,
+    Msleep,
     Mv,
     Pwd,
     Printf,
@@ -52,6 +59,7 @@ enum BuiltinType {
     Set,
     Shift,
     Test,
+    Times,
     Trap,
     True,
     Type,
@@ -94,6 +102,7 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"command", BuiltinType::Command),
     make_entry(b"continue", BuiltinType::Continue),
     make_entry(b"cp", BuiltinType::Cp),
+    make_entry(b"dump", BuiltinType::Dump),
     make_entry(b"echo", BuiltinType::Echo),
     make_entry(b"eval", BuiltinType::Eval),
     make_entry(b"exec", BuiltinType::Exec),
@@ -104,9 +113,11 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"getopts", BuiltinType::Getopts),
     make_entry(b"hash", BuiltinType::Hash),
     make_entry(b"jobs", BuiltinType::Jobs),
+    make_entry(b"list", BuiltinType::List),
     make_entry(b"local", BuiltinType::Local),
     make_entry(b"ls", BuiltinType::Ls),
     make_entry(b"mkdir", BuiltinType::Mkdir),
+    make_entry(b"msleep", BuiltinType::Msleep),
     make_entry(b"mv", BuiltinType::Mv),
     make_entry(b"printf", BuiltinType::Printf),
     make_entry(b"pwd", BuiltinType::Pwd),
@@ -117,6 +128,7 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"set", BuiltinType::Set),
     make_entry(b"shift", BuiltinType::Shift),
     make_entry(b"test", BuiltinType::Test),
+    make_entry(b"times", BuiltinType::Times),
     make_entry(b"trap", BuiltinType::Trap),
     make_entry(b"true", BuiltinType::True),
     make_entry(b"type", BuiltinType::Type),
@@ -186,6 +198,7 @@ pub fn run_builtin(
         BuiltinType::Continue => essential::builtin_continue(args, state, ctx),
         BuiltinType::Cp => with_io(ctx, args, state, file_utils::builtin_cp),
         BuiltinType::Dot => essential::builtin_dot(args, state, ctx),
+        BuiltinType::Dump => with_io(ctx, args, state, dump::builtin_dump),
         BuiltinType::Echo => with_io(ctx, args, state, echo::builtin_echo),
         BuiltinType::Eval => essential::builtin_eval(args, state, ctx),
         BuiltinType::Exec => essential::builtin_exec(args, state, ctx),
@@ -196,9 +209,11 @@ pub fn run_builtin(
         BuiltinType::Getopts => with_io(ctx, args, state, essential::builtin_getopts),
         BuiltinType::Hash => with_io(ctx, args, state, essential::builtin_hash),
         BuiltinType::Jobs => with_io(ctx, args, state, essential::builtin_jobs),
+        BuiltinType::List => with_io(ctx, args, state, list::builtin_list),
         BuiltinType::Local => with_io(ctx, args, state, essential::builtin_local),
         BuiltinType::Ls => with_io(ctx, args, state, file_utils::builtin_ls),
         BuiltinType::Mkdir => with_io(ctx, args, state, file_utils::builtin_mkdir),
+        BuiltinType::Msleep => with_io(ctx, args, state, msleep::builtin_msleep),
         BuiltinType::Mv => with_io(ctx, args, state, file_utils::builtin_mv),
         BuiltinType::Pwd => with_io(ctx, args, state, essential::builtin_pwd),
         BuiltinType::Printf => with_io(ctx, args, state, printf::builtin_printf),
@@ -210,6 +225,7 @@ pub fn run_builtin(
         BuiltinType::LeftBracket => with_io(ctx, args, state, test::builtin_left_bracket),
         BuiltinType::Shift => with_io(ctx, args, state, essential::builtin_shift),
         BuiltinType::Test => with_io(ctx, args, state, test::builtin_test),
+        BuiltinType::Times => with_io(ctx, args, state, times::builtin_times),
         BuiltinType::Trap => with_io(ctx, args, state, essential::builtin_trap),
         BuiltinType::Type => with_io(ctx, args, state, essential::builtin_type),
         BuiltinType::Ulimit => with_io(ctx, args, state, essential::builtin_ulimit),
