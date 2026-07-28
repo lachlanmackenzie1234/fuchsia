@@ -514,13 +514,13 @@ impl ComponentInstance {
     ) -> Result<(), AddDynamicChildError> {
         let mut state = self.lock_resolved_state().await?;
         let collection_decl = state
-            .decl()
-            .unwrap()
-            .find_collection(&collection_name)
+            .collection_decls
+            .iter()
+            .find(|decl| decl.name == collection_name)
+            .cloned()
             .ok_or_else(|| AddDynamicChildError::CollectionNotFound {
                 name: collection_name.clone(),
-            })?
-            .clone();
+            })?;
         let is_single_run_collection = collection_decl.durability == fdecl::Durability::SingleRun;
         // Start the child if it's created in a `SingleRun` collection or it's eager.
         let maybe_start_reason = if is_single_run_collection {
@@ -890,9 +890,7 @@ impl ComponentInstance {
             }
             let resolved_state = state.get_resolved_state().unwrap();
             resolved_state
-                .decl()
-                .unwrap()
-                .collections
+                .collection_decls
                 .iter()
                 .filter_map(|c| match c.durability {
                     fdecl::Durability::SingleRun => Some(c.name.clone()),
@@ -2444,11 +2442,7 @@ pub mod tests {
             .lock_resolved_state()
             .await
             .expect("failed to get resolved state")
-            .resolved_component
-            .decl
-            .as_ref()
-            .unwrap()
-            .collections
+            .collection_decls
             .iter()
             .find(|c| c.name.as_str() == "col")
             .expect("unable to find collection decl")

@@ -334,6 +334,10 @@ pub struct ResolvedInstanceState {
     /// component shutdown without needing to retain the complete component
     /// decl.
     pub storage_paths: Vec<Path>,
+
+    /// The collection declarations of this component instance. We store them here as a memory
+    /// optimization so that we do not need to retain the complete decl.
+    pub collection_decls: Vec<CollectionDecl>,
 }
 
 /// Abbreviated equivalent to [ComponentAddress] that omits the actual url string.
@@ -435,6 +439,9 @@ impl ResolvedInstanceState {
             })
             .collect::<Vec<_>>();
 
+        let collection_decls =
+            decl.collections.iter().map(|collection| collection.clone()).collect::<Vec<_>>();
+
         let mut state = Self {
             weak_component,
             execution_scope: component.execution_scope.clone(),
@@ -450,6 +457,7 @@ impl ResolvedInstanceState {
             program_escrow,
             capability_requested_receivers,
             storage_paths,
+            collection_decls,
         };
         state.add_static_children(component).await?;
 
