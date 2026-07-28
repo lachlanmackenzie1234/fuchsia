@@ -15,6 +15,7 @@
 #include "src/developer/forensics/feedback/attachments/provider.h"
 #include "src/developer/forensics/feedback/attachments/types.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
+#include "src/lib/timekeeper/clock.h"
 
 namespace forensics::feedback {
 
@@ -24,13 +25,15 @@ namespace forensics::feedback {
 // each time they're needed.
 class AttachmentManager {
  public:
-  explicit AttachmentManager(async_dispatcher_t* dispatcher, const std::set<std::string>& allowlist,
+  explicit AttachmentManager(async_dispatcher_t* dispatcher, timekeeper::Clock* clock,
+                             const std::set<std::string>& allowlist,
                              std::map<std::string, AttachmentProvider*> providers = {});
 
   ::fpromise::promise<Attachments> GetAttachments(zx::duration timeout);
 
  private:
   async_dispatcher_t* dispatcher_;
+  timekeeper::Clock* clock_;
 
   std::map<std::string, AttachmentProvider*> providers_;
   uint64_t next_ticket_{0};

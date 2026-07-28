@@ -45,15 +45,15 @@ TEST_F(FileBackedProviderTest, MalformedFilePath) {
 
   FileBackedProvider file_backed_provider_(kBadPath);
 
-  AttachmentValue attachment(Error::kNotSet);
+  AttachmentData attachment(Error::kNotSet);
   GetExecutor().schedule_task(
       file_backed_provider_.Get(kTicket)
-          .and_then([&attachment](AttachmentValue& res) { attachment = std::move(res); })
+          .and_then([&attachment](AttachmentData& res) { attachment = std::move(res); })
           .or_else([] { FX_LOGS(FATAL) << "Logic error"; }));
 
   RunLoopUntilIdle();
 
-  EXPECT_THAT(attachment, AttachmentValueIs(Error::kFileReadFailure));
+  EXPECT_THAT(attachment, AttachmentDataIs(Error::kFileReadFailure));
 }
 
 TEST_F(FileBackedProviderTest, EmptyFile) {
@@ -62,15 +62,15 @@ TEST_F(FileBackedProviderTest, EmptyFile) {
 
   FileBackedProvider file_backed_provider_(path);
 
-  AttachmentValue attachment(Error::kNotSet);
+  AttachmentData attachment(Error::kNotSet);
   GetExecutor().schedule_task(
       file_backed_provider_.Get(kTicket)
-          .and_then([&attachment](AttachmentValue& res) { attachment = std::move(res); })
+          .and_then([&attachment](AttachmentData& res) { attachment = std::move(res); })
           .or_else([] { FX_LOGS(FATAL) << "Logic error"; }));
 
   RunLoopUntilIdle();
 
-  EXPECT_THAT(attachment, AttachmentValueIs(Error::kMissingValue));
+  EXPECT_THAT(attachment, AttachmentDataIs(Error::kMissingValue));
 }
 
 TEST_F(FileBackedProviderTest, NonEmptyFile) {
@@ -80,15 +80,15 @@ TEST_F(FileBackedProviderTest, NonEmptyFile) {
 
   FileBackedProvider file_backed_provider_(path);
 
-  AttachmentValue attachment(Error::kNotSet);
+  AttachmentData attachment(Error::kNotSet);
   GetExecutor().schedule_task(
       file_backed_provider_.Get(kTicket)
-          .and_then([&attachment](AttachmentValue& res) { attachment = std::move(res); })
+          .and_then([&attachment](AttachmentData& res) { attachment = std::move(res); })
           .or_else([] { FX_LOGS(FATAL) << "Logic error"; }));
 
   RunLoopUntilIdle();
 
-  EXPECT_THAT(attachment, AttachmentValueIs(data));
+  EXPECT_THAT(attachment, AttachmentDataIs(data));
 }
 
 TEST_F(FileBackedProviderTest, ForceCompletionCalledWhenPromiseIsIncomplete) {
@@ -97,10 +97,10 @@ TEST_F(FileBackedProviderTest, ForceCompletionCalledWhenPromiseIsIncomplete) {
 
   FileBackedProvider file_backed_provider_(path);
 
-  AttachmentValue attachment(Error::kNotSet);
+  AttachmentData attachment(Error::kNotSet);
   GetExecutor().schedule_task(
       file_backed_provider_.Get(kTicket)
-          .and_then([&attachment](AttachmentValue& res) { attachment = std::move(res); })
+          .and_then([&attachment](AttachmentData& res) { attachment = std::move(res); })
           .or_else([] { FX_LOGS(FATAL) << "Logic error"; }));
 
   file_backed_provider_.ForceCompletion(kTicket, Error::kDefault);

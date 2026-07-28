@@ -22,6 +22,8 @@
 #include "src/developer/forensics/testing/gmatchers.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/unit_test_fixture.h"
+#include "src/lib/timekeeper/async_test_clock.h"
+#include "src/lib/timekeeper/test_clock.h"
 
 namespace forensics::feedback {
 namespace {
@@ -40,16 +42,16 @@ class SimpleAttachmentProvider : public AttachmentProvider {
   SimpleAttachmentProvider(async_dispatcher_t* dispatcher, zx::duration delay, std::string data)
       : dispatcher_(dispatcher), delay_(delay), data_(std::move(data)) {}
 
-  ::fpromise::promise<AttachmentValue> Get(const uint64_t ticket) override {
-    ::fpromise::bridge<AttachmentValue> bridge;
-
+  ::fpromise::promise<AttachmentData> Get(uint64_t ticket) override {
+    ::fpromise::bridge<AttachmentData> bridge;
     completers_[ticket] = std::move(bridge.completer);
 
     async::PostDelayedTask(
         dispatcher_,
-        [this, ticket]() mutable {
-          if (completers_[ticket]) {
-            completers_[ticket].complete_ok(AttachmentValue(data_));
+        [this, ticket] {
+          if (completers_.contains(ticket)) {
+            completers_[ticket].complete_ok(AttachmentData(data_));
+            completers_.erase(ticket);
           }
         },
         delay_);
@@ -57,9 +59,10 @@ class SimpleAttachmentProvider : public AttachmentProvider {
     return bridge.consumer.promise_or(::fpromise::error());
   }
 
-  void ForceCompletion(const uint64_t ticket, const Error error) override {
-    if (completers_[ticket] && completers_.contains(ticket)) {
-      completers_[ticket].complete_ok(error);
+  void ForceCompletion(uint64_t ticket, Error error) override {
+    if (completers_.contains(ticket)) {
+      completers_[ticket].complete_ok(AttachmentData(error));
+      completers_.erase(ticket);
     }
   }
 
@@ -68,10 +71,13 @@ class SimpleAttachmentProvider : public AttachmentProvider {
 
   zx::duration delay_;
   std::string data_;
-  std::map<uint64_t, ::fpromise::completer<AttachmentValue>> completers_;
+  std::map<uint64_t, ::fpromise::completer<AttachmentData>> completers_;
 };
 
-using AttachmentManagerTest = UnitTestFixture;
+class AttachmentManagerTest : public UnitTestFixture {
+ protected:
+  timekeeper::AsyncTestClock clock_{dispatcher()};
+};
 
 TEST_F(AttachmentManagerTest, Dynamic) {
   async::Executor executor(dispatcher());
@@ -79,7 +85,7 @@ TEST_F(AttachmentManagerTest, Dynamic) {
   SimpleAttachmentProvider provider1(dispatcher(), zx::sec(1), "value1");
   SimpleAttachmentProvider provider2(dispatcher(), zx::sec(3), "value2");
 
-  AttachmentManager manager(dispatcher(), {"dynamic1", "dynamic2"},
+  AttachmentManager manager(dispatcher(), &clock_, {"dynamic1", "dynamic2"},
                             {
                                 {"dynamic1", &provider1},
                                 {"dynamic2", &provider2},
@@ -111,9 +117,31 @@ TEST_F(AttachmentManagerTest, Dynamic) {
                            }));
 }
 
+TEST_F(AttachmentManagerTest, CollectionDuration) {
+  async::Executor executor(dispatcher());
+  timekeeper::TestClock clock;
+
+  SimpleAttachmentProvider provider(dispatcher(), zx::sec(5), "value");
+  AttachmentManager manager(dispatcher(), &clock, {"key"}, {{"key", &provider}});
+
+  Attachments attachments;
+  executor.schedule_task(
+      manager.GetAttachments(zx::duration::infinite())
+          .and_then([&attachments](Attachments& result) { attachments = std::move(result); })
+          .or_else([] { FX_LOGS(FATAL) << "Unreachable branch"; }));
+
+  clock.SetMonotonic(zx::time_monotonic(0) + zx::sec(5));
+  RunLoopFor(zx::sec(5));
+
+  EXPECT_THAT(attachments, ElementsAreArray({
+                               Pair("key", AttachmentValueIs("value")),
+                           }));
+  EXPECT_EQ(attachments.at("key").CollectionDuration(), zx::sec(5));
+}
+
 TEST_F(AttachmentManagerTest, NoProvider) {
   ASSERT_DEATH(
-      { AttachmentManager manager(dispatcher(), {"unknown.attachment"}); },
+      { AttachmentManager manager(dispatcher(), &clock_, {"unknown.attachment"}); },
       HasSubstr("Attachment \"unknown.attachment\" collected by 0 providers"));
 }
 

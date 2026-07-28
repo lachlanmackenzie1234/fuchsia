@@ -17,7 +17,7 @@ class AttachmentProvider {
  public:
   // Returns a promise to the data collection, where collection can be terminated early with
   // |ticket|
-  virtual ::fpromise::promise<AttachmentValue> Get(uint64_t ticket) = 0;
+  virtual ::fpromise::promise<AttachmentData> Get(uint64_t ticket) = 0;
 
   // Completes the data collection promise associated with |ticket| early, if it hasn't
   // already completed.

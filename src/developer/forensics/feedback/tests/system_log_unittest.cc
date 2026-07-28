@@ -116,12 +116,12 @@ class SystemLogTest : public UnitTestFixture {
     InjectServiceProvider(log_server_.get(), feedback_data::kArchiveAccessorName);
   }
 
-  AttachmentValue CollectSystemLog(const zx::duration timeout = zx::sec(1)) {
+  AttachmentData CollectSystemLog(const zx::duration timeout = zx::sec(1)) {
     const uint64_t kTicket = 1234;
-    AttachmentValue result(Error::kNotSet);
+    AttachmentData result(Error::kNotSet);
     executor_.schedule_task(
         system_log_.Get(kTicket)
-            .and_then([&result](AttachmentValue& res) { result = std::move(res); })
+            .and_then([&result](AttachmentData& res) { result = std::move(res); })
             .or_else([] { FX_LOGS(FATAL) << "Bad path"; }));
     RunLoopFor(timeout);
     return result;
@@ -131,8 +131,8 @@ class SystemLogTest : public UnitTestFixture {
 
   SystemLog& GetSystemLog() { return system_log_; }
 
-  ::fpromise::promise<AttachmentValue> CollectSystemLog(const uint64_t ticket) {
-    return system_log_.Get(ticket).or_else([]() -> ::fpromise::result<AttachmentValue> {
+  ::fpromise::promise<AttachmentData> CollectSystemLog(const uint64_t ticket) {
+    return system_log_.Get(ticket).or_else([]() -> ::fpromise::result<AttachmentData> {
       FX_LOGS(FATAL) << "Bad path";
       return ::fpromise::error();
     });
@@ -167,8 +167,8 @@ class SystemLogTest : public UnitTestFixture {
 TEST_F(SystemLogTest, GetTerminatesDueToLogTimestamp) {
   SetUpLogServer(Messages());
 
-  const AttachmentValue log = CollectSystemLog();
-  EXPECT_THAT(log, AttachmentValueIs(R"([01234.000][00200][00300][tag_1] INFO: Message 1
+  const AttachmentData log = CollectSystemLog();
+  EXPECT_THAT(log, AttachmentDataIs(R"([01234.000][00200][00300][tag_1] INFO: Message 1
 [01234.000][00200][00300][tag_2] INFO: Message 2
 [01234.000][00200][00300][tag_3] INFO: Message 3
 )"));
@@ -180,16 +180,16 @@ TEST_F(SystemLogTest, GetTerminatesDueToForceCompletionWithEmptyLog) {
 
   RunLoopFor(kLogTimestamp + zx::sec(1));
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   RunLoopUntilIdle();
 
   GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
 
   RunLoopUntilIdle();
-  EXPECT_THAT(log, AttachmentValueIs(Error::kDefault));
+  EXPECT_THAT(log, AttachmentDataIs(Error::kDefault));
 }
 
 TEST_F(SystemLogTest, GetTerminatesDueToForceCompletion) {
@@ -199,9 +199,9 @@ TEST_F(SystemLogTest, GetTerminatesDueToForceCompletion) {
   // Prime the clock so log collection won't be completed due to message timestamps.
   RunLoopFor(kLogTimestamp + zx::sec(1));
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   // Giving some time to actually collect some log data, so that system_log is not empty
   RunLoopUntilIdle();
@@ -210,7 +210,7 @@ TEST_F(SystemLogTest, GetTerminatesDueToForceCompletion) {
   GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
 
   RunLoopUntilIdle();
-  EXPECT_THAT(log, AttachmentValueIs(
+  EXPECT_THAT(log, AttachmentDataIs(
                        R"([01234.000][00200][00300][tag_1] INFO: Message 1
 [01234.000][00200][00300][tag_2] INFO: Message 2
 [01234.000][00200][00300][tag_3] INFO: Message 3
@@ -222,14 +222,14 @@ TEST_F(SystemLogTest, ForceCompletionCalledAfterTermination) {
   const uint64_t kTicket = 1234;
   SetUpLogServer(Messages());
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   RunLoopFor(zx::sec(1));
 
   GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
-  EXPECT_THAT(log, AttachmentValueIs(R"([01234.000][00200][00300][tag_1] INFO: Message 1
+  EXPECT_THAT(log, AttachmentDataIs(R"([01234.000][00200][00300][tag_1] INFO: Message 1
 [01234.000][00200][00300][tag_2] INFO: Message 2
 [01234.000][00200][00300][tag_3] INFO: Message 3
 )"));
@@ -239,8 +239,8 @@ TEST_F(SystemLogTest, ActivePeriodExpires) {
   const uint64_t kTicket = 1234;
   SetUpLogServer(Messages());
 
-  AttachmentValue log = CollectSystemLog();
-  EXPECT_THAT(log, AttachmentValueIs(R"([01234.000][00200][00300][tag_1] INFO: Message 1
+  AttachmentData log = CollectSystemLog();
+  EXPECT_THAT(log, AttachmentDataIs(R"([01234.000][00200][00300][tag_1] INFO: Message 1
 [01234.000][00200][00300][tag_2] INFO: Message 2
 [01234.000][00200][00300][tag_3] INFO: Message 3
 )"));
@@ -249,10 +249,10 @@ TEST_F(SystemLogTest, ActivePeriodExpires) {
   RunLoopFor(kActivePeriod);
   ASSERT_FALSE(LogServer().IsBound());
 
-  log = Error::kNotSet;
+  log = AttachmentData(Error::kNotSet);
 
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   RunLoopUntilIdle();
 
@@ -260,7 +260,7 @@ TEST_F(SystemLogTest, ActivePeriodExpires) {
 
   RunLoopUntilIdle();
 
-  EXPECT_THAT(log, AttachmentValueIs(Error::kDefault));
+  EXPECT_THAT(log, AttachmentDataIs(Error::kDefault));
 
   ASSERT_TRUE(LogServer().IsBound());
 }
@@ -269,8 +269,8 @@ TEST_F(SystemLogTest, ActivePeriodResets) {
   const uint64_t kTicket = 1234;
   SetUpLogServer(Messages());
 
-  AttachmentValue log = CollectSystemLog(zx::min(1));
-  EXPECT_THAT(log, AttachmentValueIs(
+  AttachmentData log = CollectSystemLog(zx::min(1));
+  EXPECT_THAT(log, AttachmentDataIs(
                        R"([01234.000][00200][00300][tag_1] INFO: Message 1
 [01234.000][00200][00300][tag_2] INFO: Message 2
 [01234.000][00200][00300][tag_3] INFO: Message 3
@@ -279,17 +279,17 @@ TEST_F(SystemLogTest, ActivePeriodResets) {
   RunLoopFor(kActivePeriod / 2);
   ASSERT_TRUE(LogServer().IsBound());
 
-  log = Error::kNotSet;
+  log = AttachmentData(Error::kNotSet);
 
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   RunLoopFor(kActivePeriod / 2);
 
   GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
 
   RunLoopUntilIdle();
-  EXPECT_THAT(log, AttachmentValueIs(
+  EXPECT_THAT(log, AttachmentDataIs(
                        R"([01234.000][00200][00300][tag_1] INFO: Message 1
 [01234.000][00200][00300][tag_2] INFO: Message 2
 [01234.000][00200][00300][tag_3] INFO: Message 3
@@ -307,9 +307,9 @@ TEST_F(SystemLogTest, NoCobaltLogsIfNoMessages) {
   // Prime the clock so log collection won't be completed due to message timestamps.
   RunLoopFor(kLogTimestamp + zx::sec(1));
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   // Giving some time to actually collect some log data, so that system_log is not empty
   RunLoopUntilIdle();
@@ -332,9 +332,9 @@ TEST_F(SystemLogTest, NoCobaltLogsIfNegativeFirstTimestamp) {
   // Prime the clock so log collection won't be completed due to message timestamps.
   RunLoopFor(kLogTimestamp + zx::sec(1));
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   // Giving some time to actually collect some log data, so that system_log is not empty
   RunLoopUntilIdle();
@@ -345,7 +345,7 @@ TEST_F(SystemLogTest, NoCobaltLogsIfNegativeFirstTimestamp) {
   RunLoopUntilIdle();
 
   // The timestamp formatter expects unsigned integers so -1 becomes a large positive number.
-  EXPECT_THAT(log, AttachmentValueIs(
+  EXPECT_THAT(log, AttachmentDataIs(
                        R"([1266874888.709][00000][00000][] INFO: Message 1
 [00001.000][00000][00000][] INFO: Message 2
 [00002.000][00000][00000][] INFO: Message 3
@@ -365,9 +365,9 @@ TEST_F(SystemLogTest, NoCobaltLogsIfUnderCapacity) {
   // Prime the clock so log collection won't be completed due to message timestamps.
   RunLoopFor(kLogTimestamp + zx::sec(1));
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   // Giving some time to actually collect some log data, so that system_log is not empty
   RunLoopUntilIdle();
@@ -376,7 +376,7 @@ TEST_F(SystemLogTest, NoCobaltLogsIfUnderCapacity) {
   GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
 
   RunLoopUntilIdle();
-  EXPECT_THAT(log, AttachmentValueIs(
+  EXPECT_THAT(log, AttachmentDataIs(
                        R"([00000.000][00200][00300][tag_1] INFO: Message 1
 [00001.000][00200][00300][tag_2] INFO: Message 2
 [00002.000][00200][00300][tag_3] INFO: Message 3
@@ -396,9 +396,9 @@ TEST_F(SystemLogTest, BufferSortedBeforeLoggingToCobalt) {
   // Prime the clock so log collection won't be completed due to message timestamps.
   RunLoopFor(kLogTimestamp + zx::sec(1));
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   // Giving some time to actually collect some log data, so that system_log is not empty
   RunLoopUntilIdle();
@@ -407,7 +407,7 @@ TEST_F(SystemLogTest, BufferSortedBeforeLoggingToCobalt) {
   GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
 
   RunLoopUntilIdle();
-  EXPECT_THAT(log, AttachmentValueIs(
+  EXPECT_THAT(log, AttachmentDataIs(
                        R"([00001.000][00200][00300][tag_1] INFO: Message 1
 [00061.000][00200][00300][tag_2] INFO: Message 2
 [00121.000][00200][00300][tag_3] INFO: Message 3
@@ -432,9 +432,9 @@ TEST_F(SystemLogTest, CobaltLogsIfAtCapacity) {
   // Prime the clock so log collection won't be completed due to message timestamps.
   RunLoopFor(kLogTimestamp + zx::sec(1));
 
-  AttachmentValue log(Error::kNotSet);
+  AttachmentData log(Error::kNotSet);
   GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
-      [&log](AttachmentValue& result) { log = std::move(result); }));
+      [&log](AttachmentData& result) { log = std::move(result); }));
 
   // Giving some time to actually collect some log data, so that system_log is not empty
   RunLoopUntilIdle();
@@ -443,7 +443,7 @@ TEST_F(SystemLogTest, CobaltLogsIfAtCapacity) {
   GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
 
   RunLoopUntilIdle();
-  EXPECT_THAT(log, AttachmentValueIs(
+  EXPECT_THAT(log, AttachmentDataIs(
                        R"([00001.000][00200][00300][tag_1] INFO: Message 1
 [00061.000][00200][00300][tag_2] INFO: Message 2
 [00121.000][00200][00300][tag_3] INFO: Message 3
@@ -463,8 +463,8 @@ TEST_F(SystemLogTest, GetCalledWithSameTicket) {
   // Expect a crash because a ticket cannot be reused.
   ASSERT_DEATH(
       {
-        const ::fpromise::promise<AttachmentValue> log1 = CollectSystemLog(kTicket);
-        const ::fpromise::promise<AttachmentValue> log2 = CollectSystemLog(kTicket);
+        const ::fpromise::promise<AttachmentData> log1 = CollectSystemLog(kTicket);
+        const ::fpromise::promise<AttachmentData> log2 = CollectSystemLog(kTicket);
       },
       "Ticket used twice: ");
 }

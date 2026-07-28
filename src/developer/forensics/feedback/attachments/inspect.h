@@ -32,7 +32,7 @@ class Inspect : public AttachmentProvider {
 
   // Returns a promise to the inspect data and allows collection to be terminated early with
   // |ticket|.
-  ::fpromise::promise<AttachmentValue> Get(uint64_t ticket) override;
+  ::fpromise::promise<AttachmentData> Get(uint64_t ticket) override;
 
   // Completes the inspect data collection promise associated with |ticket| early, if it hasn't
   // already completed.

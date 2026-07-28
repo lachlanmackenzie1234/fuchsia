@@ -59,11 +59,11 @@ class InspectTest : public UnitTestFixture {
         std::make_unique<feedback_data::InspectDataBudget>(false, &inspect_node_manager_, &cobalt_);
   }
 
-  AttachmentValue Run(::fpromise::promise<AttachmentValue> promise,
-                      const std::optional<zx::duration> run_loop_for = std::nullopt) {
-    AttachmentValue attachment(Error::kNotSet);
+  AttachmentData Run(::fpromise::promise<AttachmentData> promise,
+                     const std::optional<zx::duration> run_loop_for = std::nullopt) {
+    AttachmentData attachment(Error::kNotSet);
     executor_.schedule_task(
-        promise.and_then([&attachment](AttachmentValue& result) { attachment = std::move(result); })
+        promise.and_then([&attachment](AttachmentData& result) { attachment = std::move(result); })
             .or_else([]() { FX_LOGS(FATAL) << "Unexpected branch"; }));
 
     if (run_loop_for.has_value()) {
@@ -135,9 +135,9 @@ TEST_F(InspectTest, Get) {
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
-  const AttachmentValue attachment = Run(inspect.Get(1234));
+  const AttachmentData attachment = Run(inspect.Get(1234));
 
-  EXPECT_THAT(attachment, AttachmentValueIs(R"([
+  EXPECT_THAT(attachment, AttachmentDataIs(R"([
 foo1,
 foo2,
 bar1
@@ -152,7 +152,7 @@ TEST_F(InspectTest, GetTerminatesDueToForceCompletion) {
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
-  const AttachmentValue attachment = Run(inspect.Get(kTicket));
+  const AttachmentData attachment = Run(inspect.Get(kTicket));
 
   // Giving some time to actually collect some inspect data
   RunLoopUntilIdle();
@@ -162,11 +162,11 @@ TEST_F(InspectTest, GetTerminatesDueToForceCompletion) {
 
   RunLoopUntilIdle();
 
-  EXPECT_THAT(attachment, AttachmentValueIs(R"([
+  EXPECT_THAT(attachment, AttachmentDataIs(R"([
 foo1,
 foo2
 ])",
-                                            Error::kDefault));
+                                           Error::kDefault));
 }
 
 TEST_F(InspectTest, ForceCompletionCalledAfterTermination) {
@@ -181,11 +181,11 @@ TEST_F(InspectTest, ForceCompletionCalledAfterTermination) {
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
-  const AttachmentValue attachment = Run(inspect.Get(kTicket));
+  const AttachmentData attachment = Run(inspect.Get(kTicket));
 
   inspect.ForceCompletion(kTicket, Error::kDefault);
 
-  EXPECT_THAT(attachment, AttachmentValueIs(R"([
+  EXPECT_THAT(attachment, AttachmentDataIs(R"([
 foo1,
 foo2,
 bar1
@@ -200,8 +200,8 @@ TEST_F(InspectTest, GetCalledWithSameTicket) {
   // Expect a crash because a ticket cannot be reused.
   ASSERT_DEATH(
       {
-        const ::fpromise::promise<AttachmentValue> attachment1 = inspect.Get(kTicket);
-        const ::fpromise::promise<AttachmentValue> attachment2 = inspect.Get(kTicket);
+        const ::fpromise::promise<AttachmentData> attachment1 = inspect.Get(kTicket);
+        const ::fpromise::promise<AttachmentData> attachment2 = inspect.Get(kTicket);
       },
       "Ticket used twice: ");
 }
@@ -212,9 +212,9 @@ TEST_F(InspectTest, GetConnectionError) {
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
-  const AttachmentValue attachment = Run(inspect.Get(kTicket));
+  const AttachmentData attachment = Run(inspect.Get(kTicket));
 
-  EXPECT_THAT(attachment.Error(), AttachmentValueIs(Error::kConnectionError));
+  EXPECT_THAT(attachment, AttachmentDataIs(Error::kConnectionError));
 }
 
 TEST_F(InspectTest, GetIteratorReturnsError) {
@@ -224,9 +224,9 @@ TEST_F(InspectTest, GetIteratorReturnsError) {
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
-  const AttachmentValue attachment = Run(inspect.Get(kTicket));
+  const AttachmentData attachment = Run(inspect.Get(kTicket));
 
-  EXPECT_THAT(attachment.Error(), AttachmentValueIs(Error::kMissingValue));
+  EXPECT_THAT(attachment, AttachmentDataIs(Error::kMissingValue));
 }
 
 TEST_F(InspectTest, Reconnects) {
@@ -273,7 +273,7 @@ TEST_F(InspectTest, RedactsWithJsonReplacers) {
 
   Inspect inspect(dispatcher(), services(), std::make_unique<MonotonicBackoff>(), DataBudget(),
                   GetRedactor());
-  const AttachmentValue attachment = Run(inspect.Get(1234));
+  const AttachmentData attachment = Run(inspect.Get(1234));
   EXPECT_EQ(attachment.Value(), R"([
 ["<REDACTED-IPV4: 1>",
 "<REDACTED-IPV4: 2>",

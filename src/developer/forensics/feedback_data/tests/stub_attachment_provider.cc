@@ -8,12 +8,12 @@
 
 namespace forensics::feedback_data {
 
-using feedback::AttachmentValue;
+using feedback::AttachmentData;
 
 StubAttachmentProvider::StubAttachmentProvider(std::string timeout_value)
     : timeout_value_(std::move(timeout_value)) {}
 
-fpromise::promise<AttachmentValue> StubAttachmentProvider::Get(const uint64_t ticket) {
+fpromise::promise<AttachmentData> StubAttachmentProvider::Get(const uint64_t ticket) {
   FX_CHECK(!completers_.contains(ticket)) << "Ticket used twice: " << ticket;
 
   fpromise::bridge<std::string, Error> bridge;
@@ -40,10 +40,10 @@ fpromise::promise<AttachmentValue> StubAttachmentProvider::Get(const uint64_t ti
           self->completers_.erase(ticket);
         }
 
-        return fpromise::ok(AttachmentValue(success_value));
+        return fpromise::ok(AttachmentData(success_value));
       })
       .or_else([timeout_value = timeout_value_](const Error& error) {
-        return fpromise::ok(AttachmentValue(timeout_value, error));
+        return fpromise::ok(AttachmentData(timeout_value, error));
       });
 }
 

@@ -21,7 +21,7 @@ class FileBackedProvider : public AttachmentProvider {
   explicit FileBackedProvider(std::string path, bool warn_if_unavailable = true);
 
   // Returns an immediately ready promise containing the file's content.
-  ::fpromise::promise<AttachmentValue> Get(uint64_t ticket) override;
+  ::fpromise::promise<AttachmentData> Get(uint64_t ticket) override;
 
   // No-op because collection happens synchronously
   void ForceCompletion(uint64_t ticket, Error error) override;

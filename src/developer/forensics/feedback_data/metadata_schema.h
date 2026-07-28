@@ -42,6 +42,9 @@ constexpr const char* kMetadataSchema = R"({
                         "units" ]
                   }
                 },
+                "collection_duration_monotonic_nanos": {
+                  "type": "integer"
+                },
                 "state":{
                    "type":"string",
                    "enum":[
@@ -55,7 +58,8 @@ constexpr const char* kMetadataSchema = R"({
                 }
              },
              "required":[
-                "state"
+                "state",
+                "collection_duration_monotonic_nanos"
              ]
           }
        },

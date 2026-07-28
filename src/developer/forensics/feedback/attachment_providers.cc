@@ -25,7 +25,7 @@ AttachmentProviders::AttachmentProviders(async_dispatcher_t* dispatcher,
                                 /*warn_if_unavailable=*/false),
       kernel_boot_options_(kKernelBootOptionsPath),
       attachment_manager_(
-          dispatcher, allowlist,
+          dispatcher, clock, allowlist,
           {
               {feedback_data::kAttachmentLogKernel, &kernel_log_},
               {feedback_data::kAttachmentLogKernelPrevious, &previous_boot_kernel_log_},

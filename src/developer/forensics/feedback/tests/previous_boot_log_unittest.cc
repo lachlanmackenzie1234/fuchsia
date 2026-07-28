@@ -59,7 +59,7 @@ TEST_F(PreviousBootLogTest, PreviousBootLogDeletedAfterDeviceUptimeThresholdReac
   RunLoopFor(zx::sec(5));
 
   GetExecutor().schedule_task(previous_boot_log_.Get(kTicket)
-                                  .and_then([](const AttachmentValue& result) {
+                                  .and_then([](const AttachmentData& result) {
                                     ASSERT_TRUE(result.HasError());
                                     EXPECT_EQ(result.Error(), Error::kCustom);
                                   })
@@ -75,10 +75,10 @@ TEST_F(PreviousBootLogTest, ForceCompletionCalledWhenPromiseIsIncomplete) {
 
   PreviousBootLog previous_boot_log_(dispatcher(), Clock(), zx::sec(5), path);
 
-  AttachmentValue attachment(Error::kNotSet);
+  AttachmentData attachment(Error::kNotSet);
   GetExecutor().schedule_task(
       previous_boot_log_.Get(kTicket)
-          .and_then([&attachment](AttachmentValue& res) { attachment = std::move(res); })
+          .and_then([&attachment](AttachmentData& res) { attachment = std::move(res); })
           .or_else([] { FX_LOGS(FATAL) << "Logic error"; }));
 
   previous_boot_log_.ForceCompletion(kTicket, Error::kDefault);
@@ -97,7 +97,7 @@ TEST_F(PreviousBootLogTest, NoPreviousBootLog) {
   PreviousBootLog previous_boot_log_(dispatcher(), Clock(),
                                      /*delete_previous_boot_log_at=*/std::nullopt, path);
   GetExecutor().schedule_task(previous_boot_log_.Get(kTicket)
-                                  .and_then([](const AttachmentValue& result) {
+                                  .and_then([](const AttachmentData& result) {
                                     ASSERT_TRUE(result.HasError());
                                     EXPECT_EQ(result.Error(), Error::kMissingValue);
                                   })
@@ -118,9 +118,9 @@ TEST_F(PreviousBootLogTest, LazilyDeleted) {
   PreviousBootLog previous_boot_log_(dispatcher(), &clock, zx::sec(5), path);
   EXPECT_TRUE(files::IsFile(path));
 
-  std::optional<AttachmentValue> result = std::nullopt;
+  std::optional<AttachmentData> result = std::nullopt;
   GetExecutor().schedule_task(previous_boot_log_.Get(kTicket)
-                                  .and_then([&result](AttachmentValue& promise_result) mutable {
+                                  .and_then([&result](AttachmentData& promise_result) mutable {
                                     result = std::move(promise_result);
                                   })
                                   .or_else([] { FX_LOGS(FATAL) << "Logic error"; }));
@@ -133,7 +133,7 @@ TEST_F(PreviousBootLogTest, LazilyDeleted) {
   clock.SetBoot(clock.BootNow() + zx::sec(5));
   result = std::nullopt;
   GetExecutor().schedule_task(previous_boot_log_.Get(kTicket)
-                                  .and_then([&result](AttachmentValue& promise_result) {
+                                  .and_then([&result](AttachmentData& promise_result) {
                                     result = std::move(promise_result);
                                   })
                                   .or_else([] { FX_LOGS(FATAL) << "Logic error"; }));

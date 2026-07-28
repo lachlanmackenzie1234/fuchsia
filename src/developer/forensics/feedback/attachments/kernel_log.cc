@@ -49,11 +49,11 @@ KernelLog::KernelLog(async_dispatcher_t* dispatcher,
   services_->Connect(read_only_log_.NewRequest(dispatcher_));
 }
 
-::fpromise::promise<AttachmentValue> KernelLog::Get(const uint64_t ticket) {
+::fpromise::promise<AttachmentData> KernelLog::Get(const uint64_t ticket) {
   FX_CHECK(!completers_.contains(ticket)) << "Ticket used twice: " << ticket;
 
   if (!read_only_log_.is_bound()) {
-    return ::fpromise::make_ok_promise(AttachmentValue(Error::kConnectionError));
+    return ::fpromise::make_ok_promise(AttachmentData(Error::kConnectionError));
   }
 
   ::fpromise::bridge<zx::debuglog, Error> bridge;
@@ -111,12 +111,12 @@ KernelLog::KernelLog(async_dispatcher_t* dispatcher,
 
         if (messages.empty()) {
           FX_LOGS(ERROR) << "Empty kernel log";
-          return ::fpromise::ok(AttachmentValue(Error::kMissingValue));
+          return ::fpromise::ok(AttachmentData(Error::kMissingValue));
         }
 
-        return ::fpromise::ok(AttachmentValue(fxl::JoinStrings(messages)));
+        return ::fpromise::ok(AttachmentData(fxl::JoinStrings(messages)));
       })
-      .or_else([](const Error& error) { return ::fpromise::ok(AttachmentValue(error)); });
+      .or_else([](const Error& error) { return ::fpromise::ok(AttachmentData(error)); });
 }
 
 void KernelLog::ForceCompletion(const uint64_t ticket, const Error error) {

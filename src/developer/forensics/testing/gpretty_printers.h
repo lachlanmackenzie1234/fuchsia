@@ -158,18 +158,37 @@ inline std::string Format(const std::string_view input) {
 
 }  // namespace pretty
 
+inline void PrintTo(const AttachmentData& value, std::ostream* os) {
+  *os << fostr::Indent;
+  *os << "{ ";
+  switch (value.State()) {
+    case AttachmentState::kComplete:
+      *os << "VALUE : " << pretty::Format(value.Value());
+      break;
+    case AttachmentState::kPartial:
+      *os << "VALUE : " << pretty::Format(value.Value());
+      *os << ", ERROR : " << ToString(value.Error());
+      break;
+    case AttachmentState::kMissing:
+      *os << "ERROR : " << ToString(value.Error());
+      break;
+  }
+  *os << " }";
+  *os << fostr::Outdent;
+}
+
 inline void PrintTo(const AttachmentValue& value, std::ostream* os) {
   *os << fostr::Indent;
   *os << "{ ";
   switch (value.State()) {
-    case AttachmentValue::State::kComplete:
+    case AttachmentState::kComplete:
       *os << "VALUE : " << pretty::Format(value.Value());
       break;
-    case AttachmentValue::State::kPartial:
+    case AttachmentState::kPartial:
       *os << "VALUE : " << pretty::Format(value.Value());
       *os << ", ERROR : " << ToString(value.Error());
       break;
-    case AttachmentValue::State::kMissing:
+    case AttachmentState::kMissing:
       *os << "ERROR : " << ToString(value.Error());
       break;
   }

@@ -138,11 +138,11 @@ void InspectCollector::Run() {
 
 }  // namespace
 
-::fpromise::promise<AttachmentValue> Inspect::Get(const uint64_t ticket) {
+::fpromise::promise<AttachmentData> Inspect::Get(const uint64_t ticket) {
   FX_CHECK(!completers_.contains(ticket)) << "Ticket used twice: " << ticket;
 
   if (!archive_accessor_.is_bound()) {
-    return ::fpromise::make_ok_promise(AttachmentValue(Error::kConnectionError));
+    return ::fpromise::make_ok_promise(AttachmentData(Error::kConnectionError));
   }
 
   ::fpromise::bridge<void, Error> bridge;
@@ -185,11 +185,12 @@ void InspectCollector::Run() {
   // Keep |collector| alive until Inspect collection has completed (for any reason).
   return consume.then([self, ticket, collector = std::move(collector)](
                           const ::fpromise::result<void, Error>& result) mutable
-                          -> ::fpromise::result<AttachmentValue> {
+                          -> ::fpromise::result<AttachmentData> {
     const std::vector<std::string>& inspect = collector->Inspect();
     if (inspect.empty()) {
       FX_LOGS(WARNING) << "Inspect data was empty";
-      return ::fpromise::ok(result.is_ok() ? Error::kMissingValue : result.error());
+      const Error error = result.is_ok() ? Error::kMissingValue : result.error();
+      return ::fpromise::ok(AttachmentData(error));
     }
 
     if (self) {
@@ -201,9 +202,9 @@ void InspectCollector::Run() {
     joined_data += "\n]";
     joined_data = self->redactor_->RedactJson(joined_data);
 
-    AttachmentValue value = (result.is_ok())
-                                ? AttachmentValue(std::move(joined_data))
-                                : AttachmentValue(std::move(joined_data), result.error());
+    AttachmentData value = (result.is_ok())
+                               ? AttachmentData(std::move(joined_data))
+                               : AttachmentData(std::move(joined_data), result.error());
 
     return ::fpromise::ok(std::move(value));
   });

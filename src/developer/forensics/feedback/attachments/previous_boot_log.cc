@@ -44,7 +44,7 @@ PreviousBootLog::PreviousBootLog(async_dispatcher_t* dispatcher, timekeeper::Clo
       zx::time_monotonic(0) + *delete_previous_boot_log_at - clock_->MonotonicNow());
 }
 
-::fpromise::promise<AttachmentValue> PreviousBootLog::Get(const uint64_t ticket) {
+::fpromise::promise<AttachmentData> PreviousBootLog::Get(const uint64_t ticket) {
   // Lazily check if the previous boot log should be deleted because we have no easy way to schedule
   // async work based on the boot clock.
   if (!is_file_deleted_ && delete_previous_boot_log_at_.has_value() &&
@@ -55,7 +55,7 @@ PreviousBootLog::PreviousBootLog(async_dispatcher_t* dispatcher, timekeeper::Clo
   }
 
   if (is_file_deleted_) {
-    return fpromise::make_ok_promise(AttachmentValue(Error::kCustom));
+    return fpromise::make_ok_promise(AttachmentData(Error::kCustom));
   }
 
   return FileBackedProvider::Get(ticket);

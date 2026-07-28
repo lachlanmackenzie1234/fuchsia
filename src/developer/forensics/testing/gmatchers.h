@@ -22,18 +22,18 @@ namespace internal {
 
 // Allows expectations to be set on AttachmentValue. Needed because values can't easily be compared
 // for equality due to the move-only nature of AttachmentValue.
-class AttachmentValueMatcher
-    : public ::testing::MatcherInterface<const feedback::AttachmentValue&> {
+template <typename T>
+class AttachmentDataOrValueMatcher : public ::testing::MatcherInterface<const T&> {
  public:
   using is_gtest_matcher = void;
 
-  AttachmentValueMatcher(std::string value) : value_(std::move(value)), error_(std::nullopt) {}
-  AttachmentValueMatcher(const Error error) : value_(std::nullopt), error_(error) {}
-  AttachmentValueMatcher(std::string value, const Error error)
+  AttachmentDataOrValueMatcher(std::string value)
+      : value_(std::move(value)), error_(std::nullopt) {}
+  AttachmentDataOrValueMatcher(const Error error) : value_(std::nullopt), error_(error) {}
+  AttachmentDataOrValueMatcher(std::string value, const Error error)
       : value_(std::move(value)), error_(error) {}
 
-  bool MatchAndExplain(const feedback::AttachmentValue& val,
-                       ::testing::MatchResultListener* listener) const override {
+  bool MatchAndExplain(const T& val, ::testing::MatchResultListener* listener) const override {
     const bool value_matches =
         val.HasValue() == value_.has_value() && (!val.HasValue() || val.Value() == *value_);
     const bool error_matches =
@@ -169,16 +169,36 @@ MATCHER(HasValue, negation ? "is error" : "has value") {
 }
 
 inline testing::Matcher<feedback::AttachmentValue> AttachmentValueIs(std::string data) {
-  return internal::AttachmentValueMatcher(std::move(data));
+  return ::testing::Matcher<feedback::AttachmentValue>(
+      new internal::AttachmentDataOrValueMatcher<feedback::AttachmentValue>(std::move(data)));
 }
 
 inline testing::Matcher<feedback::AttachmentValue> AttachmentValueIs(const Error error) {
-  return internal::AttachmentValueMatcher(error);
+  return ::testing::Matcher<feedback::AttachmentValue>(
+      new internal::AttachmentDataOrValueMatcher<feedback::AttachmentValue>(error));
 }
 
 inline testing::Matcher<feedback::AttachmentValue> AttachmentValueIs(std::string data,
                                                                      const Error error) {
-  return internal::AttachmentValueMatcher(std::move(data), error);
+  return ::testing::Matcher<feedback::AttachmentValue>(
+      new internal::AttachmentDataOrValueMatcher<feedback::AttachmentValue>(std::move(data),
+                                                                            error));
+}
+
+inline testing::Matcher<feedback::AttachmentData> AttachmentDataIs(std::string data) {
+  return ::testing::Matcher<feedback::AttachmentData>(
+      new internal::AttachmentDataOrValueMatcher<feedback::AttachmentData>(std::move(data)));
+}
+
+inline testing::Matcher<feedback::AttachmentData> AttachmentDataIs(const Error error) {
+  return ::testing::Matcher<feedback::AttachmentData>(
+      new internal::AttachmentDataOrValueMatcher<feedback::AttachmentData>(error));
+}
+
+inline testing::Matcher<feedback::AttachmentData> AttachmentDataIs(std::string data,
+                                                                   const Error error) {
+  return ::testing::Matcher<feedback::AttachmentData>(
+      new internal::AttachmentDataOrValueMatcher<feedback::AttachmentData>(std::move(data), error));
 }
 
 }  // namespace forensics

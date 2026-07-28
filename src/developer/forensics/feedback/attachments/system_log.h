@@ -104,7 +104,7 @@ class SystemLog : public AttachmentProvider {
             cobalt::Logger* cobalt, LogBuffer* buffer);
 
   // Returns a promise to the system log and allows collection to be terminated early with |ticket|.
-  ::fpromise::promise<AttachmentValue> Get(uint64_t ticket) override;
+  ::fpromise::promise<AttachmentData> Get(uint64_t ticket) override;
 
   // Completes the system log collection promise associated with |ticket| early, if it hasn't
   // already completed.

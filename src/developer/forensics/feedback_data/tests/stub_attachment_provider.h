@@ -25,7 +25,7 @@ class StubAttachmentProvider : public feedback::AttachmentProvider {
   explicit StubAttachmentProvider(std::string timeout_value);
 
   // Returns a promise to the data and allows collection to be terminated early with |ticket|.
-  fpromise::promise<feedback::AttachmentValue> Get(uint64_t ticket) override;
+  fpromise::promise<feedback::AttachmentData> Get(uint64_t ticket) override;
 
   // Completes *all* data collection promises successfully using a value of |success_value|, if it
   // hasn't already completed.

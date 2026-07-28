@@ -109,6 +109,17 @@
               utc_boot_difference.get());                                 \
   }
 
+#define COLLECTION_DURATION_IS(json, name, collection_duration)                \
+  {                                                                            \
+    ASSERT_TRUE(json.HasMember("files"));                                      \
+    auto& files = json["files"];                                               \
+    ASSERT_TRUE(files.HasMember(name));                                        \
+    ASSERT_TRUE(files[name].HasMember("collection_duration_monotonic_nanos")); \
+    ASSERT_TRUE(files[name]["collection_duration_monotonic_nanos"].IsInt64()); \
+    EXPECT_EQ(files[name]["collection_duration_monotonic_nanos"].GetInt64(),   \
+              collection_duration.get());                                      \
+  }
+
 namespace forensics {
 namespace feedback_data {
 namespace {
@@ -286,13 +297,16 @@ TEST_F(MetadataTest, Check_FormatAttachmentsProperly) {
   };
 
   feedback::Attachments attachments;
-  attachments.insert({"complete attachment 1", feedback::AttachmentValue("")});
-  attachments.insert({"complete attachment 2", feedback::AttachmentValue("")});
-  attachments.insert({"partial attachment 1", feedback::AttachmentValue("", Error::kTimeout)});
+  attachments.insert({"complete attachment 1", feedback::AttachmentValue("", zx::msec(10))});
+  attachments.insert({"complete attachment 2", feedback::AttachmentValue("", zx::msec(20))});
   attachments.insert(
-      {"partial attachment 2", feedback::AttachmentValue("", Error::kAsyncTaskPostFailure)});
-  attachments.insert({"missing attachment 1", feedback::AttachmentValue(Error::kBadValue)});
-  attachments.insert({"missing attachment 2", feedback::AttachmentValue(Error::kFileReadFailure)});
+      {"partial attachment 1", feedback::AttachmentValue("", Error::kTimeout, zx::msec(30))});
+  attachments.insert({"partial attachment 2",
+                      feedback::AttachmentValue("", Error::kAsyncTaskPostFailure, zx::msec(40))});
+  attachments.insert(
+      {"missing attachment 1", feedback::AttachmentValue(Error::kBadValue, zx::msec(50))});
+  attachments.insert(
+      {"missing attachment 2", feedback::AttachmentValue(Error::kFileReadFailure, zx::msec(60))});
 
   SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
 
@@ -306,6 +320,13 @@ TEST_F(MetadataTest, Check_FormatAttachmentsProperly) {
 
   HAS_MISSING_ATTACHMENT(metadata_json, "missing attachment 1", "bad data returned");
   HAS_MISSING_ATTACHMENT(metadata_json, "missing attachment 2", "file read failure");
+
+  COLLECTION_DURATION_IS(metadata_json, "complete attachment 1", zx::msec(10));
+  COLLECTION_DURATION_IS(metadata_json, "complete attachment 2", zx::msec(20));
+  COLLECTION_DURATION_IS(metadata_json, "partial attachment 1", zx::msec(30));
+  COLLECTION_DURATION_IS(metadata_json, "partial attachment 2", zx::msec(40));
+  COLLECTION_DURATION_IS(metadata_json, "missing attachment 1", zx::msec(50));
+  COLLECTION_DURATION_IS(metadata_json, "missing attachment 2", zx::msec(60));
 }
 
 TEST_F(MetadataTest, Check_NonPlatformAnnotationsComplete) {
@@ -366,13 +387,17 @@ TEST_F(MetadataTest, Check_SmokeTest) {
       "missing attachment 3",
   };
   feedback::Attachments attachments;
-  attachments.insert({"complete attachment 1", feedback::AttachmentValue("")});
-  attachments.insert({"complete attachment 2", feedback::AttachmentValue("")});
-  attachments.insert({"partial attachment 1", feedback::AttachmentValue("", Error::kTimeout)});
+  attachments.insert({"complete attachment 1", feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert({"complete attachment 2", feedback::AttachmentValue("", zx::duration(0))});
   attachments.insert(
-      {"partial attachment 2", feedback::AttachmentValue("", Error::kAsyncTaskPostFailure)});
-  attachments.insert({"missing attachment 1", feedback::AttachmentValue(Error::kBadValue)});
-  attachments.insert({"missing attachment 2", feedback::AttachmentValue(Error::kFileReadFailure)});
+      {"partial attachment 1", feedback::AttachmentValue("", Error::kTimeout, zx::duration(0))});
+  attachments.insert(
+      {"partial attachment 2",
+       feedback::AttachmentValue("", Error::kAsyncTaskPostFailure, zx::duration(0))});
+  attachments.insert(
+      {"missing attachment 1", feedback::AttachmentValue(Error::kBadValue, zx::duration(0))});
+  attachments.insert({"missing attachment 2",
+                      feedback::AttachmentValue(Error::kFileReadFailure, zx::duration(0))});
 
   SetUpMetadata(annotation_allowlist, attachment_allowlist);
 
@@ -448,11 +473,13 @@ TEST_F(MetadataTest, Check_UtcBootDifference) {
   };
 
   feedback::Attachments attachments;
-  attachments.insert({kAttachmentInspect, feedback::AttachmentValue("")});
-  attachments.insert({kAttachmentLogKernel, feedback::AttachmentValue("")});
-  attachments.insert({kAttachmentLogKernelPrevious, feedback::AttachmentValue("")});
-  attachments.insert({kAttachmentLogSystem, feedback::AttachmentValue("")});
-  attachments.insert({kAttachmentLogSystemPrevious, feedback::AttachmentValue("")});
+  attachments.insert({kAttachmentInspect, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert({kAttachmentLogKernel, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert(
+      {kAttachmentLogKernelPrevious, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert({kAttachmentLogSystem, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert(
+      {kAttachmentLogSystemPrevious, feedback::AttachmentValue("", zx::duration(0))});
 
   SetUpMetadata(annotation_allowlist, attachment_allowlist);
   RunLoopUntilIdle();
@@ -498,7 +525,7 @@ TEST_F(MetadataTest, Check_NoUtcMontonicDifferenceAvailable) {
   };
 
   feedback::Attachments attachments;
-  attachments.insert({"attachment 1", feedback::AttachmentValue("")});
+  attachments.insert({"attachment 1", feedback::AttachmentValue("", zx::duration(0))});
 
   SetUpMetadata(annotation_allowlist, attachment_allowlist);
 
@@ -530,10 +557,11 @@ TEST_F(MetadataTest, Check_NoUtcBootDifferenceMissingFile) {
   };
 
   feedback::Attachments attachments;
-  attachments.insert({kAttachmentInspect, feedback::AttachmentValue("")});
-  attachments.insert({kAttachmentLogKernel, feedback::AttachmentValue("")});
-  attachments.insert({kAttachmentLogSystem, feedback::AttachmentValue("")});
-  attachments.insert({kAttachmentLogSystemPrevious, feedback::AttachmentValue(Error::kCustom)});
+  attachments.insert({kAttachmentInspect, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert({kAttachmentLogKernel, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert({kAttachmentLogSystem, feedback::AttachmentValue("", zx::duration(0))});
+  attachments.insert(
+      {kAttachmentLogSystemPrevious, feedback::AttachmentValue(Error::kCustom, zx::duration(0))});
 
   SetUpMetadata(annotation_allowlist, attachment_allowlist);
   RunLoopUntilIdle();

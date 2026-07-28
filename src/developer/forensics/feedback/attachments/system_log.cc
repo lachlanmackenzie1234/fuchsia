@@ -257,7 +257,7 @@ auto CompletesAndConsume() {
 
 }  // namespace
 
-::fpromise::promise<AttachmentValue> SystemLog::Get(const uint64_t ticket) {
+::fpromise::promise<AttachmentData> SystemLog::Get(const uint64_t ticket) {
   FX_CHECK(!completers_.contains(ticket)) << "Ticket used twice: " << ticket;
 
   if (!is_active_) {
@@ -277,9 +277,9 @@ auto CompletesAndConsume() {
   buffer_->ExecuteAfter(clock_->BootNow(), std::move(complete_ok));
 
   return consume.then([self, ticket](const ::fpromise::result<void, Error>& result)
-                          -> ::fpromise::result<AttachmentValue> {
+                          -> ::fpromise::result<AttachmentData> {
     if (!self) {
-      return ::fpromise::ok(AttachmentValue(Error::kLogicError));
+      return ::fpromise::ok(AttachmentData(Error::kLogicError));
     }
 
     if (result.is_error() && result.error() == Error::kLogicError) {
@@ -312,11 +312,11 @@ auto CompletesAndConsume() {
 
     if (system_log.empty()) {
       const Error error = (result.is_ok()) ? Error::kMissingValue : result.error();
-      return ::fpromise::ok(AttachmentValue(error));
+      return ::fpromise::ok(AttachmentData(error));
     }
 
-    return ::fpromise::ok(result.is_ok() ? AttachmentValue(std::move(system_log))
-                                         : AttachmentValue(std::move(system_log), result.error()));
+    return ::fpromise::ok(result.is_ok() ? AttachmentData(std::move(system_log))
+                                         : AttachmentData(std::move(system_log), result.error()));
   });
 }
 

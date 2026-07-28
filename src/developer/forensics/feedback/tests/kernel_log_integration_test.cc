@@ -39,12 +39,12 @@ class CollectKernelLogTest : public gtest::RealLoopFixture {
 
   void SetRedactor(std::unique_ptr<RedactorBase> redactor) { redactor_ = std::move(redactor); }
 
-  AttachmentValue GetKernelLog() {
+  AttachmentData GetKernelLog() {
     const uint64_t kTicket = 1234;
     KernelLog kernel_log(dispatcher(), environment_services_, nullptr, redactor_.get());
-    ::fpromise::result<AttachmentValue> attachment(::fpromise::error());
+    ::fpromise::result<AttachmentData> attachment(::fpromise::error());
     executor_.schedule_task(kernel_log.Get(kTicket)
-                                .and_then([&attachment](AttachmentValue& result) {
+                                .and_then([&attachment](AttachmentData& result) {
                                   attachment = ::fpromise::ok(std::move(result));
                                 })
                                 .or_else([] { FX_LOGS(FATAL) << "Unreachable branch"; }));
@@ -78,7 +78,7 @@ TEST_F(CollectKernelLogTest, Succeed_BasicCase) {
       fxl::StringPrintf("<<GetLogTest_Succeed_BasicCase: %zu>>", zx_clock_get_monotonic()));
   SendToKernelLog(output);
 
-  const AttachmentValue log = GetKernelLog();
+  const AttachmentData log = GetKernelLog();
 
   ASSERT_TRUE(log.HasValue());
   EXPECT_THAT(log.Value(), testing::HasSubstr(output));
@@ -91,18 +91,18 @@ TEST_F(CollectKernelLogTest, GetTerminatesDueToForceCompletion) {
 
   SendToKernelLog(output);
 
-  AttachmentValue log(Error::kNotSet);
-  ::fpromise::result<AttachmentValue> attachment(::fpromise::error());
+  AttachmentData log(Error::kNotSet);
+  ::fpromise::result<AttachmentData> attachment(::fpromise::error());
 
   KernelLog kernel_log(dispatcher(), environment_services_, nullptr, redactor_.get());
   GetExecutor().schedule_task(kernel_log.Get(kTicket).and_then(
-      [&attachment](AttachmentValue& result) { attachment = ::fpromise::ok(std::move(result)); }));
+      [&attachment](AttachmentData& result) { attachment = ::fpromise::ok(std::move(result)); }));
   kernel_log.ForceCompletion(kTicket, Error::kDefault);
 
   RunLoopUntil([&attachment] { return attachment.is_ok(); });
   log = attachment.take_value();
 
-  EXPECT_THAT(log, AttachmentValueIs(Error::kDefault));
+  EXPECT_THAT(log, AttachmentDataIs(Error::kDefault));
 }
 
 TEST_F(CollectKernelLogTest, ForceCompletionCalledAfterTermination) {
@@ -112,12 +112,12 @@ TEST_F(CollectKernelLogTest, ForceCompletionCalledAfterTermination) {
 
   SendToKernelLog(output);
 
-  AttachmentValue log(Error::kNotSet);
-  ::fpromise::result<AttachmentValue> attachment(::fpromise::error());
+  AttachmentData log(Error::kNotSet);
+  ::fpromise::result<AttachmentData> attachment(::fpromise::error());
 
   KernelLog kernel_log(dispatcher(), environment_services_, nullptr, redactor_.get());
   GetExecutor().schedule_task(kernel_log.Get(kTicket).and_then(
-      [&attachment](AttachmentValue& result) { attachment = ::fpromise::ok(std::move(result)); }));
+      [&attachment](AttachmentData& result) { attachment = ::fpromise::ok(std::move(result)); }));
 
   RunLoopUntil([&attachment] { return attachment.is_ok(); });
   log = attachment.take_value();
@@ -138,8 +138,8 @@ TEST_F(CollectKernelLogTest, GetCalledWithSameTicket) {
   // Expect a crash because a ticket cannot be reused.
   ASSERT_DEATH(
       {
-        const ::fpromise::promise<AttachmentValue> log1 = kernel_log.Get(kTicket);
-        const ::fpromise::promise<AttachmentValue> log2 = kernel_log.Get(kTicket);
+        const ::fpromise::promise<AttachmentData> log1 = kernel_log.Get(kTicket);
+        const ::fpromise::promise<AttachmentData> log2 = kernel_log.Get(kTicket);
       },
       "Ticket used twice: ");
 }
@@ -151,12 +151,12 @@ TEST_F(CollectKernelLogTest, Succeed_TwoRetrievals) {
       fxl::StringPrintf("<<GetLogTest_Succeed_TwoRetrievals: %zu>>", zx_clock_get_monotonic()));
   SendToKernelLog(output);
 
-  const AttachmentValue log1 = GetKernelLog();
+  const AttachmentData log1 = GetKernelLog();
 
   ASSERT_TRUE(log1.HasValue());
   EXPECT_THAT(log1.Value(), testing::HasSubstr(output));
 
-  const AttachmentValue log2 = GetKernelLog();
+  const AttachmentData log2 = GetKernelLog();
 
   ASSERT_TRUE(log2.HasValue());
   EXPECT_THAT(log2.Value(), testing::HasSubstr(output));
@@ -183,7 +183,7 @@ TEST_F(CollectKernelLogTest, Succeed_Redacts) {
       fxl::StringPrintf("<<GetLogTest_Succeed_BasicCase: %zu>>", zx_clock_get_monotonic()));
   SendToKernelLog(output);
 
-  const AttachmentValue log = GetKernelLog();
+  const AttachmentData log = GetKernelLog();
 
   ASSERT_TRUE(log.HasValue());
   EXPECT_THAT(log.Value(), testing::HasSubstr("<REDACTED>"));

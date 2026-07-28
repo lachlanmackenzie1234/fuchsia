@@ -49,7 +49,7 @@ class AttachmentMetricsTest : public UnitTestFixture,
 Attachments ToAttachments(const std::map<std::string, Error>& errors) {
   Attachments attachments;
   for (const auto& [k, v] : errors) {
-    attachments.insert({k, AttachmentValue(v)});
+    attachments.insert({k, AttachmentValue(v, zx::duration(0))});
   }
   return attachments;
 }

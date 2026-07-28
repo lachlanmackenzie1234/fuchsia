@@ -29,7 +29,7 @@ class PreviousBootLog : public FileBackedProvider {
                   std::optional<zx::duration> delete_previous_boot_log_at, std::string path);
 
   // Returns a promise, that is immediately available, to the previous boot log.
-  ::fpromise::promise<AttachmentValue> Get(uint64_t ticket) override;
+  ::fpromise::promise<AttachmentData> Get(uint64_t ticket) override;
 
  private:
   async_dispatcher_t* dispatcher_;

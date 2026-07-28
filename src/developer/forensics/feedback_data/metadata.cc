@@ -38,13 +38,13 @@ std::set<std::string> kPreviousBootUtcBootDifferenceAllowlist = {
     kAttachmentLogSystemPrevious,
 };
 
-std::string ToString(const enum feedback::AttachmentValue::State state) {
+std::string ToString(const enum feedback::AttachmentState state) {
   switch (state) {
-    case feedback::AttachmentValue::State::kComplete:
+    case feedback::AttachmentState::kComplete:
       return "complete";
-    case feedback::AttachmentValue::State::kPartial:
+    case feedback::AttachmentState::kPartial:
       return "partial";
-    case feedback::AttachmentValue::State::kMissing:
+    case feedback::AttachmentState::kMissing:
       return "missing";
   }
 }
@@ -72,24 +72,26 @@ feedback::Attachments AllAttachments(const feedback::AttachmentKeys& allowlist,
   feedback::Attachments all_attachments;
 
   // Because attachments can contain large blobs of text and we only care about the state of the
-  // attachment and its associated error, we don't copy the value of the attachment.
+  // attachment, its associated error, and collection duration, we don't copy the value of the
+  // attachment.
   for (const auto& [k, v] : attachments) {
     switch (v.State()) {
-      case feedback::AttachmentValue::State::kComplete:
-        all_attachments.insert({k, feedback::AttachmentValue("")});
+      case feedback::AttachmentState::kComplete:
+        all_attachments.insert({k, feedback::AttachmentValue("", v.CollectionDuration())});
         break;
-      case feedback::AttachmentValue::State::kPartial:
-        all_attachments.insert({k, feedback::AttachmentValue("", v.Error())});
+      case feedback::AttachmentState::kPartial:
+        all_attachments.insert(
+            {k, feedback::AttachmentValue("", v.Error(), v.CollectionDuration())});
         break;
-      case feedback::AttachmentValue::State::kMissing:
-        all_attachments.insert({k, feedback::AttachmentValue(v.Error())});
+      case feedback::AttachmentState::kMissing:
+        all_attachments.insert({k, feedback::AttachmentValue(v.Error(), v.CollectionDuration())});
         break;
     }
   }
 
   for (const feedback::AttachmentKey& key : allowlist) {
     if (!all_attachments.contains(key)) {
-      all_attachments.insert({key, feedback::AttachmentValue(Error::kLogicError)});
+      all_attachments.insert({key, feedback::AttachmentValue(Error::kLogicError, zx::duration(0))});
     }
   }
 
@@ -102,7 +104,7 @@ void AddUtcBootDifference(const std::optional<zx::duration>& utc_boot_difference
   if (!utc_boot_difference.has_value() || !file->IsObject() ||
       file->HasMember("utc_monotonic_difference_nanos") ||
       (file->HasMember("state") && (*file)["state"].IsString() &&
-       (*file)["state"].GetString() == ToString(feedback::AttachmentValue::State::kMissing))) {
+       (*file)["state"].GetString() == ToString(feedback::AttachmentState::kMissing))) {
     return;
   }
 
@@ -145,6 +147,8 @@ void AddAttachments(const feedback::AttachmentKeys& attachment_allowlist,
     if (v.HasError()) {
       file.AddMember("error", MakeValue(ToReason(v.Error())), allocator);
     }
+    file.AddMember("collection_duration_monotonic_nanos",
+                   Value().SetInt64(v.CollectionDuration().get()), allocator);
 
     (*metadata_json)["files"].AddMember(MakeValue(name), file, allocator);
   }

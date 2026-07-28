@@ -29,10 +29,10 @@ void EraseNotAllowlisted(std::map<std::string, T>& c, const std::set<std::string
 
 }  // namespace
 
-AttachmentManager::AttachmentManager(async_dispatcher_t* dispatcher,
+AttachmentManager::AttachmentManager(async_dispatcher_t* dispatcher, timekeeper::Clock* clock,
                                      const std::set<std::string>& allowlist,
                                      std::map<std::string, AttachmentProvider*> providers)
-    : dispatcher_(dispatcher), providers_(std::move(providers)) {
+    : dispatcher_(dispatcher), clock_(clock), providers_(std::move(providers)) {
   // Remove any providers that return attachments not in |allowlist_|.
   EraseNotAllowlisted(providers_, allowlist);
 
@@ -51,7 +51,16 @@ AttachmentManager::AttachmentManager(async_dispatcher_t* dispatcher,
   const uint64_t ticket = ++next_ticket_;
   for (auto& [k, p] : providers_) {
     keys.push_back(k);
-    promises.push_back(p->Get(ticket));
+    const zx::time_monotonic start = clock_->MonotonicNow();
+    promises.push_back(p->Get(ticket).then(
+        [clock = clock_,
+         start](::fpromise::result<AttachmentData>& result) -> ::fpromise::result<AttachmentValue> {
+          const zx::time_monotonic end = clock->MonotonicNow();
+          if (result.is_ok()) {
+            return ::fpromise::ok(AttachmentValue(result.take_value(), end - start));
+          }
+          return ::fpromise::error();
+        }));
   }
 
   // Complete the collection after |timeout| elapses
@@ -80,7 +89,9 @@ AttachmentManager::AttachmentManager(async_dispatcher_t* dispatcher,
       // Consider any attachments without content as missing attachments.
       if (AttachmentValue& attachment = attachments.at(keys[i]);
           attachment.HasValue() && attachment.Value().empty()) {
-        attachment = attachment.HasError() ? attachment.Error() : Error::kMissingValue;
+        attachment = AttachmentValue(
+            AttachmentData(attachment.HasError() ? attachment.Error() : Error::kMissingValue),
+            attachment.CollectionDuration());
       }
     }
 
