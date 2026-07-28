@@ -4,38 +4,11 @@
 
 import("//build/compiled_action.gni")
 import("//build/fidl/toolchain.gni")
-import("//build/go/go_binary.gni")
-import("//build/go/go_library.gni")
 import("//build/host.gni")
 import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
 
 if (is_host) {
-  go_library("codegen") {
-    source_dir = "codegen"
-    deps = [ "//tools/fidl/lib/fidlgen" ]
-    sources = [
-      "codegen.go",
-      "description.tmpl",
-      "ir.go",
-      "protocol.tmpl",
-      "struct.tmpl",
-      "union.tmpl",
-    ]
-  }
-
-  go_library("main") {
-    deps = [
-      ":codegen",
-      "//tools/fidl/lib/fidlgen",
-    ]
-    sources = [ "main.go" ]
-  }
-
-  go_binary("fidlgen_syzkaller") {
-    embed = [ ":main" ]
-  }
-
   fidl_testdata_info_filtered = []
   foreach(info, fidl_testdata_info) {
     if (info.denylist + [ "fidlgen_syzkaller" ] - [ "fidlgen_syzkaller" ] ==
@@ -46,7 +19,8 @@ if (is_host) {
 
   compiled_action_foreach("generate_goldens") {
     testonly = true
-    tool = ":fidlgen_syzkaller"
+    tool = "//build/bazel/host:bazel_root_host_tools.fidlgen_syzkaller"
+    tool_output_name = "fidlgen_syzkaller"
     deps = []
     sources = []
     foreach(info, fidl_testdata_info_filtered) {
@@ -76,11 +50,6 @@ if (is_host) {
       ]
     }
   }
-}
-
-install_host_tools("host") {
-  deps = [ ":fidlgen_syzkaller" ]
-  outputs = [ "fidlgen_syzkaller" ]
 }
 
 group("tests") {
