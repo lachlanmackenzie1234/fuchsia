@@ -45,7 +45,6 @@ class GpuMetricsProcessor(trace_metrics.MetricsProcessor):
             trace_model.CounterEvent
         ] = trace_utils.filter_events(
             all_events,
-            category="magma",
             name=_GPU_USAGE_EVENT_NAME,
             type=trace_model.CounterEvent,
         )

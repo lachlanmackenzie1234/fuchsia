@@ -111,6 +111,72 @@ class TraceUtilsTest(unittest.TestCase):
         )
         self.assertEqual(filtered2, [])
 
+    def test_filter_events_with_name_collection(self) -> None:
+        events: List[trace_model.Event] = [
+            trace_model.DurationEvent(
+                duration=None,
+                parent=None,
+                child_durations=[],
+                child_flows=[],
+                base=trace_model.Event(
+                    category="cat_a",
+                    name="name_a",
+                    start=trace_time.TimePoint.from_epoch_delta(
+                        trace_time.TimeDelta.from_microseconds(0)
+                    ),
+                    pid=7009,
+                    tid=7022,
+                    args={},
+                ),
+            ),
+            trace_model.DurationEvent(
+                duration=None,
+                parent=None,
+                child_durations=[],
+                child_flows=[],
+                base=trace_model.Event(
+                    category="cat_b",
+                    name="name_b",
+                    start=trace_time.TimePoint.from_epoch_delta(
+                        trace_time.TimeDelta.from_microseconds(0)
+                    ),
+                    pid=7009,
+                    tid=7022,
+                    args={},
+                ),
+            ),
+            trace_model.DurationEvent(
+                duration=None,
+                parent=None,
+                child_durations=[],
+                child_flows=[],
+                base=trace_model.Event(
+                    category="cat_c",
+                    name="name_c",
+                    start=trace_time.TimePoint.from_epoch_delta(
+                        trace_time.TimeDelta.from_microseconds(0)
+                    ),
+                    pid=7009,
+                    tid=7022,
+                    args={},
+                ),
+            ),
+        ]
+
+        filtered = list(
+            trace_utils.filter_events(
+                events, name={"name_a", "name_c"}, type=trace_model.Event
+            )
+        )
+        self.assertEqual(filtered, [events[0], events[2]])
+
+        filtered2 = list(
+            trace_utils.filter_events(
+                events, name=["name_b", "name_c"], type=trace_model.Event
+            )
+        )
+        self.assertEqual(filtered2, [events[1], events[2]])
+
     def test_filter_events_with_type(self) -> None:
         events: List[trace_model.Event] = [
             trace_model.DurationEvent(

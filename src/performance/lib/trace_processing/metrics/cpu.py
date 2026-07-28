@@ -197,7 +197,6 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             trace_model.CounterEvent
         ] = trace_utils.filter_events(
             all_events,
-            category="system_metrics",
             name=_CPU_USAGE_EVENT_NAME,
             type=trace_model.CounterEvent,
         )
@@ -406,7 +405,6 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             e
             for e in trace_utils.filter_events(
                 model.all_events(),
-                category="kernel:power",
                 type=trace_model.CounterEvent,
             )
             if e.name and e.name.startswith(_PROCESSING_RATE_EVENT_NAME)

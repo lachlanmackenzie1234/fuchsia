@@ -147,12 +147,11 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
         series_by_name = collections.defaultdict(list)
         for event in trace_utils.filter_events(
             model.all_events(),
-            category=MEMORY_SYSTEM_CATEGORY,
+            name=KERNEL_EVENT_NAMES,
             type=trace_model.CounterEvent,
         ):
-            if event.name in KERNEL_EVENT_NAMES:
-                for name, value in event.args.items():
-                    series_by_name[name].append((event.start, value))
+            for name, value in event.args.items():
+                series_by_name[name].append((event.start, value))
 
         return (
             self.FREEFORM_METRICS_FILENAME,
@@ -172,13 +171,12 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
         series_by_name = collections.defaultdict(list)
         for event in trace_utils.filter_events(
             model.all_events(),
-            category=MEMORY_SYSTEM_CATEGORY,
+            name=KERNEL_EVENT_NAMES,
             type=trace_model.CounterEvent,
         ):
-            if event.name in KERNEL_EVENT_NAMES:
-                for name, value in event.args.items():
-                    if name in STRUCTURED_METRIC_NAMES:
-                        series_by_name[name].append((event.start, value))
+            for name, value in event.args.items():
+                if name in STRUCTURED_METRIC_NAMES:
+                    series_by_name[name].append((event.start, value))
 
         results = []
         for name, series in series_by_name.items():

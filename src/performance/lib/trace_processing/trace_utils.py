@@ -56,14 +56,14 @@ def filter_events(
     events: Iterable[trace_model.Event],
     type: type[T],
     category: Optional[str] = None,
-    name: Optional[str] = None,
+    name: str | Iterable[str] | None = None,
 ) -> Generator[T, None, None]:
     """Filter |events| based on category, name, or type.
 
     Args:
       events: The set of events to filter.
       category: Category of events to include, or None to skip this filter.
-      name: name of events to include, or None to skip this filter.
+      name: name or names of events to include, or None to skip this filter.
       type: Type of events to include. By default object to include all events.
 
     Returns:
@@ -73,7 +73,12 @@ def filter_events(
 
     for event in events:
         category_matches: bool = category is None or event.category == category
-        name_matches: bool = name is None or event.name == name
+        if name is None:
+            name_matches = True
+        elif isinstance(name, str):
+            name_matches = event.name == name
+        else:
+            name_matches = event.name in name
         if isinstance(event, type) and category_matches and name_matches:
             yield event
 

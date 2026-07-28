@@ -192,7 +192,6 @@ class PowerMetricsProcessor(trace_metrics.MetricsProcessor):
         post_sync_model = model.slice(test_start)
         metrics_events = trace_utils.filter_events(
             post_sync_model.all_events(),
-            category="Metrics",
             name="Metrics",
             type=trace_model.CounterEvent,
         )
