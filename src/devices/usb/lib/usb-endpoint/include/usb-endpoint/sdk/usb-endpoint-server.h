@@ -7,12 +7,14 @@
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
+#include <lib/fit/result.h>
 #include <lib/zx/bti.h>
 #include <zircon/types.h>
 
 #include <map>
 #include <mutex>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <usb/sdk/request-fidl.h>
@@ -27,6 +29,7 @@ using RequestVariant = std::variant<usb::FidlRequest>;
 class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint> {
  public:
   EndpointServer(const zx::bti& bti, uint8_t ep_addr) : bti_(bti), ep_addr_(ep_addr) {}
+  virtual ~EndpointServer();
 
   // Connects to the EndpointServer.
   void Connect(async_dispatcher_t* dispatcher,
@@ -89,7 +92,14 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
   };
   // registered_vmos_: All pre-registered VMOs registered through RegisterVmos(). Mapping from
   // vmo_id to RegisteredVmo.
-  std::map<uint64_t, RegisteredVmo> registered_vmos_ __TA_GUARDED(lock_);
+  std::map<fuchsia_hardware_usb_request::VmoId, RegisteredVmo> registered_vmos_ __TA_GUARDED(lock_);
+
+  // Unpins all VMOs in |vmos|, frees physical lists, and removes them from the map.
+  // Returns a successful result if all VMOs were unpinned successfully.
+  // Otherwise, returns a vector of pairs containing the VMO ID and the error status
+  // for each failed unpin operation.
+  fit::result<std::vector<std::pair<fuchsia_hardware_usb_request::VmoId, zx_status_t>>> UnpinVmos(
+      std::map<fuchsia_hardware_usb_request::VmoId, RegisteredVmo>& vmos);
 
   mutable std::mutex lock_;
 };
