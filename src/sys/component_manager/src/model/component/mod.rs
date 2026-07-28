@@ -1872,11 +1872,11 @@ pub mod tests {
 
         let root_resolved = root_component.lock_resolved_state().await.expect("resolve failed");
 
-        assert_eq!(&[example_capability], &*root_resolved.capabilities());
-        assert_eq!(&[example_use], &*root_resolved.uses());
-        assert_eq!(&[example_offer], &*root_resolved.offers());
-        assert_eq!(&[example_expose], &*root_resolved.exposes());
-        assert_eq!(&[root_decl.collections[0].clone()], &*root_resolved.collections());
+        assert_eq!(&[example_capability], &*root_resolved.try_capabilities().unwrap());
+        assert_eq!(&[example_use], &*root_resolved.try_uses().unwrap());
+        assert_eq!(&[example_offer], &*root_resolved.try_offers().unwrap());
+        assert_eq!(&[example_expose], &*root_resolved.try_exposes().unwrap());
+        assert_eq!(&[root_decl.collections[0].clone()], &*root_resolved.try_collections().unwrap());
         assert_eq!(
             &[env_a, env_b],
             &*root_resolved.resolved_component.decl.as_ref().unwrap().environments
@@ -2009,7 +2009,10 @@ pub mod tests {
                 ),
             ]));
 
-            pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
+            pretty_assertions::assert_eq!(
+                &[example_offer.clone()],
+                &*root_resolved.try_offers().unwrap()
+            );
             pretty_assertions::assert_eq!(
                 root_resolved.resolved_component.dependencies,
                 expected_deps
@@ -2056,7 +2059,10 @@ pub mod tests {
                 (DependencyNode::Child("a".into(), None), DependencyNode::Child("b".into(), None)),
             ]));
 
-            pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
+            pretty_assertions::assert_eq!(
+                &[example_offer.clone()],
+                &*root_resolved.try_offers().unwrap()
+            );
             pretty_assertions::assert_eq!(
                 root_resolved.resolved_component.dependencies,
                 expected_deps,
@@ -2124,7 +2130,10 @@ pub mod tests {
                 ),
             ]));
 
-            pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
+            pretty_assertions::assert_eq!(
+                &[example_offer.clone()],
+                &*root_resolved.try_offers().unwrap()
+            );
             pretty_assertions::assert_eq!(
                 root_resolved.resolved_component.dependencies,
                 expected_deps,

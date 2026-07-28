@@ -1117,7 +1117,10 @@ impl ResolvedInstanceState {
         let dynamic_offers: Vec<OfferDecl> =
             new_dynamic_offers.into_iter().map(FidlIntoNative::fidl_into_native).collect();
         for offer in &dynamic_offers {
-            if !self.offer_source_exists(offer.source()) {
+            if !self
+                .try_offer_source_exists(offer.source())
+                .expect("component decl already dropped on instantiation code path")
+            {
                 return Err(DynamicCapabilityError::SourceNotFound { offer: offer.clone() }.into());
             }
         }
@@ -1217,24 +1220,24 @@ impl ResolvedInstanceState {
 impl ResolvedInstanceInterface for ResolvedInstanceState {
     type Component = ComponentInstance;
 
-    fn uses(&self) -> Box<[UseDecl]> {
-        self.resolved_component.decl.as_ref().unwrap().uses.clone()
+    fn try_uses(&self) -> Option<Box<[UseDecl]>> {
+        self.resolved_component.decl.as_ref().map(|d| d.uses.clone())
     }
 
-    fn exposes(&self) -> Box<[cm_rust::ExposeDecl]> {
-        self.resolved_component.decl.as_ref().unwrap().exposes.clone()
+    fn try_exposes(&self) -> Option<Box<[cm_rust::ExposeDecl]>> {
+        self.resolved_component.decl.as_ref().map(|d| d.exposes.clone())
     }
 
-    fn offers(&self) -> Box<[OfferDecl]> {
-        self.resolved_component.decl.as_ref().unwrap().offers.clone()
+    fn try_offers(&self) -> Option<Box<[OfferDecl]>> {
+        self.resolved_component.decl.as_ref().map(|d| d.offers.clone())
     }
 
-    fn capabilities(&self) -> Box<[cm_rust::CapabilityDecl]> {
-        self.resolved_component.decl.as_ref().unwrap().capabilities.clone()
+    fn try_capabilities(&self) -> Option<Box<[cm_rust::CapabilityDecl]>> {
+        self.resolved_component.decl.as_ref().map(|d| d.capabilities.clone())
     }
 
-    fn collections(&self) -> Box<[cm_rust::CollectionDecl]> {
-        self.resolved_component.decl.as_ref().unwrap().collections.clone()
+    fn try_collections(&self) -> Option<Box<[cm_rust::CollectionDecl]>> {
+        self.resolved_component.decl.as_ref().map(|d| d.collections.clone())
     }
 
     fn get_child(&self, moniker: &BorrowedChildName) -> Option<Arc<ComponentInstance>> {

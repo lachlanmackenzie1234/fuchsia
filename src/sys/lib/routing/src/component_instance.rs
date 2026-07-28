@@ -140,21 +140,31 @@ pub trait ResolvedInstanceInterface: Send + Sync {
     /// Type representing a (unlocked and potentially unresolved) component instance.
     type Component;
 
-    /// Current view of this component's `uses` declarations.
-    fn uses(&self) -> Box<[UseDecl]>;
+    /// Current view of this component's `uses` declarations. Implementers are
+    /// not required to retain their component declaration and in that case
+    /// should return `None`.
+    fn try_uses(&self) -> Option<Box<[UseDecl]>>;
 
-    /// Current view of this component's `exposes` declarations.
-    fn exposes(&self) -> Box<[ExposeDecl]>;
+    /// Current view of this component's `exposes` declarations. Implementers
+    /// are not required to retain their component declaration and in that case
+    /// should return `None`.
+    fn try_exposes(&self) -> Option<Box<[ExposeDecl]>>;
 
-    /// Current view of this component's `offers` declarations. Does not include any dynamic
-    /// offers between children of this component.
-    fn offers(&self) -> Box<[OfferDecl]>;
+    /// Current view of this component's `offers` declarations. Does not include
+    /// any dynamic offers between children of this component. Implementers are
+    /// not required to retain their component declaration and in that case
+    /// should return `None`.
+    fn try_offers(&self) -> Option<Box<[OfferDecl]>>;
 
     /// Current view of this component's `capabilities` declarations.
-    fn capabilities(&self) -> Box<[CapabilityDecl]>;
+    /// Implementers are not required to retain their component declaration and
+    /// in that case should return `None`.
+    fn try_capabilities(&self) -> Option<Box<[CapabilityDecl]>>;
 
     /// Current view of this component's `collections` declarations.
-    fn collections(&self) -> Box<[CollectionDecl]>;
+    /// Implementers are not required to retain their component declaration and
+    /// in that case should return `None`.
+    fn try_collections(&self) -> Option<Box<[CollectionDecl]>>;
 
     /// Returns a live child of this instance.
     fn get_child(&self, moniker: &BorrowedChildName) -> Option<Arc<Self::Component>>;
@@ -176,29 +186,32 @@ pub trait ResolvedInstanceInterface: Send + Sync {
 /// component.
 pub trait ResolvedInstanceInterfaceExt: ResolvedInstanceInterface {
     /// Returns true if the given offer source refers to a valid entity, e.g., a
-    /// child that exists, a declared collection, etc.
-    fn offer_source_exists(&self, source: &OfferSource) -> bool {
+    /// child that exists, a declared collection, etc. However, implementers are
+    /// not required to retain their component decl, in which case they should
+    /// return `None` if they lack sufficient information to determine if the
+    /// offer source is a valid entity.
+    fn try_offer_source_exists(&self, source: &OfferSource) -> Option<bool> {
         match source {
             OfferSource::Framework
             | OfferSource::Self_
             | OfferSource::Parent
-            | OfferSource::Void => true,
+            | OfferSource::Void => Some(true),
             OfferSource::Child(cm_rust::ChildRef { name, collection }) => {
                 let child_moniker = match ChildName::try_new(
                     name.as_str(),
                     collection.as_ref().map(|c| c.as_str()),
                 ) {
                     Ok(m) => m,
-                    Err(_) => return false,
+                    Err(_) => return Some(false),
                 };
-                self.get_child(&child_moniker).is_some()
+                Some(self.get_child(&child_moniker).is_some())
             }
-            OfferSource::Collection(collection_name) => IntoIterator::into_iter(self.collections())
-                .any(|collection| collection.name == *collection_name),
-            OfferSource::Capability(capability_name) => {
-                IntoIterator::into_iter(self.capabilities())
-                    .any(|capability| capability.name() == capability_name)
-            }
+            OfferSource::Collection(collection_name) => self
+                .try_collections()
+                .map(|c| c.iter().any(|collection| collection.name == *collection_name)),
+            OfferSource::Capability(capability_name) => self
+                .try_capabilities()
+                .map(|c| c.iter().any(|capability| capability.name() == capability_name)),
         }
     }
 }
@@ -217,24 +230,24 @@ where
 {
     type Component = <T::Target as ResolvedInstanceInterface>::Component;
 
-    fn uses(&self) -> Box<[UseDecl]> {
-        T::Target::uses(&*self)
+    fn try_uses(&self) -> Option<Box<[UseDecl]>> {
+        T::Target::try_uses(&*self)
     }
 
-    fn exposes(&self) -> Box<[ExposeDecl]> {
-        T::Target::exposes(&*self)
+    fn try_exposes(&self) -> Option<Box<[ExposeDecl]>> {
+        T::Target::try_exposes(&*self)
     }
 
-    fn offers(&self) -> Box<[cm_rust::offer::OfferDecl]> {
-        T::Target::offers(&*self)
+    fn try_offers(&self) -> Option<Box<[cm_rust::offer::OfferDecl]>> {
+        T::Target::try_offers(&*self)
     }
 
-    fn capabilities(&self) -> Box<[cm_rust::CapabilityDecl]> {
-        T::Target::capabilities(&*self)
+    fn try_capabilities(&self) -> Option<Box<[cm_rust::CapabilityDecl]>> {
+        T::Target::try_capabilities(&*self)
     }
 
-    fn collections(&self) -> Box<[cm_rust::CollectionDecl]> {
-        T::Target::collections(&*self)
+    fn try_collections(&self) -> Option<Box<[cm_rust::CollectionDecl]>> {
+        T::Target::try_collections(&*self)
     }
 
     fn get_child(&self, moniker: &BorrowedChildName) -> Option<Arc<Self::Component>> {

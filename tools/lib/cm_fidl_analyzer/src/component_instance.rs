@@ -283,24 +283,24 @@ impl ComponentInstanceInterface for ComponentInstanceForAnalyzer {
 impl ResolvedInstanceInterface for ComponentInstanceForAnalyzer {
     type Component = Self;
 
-    fn uses(&self) -> Box<[UseDecl]> {
-        self.decl.uses.clone()
+    fn try_uses(&self) -> Option<Box<[UseDecl]>> {
+        Some(self.decl.uses.clone())
     }
 
-    fn exposes(&self) -> Box<[ExposeDecl]> {
-        self.decl.exposes.clone()
+    fn try_exposes(&self) -> Option<Box<[ExposeDecl]>> {
+        Some(self.decl.exposes.clone())
     }
 
-    fn offers(&self) -> Box<[OfferDecl]> {
-        self.decl.offers.clone()
+    fn try_offers(&self) -> Option<Box<[OfferDecl]>> {
+        Some(self.decl.offers.clone())
     }
 
-    fn capabilities(&self) -> Box<[CapabilityDecl]> {
-        self.decl.capabilities.clone()
+    fn try_capabilities(&self) -> Option<Box<[CapabilityDecl]>> {
+        Some(self.decl.capabilities.clone())
     }
 
-    fn collections(&self) -> Box<[CollectionDecl]> {
-        self.decl.collections.clone()
+    fn try_collections(&self) -> Option<Box<[CollectionDecl]>> {
+        Some(self.decl.collections.clone())
     }
 
     fn get_child(&self, moniker: &BorrowedChildName) -> Option<Arc<Self>> {

@@ -1316,19 +1316,19 @@ mod tests {
     #[async_trait]
     impl ResolvedInstanceInterface for MockResolvedState {
         type Component = MockComponentInstance;
-        fn uses(&self) -> Box<[UseDecl]> {
+        fn try_uses(&self) -> Option<Box<[UseDecl]>> {
             unimplemented!()
         }
-        fn exposes(&self) -> Box<[ExposeDecl]> {
+        fn try_exposes(&self) -> Option<Box<[ExposeDecl]>> {
             unimplemented!()
         }
-        fn offers(&self) -> Box<[OfferDecl]> {
+        fn try_offers(&self) -> Option<Box<[OfferDecl]>> {
             unimplemented!()
         }
-        fn capabilities(&self) -> Box<[CapabilityDecl]> {
+        fn try_capabilities(&self) -> Option<Box<[CapabilityDecl]>> {
             unimplemented!()
         }
-        fn collections(&self) -> Box<[CollectionDecl]> {
+        fn try_collections(&self) -> Option<Box<[CollectionDecl]>> {
             unimplemented!()
         }
         fn get_child(&self, _moniker: &BorrowedChildName) -> Option<Arc<Self::Component>> {
