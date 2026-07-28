@@ -65,6 +65,26 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/fidl/gidl/cmd/gidl:gidl"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl_/gidl"
+        ninja = "gidl"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/fidl/gidl/cmd/gidl_audit:gidl_audit"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl_audit_/gidl_audit"
+        ninja = "gidl_audit"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/go_test_parser:go_test_parser"
     copy_outputs = [
       {

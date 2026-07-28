@@ -4,8 +4,6 @@
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
-package(default_visibility = ["//visibility:public"])
-
 fidl_library(
     name = "test.mixer",
     testonly = True,
@@ -15,6 +13,9 @@ fidl_library(
     excluded_checks = [
         "invalid-copyright-for-platform-source-library",
         "string-bounds-not-specified",
+    ],
+    visibility = [
+        "//tools/fidl/gidl:__subpackages__",
     ],
     deps = [
         "//zircon/vdso/zx",

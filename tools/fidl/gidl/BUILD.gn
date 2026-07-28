@@ -9,17 +9,6 @@ import(
     "//third_party/go/src/syscall/zx/fidl/fidl_test/conformance_test_files.gni")
 import("//tools/fidl/gidl/gidl.gni")
 
-install_host_tools("host") {
-  deps = [
-    "cmd/gidl",
-    "cmd/gidl_audit",
-  ]
-  outputs = [
-    "gidl",
-    "gidl_audit",
-  ]
-}
-
 conformance_golden_items = [
   {
     language = "go"

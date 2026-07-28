@@ -52,5 +52,6 @@ fidl("test.mixer") {
     "invalid-copyright-for-platform-source-library",
     "string-bounds-not-specified",
   ]
+  visibility = [ "//tools/fidl/gidl/*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
