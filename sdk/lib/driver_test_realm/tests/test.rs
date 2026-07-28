@@ -4,6 +4,12 @@
 
 use anyhow::{Context, Error, Result};
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, LocalComponentHandles, RealmBuilder, Route,
@@ -13,11 +19,6 @@ use fuchsia_driver_test::{
     DriverTestRealmInstance2, Options2,
 };
 use futures::{FutureExt as _, StreamExt as _};
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_driver_development as fdd,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio,
-    fuchsia_async as fasync,
-};
 
 async fn get_driver_info(
     service: &fdd::ManagerProxy,
@@ -53,22 +54,10 @@ async fn serve_boot_items(handles: LocalComponentHandles) -> Result<(), Error> {
 }
 
 async fn run_boot_items(mut stream: fboot::ItemsRequestStream) {
-    /// This constant is defined in
-    /// sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
-    const ZBI_TYPE_PLATFORM_ID: u32 = 0x44494c50;
-
     /// These constants are defined in
     /// zircon/system/ulib/ddk-platform-defs/include/lib/ddk/platform-defs.h
     const PDEV_VID_TEST: u32 = 0x11;
     const PDEV_PID_PBUS_TEST: u32 = 0x01;
-
-    /// This struct is defined in sdk/lib/zbi-format/include/lib/zbi-format/board.h
-    #[repr(C)]
-    struct ZbiPlatformId {
-        _vid: u32,
-        _pid: u32,
-        _board_name: [u8; 32],
-    }
 
     while let Some(request) = stream.next().await {
         match request.unwrap() {
@@ -76,16 +65,16 @@ async fn run_boot_items(mut stream: fboot::ItemsRequestStream) {
                 responder.send(None, 0).unwrap();
             }
             fboot::ItemsRequest::Get2 { type_, extra: _, responder } => {
-                if type_ == ZBI_TYPE_PLATFORM_ID {
-                    let platform_id = ZbiPlatformId {
-                        _vid: PDEV_VID_TEST,
-                        _pid: PDEV_PID_PBUS_TEST,
-                        _board_name: [0; 32],
+                if type_ == zbi::Type::PlatformId as u32 {
+                    let platform_id = zbi::PlatformId {
+                        vid: PDEV_VID_TEST,
+                        pid: PDEV_PID_PBUS_TEST,
+                        board_name: [0; 32],
                     };
-                    const PLATFORM_ID_SIZE: usize = std::mem::size_of::<ZbiPlatformId>();
+                    const PLATFORM_ID_SIZE: usize = std::mem::size_of::<zbi::PlatformId>();
                     let vmo = zx::Vmo::create(PLATFORM_ID_SIZE as u64).unwrap();
                     let bytes = unsafe {
-                        std::mem::transmute::<ZbiPlatformId, [u8; PLATFORM_ID_SIZE]>(platform_id)
+                        std::mem::transmute::<zbi::PlatformId, [u8; PLATFORM_ID_SIZE]>(platform_id)
                     };
                     vmo.write(&bytes, 0).unwrap();
                     let ret = vec![fboot::RetrievedItems {
