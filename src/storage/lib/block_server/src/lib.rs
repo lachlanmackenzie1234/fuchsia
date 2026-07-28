@@ -228,21 +228,49 @@ impl<S> ActiveRequestsInner<S> {
             && group.status == zx::Status::OK
             && let Some(info) = &mut group.decompression_info
         {
+            struct RawDCtx(std::ptr::NonNull<zstd::zstd_safe::zstd_sys::ZSTD_DCtx>);
+
             thread_local! {
-                static DECOMPRESSOR: std::cell::RefCell<zstd::bulk::Decompressor<'static>> =
-                    std::cell::RefCell::new(zstd::bulk::Decompressor::new().unwrap());
-            }
-            DECOMPRESSOR.with(|decompressor| {
-                // SAFETY: We verified `uncompressed_range` fits within our mapping.
-                let target_slice = unsafe { info.uncompressed_slice().as_mut().unwrap() };
-                let mut decompressor = decompressor.borrow_mut();
-                if let Err(error) = decompressor.decompress_to_buffer(
-                    &info.buffer.take().unwrap().as_slice()[info.compressed_range.clone()],
-                    target_slice,
-                ) {
-                    log::warn!(error:?; "Decompression error");
-                    group.status = zx::Status::IO_DATA_INTEGRITY;
+                static RAW_DECOMPRESSOR: std::cell::RefCell<RawDCtx> = {
+                    // SAFETY: Creating a new ZSTD decompression context does not borrow or capture
+                    // any external memory.
+                    let raw_ptr = unsafe { zstd::zstd_safe::zstd_sys::ZSTD_createDCtx() };
+                    let ptr = std::ptr::NonNull::new(raw_ptr).expect("ZSTD_createDCtx failed");
+                    std::cell::RefCell::new(RawDCtx(ptr))
                 };
+            }
+
+            impl Drop for RawDCtx {
+                fn drop(&mut self) {
+                    // SAFETY: `self.0` is non-null and was allocated via `ZSTD_createDCtx`.
+                    unsafe {
+                        zstd::zstd_safe::zstd_sys::ZSTD_freeDCtx(self.0.as_ptr());
+                    }
+                }
+            }
+
+            RAW_DECOMPRESSOR.with_borrow_mut(|decompressor| {
+                let dctx = decompressor.0.as_ptr();
+                let target = info.uncompressed_slice();
+                let buffer = info.buffer.take().unwrap();
+                let source = buffer.subslice(info.compressed_range.clone());
+
+                // SAFETY: `target` points to valid uncompressed destination memory in the VMO
+                // mapping. `source` points to valid compressed memory within `buffer`.
+                unsafe {
+                    let result = zstd::zstd_safe::zstd_sys::ZSTD_decompressDCtx(
+                        dctx,
+                        target as *mut u8 as *mut std::os::raw::c_void,
+                        target.len(),
+                        source.as_ptr() as *const std::os::raw::c_void,
+                        source.len(),
+                    );
+                    if zstd::zstd_safe::zstd_sys::ZSTD_isError(result) != 0 {
+                        let error = zstd::zstd_safe::get_error_name(result);
+                        log::warn!(error:?; "Decompression error");
+                        group.status = zx::Status::IO_DATA_INTEGRITY;
+                    }
+                }
             });
         }
     }

@@ -93,7 +93,7 @@ impl Interface for Data {
             if opts.inline_crypto.is_enabled {
                 self.fscrypt_keys()
                     .get_key(opts.inline_crypto.slot)?
-                    .decrypt(&mut data, opts.inline_crypto.dun as u128)
+                    .decrypt(&mut data[..], opts.inline_crypto.dun as u128)
                     .map_err(|_| zx::Status::IO)?;
             }
             vmo.write(&data[..], vmo_offset)
@@ -140,7 +140,7 @@ impl Interface for Data {
             if opts.inline_crypto.is_enabled {
                 self.fscrypt_keys()
                     .get_key(opts.inline_crypto.slot)?
-                    .encrypt(&mut data, opts.inline_crypto.dun as u128)
+                    .encrypt(&mut data[..], opts.inline_crypto.dun as u128)
                     .map_err(|_| zx::Status::IO)?;
             }
             self.data.write(&data[..], device_block_offset * self.block_size as u64)
