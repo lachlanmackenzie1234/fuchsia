@@ -322,6 +322,7 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
 
   AsciiToUnicode(vol_label, volume_name);
 
+  memset(super_block_.volume_name, 0, sizeof(super_block_.volume_name));
   volume_name.copy(reinterpret_cast<char16_t *>(super_block_.volume_name), vol_label.size());
   super_block_.volume_name[vol_label.size()] = '\0';
 

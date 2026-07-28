@@ -110,10 +110,10 @@ struct Superblock {
   uint8_t uuid[16] = {
       0,
   };  // 128-bit uuid for volume
-  uint16_t volume_name[512];                 // volume name
-  uint32_t extension_count = 0;              // # of extensions below
-  uint8_t extension_list[kMaxExtension][8];  // extension array
-  uint32_t cp_payload = 0;                   // # of checkpoint trailing blocks for SIT bitmap
+  uint16_t volume_name[512] = {};                 // volume name
+  uint32_t extension_count = 0;                   // # of extensions below
+  uint8_t extension_list[kMaxExtension][8] = {};  // extension array
+  uint32_t cp_payload = 0;                        // # of checkpoint trailing blocks for SIT bitmap
 } __attribute__((packed));
 
 // For checkpoint
