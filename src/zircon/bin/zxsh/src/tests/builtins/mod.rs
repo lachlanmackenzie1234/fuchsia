@@ -4,5 +4,6 @@
 
 pub mod echo;
 pub mod essential;
+pub mod file_utils;
 pub mod printf;
 pub mod test;
