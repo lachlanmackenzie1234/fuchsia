@@ -28,11 +28,25 @@ use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 pub trait Interface: Send + Sync + Unpin + 'static {
     /// Runs `stream` to completion.
     ///
-    /// Implementors can override this method if they want to create a passthrough session instead
-    /// (and can use `[PassthroughSession]` below to do so).  See
-    /// fuchsia.hardware.block.Block/OpenSessionWithOffsetMap.
+    /// `offset_map` is provided by the client, and is used to remap requests.  The extents in
+    /// `offset_map` are already validated to be within the range of the partition (as determined by
+    /// the [`PartitionInfo::block_count`] field).  The implementation is expected to apply these
+    /// mappings to all FIFO requests, and to ensure all FIFO requests fit within the logical
+    /// extents of the offset map.  Note that the default implementation does this for you, and that
+    /// is correct for most implementations.
     ///
-    /// If the implementor uses a `[PassthroughSession]`, the following Interface methods
+    /// Implementors can override this method if they want to create a passthrough session instead
+    /// (and can use [`PassthroughSession`] below to do so).  Generally, a passthrough session would
+    /// open a session to its underlying device with an offset map applied
+    /// (`fuchsia.storage.block.Block/OpenSessionWithOffsetMap`), which remaps and restricts
+    /// requests to the range the partition should have access to.
+    ///
+    /// Nested mappings (i.e.  the case when `offset_map` is Some, but the implementation creates a
+    /// passthrough session with its own mapping) would need to be composed by the implementation.
+    /// At this time, no implementations of passthrough sessions support nested mappings, but we can
+    /// add support as needed.
+    ///
+    /// If the implementor uses a [`PassthroughSession`], the following Interface methods
     /// will not be called, and can be stubbed out:
     ///   - on_attach_vmo
     ///   - on_detach_vmo
@@ -47,8 +61,13 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         offset_map: OffsetMap,
         block_size: u32,
     ) -> impl Future<Output = Result<(), Error>> + Send {
-        // By default, serve the session rather than forwarding/proxying it.
-        session_manager.serve_session(stream, offset_map, block_size)
+        // By default, serve the session rather than forwarding it.
+        session_manager.serve_session(
+            stream,
+            offset_map,
+            self.get_info().max_transfer_blocks(),
+            block_size,
+        )
     }
 
     /// Called whenever a VMO is attached, prior to the VMO's usage in any other methods.  Whilst
@@ -65,6 +84,11 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     fn get_info(&self) -> Cow<'_, DeviceInfo>;
 
     /// Called for a request to read bytes.
+    ///
+    /// Implementations are responsible for checking that the request block range
+    /// (`[device_block_offset, device_block_offset + block_count)`) falls within valid
+    /// device/partition bounds, and returning `Err(zx::Status::OUT_OF_RANGE)` if it is out of
+    /// bounds.
     fn read(
         &self,
         device_block_offset: u64,
@@ -76,6 +100,10 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Called for a request to write bytes.
+    ///
+    /// Implementations are responsible for checking that the request block range
+    /// (`[device_block_offset, device_block_offset + block_count)`) falls within valid device/partition
+    /// bounds, and returning `Err(zx::Status::OUT_OF_RANGE)` if it is out of bounds.
     fn write(
         &self,
         device_block_offset: u64,
@@ -93,6 +121,11 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Called to trim a region.
+    ///
+    /// Implementations are responsible for checking that the request block range
+    /// (`[device_block_offset, device_block_offset + block_count)`) falls within valid
+    /// device/partition bounds, and returning `Err(zx::Status::OUT_OF_RANGE)` if it is out of
+    /// bounds.
     fn trim(
         &self,
         device_block_offset: u64,
@@ -204,9 +237,11 @@ impl<I: Interface + ?Sized> SessionManager<I> {
         self: Arc<Self>,
         stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
+        max_transfer_blocks: Option<std::num::NonZero<u32>>,
         block_size: u32,
     ) -> Result<(), Error> {
-        let (helper, fifo) = SessionHelper::new(self.clone(), offset_map, block_size)?;
+        let (helper, fifo) =
+            SessionHelper::new(self.clone(), offset_map, max_transfer_blocks, block_size)?;
         let session = Arc::new(Session {
             helper: Arc::new(helper),
             interface: self.interface.clone(),

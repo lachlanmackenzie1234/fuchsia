@@ -65,7 +65,14 @@ impl block_server::async_interface::Interface for PartitionBackend {
         if !self.passthrough || !offset_map.is_empty() {
             // For now, we don't support double-passthrough.  We could as needed for nested GPT.
             // If we support this, we can remove I/O and vmoid management from this struct.
-            return session_manager.serve_session(stream, offset_map, block_size).await;
+            return session_manager
+                .serve_session(
+                    stream,
+                    offset_map,
+                    self.get_info().max_transfer_blocks(),
+                    block_size,
+                )
+                .await;
         }
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fblock::SessionMarker>();
         self.partition.open_passthrough_session(server_end);

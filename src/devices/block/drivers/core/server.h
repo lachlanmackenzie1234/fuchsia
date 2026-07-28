@@ -34,8 +34,10 @@
 // Remaps the dev_offset of block requests based on an internal map.
 class OffsetMap {
  public:
+  // Creates an OffsetMap from a single mapping.  `block_count` is the total size of the device,
+  // used to bounds-check the mapping.
   static zx::result<std::unique_ptr<OffsetMap>> Create(
-      fuchsia_storage_block::wire::BlockOffsetMapping mapping);
+      fuchsia_storage_block::wire::BlockOffsetMapping mapping, uint64_t block_count);
 
   // Adjusts `request` by applying the map to dev_offset.
   // Returns false if the request would exceed the range known to OffsetMap.

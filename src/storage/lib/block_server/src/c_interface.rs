@@ -146,7 +146,8 @@ impl PartitionInfo {
     unsafe fn to_rust(&self) -> super::DeviceInfo {
         super::DeviceInfo::Partition(super::PartitionInfo {
             device_flags: fblock::DeviceFlag::from_bits_truncate(self.device_flags),
-            block_range: Some(self.start_block..self.start_block + self.block_count),
+            start_block_offset: Some(self.start_block),
+            block_count: self.block_count,
             type_guid: self.type_guid,
             instance_guid: self.instance_guid,
             name: if self.name.is_null() {
@@ -154,7 +155,7 @@ impl PartitionInfo {
             } else {
                 String::from_utf8_lossy(unsafe { CStr::from_ptr(self.name).to_bytes() }).to_string()
             },
-            flags: self.flags,
+            flags: Some(self.flags),
             max_transfer_blocks: if self.max_transfer_size != MAX_TRANSFER_UNBOUNDED {
                 NonZero::new(self.max_transfer_size / self.block_size)
             } else {

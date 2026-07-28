@@ -54,7 +54,7 @@ impl Ramdisk {
         block_size: u32,
         node_token: Option<zx::Event>,
     ) -> Result<Ramdisk, Status> {
-        let block_count = partition_info.block_range.as_ref().map(|r| r.end - r.start).unwrap_or(0);
+        let block_count = partition_info.block_count;
 
         let state = Condition::new(RamdiskState {
             block_counts: framdisk::BlockWriteCounts { received: 0, successful: 0, failed: 0 },

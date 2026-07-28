@@ -20,7 +20,6 @@ use zstd;
 
 const BLOCK_SIZE: u32 = 512;
 
-#[derive(Default)]
 struct MockInterface {
     read_hook: Option<
         Box<
@@ -34,7 +33,20 @@ struct MockInterface {
                 + Sync,
         >,
     >,
-    get_info_hook: Option<Box<dyn Fn() -> Cow<'static, crate::DeviceInfo> + Send + Sync>>,
+    info: crate::DeviceInfo,
+}
+
+impl Default for MockInterface {
+    fn default() -> Self {
+        Self {
+            read_hook: None,
+            info: crate::DeviceInfo::Block(crate::BlockInfo {
+                block_count: 100,
+                device_flags: fblock::DeviceFlag::empty(),
+                max_transfer_blocks: NonZero::new(u32::MAX),
+            }),
+        }
+    }
 }
 
 impl Interface for MockInterface {
@@ -43,15 +55,7 @@ impl Interface for MockInterface {
     }
 
     fn get_info(&self) -> Cow<'_, crate::DeviceInfo> {
-        if let Some(hook) = &self.get_info_hook {
-            hook()
-        } else {
-            Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
-                block_count: 100,
-                device_flags: fblock::DeviceFlag::empty(),
-                max_transfer_blocks: NonZero::new(u32::MAX),
-            }))
-        }
+        Cow::Borrowed(&self.info)
     }
 
     async fn read(
@@ -367,13 +371,11 @@ async fn test_fragmented_device_reads() {
 
     let mut fixture = TestFixture::new(
         MockInterface {
-            get_info_hook: Some(Box::new(move || {
-                Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
-                    block_count: 100,
-                    device_flags: fblock::DeviceFlag::empty(),
-                    max_transfer_blocks: NonZero::new(len1),
-                }))
-            })),
+            info: crate::DeviceInfo::Block(crate::BlockInfo {
+                block_count: 1000,
+                device_flags: fblock::DeviceFlag::empty(),
+                max_transfer_blocks: NonZero::new(len1),
+            }),
             read_hook: Some(Box::new(move |device_block_offset, block_count, vmo, vmo_offset| {
                 let compressed_data = compressed_data.clone();
                 let read_count = read_count_clone.clone();
@@ -397,11 +399,7 @@ async fn test_fragmented_device_reads() {
             })),
             ..MockInterface::default()
         },
-        Some(fblock::BlockOffsetMapping {
-            source_block_offset: 100,
-            target_block_offset: 0,
-            length: 100,
-        }),
+        Some(fblock::BlockOffsetMapping { target_block_offset: 0, length: 100 }),
         zx::system_get_page_size() as u64,
     )
     .await;
@@ -417,7 +415,7 @@ async fn test_fragmented_device_reads() {
             vmoid: fixture.vmoid.id,
             length: total_blocks,
             vmo_offset: 0,
-            dev_offset: 100,
+            dev_offset: 0,
             uncompressed_bytes: 2 * BLOCK_SIZE,
             total_compressed_bytes: test_data.total_compressed_bytes,
             compressed_prefix_bytes: test_data.compressed_prefix_bytes,
@@ -653,6 +651,11 @@ async fn test_decompression_buffer_exhaustion() {
 
     let mut fixture = TestFixture::new(
         MockInterface {
+            info: crate::DeviceInfo::Block(crate::BlockInfo {
+                block_count: u32::MAX as u64,
+                device_flags: fblock::DeviceFlag::empty(),
+                max_transfer_blocks: NonZero::new(u32::MAX),
+            }),
             read_hook: Some(Box::new(move |device_block_offset, block_count, vmo, vmo_offset| {
                 let (sender, receiver) = oneshot::channel();
                 tx.unbounded_send(sender).unwrap();

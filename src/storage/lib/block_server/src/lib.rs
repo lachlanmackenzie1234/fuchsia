@@ -29,10 +29,14 @@ pub(crate) const FIFO_MAX_REQUESTS: usize = 64;
 
 type TraceFlowId = Option<NonZero<u64>>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DeviceInfo {
+    /// A raw non-partition block device.
     Block(BlockInfo),
+    /// A static partition with fixed physical mappings.
     Partition(PartitionInfo),
+    /// A dynamic volume whose slice/block count is queried via get_volume_info.
+    Volume(VolumeInfo),
 }
 
 impl DeviceInfo {
@@ -40,21 +44,24 @@ impl DeviceInfo {
         match self {
             Self::Block(BlockInfo { .. }) => "",
             Self::Partition(PartitionInfo { name, .. }) => name,
+            Self::Volume(VolumeInfo { name, .. }) => name,
         }
     }
     pub fn device_flags(&self) -> fblock::DeviceFlag {
         match self {
             Self::Block(BlockInfo { device_flags, .. }) => *device_flags,
             Self::Partition(PartitionInfo { device_flags, .. }) => *device_flags,
+            Self::Volume(VolumeInfo { device_flags, .. }) => *device_flags,
         }
     }
 
+    /// Returns the block count of the device or partition.
+    /// Returns None for dynamic volumes (whose size needs to be queried from the volume manager).
     pub fn block_count(&self) -> Option<u64> {
         match self {
             Self::Block(BlockInfo { block_count, .. }) => Some(*block_count),
-            Self::Partition(PartitionInfo { block_range, .. }) => {
-                block_range.as_ref().map(|range| range.end - range.start)
-            }
+            Self::Partition(PartitionInfo { block_count, .. }) => Some(*block_count),
+            Self::Volume(VolumeInfo { .. }) => None,
         }
     }
 
@@ -64,6 +71,7 @@ impl DeviceInfo {
             Self::Partition(PartitionInfo { max_transfer_blocks, .. }) => {
                 max_transfer_blocks.clone()
             }
+            Self::Volume(VolumeInfo { max_transfer_blocks, .. }) => max_transfer_blocks.clone(),
         }
     }
 
@@ -74,10 +82,26 @@ impl DeviceInfo {
             MAX_TRANSFER_UNBOUNDED
         }
     }
+
+    pub fn type_guid(&self) -> Option<[u8; 16]> {
+        match self {
+            Self::Partition(PartitionInfo { type_guid, .. }) => Some(*type_guid),
+            Self::Volume(VolumeInfo { type_guid, .. }) => Some(*type_guid),
+            Self::Block(_) => None,
+        }
+    }
+
+    pub fn instance_guid(&self) -> Option<[u8; 16]> {
+        match self {
+            Self::Partition(PartitionInfo { instance_guid, .. }) => Some(*instance_guid),
+            Self::Volume(VolumeInfo { instance_guid, .. }) => Some(*instance_guid),
+            Self::Block(_) => None,
+        }
+    }
 }
 
 /// Information associated with non-partition block devices.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct BlockInfo {
     pub device_flags: fblock::DeviceFlag,
     pub block_count: u64,
@@ -85,15 +109,29 @@ pub struct BlockInfo {
 }
 
 /// Information associated with a block device that is also a partition.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct PartitionInfo {
     /// The device flags reported by the underlying device.
     pub device_flags: fblock::DeviceFlag,
     pub max_transfer_blocks: Option<NonZero<u32>>,
-    /// If `block_range` is None, the partition is a volume and may not be contiguous.
-    /// In this case, the server will use the `get_volume_info` method to get the count of assigned
-    /// slices and use that (along with the slice and block sizes) to determine the block count.
-    pub block_range: Option<Range<u64>>,
+    /// This is None for partitions which have multiple logical extents, in which case the
+    /// start_block_offset is not meaningful and potentially confusing.
+    pub start_block_offset: Option<u64>,
+    pub block_count: u64,
+    pub type_guid: [u8; 16],
+    pub instance_guid: [u8; 16],
+    pub name: String,
+    /// This can be None for partitions which are composed of multiple partitions (e.g. an
+    /// overlay partition in GPT).
+    pub flags: Option<u64>,
+}
+
+/// Information associated with a dynamic volume (such as FVM volumes).
+#[derive(Clone, Default, Debug)]
+pub struct VolumeInfo {
+    /// The device flags reported by the underlying device.
+    pub device_flags: fblock::DeviceFlag,
+    pub max_transfer_blocks: Option<NonZero<u32>>,
     pub type_guid: [u8; 16],
     pub instance_guid: [u8; 16],
     pub name: String,
@@ -247,62 +285,100 @@ pub struct BlockServer<SM: SessionManager> {
     orchestrator: Arc<SM::Orchestrator>,
 }
 
-/// A single entry in `[OffsetMap]`.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockOffsetMapping {
-    source_block_offset: u64,
-    target_block_offset: u64,
-    length: u64,
+    pub target_block_offset: u64,
+    pub length: u64,
 }
 
-impl BlockOffsetMapping {
-    fn are_blocks_within_source_range(&self, blocks: (u64, u32)) -> bool {
-        blocks.0 >= self.source_block_offset
-            && blocks.0 + blocks.1 as u64 - self.source_block_offset <= self.length
+/// Remaps the offset of block requests based on an internal map of contiguous logical extents.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OffsetMap {
+    mappings: Vec<BlockOffsetMapping>,
+}
+
+impl OffsetMap {
+    /// Creates a new `OffsetMap` from a list of `BlockOffsetMapping`s.
+    /// Returns `INVALID_ARGS` if any mapping length is zero, or if logical/target block offsets
+    /// overflow `u64`.
+    pub fn new(mappings: Vec<BlockOffsetMapping>) -> Result<Self, zx::Status> {
+        let mut total: u64 = 0;
+        for m in &mappings {
+            if m.length == 0 {
+                return Err(zx::Status::INVALID_ARGS);
+            }
+            m.target_block_offset.checked_add(m.length).ok_or(zx::Status::INVALID_ARGS)?;
+            total = total.checked_add(m.length).ok_or(zx::Status::INVALID_ARGS)?;
+        }
+        Ok(Self { mappings })
+    }
+
+    /// Creates an empty `OffsetMap`.
+    pub fn empty() -> Self {
+        Self { mappings: Vec::new() }
+    }
+
+    /// Maps `logical_offset` to `(target_block_offset, len)`, where `len` is the total number of
+    /// blocks which can be addressed from `target_block_offset` onwards.
+    ///
+    /// For example: if you have logical offset 0 pointing to physical extent 1000..1010, and you
+    /// search for offset 5, the return value will be `Some((1005, 5))`.
+    pub fn map(&self, logical_offset: u64) -> Option<(u64, u32)> {
+        let mut current_logical_start = 0;
+        for mapping in &self.mappings {
+            let current_logical_end = current_logical_start + mapping.length;
+            if logical_offset < current_logical_end {
+                let delta = logical_offset - current_logical_start;
+                let dev_offset = mapping.target_block_offset + delta;
+                let len = u32::try_from(current_logical_end - logical_offset).unwrap_or(u32::MAX);
+                return Some((dev_offset, len));
+            }
+            current_logical_start = current_logical_end;
+        }
+        None
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mappings.is_empty()
+    }
+
+    fn total_blocks(&self) -> u64 {
+        self.mappings.iter().map(|m| m.length).sum()
+    }
+
+    /// Returns true if the block range `[offset, offset + length)` falls entirely within this
+    /// map's total blocks. If the map is empty, returns true (no range restriction).
+    pub fn are_blocks_within_source_range(&self, (offset, length): (u64, u32)) -> bool {
+        if self.is_empty() {
+            return true;
+        }
+        let total = self.total_blocks();
+        offset <= total && total - offset >= length as u64
+    }
+
+    pub fn mappings(&self) -> &[BlockOffsetMapping] {
+        &self.mappings
     }
 }
 
-impl std::convert::TryFrom<fblock::BlockOffsetMapping> for BlockOffsetMapping {
+impl TryFrom<&fblock::BlockOffsetMapping> for BlockOffsetMapping {
     type Error = zx::Status;
 
-    fn try_from(wire: fblock::BlockOffsetMapping) -> Result<Self, Self::Error> {
-        wire.source_block_offset.checked_add(wire.length).ok_or(zx::Status::INVALID_ARGS)?;
+    fn try_from(wire: &fblock::BlockOffsetMapping) -> Result<Self, Self::Error> {
+        if wire.length == 0 {
+            return Err(zx::Status::INVALID_ARGS);
+        }
         wire.target_block_offset.checked_add(wire.length).ok_or(zx::Status::INVALID_ARGS)?;
-        Ok(Self {
-            source_block_offset: wire.source_block_offset,
+        Ok(BlockOffsetMapping {
             target_block_offset: wire.target_block_offset,
             length: wire.length,
         })
     }
 }
 
-/// Remaps the offset of block requests based on an internal map, and truncates long requests.
-pub struct OffsetMap {
-    mapping: Option<BlockOffsetMapping>,
-    max_transfer_blocks: Option<NonZero<u32>>,
-}
-
-impl OffsetMap {
-    /// An OffsetMap that remaps requests.
-    pub fn new(mapping: BlockOffsetMapping, max_transfer_blocks: Option<NonZero<u32>>) -> Self {
-        Self { mapping: Some(mapping), max_transfer_blocks }
-    }
-
-    /// An OffsetMap that just enforces maximum request sizes.
-    pub fn empty(max_transfer_blocks: Option<NonZero<u32>>) -> Self {
-        Self { mapping: None, max_transfer_blocks }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.mapping.is_none()
-    }
-
-    fn mapping(&self) -> Option<&BlockOffsetMapping> {
-        self.mapping.as_ref()
-    }
-
-    fn max_transfer_blocks(&self) -> Option<NonZero<u32>> {
-        self.max_transfer_blocks
+impl From<&BlockOffsetMapping> for fblock::BlockOffsetMapping {
+    fn from(m: &BlockOffsetMapping) -> Self {
+        fblock::BlockOffsetMapping { target_block_offset: m.target_block_offset, length: m.length }
     }
 }
 
@@ -330,9 +406,13 @@ pub trait SessionManager: 'static {
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
     /// Creates a new session to handle `stream`.
+    ///
     /// The returned future should run until the session completes, for example when the client end
     /// closes.
-    /// `offset_map`, will be used to adjust the block offset/length of FIFO requests.
+    ///
+    /// `offset_map` is an optional client-provided map to adjust the offset/length of FIFO
+    /// requests.  If the implementation supports mapping requests, it must forward this back to
+    /// [`SessionHelper::new`].
     fn open_session(
         orchestrator: Arc<Self::Orchestrator>,
         stream: fblock::SessionRequestStream,
@@ -413,7 +493,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                     }
                 }
                 Ok(None) => break,
-                Err(err) => log::warn!(err:?; "Invalid request"),
+                Err(error) => log::warn!(error:?; "Invalid request"),
             }
         }
         scope.await;
@@ -435,14 +515,14 @@ impl<SM: SessionManager> BlockServer<SM> {
                         (*block_count, *device_flags)
                     }
                     DeviceInfo::Partition(partition_info) => {
-                        let block_count = if let Some(range) = partition_info.block_range.as_ref() {
-                            range.end - range.start
-                        } else {
-                            let volume_info = self.session_manager().get_volume_info().await?;
-                            volume_info.0.slice_size * volume_info.1.partition_slice_count
-                                / self.block_size as u64
-                        };
-                        (block_count, partition_info.device_flags)
+                        (partition_info.block_count, partition_info.device_flags)
+                    }
+                    DeviceInfo::Volume(volume_info) => {
+                        let volume_info_fidl = self.session_manager().get_volume_info().await?;
+                        let block_count = volume_info_fidl.0.slice_size
+                            * volume_info_fidl.1.partition_slice_count
+                            / self.block_size as u64;
+                        (block_count, volume_info.device_flags)
                     }
                 };
                 if SM::SUPPORTS_DECOMPRESSION {
@@ -456,11 +536,10 @@ impl<SM: SessionManager> BlockServer<SM> {
                 }))?;
             }
             fblock::BlockRequest::OpenSession { session, control_handle: _ } => {
-                let info = self.device_info();
                 return Ok(Some(SM::open_session(
                     self.orchestrator.clone(),
                     session.into_stream(),
-                    OffsetMap::empty(info.max_transfer_blocks()),
+                    OffsetMap::empty(),
                     self.block_size,
                 )));
             }
@@ -470,74 +549,101 @@ impl<SM: SessionManager> BlockServer<SM> {
                 control_handle: _,
             } => {
                 let info = self.device_info();
-                let initial_mapping: BlockOffsetMapping = match mapping.try_into() {
+                let mapping: BlockOffsetMapping = match (&mapping).try_into() {
                     Ok(m) => m,
                     Err(status) => {
                         session.close_with_epitaph(status)?;
                         return Ok(None);
                     }
                 };
-                if let Some(max) = info.block_count() {
-                    if initial_mapping.target_block_offset + initial_mapping.length > max {
-                        log::warn!("Invalid mapping for session: {initial_mapping:?} (max {max})");
+                let offset_map = match OffsetMap::new(vec![mapping]) {
+                    Ok(map) => map,
+                    Err(_) => {
                         session.close_with_epitaph(zx::Status::INVALID_ARGS)?;
                         return Ok(None);
+                    }
+                };
+                if let Some(max) = info.block_count() {
+                    for m in offset_map.mappings() {
+                        if m.target_block_offset + m.length > max {
+                            log::warn!("Invalid mapping for session: {m:?} (max blocks {max})");
+                            session.close_with_epitaph(zx::Status::INVALID_ARGS)?;
+                            return Ok(None);
+                        }
                     }
                 }
                 return Ok(Some(SM::open_session(
                     self.orchestrator.clone(),
                     session.into_stream(),
-                    OffsetMap::new(initial_mapping, info.max_transfer_blocks()),
+                    offset_map,
                     self.block_size,
                 )));
             }
             fblock::BlockRequest::GetTypeGuid { responder } => {
-                let info = self.device_info();
-                if let DeviceInfo::Partition(partition_info) = info.as_ref() {
-                    let mut guid = fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
-                    guid.value.copy_from_slice(&partition_info.type_guid);
-                    responder.send(zx::sys::ZX_OK, Some(&guid))?;
-                } else {
-                    responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
+                match self.device_info().type_guid() {
+                    Some(guid) => {
+                        responder.send(zx::sys::ZX_OK, Some(&fblock::Guid { value: guid }))?
+                    }
+                    None => responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?,
                 }
             }
             fblock::BlockRequest::GetInstanceGuid { responder } => {
-                let info = self.device_info();
-                if let DeviceInfo::Partition(partition_info) = info.as_ref() {
-                    let mut guid = fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
-                    guid.value.copy_from_slice(&partition_info.instance_guid);
-                    responder.send(zx::sys::ZX_OK, Some(&guid))?;
-                } else {
-                    responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
+                match self.device_info().instance_guid() {
+                    Some(guid) => {
+                        responder.send(zx::sys::ZX_OK, Some(&fblock::Guid { value: guid }))?
+                    }
+                    None => responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?,
                 }
             }
             fblock::BlockRequest::GetName { responder } => {
                 let info = self.device_info();
-                if let DeviceInfo::Partition(partition_info) = info.as_ref() {
-                    responder.send(zx::sys::ZX_OK, Some(&partition_info.name))?;
-                } else {
-                    responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
+                match info.as_ref() {
+                    DeviceInfo::Partition(_) | DeviceInfo::Volume(_) => {
+                        responder.send(zx::sys::ZX_OK, Some(info.label()))?;
+                    }
+                    _ => responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?,
                 }
             }
             fblock::BlockRequest::GetMetadata { responder } => {
-                let info = self.device_info();
-                if let DeviceInfo::Partition(info) = info.as_ref() {
-                    let mut type_guid = fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
-                    type_guid.value.copy_from_slice(&info.type_guid);
-                    let mut instance_guid =
-                        fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
-                    instance_guid.value.copy_from_slice(&info.instance_guid);
-                    responder.send(Ok(&fblock::PartitionInfo {
-                        name: Some(info.name.clone()),
-                        type_guid: Some(type_guid),
-                        instance_guid: Some(instance_guid),
-                        start_block_offset: info.block_range.as_ref().map(|range| range.start),
-                        num_blocks: info.block_range.as_ref().map(|range| range.end - range.start),
-                        flags: Some(info.flags),
-                        ..Default::default()
-                    }))?;
-                } else {
-                    responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED))?;
+                let device_info = self.device_info();
+                match device_info.as_ref() {
+                    DeviceInfo::Partition(info) => {
+                        let mut type_guid =
+                            fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
+                        type_guid.value.copy_from_slice(&info.type_guid);
+                        let mut instance_guid =
+                            fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
+                        instance_guid.value.copy_from_slice(&info.instance_guid);
+                        let start_block_offset = info.start_block_offset;
+                        let flags = info.flags;
+                        responder.send(Ok(&fblock::PartitionInfo {
+                            name: Some(info.name.clone()),
+                            type_guid: Some(type_guid),
+                            instance_guid: Some(instance_guid),
+                            start_block_offset,
+                            num_blocks: device_info.block_count(),
+                            flags,
+                            ..Default::default()
+                        }))?;
+                    }
+                    DeviceInfo::Volume(info) => {
+                        let mut type_guid =
+                            fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
+                        type_guid.value.copy_from_slice(&info.type_guid);
+                        let mut instance_guid =
+                            fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
+                        instance_guid.value.copy_from_slice(&info.instance_guid);
+                        responder.send(Ok(&fblock::PartitionInfo {
+                            name: Some(info.name.clone()),
+                            type_guid: Some(type_guid),
+                            instance_guid: Some(instance_guid),
+                            start_block_offset: None,
+                            num_blocks: device_info.block_count(),
+                            flags: Some(info.flags),
+                            ..Default::default()
+                        }))?;
+                    }
+                    _ => responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED))?,
                 }
             }
             fblock::BlockRequest::QuerySlices { responder, start_slices } => {
@@ -596,6 +702,7 @@ impl<SM: SessionManager> BlockServer<SM> {
 struct SessionHelper<SM: SessionManager> {
     orchestrator: Arc<SM::Orchestrator>,
     offset_map: OffsetMap,
+    max_transfer_blocks: Option<NonZero<u32>>,
     block_size: u32,
     peer_fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest>,
     vmos: Mutex<BTreeMap<u16, (Arc<zx::Vmo>, Option<Arc<VmoMapping>>)>>,
@@ -642,10 +749,21 @@ impl<SM: SessionManager> SessionHelper<SM> {
     fn new(
         orchestrator: Arc<SM::Orchestrator>,
         offset_map: OffsetMap,
+        max_transfer_blocks: Option<NonZero<u32>>,
         block_size: u32,
     ) -> Result<(Self, zx::Fifo<BlockFifoRequest, BlockFifoResponse>), zx::Status> {
         let (peer_fifo, fifo) = zx::Fifo::create(16)?;
-        Ok((Self { orchestrator, offset_map, block_size, peer_fifo, vmos: Mutex::default() }, fifo))
+        Ok((
+            Self {
+                orchestrator,
+                offset_map,
+                max_transfer_blocks,
+                block_size,
+                peer_fifo,
+                vmos: Mutex::default(),
+            },
+            fifo,
+        ))
     }
 
     fn session_manager(&self) -> &SM {
@@ -703,8 +821,8 @@ impl<SM: SessionManager> SessionHelper<SM> {
             }
             fblock::SessionRequest::Close { responder } => {
                 Ok(HandleRequestResult::Closed(Box::new(move || {
-                    if let Err(err) = responder.send(Ok(())) {
-                        log::warn!(err:?; "Error sending close response");
+                    if let Err(error) = responder.send(Ok(())) {
+                        log::warn!(error:?; "Error sending close response");
                     }
                 })))
             }
@@ -1061,18 +1179,13 @@ impl<SM: SessionManager> SessionHelper<SM> {
         if active_request.status != zx::Status::OK {
             return Err(zx::Status::BAD_STATE);
         }
-        let mapping = self.offset_map.mapping();
-        match (mapping, request.operation.blocks()) {
-            (Some(mapping), Some(blocks)) if !mapping.are_blocks_within_source_range(blocks) => {
+        if let Some(blocks) = request.operation.blocks() {
+            if !self.offset_map.are_blocks_within_source_range(blocks) {
                 return Err(zx::Status::OUT_OF_RANGE);
             }
-            _ => {}
         }
-        let remainder = request.operation.map(
-            self.offset_map.mapping(),
-            self.offset_map.max_transfer_blocks(),
-            self.block_size,
-        );
+        let remainder =
+            request.operation.map(&self.offset_map, self.max_transfer_blocks, self.block_size);
         if remainder.is_some() {
             active_request.count += 1;
         }
@@ -1209,7 +1322,7 @@ impl Operation {
     }
 
     /// Returns (offset, length).
-    fn blocks(&self) -> Option<(u64, u32)> {
+    pub fn blocks(&self) -> Option<(u64, u32)> {
         match self {
             Operation::Read { device_block_offset, block_count, .. }
             | Operation::Write { device_block_offset, block_count, .. }
@@ -1232,34 +1345,32 @@ impl Operation {
         }
     }
 
-    /// Maps the operation using `mapping` and returns the remainder.  `mapping` *must* overlap the
-    /// start of the operation.
+    /// Maps the operation using `offset_map` and returns the remainder if the request was split
+    /// due to `max_transfer_blocks` or crossing mapping boundaries.
     fn map(
         &mut self,
-        mapping: Option<&BlockOffsetMapping>,
-        max_blocks: Option<NonZero<u32>>,
+        offset_map: &OffsetMap,
+        max_transfer_blocks: Option<NonZero<u32>>,
         block_size: u32,
     ) -> Option<Self> {
         let mut max = match self {
-            Operation::Read { .. } | Operation::Write { .. } => max_blocks.map(|m| m.get() as u64),
+            Operation::Read { .. } | Operation::Write { .. } => max_transfer_blocks.map(u32::from),
             _ => None,
         };
         let (offset, length) = self.blocks_mut()?;
         let orig_offset = *offset;
-        if let Some(mapping) = mapping {
-            let delta = *offset - mapping.source_block_offset;
-            debug_assert!(*offset - mapping.source_block_offset < mapping.length);
-            *offset = mapping.target_block_offset + delta;
-            let mapping_max = mapping.target_block_offset + mapping.length - *offset;
+        if !offset_map.is_empty() {
+            let (dev_offset, len) = offset_map.map(*offset).expect("offset out of range");
+            *offset = dev_offset;
             max = match max {
-                None => Some(mapping_max),
-                Some(m) => Some(std::cmp::min(m, mapping_max)),
+                None => Some(len),
+                Some(m) => Some(std::cmp::min(m, len)),
             };
-        };
+        }
         if let Some(max) = max {
-            if *length as u64 > max {
-                let rem = (*length as u64 - max) as u32;
-                *length = max as u32;
+            if *length as u64 > max as u64 {
+                let rem = *length - max;
+                *length = max;
                 return Some(match self {
                     Operation::Read {
                         device_block_offset: _,
@@ -1269,11 +1380,11 @@ impl Operation {
                         options,
                     } => {
                         let mut options = *options;
-                        options.inline_crypto.dun += max as u32;
+                        options.inline_crypto.dun += max;
                         Operation::Read {
-                            device_block_offset: orig_offset + max,
+                            device_block_offset: orig_offset + max as u64,
                             block_count: rem,
-                            vmo_offset: *vmo_offset + max * block_size as u64,
+                            vmo_offset: *vmo_offset + max as u64 * block_size as u64,
                             _unused: *_unused,
                             options: options,
                         }
@@ -1286,18 +1397,19 @@ impl Operation {
                         options,
                     } => {
                         let mut options = *options;
-                        options.inline_crypto.dun += max as u32;
+                        options.inline_crypto.dun += max;
                         Operation::Write {
-                            device_block_offset: orig_offset + max,
+                            device_block_offset: orig_offset + max as u64,
                             block_count: rem,
                             _unused: *_unused,
-                            vmo_offset: *vmo_offset + max * block_size as u64,
+                            vmo_offset: *vmo_offset + max as u64 * block_size as u64,
                             options: options,
                         }
                     }
-                    Operation::Trim { device_block_offset: _, block_count: _ } => {
-                        Operation::Trim { device_block_offset: orig_offset + max, block_count: rem }
-                    }
+                    Operation::Trim { device_block_offset: _, block_count: _ } => Operation::Trim {
+                        device_block_offset: orig_offset + max as u64,
+                        block_count: rem,
+                    },
                     _ => unreachable!(),
                 });
             }
@@ -1348,8 +1460,8 @@ impl GroupOrRequest {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockOffsetMapping, BlockServer, DeviceInfo, FIFO_MAX_REQUESTS, Operation, PartitionInfo,
-        TraceFlowId,
+        BlockOffsetMapping, BlockServer, DeviceInfo, FIFO_MAX_REQUESTS, OffsetMap, Operation,
+        PartitionInfo, TraceFlowId,
     };
     use assert_matches::assert_matches;
     use block_protocol::{
@@ -1373,6 +1485,7 @@ mod tests {
 
     #[derive(Default)]
     struct MockInterface {
+        info: Option<DeviceInfo>,
         read_hook: Option<
             Box<
                 dyn Fn(u64, u32, &Arc<zx::Vmo>, u64) -> BoxFuture<'static, Result<(), zx::Status>>
@@ -1391,7 +1504,10 @@ mod tests {
         }
 
         fn get_info(&self) -> Cow<'_, DeviceInfo> {
-            Cow::Owned(test_device_info())
+            match &self.info {
+                Some(info) => Cow::Borrowed(info),
+                None => Cow::Owned(test_device_info()),
+            }
         }
 
         async fn read(
@@ -1403,6 +1519,12 @@ mod tests {
             _opts: ReadOptions,
             _trace_flow_id: TraceFlowId,
         ) -> Result<(), zx::Status> {
+            if let Some(total) = self.get_info().block_count() {
+                if device_block_offset >= total || total - device_block_offset < block_count as u64
+                {
+                    return Err(zx::Status::OUT_OF_RANGE);
+                }
+            }
             if let Some(read_hook) = &self.read_hook {
                 read_hook(device_block_offset, block_count, vmo, vmo_offset).await
             } else {
@@ -1462,11 +1584,12 @@ mod tests {
                 | fblock::DeviceFlag::BARRIER_SUPPORT
                 | fblock::DeviceFlag::FUA_SUPPORT,
             max_transfer_blocks: NonZero::new(MAX_TRANSFER_BLOCKS),
-            block_range: Some(0..100),
+            start_block_offset: Some(0),
+            block_count: 100,
             type_guid: [1; 16],
             instance_guid: [2; 16],
             name: "foo".to_string(),
-            flags: 0xabcd,
+            flags: Some(0xabcd),
         })
     }
 
@@ -1582,11 +1705,7 @@ mod tests {
                 };
 
                 let block_info = proxy.get_info().await.unwrap().unwrap();
-                assert_eq!(
-                    block_info.block_count,
-                    partition_info.block_range.as_ref().unwrap().end
-                        - partition_info.block_range.as_ref().unwrap().start
-                );
+                assert_eq!(block_info.block_count, expected_info.block_count().unwrap());
                 assert_eq!(
                     block_info.flags,
                     fblock::DeviceFlag::READONLY
@@ -1613,12 +1732,10 @@ mod tests {
                 assert_eq!(metadata.name, name);
                 assert_eq!(metadata.type_guid.as_ref(), type_guid.as_deref());
                 assert_eq!(metadata.instance_guid.as_ref(), instance_guid.as_deref());
-                assert_eq!(
-                    metadata.start_block_offset,
-                    Some(partition_info.block_range.as_ref().unwrap().start)
-                );
-                assert_eq!(metadata.num_blocks, Some(block_info.block_count));
-                assert_eq!(metadata.flags, Some(partition_info.flags));
+                let expected_start = partition_info.start_block_offset.or(Some(0));
+                assert_eq!(metadata.start_block_offset, expected_start);
+                assert_eq!(metadata.num_blocks, Some(partition_info.block_count));
+                assert_eq!(metadata.flags, partition_info.flags);
 
                 std::mem::drop(proxy);
             }
@@ -1750,8 +1867,8 @@ mod tests {
 
                 proxy.open_session(server).unwrap();
 
-                // Dropping the proxy should not cause the session to terminate because the session is
-                // still live.
+                // Dropping the proxy should not cause the session to terminate because the session
+                // is still live.
                 std::mem::drop(proxy);
 
                 session_proxy.close().await.unwrap().unwrap();
@@ -1789,7 +1906,10 @@ mod tests {
         }
 
         fn get_info(&self) -> Cow<'_, DeviceInfo> {
-            Cow::Owned(test_device_info())
+            Cow::Owned(DeviceInfo::Block(crate::BlockInfo {
+                block_count: 100,
+                ..Default::default()
+            }))
         }
 
         async fn read(
@@ -2831,6 +2951,10 @@ mod tests {
                 let block_server = BlockServer::new(
                     BLOCK_SIZE,
                     Arc::new(MockInterface {
+                        info: Some(DeviceInfo::Partition(PartitionInfo {
+                            block_count: 1000,
+                            ..Default::default()
+                        })),
                         read_hook: Some(Box::new(move |_, _, _, _| {
                             let event_clone = event_clone.clone();
                             Box::pin(async move {
@@ -2956,11 +3080,7 @@ mod tests {
             async move {
                 let (session_proxy, server) = fidl::endpoints::create_proxy();
 
-                let mapping = fblock::BlockOffsetMapping {
-                    source_block_offset: 0,
-                    target_block_offset: 10,
-                    length: 20,
-                };
+                let mapping = fblock::BlockOffsetMapping { target_block_offset: 10, length: 20 };
                 proxy.open_session_with_offset_map(server, &mapping).unwrap();
 
                 let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
@@ -3081,14 +3201,18 @@ mod tests {
         #[track_caller]
         fn expect_map_result(
             mut operation: Operation,
-            mapping: Option<BlockOffsetMapping>,
+            mapping: Option<fblock::BlockOffsetMapping>,
             max_blocks: Option<NonZero<u32>>,
             expected_operations: Vec<Operation>,
         ) {
+            let offset_map = mapping
+                .map(|m| {
+                    let map: BlockOffsetMapping = (&m).try_into().unwrap();
+                    OffsetMap::new(vec![map]).unwrap()
+                })
+                .unwrap_or_else(OffsetMap::empty);
             let mut ops = vec![];
-            while let Some(remainder) =
-                operation.map(mapping.as_ref(), max_blocks.clone(), BLOCK_SIZE)
-            {
+            while let Some(remainder) = operation.map(&offset_map, max_blocks, BLOCK_SIZE) {
                 ops.push(operation);
                 operation = remainder;
             }
@@ -3157,17 +3281,13 @@ mod tests {
         // Remapping + Max block count
         expect_map_result(
             Operation::Read {
-                device_block_offset: 10,
+                device_block_offset: 0,
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
                 options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
             },
-            Some(BlockOffsetMapping {
-                source_block_offset: 10,
-                target_block_offset: 100,
-                length: 200,
-            }),
+            Some(fblock::BlockOffsetMapping { target_block_offset: 100, length: 200 }),
             NonZero::new(120),
             vec![
                 Operation::Read {
@@ -3189,15 +3309,157 @@ mod tests {
             ],
         );
         expect_map_result(
-            Operation::Trim { device_block_offset: 10, block_count: 200 },
-            Some(BlockOffsetMapping {
-                source_block_offset: 10,
-                target_block_offset: 100,
-                length: 200,
-            }),
+            Operation::Trim { device_block_offset: 0, block_count: 200 },
+            Some(fblock::BlockOffsetMapping { target_block_offset: 100, length: 200 }),
             NonZero::new(120),
             vec![Operation::Trim { device_block_offset: 100, block_count: 200 }],
         );
+
+        // Multi-extent remapping
+        let multi_extent_map = OffsetMap::new(vec![
+            BlockOffsetMapping { target_block_offset: 100, length: 10 },
+            BlockOffsetMapping { target_block_offset: 200, length: 20 },
+        ])
+        .unwrap();
+
+        fn expect_multi_map_result(
+            mut operation: Operation,
+            offset_map: &OffsetMap,
+            max_blocks: Option<NonZero<u32>>,
+            expected_operations: Vec<Operation>,
+        ) {
+            let mut ops = vec![];
+            while let Some(remainder) = operation.map(offset_map, max_blocks, BLOCK_SIZE) {
+                ops.push(operation);
+                operation = remainder;
+            }
+            ops.push(operation);
+            assert_eq!(ops, expected_operations);
+        }
+
+        // Read spanning multi-extents (logical offset 5, count 15 -> 5 blocks in extent 0, 10 in
+        // extent 1)
+        expect_multi_map_result(
+            Operation::Read {
+                device_block_offset: 5,
+                block_count: 15,
+                _unused: 0,
+                vmo_offset: 0,
+                options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
+            },
+            &multi_extent_map,
+            None,
+            vec![
+                Operation::Read {
+                    device_block_offset: 105,
+                    block_count: 5,
+                    _unused: 0,
+                    vmo_offset: 0,
+                    options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
+                },
+                Operation::Read {
+                    device_block_offset: 200,
+                    block_count: 10,
+                    _unused: 0,
+                    vmo_offset: 5 * BLOCK_SIZE as u64,
+                    options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1005) },
+                },
+            ],
+        );
+
+        // Read spanning multi-extents with max_transfer_blocks limit
+        expect_multi_map_result(
+            Operation::Read {
+                device_block_offset: 5,
+                block_count: 15,
+                _unused: 0,
+                vmo_offset: 0,
+                options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
+            },
+            &multi_extent_map,
+            NonZero::new(7),
+            vec![
+                Operation::Read {
+                    device_block_offset: 105,
+                    block_count: 5,
+                    _unused: 0,
+                    vmo_offset: 0,
+                    options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
+                },
+                Operation::Read {
+                    device_block_offset: 200,
+                    block_count: 7,
+                    _unused: 0,
+                    vmo_offset: 5 * BLOCK_SIZE as u64,
+                    options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1005) },
+                },
+                Operation::Read {
+                    device_block_offset: 207,
+                    block_count: 3,
+                    _unused: 0,
+                    vmo_offset: 12 * BLOCK_SIZE as u64,
+                    options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1012) },
+                },
+            ],
+        );
+
+        // Write spanning multi-extents
+        expect_multi_map_result(
+            Operation::Write {
+                device_block_offset: 5,
+                block_count: 15,
+                _unused: 0,
+                vmo_offset: 0,
+                options: WriteOptions {
+                    inline_crypto: InlineCryptoOptions::enabled(1, 2000),
+                    flags: WriteFlags::empty(),
+                },
+            },
+            &multi_extent_map,
+            None,
+            vec![
+                Operation::Write {
+                    device_block_offset: 105,
+                    block_count: 5,
+                    _unused: 0,
+                    vmo_offset: 0,
+                    options: WriteOptions {
+                        inline_crypto: InlineCryptoOptions::enabled(1, 2000),
+                        flags: WriteFlags::empty(),
+                    },
+                },
+                Operation::Write {
+                    device_block_offset: 200,
+                    block_count: 10,
+                    _unused: 0,
+                    vmo_offset: 5 * BLOCK_SIZE as u64,
+                    options: WriteOptions {
+                        inline_crypto: InlineCryptoOptions::enabled(1, 2005),
+                        flags: WriteFlags::empty(),
+                    },
+                },
+            ],
+        );
+
+        // Trim spanning multi-extents
+        expect_multi_map_result(
+            Operation::Trim { device_block_offset: 5, block_count: 15 },
+            &multi_extent_map,
+            None,
+            vec![
+                Operation::Trim { device_block_offset: 105, block_count: 5 },
+                Operation::Trim { device_block_offset: 200, block_count: 10 },
+            ],
+        );
+
+        // Large extent test (length > u32::MAX)
+        let large_extent_map = OffsetMap::new(vec![BlockOffsetMapping {
+            target_block_offset: 100,
+            length: (u32::MAX as u64) + 10,
+        }])
+        .unwrap();
+
+        assert_eq!(large_extent_map.map(0), Some((100, u32::MAX)));
     }
 
     // Verifies that if the pre-flush (for a simulated barrier) fails, the write is not executed.
@@ -3211,11 +3473,12 @@ mod tests {
                 Cow::Owned(DeviceInfo::Partition(PartitionInfo {
                     device_flags: fblock::DeviceFlag::empty(), // No BARRIER_SUPPORT
                     max_transfer_blocks: NonZero::new(100),
-                    block_range: Some(0..100),
+                    start_block_offset: Some(0),
+                    block_count: 100,
                     type_guid: [0; 16],
                     instance_guid: [0; 16],
                     name: "test".to_string(),
-                    flags: 0,
+                    flags: Some(0),
                 }))
             }
             async fn on_attach_vmo(&self, _vmo: &zx::Vmo) -> Result<(), zx::Status> {
@@ -3303,11 +3566,12 @@ mod tests {
                 Cow::Owned(DeviceInfo::Partition(PartitionInfo {
                     device_flags: fblock::DeviceFlag::empty(), // No FUA_SUPPORT
                     max_transfer_blocks: NonZero::new(100),
-                    block_range: Some(0..100),
+                    start_block_offset: Some(0),
+                    block_count: 100,
                     type_guid: [0; 16],
                     instance_guid: [0; 16],
                     name: "test".to_string(),
-                    flags: 0,
+                    flags: Some(0),
                 }))
             }
             async fn on_attach_vmo(&self, _vmo: &zx::Vmo) -> Result<(), zx::Status> {
@@ -3565,6 +3829,221 @@ mod tests {
 
                 std::mem::drop(session_a);
                 std::mem::drop(session_b);
+                std::mem::drop(proxy);
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_unmapped_request_out_of_range() {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
+        let _server = fasync::Task::spawn(async move {
+            let block_server = BlockServer::new(4096, Arc::new(MockInterface::default()));
+            let _ = block_server.handle_requests(stream).await;
+        });
+
+        let (session_proxy, server) = fidl::endpoints::create_proxy();
+        proxy.open_session(server).unwrap();
+
+        let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+        let vmo_id = session_proxy
+            .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let mut fifo = fasync::Fifo::from_fifo(session_proxy.get_fifo().await.unwrap().unwrap());
+        let (mut reader, mut writer) = fifo.async_io();
+
+        // Attempting to read at offset 100 on a 100-block unmapped partition should fail with
+        // OUT_OF_RANGE.
+        writer
+            .write_entries(&BlockFifoRequest {
+                command: BlockFifoCommand {
+                    opcode: BlockOpcode::Read.into_primitive(),
+                    ..Default::default()
+                },
+                reqid: 1,
+                vmoid: vmo_id.id,
+                length: 1,
+                dev_offset: 100,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let mut response = BlockFifoResponse::default();
+        reader.read_entries(&mut response).await.unwrap();
+        assert_eq!(zx::Status::from_raw(response.status), zx::Status::OUT_OF_RANGE);
+    }
+
+    #[fuchsia::test]
+    async fn test_open_session_with_offset_map_errors() {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
+
+        futures::join!(
+            async {
+                let block_server = BlockServer::new(BLOCK_SIZE, Arc::new(MockInterface::default()));
+                let _ = block_server.handle_requests(stream).await;
+            },
+            async move {
+                // Test 1: Length 0 mapping -> should close session with INVALID_ARGS epitaph.
+                {
+                    let (session_proxy, server) = fidl::endpoints::create_proxy();
+                    proxy
+                        .open_session_with_offset_map(
+                            server,
+                            &fblock::BlockOffsetMapping { target_block_offset: 0, length: 0 },
+                        )
+                        .unwrap();
+                    let res = session_proxy.get_fifo().await;
+                    assert_matches!(
+                        res,
+                        Err(fidl::Error::ClientChannelClosed {
+                            status: zx::Status::INVALID_ARGS,
+                            ..
+                        })
+                    );
+                }
+
+                // Test 2: Mappings out of range (exceeding block_count) -> should close with
+                // INVALID_ARGS epitaph.
+                {
+                    let (session_proxy, server) = fidl::endpoints::create_proxy();
+                    let mapping = fblock::BlockOffsetMapping {
+                        target_block_offset: u64::MAX - 10, // Way past block_count
+                        length: 10,
+                    };
+                    proxy.open_session_with_offset_map(server, &mapping).unwrap();
+                    let res = session_proxy.get_fifo().await;
+                    assert_matches!(
+                        res,
+                        Err(fidl::Error::ClientChannelClosed {
+                            status: zx::Status::INVALID_ARGS,
+                            ..
+                        })
+                    );
+                }
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_split_request_failure_aborts_subsequent_chunks() {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
+
+        let read_calls = Arc::new(AtomicU64::new(0));
+        let read_calls_clone = read_calls.clone();
+
+        struct MockSplitInterface {
+            read_calls: Arc<AtomicU64>,
+        }
+
+        impl super::async_interface::Interface for MockSplitInterface {
+            fn get_info(&self) -> Cow<'_, DeviceInfo> {
+                Cow::Owned(DeviceInfo::Partition(PartitionInfo {
+                    device_flags: fblock::DeviceFlag::READONLY,
+                    max_transfer_blocks: NonZero::new(5),
+                    start_block_offset: Some(0),
+                    block_count: 100,
+                    type_guid: [1; 16],
+                    instance_guid: [2; 16],
+                    name: "foo".to_string(),
+                    flags: Some(0),
+                }))
+            }
+
+            async fn on_attach_vmo(&self, _vmo: &zx::Vmo) -> Result<(), zx::Status> {
+                Ok(())
+            }
+
+            async fn read(
+                &self,
+                _device_block_offset: u64,
+                _block_count: u32,
+                _vmo: &Arc<zx::Vmo>,
+                _vmo_offset: u64,
+                _opts: ReadOptions,
+                _trace_flow_id: TraceFlowId,
+            ) -> Result<(), zx::Status> {
+                let call_num = self.read_calls.fetch_add(1, Ordering::Relaxed);
+                if call_num == 0 { Err(zx::Status::IO) } else { Ok(()) }
+            }
+
+            async fn write(
+                &self,
+                _device_block_offset: u64,
+                _block_count: u32,
+                _vmo: &Arc<zx::Vmo>,
+                _vmo_offset: u64,
+                _opts: WriteOptions,
+                _trace_flow_id: TraceFlowId,
+            ) -> Result<(), zx::Status> {
+                unreachable!()
+            }
+
+            async fn flush(&self, _trace_flow_id: TraceFlowId) -> Result<(), zx::Status> {
+                Ok(())
+            }
+
+            async fn trim(
+                &self,
+                _device_block_offset: u64,
+                _block_count: u32,
+                _trace_flow_id: TraceFlowId,
+            ) -> Result<(), zx::Status> {
+                unreachable!()
+            }
+        }
+
+        futures::join!(
+            async move {
+                let block_server = BlockServer::new(
+                    BLOCK_SIZE,
+                    Arc::new(MockSplitInterface { read_calls: read_calls_clone }),
+                );
+                let _ = block_server.handle_requests(stream).await;
+            },
+            async move {
+                let (session_proxy, server) = fidl::endpoints::create_proxy();
+                proxy.open_session(server).unwrap();
+
+                let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+                let vmo_id = session_proxy
+                    .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+                let mut fifo =
+                    fasync::Fifo::from_fifo(session_proxy.get_fifo().await.unwrap().unwrap());
+                let (mut reader, mut writer) = fifo.async_io();
+
+                // Send a request for 10 blocks. With max_transfer_blocks = 5, this will be split
+                // into 2 chunks of 5 blocks each.
+                writer
+                    .write_entries(&BlockFifoRequest {
+                        command: BlockFifoCommand {
+                            opcode: BlockOpcode::Read.into_primitive(),
+                            ..Default::default()
+                        },
+                        vmoid: vmo_id.id,
+                        length: 10,
+                        dev_offset: 0,
+                        reqid: 1,
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+
+                let mut response = BlockFifoResponse::default();
+                reader.read_entries(&mut response).await.unwrap();
+                assert_ne!(response.status, zx::sys::ZX_OK);
+
+                // Verify that only the first chunk was submitted to `read`. The second chunk
+                // should have been aborted when `map_request` saw active_request.status != OK.
+                assert_eq!(read_calls.load(Ordering::Relaxed), 1);
+
                 std::mem::drop(proxy);
             }
         );

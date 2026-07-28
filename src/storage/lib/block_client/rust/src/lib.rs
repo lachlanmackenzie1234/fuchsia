@@ -1360,11 +1360,12 @@ mod tests {
                 Cow::Owned(DeviceInfo::Partition(PartitionInfo {
                     device_flags: fidl_fuchsia_storage_block::DeviceFlag::empty(),
                     max_transfer_blocks: None,
-                    block_range: Some(0..1000),
+                    start_block_offset: None,
+                    block_count: 1000,
                     type_guid: [0; 16],
                     instance_guid: [0; 16],
                     name: "foo".to_string(),
-                    flags: 0,
+                    ..Default::default()
                 }))
             }
 

@@ -79,12 +79,12 @@ impl RamdiskControllerInner {
         };
 
         let partition_info = block_server::PartitionInfo {
-            block_range: Some(0..block_count),
             device_flags: options
                 .device_flags
                 .unwrap_or_else(fidl_fuchsia_storage_block::DeviceFlag::empty),
-            type_guid: options.type_guid.map(|g| g.value).unwrap_or([0; 16]),
             max_transfer_blocks: options.max_transfer_blocks.and_then(std::num::NonZeroU32::new),
+            block_count,
+            type_guid: options.type_guid.map(|g| g.value).unwrap_or([0; 16]),
             ..Default::default()
         };
 

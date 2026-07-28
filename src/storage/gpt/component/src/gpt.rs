@@ -110,19 +110,18 @@ impl GptPartition {
             let mapping = {
                 let info = self.info.lock();
                 fblock::BlockOffsetMapping {
-                    source_block_offset: 0,
                     target_block_offset: info.start_block,
                     length: info.num_blocks,
                 }
             };
-            if let Err(err) = gpt.block_proxy.open_session_with_offset_map(session, &mapping) {
+            if let Err(error) = gpt.block_proxy.open_session_with_offset_map(session, &mapping) {
                 // Client errors normally come back on `session` but that was already consumed.  The
                 // client will get a PEER_CLOSED without an epitaph.
-                log::warn!(err:?; "Failed to open passthrough session");
+                log::warn!(error:?; "Failed to open passthrough session");
             }
         } else {
-            if let Err(err) = session.close_with_epitaph(zx::Status::BAD_STATE) {
-                log::warn!(err:?; "Failed to send session epitaph");
+            if let Err(error) = session.close_with_epitaph(zx::Status::BAD_STATE) {
+                log::warn!(error:?; "Failed to send session epitaph");
             }
         }
     }
@@ -219,11 +218,12 @@ fn convert_partition_info(
     block_server::DeviceInfo::Partition(block_server::PartitionInfo {
         device_flags,
         max_transfer_blocks,
-        block_range: Some(info.start_block..info.start_block + info.num_blocks),
+        start_block_offset: Some(info.start_block),
+        block_count: info.num_blocks,
         type_guid: info.type_guid.to_bytes(),
         instance_guid: info.instance_guid.to_bytes(),
         name: info.label.clone(),
-        flags: info.flags,
+        flags: Some(info.flags),
     })
 }
 
@@ -489,8 +489,8 @@ impl GptManager {
         inner.ensure_transaction_matches(&transaction)?;
         let pending = std::mem::take(&mut inner.pending_transaction).unwrap();
         let partitions = pending.transaction.partitions.clone();
-        if let Err(err) = inner.gpt.commit_transaction(pending.transaction).await {
-            log::warn!(err:?; "Failed to commit transaction");
+        if let Err(error) = inner.gpt.commit_transaction(pending.transaction).await {
+            log::warn!(error:?; "Failed to commit transaction");
             return Err(zx::Status::IO);
         }
         // Everything after this point should be infallible.
@@ -511,8 +511,8 @@ impl GptManager {
         }
         for idx in pending.added_partitions {
             if let Some(info) = inner.gpt.partitions().get(&idx).cloned() {
-                if let Err(err) = inner.bind_partition(self, idx, info, vec![]) {
-                    log::error!(err:?; "Failed to bind partition");
+                if let Err(error) = inner.bind_partition(self, idx, info, vec![]) {
+                    log::error!(error:?; "Failed to bind partition");
                 }
             }
         }
@@ -567,7 +567,7 @@ impl GptManager {
                                 .map_err(|status| status.into_raw()),
                         )
                         .unwrap_or_else(
-                            |err| log::error!(err:?; "Failed to send UpdateMetadata response"),
+                            |error| log::error!(error:?; "Failed to send UpdateMetadata response"),
                         );
                 }
             }
@@ -609,7 +609,7 @@ impl GptManager {
                         Err(status) => responder.send(Err(status.into_raw())),
                     }
                     .unwrap_or_else(
-                        |err| log::error!(err:?; "Failed to send GetPartitions response"),
+                        |error| log::error!(error:?; "Failed to send GetPartitions response"),
                     );
                 }
             }
@@ -663,8 +663,8 @@ impl GptManager {
         transaction.partitions = partitions;
         inner.gpt.commit_transaction(transaction).await?;
 
-        if let Err(err) = inner.bind_all_partitions(&self) {
-            log::error!(err:?; "Failed to rebind partitions");
+        if let Err(error) = inner.bind_all_partitions(&self) {
+            log::error!(error:?; "Failed to rebind partitions");
             return Err(zx::Status::BAD_STATE);
         }
         log::info!("Rebinding partitions OK!");
@@ -1796,11 +1796,7 @@ mod tests {
         part_block
             .open_session_with_offset_map(
                 server_end,
-                &fblock::BlockOffsetMapping {
-                    source_block_offset: 0,
-                    target_block_offset: 1,
-                    length: 2,
-                },
+                &fblock::BlockOffsetMapping { target_block_offset: 1, length: 2 },
             )
             .expect("FIDL error");
         session.get_fifo().await.expect_err("Session should be closed");
@@ -1809,11 +1805,7 @@ mod tests {
         part_block
             .open_session_with_offset_map(
                 server_end,
-                &fblock::BlockOffsetMapping {
-                    source_block_offset: 0,
-                    target_block_offset: 0,
-                    length: 3,
-                },
+                &fblock::BlockOffsetMapping { target_block_offset: 0, length: 3 },
             )
             .expect("FIDL error");
         session.get_fifo().await.expect_err("Session should be closed");

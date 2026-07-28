@@ -87,6 +87,9 @@ class Interface {
   // completed by calling BlockServer::SendReply; failure to do so will result in resource leaks
   // until the block server terminates. This remains true even during server shutdown; all requests
   // received must be completed (e.g. with ZX_ERR_CANCELED).
+  //
+  // Implementations are responsible for checking that request block ranges fall within valid
+  // device/partition bounds, and completing with ZX_ERR_OUT_OF_RANGE if out of bounds.
   virtual void OnRequests(std::span<Request>) = 0;
 
   // Called for log messages.

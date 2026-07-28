@@ -60,14 +60,13 @@ block_command_t OpcodeAndFlagsToCommand(BlockFifoCommand command) {
 OffsetMap::OffsetMap(fuchsia_storage_block::wire::BlockOffsetMapping mapping) : mapping_(mapping) {}
 
 zx::result<std::unique_ptr<OffsetMap>> OffsetMap::Create(
-    fuchsia_storage_block::wire::BlockOffsetMapping initial_mapping) {
+    fuchsia_storage_block::wire::BlockOffsetMapping initial_mapping, uint64_t block_count) {
   if (initial_mapping.length == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  auto source_end = safemath::CheckAdd(initial_mapping.source_block_offset, initial_mapping.length);
   auto target_end = safemath::CheckAdd(initial_mapping.target_block_offset, initial_mapping.length);
-  if (!source_end.IsValid() || !target_end.IsValid()) {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  if (!target_end.IsValid() || (block_count > 0 && target_end.ValueOrDie() > block_count)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
   auto map = std::unique_ptr<OffsetMap>(new OffsetMap(initial_mapping));
   return zx::ok(std::move(map));
@@ -78,12 +77,13 @@ bool OffsetMap::AdjustRequest(BlockFifoRequest& request) const {
     return false;
   }
   auto end = safemath::CheckAdd(request.dev_offset, request.length);
-  if (mapping_.source_block_offset > request.dev_offset || !end.IsValid() ||
-      end.ValueOrDie() > mapping_.source_block_offset + mapping_.length) {
+  if (!end.IsValid() || end.ValueOrDie() > mapping_.length) {
     return false;
   }
-  uint64_t delta = request.dev_offset - mapping_.source_block_offset;
-  request.dev_offset = mapping_.target_block_offset + delta;
+  // NB: This assumes there is only one mapping which starts at logical offset 0.  This is true now
+  // and this library is slated for removal soon (https://fxbug.dev/470140477) so it is safe to
+  // assume.
+  request.dev_offset += mapping_.target_block_offset;
   return true;
 }
 
@@ -218,18 +218,18 @@ void Server::TxnEnd() {
 zx::result<std::unique_ptr<Server>> Server::Create(
     ddk::BlockProtocolClient* bp,
     std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping) {
+  block_info_t info;
+  size_t block_op_size;
+  bp->Query(&info, &block_op_size);
+
   std::unique_ptr<OffsetMap> map;
   if (mapping) {
-    zx::result result = OffsetMap::Create(*mapping);
+    zx::result result = OffsetMap::Create(*mapping, info.block_count);
     if (result.is_error()) {
       return result.take_error();
     }
     map = *std::move(result);
   }
-
-  block_info_t info;
-  size_t block_op_size;
-  bp->Query(&info, &block_op_size);
 
   fbl::AllocChecker ac;
   std::unique_ptr<Server> bs(new (&ac) Server(bp, info, block_op_size, std::move(map)));

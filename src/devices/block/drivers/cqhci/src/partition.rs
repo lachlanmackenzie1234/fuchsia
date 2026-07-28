@@ -29,16 +29,17 @@ impl EmmcPartition {
             partition,
             device_info: DeviceInfo::Partition(PartitionInfo {
                 device_flags: block_info.flags,
-                block_range: Some(0..block_info.block_count),
                 max_transfer_blocks: if block_info.max_transfer_size != MAX_TRANSFER_UNBOUNDED {
                     NonZero::new(block_info.max_transfer_size / block_info.block_size)
                 } else {
                     None
                 },
+                start_block_offset: None,
+                block_count: block_info.block_count,
                 type_guid: [0u8; 16],
                 instance_guid: [0u8; 16],
                 name: partition_name(partition).to_string(),
-                flags: 0,
+                ..Default::default()
             }),
             command_queue,
         }

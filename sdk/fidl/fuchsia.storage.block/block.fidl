@@ -206,10 +206,9 @@ type BlockInfo = struct {
     flags DeviceFlag;
 };
 
-/// Describes a re-mapping of a block range.  See OffsetMap.
+/// Describes a re-mapping of a block range. The logical offset is implied to be 0.
 /// Note that all fields are in *blocks*, not bytes.
 type BlockOffsetMapping = struct {
-    source_block_offset uint64;
     target_block_offset uint64;
     length uint64;
 };

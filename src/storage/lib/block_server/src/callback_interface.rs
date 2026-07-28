@@ -44,6 +44,9 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     /// Starts a batch of requests.  The implementation may block if there are too many in-flight
     /// requests, providing pushback.  The interface is responsible for eventually calling
     /// [`SessionManager::complete_request`] for each request (even during server shutdown).
+    ///
+    /// Implementations are responsible for checking that request block ranges fall within valid
+    /// device/partition bounds, and completing with `zx::Status::OUT_OF_RANGE` if out of bounds.
     fn on_requests(&self, requests: &[Request]);
 }
 
@@ -92,7 +95,10 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         offset_map: OffsetMap,
         block_size: u32,
     ) -> Result<(), Error> {
-        let (helper, fifo) = SessionHelper::new(orchestrator.clone(), offset_map, block_size)?;
+        let sm: &SessionManager<I> = orchestrator.as_ref().borrow();
+        let max_blocks = sm.get_info().max_transfer_blocks();
+        let (helper, fifo) =
+            SessionHelper::new(orchestrator.clone(), offset_map, max_blocks, block_size)?;
         let (abort_handle, registration) = AbortHandle::new_pair();
         let session = Arc::new(Session {
             helper,

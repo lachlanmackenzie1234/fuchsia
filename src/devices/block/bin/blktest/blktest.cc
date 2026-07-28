@@ -117,6 +117,13 @@ TEST(BlkdevTests, blkdev_test_bad_requests) {
   off_t dev_size = blk_size * blk_count;
   ASSERT_NE(BWrite(client.borrow(), buf.get(), blk_size, dev_size), ZX_OK);
   ASSERT_NE(BRead(client.borrow(), buf.get(), blk_size, dev_size), ZX_OK);
+
+  // Read / write starting within device but extending past end of device
+  if (blk_count > 0) {
+    off_t near_end = (blk_count - 1) * blk_size;
+    ASSERT_NE(BWrite(client.borrow(), buf.get(), blk_size * 2, near_end), ZX_OK);
+    ASSERT_NE(BRead(client.borrow(), buf.get(), blk_size * 2, near_end), ZX_OK);
+  }
 }
 
 TEST(BlkdevTests, blkdev_test_fifo_no_op) {
@@ -165,6 +172,61 @@ zx::result<std::unique_ptr<block_client::Client>> CreateSession(
   }
   auto& [session, fifo] = result.value();
   return zx::ok(std::make_unique<block_client::Client>(std::move(session), std::move(fifo)));
+}
+
+TEST(BlkdevTests, blkdev_test_fifo_out_of_bounds) {
+  uint64_t blk_size, blk_count;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
+  ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
+
+  zx::result block_client_ptr = CreateSession(client);
+  ASSERT_OK(block_client_ptr);
+  block_client::Client& block_client = *block_client_ptr.value();
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(blk_size * 2, 0, &vmo));
+  zx::result vmoid_result = block_client.RegisterVmo(vmo);
+  ASSERT_OK(vmoid_result);
+  vmoid_t vmoid = vmoid_result->get();
+
+  // Test 1: dev_offset = blk_count (starts past end of device)
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
+      .group = 0,
+      .vmoid = vmoid,
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = blk_count,
+  };
+  ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+
+  request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
+  ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+
+  request.command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
+  ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+
+  // Test 2: dev_offset = blk_count - 1, length = 2 (starts inside, extends past end of device)
+  if (blk_count > 0) {
+    request = {
+        .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
+        .group = 0,
+        .vmoid = vmoid,
+        .length = 2,
+        .vmo_offset = 0,
+        .dev_offset = blk_count - 1,
+    };
+    ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+
+    request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
+    ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+
+    request.command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
+    ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+  }
+
+  request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
+  ASSERT_EQ(block_client.Transaction(&request, 1), ZX_OK);
 }
 
 TEST(BlkdevTests, blkdev_test_fifo_basic) {

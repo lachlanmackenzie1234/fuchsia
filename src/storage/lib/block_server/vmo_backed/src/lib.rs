@@ -232,9 +232,10 @@ impl VmoBackedServerOptions<'_> {
                 DeviceInfo::Block(info)
             }
             DeviceInfo::Partition(mut info) => {
-                info.block_range = Some(0..block_count);
+                info.block_count = block_count;
                 DeviceInfo::Partition(info)
             }
+            DeviceInfo::Volume(info) => DeviceInfo::Volume(info),
         };
         Ok(VmoBackedServer {
             server: BlockServer::new(
