@@ -895,6 +895,36 @@ TEST_F(ProcfsTest, ProcSysNetInvalidWriteReturnsEinval) {
                            << " but got: " << strerror(errno);
 }
 
+// Writes to /proc/sys/kernel/tainted require CAP_SYS_ADMIN; Linux fails them with EPERM,
+// before parsing the value.
+TEST_F(ProcfsTest, ProcSysKernelTaintedWriteRequiresSysAdmin) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Requires CAP_SYS_ADMIN to open the file for writing, skipping.";
+  }
+
+  constexpr char kPath[] = "/proc/sys/kernel/tainted";
+
+  // Writing 0 adds no taint flags, so this is a no-op on both Linux and Starnix.
+  {
+    fbl::unique_fd fd(open(kPath, O_WRONLY));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+    EXPECT_THAT(write(fd.get(), "0", 1), SyscallSucceedsWithValue(1));
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Open before dropping the capability: the file is mode 0644 and owned by root, so
+    // this isolates the write-time capability check from the open-time DAC check.
+    fbl::unique_fd fd(open(kPath, O_WRONLY));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+
+    EXPECT_THAT(write(fd.get(), "0", 1), SyscallFailsWithErrno(EPERM));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 class ProcSelfFdTest : public ProcTestBase {
  protected:
   std::string read_fd_link(int fd) {

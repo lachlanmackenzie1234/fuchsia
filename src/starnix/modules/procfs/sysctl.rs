@@ -451,7 +451,8 @@ impl KernelTaintedFile {
 }
 
 impl BytesFileOps for KernelTaintedFile {
-    fn write(&self, _current_task: &CurrentTask, _data: Vec<u8>) -> Result<(), Errno> {
+    fn write(&self, current_task: &CurrentTask, _data: Vec<u8>) -> Result<(), Errno> {
+        security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
         Ok(())
     }
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
