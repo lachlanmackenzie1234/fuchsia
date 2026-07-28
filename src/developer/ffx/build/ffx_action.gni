@@ -176,8 +176,7 @@ template("ffx_action") {
       "--machine",
       "raw",
 
-      # Logging is disabled, but strict mode requires a logging destination to
-      # be set.
+      # Set log output location.
       "--log-output",
       "/dev/null",
     ]

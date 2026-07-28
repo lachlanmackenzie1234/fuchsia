@@ -232,7 +232,7 @@ impl<T: FfxTool<E>, E: Into<Error> + 'static> FhoTool<T, E> {
         ffx: FfxCommandLine,
         tool: T::Command,
     ) -> Result<Box<Self>> {
-        check_strict_constraints(&ffx.global, T::requires_target())?;
+        check_strict_constraints(&ffx.global, Some(context), T::requires_target())?;
 
         let env = FhoEnvironment::new(context, &ffx);
         ffx_diagnostics_analytics_state::set_command_line_context(env.ffx_command(), &tool);

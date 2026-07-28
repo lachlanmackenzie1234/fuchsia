@@ -25,6 +25,7 @@ macro_rules! embedded_plugin {
 
             $crate::macro_deps::check_strict_constraints(
                 &env.ffx_command().global,
+                Some(env.environment_context()),
                 <$tool as $crate::FfxTool<$err>>::requires_target(),
             )?;
 

@@ -380,7 +380,11 @@ fn format_strict_check_error_enums(errors: &Vec<StrictCheckErrorEnum>) -> String
 
 /// When a tool is run in "strict" mode there are certain constraints on passed
 /// arguments. This ensures they are all satisfied
-pub fn check_strict_constraints(ffx: &Ffx, requires_target: bool) -> Result<()> {
+pub fn check_strict_constraints(
+    ffx: &Ffx,
+    context: Option<&EnvironmentContext>,
+    requires_target: bool,
+) -> Result<()> {
     // In this case we're not in strict mode so we just exit out
     if !ffx.strict {
         return Ok(());
@@ -401,7 +405,8 @@ pub fn check_strict_constraints(ffx: &Ffx, requires_target: bool) -> Result<()> 
         errors.push(StrictCheckErrorEnum::MustHaveMachineSpecified);
     }
 
-    if ffx.log_destination.is_none() {
+    let log_enabled = context.map(ffx_config::logging::is_enabled).unwrap_or(true);
+    if log_enabled && ffx.log_destination.is_none() {
         errors.push(StrictCheckErrorEnum::MustHaveLogDestination);
     }
 
@@ -845,12 +850,29 @@ mod test {
                 name: "serial prefix is okay".into(),
                 expected_errors: vec![],
             },
+            TestCase {
+                inputs: vec![
+                    "ffx",
+                    "--strict",
+                    "--config",
+                    "log.enabled=false",
+                    "--target",
+                    "192.168.1.1:8081",
+                    "--machine",
+                    "json",
+                    "target",
+                    "echo",
+                ],
+                name: "log.enabled=false does not require log destination".into(),
+                expected_errors: vec![],
+            },
         ];
 
         for case in cases {
             let cmd_line =
                 FfxCommandLine::new(None, &case.inputs).expect("Command line should parse");
-            match check_strict_constraints(&cmd_line.global, true) {
+            let context = cmd_line.global.load_context(ExecutableKind::Test).ok();
+            match check_strict_constraints(&cmd_line.global, context.as_ref(), true) {
                 Err(Error::User(got_err)) => match got_err.downcast_ref::<StrictCheckError>() {
                     Some(StrictCheckError::User(inner_errs)) => {
                         assert_eq!(
