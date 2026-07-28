@@ -554,7 +554,7 @@
     <!-- rsclient tools -->
     <package name="fuchsia/tools/rsclient/${platform}"
              path="prebuilt/rsclient/{{.OS}}-{{.Arch}}"
-             version="git_revision:c2b0c5a75ddccf6a5275c60775601b623cdf34ab"
+             version="git_revision:878617077e3d4d50874330ec3768bb297c8cb685"
              platforms="linux-amd64"/>
 
     <!-- Zedmon -->
