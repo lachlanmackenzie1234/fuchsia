@@ -27,13 +27,13 @@ const ITEM_LIMIT: usize = 1535;
 
 struct Placeholder<'a> {
     cache: &'a TreeCache,
-    key: ObjectKey,
+    key: Option<ObjectKey>,
     placeholder_id: u64,
 }
 
 impl Placeholder<'_> {
     fn replace_entry(&mut self, value: Option<CacheValue>) {
-        let key = std::mem::replace(&mut self.key, ObjectKey::object(0));
+        let key = self.key.take().expect("This method should only be called once");
         let mut inner = self.cache.inner.lock();
         // The value is present...
         if let Entry::Occupied(mut entry) = inner.entry(key) {
@@ -56,7 +56,9 @@ impl Placeholder<'_> {
 
 impl Drop for Placeholder<'_> {
     fn drop(&mut self) {
-        self.replace_entry(None);
+        if self.key.is_some() {
+            self.replace_entry(None);
+        }
     }
 }
 
@@ -113,7 +115,7 @@ impl ObjectCache<ObjectKey, ObjectValue> for TreeCache {
                 }
                 ObjectCacheResult::Placeholder(Box::new(Placeholder {
                     cache: self,
-                    key: key.clone(),
+                    key: Some(key.clone()),
                     placeholder_id,
                 }))
             }
@@ -300,5 +302,20 @@ mod tests {
             ObjectCacheResult::Placeholder(placeholder) => placeholder.complete(None),
             _ => panic!("Expected cache miss with placeholder returned."),
         };
+    }
+
+    #[fuchsia::test]
+    async fn test_dropped_placeholder_clears_entry() {
+        let cache = TreeCache::new();
+        let key = ObjectKey::object(1);
+
+        {
+            let _placeholder = match cache.lookup_or_reserve(&key) {
+                ObjectCacheResult::Placeholder(placeholder) => placeholder,
+                _ => panic!("Expected cache miss with placeholder returned."),
+            };
+        }
+
+        assert_matches!(cache.lookup_or_reserve(&key), ObjectCacheResult::Placeholder(_));
     }
 }
