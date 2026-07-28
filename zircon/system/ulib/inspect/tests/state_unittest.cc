@@ -1404,8 +1404,8 @@ TEST(State, SetLargeProperty) {
   CompareBlock(blocks.find(4)->block, MakeInlinedOrder0StringReferenceBlock("abcd"));
 }
 
-TEST(State, SetPropertyOutOfMemory) {
-  auto state = InitState(16 * 1024);  // Only 16K of space, property will not fit.
+TEST(State, SetPropertyTruncatedOnOutOfMemory) {
+  auto state = InitState(16 * 1024);  // Only 16K of space, property will not fit completely.
   ASSERT_TRUE(state != nullptr);
 
   std::vector<uint8_t> vec;
@@ -1414,19 +1414,16 @@ TEST(State, SetPropertyOutOfMemory) {
   }
 
   ByteVectorProperty a = state->CreateByteVectorProperty("a", 0, vec);
-  EXPECT_FALSE(bool(a));
+  EXPECT_TRUE(bool(a));
 
   fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
   size_t free_blocks, allocated_blocks;
   auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
   ASSERT_TRUE(snapshot);
 
-  // Header (1) only, property failed to fit.
-  EXPECT_EQ(1u, allocated_blocks);
-  EXPECT_EQ(13u, free_blocks);
-
-  CompareBlock(blocks.find(0)->block, MakeHeader(2));
-  EXPECT_EQ(inspect::internal::GetHeaderVmoSize(blocks.find(0)->block), state->GetStats().size);
+  // Header (1) + Value (1) + Name (1) + 7 extents = 10 allocated blocks.
+  EXPECT_EQ(10u, allocated_blocks);
+  EXPECT_EQ(5u, free_blocks);
 }
 
 TEST(State, CreateNodeHierarchy) {
@@ -2063,6 +2060,110 @@ TEST(StateTest, TransactionRollbackOnPropertyFailure) {
 
   // Verify allocated blocks count is unchanged (no leaks).
   EXPECT_EQ(allocated_blocks, allocated_count_before_failed_creation);
+}
+
+TEST(StateTest, TransactionPartialSuccessOnPropertyFailure) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != nullptr);
+
+  // Create a parent node
+  Node parent = state->CreateNode("parent", 0);
+  ASSERT_TRUE(parent);
+
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+  size_t free_blocks, allocated_blocks;
+  auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+
+  auto parent_index = BlockIndex(2);
+
+  // We will use the name "p" for all filling properties.
+  // First creation allocates the name block (16 bytes) and the value block (16 bytes).
+  auto base_prop = state->CreateIntProperty("p", parent_index, 0);
+  ASSERT_TRUE(base_prop);
+
+  // Fill the heap completely using the same name.
+  // Each of these allocates exactly 1 block of 16 bytes (value block).
+  std::vector<IntProperty> fill_props;
+  while (true) {
+    auto prop = state->CreateIntProperty("p", parent_index, 0);
+    if (!prop) {
+      break;
+    }
+    fill_props.push_back(std::move(prop));
+  }
+
+  // Now the heap is completely full.
+  // We want to free exactly 2080 bytes (one 2048-byte block and two 16-byte blocks).
+  // Each pop_back frees 16 bytes.
+  // 2080 / 16 = 130 properties.
+  ASSERT_GE(fill_props.size(), 130u);
+  for (int i = 0; i < 130; i++) {
+    fill_props.pop_back();
+  }
+
+  // Re-scan to get the current allocated blocks count.
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks_full;
+  snapshot = SnapshotAndScan(state->GetVmo(), &blocks_full, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+  size_t allocated_count_before = allocated_blocks;
+
+  // Try to create a ByteVectorProperty with a NEW name.
+  // This requires:
+  // - Value block (16 bytes)
+  // - Name block (16 bytes) (new name "n" -> 1 byte -> fits in 16 bytes block)
+  // - Extents for value.
+  // We will pass a value of 2041 bytes, which requires:
+  // - Extent 1: 2048 bytes (holds 2040 bytes)
+  // - Extent 2: 16 bytes (holds 1 byte)
+  // Total needed: 16 + 16 + 2048 + 16 = 2096 bytes.
+  // We only have 2080 bytes free.
+  // The allocation of Extent 2 (16 bytes) will fail because we run out of space.
+  // It should succeed partially, keeping Extent 1 (2040 bytes of data).
+  std::vector<uint8_t> data(2041, 'A');
+  auto partial_prop = state->CreateByteVectorProperty("n", parent_index, data);
+  ASSERT_TRUE(partial_prop);  // Should succeed!
+
+  // Verify VMO is consistent and we used the expected number of blocks.
+  // We had 2080 bytes free (one 2048 block, one 32 block).
+  // We allocated:
+  // - Value: 16 bytes (from 32 block)
+  // - Name: 16 bytes (from 32 block)
+  // - Extent 1: 2048 bytes (from 2048 block)
+  // Total allocated: 2080 bytes.
+  // So all free space should be used, and allocated blocks should increase by 3.
+  // (Value, Name, Extent 1).
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks_after;
+  snapshot = SnapshotAndScan(state->GetVmo(), &blocks_after, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+  EXPECT_EQ(allocated_blocks, allocated_count_before + 3);
+
+  // Verify the property value was truncated to 2040 bytes (capacity of 1 max extent).
+  BlockIndex prop_index = 0;
+  for (const auto& pair : blocks_after) {
+    const Block* block = pair.block;
+    if (GetType(block) == BlockType::kBufferValue &&
+        ValueBlockFields::ParentIndex::Get<BlockIndex>(block->header) == parent_index) {
+      prop_index = pair.GetKey();
+      break;
+    }
+  }
+  ASSERT_NE(prop_index, 0u);
+
+  auto* prop_block = blocks_after.find(prop_index)->block;
+  ASSERT_EQ(GetType(prop_block), BlockType::kBufferValue);
+  uint32_t total_length = PropertyBlockPayload::TotalLength::Get<uint32_t>(prop_block->payload.u64);
+  EXPECT_EQ(total_length, 2040u);  // Truncated to 2040 bytes
+
+  // Verify the extent index is not 0.
+  BlockIndex extent_index =
+      PropertyBlockPayload::ExtentIndex::Get<BlockIndex>(prop_block->payload.u64);
+  EXPECT_NE(extent_index, 0u);
+
+  // And the next extent index of that extent should be 0 (no second extent).
+  auto* extent_block = blocks_after.find(extent_index)->block;
+  ASSERT_EQ(GetType(extent_block), BlockType::kExtent);
+  EXPECT_EQ(ExtentBlockFields::NextExtentIndex::Get<BlockIndex>(extent_block->header), 0u);
 }
 
 }  // namespace

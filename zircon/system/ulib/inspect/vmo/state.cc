@@ -188,15 +188,15 @@ class State::Txn final {
     return ZX_OK;
   }
 
-  std::pair<BlockIndex, zx_status_t> CreateExtentChain(const char* value, size_t length)
+  std::tuple<BlockIndex, size_t, zx_status_t> CreateExtentChain(const char* value, size_t length)
       __TA_NO_THREAD_SAFETY_ANALYSIS {
-    auto [first_extent_index, status] = state_->InnerCreateExtentChain(value, length);
+    auto [first_extent_index, written, status] = state_->InnerCreateExtentChain(value, length);
     if (status == ZX_OK && first_extent_index != 0) {
       undos_.push_back([this, first_extent_index]() __TA_NO_THREAD_SAFETY_ANALYSIS {
         state_->InnerFreeExtentChain(first_extent_index);
       });
     }
-    return {first_extent_index, status};
+    return {first_extent_index, written, status};
   }
 
  private:
@@ -546,10 +546,10 @@ WrapperType State::InnerCreateProperty(std::string_view name, BlockIndex parent,
     return WrapperType();
   }
 
-  auto [first_extent_index, extent_status] = txn.CreateExtentChain(value, length);
+  auto [first_extent_index, written, extent_status] = txn.CreateExtentChain(value, length);
 
   auto* block = heap_->GetBlock(value_index);
-  block->payload.u64 = PropertyBlockPayload::TotalLength::Make(length) |
+  block->payload.u64 = PropertyBlockPayload::TotalLength::Make(written) |
                        PropertyBlockPayload::ExtentIndex::Make(first_extent_index) |
                        PropertyBlockPayload::Flags::Make(format);
 
@@ -842,9 +842,9 @@ void State::InnerSetBytesProperty(WrapperType* property, const char* value, size
   auto* block = heap_->GetBlock(property->value_index_);
   InnerFreeExtentChain(PropertyBlockPayload::ExtentIndex::Get<BlockIndex>(block->payload.u64));
 
-  auto [first_extent_index, status] = InnerCreateExtentChain(value, length);
+  auto [first_extent_index, written, status] = InnerCreateExtentChain(value, length);
 
-  const auto length_maybe_zeroed = status == ZX_OK ? length : 0;
+  const auto length_maybe_zeroed = status == ZX_OK ? written : 0;
 
   block->payload.u64 = PropertyBlockPayload::TotalLength::Make(length_maybe_zeroed) |
                        PropertyBlockPayload::ExtentIndex::Make(first_extent_index) |
@@ -1274,15 +1274,16 @@ void State::InnerFreeExtentChain(BlockIndex index) {
   }
 }
 
-std::pair<BlockIndex, zx_status_t> State::InnerCreateExtentChain(const char* value, size_t length) {
+std::tuple<BlockIndex, size_t, zx_status_t> State::InnerCreateExtentChain(const char* value,
+                                                                          size_t length) {
   if (length == 0)
-    return {0, ZX_OK};
+    return {0, 0, ZX_OK};
 
   BlockIndex extent_index;
   zx_status_t status;
   status = heap_->Allocate(std::min(kMaxOrderSize, BlockSizeForPayload(length)), &extent_index);
   if (status != ZX_OK) {
-    return {0, status};
+    return {0, 0, status};
   }
 
   // Thread the value through extents, creating new extents as needed.
@@ -1303,14 +1304,14 @@ std::pair<BlockIndex, zx_status_t> State::InnerCreateExtentChain(const char* val
       status = heap_->Allocate(std::min(kMaxOrderSize, BlockSizeForPayload(length - offset)),
                                &extent_index);
       if (status != ZX_OK) {
-        InnerFreeExtentChain(first_extent_index);
-        return {0, status};
+        // Do not free the chain. Return what we have written so far.
+        return {first_extent_index, offset, ZX_OK};
       }
       ExtentBlockFields::NextExtentIndex::Set(&extent->header, extent_index);
     }
   }
 
-  return {first_extent_index, ZX_OK};
+  return {first_extent_index, offset, ZX_OK};
 }
 
 std::string State::UniqueLinkName(std::string_view prefix) {
@@ -1385,21 +1386,28 @@ zx_status_t State::WriteStringReferencePayload(Block* const block, std::string_v
                                 StringReferenceBlockPayload::TotalLength::SizeInBytes());
   memcpy(block->payload.data + StringReferenceBlockPayload::TotalLength::SizeInBytes(), data.data(),
          inline_length);
+
+  // Set initial total length to inline length. We will update it if we write extents.
+  StringReferenceBlockPayload::TotalLength::Set(&block->payload.u64, inline_length);
+
   // this implies the whole piece of data fit inline, and we are done
   if (inline_length == data.size()) {
     return ZX_OK;
   }
 
   // allocate necessary extents, copying data
-  auto [first_extent_index, status] =
+  auto [first_extent_index, written, status] =
       InnerCreateExtentChain(&*std::cbegin(data) + inline_length, data.size() - inline_length);
 
   if (status != ZX_OK) {
     return status;
   }
 
-  block->header =
-      block->header | StringReferenceBlockFields::NextExtentIndex::Make(first_extent_index);
+  if (first_extent_index != 0) {
+    block->header =
+        block->header | StringReferenceBlockFields::NextExtentIndex::Make(first_extent_index);
+    StringReferenceBlockPayload::TotalLength::Set(&block->payload.u64, inline_length + written);
+  }
   return ZX_OK;
 }
 

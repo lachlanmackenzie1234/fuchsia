@@ -23,6 +23,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -296,7 +297,8 @@ class State final {
   }
 
   // Helper to set the value of a string across its extents.
-  std::pair<BlockIndex, zx_status_t> InnerCreateExtentChain(const char* value, size_t length)
+  std::tuple<BlockIndex, size_t, zx_status_t> InnerCreateExtentChain(const char* value,
+                                                                     size_t length)
       __TA_REQUIRES(mutex_);
 
   // Helper to free all extents for a given first index in the extent chain.
