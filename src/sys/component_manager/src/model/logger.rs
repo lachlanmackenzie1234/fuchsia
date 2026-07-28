@@ -68,7 +68,7 @@ impl LoggerCache {
         }
 
         // Check that the component includes the logsink capability before logging on its behalf.
-        let decl = &resolved_instance_state.resolved_component.decl;
+        let decl = resolved_instance_state.resolved_component.decl.as_ref().unwrap();
         let Some(decl) = get_logsink_decl(&decl) else {
             return false;
         };
@@ -194,7 +194,7 @@ mod tests {
         .await;
         let resolved_component = Component {
             context_to_resolve_children: None,
-            decl: Arc::new(decl),
+            decl: Some(Arc::new(decl)),
             package: None,
             config: None,
             abi_revision: None,

@@ -394,7 +394,10 @@ impl ResolvedInstanceState {
     ) -> Result<Self, ResolveActionError> {
         let weak_component = WeakComponentInstance::new(component);
 
-        let decl = &resolved_component.decl;
+        let decl = &resolved_component
+            .decl
+            .as_ref()
+            .expect("component decl dropped before component instantiated");
         // Perform the policy check for debug capabilities now, instead of during routing. All the info we
         // need to perform this check is already available to us. This way, we don't have to propagate this
         // info to sandbox capabilities just so they can enforce the policy.
@@ -489,7 +492,11 @@ impl ResolvedInstanceState {
         }
         let child_outgoing_dictionary_routers =
             state.get_child_component_output_dictionary_routers();
-        let decl = &state.resolved_component.decl;
+        let decl = &state
+            .resolved_component
+            .decl
+            .as_ref()
+            .expect("component decl dropped before component instantiated");
         let (program_output_dict, declared_dictionaries) = build_program_output_dictionary(
             component,
             decl,
@@ -505,7 +512,14 @@ impl ResolvedInstanceState {
             component_input,
             program_output_dict,
             get_framework_router(&component),
-            build_storage_admin_dictionary(component, &state.resolved_component.decl),
+            build_storage_admin_dictionary(
+                component,
+                &state
+                    .resolved_component
+                    .decl
+                    .as_ref()
+                    .expect("component decl dropped before component instantiated"),
+            ),
             declared_dictionaries,
             RoutingFailureErrorReporter::new(),
             &AggregateRouter::new,
@@ -723,8 +737,8 @@ impl ResolvedInstanceState {
     }
 
     /// Returns a reference to the component's validated declaration.
-    pub fn decl(&self) -> &ComponentDecl {
-        &self.resolved_component.decl
+    pub fn decl(&self) -> Option<&ComponentDecl> {
+        self.resolved_component.decl.as_ref().map(|d| d.as_ref())
     }
 
     /// Returns relevant information and prepares to enter the unresolved state.
@@ -791,7 +805,11 @@ impl ResolvedInstanceState {
             let namespace_builder = create_namespace(
                 self.resolved_component.package.as_ref(),
                 &component,
-                &self.resolved_component.decl,
+                &self
+                    .resolved_component
+                    .decl
+                    .as_ref()
+                    .expect("component decl dropped before component instantiated"),
                 &self.sandbox.program_input.namespace(),
                 component.execution_scope.clone(),
             )
@@ -969,7 +987,7 @@ impl ResolvedInstanceState {
         if !dynamic_offers.is_empty() {
             extend_dict_with_offers(
                 &component,
-                &self.decl().offers,
+                &self.decl().unwrap().offers,
                 &child_component_output_dictionary_routers,
                 &self.sandbox.component_input,
                 &dynamic_offers,
@@ -1084,7 +1102,7 @@ impl ResolvedInstanceState {
             all_dynamic_children,
             dependencies,
             &new_dynamic_offers,
-            &(*self.resolved_component.decl).clone().native_into_fidl(),
+            &self.resolved_component.decl.as_ref().unwrap().as_ref().clone().native_into_fidl(),
         )
         .map_err(|err| {
             if err.errs.iter().all(|e| matches!(e, ValidatorError::DependencyCycle(_))) {
@@ -1152,7 +1170,13 @@ impl ResolvedInstanceState {
     ) -> Result<(), ResolveActionError> {
         // We can't hold an immutable reference to `self` while passing a mutable reference later
         // on. To get around this, clone the children.
-        let children = self.resolved_component.decl.children.clone();
+        let children = self
+            .resolved_component
+            .decl
+            .as_ref()
+            .expect("component decl dropped before component instantiated")
+            .children
+            .clone();
         for child in &children {
             // `child_input` will be populated later, after the component's sandbox is
             // constructed.
@@ -1194,23 +1218,23 @@ impl ResolvedInstanceInterface for ResolvedInstanceState {
     type Component = ComponentInstance;
 
     fn uses(&self) -> Box<[UseDecl]> {
-        self.resolved_component.decl.uses.clone()
+        self.resolved_component.decl.as_ref().unwrap().uses.clone()
     }
 
     fn exposes(&self) -> Box<[cm_rust::ExposeDecl]> {
-        self.resolved_component.decl.exposes.clone()
+        self.resolved_component.decl.as_ref().unwrap().exposes.clone()
     }
 
     fn offers(&self) -> Box<[OfferDecl]> {
-        self.resolved_component.decl.offers.clone()
+        self.resolved_component.decl.as_ref().unwrap().offers.clone()
     }
 
     fn capabilities(&self) -> Box<[cm_rust::CapabilityDecl]> {
-        self.resolved_component.decl.capabilities.clone()
+        self.resolved_component.decl.as_ref().unwrap().capabilities.clone()
     }
 
     fn collections(&self) -> Box<[cm_rust::CollectionDecl]> {
-        self.resolved_component.decl.collections.clone()
+        self.resolved_component.decl.as_ref().unwrap().collections.clone()
     }
 
     fn get_child(&self, moniker: &BorrowedChildName) -> Option<Arc<ComponentInstance>> {

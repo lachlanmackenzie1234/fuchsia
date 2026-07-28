@@ -145,7 +145,7 @@ pub struct Component {
     /// If `None`, the resolver cannot resolve relative path component URLs.
     pub context_to_resolve_children: Option<ComponentResolutionContext>,
     /// The declaration of the resolved manifest.
-    pub decl: Arc<ComponentDecl>,
+    pub decl: Option<Arc<ComponentDecl>>,
     /// The package info, if the component came from a package.
     pub package: Option<Package>,
     /// The component's validated configuration. If None, no configuration was provided.
@@ -190,7 +190,7 @@ impl Component {
         let package = package.map(|p| p.try_into()).transpose()?;
         Ok(Self {
             context_to_resolve_children,
-            decl: Arc::new(decl),
+            decl: Some(Arc::new(decl)),
             package,
             config,
             abi_revision,
@@ -207,9 +207,10 @@ impl From<&Component> for fresolution::Component {
             fmem::Data::Buffer(fmem::Buffer { vmo, size: bytes.len() as u64 })
         };
         let decl = Some(bytes_to_fmem_data(
-            &fidl::persist(&(*component.decl).clone().native_into_fidl()).expect(
-                "we should always be able to persist a manifest that we got by unpersisting it",
-            ),
+            &fidl::persist(&component.decl.as_ref().unwrap().as_ref().clone().native_into_fidl())
+                .expect(
+                    "we should always be able to persist a manifest that we got by unpersisting it",
+                ),
         ));
         let package = component.package.as_ref().map(|package| fresolution::Package {
             directory: fuchsia_fs::directory::clone(&package.package_dir)
@@ -514,6 +515,7 @@ impl ComponentInstance {
         let mut state = self.lock_resolved_state().await?;
         let collection_decl = state
             .decl()
+            .unwrap()
             .find_collection(&collection_name)
             .ok_or_else(|| AddDynamicChildError::CollectionNotFound {
                 name: collection_name.clone(),
@@ -889,6 +891,7 @@ impl ComponentInstance {
             let resolved_state = state.get_resolved_state().unwrap();
             resolved_state
                 .decl()
+                .unwrap()
                 .collections
                 .iter()
                 .filter_map(|c| match c.durability {
@@ -1874,7 +1877,10 @@ pub mod tests {
         assert_eq!(&[example_offer], &*root_resolved.offers());
         assert_eq!(&[example_expose], &*root_resolved.exposes());
         assert_eq!(&[root_decl.collections[0].clone()], &*root_resolved.collections());
-        assert_eq!(&[env_a, env_b], &*root_resolved.resolved_component.decl.environments);
+        assert_eq!(
+            &[env_a, env_b],
+            &*root_resolved.resolved_component.decl.as_ref().unwrap().environments
+        );
 
         let mut children = root_resolved
             .children()
@@ -2314,10 +2320,9 @@ pub mod tests {
 
     async fn new_resolved() -> InstanceState {
         let comp = new_component().await;
-        let decl = ComponentDeclBuilder::new().build();
         let resolved_component = Component {
             context_to_resolve_children: None,
-            decl: Arc::new(decl),
+            decl: Some(Arc::new(ComponentDeclBuilder::new().build())),
             package: None,
             config: None,
             abi_revision: None,
@@ -2432,6 +2437,8 @@ pub mod tests {
             .expect("failed to get resolved state")
             .resolved_component
             .decl
+            .as_ref()
+            .unwrap()
             .collections
             .iter()
             .find(|c| c.name.as_str() == "col")

@@ -101,7 +101,7 @@ fn open_protocols_with_numbered_handle(
     resolved_instance_state: &ResolvedInstanceState,
     target: Arc<WeakInstanceToken>,
 ) -> Vec<fprocess::HandleInfo> {
-    let decl = &resolved_instance_state.resolved_component.decl;
+    let decl = resolved_instance_state.resolved_component.decl.as_ref().expect("decl should exist");
     let numbered_handle_dict = resolved_instance_state.sandbox.program_input.numbered_handles();
     decl.uses
         .iter()
@@ -201,7 +201,7 @@ async fn do_start(
         let runner = resolved_state.sandbox.program_input.runner();
         (
             runner,
-            resolved_state.decl().get_runner().as_ref().map(|r| r.source_name.clone()),
+            resolved_state.decl().unwrap().get_runner().as_ref().map(|r| r.source_name.clone()),
             resolved_state.resolved_component.clone(),
             resolved_state.sandbox.program_input.namespace(),
         )
@@ -237,10 +237,14 @@ async fn do_start(
         program_input_dict = dict_deep_copy(&program_input_dict);
         dict_merge(&program_input_dict, additions);
     }
+    let decl = resolved_component
+        .decl
+        .as_ref()
+        .expect("component decl dropped before component instantiated");
     let mut namespace_builder = create_namespace(
         resolved_component.package.as_ref(),
         component,
-        &resolved_component.decl,
+        decl,
         &program_input_dict,
         component.execution_scope.clone(),
     )
@@ -273,8 +277,6 @@ async fn do_start(
         }
         fdecl::OnTerminate::None => {}
     }
-
-    let decl = &resolved_component.decl;
 
     let encoded_config = match decl.config {
         None => None,
@@ -318,7 +320,7 @@ async fn do_start(
         execution_controller_task,
     };
 
-    start_component(&component, resolved_component.decl, start_context).await
+    start_component(&component, decl.clone(), start_context).await
 }
 
 fn dict_deep_copy(dict: &Arc<Dictionary>) -> Arc<Dictionary> {
@@ -1091,7 +1093,7 @@ mod tests {
 
     async fn get_resolved_decl(component: &Arc<ComponentInstance>) -> ComponentDecl {
         let state = component.lock_state().await;
-        state.get_resolved_state().expect("expected component to be resolved").decl().clone()
+        state.get_resolved_state().unwrap().decl().unwrap().clone()
     }
 
     #[fuchsia::test]
@@ -1114,7 +1116,7 @@ mod tests {
         let decl = ComponentDeclBuilder::new().child_default(TEST_CHILD_NAME).build();
         let resolved_component = Component {
             context_to_resolve_children: None,
-            decl: Arc::new(decl),
+            decl: Some(Arc::new(decl)),
             package: None,
             config: None,
             abi_revision: None,

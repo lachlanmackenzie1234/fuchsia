@@ -204,6 +204,7 @@ async fn get_resolved_declaration(
         .get_resolved_state()
         .ok_or(fsys::GetDeclarationError::InstanceNotResolved)?
         .decl()
+        .unwrap()
         .clone()
         .native_into_fidl();
 
@@ -337,7 +338,7 @@ async fn construct_namespace(
     let namespace = create_namespace(
         resolved_state.package(),
         &instance,
-        resolved_state.decl(),
+        resolved_state.decl().unwrap(),
         &resolved_state.sandbox.program_input.namespace(),
         instance.execution_scope.clone(),
     )
@@ -446,6 +447,7 @@ async fn connect_to_storage_admin(
             .get_resolved_state()
             .ok_or(fsys::ConnectToStorageAdminError::InstanceNotResolved)?
             .decl()
+            .unwrap()
             .find_storage_source(
                 &storage_name
                     .parse()

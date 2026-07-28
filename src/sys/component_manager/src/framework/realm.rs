@@ -224,7 +224,7 @@ async fn list_children(
         error!(error:%; "failed to resolve InstanceState");
         fcomponent::Error::Internal
     })?;
-    let decl = state.decl();
+    let decl = state.decl().unwrap();
     decl.find_collection(&collection.name).ok_or(fcomponent::Error::CollectionNotFound)?;
     let mut children: Vec<_> = state
         .children()
