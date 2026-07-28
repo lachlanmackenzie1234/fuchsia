@@ -205,4 +205,60 @@ TEST(LoggerTest, SetSeverity) {
   }
 }
 
+TEST(LoggerTest, LogVeryLongMessage) {
+  async::Loop loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  async::Loop ns_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  ns_loop.StartThread();
+
+  // Set up namespace.
+  auto svc = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  auto ns = fdf::testing::CreateNamespace(std::move(svc.client));
+  ASSERT_TRUE(ns.is_ok());
+
+  std::optional<fuchsia_logging::FakeLogSink> log_sink;
+
+  fdf::testing::Directory svc_directory;
+  svc_directory.SetOpenHandler([&log_sink](const std::string& path, auto object) {
+    EXPECT_EQ(path, fidl::DiscoverableProtocolName<fuchsia_logger::LogSink>);
+    ASSERT_FALSE(log_sink);
+    log_sink.emplace(FUCHSIA_LOG_INFO,
+                     fidl::ServerEnd<fuchsia_logger::LogSink>(object.TakeChannel()));
+  });
+  fidl::Binding<fio::Directory> svc_binding(&svc_directory);
+
+  fdf::testing::Directory svc_directory2;
+  svc_directory2.SetOpenHandler([&ns_loop, &svc_binding](const std::string& path, auto object) {
+    EXPECT_EQ(path, ".");
+    svc_binding.Bind(object.TakeChannel(), ns_loop.dispatcher());
+  });
+
+  fidl::Binding<fio::Directory> svc_binding2(&svc_directory2);
+  svc_binding2.Bind(svc.server.TakeChannel(), ns_loop.dispatcher());
+
+  auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO);
+  ASSERT_FALSE(logger->IsNoOp());
+  while (!log_sink) {
+    loop.RunUntilIdle();
+  }
+
+  // Log a very long message.
+  std::string long_msg(2000, 'a');
+  logger->log(FUCHSIA_LOG_INFO, std::source_location::current(), "{}", long_msg);
+
+  auto data = log_sink->ReadLogsData();
+  ASSERT_TRUE(data);
+  const auto& metadata = data->metadata();
+  EXPECT_EQ(metadata.severity, fuchsia_diagnostics_types::Severity::kInfo);
+  EXPECT_THAT(metadata.tags, ElementsAre(kDriverTag, kName));
+
+  std::string message = data->message();
+  EXPECT_LT(message.size(), 2000u);
+  EXPECT_GE(message.size(), 1020u);
+
+  if (!message.empty() && message.back() == '\0') {
+    message.pop_back();
+  }
+  EXPECT_TRUE(message.ends_with("..."));
+}
+
 }  // namespace

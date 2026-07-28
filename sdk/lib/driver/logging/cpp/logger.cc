@@ -416,46 +416,42 @@ template <typename T, std::size_t N>
 class array_output_iterator {
  public:
   using iterator_category = std::output_iterator_tag;
-  using value_type = T;
+  using value_type = void;
   using difference_type = std::ptrdiff_t;
-  using pointer = T*;
-  using reference = T&;
+  using pointer = void;
+  using reference = void;
 
   explicit array_output_iterator(std::array<T, N>& arr, size_t& actual_size)
-      : arr_(arr), actual_size_(actual_size) {}
+      : arr_(&arr), actual_size_(&actual_size) {}
 
-  array_output_iterator(array_output_iterator&& other)
-      : arr_(other.arr_), actual_size_(other.actual_size_), index_(other.index_) {}
-  array_output_iterator& operator=(array_output_iterator&& other) {
-    arr_ = other.arr_;
-    actual_size_ = other.actual_size_;
-    index_ = other.index_;
-    return *this;
-  }
+  array_output_iterator(const array_output_iterator&) = default;
+  array_output_iterator& operator=(const array_output_iterator&) = default;
+  array_output_iterator(array_output_iterator&&) = default;
+  array_output_iterator& operator=(array_output_iterator&&) = default;
 
   array_output_iterator& operator=(const T& value) {
     if (index_ < N) {
-      arr_[index_] = value;
+      (*arr_)[index_] = value;
     }
     return *this;
   }
 
-  reference operator*() { return arr_[index_]; }
+  array_output_iterator& operator*() { return *this; }
   array_output_iterator& operator++() {
     ++index_;
-    actual_size_++;
+    (*actual_size_)++;
     return *this;
   }
   array_output_iterator operator++(int) {
     auto tmp = *this;
     ++index_;
-    actual_size_++;
+    (*actual_size_)++;
     return tmp;
   }
 
  private:
-  std::array<T, N>& arr_;
-  size_t& actual_size_;
+  std::array<T, N>* arr_;
+  size_t* actual_size_;
   size_t index_ = 0;
 };
 
