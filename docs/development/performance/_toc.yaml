@@ -12,8 +12,8 @@ toc:
   path: /docs/development/performance/use_cases_for_tests.md
 - title: "Perfcompare: Try builder for pre-submit testing"
   path: /docs/development/performance/perfcompare.md
-- title: "Viewing Zircon microbenchmarks with Chromeperf"
-  path: /docs/development/performance/chromeperf_user_guide.md
+- title: "Skia Perf performance dashboard"
+  path: /docs/development/performance/skia_perf.md
 - title: "Fuchsiaperf format for performance test results"
   path: /docs/development/performance/fuchsiaperf_format.md
 - title: "Fuchsiaperf producers: libraries"
@@ -26,7 +26,7 @@ toc:
   path: /docs/development/performance/metric_name_expectations.md
 - title: "Documenting performance tests"
   path: /docs/development/performance/documenting_tests.md
-- title: "Chromeperf uploading and config"
+- title: "Chromeperf/Skia Perf uploading and config"
   path: /docs/development/performance/chromeperf_uploading_config.md
 - title: "FAQ"
   path: /docs/development/performance/faq.md

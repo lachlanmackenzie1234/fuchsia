@@ -1,4 +1,4 @@
-# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,7 +7,5 @@
 # team as a reviewer.
 # Using ? or * is not supported in the redirect links.
 redirects:
-- from: /docs/development/benchmarking/catapult_user_guide.md
-  to: /docs/development/performance/chromeperf_user_guide.md
-- from: /docs/development/benchmarking/results_schema.md
-  to: /docs/development/performance/fuchsiaperf_format.md
+- from: /docs/development/performance/chromeperf_user_guide.md
+  to: /docs/development/performance/skia_perf.md

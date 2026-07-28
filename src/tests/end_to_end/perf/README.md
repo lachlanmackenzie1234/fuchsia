@@ -24,10 +24,11 @@ And the following test:
 *   `perftest_trace_events_test` - Tests that we correctly read events from a
     trace session.
 
-You can view the test results from CI builds in [Chromeperf][chromeperf].
+You can view the test results from CI builds in the [Skia Perf][skiaperf]
+performance dashboard.
 
 <!-- Reference links -->
 
-[chromeperf]: /docs/development/performance/chromeperf_user_guide.md
+[skiaperf]: /docs/development/performance/skia_perf.md
 [instructions]: /docs/development/performance/running_performance_tests.md
 [lacewing]: /src/testing/end_to_end/README.md

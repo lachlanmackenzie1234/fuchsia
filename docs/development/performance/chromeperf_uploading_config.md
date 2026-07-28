@@ -1,8 +1,12 @@
-# Chromeperf uploading and configuration
+# Chromeperf/Skia Perf uploading and configuration
 
 This page describes how performance results from Fuchsia builds are
 uploaded to Chromeperf, and how Fuchsia's use of Chromeperf is
 configured.
+
+This also applies to Skia Perf. See Fuchsia's [intro to Skia
+Perf](skia_perf.md) for some background on Fuchsia's migration from
+Chromeperf to Skia Perf.
 
 Some parts of this are implemented in Google-internal code and are not
 described fully here. Googlers can refer to the [Google-internal
