@@ -8,7 +8,7 @@ use bt_rfcomm::frame::{CommandResponse, Frame, FrameData, FrameParseError, UIHDa
 use bt_rfcomm::{DLCI, Role, ServerChannel, max_packet_size_from_l2cap_mtu};
 use fidl_fuchsia_bluetooth::ErrorCode;
 use fuchsia_async as fasync;
-use fuchsia_bluetooth::types::{Channel, PeerId};
+use fuchsia_bluetooth::types::{Channel, ConnectionBackendType, PeerId};
 use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::{mpsc, oneshot};
@@ -164,9 +164,10 @@ impl SessionInner {
         max_packet_size: u16,
         outgoing_frame_sender: mpsc::Sender<Frame>,
         channel_opened_fn: ChannelOpenedFn,
+        backend_type: ConnectionBackendType,
     ) -> Self {
         Self {
-            multiplexer: SessionMultiplexer::create(max_packet_size),
+            multiplexer: SessionMultiplexer::create(max_packet_size, backend_type),
             outstanding_frames: OutstandingFrames::new(),
             pending_channels: HashMap::new(),
             outgoing_frame_sender,
@@ -887,10 +888,15 @@ impl Session {
         let (frames_to_peer_sender, frame_receiver) = mpsc::channel(MAX_CONCURRENT_FRAMES);
         let max_rfcomm_packet_size =
             max_packet_size_from_l2cap_mtu(l2cap_channel.max_tx_size() as u16);
+        let backend_type = l2cap_channel.connection_type();
+        info!(
+            "Creating RFCOMM Session (ID: {id:?}) over L2CAP channel with backend {backend_type:?}"
+        );
         let session_inner = Arc::new(Mutex::new(SessionInner::create(
             max_rfcomm_packet_size,
             frames_to_peer_sender,
             channel_opened_callback,
+            backend_type,
         )));
         let (termination_sender, receiver) = oneshot::channel();
         let terminated = receiver.map(|_| ()).boxed().shared();
@@ -1132,10 +1138,12 @@ mod tests {
             create_test_channels_with_max_tx(transport, MAX_PACKET_SIZE_FOR_TEST.into());
         let channel_opened_fn = Box::new(|_server_channel, _channel| async { Ok(()) }.boxed());
         let (frame_sender, frame_receiver) = mpsc::channel(0);
+        let backend_type = local.connection_type();
         let session_inner = Arc::new(Mutex::new(SessionInner::create(
             local.max_tx_size() as u16,
             frame_sender,
             channel_opened_fn,
+            backend_type,
         )));
         let (sender, _receiver) = oneshot::channel();
         let session_fut =
@@ -1179,7 +1187,10 @@ mod tests {
         let (channel_opened_fn, channel_receiver) = create_inbound_relay();
         let (outgoing_frame_sender, outgoing_frames) = mpsc::channel(0);
         let session = SessionInner {
-            multiplexer: SessionMultiplexer::create(MAX_PACKET_SIZE_FOR_TEST),
+            multiplexer: SessionMultiplexer::create(
+                MAX_PACKET_SIZE_FOR_TEST,
+                ConnectionBackendType::Socket,
+            ),
             outstanding_frames: OutstandingFrames::new(),
             pending_channels: HashMap::new(),
             outgoing_frame_sender,

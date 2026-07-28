@@ -5,7 +5,8 @@
 use bt_rfcomm::frame::Frame;
 use bt_rfcomm::frame::mux_commands::DEFAULT_INITIAL_CREDITS;
 use bt_rfcomm::{DLCI, RfcommError, Role};
-use fuchsia_bluetooth::types::Channel;
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fuchsia_bluetooth::types::{Channel, ConnectionBackendType};
 use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::mpsc;
@@ -87,6 +88,8 @@ pub struct SessionMultiplexer {
     channels: HashMap<DLCI, SessionChannel>,
     /// The inspect node for this object.
     inspect: SessionMultiplexerInspect,
+    /// The backend type of the underlying L2CAP channel.
+    backend_type: ConnectionBackendType,
 }
 
 impl Inspect for &mut SessionMultiplexer {
@@ -98,19 +101,23 @@ impl Inspect for &mut SessionMultiplexer {
 }
 
 impl SessionMultiplexer {
-    pub fn create(max_rfcomm_packet_size: u16) -> Self {
+    pub fn create(max_rfcomm_packet_size: u16, backend_type: ConnectionBackendType) -> Self {
+        if backend_type == ConnectionBackendType::FidlServer {
+            warn!("RFCOMM SessionMultiplexer initialized with unexpected FidlServer backend type");
+        }
         Self {
             role: Role::Unassigned,
             max_rfcomm_packet_size,
             parameters: ParameterNegotiationState::default(),
             channels: HashMap::new(),
             inspect: SessionMultiplexerInspect::default(),
+            backend_type,
         }
     }
 
     /// Resets the multiplexer back to its initial state with no opened channels.
     pub fn reset(&mut self) {
-        *self = Self::create(self.max_rfcomm_packet_size);
+        *self = Self::create(self.max_rfcomm_packet_size, self.backend_type);
     }
 
     pub fn role(&self) -> Role {
@@ -279,6 +286,8 @@ impl SessionMultiplexer {
         dlci: DLCI,
         user_data_sender: mpsc::Sender<Frame>,
     ) -> Result<Channel, Error> {
+        let backend_type = self.backend_type;
+        trace!("Establishing session channel for DLCI {} using backend {:?}", dlci, backend_type);
         // If the session parameters have not been negotiated, set them to our preferred default.
         if !self.parameters_negotiated() {
             let _ = self.negotiate_session_parameters(SessionParameters::default());
@@ -302,7 +311,18 @@ impl SessionMultiplexer {
         // Create endpoints for the session channel. The local end is held by this component
         // and the remote end is returned to be held by a RFCOMM profile.
         let max_tx_size = channel.max_packet_size().expect("set in `set_parameters`");
-        let (local, remote) = Channel::create_socket_pair_with_max_tx(max_tx_size.into());
+        let (local, remote) = match backend_type {
+            ConnectionBackendType::Socket => {
+                Channel::create_socket_pair_with_max_tx(max_tx_size.into())
+            }
+            ConnectionBackendType::FidlClient | ConnectionBackendType::FidlServer => {
+                let (proxy, stream) =
+                    fidl::endpoints::create_proxy_and_stream::<fidl_bt::ChannelMarker>();
+                let remote = Channel::from_fidl_client(proxy, max_tx_size.into());
+                let local = Channel::from_fidl_server(stream, max_tx_size.into());
+                (local, remote)
+            }
+        };
         channel.establish(local, user_data_sender)?;
         Ok(remote)
     }
@@ -332,6 +352,8 @@ impl SessionMultiplexer {
 mod tests {
     use super::*;
 
+    use test_case::test_case;
+
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use diagnostics_assertions::assert_data_tree;
@@ -341,10 +363,12 @@ mod tests {
     use crate::rfcomm::session::channel::Credits;
     use crate::rfcomm::types::SignaledTask;
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn negotiate_session_parameters() {
+    fn negotiate_session_parameters(backend_type: ConnectionBackendType) {
         const DEFAULT_MAX_TX: u16 = 900;
-        let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX);
+        let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX, backend_type);
         assert!(!multiplexer.parameters_negotiated());
 
         let new_parameters = SessionParameters { credit_based_flow: true };
@@ -353,10 +377,12 @@ mod tests {
         assert!(multiplexer.parameters_negotiated());
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn renegotiate_parameters_after_channel_closed() {
+    fn renegotiate_parameters_after_channel_closed(backend_type: ConnectionBackendType) {
         let mut exec = fuchsia_async::TestExecutor::new();
-        let mut multiplexer = SessionMultiplexer::create(900);
+        let mut multiplexer = SessionMultiplexer::create(900, backend_type);
         let dlci = DLCI::try_from(8).unwrap();
 
         // Negotiate initial parameters.
@@ -402,9 +428,11 @@ mod tests {
         exec.run_until_stalled(&mut closed_fut2).expect_pending("channel still active");
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn negotiate_multiple_channels_and_renegotiation() {
-        let mut multiplexer = SessionMultiplexer::create(900);
+    fn negotiate_multiple_channels_and_renegotiation(backend_type: ConnectionBackendType) {
+        let mut multiplexer = SessionMultiplexer::create(900, backend_type);
         let dlci1 = DLCI::try_from(8).unwrap();
         let dlci2 = DLCI::try_from(9).unwrap();
 
@@ -440,10 +468,14 @@ mod tests {
         assert_eq!(channel1_updated.max_packet_size(), Some(550));
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn negotiate_session_parameters_after_dlc_established_is_ignored() {
+    fn negotiate_session_parameters_after_dlc_established_is_ignored(
+        backend_type: ConnectionBackendType,
+    ) {
         let _exec = fuchsia_async::TestExecutor::new();
-        let mut multiplexer = SessionMultiplexer::create(900);
+        let mut multiplexer = SessionMultiplexer::create(900, backend_type);
         let dlci = DLCI::try_from(8).unwrap();
 
         // Establish a channel.
@@ -463,9 +495,13 @@ mod tests {
         assert!(multiplexer.credit_based_flow());
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn negotiate_channel_parameters_ignores_credits_if_flow_control_disabled() {
-        let mut multiplexer = SessionMultiplexer::create(900);
+    fn negotiate_channel_parameters_ignores_credits_if_flow_control_disabled(
+        backend_type: ConnectionBackendType,
+    ) {
+        let mut multiplexer = SessionMultiplexer::create(900, backend_type);
         let dlci = DLCI::try_from(8).unwrap();
 
         // Negotiate NO credit-based flow control.
@@ -485,9 +521,11 @@ mod tests {
         assert_eq!(negotiated.max_frame_size, 500);
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn negotiate_channel_parameters_respects_max_frame_size() {
-        let mut multiplexer = SessionMultiplexer::create(900);
+    fn negotiate_channel_parameters_respects_max_frame_size(backend_type: ConnectionBackendType) {
+        let mut multiplexer = SessionMultiplexer::create(900, backend_type);
         let dlci = DLCI::try_from(8).unwrap();
 
         // Request larger than preferred
@@ -511,9 +549,11 @@ mod tests {
         assert_eq!(channel.max_packet_size(), Some(500));
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn negotiate_channel_parameters_caps_large_peer_mtu() {
-        let mut multiplexer = SessionMultiplexer::create(32767);
+    fn negotiate_channel_parameters_caps_large_peer_mtu(backend_type: ConnectionBackendType) {
+        let mut multiplexer = SessionMultiplexer::create(32767, backend_type);
         let dlci = DLCI::try_from(8).unwrap();
 
         // Peer attempts to negotiate a super large max frame size.
@@ -526,20 +566,24 @@ mod tests {
         assert_eq!(channel.max_packet_size(), Some(32767));
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn start_multiplexer_multiple_times_is_error() {
+    fn start_multiplexer_multiple_times_is_error(backend_type: ConnectionBackendType) {
         const DEFAULT_MAX_TX: u16 = 900;
-        let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX);
+        let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX, backend_type);
         multiplexer.start(Role::Initiator).expect("can start the multiplexer");
         assert!(multiplexer.started());
         let err_result = multiplexer.start(Role::Responder);
         assert_matches!(err_result, Err(Error::MultiplexerAlreadyStarted));
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    async fn start_multiplexer_and_establish_dlci() {
+    async fn start_multiplexer_and_establish_dlci(backend_type: ConnectionBackendType) {
         const DEFAULT_MAX_TX: u16 = 900;
-        let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX);
+        let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX, backend_type);
         multiplexer.start(Role::Initiator).expect("can start the multiplexer");
         assert!(multiplexer.started());
         assert!(!multiplexer.any_dlc_established());
@@ -553,6 +597,7 @@ mod tests {
             .expect("can set parameters");
         let mut user_rfcomm_channel =
             multiplexer.establish_session_channel(dlci, sender).expect("can register");
+        assert_eq!(user_rfcomm_channel.connection_type(), backend_type);
         assert!(multiplexer.any_dlc_established());
         assert!(multiplexer.dlci_established(&dlci));
 
@@ -573,13 +618,15 @@ mod tests {
         assert!(!multiplexer.dlci_established(&dlci));
     }
 
+    #[test_case(ConnectionBackendType::Socket; "socket")]
+    #[test_case(ConnectionBackendType::FidlClient; "fidl")]
     #[fuchsia::test]
-    fn multiplexer_inspect_hierarchy() {
+    fn multiplexer_inspect_hierarchy(backend_type: ConnectionBackendType) {
         let mut exec = fuchsia_async::TestExecutor::new();
         let inspect = inspect::Inspector::default();
 
         // Setup multiplexer with inspect.
-        let mut multiplexer = SessionMultiplexer::create(600);
+        let mut multiplexer = SessionMultiplexer::create(600, backend_type);
         multiplexer.iattach(inspect.root(), "multiplexer").expect("should attach to inspect tree");
         // Default inspect tree.
         assert_data_tree!(@executor exec, inspect, root: {

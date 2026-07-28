@@ -101,7 +101,7 @@ impl From<ChannelMode> for fidl_bt::ChannelMode {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ConnectionBackendType {
     Socket,
     FidlClient,
@@ -226,6 +226,10 @@ impl Channel {
 
     pub fn max_tx_size(&self) -> usize {
         self.max_tx_size
+    }
+
+    pub fn connection_type(&self) -> ConnectionBackendType {
+        self.connection.connection_type()
     }
 
     pub fn channel_mode(&self) -> &ChannelMode {
