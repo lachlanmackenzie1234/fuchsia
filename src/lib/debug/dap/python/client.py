@@ -59,7 +59,12 @@ class DapClient:
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._seq_counter = 1
         self._write_queue: asyncio.Queue[
-            tuple[StreamWriterProtocol, dict[str, Any], asyncio.Future[Any]]
+            tuple[
+                StreamWriterProtocol,
+                dict[str, Any],
+                asyncio.Future[None],
+                asyncio.Future[Any],
+            ]
         ] = asyncio.Queue()
         self._reader_task: asyncio.Task[None] | None = None
         self._writer_task: asyncio.Task[None] | None = None
@@ -99,9 +104,11 @@ class DapClient:
 
         while not self._write_queue.empty():
             try:
-                _, _, fut = self._write_queue.get_nowait()
-                if not fut.done():
-                    fut.cancel()
+                _, _, sent_fut, data_fut = self._write_queue.get_nowait()
+                if not sent_fut.done():
+                    sent_fut.cancel()
+                if not data_fut.done():
+                    data_fut.cancel()
                 self._write_queue.task_done()
             except asyncio.QueueEmpty:
                 break
@@ -115,18 +122,34 @@ class DapClient:
         """Processes queued write requests sequentially in FIFO order."""
         while True:
             try:
-                writer, request, fut = await self._write_queue.get()
+                (
+                    writer,
+                    request,
+                    sent_fut,
+                    data_fut,
+                ) = await self._write_queue.get()
             except asyncio.CancelledError:
                 break
 
+            # in case the caller gives up waiting for this future (e.g. cancel).
+            if data_fut.done():
+                if not sent_fut.done():
+                    sent_fut.cancel()
+                self._write_queue.task_done()
+                continue
+
             try:
                 await self._write_message(writer, request)
+                if not sent_fut.done():
+                    sent_fut.set_result(None)
             except Exception as e:
                 seq = request.get("seq")
                 if seq is not None:
                     self._pending_requests.pop(seq, None)
-                if not fut.done():
-                    fut.set_exception(e)
+                if not sent_fut.done():
+                    sent_fut.set_exception(e)
+                if not data_fut.done():
+                    data_fut.set_exception(e)
             finally:
                 self._write_queue.task_done()
 
@@ -162,12 +185,13 @@ class DapClient:
         finally:
             await self.close()
 
+    # To make requests execute `_write_message` by FIFO order, we rely on the run_writer_task.
     def _send_request_future(
         self,
         writer: StreamWriterProtocol,
         command: str,
         arguments: DapBaseModel | None = None,
-    ) -> tuple[int, asyncio.Future[dict[str, Any]]]:
+    ) -> tuple[int, asyncio.Future[None], asyncio.Future[dict[str, Any]]]:
         """Sends a request to the debug adapter synchronously by queueing it for the write worker.
 
         Args:
@@ -176,7 +200,7 @@ class DapClient:
             arguments: Optional arguments for the command.
 
         Returns:
-            A tuple of (sequence number, response future).
+            A tuple of (sequence number, sent future, response future).
 
         Raises:
             DapError: If the client is not running.
@@ -191,7 +215,8 @@ class DapClient:
         self._seq_counter += 1
 
         loop = asyncio.get_running_loop()
-        fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+        sent_fut: asyncio.Future[None] = loop.create_future()
+        data_fut: asyncio.Future[dict[str, Any]] = loop.create_future()
 
         request: dict[str, Any] = {
             "seq": seq,
@@ -205,10 +230,38 @@ class DapClient:
                 )
             request["arguments"] = arguments.dump_dap()
 
-        self._pending_requests[seq] = fut
-        self._write_queue.put_nowait((writer, request, fut))
+        self._pending_requests[seq] = data_fut
+        self._write_queue.put_nowait((writer, request, sent_fut, data_fut))
 
-        return seq, fut
+        return seq, sent_fut, data_fut
+
+    async def _await_request_response(
+        self,
+        command: str,
+        seq: int,
+        sent_fut: asyncio.Future[None],
+        data_fut: asyncio.Future[dict[str, Any]],
+        timeout: float,
+    ) -> dict[str, Any]:
+        """Awaits wire transmission and response for a request with centralized cleanup."""
+        try:
+            async with asyncio.timeout(timeout):
+                await sent_fut
+                return await data_fut
+        except TimeoutError:
+            if not sent_fut.done():
+                raise DapError(
+                    f"CLIENT IO ERROR: Request {command} (seq={seq}) failed to write to socket within {timeout}s"
+                )
+            raise DapError(
+                f"SERVER TIMEOUT: Request {command} (seq={seq}) sent over wire, but adapter timed out waiting for response after {timeout}s"
+            )
+        finally:
+            self._pending_requests.pop(seq, None)
+            if not sent_fut.done():
+                sent_fut.cancel()
+            if not data_fut.done():
+                data_fut.cancel()
 
     async def _send_request(
         self,
@@ -231,21 +284,21 @@ class DapClient:
         Raises:
             DapError: If the request times out or framing fails.
         """
-        seq, fut = self._send_request_future(writer, command, arguments)
-        try:
-            resp = await asyncio.wait_for(fut, timeout=timeout)
-            if not resp.get("success", True):
-                msg = resp.get("message", "Unknown DAP error")
-                logger.error(f"DAP request {command} (seq={seq}) failed: {msg}")
-                raise DapError(f"DAP request {command} failed: {msg}")
-            return resp
-        except asyncio.TimeoutError:
-            self._pending_requests.pop(seq, None)
-            if not fut.done():
-                fut.cancel()
-            raise DapError(
-                f"Request {command} (seq={seq}) timed out after {timeout}s"
-            )
+
+        # Instead of directly calling _write_message here,
+        # we leverage _send_request_future, so this function inherently sends requests in FIFO order.
+        # FIFO may not be necessary for this function and its client, but we keep it for consistency.
+        seq, sent_fut, data_fut = self._send_request_future(
+            writer, command, arguments
+        )
+        resp = await self._await_request_response(
+            command, seq, sent_fut, data_fut, timeout
+        )
+        if not resp.get("success", True):
+            msg = resp.get("message", "Unknown DAP error")
+            logger.error(f"DAP request {command} (seq={seq}) failed: {msg}")
+            raise DapError(f"DAP request {command} failed: {msg}")
+        return resp
 
     async def initialize(
         self, writer: StreamWriterProtocol, args: InitializeArguments

@@ -375,7 +375,7 @@ class DapTestFramework:
             self._writer is not None
         ), "DAP client socket writer is not initialized."
 
-        seq, fut = self.client._send_request_future(
+        seq, sent_fut, data_fut = self.client._send_request_future(
             self._writer, command, arguments
         )
 
@@ -384,8 +384,8 @@ class DapTestFramework:
 
         async def _wait_and_resolve() -> None:
             try:
-                resp_dict = await asyncio.wait_for(
-                    fut, timeout=self.request_timeout
+                resp_dict = await self.client._await_request_response(
+                    command, seq, sent_fut, data_fut, self.request_timeout
                 )
                 self.traffic_history.append(resp_dict)
                 if command == "initialize":
