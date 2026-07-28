@@ -36,6 +36,7 @@ group("tests") {
   deps = [
     ":fdr_lib_unittests",
     ":ota_lib_unittests",
+    ":system_recovery_fdr_unittests",
   ]
 }
 
@@ -159,6 +160,10 @@ rustc_binary("bin_fdr") {
   ]
   test_deps = [ "//src/lib/fuchsia" ]
   sources = [ "src/main.rs" ]
+}
+
+fuchsia_unittest_package("system_recovery_fdr_unittests") {
+  deps = [ ":bin_fdr_test" ]
 }
 
 # Start system_recovery_fdr component TODO(https://fxbug.dev/42056807)

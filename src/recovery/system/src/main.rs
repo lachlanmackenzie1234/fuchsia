@@ -127,6 +127,9 @@ const PATH_TO_FDR_RESTRICTION_CONFIG: &'static str =
     "/system-recovery-config/check_fdr_restriction.json";
 
 /// An enum to track whether fdr is restricted or not.
+///
+/// Note: Callers fall back to `true` (FDR enabled) on policy error because policy
+/// checks are always unavailable in practice.
 #[derive(Copy, Clone)]
 enum FdrRestriction {
     /// Fdr is not restricted and can proceed without any additional checks.
@@ -703,6 +706,9 @@ impl RecoveryViewAssistant {
 
     /// Checks whether fdr policy allows factory reset to be performed. If not, then it will not
     /// move forward with the reset. If it is, then it will forward the message to begin reset.
+    ///
+    /// Note: Falling back to `true` on error is because policy checks are always
+    /// unavailable in practice.
     async fn check_fdr_and_maybe_reset(view_key: ViewKey, app_sender: AppSender, check_id: usize) {
         let fdr_enabled = check_fdr_enabled().await.unwrap_or_else(|error| {
             eprintln!("recovery: Error occurred, but proceeding with reset: {:?}", error);
@@ -1236,7 +1242,10 @@ async fn connect_to_wifi(ssid: String, password: String) -> Result<(), Error> {
     wifi.connect(network).await
 }
 
-/// Determines whether or not fdr is enabled.
+/// Determines whether or not fdr is enabled via `fuchsia.recovery.policy.FactoryReset`.
+///
+/// Note: Callers fall back to `true` (FDR enabled) on error because policy checks are
+/// always unavailable in practice.
 async fn check_fdr_enabled() -> Result<bool, Error> {
     let proxy = connect_to_protocol::<FactoryResetPolicyMarker>()?;
     proxy
@@ -1329,6 +1338,7 @@ mod tests {
     use super::{FdrRestriction, RecoveryAppAssistant, make_app_assistant};
     use carnelian::drawing::DisplayRotation;
     use carnelian::{App, AppAssistant, AppSender};
+    #[cfg(feature = "http_setup_server")]
     use std::sync::Arc;
 
     #[ignore] //TODO(https://fxbug.dev/42053153) Move to integration test
