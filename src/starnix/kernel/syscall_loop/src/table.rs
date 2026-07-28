@@ -176,10 +176,10 @@ pub fn dispatch_syscall(
             sys_arch32_timer_settime, sys_clock_nanosleep as sys_arch32_clock_nanosleep,
         };
         pub use starnix_core::task::syscalls::{
-            sys_arch32_execve, sys_arch32_getegid32, sys_arch32_geteuid32, sys_arch32_getgid32,
-            sys_arch32_getgroups32, sys_arch32_getpgid, sys_arch32_getppid, sys_arch32_getpriority,
-            sys_arch32_getresgid32, sys_arch32_getresuid32, sys_arch32_getrusage,
-            sys_arch32_ioprio_set, sys_arch32_ptrace, sys_arch32_quotactl,
+            sys_arch32_execve, sys_arch32_execveat, sys_arch32_getegid32, sys_arch32_geteuid32,
+            sys_arch32_getgid32, sys_arch32_getgroups32, sys_arch32_getpgid, sys_arch32_getppid,
+            sys_arch32_getpriority, sys_arch32_getresgid32, sys_arch32_getresuid32,
+            sys_arch32_getrusage, sys_arch32_ioprio_set, sys_arch32_ptrace, sys_arch32_quotactl,
             sys_arch32_sched_get_priority_max, sys_arch32_sched_get_priority_min,
             sys_arch32_sched_getaffinity, sys_arch32_sched_getparam, sys_arch32_sched_setaffinity,
             sys_arch32_sched_setparam, sys_arch32_sched_setscheduler, sys_arch32_seccomp,
@@ -324,6 +324,7 @@ pub fn dispatch_syscall(
             eventfd2[2],
             eventfd[1],
             execve[3],
+            execveat[5],
             exit[1],
             exit_group[1],
             faccessat2[4],
