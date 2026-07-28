@@ -91,6 +91,11 @@ class Monitor : public fidl::Server<fuchsia_memory_inspection::Collector>,
   std::optional<fidl::Client<fuchsia_hardware_ram_metrics::Device>> ram_device_;
   uint64_t pending_bandwidth_measurements_ = 0;
   pressure_signaler::Level level_;
+  async::TaskClosureMethod<Monitor, &Monitor::SampleAndPost> sample_task_{this};
+  async::TaskClosureMethod<Monitor, &Monitor::MeasureBandwidthAndPost> measure_bandwidth_task_{
+      this};
+  async::TaskClosureMethod<Monitor, &Monitor::PeriodicMeasureBandwidth>
+      periodic_measure_bandwidth_task_{this};
 
   // Imminent OOM monitoring
   ImminentOomObserver* imminent_oom_observer_;

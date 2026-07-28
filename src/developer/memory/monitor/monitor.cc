@@ -362,7 +362,7 @@ void Monitor::SampleAndPost() {
   TRACE_COUNTER(kTraceName, "allocated", 0, "vmo", kmem.vmo_bytes, "mmu_overhead",
                 kmem.mmu_overhead_bytes, "ipc", kmem.ipc_bytes);
   TRACE_COUNTER(kTraceName, "free", 0, "free", kmem.free_bytes, "free_heap", kmem.free_heap_bytes);
-  async::PostDelayedTask(dispatcher_, [this] { SampleAndPost(); }, kTracingDelay);
+  sample_task_.PostDelayed(dispatcher_, kTracingDelay);
 }
 
 void Monitor::MeasureBandwidthAndPost() {
@@ -433,7 +433,7 @@ void Monitor::MeasureBandwidthAndPost() {
                                                      info.frequency(), cycles_to_measure) *
                                       info.bytes_per_cycle());
           }
-          async::PostTask(dispatcher_, [this] { MeasureBandwidthAndPost(); });
+          measure_bandwidth_task_.Post(dispatcher_);
         });
   }
 }
@@ -441,9 +441,8 @@ void Monitor::MeasureBandwidthAndPost() {
 void Monitor::PeriodicMeasureBandwidth() {
   if (!ram_device_)
     return;
-  std::chrono::seconds seconds_to_sleep = std::chrono::seconds(1);
-  async::PostDelayedTask(
-      dispatcher_, [this]() { PeriodicMeasureBandwidth(); }, zx::sec(seconds_to_sleep.count()));
+  constexpr zx::duration seconds_to_sleep = zx::sec(1);
+  periodic_measure_bandwidth_task_.PostDelayed(dispatcher_, seconds_to_sleep);
 
   // Will not do measurement when tracing
   if (tracing_)
