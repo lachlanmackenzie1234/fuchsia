@@ -40,6 +40,8 @@ rustc_library("tracefs") {
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
   ]
+
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 fuchsia_unittest_package("starnix-tracefs-tests") {

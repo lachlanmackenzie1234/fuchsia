@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::mm::PAGE_SIZE;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use anyhow::Context;
 use fidl_fuchsia_cpu_profiler as profiler;
@@ -12,7 +13,7 @@ use futures::channel::mpsc as future_mpsc;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock, mpsc as sync_mpsc};
+use std::sync::{Arc, LazyLock, OnceLock, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
 
 use futures::io::{AsyncReadExt, Cursor};
@@ -48,10 +49,10 @@ use crate::security::{self, TargetTaskType};
 use crate::task::Kernel;
 
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
-// 4096 * 10, page size * 10.
+// PAGE_SIZE * 10, runtime page size * 10.
 // If tests flake due to running out of buffer space, or if the profiling duration is
 // significantly increased, this buffer size may need further adjustment (expansion).
-const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 40960;
+static ESTIMATED_MMAP_BUFFER_SIZE: LazyLock<u64> = LazyLock::new(|| *PAGE_SIZE * 10);
 // FXT magic bytes (little endian).
 const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
 
@@ -537,7 +538,7 @@ fn write_record_to_vmo(
     // Example:
     //  You're writing the first record (size 100). Start writing at 0 + 4096.
     //  You're writing the second record. Start writing at 100 + 4096.
-    let data_offset = offset + (zx::system_get_page_size() as u64);
+    let data_offset = offset + *PAGE_SIZE;
 
     // Write header to memory.
     match perf_data_vmo.write(&perf_event_header.as_bytes(), data_offset) {
@@ -772,7 +773,7 @@ unsafe fn create_seq_lock(
 ) -> SeqLock<PerfMetadataHeader, PerfMetadataValue> {
     // Currently we hardcode everything just to get something E2E working.
     let metadata_header = PerfMetadataHeader { version: 1, compat_version: 2 };
-    let page_size = zx::system_get_page_size() as u64;
+    let page_size = *PAGE_SIZE;
     let metadata_value = PerfMetadataValue {
         lock: 0,
         index: 3,
@@ -860,7 +861,7 @@ pub fn sys_perf_event_open(
         0,
         perf_event_attrs.disabled(),
         perf_event_attrs.sample_type,
-        zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
+        zx::Vmo::create(*ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
         sender,
     );
 

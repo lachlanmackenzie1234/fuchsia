@@ -310,7 +310,7 @@ impl TraceEventQueueList {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_RING_BUFFER_SIZE_BYTES, TraceEvent, TraceEventQueue};
+    use super::{DEFAULT_RING_BUFFER_SIZE_BYTES, LocklessRingBuffer, TraceEvent, TraceEventQueue};
     use crate::vfs::OutputBuffer;
     use crate::vfs::buffers::VecOutputBuffer;
 
@@ -395,16 +395,19 @@ mod tests {
         let expected_event = TraceEvent::new(pid, data.len());
         assert_eq!(expected_event.size(), 155);
 
+        let events_per_page =
+            (*PAGE_SIZE as usize - LocklessRingBuffer::PAGE_HEADER_SIZE) / expected_event.size();
+
         // Push the event into the queue.
-        for i in 0..27 {
+        for i in 0..=events_per_page {
             let event = TraceEvent::new(pid, data.len());
             let result = queue.push_event(event, data);
             assert!(result.is_ok());
             let delta = result.ok().expect("delta").into_nanos();
-            // The first event on Page 0 (i == 0) and the first event on Page 1 (i == 26,
-            // due to overflow since a page holds exactly 26 events of size 155) must
+            // The first event on Page 0 (i == 0) and the first event on Page 1 (i == events_per_page,
+            // due to overflow since a page holds exactly events_per_page events of size 155) must
             // have a time delta of exactly 0 in their event headers as per the Ftrace format.
-            if i == 0 || i == 26 {
+            if i == 0 || i == events_per_page {
                 assert_eq!(delta, 0);
             } else {
                 assert!(delta > 0);
@@ -423,7 +426,7 @@ mod tests {
 
         // Verify size of events
         let actual_size_bytes = &buffer.data()[8..16];
-        let expected_size_bytes = &(expected_event.size() * 26).to_le_bytes();
+        let expected_size_bytes = &((expected_event.size() * events_per_page) as u64).to_le_bytes();
         assert_eq!(actual_size_bytes, expected_size_bytes);
 
         // Try reading another page.

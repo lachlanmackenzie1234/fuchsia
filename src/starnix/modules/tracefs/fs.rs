@@ -231,11 +231,14 @@ struct EventsHeaderPage;
 impl EventsHeaderPage {
     fn new_node() -> impl FsNodeOps {
         ConstFile::new_node(
-            "\tfield: u64 timestamp;\toffset:0;\tsize:8;\tsigned:0\n\
-        \tfield: local_t commit;\toffset:8;\tsize:8;\tsigned:1\n\
-        \tfield: int overwrite;\toffset:8;\tsize:1;\tsigned:1\n\
-        \tfield: char data;\toffset:16;\tsize:4080;\tsigned:0\n"
-                .into(),
+            format!(
+                "\tfield: u64 timestamp;\toffset:0;\tsize:8;\tsigned:0\n\
+            \tfield: local_t commit;\toffset:8;\tsize:8;\tsigned:1\n\
+            \tfield: int overwrite;\toffset:8;\tsize:1;\tsigned:1\n\
+            \tfield: char data;\toffset:16;\tsize:{};\tsigned:0\n",
+                *PAGE_SIZE - 16
+            )
+            .into_bytes(),
         )
     }
 }
@@ -268,5 +271,47 @@ impl TraceFile {
     fn new_node() -> impl FsNodeOps {
         track_stub!(TODO("https://fxbug.dev/357665908"), "/sys/kernel/tracing/trace");
         ConstFile::new_node("# tracer: nop\n".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starnix_core::testing::spawn_kernel_and_run;
+    use starnix_core::vfs::buffers::VecOutputBuffer;
+    use starnix_core::vfs::{FsNodeInfo, NamespaceNode};
+    use starnix_uapi::auth::FsCred;
+    use starnix_uapi::file_mode::{AccessCheck, mode};
+    use starnix_uapi::open_flags::OpenFlags;
+
+    #[::fuchsia::test]
+    async fn test_events_header_page_size() {
+        spawn_kernel_and_run(async move |current_task| {
+            let fs = current_task.fs().root().entry.node.fs();
+            let info = FsNodeInfo::new(mode!(IFREG, 0o444), FsCred::root());
+            let node = fs.create_node_and_allocate_node_id(EventsHeaderPage::new_node(), info);
+            let ns_node = NamespaceNode::new_anonymous_unrooted(current_task, node);
+            let file = ns_node
+                .open(current_task, OpenFlags::RDONLY, AccessCheck::skip())
+                .expect("open header_page node");
+
+            let mut buffer = VecOutputBuffer::new(*PAGE_SIZE as usize);
+            let bytes_read = file.read(current_task, &mut buffer).expect("read header_page");
+            let content = std::str::from_utf8(&buffer.data()[..bytes_read]).expect("valid utf8");
+
+            let expected_content = format!(
+                "\tfield: u64 timestamp;\toffset:0;\tsize:8;\tsigned:0\n\
+            \tfield: local_t commit;\toffset:8;\tsize:8;\tsigned:1\n\
+            \tfield: int overwrite;\toffset:8;\tsize:1;\tsigned:1\n\
+            \tfield: char data;\toffset:16;\tsize:{};\tsigned:0\n",
+                *PAGE_SIZE - 16
+            );
+            assert_eq!(
+                content, expected_content,
+                "Expected header_page to match exactly:\n{}\nGot:\n{}",
+                expected_content, content
+            );
+        })
+        .await;
     }
 }
