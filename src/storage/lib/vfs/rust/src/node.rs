@@ -21,6 +21,7 @@ use std::future::{Future, ready};
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
+use storage_trace::{self as trace, TraceFutureExt};
 use zx_status::Status;
 
 /// POSIX emulation layer access attributes for all services created with service().
@@ -210,6 +211,7 @@ impl<N: Node> Connection<N> {
                 not(fuchsia_api_level_at_least = "29")
             ))]
             fio::NodeRequest::DeprecatedClone { flags, object, control_handle: _ } => {
+                trace::duration!("storage", "Node::Clone");
                 crate::common::send_on_open_with_error(
                     flags.contains(fio::OpenFlags::DESCRIBE),
                     object,
@@ -217,76 +219,106 @@ impl<N: Node> Connection<N> {
                 );
             }
             fio::NodeRequest::Clone { request, control_handle: _ } => {
+                trace::duration!("storage", "Node::Clone");
                 // Suppress any errors in the event a bad `request` channel was provided.
                 self.handle_clone(ServerEnd::new(request.into_channel()));
             }
             fio::NodeRequest::Close { responder } => {
+                trace::duration!("storage", "Node::Close");
                 responder.send(Ok(()))?;
                 return Ok(ConnectionState::Closed);
             }
             fio::NodeRequest::Sync { responder } => {
+                trace::duration!("storage", "Node::Sync");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
             fio::NodeRequest::DeprecatedGetAttr { responder } => {
-                let (status, attrs) =
-                    crate::common::io2_to_io1_attrs(self.node.as_ref(), self.options.rights).await;
-                responder.send(status.into_raw(), &attrs)?;
+                async move {
+                    let (status, attrs) =
+                        crate::common::io2_to_io1_attrs(self.node.as_ref(), self.options.rights)
+                            .await;
+                    responder.send(status.into_raw(), &attrs)
+                }
+                .trace(trace::trace_future_args!("storage", "Node::GetAttr"))
+                .await?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
             fio::NodeRequest::GetAttr { responder } => {
-                let (status, attrs) =
-                    crate::common::io2_to_io1_attrs(self.node.as_ref(), self.options.rights).await;
-                responder.send(status.into_raw(), &attrs)?;
+                async move {
+                    let (status, attrs) =
+                        crate::common::io2_to_io1_attrs(self.node.as_ref(), self.options.rights)
+                            .await;
+                    responder.send(status.into_raw(), &attrs)
+                }
+                .trace(trace::trace_future_args!("storage", "Node::GetAttr"))
+                .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
             fio::NodeRequest::DeprecatedSetAttr { flags: _, attributes: _, responder } => {
+                trace::duration!("storage", "Node::SetAttr");
                 responder.send(Status::BAD_HANDLE.into_raw())?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
             fio::NodeRequest::SetAttr { flags: _, attributes: _, responder } => {
+                trace::duration!("storage", "Node::SetAttr");
                 responder.send(Status::BAD_HANDLE.into_raw())?;
             }
             fio::NodeRequest::GetAttributes { query, responder } => {
-                let result = self.node.get_attributes(query).await;
-                responder.send(
-                    result
-                        .as_ref()
-                        .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
-                        .map_err(|status| status.into_raw()),
-                )?;
+                async move {
+                    let attrs = self.node.get_attributes(query).await;
+                    responder.send(
+                        attrs
+                            .as_ref()
+                            .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
+                            .map_err(|status| status.into_raw()),
+                    )
+                }
+                .trace(trace::trace_future_args!("storage", "Node::GetAttributes"))
+                .await?;
             }
             fio::NodeRequest::UpdateAttributes { payload: _, responder } => {
+                trace::duration!("storage", "Node::UpdateAttributes");
                 responder.send(Err(Status::BAD_HANDLE.into_raw()))?;
             }
             fio::NodeRequest::ListExtendedAttributes { iterator, .. } => {
+                trace::duration!("storage", "Node::ListExtendedAttributes");
                 iterator.close_with_epitaph(Status::NOT_SUPPORTED)?;
             }
             fio::NodeRequest::GetExtendedAttribute { responder, .. } => {
+                trace::duration!("storage", "Node::GetExtendedAttribute");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::NodeRequest::SetExtendedAttribute { responder, .. } => {
+                trace::duration!("storage", "Node::SetExtendedAttribute");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::NodeRequest::RemoveExtendedAttribute { responder, .. } => {
+                trace::duration!("storage", "Node::RemoveExtendedAttribute");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::NodeRequest::GetFlags { responder } => {
+                trace::duration!("storage", "Node::GetFlags");
                 responder.send(Ok(fio::Flags::from(&self.options)))?;
             }
             fio::NodeRequest::SetFlags { flags: _, responder } => {
+                trace::duration!("storage", "Node::SetFlags");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::NodeRequest::DeprecatedGetFlags { responder } => {
+                trace::duration!("storage", "Node::GetFlags");
                 responder.send(Status::OK.into_raw(), fio::OpenFlags::NODE_REFERENCE)?;
             }
             fio::NodeRequest::DeprecatedSetFlags { flags: _, responder } => {
+                trace::duration!("storage", "Node::SetFlags");
                 responder.send(Status::BAD_HANDLE.into_raw())?;
             }
             fio::NodeRequest::Query { responder } => {
+                trace::duration!("storage", "Node::Query");
                 responder.send(fio::NodeMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::NodeRequest::QueryFilesystem { responder } => {
+                trace::duration!("storage", "Node::QueryFilesystem");
                 responder.send(Status::NOT_SUPPORTED.into_raw(), None)?;
             }
             fio::NodeRequest::_UnknownMethod { .. } => (),
