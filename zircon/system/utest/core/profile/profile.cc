@@ -310,6 +310,17 @@ TEST(SchedulerProfileTest, SetThreadPriorityIsOk) {
   ASSERT_OK(result.load(), "%s", error.load());
 }
 
+TEST(SchedulerProfileTest, SetProfileWithNonZeroOptionsIsInvalidArgs) {
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+
+  zx::profile profile;
+  zx_profile_info_t info = MakeSchedulerProfileInfo(ZX_PRIORITY_LOWEST);
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &info, &profile));
+
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::thread::self()->set_profile(profile, 1u));
+}
+
 TEST(ProfileTest, CreateProfileWithDefaultInitializedProfileInfoIsError) {
   zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
   ASSERT_OK(maybe_profile_rsrc.status_value());

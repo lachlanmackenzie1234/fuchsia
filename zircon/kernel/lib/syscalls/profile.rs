@@ -78,6 +78,10 @@ pub fn sys_object_set_profile(
         options
     );
 
+    if options != 0 {
+        return Err(Status::INVALID_ARGS.into());
+    }
+
     PROFILE_SET.add(1);
 
     let profile =
