@@ -140,6 +140,14 @@ void ServiceInstancePublisherServiceImpl::ResponderPublisher::GetPublication(
     ++on_publication_calls_in_progress_;
     GetPublicationNow(publication_cause, subtype, source_addresses, std::move(callback));
   } else {
+    // If |pending_publications_| contains many publications already, ignore this one to
+    // prevent memory exhaustion. The limit is quite high, so we don't bother doing anything
+    // clever like tossing old requests.
+    if (pending_publications_.size() >= kMaxPublicationsInQueue) {
+      callback(nullptr);
+      return;
+    }
+
     pending_publications_.emplace(publication_cause, subtype, source_addresses,
                                   std::move(callback));
   }

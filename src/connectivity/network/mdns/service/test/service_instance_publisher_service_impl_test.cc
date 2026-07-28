@@ -23,7 +23,11 @@ class ServiceInstancePublisherServiceImplTests
     if (on_publication_handler_) {
       on_publication_handler_();
     }
-    callback(fpromise::error(fuchsia::net::mdns::OnPublicationError::DO_NOT_RESPOND));
+    if (auto_respond_) {
+      callback(fpromise::error(fuchsia::net::mdns::OnPublicationError::DO_NOT_RESPOND));
+    } else {
+      pending_publication_callbacks_.push_back(std::move(callback));
+    }
   }
 
   size_t on_publication_request_count() {
@@ -36,9 +40,17 @@ class ServiceInstancePublisherServiceImplTests
     on_publication_handler_ = std::move(handler);
   }
 
+  void set_auto_respond(bool auto_respond) { auto_respond_ = auto_respond; }
+
+  std::vector<OnPublicationCallback>& pending_publication_callbacks() {
+    return pending_publication_callbacks_;
+  }
+
  private:
   size_t on_publication_request_count_ = 0;
   fit::closure on_publication_handler_;
+  bool auto_respond_ = true;
+  std::vector<OnPublicationCallback> pending_publication_callbacks_;
 };
 
 namespace {
@@ -316,6 +328,99 @@ TEST_F(ServiceInstancePublisherServiceImplTests, InvalidSubtypeUtf8) {
 
   // Expect no OnPublication requests, since the subtype was invalid UTF-8.
   EXPECT_EQ(0u, on_publication_request_count());
+
+  publisher_ptr = nullptr;
+  binding.Close(ZX_ERR_PEER_CLOSED);
+  RunLoopUntilIdle();
+}
+
+// Tests that the number of queued publications is capped at kMaxPublicationsInQueue (1000).
+TEST_F(ServiceInstancePublisherServiceImplTests, MaxPublicationsInQueue) {
+  set_auto_respond(false);
+
+  // Instantiate |Mdns| so we can register a publisher with it.
+  TestTransceiver transceiver;
+  Mdns mdns(transceiver);
+  bool ready_callback_called = false;
+  mdns.Start(nullptr, DnsName("TestHostName"), /* perform probe */ false,
+             [&ready_callback_called]() {
+               // Ready callback.
+               ready_callback_called = true;
+             },
+             {});
+
+  // Create the publisher bound to the |publisher_ptr| channel.
+  fuchsia::net::mdns::ServiceInstancePublisherPtr publisher_ptr;
+  auto under_test = std::make_unique<ServiceInstancePublisherServiceImpl>(
+      mdns, publisher_ptr.NewRequest(), []() {});
+
+  // Expect that the |Mdns| instance is ready.
+  RunLoopUntilIdle();
+  EXPECT_TRUE(ready_callback_called);
+
+  // Instantiate a responder.
+  fuchsia::net::mdns::ServiceInstancePublicationResponderHandle responder_handle;
+  fidl::Binding<fuchsia::net::mdns::ServiceInstancePublicationResponder> binding(
+      this, responder_handle.NewRequest());
+  zx_status_t binding_status = ZX_OK;
+  binding.set_error_handler([&binding_status](zx_status_t status) { binding_status = status; });
+
+  auto options = fuchsia::net::mdns::ServiceInstancePublicationOptions();
+  options.set_perform_probe(false);
+
+  // Register the publisher with the |Mdns| instance.
+  publisher_ptr->PublishServiceInstance(
+      "_testservice._tcp.", "TestInstanceName", std::move(options), std::move(responder_handle),
+      [](fuchsia::net::mdns::ServiceInstancePublisher_PublishServiceInstance_Result result) {});
+
+  // Run loop for initial announcement.
+  RunLoopUntilIdle();
+  EXPECT_EQ(ZX_OK, binding_status);
+
+  // First OnPublication call is active (calls in progress = 1).
+  EXPECT_EQ(1u, on_publication_request_count());
+  EXPECT_EQ(1u, pending_publication_callbacks().size());
+
+  // Second OnPublication call (calls in progress = 2, max in progress).
+  binding.events().Reannounce();
+  RunLoopUntilIdle();
+  EXPECT_EQ(1u, on_publication_request_count());
+  EXPECT_EQ(2u, pending_publication_callbacks().size());
+
+  // Queue 1000 publications (kMaxPublicationsInQueue).
+  for (size_t i = 0; i < 1000; ++i) {
+    binding.events().Reannounce();
+  }
+  RunLoopUntilIdle();
+
+  // None of these 1000 reannouncements should result in OnPublication calls yet,
+  // because calls in progress is already at the maximum of 2.
+  EXPECT_EQ(0u, on_publication_request_count());
+
+  // Send one more reannouncement beyond the queue capacity limit.
+  binding.events().Reannounce();
+  RunLoopUntilIdle();
+
+  // It should be dropped, so still no new OnPublication calls.
+  EXPECT_EQ(0u, on_publication_request_count());
+
+  // Complete one of the 2 in-progress calls.
+  pending_publication_callbacks().front()(
+      fpromise::error(fuchsia::net::mdns::OnPublicationError::DO_NOT_RESPOND));
+  pending_publication_callbacks().erase(pending_publication_callbacks().begin());
+  RunLoopUntilIdle();
+
+  // Now 1 call from the queue should be processed, invoking OnPublication once.
+  EXPECT_EQ(1u, on_publication_request_count());
+  EXPECT_EQ(2u, pending_publication_callbacks().size());
+
+  // Complete all remaining pending callbacks to cleanly shut down.
+  while (!pending_publication_callbacks().empty()) {
+    pending_publication_callbacks().front()(
+        fpromise::error(fuchsia::net::mdns::OnPublicationError::DO_NOT_RESPOND));
+    pending_publication_callbacks().erase(pending_publication_callbacks().begin());
+    RunLoopUntilIdle();
+  }
 
   publisher_ptr = nullptr;
   binding.Close(ZX_ERR_PEER_CLOSED);

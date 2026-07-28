@@ -63,6 +63,10 @@ class ServiceInstancePublisherServiceImpl
     // This limit is set to prevent the responder channel from overflowing.
     static constexpr uint32_t kMaxOnPublicationCallsInProgress = 2;
 
+    // The maximum number of |OnPublication| method calls that may be in |pending_publications_|
+    // at any given time. This is used to prevent memory exhaustion, so it's set quite high.
+    static constexpr uint32_t kMaxPublicationsInQueue = 1000;
+
     struct Entry {
       Entry(PublicationCause publication_cause, std::string subtype,
             std::vector<inet::SocketAddress> source_addresses, GetPublicationCallback callback)
