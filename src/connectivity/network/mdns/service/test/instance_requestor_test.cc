@@ -1033,6 +1033,135 @@ TEST_F(InstanceRequestorTest, ResponsePtrOnly) {
   subscriber.ExpectNoOther();
 }
 
+// Regression test: subscribers that unsubscribe synchronously from their |InstanceLost| callback
+// (as the FIDL subscriber implementations do when a listener proxy call fails at encode time)
+// must not invalidate the subscriber set iteration in |RemoveInstance|.
+TEST_F(InstanceRequestorTest, SubscriberUnsubscribesDuringInstanceLost) {
+  // Need to |make_shared|, because removing the last subscriber posts a task that calls
+  // |shared_from_this|.
+  auto under_test = std::make_shared<InstanceRequestor>(
+      this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies);
+  SetAgent(*under_test);
+
+  class UnsubscribingSubscriber : public Subscriber {
+   public:
+    explicit UnsubscribingSubscriber(InstanceRequestor& requestor) : requestor_(requestor) {}
+
+    void InstanceLost(const DnsName& service, const DnsLabel& instance) override {
+      Subscriber::InstanceLost(service, instance);
+      requestor_.RemoveSubscriber(this);
+    }
+
+   private:
+    InstanceRequestor& requestor_;
+  };
+
+  UnsubscribingSubscriber subscriber_a(*under_test);
+  UnsubscribingSubscriber subscriber_b(*under_test);
+  under_test->AddSubscriber(&subscriber_a);
+  under_test->AddSubscriber(&subscriber_b);
+
+  under_test->Start(kLocalHostFullName);
+
+  // Expect a PTR question on start.
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+
+  subscriber_a.ExpectQueryCalled(DnsType::kPtr);
+  subscriber_b.ExpectQueryCalled(DnsType::kPtr);
+
+  // Receive a response with only a PTR record, so the instance is known but not yet reported.
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), 1, Media::kWireless, IpVersions::kV4);
+  ReceivePtr(*under_test, kServiceName, kInstanceName, sender_address);
+
+  // Expect an SRV query.
+  ExpectQueryCall(DnsType::kSrv, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+
+  // The requestor also asked for the received PTR resource to be renewed.
+  ExpectRenewCall(DnsResource(kServiceFullName, DnsType::kPtr));
+
+  // Expire the PTR resource. Both subscribers unsubscribe from inside |InstanceLost|.
+  DnsResource ptr_resource(kServiceFullName, DnsType::kPtr);
+  ptr_resource.ptr_.pointer_domain_name_ = DnsName(kInstanceFullName);
+  ptr_resource.time_to_live_ = 0;
+  under_test->ReceiveResource(ptr_resource, MdnsResourceSection::kExpired, sender_address);
+
+  auto instance_id_a = subscriber_a.ExpectInstanceLostCalled();
+  EXPECT_EQ(kServiceName, instance_id_a->service_);
+  EXPECT_EQ(kInstanceName, instance_id_a->instance_);
+  auto instance_id_b = subscriber_b.ExpectInstanceLostCalled();
+  EXPECT_EQ(kServiceName, instance_id_b->service_);
+  EXPECT_EQ(kInstanceName, instance_id_b->instance_);
+
+  // Removing the last subscriber posts a task that quits the agent.
+  ExpectPostTaskForTimeAndInvoke(zx::sec(0), zx::sec(0));
+  ExpectRemoveAgentCall();
+}
+
+// Regression test: a subscriber that unsubscribes synchronously from its |InstanceDiscovered|
+// callback must not receive further callbacks from |ReportAllDiscoveries|.
+TEST_F(InstanceRequestorTest, SubscriberUnsubscribesDuringReportAllDiscoveries) {
+  InstanceRequestor under_test(this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+                               kExcludeLocalProxies);
+  SetAgent(under_test);
+
+  Subscriber subscriber_a;
+  under_test.AddSubscriber(&subscriber_a);
+
+  under_test.Start(kLocalHostFullName);
+
+  // Expect a PTR question on start.
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+
+  subscriber_a.ExpectQueryCalled(DnsType::kPtr);
+
+  // Discover two instances.
+  const DnsLabel kInstanceName2("testinstance2");
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), 1, Media::kWireless, IpVersions::kV4);
+  ReceivePublication(under_test, kHostFullName, kServiceName, kInstanceName, kPort, kText,
+                     sender_address);
+  subscriber_a.ExpectInstanceDiscoveredCalled();
+  ReceivePublication(under_test, kHostFullName, kServiceName, kInstanceName2, kPort, kText,
+                     sender_address);
+  subscriber_a.ExpectInstanceDiscoveredCalled();
+
+  // A subscriber that unsubscribes on its first callback must get exactly one callback.
+  class UnsubscribingSubscriber : public Subscriber {
+   public:
+    explicit UnsubscribingSubscriber(InstanceRequestor& requestor) : requestor_(requestor) {}
+
+    void InstanceDiscovered(const DnsName& service, const DnsLabel& instance,
+                            const std::vector<inet::SocketAddress>& addresses,
+                            const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
+                            uint16_t srv_weight, const DnsName& target) override {
+      ++discovered_count_;
+      requestor_.RemoveSubscriber(this);
+    }
+
+    size_t discovered_count() const { return discovered_count_; }
+
+   private:
+    InstanceRequestor& requestor_;
+    size_t discovered_count_ = 0;
+  };
+
+  UnsubscribingSubscriber subscriber_b(under_test);
+  under_test.AddSubscriber(&subscriber_b);
+
+  EXPECT_EQ(1u, subscriber_b.discovered_count());
+}
+
 // Tests the behavior of the requestor when a response containing no addresses is received on V6.
 TEST_F(InstanceRequestorTest, ResponseSansAddressesV6) {
   InstanceRequestor under_test(this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,

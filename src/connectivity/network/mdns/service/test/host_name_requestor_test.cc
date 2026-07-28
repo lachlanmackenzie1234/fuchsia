@@ -427,7 +427,9 @@ TEST_F(HostNameRequestorTest, Quit) {
 
   under_test->RemoveSubscriber(&subscriber);
 
-  // Expect the requestor to remove itself.
+  // Removing the last subscriber posts a task that quits the agent, matching |InstanceRequestor|.
+  // Invoke the task and expect the requestor to remove itself.
+  ExpectPostTaskForTimeAndInvoke(zx::sec(0), zx::sec(0));
   ExpectRemoveAgentCall();
   ExpectNoOther();
 }
@@ -728,6 +730,59 @@ TEST_F(HostNameRequestorTest, NoLocalProxyHost) {
 
   under_test.OnAddProxyHost(kHostFullName, kHostAddresses);
   EXPECT_FALSE(subscriber.addresses_changed_called());
+}
+
+// Regression test: subscribers that unsubscribe synchronously from their |AddressesChanged|
+// callback must not invalidate the subscriber set iteration in |MaybeSendAddressesChanged|, and
+// removal of the last subscriber must quit the agent through a posted task.
+TEST_F(HostNameRequestorTest, SubscriberUnsubscribesDuringAddressesChanged) {
+  // Need to |make_shared|, because removing the last subscriber posts a task that calls
+  // |shared_from_this|.
+  auto under_test = std::make_shared<HostNameRequestor>(
+      this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies);
+  SetAgent(*under_test);
+
+  under_test->Start(kLocalHostFullName);
+
+  class UnsubscribingSubscriber : public Subscriber {
+   public:
+    explicit UnsubscribingSubscriber(HostNameRequestor& requestor) : requestor_(requestor) {}
+
+    void AddressesChanged(std::vector<HostAddress> addresses) override {
+      Subscriber::AddressesChanged(std::move(addresses));
+      requestor_.RemoveSubscriber(this);
+    }
+
+   private:
+    HostNameRequestor& requestor_;
+  };
+
+  UnsubscribingSubscriber subscriber_a(*under_test);
+  UnsubscribingSubscriber subscriber_b(*under_test);
+  under_test->AddSubscriber(&subscriber_a);
+  under_test->AddSubscriber(&subscriber_b);
+
+  // Expect A and AAAA questions on start.
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kHostFullName, DnsType::kA);
+  ExpectQuestion(message.get(), kHostFullName, DnsType::kAaaa);
+  ExpectNoOtherQuestionOrResource(message.get());
+
+  // Respond. Both subscribers unsubscribe from inside |AddressesChanged|.
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 200, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), kInterfaceId, Media::kWireless, IpVersions::kV4);
+  under_test->ReceiveResource(DnsResource(kHostFullName, kAddresses[0]),
+                              MdnsResourceSection::kAnswer, sender_address);
+  under_test->EndOfMessage();
+
+  EXPECT_TRUE(subscriber_a.addresses_changed_called());
+  EXPECT_TRUE(subscriber_b.addresses_changed_called());
+  ExpectRenewCall(DnsResource(kHostFullName, kAddresses[0]));
+
+  // Removing the last subscriber posts a task that quits the agent.
+  ExpectPostTaskForTimeAndInvoke(zx::sec(0), zx::sec(0));
+  ExpectRemoveAgentCall();
 }
 
 }  // namespace mdns::test

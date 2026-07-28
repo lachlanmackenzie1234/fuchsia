@@ -37,7 +37,11 @@ void HostNameRequestor::AddSubscriber(Mdns::HostNameSubscriber* subscriber) {
 void HostNameRequestor::RemoveSubscriber(Mdns::HostNameSubscriber* subscriber) {
   subscribers_.erase(subscriber);
   if (subscribers_.empty()) {
-    RemoveSelf();
+    // Post the removal rather than calling |RemoveSelf| here, because this method can be called
+    // synchronously from a subscriber callback (for example, from |MaybeSendAddressesChanged|),
+    // and agents must not remove themselves during inbound message processing. Using |Quit| also
+    // runs the on-quit callback, which removes this requestor from the owner's lookup table.
+    PostTaskForTime([this, own_this = shared_from_this()]() { Quit(); }, now());
   }
 }
 
@@ -151,7 +155,10 @@ void HostNameRequestor::MaybeSendAddressesChanged() {
     return;
   }
 
-  for (auto subscriber : subscribers_) {
+  // |AddressesChanged| may delete the subscriber synchronously (removing it from
+  // |subscribers_|), so iterate over a snapshot to keep the loop iterator valid.
+  std::vector<Mdns::HostNameSubscriber*> subscribers(subscribers_.begin(), subscribers_.end());
+  for (auto subscriber : subscribers) {
     subscriber->AddressesChanged(addresses_.Addresses());
   }
 

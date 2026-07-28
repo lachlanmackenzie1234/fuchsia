@@ -228,12 +228,22 @@ void InstanceRequestor::ReportAllDiscoveries(Mdns::Subscriber* subscriber) {
                                    target_info.addresses_.AddressesWithPort(instance_info.port_),
                                    instance_info.text_, instance_info.srv_priority_,
                                    instance_info.srv_weight_, instance_info.target_);
+
+    // |InstanceDiscovered| may delete the subscriber synchronously (removing it from
+    // |subscribers_|). Stop reporting in that case so no further calls are made through the
+    // dangling pointer.
+    if (subscribers_.find(subscriber) == subscribers_.end()) {
+      return;
+    }
   }
 }
 
 void InstanceRequestor::SendQuery() {
   SendQuestion(question_, ReplyAddress::Multicast(media_, ip_versions_));
-  for (const auto& subscriber : subscribers_) {
+  // |Query| may delete the subscriber synchronously (removing it from |subscribers_|), so
+  // iterate over a snapshot to keep the loop iterator valid.
+  std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
+  for (const auto& subscriber : subscribers) {
     subscriber->Query(question_->type_);
   }
 
@@ -390,7 +400,10 @@ void InstanceRequestor::ReceiveAaaaResource(const DnsResource& resource,
 void InstanceRequestor::RemoveInstance(const DnsName& instance_full_name) {
   auto iter = instance_infos_by_full_name_.find(instance_full_name);
   if (iter != instance_infos_by_full_name_.end()) {
-    for (auto subscriber : subscribers_) {
+    // |InstanceLost| may delete the subscriber synchronously (removing it from |subscribers_|),
+    // so iterate over a snapshot to keep the loop iterator valid.
+    std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
+    for (auto subscriber : subscribers) {
       subscriber->InstanceLost(iter->second.service_name_, iter->second.instance_name_);
     }
 
