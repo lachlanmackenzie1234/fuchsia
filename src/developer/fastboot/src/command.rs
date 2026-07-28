@@ -81,6 +81,10 @@ pub enum Command {
     // If the value is "yes", the partition is logical. Otherwise the partition is physical.
     IsLogical(String),
 
+    // Combination of partition name, partition offset, downloaded data checksum.
+    StreamFlash { partition: String, offset: u64, crc32: u32 },
+    // Combination of partition name, partition offset, payload length in bytes, payload value.
+    StreamFill { partition: String, offset: u64, length: u64, val: u32 },
     ////////////// OEM Commands ////////////////////////////////////////////
     //
     // Support for OEM commands not specifically defined in the Fastboot specification.
@@ -168,6 +172,13 @@ impl TryFrom<&Command> for Vec<u8> {
             Command::IsLogical(s) => concat_message(b"is-logical:", s),
             Command::SetActive(s) => concat_message(b"set_active:", s),
             Command::Oem(s) => concat_message(b"oem ", s),
+            Command::StreamFlash { partition, offset, crc32 } => {
+                concat_message(b"stream-flash:", &format!("{}:{:X}:{:X}", partition, offset, crc32))
+            }
+            Command::StreamFill { partition, offset, length, val } => concat_message(
+                b"stream-fill:",
+                &format!("{}:{:X}:{:X}:{:X}", partition, offset, length, val),
+            ),
         }
     }
 }
@@ -196,6 +207,12 @@ fn write_command(reply: &Command, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Command::IsLogical(s) => write!(f, "IS_LOGICAL: {}", s),
         Command::SetActive(s) => write!(f, "SET_ACTIVE: {}", s),
         Command::Oem(s) => write!(f, "OEM {}", s),
+        Command::StreamFlash { partition, offset, crc32 } => {
+            write!(f, "STREAM-FLASH: {}:{:X}:{:X}", partition, offset, crc32)
+        }
+        Command::StreamFill { partition, offset, length, val } => {
+            write!(f, "STREAM-FILL: {}:{:X}:{:X}:{:X}", partition, offset, length, val)
+        }
     }
 }
 

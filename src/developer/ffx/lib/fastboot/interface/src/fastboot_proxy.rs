@@ -615,10 +615,12 @@ mod test {
     async fn test_get_all_vars() -> Result<()> {
         let (var_client, mut var_server): (Sender<Variable>, Receiver<Variable>) = mpsc::channel(3);
         let mut test_transport = TestTransport::new();
-        test_transport.push(Reply::Okay("Done".to_string()));
-        test_transport.push(Reply::Info("name:ianthe".to_string()));
-        test_transport.push(Reply::Info("cav:babs".to_string()));
-        test_transport.push(Reply::Info("sis:corona".to_string()));
+        test_transport.extend([
+            Reply::Info("sis:corona".to_string()),
+            Reply::Info("cav:babs".to_string()),
+            Reply::Info("name:ianthe".to_string()),
+            Reply::Okay("Done".to_string()),
+        ]);
         let mut fastboot_client = FastbootProxy::<TestTransport> {
             target_id: "foo".to_string(),
             interface: Some(test_transport),
@@ -648,8 +650,8 @@ mod test {
     async fn test_get_all_vars_error() -> Result<()> {
         let (var_client, mut var_server): (Sender<Variable>, Receiver<Variable>) = mpsc::channel(2);
         let mut test_transport = TestTransport::new();
-        test_transport.push(Reply::Fail("Done".to_string()));
-        test_transport.push(Reply::Info("alt:kiriona".to_string()));
+        test_transport
+            .extend([Reply::Info("alt:kiriona".to_string()), Reply::Fail("Done".to_string())]);
         let mut fastboot_client = FastbootProxy::<TestTransport> {
             target_id: "foo".to_string(),
             interface: Some(test_transport),
@@ -1048,9 +1050,11 @@ mod test {
         let (mut file, temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
 
         let mut test_transport = TestTransport::new();
-        test_transport.push(Reply::Okay("Done".to_string())); // Upload Done
-        test_transport.push(Reply::Data(1234)); // Upload Response
-        test_transport.push(Reply::Data(12)); // Upload Response (size)
+        test_transport.extend([
+            Reply::Data(12),                 // Upload Response (size)
+            Reply::Data(1234),               // Upload Response
+            Reply::Okay("Done".to_string()), // Upload Done
+        ]);
 
         let mut fastboot_client = FastbootProxy::<TestTransport> {
             target_id: "foo".to_string(),
@@ -1063,7 +1067,7 @@ mod test {
 
         let mut buf = Vec::<u8>::new();
         file.read_to_end(&mut buf)?;
-        assert_eq!(buf, [68, 65, 84, 65, 48, 48, 48, 48, 48, 52, 68, 50,]);
+        assert_eq!(buf, "DATA000004D2".as_bytes());
 
         Ok(())
     }
@@ -1101,8 +1105,10 @@ mod test {
         file.flush().unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();
         let mut test_transport = TestTransport::new();
-        test_transport.push(Reply::Okay("done".to_string())); // Download Okay
-        test_transport.push(Reply::Data(4096)); // Download Response
+        test_transport.extend([
+            Reply::Data(4096),               // Download Response
+            Reply::Okay("done".to_string()), // Download Okay
+        ]);
         let mut fastboot_client = FastbootProxy::<TestTransport> {
             target_id: "foo".to_string(),
             interface: Some(test_transport),
@@ -1178,9 +1184,11 @@ mod test {
         file.seek(SeekFrom::Start(0)).unwrap();
 
         let mut test_transport = TestTransport::new();
-        test_transport.push(Reply::Okay("".to_string())); // Flash Ok
-        test_transport.push(Reply::Okay("".to_string())); // Download Ok
-        test_transport.push(Reply::Data(4096)); // Download
+        test_transport.extend([
+            Reply::Data(4096),           // Download
+            Reply::Okay("".to_string()), // Download Ok
+            Reply::Okay("".to_string()), // Flash Ok
+        ]);
 
         let mut fastboot_client = FastbootProxy::<TestTransport> {
             target_id: "foo".to_string(),

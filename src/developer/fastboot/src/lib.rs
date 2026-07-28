@@ -21,9 +21,10 @@ pub mod test_transport;
 
 pub use crate::command::MAX_COMMAND_LENGTH;
 
+pub const BUFFER_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+
 const MAX_PACKET_SIZE: usize = 64;
 const DEFAULT_READ_TIMEOUT_SECS: i64 = 30;
-const BUFFER_SIZE: usize = 50 * 1024 * 1024; // 50 MB
 
 #[derive(Debug, Clone)]
 pub struct FastbootContext {
@@ -138,7 +139,7 @@ async fn read_and_log_info<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Re
     read_and_log_info_with_timeout(interface, Duration::seconds(DEFAULT_READ_TIMEOUT_SECS)).await
 }
 
-async fn read_and_log_info_with_timeout<T: AsyncRead + Unpin>(
+pub async fn read_and_log_info_with_timeout<T: AsyncRead + Unpin>(
     interface: &mut T,
     duration: Duration,
 ) -> Result<Reply, ReadError> {
@@ -426,17 +427,14 @@ mod test {
         assert!(!response.is_err());
         assert_eq!(response.unwrap(), Reply::Okay("0.4".to_string()));
 
-        test_transport.push(Reply::Okay("0.4".to_string()));
-        test_transport.push(Reply::Info("Test".to_string()));
+        test_transport.extend([Reply::Info("Test".to_string()), Reply::Okay("0.4".to_string())]);
         let response_with_info =
             send(ctx.clone(), Command::GetVar(ClientVariable::Version), &mut test_transport).await;
         assert!(!response_with_info.is_err());
         assert_eq!(response_with_info.unwrap(), Reply::Okay("0.4".to_string()));
 
+        test_transport.extend((0..10).map(|i| Reply::Info(format!("Test {i}"))));
         test_transport.push(Reply::Okay("0.4".to_string()));
-        for i in 0..10 {
-            test_transport.push(Reply::Info(format!("Test {}", i).to_string()));
-        }
         let response_with_info =
             send(ctx.clone(), Command::GetVar(ClientVariable::Version), &mut test_transport).await;
         assert!(!response_with_info.is_err());
@@ -447,9 +445,11 @@ mod test {
     async fn test_uploading_data_to_partition() {
         let data: [u8; 14336] = [0; 14336];
         let mut test_transport = TestTransport::new();
-        test_transport.push(Reply::Okay("Done Writing".to_string()));
-        test_transport.push(Reply::Info("Writing".to_string()));
-        test_transport.push(Reply::Data(14336));
+        test_transport.extend([
+            Reply::Data(14336),
+            Reply::Info("Writing".to_string()),
+            Reply::Okay("Done Writing".to_string()),
+        ]);
 
         let events = Arc::new(Mutex::new(Vec::<UploadEvent>::new()));
         let listener = PushEventsUploadProgressListener { event_queue: events.clone() };

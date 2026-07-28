@@ -5,11 +5,12 @@
 use crate::reply::Reply;
 use futures::task::{Context, Poll};
 use futures::{AsyncRead, AsyncWrite};
+use std::collections::VecDeque;
 use std::pin::Pin;
 
 #[derive(Debug)]
 pub struct TestTransport {
-    replies: Vec<Reply>,
+    replies: VecDeque<Reply>,
 }
 
 impl AsyncRead for TestTransport {
@@ -18,13 +19,12 @@ impl AsyncRead for TestTransport {
         _cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        match self.replies.pop() {
-            Some(r) => {
-                let reply = Vec::<u8>::from(r);
-                buf[..reply.len()].copy_from_slice(&reply);
-                Poll::Ready(Ok(reply.len()))
-            }
-            None => Poll::Ready(Ok(0)),
+        if let Some(r) = self.replies.pop_front() {
+            let reply = Vec::<u8>::from(r);
+            buf[..reply.len()].copy_from_slice(&reply);
+            Poll::Ready(Ok(reply.len()))
+        } else {
+            Poll::Ready(Ok(0))
         }
     }
 }
@@ -49,10 +49,16 @@ impl AsyncWrite for TestTransport {
 
 impl TestTransport {
     pub fn new() -> Self {
-        TestTransport { replies: Vec::new() }
+        TestTransport { replies: VecDeque::new() }
     }
 
     pub fn push(&mut self, reply: Reply) {
-        self.replies.push(reply);
+        self.replies.push_back(reply);
+    }
+}
+
+impl Extend<Reply> for TestTransport {
+    fn extend<T: IntoIterator<Item = Reply>>(&mut self, iter: T) {
+        self.replies.extend(iter)
     }
 }
