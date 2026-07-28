@@ -23,82 +23,6 @@ load(
     "fuchsia_find_all_package_resources",
 )
 
-def fx_package(
-        *,
-        name,
-        package_name = None,
-        archive_name = None,
-        platform = None,
-        components = [],
-        resources = [],
-        tools = [],
-        subpackages = [],
-        tags = [],
-        **kwargs):
-    """Builds a fuchsia package.
-
-    This rule produces a fuchsia package which can be published to a package
-    server and loaded on a device.
-
-    The rule will return both package manifest json file which can be used later
-    in the build system and an archive (.far) of the package which can be shared.
-
-    ```
-    fuchsia_package(
-        name = "pkg",
-        components = [":my_component"],
-        tools = [":my_tool"]
-    )
-    ```
-
-    Args:
-        name: The target name.
-        components: A list of components to add to this package. The dependencies
-          of these targets will have their debug symbols stripped and added to
-          the build-id directory.
-        resources: A list of additional resources to add to this package. These
-          resources will not have debug symbols stripped.
-        tools: Additional tools that should be added to this package.
-        subpackages: Additional subpackages that should be added to this package.
-        package_name: An optional name to use for this package, defaults to name.
-        archive_name: An option name for the far file.
-        platform: Optionally override the platform to build the package for.
-        tags: Forward additional tags to all generated targets.
-        **kwargs: extra attributes to pass along to the build rule.
-    """
-    _deps_to_search = components + resources + tools
-
-    processed_binaries = "%s_fuchsia_package.elf_binaries" % name
-    find_and_process_unstripped_binaries(
-        name = processed_binaries,
-        deps = _deps_to_search,
-        tags = tags + ["manual"],
-        **kwargs
-    )
-
-    collected_resources = "%s_fuchsia_package.resources" % name
-    fuchsia_find_all_package_resources(
-        name = collected_resources,
-        deps = _deps_to_search,
-        tags = tags + ["manual"],
-        **kwargs
-    )
-
-    _build_fuchsia_package(
-        name = name,
-        components = components,
-        resources = resources,
-        processed_binaries = processed_binaries,
-        collected_resources = collected_resources,
-        tools = tools,
-        subpackages = subpackages,
-        package_name = package_name or name,
-        archive_name = archive_name,
-        platform = platform,
-        tags = tags + ["manual"],
-        **kwargs
-    )
-
 def _build_fuchsia_package_impl(ctx):
     fuchsia_debug_symbol_info = FuchsiaDebugSymbolInfo(build_id_dirs_mapping = {})
 
@@ -113,6 +37,12 @@ def _build_fuchsia_package_impl(ctx):
 
 _build_fuchsia_package = rule(
     implementation = _build_fuchsia_package_impl,
+    doc = """
+    Generates actions to build and archive a Fuchsia package containing components,
+    resources, tools, and subpackages.
+
+    This rule invokes the common implementation with platform-built tools.
+    """,
     attrs = COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES | {
         "_package_tool": attr.label(
             # TODO(b/519244675): Replace with a Bazel label once `package-tool` is migrated to Bazel.
@@ -128,5 +58,79 @@ _build_fuchsia_package = rule(
         "_current_api_level": attr.label(
             default = "@//build/bazel/versioning:api_level",
         ),
+    },
+)
+
+def _fx_package_impl(
+        name,
+        package_name,
+        archive_name,
+        components,
+        resources,
+        tools,
+        subpackages,
+        tags,
+        visibility,
+        **kwargs):
+    # The default value of non-mandatory inherited attributes is always overridden to be None,
+    # regardless of the original attribute definition's default value.
+    #
+    # See https://bazel.build/extending/macros#attribute-inheritance.
+    tags = tags or []
+    _deps_to_search = (components or []) + (resources or []) + (tools or [])
+
+    processed_binaries = "%s_fuchsia_package.elf_binaries" % name
+    find_and_process_unstripped_binaries(
+        name = processed_binaries,
+        deps = _deps_to_search,
+        tags = tags + ["manual"],
+    )
+
+    collected_resources = "%s_fuchsia_package.resources" % name
+    fuchsia_find_all_package_resources(
+        name = collected_resources,
+        deps = _deps_to_search,
+        tags = tags + ["manual"],
+    )
+
+    _build_fuchsia_package(
+        name = name,
+        components = components,
+        resources = resources,
+        processed_binaries = processed_binaries,
+        collected_resources = collected_resources,
+        tools = tools,
+        subpackages = subpackages,
+        package_name = package_name or name,
+        archive_name = archive_name,
+        tags = tags,
+        visibility = visibility,
+        **kwargs
+    )
+
+fx_package = macro(
+    implementation = _fx_package_impl,
+    inherit_attrs = _build_fuchsia_package,
+    doc = """Produces a Fuchsia package that can be published to a package server and loaded on a device.
+
+    Example usage:
+
+    ```
+    fx_package(
+        name = "pkg",
+        components = [":my_component"],
+        tools = [":my_tool"]
+    )
+    ```""",
+    attrs = {
+        "package_name": attr.string(
+            doc = """An optional name to use for this package, defaults to target name.
+
+            Defaults to `name` to match the behavior of the GN `fuchsia_package()` template.
+            Note that this is different from the Bazel SDK behavior.""",
+        ),
+        # Do not inherit implementation details passed to `_build_fuchsia_package()`.
+        "collected_resources": None,
+        "processed_binaries": None,
     },
 )
