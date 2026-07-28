@@ -13,6 +13,7 @@ use bstr::{BString, ByteSlice};
 pub mod echo;
 pub mod essential;
 pub mod printf;
+pub mod test;
 
 #[derive(Clone, Copy)]
 enum BuiltinType {
@@ -35,6 +36,7 @@ enum BuiltinType {
     Getopts,
     Hash,
     Jobs,
+    LeftBracket,
     Local,
     Pwd,
     Printf,
@@ -43,6 +45,7 @@ enum BuiltinType {
     Return,
     Set,
     Shift,
+    Test,
     Trap,
     True,
     Type,
@@ -76,6 +79,7 @@ const fn make_entry(name: &[u8], func: BuiltinType) -> BuiltinEntry {
 static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b".", BuiltinType::Dot),
     make_entry(b":", BuiltinType::Colon),
+    make_entry(b"[", BuiltinType::LeftBracket),
     make_entry(b"alias", BuiltinType::Alias),
     make_entry(b"bg", BuiltinType::Bg),
     make_entry(b"break", BuiltinType::Break),
@@ -101,6 +105,7 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"return", BuiltinType::Return),
     make_entry(b"set", BuiltinType::Set),
     make_entry(b"shift", BuiltinType::Shift),
+    make_entry(b"test", BuiltinType::Test),
     make_entry(b"trap", BuiltinType::Trap),
     make_entry(b"true", BuiltinType::True),
     make_entry(b"type", BuiltinType::Type),
@@ -186,7 +191,9 @@ pub fn run_builtin(
         BuiltinType::Readonly => with_io(ctx, args, state, essential::builtin_readonly),
         BuiltinType::Return => essential::builtin_return(args, state, ctx),
         BuiltinType::Set => with_io(ctx, args, state, essential::builtin_set),
+        BuiltinType::LeftBracket => with_io(ctx, args, state, test::builtin_left_bracket),
         BuiltinType::Shift => with_io(ctx, args, state, essential::builtin_shift),
+        BuiltinType::Test => with_io(ctx, args, state, test::builtin_test),
         BuiltinType::Trap => with_io(ctx, args, state, essential::builtin_trap),
         BuiltinType::Type => with_io(ctx, args, state, essential::builtin_type),
         BuiltinType::Ulimit => with_io(ctx, args, state, essential::builtin_ulimit),

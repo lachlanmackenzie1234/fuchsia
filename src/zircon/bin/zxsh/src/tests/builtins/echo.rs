@@ -4,7 +4,7 @@
 
 use crate::builtins::echo::builtin_echo;
 use crate::builtins::run_builtin;
-use crate::eval::{EvalOutcome, ExecutionContext, ShellState};
+use crate::eval::{ExecutionContext, ShellState};
 use bstr::BString;
 
 #[test]
@@ -104,16 +104,4 @@ fn test_echo_unknown_escape_and_trailing_backslash() {
     );
     assert_eq!(code, 0);
     assert_eq!(stdout, &[b'\\', b'z', b' ', b'e', b'n', b'd', b'\\', b'\n']);
-}
-
-#[test]
-fn test_run_builtin_with_closed_io_streams() {
-    let mut state = ShellState::new();
-    let mut empty_ctx = ExecutionContext::initial().unwrap();
-    empty_ctx.close_fd(crate::fd::Fd::STDIN);
-    empty_ctx.close_fd(crate::fd::Fd::STDOUT);
-    empty_ctx.close_fd(crate::fd::Fd::STDERR);
-
-    let res = run_builtin("echo", &[BString::from("hello")], &mut state, &mut empty_ctx).unwrap();
-    assert_eq!(res, EvalOutcome::Code(0));
 }

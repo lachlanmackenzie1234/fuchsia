@@ -5,3 +5,4 @@
 pub mod echo;
 pub mod essential;
 pub mod printf;
+pub mod test;
