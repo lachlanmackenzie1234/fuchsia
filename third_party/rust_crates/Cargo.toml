@@ -713,6 +713,9 @@ rustflags = [
   "--cfg=httparse_simd_neon_intrinsics",
 ]
 
+[gn.package.hyper."0.14.19"]
+groups = [ { name = "hyper" }, { name = "hyper-0.14" } ]
+
 [gn.package.indexmap."1.9.2"]
 rustflags = ["--cfg=has_std"]
 

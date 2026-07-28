@@ -923,6 +923,10 @@ group("hyper") {
   public_deps = [ ":hyper-v0_14_19" ]
 }
 
+group("hyper-0.14") {
+  public_deps = [ ":hyper-v0_14_19" ]
+}
+
 group("hyper-0.14.19") {
   public_deps = [ ":hyper-v0_14_19" ]
 }
