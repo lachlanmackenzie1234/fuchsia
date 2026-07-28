@@ -36,6 +36,13 @@ struct LookupContiguousResult {
   zx_status_t status;
   paddr_t paddr;
 };
+// ValidateChildSliceResult maps to the Rust FFI type ValidateChildSliceResult.
+// This allows returning both status and physical address base by value from FFI
+// without needing raw out pointers.
+struct ValidateChildSliceResult {
+  zx_status_t status;
+  paddr_t base;
+};
 
 extern "C" {
 void rust_vm_object_physical_state_init(void* state, paddr_t base, uint64_t size, bool is_slice,
@@ -61,6 +68,11 @@ zx_status_t rust_vm_object_physical_state_lookup(const void* state, uint64_t off
 zx_status_t rust_vm_object_physical_set_mapping_cache_policy(VmObjectPhysical* vmo,
                                                              const void* state,
                                                              arch_mmu_flags_t cache_policy);
+ValidateChildSliceResult rust_vm_object_physical_validate_child_slice_args(const void* state,
+                                                                           uint64_t offset,
+                                                                           uint64_t size);
+void rust_vm_object_physical_dump(const void* state, uint32_t depth, uintptr_t cpp_vmo_addr,
+                                  int32_t ref_count);
 }
 
 VmObjectPhysical::VmObjectPhysical(paddr_t base, uint64_t size, bool is_slice,
@@ -116,8 +128,6 @@ uint64_t VmObjectPhysical::parent_user_id() const {
 uint64_t VmObjectPhysical::size_locked() const {
   return rust_vm_object_physical_state_get_size(state());
 }
-
-paddr_t VmObjectPhysical::base() const { return rust_vm_object_physical_state_get_base(state()); }
 
 fbl::RefPtr<VmObjectPhysical> VmObjectPhysical::parent_locked() const {
   return fbl::ImportFromRawPtr(rust_vm_object_physical_state_get_parent_locked(state()));
@@ -178,30 +188,20 @@ zx_status_t VmObjectPhysical::CreateChildSlice(uint64_t offset, uint64_t size, b
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  // Slice must be wholly contained.
-  uint64_t our_size;
-  paddr_t our_base;
-  {
-    // size_ is not an atomic variable and although it should not be changing, as we are not
-    // allowing this operation on resizable vmo's, we should still be holding the lock to
-    // correctly read size_. Unfortunately we must also drop then drop the lock in order to
-    // perform the allocation.
-    Guard<CriticalMutex> guard{lock()};
-    our_size = size_locked();
-    our_base = base();
+  ValidateChildSliceResult result =
+      rust_vm_object_physical_validate_child_slice_args(state(), offset, size);
+  if (result.status != ZX_OK) {
+    return result.status;
   }
-  if (!InRange(offset, size, our_size)) {
-    return ZX_ERR_INVALID_ARGS;
-  }
+  paddr_t child_base = result.base;
 
   // To mimic a slice we can just create a physical vmo with the correct region. This works since
   // nothing is resizable and the slice must be wholly contained.
   // We can read and store the user_id here since for a slice to be being created the dispatcher
   // side of this object must have completed, and hence the user_id has been set.
   fbl::AllocChecker ac;
-  auto vmo =
-      fbl::AdoptRef<VmObjectPhysical>(new (&ac) VmObjectPhysical(our_base + offset, size,
-                                                                 /*is_slice=*/true, user_id()));
+  auto vmo = fbl::AdoptRef<VmObjectPhysical>(
+      new (&ac) VmObjectPhysical(child_base, size, /*is_slice=*/true, user_id()));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -230,12 +230,8 @@ zx_status_t VmObjectPhysical::CreateChildSlice(uint64_t offset, uint64_t size, b
 void VmObjectPhysical::Dump(uint depth, bool verbose) {
   canary_.Assert();
 
-  Guard<CriticalMutex> guard{lock()};
-  for (uint i = 0; i < depth; ++i) {
-    printf("  ");
-  }
-  printf("object %p base %#" PRIxPTR " size %#" PRIx64 " ref %d\n", this, base(), size_locked(),
-         ref_count_debug());
+  rust_vm_object_physical_dump(state(), depth, reinterpret_cast<uintptr_t>(this),
+                               ref_count_debug());
 }
 
 zx_status_t VmObjectPhysical::Lookup(uint64_t offset, uint64_t len,

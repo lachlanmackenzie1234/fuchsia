@@ -98,6 +98,15 @@ pub struct LookupContiguousResult {
     pub paddr: PAddr,
 }
 
+#[repr(C)]
+/// FFI-safe result structure returned by `rust_vm_object_physical_validate_child_slice_args`.
+pub struct ValidateChildSliceResult {
+    /// The status of the validation operation.
+    pub status: Status,
+    /// The physical address retrieved, valid only if `status` is `Status::OK`.
+    pub base: PAddr,
+}
+
 /// RAII guard that manages the acquisition and release of the child list lock.
 pub struct ChildListLockGuard {
     should_clear: bool,
@@ -468,4 +477,68 @@ pub unsafe extern "C" fn rust_vm_object_physical_set_mapping_cache_policy(
 
     vmo.set_cache_policy_locked(cache_policy);
     Status::OK
+}
+
+/// # Safety
+///
+/// The caller must ensure `state_ptr` points to an initialized `VmObjectPhysicalState`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_object_physical_validate_child_slice_args(
+    state_ptr: *const VmObjectPhysicalState,
+    offset: u64,
+    size: u64,
+) -> ValidateChildSliceResult {
+    // SAFETY: The caller guarantees `state_ptr` is valid.
+    let state = unsafe { &*state_ptr };
+    ksync::lock!(let _guard = state.lock_lock());
+
+    // Slice must be wholly contained.
+    // state.size is not an atomic variable and although it should not be changing, as we are not
+    // allowing this operation on resizable VMOs, we should still be holding the lock to
+    // correctly read state.size. We drop the lock when returning from this function before
+    // performing the child VMO allocation on the C++ side.
+    if !in_range(offset, size, state.size) {
+        return ValidateChildSliceResult { status: Status::INVALID_ARGS, base: PAddr(0) };
+    }
+
+    ValidateChildSliceResult { status: Status::OK, base: PAddr(state.base.0 + offset as usize) }
+}
+
+/// # Safety
+///
+/// The caller must ensure `state_ptr` points to an initialized `VmObjectPhysicalState`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_object_physical_dump(
+    state_ptr: *const VmObjectPhysicalState,
+    depth: u32,
+    cpp_vmo_addr: usize,
+    ref_count: i32,
+) {
+    unsafe extern "C" {
+        fn printf(format: *const core::ffi::c_char, ...) -> core::ffi::c_int;
+    }
+
+    // SAFETY: The caller guarantees `state_ptr` is valid.
+    let state = unsafe { &*state_ptr };
+    ksync::lock!(let _guard = state.lock_lock());
+
+    let fmt_indent = c"  ".as_ptr();
+    for _ in 0..depth {
+        // SAFETY: calling printf with static string is safe.
+        unsafe {
+            printf(fmt_indent);
+        }
+    }
+
+    let fmt_str = c"object %p base 0x%lx size 0x%lx ref %d\n".as_ptr();
+    // SAFETY: calling printf with valid arguments matching format specifiers.
+    unsafe {
+        printf(
+            fmt_str,
+            cpp_vmo_addr as *const core::ffi::c_void,
+            state.base.0 as core::ffi::c_ulong,
+            state.size as core::ffi::c_ulong,
+            ref_count as core::ffi::c_int,
+        );
+    }
 }

@@ -117,8 +117,6 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
   fbl::RefPtr<VmObjectPhysical> parent_locked() const TA_REQ(ChildListLock::Get());
   void set_parent_locked(fbl::RefPtr<VmObjectPhysical> parent) TA_REQ(ChildListLock::Get());
 
-  paddr_t base() const;
-
   // members
   OpaqueStorage<kVmObjectPhysicalStateSize, kVmObjectPhysicalStateAlign> opaque_storage_;
 };
