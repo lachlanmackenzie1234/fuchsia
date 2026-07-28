@@ -1087,7 +1087,7 @@ mod tests {
 
         let client = fidl::AsyncSocket::from_socket(client_socket);
         let seq_lock = OnceLock::new();
-        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let perf_data_vmo = zx::Vmo::create(*ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
         let mut vmo_write_offset = 0;
 
         let test_task = stop_and_collect_samples(
