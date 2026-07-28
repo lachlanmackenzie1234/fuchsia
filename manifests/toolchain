@@ -208,11 +208,11 @@
     <!--   LLVM libraries -->
     <!--   For Linux, download both arm64 and amd64 versions. -->
     <package name="fuchsia/third_party/llvm/linux-arm64"
-             version="git_revision:dde579becf31add55c5a473f28fd010df36d2490"
+             version="git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/linux-arm64"/>
     <package name="fuchsia/third_party/llvm/linux-amd64"
-             version="git_revision:dde579becf31add55c5a473f28fd010df36d2490"
+             version="git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/linux-x64"/>
     <package name="fuchsia/third_party/llvm/fuchsia-amd64"
