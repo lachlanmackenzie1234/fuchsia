@@ -42,6 +42,8 @@ pub enum Opcode {
     ExecuteWriteReq = 0x18,
     ExecuteWriteRsp = 0x19,
     HandleValueNtf = 0x1B,
+    HandleValueInd = 0x1D,
+    HandleValueCnf = 0x1E,
 }
 
 /// The UUID format types supported in Find Information Response.
@@ -591,12 +593,35 @@ pub struct HandleValueNtfHeader {
 /// Handle Value Notification PDU (Opcode = 0x1B).
 ///
 /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
-#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug)]
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct HandleValueNtf {
     pub header: HandleValueNtfHeader,
     pub attribute_value: [u8],
 }
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+pub struct HandleValueIndHeader {
+    pub attribute_handle: U16,
+}
+
+/// Handle Value Indication PDU (Opcode = 0x1D).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.2).
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct HandleValueInd {
+    pub header: HandleValueIndHeader,
+    pub attribute_value: [u8],
+}
+
+/// Handle Value Confirmation PDU (Opcode = 0x1E).
+///
+/// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.3).
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct HandleValueCnf;
 
 #[cfg(test)]
 mod tests {
@@ -855,5 +880,18 @@ mod tests {
         let parsed = HandleValueNtf::try_ref_from_bytes(&ntf_bytes[..]).unwrap();
         assert_eq!(parsed.header.attribute_handle.get(), 5);
         assert_eq!(parsed.attribute_value, [0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn test_handle_value_ind() {
+        let ind_bytes = [0x05, 0x00, 0xAA, 0xBB];
+        let parsed = HandleValueInd::try_ref_from_bytes(&ind_bytes[..]).unwrap();
+        assert_eq!(parsed.header.attribute_handle.get(), 5);
+        assert_eq!(parsed.attribute_value, [0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn test_handle_value_cnf() {
+        assert_eq!(size_of::<HandleValueCnf>(), 0);
     }
 }

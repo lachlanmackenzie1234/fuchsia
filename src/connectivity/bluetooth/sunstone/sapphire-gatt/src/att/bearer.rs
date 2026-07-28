@@ -227,12 +227,6 @@ where
                 .expect("staged_buf contains valid ATT packet"),
         )
     }
-
-    /// Clears the staged buffer after consuming its payload.
-    pub fn clear_staged_buf(&mut self) {
-        self.staged_buf.clear();
-    }
-
     /// Pulls the next incoming SDU from the channel, validates the header invariants,
     /// and returns a structured zero-copy reference to the parsed ATT Packet.
     pub async fn next_packet<'a>(
@@ -250,6 +244,27 @@ where
         let packet =
             Packet::try_mut_from_bytes(initialized).expect("staged_buf contains valid ATT packet");
         Ok(packet)
+    }
+}
+
+/// Trait representing an ATT PDU receiver that can await incoming packets and adjust its MTU.
+pub trait AttReceiver {
+    async fn next_packet<'a>(
+        &mut self,
+        buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut Packet, BearerRecvError>;
+    fn set_mtu(&mut self, mtu: u16);
+}
+
+impl<Rx: L2CapChannelRx> AttReceiver for BearerRx<Rx> {
+    async fn next_packet<'a>(
+        &mut self,
+        buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut Packet, BearerRecvError> {
+        self.next_packet(buf).await
+    }
+    fn set_mtu(&mut self, mtu: u16) {
+        BearerRx::set_mtu(self, mtu);
     }
 }
 

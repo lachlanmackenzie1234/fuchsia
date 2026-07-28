@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::att::bearer::{BearerRecvError, BearerRx};
+use crate::att::bearer::{AttReceiver, BearerRecvError, BearerRx};
 use crate::att::l2cap::L2CapChannelRx;
 use crate::att::pdu::{Opcode, Packet};
 use core::fmt;
@@ -16,7 +16,8 @@ use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 pub enum RouteFilter {
     Responses,
     Requests,
-    Notifications,
+    ServerEvents,
+    Confirmations,
 }
 
 impl RouteFilter {
@@ -50,7 +51,10 @@ impl RouteFilter {
                     | Opcode::PrepareWriteReq
                     | Opcode::ExecuteWriteReq
             ),
-            RouteFilter::Notifications => matches!(opcode, Opcode::HandleValueNtf),
+            RouteFilter::ServerEvents => {
+                matches!(opcode, Opcode::HandleValueNtf | Opcode::HandleValueInd)
+            }
+            RouteFilter::Confirmations => matches!(opcode, Opcode::HandleValueCnf),
         }
     }
 }
@@ -59,7 +63,8 @@ impl RouteFilter {
 struct RouteSet {
     responses: bool,
     requests: bool,
-    notifications: bool,
+    server_events: bool,
+    confirmations: bool,
 }
 
 impl RouteSet {
@@ -81,11 +86,19 @@ impl RouteSet {
                     true
                 }
             }
-            RouteFilter::Notifications => {
-                if self.notifications {
+            RouteFilter::ServerEvents => {
+                if self.server_events {
                     false
                 } else {
-                    self.notifications = true;
+                    self.server_events = true;
+                    true
+                }
+            }
+            RouteFilter::Confirmations => {
+                if self.confirmations {
+                    false
+                } else {
+                    self.confirmations = true;
                     true
                 }
             }
@@ -167,11 +180,23 @@ impl<'a, Rx: L2CapChannelRx, Mtx: RawMutex> BearerRxHandle<'a, Rx, Mtx> {
     }
 }
 
+impl<'a, Rx: L2CapChannelRx, Mtx: RawMutex> AttReceiver for BearerRxHandle<'a, Rx, Mtx> {
+    async fn next_packet<'b>(
+        &mut self,
+        buf: &'b mut [MaybeUninit<u8>],
+    ) -> Result<&'b mut Packet, BearerRecvError> {
+        self.next_packet(buf).await
+    }
+    fn set_mtu(&mut self, mtu: u16) {
+        BearerRxHandle::set_mtu(self, mtu);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::att::bearer::{BearerTx, MAX_SUPPORTED_MTU};
-    use crate::att::client::NotificationStream;
+    use crate::att::client::ServerEventStream;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
         DynamicPacketBuilder, HandleValueNtfHeader, Header, Opcode, PacketBuilder, ReadReq,
@@ -184,13 +209,13 @@ mod tests {
     #[test]
     fn test_router_notifications() {
         let (app_channel, server_tx, _server_rx) = setup_mock_channel();
+        let mut bearer_tx = BearerTx::new(server_tx);
         let router = BearerRouter::<_>::new(app_channel.receiver);
-        let router_ref = &router;
-        BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let mut bearer_tx = BearerTx::new(server_tx);
 
-            let mut notification_stream =
-                NotificationStream::new(router_ref).expect("notification stream created");
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let mut event_stream =
+                ServerEventStream::new(&router, BearerTx::new(app_channel.sender))
+                    .expect("server event stream created");
 
             let _sender_handle = executor.spawn(async move {
                 for i in 0..4u16 {
@@ -211,17 +236,17 @@ mod tests {
             let test_listener = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
 
-                let ntf1 = notification_stream.next(&mut rx_buf).await.unwrap();
-                assert_eq!(ntf1.header.attribute_handle.get(), 1);
+                let ntf1 = event_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(ntf1.handle().get(), 1);
 
-                let ntf2 = notification_stream.next(&mut rx_buf).await.unwrap();
-                assert_eq!(ntf2.header.attribute_handle.get(), 2);
+                let ntf2 = event_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(ntf2.handle().get(), 2);
 
-                let ntf3 = notification_stream.next(&mut rx_buf).await.unwrap();
-                assert_eq!(ntf3.header.attribute_handle.get(), 3);
+                let ntf3 = event_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(ntf3.handle().get(), 3);
 
-                let ntf4 = notification_stream.next(&mut rx_buf).await.unwrap();
-                assert_eq!(ntf4.header.attribute_handle.get(), 4);
+                let ntf4 = event_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(ntf4.handle().get(), 4);
             });
 
             executor.run_until_stalled();
@@ -232,12 +257,11 @@ mod tests {
     #[test]
     fn test_router_buffer_too_small_repush() {
         let (app_channel, server_tx, _server_rx) = setup_mock_channel();
+        let mut bearer_tx = BearerTx::new(server_tx);
         let router = BearerRouter::<_>::new(app_channel.receiver);
-        let router_ref = &router;
-        BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let mut bearer_tx = BearerTx::new(server_tx);
 
-            let notification_rx_handle = router_ref.route_to(RouteFilter::Notifications).unwrap();
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let notification_rx_handle = router.route_to(RouteFilter::ServerEvents).unwrap();
 
             let _sender_handle = executor.spawn(async move {
                 let header = PacketBuilder {
@@ -273,12 +297,11 @@ mod tests {
     #[test]
     fn test_router_server_request_inbox() {
         let (app_channel, _server_tx, server_rx) = setup_mock_channel();
+        let mut client_tx_bearer = BearerTx::new(app_channel.sender);
         let router = BearerRouter::<_>::new(server_rx);
-        let router_ref = &router;
-        BoundedExecutor::new(TestExecutor::new(), |executor| {
-            let mut client_tx_bearer = BearerTx::new(app_channel.sender);
 
-            let server_rx_handle = router_ref.route_to(RouteFilter::Requests).unwrap();
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let mut server_rx_handle = router.route_to(RouteFilter::Requests).unwrap();
 
             let sender_handle = executor.spawn(async move {
                 let header = PacketBuilder {
@@ -290,7 +313,6 @@ mod tests {
 
             let test_server_listener = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
-                let mut server_rx_handle = server_rx_handle;
                 let p = server_rx_handle.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(p.header.opcode, Opcode::ReadReq);
                 let req = ReadReq::try_ref_from_bytes(&p.data).unwrap();
@@ -311,7 +333,9 @@ mod tests {
         assert!(router.route_to(RouteFilter::Responses).is_none());
         assert!(router.route_to(RouteFilter::Requests).is_some());
         assert!(router.route_to(RouteFilter::Requests).is_none());
-        assert!(router.route_to(RouteFilter::Notifications).is_some());
-        assert!(router.route_to(RouteFilter::Notifications).is_none());
+        assert!(router.route_to(RouteFilter::ServerEvents).is_some());
+        assert!(router.route_to(RouteFilter::ServerEvents).is_none());
+        assert!(router.route_to(RouteFilter::Confirmations).is_some());
+        assert!(router.route_to(RouteFilter::Confirmations).is_none());
     }
 }

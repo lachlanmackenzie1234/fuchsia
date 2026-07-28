@@ -4,13 +4,14 @@
 
 use crate::att::AttributeHandle;
 use crate::att::bearer::{
-    BearerRecvError, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_SUPPORTED_MTU,
+    AttReceiver, BearerRecvError, BearerSendError, BearerTx, DEFAULT_STARTING_MTU,
+    MAX_SUPPORTED_MTU,
 };
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, ExecuteWriteFlags,
     ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReqHeader, FindInformationReq,
-    FindInformationRsp, HandleValueNtf, HandlesInformation, Header, InformationData16,
+    FindInformationRsp, HandleValueCnf, HandlesInformation, Header, InformationData16,
     InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteHeader, ReadBlobReq,
     ReadByGroupTypeReqHeader, ReadByGroupTypeRsp, ReadByGroupTypeRspEntryHeader,
     ReadByTypeReqHeader, ReadByTypeRsp, ReadReq, UuidFormat, WriteCmdHeader, WriteReqHeader,
@@ -19,11 +20,11 @@ use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
 
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
-use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
+use sapphire_sync::mutex::raw::RawMutex;
 use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
-use zerocopy::{FromBytes, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientError {
@@ -72,7 +73,7 @@ impl<'a> IntoIterator for ReadByTypeResults<'a> {
     }
 }
 
-impl<'a, 'b> IntoIterator for &'b ReadByTypeResults<'a> {
+impl<'a, 'b> IntoIterator for &'a ReadByTypeResults<'a> {
     type Item = Result<AttributeData<'a>, ClientError>;
     type IntoIter = ReadByTypeIter<'a>;
 
@@ -160,7 +161,7 @@ impl<'a> IntoIterator for ReadByGroupTypeResults<'a> {
     }
 }
 
-impl<'a, 'b> IntoIterator for &'b ReadByGroupTypeResults<'a> {
+impl<'a, 'b> IntoIterator for &'a ReadByGroupTypeResults<'a> {
     type Item = Result<AttributeGroupData<'a>, ClientError>;
     type IntoIter = ReadByGroupTypeIter<'a>;
 
@@ -217,24 +218,19 @@ impl<'a> Iterator for ReadByGroupTypeIter<'a> {
 }
 
 /// ATT Client protocol wrapper.
-pub struct Client<'a, Tx, Rx, Mtx = SingleThreadMutex> {
+pub struct Client<Tx, R> {
     bearer_tx: BearerTx<Tx>,
-    bearer_rx: BearerRxHandle<'a, Rx, Mtx>,
+    bearer_rx: R,
     preferred_mtu: u16,
 }
 
-impl<'a, Tx, Rx, Mtx> Client<'a, Tx, Rx, Mtx>
+impl<Tx, R> Client<Tx, R>
 where
     Tx: L2CapChannelTx,
-    Rx: L2CapChannelRx,
-    Mtx: RawMutex,
+    R: AttReceiver,
 {
     /// Creates a new ATT Client instance.
-    pub fn new(
-        bearer_tx: BearerTx<Tx>,
-        bearer_rx: BearerRxHandle<'a, Rx, Mtx>,
-        preferred_mtu: u16,
-    ) -> Self {
+    pub fn new(bearer_tx: BearerTx<Tx>, bearer_rx: R, preferred_mtu: u16) -> Self {
         Self { bearer_tx, bearer_rx, preferred_mtu }
     }
 
@@ -248,13 +244,13 @@ where
     ///    - If it is an `ErrorRsp` and corresponds to our request, the specific
     ///      `ErrorCode` is parsed and returned as a `ClientError::ErrorResponse`.
     ///    - Otherwise, returns `ClientError::UnexpectedOpcode`.
-    async fn transaction<'b>(
+    async fn transaction<'a>(
         &mut self,
         req_opcode: Opcode,
         req_packet: &Packet,
-        rx_buf: &'b mut [MaybeUninit<u8>],
+        rx_buf: &'a mut [MaybeUninit<u8>],
         expected_rsp_opcode: Opcode,
-    ) -> Result<&'b mut Packet, ClientError> {
+    ) -> Result<&'a mut Packet, ClientError> {
         // Verify the provided buffer is large enough to hold any valid packet under the negotiated MTU.
         assert!(
             rx_buf.len() >= usize::from(self.bearer_tx.mtu()),
@@ -343,12 +339,12 @@ where
     /// The returned zero-copy data slice borrow-maps directly over the provided `rx_buf`.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3).
-    pub async fn find_information<'b>(
+    pub async fn find_information<'a>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
-        rx_buf: &'b mut [MaybeUninit<u8>],
-    ) -> Result<DiscoveredInformation<'b>, ClientError> {
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<DiscoveredInformation<'a>, ClientError> {
         // Build and transmit the Find Information Request packet.
         let builder = PacketBuilder {
             header: Header { opcode: Opcode::FindInformationReq },
@@ -394,14 +390,14 @@ where
     /// to discover the range of a specific service type (e.g. Heart Rate service).
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.3.3).
-    pub async fn find_by_type_value<'b>(
+    pub async fn find_by_type_value<'a>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
         attribute_type: u16, // 16-bit UUID only
         attribute_value: &[u8],
-        rx_buf: &'b mut [MaybeUninit<u8>],
-    ) -> Result<&'b [HandlesInformation], ClientError> {
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a [HandlesInformation], ClientError> {
         let header_builder = PacketBuilder {
             header: Header { opcode: Opcode::FindByTypeValueReq },
             payload: FindByTypeValueReqHeader {
@@ -430,11 +426,11 @@ where
     /// Sends a Read Request and awaits a Read Response.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.1 & 3.4.4.2)
-    pub async fn read<'b>(
+    pub async fn read<'a>(
         &mut self,
         handle: AttributeHandle,
-        rx_buf: &'b mut [MaybeUninit<u8>],
-    ) -> Result<&'b mut [u8], ClientError> {
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], ClientError> {
         // Construct the Read Request payload.
         let req = ReadReq { attribute_handle: U16::new(handle.value()) };
         let builder = PacketBuilder { header: Header { opcode: Opcode::ReadReq }, payload: req };
@@ -450,12 +446,12 @@ where
     /// Sends a Read Blob Request and awaits a Read Blob Response.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.3 & 3.4.4.4)
-    pub async fn read_blob<'b>(
+    pub async fn read_blob<'a>(
         &mut self,
         handle: AttributeHandle,
         offset: u16,
-        rx_buf: &'b mut [MaybeUninit<u8>],
-    ) -> Result<&'b mut [u8], ClientError> {
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], ClientError> {
         // Construct the Read Blob Request payload.
         let req = ReadBlobReq {
             attribute_handle: U16::new(handle.value()),
@@ -485,13 +481,13 @@ where
     /// attribute type (UUID).
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.7 & 3.4.4.8).
-    pub async fn read_by_type<'b>(
+    pub async fn read_by_type<'a>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
         attribute_type: &Uuid,
-        rx_buf: &'b mut [MaybeUninit<u8>],
-    ) -> Result<ReadByTypeResults<'b>, ClientError> {
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<ReadByTypeResults<'a>, ClientError> {
         // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_type.as_bytes();
         let header_builder = PacketBuilder {
@@ -537,13 +533,13 @@ where
     /// attribute group type (UUID).
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.4.9 & 3.4.4.10).
-    pub async fn read_by_group_type<'b>(
+    pub async fn read_by_group_type<'a>(
         &mut self,
         starting_handle: AttributeHandle,
         ending_handle: AttributeHandle,
         attribute_group_type: &Uuid,
-        rx_buf: &'b mut [MaybeUninit<u8>],
-    ) -> Result<ReadByGroupTypeResults<'b>, ClientError> {
+        rx_buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<ReadByGroupTypeResults<'a>, ClientError> {
         // Serialize the variable-length UUID parameter onto the end of the request header.
         let type_bytes = attribute_group_type.as_bytes();
         let header_builder = PacketBuilder {
@@ -573,11 +569,11 @@ where
     /// Initiates a Write Request procedure to write the value of an attribute.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.5.1 & 3.4.5.2).
-    pub async fn write<'b>(
+    pub async fn write<'a>(
         &mut self,
         attribute_handle: AttributeHandle,
         attribute_value: &[u8],
-        rx_buf: &'b mut [MaybeUninit<u8>],
+        rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
         let header_builder = PacketBuilder {
             header: Header { opcode: Opcode::WriteReq },
@@ -624,12 +620,12 @@ where
     /// Initiates a Prepare Write procedure to write a part of an attribute value.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.1).
-    pub async fn prepare_write<'b>(
+    pub async fn prepare_write<'a>(
         &mut self,
         attribute_handle: AttributeHandle,
         value_offset: u16,
         part_attribute_value: &[u8],
-        rx_buf: &'b mut [MaybeUninit<u8>],
+        rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
         let header_builder = PacketBuilder {
             header: Header { opcode: Opcode::PrepareWriteReq },
@@ -664,10 +660,10 @@ where
     /// to reuse their existing buffer without stack duplication.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.6.3).
-    pub async fn execute_write<'b>(
+    pub async fn execute_write<'a>(
         &mut self,
         flags: ExecuteWriteFlags,
-        rx_buf: &'b mut [MaybeUninit<u8>],
+        rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
         let builder = PacketBuilder {
             header: Header { opcode: Opcode::ExecuteWriteReq },
@@ -684,28 +680,62 @@ where
 
         Ok(())
     }
+
+    /// Returns an asynchronous stream handle for consuming unsolicited server events
+    /// pushed from the remote server endpoint.
+    pub fn server_event_stream<'a, Rx: L2CapChannelRx, Mtx: RawMutex>(
+        &self,
+        rx_handle: BearerRxHandle<'a, Rx, Mtx>,
+    ) -> ServerEventStream<Tx, BearerRxHandle<'a, Rx, Mtx>> {
+        ServerEventStream { bearer_tx: self.bearer_tx.clone(), rx_handle }
+    }
 }
 
-/// An asynchronous stream consumption API for consuming unsolicited Handle Value Notifications
-/// pushed from the remote server endpoint.
-#[derive(Debug)]
-pub struct NotificationStream<'a, Rx, Mtx = SingleThreadMutex> {
-    rx_handle: BearerRxHandle<'a, Rx, Mtx>,
+/// An individual unsolicited server event pushed from the remote server endpoint.
+#[derive(TryFromBytes, KnownLayout, Immutable, IntoBytes, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct ServerEvent {
+    attribute_handle: U16,
+    value: [u8],
 }
 
-impl<'a, Rx: L2CapChannelRx, Mtx: RawMutex> NotificationStream<'a, Rx, Mtx> {
-    pub fn new(router: &'a BearerRouter<Rx, Mtx>) -> Option<Self> {
-        let rx_handle = router.route_to(RouteFilter::Notifications)?;
-        Some(Self { rx_handle })
+impl ServerEvent {
+    /// Returns the handle of the attribute whose value was updated.
+    pub fn handle(&self) -> AttributeHandle {
+        AttributeHandle::new(self.attribute_handle.get()).expect("valid non-zero handle")
     }
 
-    /// Awaits the next Handle Value Notification frame from the network.
-    /// Returns the parsed, zero-copy `HandleValueNtf` struct reference
-    /// backed by the caller's provided buffer.
-    pub async fn next<'b>(
+    /// Returns the updated attribute value bytes.
+    pub fn value(&self) -> &[u8] {
+        &self.value
+    }
+}
+
+/// An asynchronous stream consumption API for consuming unsolicited server events
+/// pushed from the remote server endpoint.
+#[derive(Debug)]
+pub struct ServerEventStream<Tx, R> {
+    bearer_tx: BearerTx<Tx>,
+    rx_handle: R,
+}
+
+impl<'a, Tx: L2CapChannelTx, Rx: L2CapChannelRx, Mtx: RawMutex>
+    ServerEventStream<Tx, BearerRxHandle<'a, Rx, Mtx>>
+{
+    pub fn new(router: &'a BearerRouter<Rx, Mtx>, bearer_tx: BearerTx<Tx>) -> Option<Self> {
+        let rx_handle = router.route_to(RouteFilter::ServerEvents)?;
+        Some(Self { bearer_tx, rx_handle })
+    }
+}
+
+impl<Tx: L2CapChannelTx, R: AttReceiver> ServerEventStream<Tx, R> {
+    /// Awaits the next server event frame from the network.
+    /// Acknowledgment PDUs are automatically transmitted down the underlying bearer
+    /// when required by the ATT protocol before returning.
+    pub async fn next<'a>(
         &mut self,
-        buf: &'b mut [MaybeUninit<u8>],
-    ) -> Result<&'b HandleValueNtf, ClientError> {
+        buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a ServerEvent, ClientError> {
         let packet = self.rx_handle.next_packet(buf).await.map_err(|e| match e {
             BearerRecvError::LinkClosed => ClientError::LinkClosed,
             BearerRecvError::BufferTooSmall => {
@@ -720,9 +750,28 @@ impl<'a, Rx: L2CapChannelRx, Mtx: RawMutex> NotificationStream<'a, Rx, Mtx> {
                 ClientError::InvalidIncomingData
             }
         })?;
-        let ntf = HandleValueNtf::try_ref_from_bytes(&packet.data)
+
+        let event = ServerEvent::try_ref_from_bytes(&packet.data)
             .map_err(|_| ClientError::InvalidIncomingData)?;
-        Ok(ntf)
+
+        match packet.header.opcode {
+            Opcode::HandleValueNtf => Ok(event),
+            Opcode::HandleValueInd => {
+                let header = PacketBuilder {
+                    header: Header { opcode: Opcode::HandleValueCnf },
+                    payload: HandleValueCnf {},
+                };
+                match self.bearer_tx.send(header.as_packet()).await {
+                    Ok(()) => {}
+                    Err(BearerSendError::LinkClosed) => return Err(ClientError::LinkClosed),
+                    Err(BearerSendError::PacketTooLarge) => {
+                        unreachable!("HandleValueCnf (1 byte) never exceeds minimum ATT MTU")
+                    }
+                }
+                Ok(event)
+            }
+            _ => Err(ClientError::InvalidIncomingData),
+        }
     }
 }
 
@@ -732,8 +781,8 @@ mod tests {
     use crate::att::bearer::BearerRx;
     use crate::att::l2cap::mock::setup_mock_channel;
     use crate::att::pdu::{
-        DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, PrepareWriteHeader,
-        PrepareWriteReq, WriteCmd, WriteReq, WriteRsp,
+        DynamicPacketBuilder, FindByTypeValueReq, FindInformationRspHeader, HandleValueIndHeader,
+        PrepareWriteHeader, PrepareWriteReq, WriteCmd, WriteReq, WriteRsp,
     };
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
@@ -1880,6 +1929,42 @@ mod tests {
             });
 
             executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_client_indication_auto_confirm_success() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
+
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let mut event_stream =
+                ServerEventStream::new(&router, BearerTx::new(app_channel.sender))
+                    .expect("server event stream created");
+
+            let server_handle = executor.spawn(async move {
+                let mut server_tx_bearer = BearerTx::new(test_tx);
+                let header = PacketBuilder {
+                    header: Header { opcode: Opcode::HandleValueInd },
+                    payload: HandleValueIndHeader { attribute_handle: U16::new(0x1234) },
+                };
+                server_tx_bearer.send(header.as_packet()).await.unwrap();
+
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let mut server_rx_bearer = BearerRx::new(test_rx);
+                let packet = server_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::HandleValueCnf);
+            });
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); 32];
+                let event = event_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(event.handle().get(), 0x1234);
+            });
+
+            executor.run_until_stalled();
+            assert!(server_handle.is_finished());
             assert!(client_handle.is_finished());
         });
     }

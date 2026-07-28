@@ -5,19 +5,21 @@
 use crate::att::AttributeHandle;
 use crate::att::attribute::Attribute;
 use crate::att::bearer::{
-    BearerRecvError, BearerRx, BearerSendError, BearerTx, DEFAULT_STARTING_MTU, MAX_ATTRIBUTE_SIZE,
-    MAX_SUPPORTED_MTU,
+    AttReceiver, BearerRecvError, BearerSendError, BearerTx, DEFAULT_STARTING_MTU,
+    MAX_ATTRIBUTE_SIZE, MAX_SUPPORTED_MTU,
 };
 use crate::att::database::Database;
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
     DynamicPacketBuilder, ErrorCode, ErrorRsp, ExchangeMtuReq, ExchangeMtuRsp, ExecuteWriteFlags,
     ExecuteWriteReq, ExecuteWriteRsp, FindByTypeValueReq, FindInformationReq,
-    FindInformationRspHeader, HandleValueNtfHeader, HandlesInformation, Header, InformationData,
-    InformationData16, InformationData128, Opcode, Packet, PacketBuilder, PrepareWriteReq,
-    ReadBlobReq, ReadByGroupTypeReq, ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq,
-    UuidFormat, WriteCmd, WriteReq, WriteRsp,
+    FindInformationRspHeader, HandleValueCnf, HandleValueIndHeader, HandleValueNtfHeader,
+    HandlesInformation, Header, InformationData, InformationData16, InformationData128, Opcode,
+    Packet, PacketBuilder, PrepareWriteReq, ReadBlobReq, ReadByGroupTypeReq,
+    ReadByGroupTypeRspEntryHeader, ReadByTypeReq, ReadReq, UuidFormat, WriteCmd, WriteReq,
+    WriteRsp,
 };
+use crate::att::router::BearerRxHandle;
 use core::cmp::{max, min};
 use core::convert::Infallible;
 use core::marker::PhantomData;
@@ -26,6 +28,7 @@ use core::ptr::NonNull;
 use sapphire_collections::storage::StorageFamily;
 use sapphire_collections::vec::Vec;
 use sapphire_peer_cache::PeerId;
+use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use sapphire_uuid::Uuid;
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::U16;
@@ -35,6 +38,15 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 pub enum ServerError {
     #[error("Underlying logical link was closed")]
     LinkClosed,
+}
+
+/// Error type for server-initiated event transactions.
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerEventError {
+    #[error("Underlying logical link was closed")]
+    LinkClosed,
+    #[error("Received invalid confirmation from peer")]
+    InvalidConfirmation,
 }
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,22 +221,22 @@ impl<'a, S: StorageFamily> Drop for PrepareQueueDrain<'a, S> {
 }
 
 /// The ATT Server protocol wrapper.
-pub struct Server<Tx, Rx, DB, S>
+pub struct Server<Tx, R, DB, S>
 where
     S: StorageFamily,
 {
     peer_id: PeerId,
     bearer_tx: BearerTx<Tx>,
-    bearer_rx: BearerRx<Rx>,
+    bearer_rx: R,
     server_rx_mtu: u16,
     database: DB,
     prepare_storage: PrepareQueue<S>,
 }
 
-impl<Tx, Rx, DB, S> Server<Tx, Rx, DB, S>
+impl<Tx, R, DB, S> Server<Tx, R, DB, S>
 where
     Tx: L2CapChannelTx,
-    Rx: L2CapChannelRx,
+    R: AttReceiver,
     DB: Database,
     S: StorageFamily,
 {
@@ -232,7 +244,7 @@ where
     pub fn new(
         peer_id: PeerId,
         bearer_tx: BearerTx<Tx>,
-        bearer_rx: BearerRx<Rx>,
+        bearer_rx: R,
         server_rx_mtu: u16,
         database: DB,
         prepare_storage: PrepareQueue<S>,
@@ -1057,6 +1069,15 @@ where
         ServerNotifier::new(self.bearer_tx.clone())
     }
 
+    /// Obtains a concurrent ServerIndicator handle sharing BearerTx and AtomicU16 MTU reference,
+    /// routing expected HandleValueCnf responses through the provided cnf_rx_handle.
+    pub fn indicator<'a, RxPhys: L2CapChannelRx, Mtx: RawMutex>(
+        &self,
+        cnf_rx_handle: BearerRxHandle<'a, RxPhys, Mtx>,
+    ) -> ServerIndicator<'a, Tx, RxPhys, Mtx> {
+        ServerIndicator::new(self.bearer_tx.clone(), cnf_rx_handle)
+    }
+
     pub fn mtu(&self) -> u16 {
         self.bearer_tx.mtu()
     }
@@ -1091,7 +1112,7 @@ where
     /// negotiated ATT MTU boundary.
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.1).
-    pub async fn notify(&mut self, handle: u16, value: &[u8]) -> Result<(), ServerError> {
+    pub async fn notify(&mut self, handle: u16, value: &[u8]) -> Result<(), ServerEventError> {
         let required_capacity =
             size_of::<Header>() + size_of::<HandleValueNtfHeader>() + value.len();
 
@@ -1114,11 +1135,78 @@ where
         let tx_packet = builder.as_packet();
         match self.bearer_tx.send(tx_packet).await {
             Ok(()) => Ok(()),
-            Err(BearerSendError::LinkClosed) => Err(ServerError::LinkClosed),
+            Err(BearerSendError::LinkClosed) => Err(ServerEventError::LinkClosed),
             Err(BearerSendError::PacketTooLarge) => {
                 panic!("Programming error: outgoing packet size exceeds the negotiated MTU.");
             }
         }
+    }
+}
+
+/// A handle for driving Handle Value Indications side-by-side with an actively running Server instance.
+pub struct ServerIndicator<'a, Tx, Rx, Mtx = SingleThreadMutex> {
+    bearer_tx: BearerTx<Tx>,
+    cnf_rx_handle: BearerRxHandle<'a, Rx, Mtx>,
+}
+
+impl<'a, Tx, Rx, Mtx> ServerIndicator<'a, Tx, Rx, Mtx>
+where
+    Tx: L2CapChannelTx,
+    Rx: L2CapChannelRx,
+    Mtx: RawMutex,
+{
+    pub fn new(bearer_tx: BearerTx<Tx>, cnf_rx_handle: BearerRxHandle<'a, Rx, Mtx>) -> Self {
+        Self { bearer_tx, cnf_rx_handle }
+    }
+
+    fn effective_mtu(&self) -> usize {
+        usize::from(self.bearer_tx.mtu())
+    }
+
+    /// Transmits a Handle Value Indication PDU and awaits the matching Handle Value Confirmation from the peer.
+    ///
+    /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.7.2 and 3.4.7.3).
+    pub async fn indicate(&mut self, handle: u16, value: &[u8]) -> Result<(), ServerEventError> {
+        let required_capacity =
+            size_of::<Header>() + size_of::<HandleValueIndHeader>() + value.len();
+
+        assert!(
+            required_capacity <= self.effective_mtu(),
+            "Programming error: Handle Value Indication payload size ({}) exceeds effective MTU ({}).",
+            required_capacity,
+            self.effective_mtu()
+        );
+
+        let header = PacketBuilder {
+            header: Header { opcode: Opcode::HandleValueInd },
+            payload: HandleValueIndHeader { attribute_handle: U16::new(handle) },
+        };
+        let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
+        let mut builder =
+            DynamicPacketBuilder::<_, u8>::new(&mut tx_buf, header, self.effective_mtu());
+        builder.extend_from_slice(value).expect("Failed to extend indication payload");
+
+        let tx_packet = builder.as_packet();
+        match self.bearer_tx.send(tx_packet).await {
+            Ok(()) => {}
+            Err(BearerSendError::LinkClosed) => return Err(ServerEventError::LinkClosed),
+            Err(BearerSendError::PacketTooLarge) => {
+                panic!("Programming error: outgoing packet size exceeds the negotiated MTU.");
+            }
+        }
+
+        const CNF_BUF_SIZE: usize = size_of::<Header>() + size_of::<HandleValueCnf>();
+        let mut cnf_buf = [MaybeUninit::uninit(); CNF_BUF_SIZE];
+        let cnf_packet = match self.cnf_rx_handle.next_packet(&mut cnf_buf).await {
+            Ok(p) => p,
+            Err(BearerRecvError::LinkClosed) => return Err(ServerEventError::LinkClosed),
+            Err(_) => return Err(ServerEventError::InvalidConfirmation),
+        };
+
+        let _cnf = HandleValueCnf::try_ref_from_bytes(&cnf_packet.data)
+            .map_err(|_| ServerEventError::InvalidConfirmation)?;
+
+        Ok(())
     }
 }
 
@@ -1144,10 +1232,12 @@ mod tests {
     use crate::att::client::ReadByGroupTypeResults;
     use crate::att::database::testing::MockDb;
     use crate::att::l2cap::mock::setup_mock_channel;
+    use crate::att::router::{BearerRouter, RouteFilter};
+
     use crate::att::pdu::{
-        FindByTypeValueReqHeader, FindInformationRsp, HandleValueNtf, InformationData16,
-        PrepareWriteHeader, PrepareWriteRsp, ReadByGroupTypeReqHeader, ReadByTypeReqHeader,
-        WriteCmdHeader, WriteReqHeader,
+        FindByTypeValueReqHeader, FindInformationRsp, HandleValueCnf, HandleValueInd,
+        HandleValueNtf, InformationData16, PrepareWriteHeader, PrepareWriteRsp,
+        ReadByGroupTypeReqHeader, ReadByTypeReqHeader, WriteCmdHeader, WriteReqHeader,
     };
 
     use core::mem::size_of;
@@ -1166,16 +1256,16 @@ mod tests {
     const TEST_RX_BUF_SIZE: usize = 64;
     const TEST_ARENA_SIZE: usize = 1024;
 
-    fn new_server<Tx, Rx, DB>(
+    fn new_server<Tx, R, DB>(
         peer_id: PeerId,
         bearer_tx: BearerTx<Tx>,
-        bearer_rx: BearerRx<Rx>,
+        bearer_rx: R,
         server_rx_mtu: u16,
         database: DB,
-    ) -> Server<Tx, Rx, DB, ArrayStorage<TEST_ARENA_SIZE>>
+    ) -> Server<Tx, R, DB, ArrayStorage<TEST_ARENA_SIZE>>
     where
         Tx: L2CapChannelTx,
-        Rx: L2CapChannelRx,
+        R: AttReceiver,
         DB: Database,
     {
         Server::new(peer_id, bearer_tx, bearer_rx, server_rx_mtu, database, PrepareQueue::new())
@@ -3147,6 +3237,52 @@ mod tests {
 
             executor.run_until_stalled();
             assert!(client_handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_server_indicate_success() {
+        let (app_channel, test_tx, test_rx) = setup_mock_channel();
+        let router = BearerRouter::<_>::new(app_channel.receiver);
+        let req_handle = router.route_to(RouteFilter::Requests).unwrap();
+        let cnf_handle = router.route_to(RouteFilter::Confirmations).unwrap();
+
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let mut client_tx_bearer = BearerTx::new(test_tx);
+            let mut client_rx_bearer = BearerRx::new(test_rx);
+
+            let server = new_server(
+                PeerId::new(1).unwrap(),
+                BearerTx::new(app_channel.sender),
+                req_handle,
+                SERVER_MTU,
+                MockDb::new(),
+            );
+
+            let client_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
+                let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
+                assert_eq!(packet.header.opcode, Opcode::HandleValueInd);
+                let ind = HandleValueInd::try_ref_from_bytes(&packet.data).unwrap();
+                assert_eq!(ind.header.attribute_handle.get(), 0x5678);
+                assert_eq!(ind.attribute_value, [0x11, 0x22]);
+
+                // Respond with HandleValueCnf
+                let cnf = PacketBuilder {
+                    header: Header { opcode: Opcode::HandleValueCnf },
+                    payload: HandleValueCnf {},
+                };
+                let _ = client_tx_bearer.send(cnf.as_packet()).await;
+            });
+
+            let server_handle = executor.spawn(async move {
+                let mut indicator = server.indicator(cnf_handle);
+                indicator.indicate(0x5678, &[0x11, 0x22]).await.unwrap();
+            });
+
+            executor.run_until_stalled();
+            assert!(client_handle.is_finished());
+            assert!(server_handle.is_finished());
         });
     }
 }

@@ -28,6 +28,11 @@ impl AttributeHandle {
     pub const fn value(self) -> u16 {
         self.0.get()
     }
+
+    /// Returns the raw `u16` value of this handle (alias for `.value()`).
+    pub const fn get(self) -> u16 {
+        self.0.get()
+    }
 }
 
 /// Error type for invalid handle conversions (e.g. converting 0).
@@ -52,12 +57,12 @@ impl From<AttributeHandle> for u16 {
 mod tests {
     use super::*;
     use crate::att::attribute::testing::MockAttribute;
-    use crate::att::bearer::{BearerRx, BearerTx, MAX_SUPPORTED_MTU};
-    use crate::att::client::{Client, DiscoveredInformation, NotificationStream};
+    use crate::att::bearer::{AttReceiver, BearerRx, BearerTx, MAX_SUPPORTED_MTU};
+    use crate::att::client::{Client, DiscoveredInformation, ServerEventStream};
     use crate::att::database::Database;
     use crate::att::database::testing::MockDb;
+    use crate::att::l2cap::L2CapChannelTx;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
     use crate::att::pdu::ExecuteWriteFlags;
     use crate::att::router::{BearerRouter, RouteFilter};
     use crate::att::server::{PrepareQueue, Server, ServerError};
@@ -75,16 +80,16 @@ mod tests {
     const READ_BLOB_OFFSET: u16 = 10;
     const TEST_ARENA_SIZE: usize = 1024;
 
-    fn new_server<Tx, Rx, DB>(
+    fn new_server<Tx, R, DB>(
         peer_id: PeerId,
         bearer_tx: BearerTx<Tx>,
-        bearer_rx: BearerRx<Rx>,
+        bearer_rx: R,
         server_rx_mtu: u16,
         database: DB,
-    ) -> Server<Tx, Rx, DB, ArrayStorage<TEST_ARENA_SIZE>>
+    ) -> Server<Tx, R, DB, ArrayStorage<TEST_ARENA_SIZE>>
     where
         Tx: L2CapChannelTx,
-        Rx: L2CapChannelRx,
+        R: AttReceiver,
         DB: Database,
     {
         let constructor = Server::new;
@@ -860,7 +865,6 @@ mod tests {
     fn test_client_server_integration_with_router() {
         let (app_channel, server_tx, server_rx) = setup_mock_channel();
         let client_router = BearerRouter::<_>::new(app_channel.receiver);
-        let client_router_ref = &client_router;
         BoundedExecutor::new(TestExecutor::new(), |executor| {
             let mut db = MockDb::new();
             let long_val = b"Sunstone Router Integration Test Value";
@@ -871,9 +875,10 @@ mod tests {
             let client_app_tx_bearer = BearerTx::new(app_channel.sender);
             let server_tx_bearer = BearerTx::new(server_tx);
 
-            let client_rx_handle = client_router_ref.route_to(RouteFilter::Responses).unwrap();
-            let mut notification_stream =
-                NotificationStream::new(client_router_ref).expect("notification stream created");
+            let client_rx_handle = client_router.route_to(RouteFilter::Responses).unwrap();
+            let mut event_stream =
+                ServerEventStream::new(&client_router, client_app_tx_bearer.clone())
+                    .expect("event stream created");
 
             let mut client =
                 Client::new(client_app_tx_bearer, client_rx_handle, CLIENT_PREFERRED_MTU);
@@ -895,9 +900,9 @@ mod tests {
 
             let notification_listener_handle = executor.spawn(async move {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
-                let ntf = notification_stream.next(&mut rx_buf).await.unwrap();
-                assert_eq!(ntf.header.attribute_handle.get(), 0x1234);
-                assert_eq!(&ntf.attribute_value[..], b"some value data");
+                let event = event_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(event.handle().get(), 0x1234);
+                assert_eq!(event.value(), b"some value data");
             });
 
             let mut notifier = server.notifier();
@@ -914,6 +919,51 @@ mod tests {
         });
     }
 
+    #[test]
+    fn test_client_server_integration_indication() {
+        let (app_channel, server_tx, server_rx) = setup_mock_channel();
+        let client_router = BearerRouter::<_>::new(app_channel.receiver);
+        let server_router = BearerRouter::<_>::new(server_rx);
+
+        BoundedExecutor::new(TestExecutor::new(), |executor| {
+            let client_app_tx_bearer = BearerTx::new(app_channel.sender);
+
+            let server_tx_bearer = BearerTx::new(server_tx);
+
+            let client_rx_handle = client_router.route_to(RouteFilter::Responses).unwrap();
+            let mut event_stream =
+                ServerEventStream::new(&client_router, client_app_tx_bearer.clone())
+                    .expect("event stream created");
+
+            let _client = Client::new(client_app_tx_bearer, client_rx_handle, CLIENT_PREFERRED_MTU);
+
+            let server = new_server(
+                PeerId::new(1).unwrap(),
+                server_tx_bearer,
+                server_router.route_to(RouteFilter::Requests).unwrap(),
+                SMALL_TEST_MTU,
+                MockDb::new(),
+            );
+
+            let indication_listener_handle = executor.spawn(async move {
+                let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
+                let event = event_stream.next(&mut rx_buf).await.unwrap();
+                assert_eq!(event.handle().get(), 0x7777);
+                assert_eq!(event.value(), b"indication payload");
+            });
+
+            let mut indicator =
+                server.indicator(server_router.route_to(RouteFilter::Confirmations).unwrap());
+            let server_proc_handle = executor.spawn(async move {
+                indicator.indicate(0x7777, b"indication payload").await.unwrap();
+            });
+
+            executor.run_until_stalled();
+
+            assert!(indication_listener_handle.is_finished());
+            assert!(server_proc_handle.is_finished());
+        });
+    }
     mod proptests {
         use super::*;
         use crate::att::attribute::Attribute;
