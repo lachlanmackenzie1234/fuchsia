@@ -80,8 +80,8 @@ inline constexpr bool kLogAudioCapturerSetUsage = false;
 // As with other underflows/overflows, we always log the first one; subsequent instances are
 // logged depending on the throttling constants below, based on AudioCore's logging level.
 inline constexpr bool kLogCaptureOverflow = true;
-inline constexpr uint16_t kCaptureOverflowWarningInterval = 100;  // Log 1/100 instances.
-inline constexpr uint16_t kCaptureOverflowInfoInterval = 10;      // Log 1/10 instances.
+inline constexpr uint64_t kCaptureOverflowWarningInterval = 100'000;  // Log 1/100'000 instances.
+inline constexpr uint64_t kCaptureOverflowInfoInterval = 10'000;      // Log 1/10'000 instances.
 // If AudioCore's log level is TRACE or DEBUG, we log all capture overflows.
 
 //
