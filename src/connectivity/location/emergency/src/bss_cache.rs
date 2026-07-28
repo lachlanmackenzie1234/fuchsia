@@ -10,7 +10,8 @@ use fidl_fuchsia_wlan_policy::{
 use futures::future::BoxFuture;
 use futures::task::{Context, Poll};
 use futures::{Future, FutureExt, Stream, StreamExt};
-use std::collections::BTreeMap;
+use rand::seq::IteratorRandom;
+use std::collections::HashMap;
 use std::pin::Pin;
 use thiserror::Error;
 
@@ -29,7 +30,7 @@ pub trait BssCache {
 /// A cache for WLAN Basic Service Sets, also known as WLAN base-stations.
 #[derive(Default)]
 pub struct RealBssCache {
-    bss_map: BTreeMap<BssId, Bss>,
+    bss_map: HashMap<BssId, Bss>,
 }
 
 pub type BssId = [u8; BSS_ADDR_LEN_BYTES];
@@ -73,12 +74,6 @@ impl RealBssCache {
     pub fn new() -> Self {
         Default::default()
     }
-
-    fn prune_to_size(&mut self) {
-        if let Some(first_overflowed_bssid) = self.bss_map.keys().cloned().nth(MAX_BSSES) {
-            self.bss_map.split_off(&first_overflowed_bssid);
-        }
-    }
 }
 
 #[async_trait(?Send)]
@@ -120,8 +115,17 @@ impl BssCache for RealBssCache {
             return Err(UpdateError::NoBssIds);
         }
 
-        self.bss_map = valid_bss_list.collect();
-        self.prune_to_size();
+        // Deduplicate BSSs and truncate the cache down to MAX_BSSES (20) BSSs.
+        let deduped_list: HashMap<BssId, Bss> = valid_bss_list.collect();
+
+        if deduped_list.len() > MAX_BSSES {
+            let mut rng = rand::rng();
+            self.bss_map =
+                deduped_list.into_iter().choose_multiple(&mut rng, MAX_BSSES).into_iter().collect();
+        } else {
+            self.bss_map = deduped_list;
+        }
+
         Ok(())
     }
 
@@ -309,9 +313,11 @@ mod tests {
                 .await;
             assert_eq!(result, Ok(()));
 
-            let bsses: BTreeMap<&BssId, &Bss> = cache.iter().collect();
-            assert_eq!(bsses.get(&[0, 0, 0, 0, 0, 0]), Some(&&Bss { rssi: None, frequency: None }));
-            assert_eq!(bsses.get(&[1, 1, 1, 1, 1, 1]), Some(&&Bss { rssi: None, frequency: None }));
+            assert_eq!(cache.iter().count(), 2);
+            assert!(cache.iter().any(|(&id, &bss)| id == [0, 0, 0, 0, 0, 0]
+                && bss == Bss { rssi: None, frequency: None }));
+            assert!(cache.iter().any(|(&id, &bss)| id == [1, 1, 1, 1, 1, 1]
+                && bss == Bss { rssi: None, frequency: None }));
         }
 
         #[fasync::run_until_stalled(test)]
@@ -380,9 +386,11 @@ mod tests {
                 .await;
             assert_eq!(result, Ok(()));
 
-            let bsses: BTreeMap<&BssId, &Bss> = cache.iter().collect();
-            assert_eq!(bsses.get(&[0, 0, 0, 0, 0, 0]), Some(&&Bss { rssi: None, frequency: None }));
-            assert_eq!(bsses.get(&[1, 1, 1, 1, 1, 1]), Some(&&Bss { rssi: None, frequency: None }));
+            assert_eq!(cache.iter().count(), 2);
+            assert!(cache.iter().any(|(&id, &bss)| id == [0, 0, 0, 0, 0, 0]
+                && bss == Bss { rssi: None, frequency: None }));
+            assert!(cache.iter().any(|(&id, &bss)| id == [1, 1, 1, 1, 1, 1]
+                && bss == Bss { rssi: None, frequency: None }));
         }
 
         #[fasync::run_until_stalled(test)]
