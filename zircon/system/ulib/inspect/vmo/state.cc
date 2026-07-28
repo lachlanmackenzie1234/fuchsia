@@ -34,6 +34,12 @@ namespace {
 struct Freeze_t {
 } Freeze;
 
+BlockIndex GetParentIndex(const Heap& heap, BlockIndex value_index) {
+  const Block* block = heap.GetBlock(value_index);
+  ZX_ASSERT(block);
+  return ValueBlockFields::ParentIndex::Get<BlockIndex>(block->header);
+}
+
 }  // namespace
 
 // Helper class to support RAII locking of the generation count.
@@ -109,6 +115,100 @@ void AutoGenerationIncrement::Release(Block* block) {
   }
 }
 
+class State::Txn final {
+ public:
+  explicit Txn(
+      State* state,
+      std::lock_guard<std::mutex>& /* this is a token to help ensure users have locked State */)
+      : state_(state),  // This should be a locked state object, as we make internal modifications
+        committed_(false) {}
+  // We disable thread safety analysis on Txn methods because Txn operates on state_,
+  // whose mutex is held by the caller of Txn. Clang's thread-safety analyzer cannot
+  // statically prove that this->mutex_ held in caller scopes is identical to txn.state_->mutex_,
+  // which would cause false-positive lock warnings without this annotation.
+  ~Txn() __TA_NO_THREAD_SAFETY_ANALYSIS {
+    if (!committed_) {
+      for (auto it = undos_.rbegin(); it != undos_.rend(); ++it) {
+        (*it)();
+      }
+    }
+  }
+
+  Txn(const Txn&) = delete;
+  Txn(Txn&&) = delete;
+  Txn& operator=(const Txn&) = delete;
+  Txn& operator=(Txn&&) = delete;
+
+  void Commit() { committed_ = true; }
+  void RegisterUndo(std::function<void()> undo) { undos_.push_back(std::move(undo)); }
+
+  zx_status_t Allocate(size_t size, BlockIndex* out) __TA_NO_THREAD_SAFETY_ANALYSIS {
+    zx_status_t status = state_->heap_->Allocate(size, out);
+    if (status == ZX_OK) {
+      BlockIndex idx = *out;
+      undos_.push_back([this, idx]() __TA_NO_THREAD_SAFETY_ANALYSIS { state_->heap_->Free(idx); });
+    }
+    return status;
+  }
+
+  zx_status_t CreateAndIncrementStringReference(std::string_view value, BlockIndex* out,
+                                                bool cached) __TA_NO_THREAD_SAFETY_ANALYSIS {
+    zx_status_t status = state_->InnerCreateAndIncrementStringReference(value, out, cached);
+    if (status == ZX_OK) {
+      BlockIndex idx = *out;
+      undos_.push_back([this, idx]() __TA_NO_THREAD_SAFETY_ANALYSIS {
+        state_->InnerReleaseStringReference(idx);
+      });
+    }
+    return status;
+  }
+
+  zx_status_t IncrementParentRefcount(BlockIndex parent_index) __TA_NO_THREAD_SAFETY_ANALYSIS {
+    Block* parent = state_->heap_->GetBlock(parent_index);
+    ZX_DEBUG_ASSERT_MSG(parent, "Index %lu is invalid", parent_index);
+    if (!parent) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+    BlockType parent_type = GetType(parent);
+    switch (parent_type) {
+      case BlockType::kHeader:
+        break;
+      case BlockType::kNodeValue:
+      case BlockType::kTombstone:
+        parent->payload.u64++;
+        undos_.push_back([this, parent_index]() __TA_NO_THREAD_SAFETY_ANALYSIS {
+          state_->DecrementParentRefcount(parent_index);
+        });
+        break;
+      default:
+        ZX_DEBUG_ASSERT_MSG(false, "Invalid parent block type %u for 0x%lx",
+                            static_cast<uint32_t>(parent_type), parent_index);
+        return ZX_ERR_INVALID_ARGS;
+    }
+    return ZX_OK;
+  }
+
+  std::pair<BlockIndex, zx_status_t> CreateExtentChain(const char* value, size_t length)
+      __TA_NO_THREAD_SAFETY_ANALYSIS {
+    auto [first_extent_index, status] = state_->InnerCreateExtentChain(value, length);
+    if (status == ZX_OK && first_extent_index != 0) {
+      undos_.push_back([this, first_extent_index]() __TA_NO_THREAD_SAFETY_ANALYSIS {
+        state_->InnerFreeExtentChain(first_extent_index);
+      });
+    }
+    return {first_extent_index, status};
+  }
+
+ private:
+  State* state_;
+  bool committed_;
+  std::vector<std::function<void()>> undos_;
+};
+
+State::Txn State::OpenTransaction(std::lock_guard<std::mutex>& token) {
+  return State::Txn(this, token);
+}
+
 State::State(std::unique_ptr<Heap> heap, BlockIndex header)
     : heap_(std::move(heap)),
       header_(header),
@@ -134,9 +234,10 @@ WrapperType State::InnerCreateArray(std::string_view name, BlockIndex parent, si
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
   zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kArrayValue, parent, &name_index, &value_index,
+  status = InnerCreateValue(txn, name, BlockType::kArrayValue, parent, &name_index, &value_index,
                             block_size_needed);
   if (status != ZX_OK) {
     return WrapperType();
@@ -147,6 +248,7 @@ WrapperType State::InnerCreateArray(std::string_view name, BlockIndex parent, si
                        ArrayBlockPayload::Flags::Make(format) |
                        ArrayBlockPayload::Count::Make(slots);
 
+  txn.Commit();
   return WrapperType(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -207,11 +309,11 @@ void State::InnerFreeArray(WrapperType* value) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
-  DecrementParentRefcount(value->value_index_);
+  auto* block = heap_->GetBlock(value->value_index_);
+  ZX_ASSERT(block);
+  DecrementParentRefcount(GetParentIndex(*heap_, value->value_index_));
 
   InnerReleaseStringReference(value->name_index_);
-
-  auto* block = heap_->GetBlock(value->value_index_);
   if (ArrayBlockPayload::EntryType::Get<BlockType>(block->payload.u64) ==
       BlockType::kStringReference) {
     // free/decrease ref count of string references
@@ -339,9 +441,10 @@ IntProperty State::CreateIntProperty(std::string_view name, BlockIndex parent, i
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
   zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kIntValue, parent, &name_index, &value_index);
+  status = InnerCreateValue(txn, name, BlockType::kIntValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return IntProperty();
   }
@@ -349,6 +452,7 @@ IntProperty State::CreateIntProperty(std::string_view name, BlockIndex parent, i
   auto* block = heap_->GetBlock(value_index);
   block->payload.i64 = value;
 
+  txn.Commit();
   return IntProperty(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -356,9 +460,10 @@ UintProperty State::CreateUintProperty(std::string_view name, BlockIndex parent,
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
   zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kUintValue, parent, &name_index, &value_index);
+  status = InnerCreateValue(txn, name, BlockType::kUintValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return UintProperty();
   }
@@ -366,6 +471,7 @@ UintProperty State::CreateUintProperty(std::string_view name, BlockIndex parent,
   auto* block = heap_->GetBlock(value_index);
   block->payload.u64 = value;
 
+  txn.Commit();
   return UintProperty(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -373,9 +479,10 @@ DoubleProperty State::CreateDoubleProperty(std::string_view name, BlockIndex par
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
   zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kDoubleValue, parent, &name_index, &value_index);
+  status = InnerCreateValue(txn, name, BlockType::kDoubleValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return DoubleProperty();
   }
@@ -383,6 +490,7 @@ DoubleProperty State::CreateDoubleProperty(std::string_view name, BlockIndex par
   auto* block = heap_->GetBlock(value_index);
   block->payload.f64 = value;
 
+  txn.Commit();
   return DoubleProperty(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -390,15 +498,17 @@ BoolProperty State::CreateBoolProperty(std::string_view name, BlockIndex parent,
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
   zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kBoolValue, parent, &name_index, &value_index);
+  status = InnerCreateValue(txn, name, BlockType::kBoolValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return BoolProperty();
   }
 
   auto* block = heap_->GetBlock(value_index);
   block->payload.u64 = value;
+  txn.Commit();
   return BoolProperty(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -428,26 +538,26 @@ WrapperType State::InnerCreateProperty(std::string_view name, BlockIndex parent,
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
-  zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kBufferValue, parent, &name_index, &value_index);
+  zx_status_t status =
+      InnerCreateValue(txn, name, BlockType::kBufferValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return WrapperType();
   }
 
+  auto [first_extent_index, extent_status] = txn.CreateExtentChain(value, length);
+
   auto* block = heap_->GetBlock(value_index);
-  BlockIndex first_extent_index;
-  std::tie(first_extent_index, status) = InnerCreateExtentChain(value, length);
   block->payload.u64 = PropertyBlockPayload::TotalLength::Make(length) |
                        PropertyBlockPayload::ExtentIndex::Make(first_extent_index) |
                        PropertyBlockPayload::Flags::Make(format);
 
-  if (status != ZX_OK) {
-    InnerReleaseStringReference(name_index);
-    heap_->Free(value_index);
+  if (extent_status != ZX_OK) {
     return WrapperType();
   }
 
+  txn.Commit();
   return WrapperType(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -456,18 +566,17 @@ StringProperty State::CreateStringProperty(std::string_view name, BlockIndex par
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
   zx_status_t status =
-      InnerCreateValue(name, BlockType::kBufferValue, parent, &name_index, &value_index);
+      InnerCreateValue(txn, name, BlockType::kBufferValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return StringProperty();
   }
 
   BlockIndex data_index;
-  status = InnerCreateAndIncrementStringReference(value, &data_index, true);
+  status = txn.CreateAndIncrementStringReference(value, &data_index, true);
   if (status != ZX_OK) {
-    InnerReleaseStringReference(name_index);
-    heap_->Free(value_index);
     return StringProperty();
   }
 
@@ -476,6 +585,7 @@ StringProperty State::CreateStringProperty(std::string_view name, BlockIndex par
       PropertyBlockPayload::TotalLength::Make(0) |
       PropertyBlockPayload::Flags::Make(PropertyBlockFormat::kStringReference);
 
+  txn.Commit();
   return StringProperty(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -491,19 +601,17 @@ Link State::CreateLink(std::string_view name, BlockIndex parent, std::string_vie
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index, content_index;
   zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kLinkValue, parent, &name_index, &value_index);
+  status = InnerCreateValue(txn, name, BlockType::kLinkValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return Link();
   }
 
   // `content` is always unique (passed through UniqueLinkName), so caching is unneeded
-  status = InnerCreateAndIncrementStringReference(content, &content_index, false);
-  if (status != ZX_OK) {
-    DecrementParentRefcount(value_index);
-    InnerReleaseStringReference(name_index);
-    heap_->Free(value_index);
+  status = txn.CreateAndIncrementStringReference(content, &content_index, false);
+  if (status != ZX_OK || content_index > 0xFFFFF) {
     return Link();
   }
 
@@ -512,6 +620,7 @@ Link State::CreateLink(std::string_view name, BlockIndex parent, std::string_vie
   block->payload.u64 = LinkBlockPayload::ContentIndex::Make(content_index) |
                        LinkBlockPayload::Flags::Make(disposition);
 
+  txn.Commit();
   return Link(weak_self_ptr_.lock(), name_index, value_index, content_index);
 }
 
@@ -548,13 +657,15 @@ Node State::CreateNode(std::string_view name, BlockIndex parent) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
+  auto txn = OpenTransaction(lock);
   BlockIndex name_index, value_index;
   zx_status_t status;
-  status = InnerCreateValue(name, BlockType::kNodeValue, parent, &name_index, &value_index);
+  status = InnerCreateValue(txn, name, BlockType::kNodeValue, parent, &name_index, &value_index);
   if (status != ZX_OK) {
     return Node();
   }
 
+  txn.Commit();
   return Node(weak_self_ptr_.lock(), name_index, value_index);
 }
 
@@ -731,9 +842,7 @@ void State::InnerSetBytesProperty(WrapperType* property, const char* value, size
   auto* block = heap_->GetBlock(property->value_index_);
   InnerFreeExtentChain(PropertyBlockPayload::ExtentIndex::Get<BlockIndex>(block->payload.u64));
 
-  BlockIndex first_extent_index;
-  zx_status_t status;
-  std::tie(first_extent_index, status) = InnerCreateExtentChain(value, length);
+  auto [first_extent_index, status] = InnerCreateExtentChain(value, length);
 
   const auto length_maybe_zeroed = status == ZX_OK ? length : 0;
 
@@ -781,27 +890,19 @@ void State::SetByteVectorProperty(ByteVectorProperty* property, cpp20::span<cons
   InnerSetBytesProperty(property, reinterpret_cast<const char*>(value.data()), value.size());
 }
 
-void State::DecrementParentRefcount(BlockIndex value_index) {
-  Block* value = heap_->GetBlock(value_index);
-  ZX_ASSERT(value);
-
-  BlockIndex parent_index = ValueBlockFields::ParentIndex::Get<BlockIndex>(value->header);
+void State::DecrementParentRefcount(BlockIndex parent_index) {
   Block* parent;
   while ((parent = heap_->GetBlock(parent_index)) != nullptr) {
-    ZX_ASSERT(parent);
     switch (GetType(parent)) {
       case BlockType::kHeader:
         return;
       case BlockType::kNodeValue:
-        // Stop decrementing parent refcounts when we observe a live object.
         ZX_ASSERT(parent->payload.u64 != 0);
         --parent->payload.u64;
         return;
       case BlockType::kTombstone:
         ZX_ASSERT(parent->payload.u64 != 0);
         if (--parent->payload.u64 == 0) {
-          // The tombstone parent is no longer referenced and can be deleted.
-          // Continue decrementing refcounts.
           BlockIndex next_parent_index =
               ValueBlockFields::ParentIndex::Get<BlockIndex>(parent->header);
           InnerReleaseStringReference(ValueBlockFields::NameIndex::Get<BlockIndex>(parent->header));
@@ -809,7 +910,6 @@ void State::DecrementParentRefcount(BlockIndex value_index) {
           parent_index = next_parent_index;
           break;
         }
-        // The tombstone parent is still referenced. Done decrementing refcounts.
         return;
       default:
         ZX_DEBUG_ASSERT_MSG(false, "Invalid parent type %u",
@@ -842,7 +942,7 @@ void State::FreeIntProperty(IntProperty* metric) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
-  DecrementParentRefcount(metric->value_index_);
+  DecrementParentRefcount(GetParentIndex(*heap_, metric->value_index_));
 
   InnerReleaseStringReference(metric->name_index_);
   heap_->Free(metric->value_index_);
@@ -858,7 +958,7 @@ void State::FreeUintProperty(UintProperty* metric) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
-  DecrementParentRefcount(metric->value_index_);
+  DecrementParentRefcount(GetParentIndex(*heap_, metric->value_index_));
 
   InnerReleaseStringReference(metric->name_index_);
   heap_->Free(metric->value_index_);
@@ -874,7 +974,7 @@ void State::FreeDoubleProperty(DoubleProperty* metric) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
-  DecrementParentRefcount(metric->value_index_);
+  DecrementParentRefcount(GetParentIndex(*heap_, metric->value_index_));
 
   InnerReleaseStringReference(metric->name_index_);
   heap_->Free(metric->value_index_);
@@ -890,7 +990,7 @@ void State::FreeBoolProperty(BoolProperty* metric) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
-  DecrementParentRefcount(metric->value_index_);
+  DecrementParentRefcount(GetParentIndex(*heap_, metric->value_index_));
 
   InnerReleaseStringReference(metric->name_index_);
   heap_->Free(metric->value_index_);
@@ -915,7 +1015,7 @@ void State::InnerFreePropertyWithExtents(WrapperType* property) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
-  DecrementParentRefcount(property->value_index_);
+  DecrementParentRefcount(GetParentIndex(*heap_, property->value_index_));
 
   const auto* block = heap_->GetBlock(property->value_index_);
 
@@ -950,7 +1050,7 @@ void State::FreeLink(Link* link) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
-  DecrementParentRefcount(link->value_index_);
+  DecrementParentRefcount(GetParentIndex(*heap_, link->value_index_));
 
   InnerReleaseStringReference(link->name_index_);
   heap_->Free(link->value_index_);
@@ -976,7 +1076,7 @@ void State::FreeNode(Node* object) {
   if (block) {
     if (block->payload.u64 == 0) {
       // Actually free the block, decrementing parent refcounts.
-      DecrementParentRefcount(object->value_index_);
+      DecrementParentRefcount(ValueBlockFields::ParentIndex::Get<BlockIndex>(block->header));
       // Node has no refs, free it.
       InnerReleaseStringReference(object->name_index_);
       heap_->Free(object->value_index_);
@@ -1127,19 +1227,18 @@ fpromise::promise<Inspector> State::CallLinkCallback(const std::string& name) {
   return holder.call();
 }
 
-zx_status_t State::InnerCreateValue(std::string_view name, BlockType type, BlockIndex parent_index,
-                                    BlockIndex* out_name, BlockIndex* out_value,
-                                    size_t min_size_required) {
+zx_status_t State::InnerCreateValue(Txn& txn, std::string_view name, BlockType type,
+                                    BlockIndex parent_index, BlockIndex* out_name,
+                                    BlockIndex* out_value, size_t min_size_required) {
   BlockIndex value_index, name_index;
   zx_status_t status;
-  status = heap_->Allocate(min_size_required, &value_index);
+  status = txn.Allocate(min_size_required, &value_index);
   if (status != ZX_OK) {
     return status;
   }
 
-  status = InnerCreateAndIncrementStringReference(name, &name_index, true);
+  status = txn.CreateAndIncrementStringReference(name, &name_index, true);
   if (status != ZX_OK) {
-    heap_->Free(value_index);
     return status;
   }
 
@@ -1150,25 +1249,9 @@ zx_status_t State::InnerCreateValue(std::string_view name, BlockType type, Block
                   ValueBlockFields::NameIndex::Make(name_index);
   memset(&block->payload, 0, min_size_required - sizeof(block->header));
 
-  // Increment the parent refcount.
-  Block* parent = heap_->GetBlock(parent_index);
-  ZX_DEBUG_ASSERT_MSG(parent, "Index %lu is invalid", parent_index);
-  // In release mode, do cleanup if parent is invalid.
-  BlockType parent_type = (parent) ? GetType(parent) : BlockType::kFree;
-  switch (parent_type) {
-    case BlockType::kHeader:
-      break;
-    case BlockType::kNodeValue:
-    case BlockType::kTombstone:
-      // Increment refcount.
-      parent->payload.u64++;
-      break;
-    default:
-      ZX_DEBUG_ASSERT_MSG(false, "Invalid parent block type %u for 0x%lx",
-                          static_cast<uint32_t>(GetType(parent)), parent_index);
-      InnerReleaseStringReference(name_index);
-      heap_->Free(value_index);
-      return ZX_ERR_INVALID_ARGS;
+  status = txn.IncrementParentRefcount(parent_index);
+  if (status != ZX_OK) {
+    return status;
   }
 
   *out_name = name_index;
@@ -1308,9 +1391,7 @@ zx_status_t State::WriteStringReferencePayload(Block* const block, std::string_v
   }
 
   // allocate necessary extents, copying data
-  BlockIndex first_extent_index;
-  zx_status_t status;
-  std::tie(first_extent_index, status) =
+  auto [first_extent_index, status] =
       InnerCreateExtentChain(&*std::cbegin(data) + inline_length, data.size() - inline_length);
 
   if (status != ZX_OK) {

@@ -2002,4 +2002,67 @@ TEST(State, SetStringArrayAllocationFailure) {
   state->FreeStringArray(&d);
 }
 
+TEST(StateTest, TransactionRollbackOnPropertyFailure) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != nullptr);
+
+  // Create a parent node
+  Node parent = state->CreateNode("parent", 0);
+  ASSERT_TRUE(parent);
+
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+  size_t free_blocks, allocated_blocks;
+  auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+
+  // Parent node value index is 2 (header is 0, name index is 1, value index is 2).
+  auto parent_index = BlockIndex(2);
+  auto* parent_block = blocks.find(parent_index)->block;
+  ASSERT_EQ(GetType(parent_block), BlockType::kNodeValue);
+  ASSERT_EQ(parent_block->payload.u64, 0u);  // child refcount is 0
+
+  // Let's fill the heap almost completely.
+  std::vector<IntProperty> properties;
+  int i = 0;
+  while (true) {
+    auto prop = state->CreateIntProperty("p" + std::to_string(i++), parent_index, 0);
+    if (!prop) {
+      break;
+    }
+    properties.push_back(std::move(prop));
+  }
+
+  // Now the heap is completely full.
+  // Let's free exactly one block of size 32 by deleting the last property.
+  ASSERT_TRUE(!properties.empty());
+  properties.pop_back();
+
+  // Re-scan to get the current allocated blocks count.
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks_full;
+  snapshot = SnapshotAndScan(state->GetVmo(), &blocks_full, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+  size_t allocated_count_before_failed_creation = allocated_blocks;
+
+  auto* parent_block_full = blocks_full.find(parent_index)->block;
+  uint64_t parent_refcount_before = parent_block_full->payload.u64;
+
+  // Try to create a StringProperty.
+  // This requires allocating a value block (size 32) and a name block (size 32).
+  // The value block allocation will succeed, but name block will fail.
+  // It should roll back completely.
+  auto failed_prop = state->CreateStringProperty("string_prop", parent_index, "value");
+  ASSERT_FALSE(failed_prop);
+
+  // Verify parent refcount is unchanged.
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks_after;
+  snapshot = SnapshotAndScan(state->GetVmo(), &blocks_after, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+
+  auto* parent_block_after = blocks_after.find(parent_index)->block;
+  EXPECT_EQ(parent_block_after->payload.u64, parent_refcount_before);
+
+  // Verify allocated blocks count is unchanged (no leaks).
+  EXPECT_EQ(allocated_blocks, allocated_count_before_failed_creation);
+}
+
 }  // namespace

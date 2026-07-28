@@ -216,6 +216,8 @@ class State final {
   InspectStats GetStats() const;
 
  private:
+  class Txn;
+
   // Holder for a LazyNodeCallbackFn.
   //
   // This class ensures that the callback function is only called once at a time, and it allows
@@ -266,7 +268,9 @@ class State final {
 
   State(std::unique_ptr<Heap> heap, BlockIndex header);
 
-  void DecrementParentRefcount(BlockIndex value_index) __TA_REQUIRES(mutex_);
+  Txn OpenTransaction(std::lock_guard<std::mutex>& token) __TA_REQUIRES(mutex_);
+
+  void DecrementParentRefcount(BlockIndex parent_index) __TA_REQUIRES(mutex_);
 
   // Transaction-conscious helper functions for using AutoGenerationIncrement.
   // In the event that at
@@ -278,8 +282,8 @@ class State final {
       __TA_REQUIRES(mutex_);
 
   // Helper method for creating a new VALUE block type.
-  zx_status_t InnerCreateValue(std::string_view name, BlockType type, BlockIndex parent_index,
-                               BlockIndex* out_name, BlockIndex* out_value,
+  zx_status_t InnerCreateValue(Txn& txn, std::string_view name, BlockType type,
+                               BlockIndex parent_index, BlockIndex* out_name, BlockIndex* out_value,
                                size_t min_size_required = kMinOrderSize) __TA_REQUIRES(mutex_);
 
   // Helper method to create a new LINK block that calls a callback when followed.

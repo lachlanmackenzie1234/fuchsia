@@ -24,6 +24,7 @@ rustc_library("fuchsia-inspect") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:paste",
+    "//third_party/rust_crates:smallvec",
     "//third_party/rust_crates:thiserror",
   ]
 
