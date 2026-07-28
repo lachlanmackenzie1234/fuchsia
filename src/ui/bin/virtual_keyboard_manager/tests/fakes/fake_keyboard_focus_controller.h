@@ -47,10 +47,23 @@ class FakeKeyboardFocusController
   // Returns the kernel object ID (koid) of the last view ref that was received.
   zx_koid_t get_last_view_ref_koid();
 
+  // Control whether Notify calls should be responded to immediately.
+  void SetDeferNotifyResponse(bool defer) { defer_notify_response_ = defer; }
+
+  // Completes a deferred Notify call.
+  void CompleteNotify() {
+    if (deferred_callback_) {
+      deferred_callback_();
+      deferred_callback_ = nullptr;
+    }
+  }
+
  private:
   fidl::BindingSet<fuchsia::ui::keyboard::focus::Controller> bindings_;
   int num_calls_{};
   std::function<void(const fuchsia::ui::views::ViewRef& received_view_ref)> on_notify_callback_;
+  bool defer_notify_response_{false};
+  NotifyCallback deferred_callback_;
 };
 
 }  // namespace virtual_keyboard_manager::testing

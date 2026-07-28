@@ -7,6 +7,7 @@
 #include <fuchsia/ui/focus/cpp/fidl.h>
 #include <fuchsia/ui/keyboard/focus/cpp/fidl.h>
 #include <lib/fidl/cpp/binding_set.h>
+#include <lib/fit/defer.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/status.h>
@@ -59,14 +60,17 @@ void FocusDispatcher::OnFocusChange(FocusChain new_focus_chain,
       }
 
       if (keyboard_focus_ctl_) {
-        keyboard_focus_ctl_->Notify(fidl::Clone(last_view_ref), [] {
-          FX_LOGS(DEBUG) << "FocusDispatcher::OnFocusChange: notify succeeded.";
-        });
+        auto deferred_callback = fit::defer(std::move(callback));
+        keyboard_focus_ctl_->Notify(fidl::Clone(last_view_ref),
+                                    [deferred_callback = std::move(deferred_callback)]() mutable {
+                                      FX_LOGS(DEBUG)
+                                          << "FocusDispatcher::OnFocusChange: notify succeeded.";
+                                      deferred_callback.call();
+                                    });
+        return;
       }
     }
   }
-  // Callback is invoked regardless of whether `Notify` succeeds, and
-  // asynchronouly with Controller.Notify above.
   callback();
 }
 

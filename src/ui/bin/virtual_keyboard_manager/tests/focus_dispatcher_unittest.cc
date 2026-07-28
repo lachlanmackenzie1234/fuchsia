@@ -136,6 +136,52 @@ TEST_F(FocusDispatcherTest, Forward) {
   EXPECT_TRUE(local_listener_notified_);
 }
 
+TEST_F(FocusDispatcherTest, DeferCallbackUntilKeyboardFocusControllerResponds) {
+  RunLoopUntilIdle();
+  ASSERT_NE(0, register_calls_) << "FocusDispatcher should call Register";
+
+  fake_keyboard_focus_controller_->SetDeferNotifyResponse(true);
+
+  std::vector<ViewRef> v;
+  v.emplace_back(MakeViewRef());
+  ChangeFocus(std::move(v));
+
+  RunLoopUntilIdle();
+  // The focus change callback should NOT have been called yet because we deferred the response.
+  EXPECT_EQ(0, focus_dispatched_);
+  EXPECT_TRUE(keyboard_notification_received_);
+  EXPECT_TRUE(local_listener_notified_);
+
+  // Now complete the notify.
+  fake_keyboard_focus_controller_->CompleteNotify();
+
+  RunLoopUntilIdle();
+  // Now the focus change callback should have been called.
+  EXPECT_NE(0, focus_dispatched_);
+}
+
+TEST_F(FocusDispatcherTest, DisconnectKeyboardFocusControllerInFlight) {
+  RunLoopUntilIdle();
+  ASSERT_NE(0, register_calls_) << "FocusDispatcher should call Register";
+
+  fake_keyboard_focus_controller_->SetDeferNotifyResponse(true);
+
+  std::vector<ViewRef> v;
+  v.emplace_back(MakeViewRef());
+  ChangeFocus(std::move(v));
+
+  RunLoopUntilIdle();
+  // The focus change callback should NOT have been called yet.
+  EXPECT_EQ(0, focus_dispatched_);
+
+  // Now disconnect the keyboard focus controller by resetting it.
+  fake_keyboard_focus_controller_.reset();
+
+  RunLoopUntilIdle();
+  // The channel closure should have triggered the deferred callback.
+  EXPECT_NE(0, focus_dispatched_);
+}
+
 TEST_F(FocusDispatcherTest, EmptyFocusChain) {
   RunLoopUntilIdle();
   ASSERT_NE(0, register_calls_) << "FocusDispatcher should call Register";

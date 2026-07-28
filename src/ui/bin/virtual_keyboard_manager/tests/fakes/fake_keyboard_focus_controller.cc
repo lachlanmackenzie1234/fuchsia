@@ -37,7 +37,11 @@ void FakeKeyboardFocusController::Notify(ViewRef view_ref, NotifyCallback callba
   if (on_notify_callback_) {
     on_notify_callback_(view_ref);
   }
-  callback();
+  if (defer_notify_response_) {
+    deferred_callback_ = std::move(callback);
+  } else {
+    callback();
+  }
 }
 
 }  // namespace testing
