@@ -34,10 +34,18 @@ use focus_chain_provider::FocusChainProviderPublisher;
 use fsettings::LightProxy;
 use fuchsia_async as fasync;
 use fuchsia_inspect as inspect;
+use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
 use sorted_vec_map::SortedVecSet;
 use std::rc::Rc;
+
+#[allow(dead_code)]
+pub enum InputTask {
+    Fasync(fasync::Task<()>),
+    Handle(crate::lib::dispatcher::TaskHandle<()>),
+    Cancelable(crate::lib::light_sensor::CancelableTask),
+}
 
 /// Begins handling input events. The returned future will complete when
 /// input events are no longer being handled.
@@ -76,7 +84,8 @@ pub async fn handle_input(
     light_sensor_configuration: Option<LightSensorConfiguration>,
     enable_merge_touch_events: bool,
     visual_debugging_level: u8,
-) -> Result<InputPipeline, Error> {
+) -> Result<(InputPipeline, Vec<InputTask>), Error> {
+    let mut tasks = Vec::new();
     let input_handlers_node = node.create_child("input_handlers");
     let metrics_logger = metrics::MetricsLogger::new(incoming);
 
@@ -84,13 +93,14 @@ pub async fn handle_input(
         FactoryResetHandler::new(incoming.clone(), &input_handlers_node, metrics_logger.clone());
     let media_buttons_handler =
         MediaButtonsHandler::new(&input_handlers_node, metrics_logger.clone());
-    let touch_injector_handler = create_touchscreen_handler(
+    let (touch_injector_handler, touch_task) = create_touchscreen_handler(
         incoming,
         scene_manager.clone(),
         &input_handlers_node,
         metrics_logger.clone(),
     )
     .await?;
+    tasks.push(InputTask::Fasync(touch_task));
 
     let supported_input_devices =
         input_device::InputDeviceType::list_from_structured_config_list(&supported_input_devices);
@@ -136,7 +146,7 @@ pub async fn handle_input(
             .await
             .context("unable to create light sensor handler")?;
             if let Some(task) = task {
-                task.detach();
+                tasks.push(InputTask::Cancelable(task));
             }
             Some(handler)
         } else {
@@ -149,25 +159,28 @@ pub async fn handle_input(
     // Create parent node of inspect nodes for device bindings.
     let injected_devices_node = node.create_child("injected_input_devices");
 
+    let (assembly, assembly_tasks) = build_input_pipeline_assembly(
+        incoming,
+        scene_manager,
+        &node,
+        display_ownership_event,
+        factory_reset_handler.clone(),
+        media_buttons_handler.clone(),
+        light_sensor_handler.clone(),
+        touch_injector_handler.clone(),
+        SortedVecSet::from_iter(supported_input_devices.iter()),
+        focus_chain_publisher,
+        input_handlers_node,
+        metrics_logger.clone(),
+        visual_debugging_level,
+    )
+    .await;
+    tasks.extend(assembly_tasks);
+
     let input_pipeline = InputPipeline::new(
         incoming,
         supported_input_devices.clone(),
-        build_input_pipeline_assembly(
-            incoming,
-            scene_manager,
-            &node,
-            display_ownership_event,
-            factory_reset_handler.clone(),
-            media_buttons_handler.clone(),
-            light_sensor_handler.clone(),
-            touch_injector_handler.clone(),
-            SortedVecSet::from_iter(supported_input_devices.iter()),
-            focus_chain_publisher,
-            input_handlers_node,
-            metrics_logger.clone(),
-            visual_debugging_level,
-        )
-        .await,
+        assembly,
         node,
         InputPipelineFeatureFlags { enable_merge_touch_events },
         metrics_logger.clone(),
@@ -181,7 +194,7 @@ pub async fn handle_input(
             light_sensor_request_stream_receiver,
             light_sensor_handler,
         );
-        fasync::Task::local(light_sensor_fut).detach();
+        tasks.push(InputTask::Fasync(fasync::Task::local(light_sensor_fut)));
     }
 
     let input_device_registry_fut = handle_input_device_registry_request_streams(
@@ -193,28 +206,28 @@ pub async fn handle_input(
         input_pipeline.feature_flags.clone(),
         metrics_logger.clone(),
     );
-    fasync::Task::local(input_device_registry_fut).detach();
+    tasks.push(InputTask::Fasync(fasync::Task::local(input_device_registry_fut)));
 
     let factory_reset_countdown_fut = handle_factory_reset_countdown_request_stream(
         factory_reset_countdown_request_stream_receiver,
         factory_reset_handler.clone(),
     );
-    fasync::Task::local(factory_reset_countdown_fut).detach();
+    tasks.push(InputTask::Fasync(fasync::Task::local(factory_reset_countdown_fut)));
 
     let factory_reset_device_device_fut = handle_recovery_policy_device_request_stream(
         factory_reset_device_request_stream_receiver,
         factory_reset_handler.clone(),
     );
-    fasync::Task::local(factory_reset_device_device_fut).detach();
+    tasks.push(InputTask::Fasync(fasync::Task::local(factory_reset_device_device_fut)));
 
     let media_buttons_listener_registry_fut = handle_device_listener_registry_request_stream(
         media_buttons_listener_registry_request_stream_receiver,
         media_buttons_handler.clone(),
         touch_injector_handler.clone(),
     );
-    fasync::Task::local(media_buttons_listener_registry_fut).detach();
+    tasks.push(InputTask::Fasync(fasync::Task::local(media_buttons_listener_registry_fut)));
 
-    Ok(input_pipeline)
+    Ok((input_pipeline, tasks))
 }
 
 fn setup_pointer_injector_config_request_stream(
@@ -224,10 +237,11 @@ fn setup_pointer_injector_config_request_stream(
         fidl_fuchsia_ui_pointerinjector_configuration::SetupMarker,
     >();
 
-    crate::scene_management::handle_pointer_injector_configuration_setup_request_stream(
+    let task = crate::scene_management::handle_pointer_injector_configuration_setup_request_stream(
         setup_request_stream,
-        scene_manager,
+        scene_manager.clone(),
     );
+    scene_manager.manage_task(task);
 
     setup_proxy
 }
@@ -237,7 +251,7 @@ async fn create_touchscreen_handler(
     scene_manager: Rc<dyn SceneManagerTrait>,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
-) -> Result<Rc<TouchInjectorHandler>, Error> {
+) -> Result<(Rc<TouchInjectorHandler>, fasync::Task<()>), Error> {
     let setup_proxy = setup_pointer_injector_config_request_stream(scene_manager.clone());
     let size = scene_manager.get_pointerinjection_display_size();
     let touch_handler = TouchInjectorHandler::new_with_config_proxy(
@@ -250,8 +264,8 @@ async fn create_touchscreen_handler(
     .await;
     match touch_handler {
         Ok(touch_handler) => {
-            fasync::Task::local(touch_handler.clone().watch_viewport()).detach();
-            Ok(touch_handler)
+            let task = fasync::Task::local(touch_handler.clone().watch_viewport());
+            Ok((touch_handler, task))
         }
         Err(e) => {
             error!("Touch injector handler was not created: {:?}", e);
@@ -267,7 +281,7 @@ async fn add_mouse_handler(
     sender: futures::channel::mpsc::Sender<CursorMessage>,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
+) -> (InputPipelineAssembly, Option<fasync::Task<()>>) {
     let setup_proxy = setup_pointer_injector_config_request_stream(scene_manager.clone());
     let size = scene_manager.get_pointerinjection_display_size();
     let mouse_handler = MouseInjectorHandler::new_with_config_proxy(
@@ -279,9 +293,10 @@ async fn add_mouse_handler(
         metrics_logger,
     )
     .await;
+    let mut task = None;
     match mouse_handler {
         Ok(mouse_handler) => {
-            fasync::Task::local(mouse_handler.clone().watch_viewport()).detach();
+            task = Some(fasync::Task::local(mouse_handler.clone().watch_viewport()));
             assembly = assembly.add_handler(mouse_handler);
         }
         Err(e) => error!(
@@ -289,7 +304,7 @@ async fn add_mouse_handler(
             e
         ),
     };
-    assembly
+    (assembly, task)
 }
 
 /// Registers the keyboard handlers that deal with keyboard.
@@ -329,13 +344,14 @@ async fn register_mouse_related_input_handlers(
     scene_manager: Rc<dyn SceneManagerTrait>,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
+) -> (InputPipelineAssembly, Vec<InputTask>) {
+    let mut tasks = Vec::new();
     let (sender, mut receiver) = futures::channel::mpsc::channel(0);
 
     // mouse injector handler is the last handler for mouse event handling, it sends out mouse
     // events to scenic. Please double check tracing events, when changing the handlers assembly
     // order.
-    let assembly = add_mouse_handler(
+    let (assembly, mouse_task) = add_mouse_handler(
         incoming,
         scene_manager.clone(),
         assembly,
@@ -344,9 +360,12 @@ async fn register_mouse_related_input_handlers(
         metrics_logger,
     )
     .await;
+    if let Some(task) = mouse_task {
+        tasks.push(InputTask::Fasync(task));
+    }
 
     let scene_manager = scene_manager.clone();
-    fasync::Task::local(async move {
+    let cursor_task = fasync::Task::local(async move {
         while let Some(message) = receiver.next().await {
             match message {
                 CursorMessage::SetPosition(position) => scene_manager.set_cursor_position(position),
@@ -355,9 +374,9 @@ async fn register_mouse_related_input_handlers(
                 }
             }
         }
-    })
-    .detach();
-    assembly
+    });
+    tasks.push(InputTask::Fasync(cursor_task));
+    (assembly, tasks)
 }
 
 const VISUAL_DEBUGGING_LEVEL_INFO_PLATFORM: u8 = 2;
@@ -376,7 +395,8 @@ async fn build_input_pipeline_assembly(
     input_handlers_node: inspect::Node,
     metrics_logger: metrics::MetricsLogger,
     visual_debugging_level: u8,
-) -> InputPipelineAssembly {
+) -> (InputPipelineAssembly, Vec<InputTask>) {
+    let mut tasks = Vec::new();
     let mut assembly = InputPipelineAssembly::new(metrics_logger.clone());
     {
         // Keep this handler first because it keeps performance measurement counters
@@ -422,7 +442,7 @@ async fn build_input_pipeline_assembly(
 
         if supported_input_devices.contains(&input_device::InputDeviceType::Mouse) {
             info!("Registering mouse-related input handlers.");
-            assembly = register_mouse_related_input_handlers(
+            let (new_assembly, mouse_tasks) = register_mouse_related_input_handlers(
                 incoming,
                 assembly,
                 scene_manager.clone(),
@@ -430,6 +450,8 @@ async fn build_input_pipeline_assembly(
                 metrics_logger.clone(),
             )
             .await;
+            assembly = new_assembly;
+            tasks.extend(mouse_tasks);
         }
 
         if supported_input_devices.contains(&input_device::InputDeviceType::Touch) {
@@ -455,7 +477,7 @@ async fn build_input_pipeline_assembly(
     // from the Inspect tree when we exit this scope.
     node.record(input_handlers_node);
 
-    assembly
+    (assembly, tasks)
 }
 
 /// Hooks up the modifier keys handler.
@@ -521,39 +543,49 @@ pub async fn handle_device_listener_registry_request_stream(
     media_buttons_handler: Rc<MediaButtonsHandler>,
     touch_injector_handler: Rc<TouchInjectorHandler>,
 ) {
-    while let Some(mut stream) = stream_receiver.next().await {
-        let media_buttons_handler = media_buttons_handler.clone();
-        let touch_injector_handler = touch_injector_handler.clone();
-        fasync::Task::local(async move {
-            loop {
-                match stream.try_next().await {
-                    Ok(Some(DeviceListenerRegistryRequest::RegisterListener {
-                        listener,
-                        responder,
-                    })) => {
-                        media_buttons_handler.register_listener_proxy(listener.into_proxy()).await;
-                        let _ = responder.send();
-                    }
-                    Ok(Some(DeviceListenerRegistryRequest::RegisterTouchButtonsListener {
-                        listener,
-                        responder,
-                    })) => {
-                        touch_injector_handler.register_listener_proxy(listener.into_proxy()).await;
-                        let _ = responder.send();
-                    }
-                    Ok(Some(_)) => {}
-                    Ok(None) => {
-                        break;
-                    }
-                    Err(e) => {
-                        warn!("Error handling device listener registry request stream: {}", e);
-                        break;
-                    }
+    let mut tasks = FuturesUnordered::new();
+    loop {
+        futures::select! {
+            stream = stream_receiver.next() => {
+                if let Some(mut stream) = stream {
+                    let media_buttons_handler = media_buttons_handler.clone();
+                    let touch_injector_handler = touch_injector_handler.clone();
+                    tasks.push(fasync::Task::local(async move {
+                        loop {
+                            match stream.try_next().await {
+                                Ok(Some(DeviceListenerRegistryRequest::RegisterListener {
+                                    listener,
+                                    responder,
+                                })) => {
+                                    media_buttons_handler.register_listener_proxy(listener.into_proxy()).await;
+                                    let _ = responder.send();
+                                }
+                                Ok(Some(DeviceListenerRegistryRequest::RegisterTouchButtonsListener {
+                                    listener,
+                                    responder,
+                                })) => {
+                                    touch_injector_handler.register_listener_proxy(listener.into_proxy()).await;
+                                    let _ = responder.send();
+                                }
+                                Ok(Some(_)) => {}
+                                Ok(None) => {
+                                    break;
+                                }
+                                Err(e) => {
+                                    warn!("Error handling device listener registry request stream: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                    }));
+                } else {
+                    break;
                 }
             }
-        })
-        .detach();
+            _ = tasks.select_next_some() => {}
+        }
     }
+    while let Some(_) = tasks.next().await {}
 }
 
 pub async fn handle_factory_reset_countdown_request_stream(
@@ -562,55 +594,85 @@ pub async fn handle_factory_reset_countdown_request_stream(
     >,
     factory_reset_handler: Rc<FactoryResetHandler>,
 ) {
-    while let Some(stream) = stream_receiver.next().await {
-        let factory_reset_handler = factory_reset_handler.clone();
-        fasync::Task::local(async move {
-            match factory_reset_handler.handle_factory_reset_countdown_request_stream(stream).await
-            {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failure while serving FactoryResetCountdown: {}", e);
+    let mut tasks = FuturesUnordered::new();
+    loop {
+        futures::select! {
+            stream = stream_receiver.next() => {
+                if let Some(stream) = stream {
+                    let factory_reset_handler = factory_reset_handler.clone();
+                    tasks.push(fasync::Task::local(async move {
+                        match factory_reset_handler.handle_factory_reset_countdown_request_stream(stream).await
+                        {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!("failure while serving FactoryResetCountdown: {}", e);
+                            }
+                        }
+                    }));
+                } else {
+                    break;
                 }
             }
-        })
-        .detach();
+            _ = tasks.select_next_some() => {}
+        }
     }
+    while let Some(_) = tasks.next().await {}
 }
 
 pub async fn handle_light_sensor_request_stream(
     mut stream_receiver: futures::channel::mpsc::UnboundedReceiver<LightSensorRequestStream>,
     light_sensor_handler: Rc<CalibratedLightSensorHandler>,
 ) {
-    while let Some(stream) = stream_receiver.next().await {
-        let light_sensor_handler = light_sensor_handler.clone();
-        fasync::Task::local(async move {
-            match light_sensor_handler.handle_light_sensor_request_stream(stream).await {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failure while serving fuchsia.lightsensor.Sensor: {e}");
+    let mut tasks = FuturesUnordered::new();
+    loop {
+        futures::select! {
+            stream = stream_receiver.next() => {
+                if let Some(stream) = stream {
+                    let light_sensor_handler = light_sensor_handler.clone();
+                    tasks.push(fasync::Task::local(async move {
+                        match light_sensor_handler.handle_light_sensor_request_stream(stream).await {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!("failure while serving fuchsia.lightsensor.Sensor: {e}");
+                            }
+                        }
+                    }));
+                } else {
+                    break;
                 }
             }
-        })
-        .detach();
+            _ = tasks.select_next_some() => {}
+        }
     }
+    while let Some(_) = tasks.next().await {}
 }
 
 pub async fn handle_recovery_policy_device_request_stream(
     mut stream_receiver: futures::channel::mpsc::UnboundedReceiver<DeviceRequestStream>,
     factory_reset_handler: Rc<FactoryResetHandler>,
 ) {
-    while let Some(stream) = stream_receiver.next().await {
-        let factory_reset_handler = factory_reset_handler.clone();
-        fasync::Task::local(async move {
-            match factory_reset_handler.handle_recovery_policy_device_request_stream(stream).await {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failure while serving fuchsia.recovery.policy.Device: {}", e);
+    let mut tasks = FuturesUnordered::new();
+    loop {
+        futures::select! {
+            stream = stream_receiver.next() => {
+                if let Some(stream) = stream {
+                    let factory_reset_handler = factory_reset_handler.clone();
+                    tasks.push(fasync::Task::local(async move {
+                        match factory_reset_handler.handle_recovery_policy_device_request_stream(stream).await {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!("failure while serving fuchsia.recovery.policy.Device: {}", e);
+                            }
+                        }
+                    }));
+                } else {
+                    break;
                 }
             }
-        })
-        .detach();
+            _ = tasks.select_next_some() => {}
+        }
     }
+    while let Some(_) = tasks.next().await {}
 }
 
 pub async fn handle_input_device_registry_request_streams(
@@ -624,43 +686,47 @@ pub async fn handle_input_device_registry_request_streams(
     feature_flags: crate::lib::input_device::InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
 ) {
-    while let Some(stream) = stream_receiver.next().await {
-        let input_device_types_clone = input_device_types.clone();
-        let input_event_sender_clone = input_event_sender.clone();
-        let input_device_bindings_clone = input_device_bindings.clone();
-        let feature_flags_clone = feature_flags.clone();
-        let metrics_logger_clone = metrics_logger.clone();
-
-        // Must clone inspect node since we move it to our async task, but we want to
-        // continue to operate on this inspect tree in future iterations of the loop.
-        let node_clone = injected_devices_node.clone_weak();
-
-        // TODO(https://fxbug.dev/42061133): Push this task down to InputPipeline.
-        // I didn't do that here, to keep the scope of this change small.
-        Dispatcher::spawn_local(async move {
-            match InputPipeline::handle_input_device_registry_request_stream(
-                stream,
-                &input_device_types_clone,
-                &input_event_sender_clone,
-                &input_device_bindings_clone,
-                &node_clone,
-                feature_flags_clone,
-                metrics_logger_clone,
-            )
-            .await
-            {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!(
-                        "failure while serving InputDeviceRegistry: {}; \
-                             will continue serving other clients",
-                        e
-                    );
+    let mut tasks = FuturesUnordered::new();
+    loop {
+        futures::select! {
+            stream = stream_receiver.next() => {
+                if let Some(stream) = stream {
+                    let input_device_types_clone = input_device_types.clone();
+                    let input_event_sender_clone = input_event_sender.clone();
+                    let input_device_bindings_clone = input_device_bindings.clone();
+                    let feature_flags_clone = feature_flags.clone();
+                    let metrics_logger_clone = metrics_logger.clone();
+                    let node_clone = injected_devices_node.clone_weak();
+                    tasks.push(Dispatcher::spawn_local(async move {
+                        match InputPipeline::handle_input_device_registry_request_stream(
+                            stream,
+                            &input_device_types_clone,
+                            &input_event_sender_clone,
+                            &input_device_bindings_clone,
+                            &node_clone,
+                            feature_flags_clone,
+                            metrics_logger_clone,
+                        )
+                        .await
+                        {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!(
+                                    "failure while serving InputDeviceRegistry: {}; \
+                                         will continue serving other clients",
+                                    e
+                                );
+                            }
+                        }
+                    }));
+                } else {
+                    break;
                 }
             }
-        })
-        .detach();
+            _ = tasks.select_next_some() => {}
+        }
     }
+    while let Some(_) = tasks.next().await {}
 }
 
 #[cfg(test)]

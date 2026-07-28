@@ -7,14 +7,16 @@ use async_trait::async_trait;
 use fidl_fuchsia_ui_app as ui_app;
 use fidl_fuchsia_ui_views as ui_views;
 use fidl_fuchsia_ui_views::ViewRef;
+use fuchsia_async as fasync;
 use scene_management::{DisplayMetrics, InjectorViewportSubscriber, SceneManagerTrait};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 pub struct MockSceneManager {
     was_present_root_view_called: Cell<bool>,
     was_set_root_view_called: Cell<bool>,
     set_root_view_viewport_token: Cell<Option<ui_views::ViewportCreationToken>>,
     set_root_view_view_ref: Cell<Option<ViewRef>>,
+    tasks: RefCell<Vec<fasync::Task<()>>>,
 }
 
 impl MockSceneManager {
@@ -24,6 +26,7 @@ impl MockSceneManager {
             was_set_root_view_called: Cell::new(false),
             set_root_view_viewport_token: Cell::new(None),
             set_root_view_view_ref: Cell::new(None),
+            tasks: RefCell::new(vec![]),
         }
     }
 
@@ -94,5 +97,9 @@ impl SceneManagerTrait for MockSceneManager {
 
     fn get_display_metrics(&self) -> &DisplayMetrics {
         unimplemented!()
+    }
+
+    fn manage_task(&self, task: fasync::Task<()>) {
+        self.tasks.borrow_mut().push(task);
     }
 }

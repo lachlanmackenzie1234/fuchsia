@@ -290,6 +290,9 @@ pub struct SceneManager {
 
     // Lock to serialize set_root_view calls and prevent interleaving race conditions.
     set_root_view_lock: futures::lock::Mutex<()>,
+
+    // Keep spawned tasks alive.
+    _tasks: RefCell<Vec<fasync::Task<()>>>,
 }
 
 /// A [SceneManager] manages a Scenic scene graph, and allows clients to add views to it.
@@ -362,6 +365,9 @@ pub trait SceneManagerTrait {
     fn get_pointerinjector_viewport_watcher_subscription(&self) -> InjectorViewportSubscriber;
 
     fn get_display_metrics(&self) -> &DisplayMetrics;
+
+    /// Store a task to keep it alive for the lifetime of the SceneManager.
+    fn manage_task(&self, task: fasync::Task<()>);
 }
 
 #[async_trait(?Send)]
@@ -485,6 +491,10 @@ impl SceneManagerTrait for SceneManager {
     fn get_display_metrics(&self) -> &DisplayMetrics {
         &self.display_metrics
     }
+
+    fn manage_task(&self, task: fasync::Task<()>) {
+        self._tasks.borrow_mut().push(task);
+    }
 }
 
 const ROOT_VIEW_DEBUG_NAME: &str = "SceneManager Display";
@@ -510,7 +520,7 @@ impl SceneManager {
     ) -> Result<Self, Error> {
         // If scenic closes, all the Scenic connections become invalid. This task exits the
         // process in response.
-        start_exit_on_scenic_closed_task(display.clone());
+        let mut tasks = vec![start_exit_on_scenic_closed_task(display.clone())];
 
         let mut id_generator = scenic::flatland::IdGenerator::new();
 
@@ -690,23 +700,23 @@ impl SceneManager {
 
         // Start Present() loops for both Flatland instances, and request that both be presented.
         let (root_flatland_presentation_sender, root_receiver) = unbounded();
-        start_flatland_presentation_loop(
+        tasks.push(start_flatland_presentation_loop(
             root_receiver,
             Arc::downgrade(&root_flatland.flatland),
             ROOT_VIEW_DEBUG_NAME.to_string(),
-        );
+        ));
         let (pointerinjector_flatland_presentation_sender, pointerinjector_receiver) = unbounded();
-        start_flatland_presentation_loop(
+        tasks.push(start_flatland_presentation_loop(
             pointerinjector_receiver,
             Arc::downgrade(&pointerinjector_flatland.flatland),
             POINTER_INJECTOR_DEBUG_NAME.to_string(),
-        );
+        ));
         let (scene_flatland_presentation_sender, scene_receiver) = unbounded();
-        start_flatland_presentation_loop(
+        tasks.push(start_flatland_presentation_loop(
             scene_receiver,
             Arc::downgrade(&scene_flatland.flatland),
             SCENE_DEBUG_NAME.to_string(),
-        );
+        ));
 
         let mut pingback_channels = Vec::new();
         pingback_channels.push(request_present_with_pingback(&root_flatland_presentation_sender)?);
@@ -766,6 +776,7 @@ impl SceneManager {
             display_metrics,
             device_pixel_ratio,
             set_root_view_lock: futures::lock::Mutex::new(()),
+            _tasks: RefCell::new(tasks),
         })
     }
 
@@ -895,20 +906,21 @@ pub fn create_viewport_hanging_get(
     Rc::new(RefCell::new(hanging_get::HangingGet::new(initial_spec, notify_fn)))
 }
 
-pub fn start_exit_on_scenic_closed_task(flatland_proxy: ui_comp::FlatlandDisplayProxy) {
+pub fn start_exit_on_scenic_closed_task(
+    flatland_proxy: ui_comp::FlatlandDisplayProxy,
+) -> fasync::Task<()> {
     fasync::Task::local(async move {
         let _ = flatland_proxy.on_closed().await;
         info!("Scenic died, closing SceneManager too.");
         process::exit(1);
     })
-    .detach()
 }
 
 pub fn start_flatland_presentation_loop(
     mut receiver: PresentationReceiver,
     weak_flatland: Weak<ui_comp::FlatlandProxy>,
     debug_name: String,
-) {
+) -> fasync::Task<()> {
     fasync::Task::local(async move {
         let mut present_count = 0;
         let scheduler = ThroughputScheduler::new();
@@ -927,110 +939,110 @@ pub fn start_flatland_presentation_loop(
 
         loop {
             futures::select! {
-                message = receiver.next() => {
-                    match message {
-                        Some(PresentationMessage::RequestPresent) => {
-                            scheduler.request_present();
-                        }
-                        Some(PresentationMessage::RequestPresentWithPingback(channel)) => {
-                            channels_awaiting_pingback.back_mut().unwrap().push(channel);
-                            scheduler.request_present();
-                        }
-                        None => {}
-                    }
-                }
-                flatland_event = flatland_event_stream.next() => {
-                    match flatland_event {
-                        Some(Ok(ui_comp::FlatlandEvent::OnNextFrameBegin{ values })) => {
-                            trace::duration!("scene_manager", "SceneManager::OnNextFrameBegin",
-                                             "debug_name" => &*debug_name);
-                            let credits = values
-                                          .additional_present_credits
-                                          .expect("Present credits must exist");
-                            let infos = values
-                                .future_presentation_infos
-                                .expect("Future presentation infos must exist")
-                                .iter()
-                                .map(
-                                |x| PresentationInfo{
-                                    latch_point: zx::MonotonicInstant::from_nanos(x.latch_point.unwrap()),
-                                    presentation_time: zx::MonotonicInstant::from_nanos(
-                                                        x.presentation_time.unwrap())
-                                })
-                                .collect();
-                            scheduler.on_next_frame_begin(credits, infos);
-                        }
-                        Some(Ok(ui_comp::FlatlandEvent::OnFramePresented{ frame_presented_info })) => {
-                            trace::duration!("scene_manager", "SceneManager::OnFramePresented",
-                                             "debug_name" => &*debug_name);
-                            let actual_presentation_time =
-                                zx::MonotonicInstant::from_nanos(frame_presented_info.actual_presentation_time);
-                            let presented_infos: Vec<PresentedInfo> =
-                                frame_presented_info.presentation_infos
-                                .into_iter()
-                                .map(|x| x.into())
-                                .collect();
-
-                            // Pingbacks for presented updates. For each presented frame, drain all
-                            // of the corresponding pingback channels
-                            for _ in 0..presented_infos.len() {
-                                for channel in channels_awaiting_pingback.pop_back().unwrap() {
-                                    _ = channel.send(());
-                                }
+                    message = receiver.next() => {
+                        match message {
+                            Some(PresentationMessage::RequestPresent) => {
+                                scheduler.request_present();
                             }
-
-                            scheduler.on_frame_presented(actual_presentation_time, presented_infos);
+                            Some(PresentationMessage::RequestPresentWithPingback(channel)) => {
+                                channels_awaiting_pingback.back_mut().unwrap().push(channel);
+                                scheduler.request_present();
+                            }
+                            None => {}
                         }
-                        Some(Ok(ui_comp::FlatlandEvent::OnError{ error })) => {
-                            error!(
-                                "Received FlatlandError code: {}; exiting listener loop for {debug_name}",
-                                error.into_primitive()
+                    }
+                    flatland_event = flatland_event_stream.next() => {
+                        match flatland_event {
+                            Some(Ok(ui_comp::FlatlandEvent::OnNextFrameBegin{ values })) => {
+                                trace::duration!("scene_manager", "SceneManager::OnNextFrameBegin",
+                                                 "debug_name" => &*debug_name);
+                                let credits = values
+                                              .additional_present_credits
+                                              .expect("Present credits must exist");
+                                let infos = values
+                                    .future_presentation_infos
+                                    .expect("Future presentation infos must exist")
+                                    .iter()
+                                    .map(
+                                    |x| PresentationInfo{
+                                        latch_point: zx::MonotonicInstant::from_nanos(x.latch_point.unwrap()),
+                                        presentation_time: zx::MonotonicInstant::from_nanos(
+                                                            x.presentation_time.unwrap())
+                                    })
+                                    .collect();
+                                scheduler.on_next_frame_begin(credits, infos);
+                            }
+                            Some(Ok(ui_comp::FlatlandEvent::OnFramePresented{ frame_presented_info })) => {
+                                trace::duration!("scene_manager", "SceneManager::OnFramePresented",
+                                                 "debug_name" => &*debug_name);
+                                let actual_presentation_time =
+                                    zx::MonotonicInstant::from_nanos(frame_presented_info.actual_presentation_time);
+                                let presented_infos: Vec<PresentedInfo> =
+                                    frame_presented_info.presentation_infos
+                                    .into_iter()
+                                    .map(|x| x.into())
+                                    .collect();
+
+                                // Pingbacks for presented updates. For each presented frame, drain all
+                                // of the corresponding pingback channels
+                                for _ in 0..presented_infos.len() {
+                                    for channel in channels_awaiting_pingback.pop_back().unwrap() {
+                                        _ = channel.send(());
+                                    }
+                                }
+
+                                scheduler.on_frame_presented(actual_presentation_time, presented_infos);
+                            }
+                            Some(Ok(ui_comp::FlatlandEvent::OnError{ error })) => {
+                                error!(
+                                    "Received FlatlandError code: {}; exiting listener loop for {debug_name}",
+                                    error.into_primitive()
+                                );
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                    present_parameters = scheduler.wait_to_update().fuse() => {
+                        trace::duration!("scene_manager", "SceneManager::Present",
+                                         "debug_name" => &*debug_name);
+
+                        match debug_name.as_str() {
+                            ROOT_VIEW_DEBUG_NAME => {
+                                trace::flow_begin!("gfx", ROOT_VIEW_PRESENT_TRACING_NAME, present_count.into());
+                            }
+                            POINTER_INJECTOR_DEBUG_NAME => {
+                                trace::flow_begin!("gfx", POINTER_INJECTOR_PRESENT_TRACING_NAME, present_count.into());
+                            }
+                            SCENE_DEBUG_NAME => {
+                                trace::flow_begin!("gfx", SCENE_TRACING_NAME, present_count.into());
+                            }
+                            _ => {
+                                warn!("SceneManager::Present with unknown debug_name {:?}", debug_name);
+                            }
+                        }
+                        present_count += 1;
+                        channels_awaiting_pingback.push_front(Vec::new());
+                        if let Some(flatland) = weak_flatland.upgrade() {
+                            flatland
+                                .present(present_parameters.into())
+                                .expect("Present failed for {debug_name}");
+                        } else {
+                            warn!(
+                                "Failed to upgrade Flatand weak ref; exiting listener loop for {debug_name}"
                             );
                             return;
                         }
-                        _ => {}
-                    }
-                }
-                present_parameters = scheduler.wait_to_update().fuse() => {
-                    trace::duration!("scene_manager", "SceneManager::Present",
-                                     "debug_name" => &*debug_name);
-
-                    match debug_name.as_str() {
-                        ROOT_VIEW_DEBUG_NAME => {
-                            trace::flow_begin!("gfx", ROOT_VIEW_PRESENT_TRACING_NAME, present_count.into());
-                        }
-                        POINTER_INJECTOR_DEBUG_NAME => {
-                            trace::flow_begin!("gfx", POINTER_INJECTOR_PRESENT_TRACING_NAME, present_count.into());
-                        }
-                        SCENE_DEBUG_NAME => {
-                            trace::flow_begin!("gfx", SCENE_TRACING_NAME, present_count.into());
-                        }
-                        _ => {
-                            warn!("SceneManager::Present with unknown debug_name {:?}", debug_name);
-                        }
-                    }
-                    present_count += 1;
-                    channels_awaiting_pingback.push_front(Vec::new());
-                    if let Some(flatland) = weak_flatland.upgrade() {
-                        flatland
-                            .present(present_parameters.into())
-                            .expect("Present failed for {debug_name}");
-                    } else {
-                        warn!(
-                            "Failed to upgrade Flatand weak ref; exiting listener loop for {debug_name}"
-                        );
-                        return;
                     }
             }
         }
-    }})
-    .detach()
+    })
 }
 
 pub fn handle_pointer_injector_configuration_setup_request_stream(
     mut request_stream: PointerInjectorConfigurationSetupRequestStream,
     scene_manager: Rc<dyn SceneManagerTrait>,
-) {
+) -> fasync::Task<()> {
     fasync::Task::local(async move {
         let subscriber = scene_manager.get_pointerinjector_viewport_watcher_subscription();
 
@@ -1059,5 +1071,4 @@ pub fn handle_pointer_injector_configuration_setup_request_stream(
             }
         }
     })
-    .detach()
 }

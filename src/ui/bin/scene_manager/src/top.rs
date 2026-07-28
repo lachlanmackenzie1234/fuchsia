@@ -38,6 +38,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::stats::InspectorExt;
 use fuchsia_inspect::{Inspector, InspectorConfig};
+use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
 use scene_manager_structured_config::Config;
@@ -261,7 +262,9 @@ pub async fn start(
 
     // Start input pipeline.
     let has_light_sensor_configuration = light_sensor_configuration.is_some();
-    if let Ok(input_pipeline) = crate::input_pipeline::handle_input(
+    #[allow(clippy::collection_is_never_read)]
+    let mut _input_tasks = Vec::new();
+    if let Ok((input_pipeline, tasks)) = crate::input_pipeline::handle_input(
         &incoming,
         scene_manager.clone(),
         input_device_registry_request_stream_receiver,
@@ -279,12 +282,15 @@ pub async fn start(
     )
     .await
     {
+        _input_tasks = tasks;
         if input_pipeline.input_device_types().contains(&InputDeviceType::LightSensor)
             && has_light_sensor_configuration
         {
             fs.dir("svc").add_fidl_service(ExposedServices::LightSensor);
         }
-        Dispatcher::spawn_local(input_pipeline.handle_input_events()).detach();
+        _input_tasks.push(crate::input_pipeline::InputTask::Handle(Dispatcher::spawn_local(
+            input_pipeline.handle_input_events(),
+        )));
     };
 
     let color_transform_manager =
@@ -295,120 +301,132 @@ pub async fn start(
 
     // Concurrency note: spawn a local task in the match branch if the protocol must serve more
     // than a single client at a time.
-    while let Some(service_request) = fs.next().await {
-        match service_request {
-            ExposedServices::ColorAdjustmentHandler(request_stream) => {
-                if attach_a11y_view {
-                    ColorTransformManager::handle_color_adjustment_handler_request_stream(
-                        Rc::clone(color_transform_manager.as_ref().unwrap()),
-                        request_stream,
-                    );
-                } else {
-                    warn!("failed to forward as A11y protocols are disabled");
-                }
-            }
-            ExposedServices::ColorAdjustment(request_stream) => {
-                if attach_a11y_view {
-                    ColorTransformManager::handle_color_adjustment_request_stream(
-                        Rc::clone(color_transform_manager.as_ref().unwrap()),
-                        request_stream,
-                    );
-                } else {
-                    warn!("failed to forward as A11y protocols are disabled");
-                }
-            }
-            ExposedServices::DisplayBacklight(request_stream) => {
-                if attach_a11y_view {
-                    ColorTransformManager::handle_display_backlight_request_stream(
-                        Rc::clone(color_transform_manager.as_ref().unwrap()),
-                        request_stream,
-                    );
-                } else {
-                    warn!("failed to forward as A11y protocols are disabled");
-                }
-            }
-            ExposedServices::FocusChainProvider(request_stream) => {
-                focus_chain_stream_handler.handle_request_stream(request_stream).detach();
-            }
-            ExposedServices::SceneManager(request_stream) => {
-                fasync::Task::local(handle_scene_manager_request_stream(
-                    request_stream,
-                    Rc::clone(&scene_manager),
-                ))
-                .detach();
-            }
-            ExposedServices::InputDeviceRegistry(request_stream) => {
-                match &input_device_registry_server.handle_request(request_stream).await {
-                    Ok(()) => (),
-                    Err(e) => {
-                        // If `handle_request()` returns `Err`, then the `unbounded_send()` call
-                        // from `handle_request()` failed with either:
-                        // * `TrySendError::SendErrorKind::Full`, or
-                        // * `TrySendError::SendErrorKind::Disconnected`.
-                        //
-                        // These are unexpected, because:
-                        // * `Full` can't happen, because `InputDeviceRegistryServer`
-                        //   uses an `UnboundedSender`.
-                        // * `Disconnected` is highly unlikely, because the corresponding
-                        //   `UnboundedReceiver` lives in `main::input_fut`, and `input_fut`'s
-                        //   lifetime is nearly as long as `input_device_registry_server`'s.
-                        //
-                        // Nonetheless, InputDeviceRegistry isn't critical to production use.
-                        // So we just log the error and move on.
-                        warn!(
-                            "failed to forward InputDeviceRegistryRequestStream: {:?}; \
-                                must restart to enable input injection",
-                            e
-                        )
-                    }
-                }
-            }
-            ExposedServices::LightSensor(request_stream) => {
-                if let Some(light_sensor_server) = light_sensor_server.as_ref() {
-                    match light_sensor_server.handle_request(request_stream).await {
-                        Ok(()) => (),
-                        Err(e) => {
-                            warn!(
-                                "failed to forward light sensor request via LightSensorRequestStream: {e:?}"
+    let mut service_tasks = FuturesUnordered::new();
+    let mut fs = fs.fuse();
+    loop {
+        futures::select! {
+            service_request = fs.next() => {
+                let request = match service_request {
+                    Some(r) => r,
+                    None => break,
+                };
+                match request {
+                    ExposedServices::ColorAdjustmentHandler(request_stream) => {
+                        if attach_a11y_view {
+                            ColorTransformManager::handle_color_adjustment_handler_request_stream(
+                                Rc::clone(color_transform_manager.as_ref().unwrap()),
+                                request_stream,
                             );
+                        } else {
+                            warn!("failed to forward as A11y protocols are disabled");
                         }
                     }
-                }
-            }
-            ExposedServices::MediaButtonsListenerRegistry(request_stream) => {
-                match &media_buttons_listener_registry_server.handle_request(request_stream).await {
-                    Ok(()) => (),
-                    Err(e) => {
-                        warn!(
-                            "failed to forward media buttons listener request via DeviceListenerRegistryRequestStream: {:?}",
-                            e
-                        )
+                    ExposedServices::ColorAdjustment(request_stream) => {
+                        if attach_a11y_view {
+                            ColorTransformManager::handle_color_adjustment_request_stream(
+                                Rc::clone(color_transform_manager.as_ref().unwrap()),
+                                request_stream,
+                            );
+                        } else {
+                            warn!("failed to forward as A11y protocols are disabled");
+                        }
+                    }
+                    ExposedServices::DisplayBacklight(request_stream) => {
+                        if attach_a11y_view {
+                            ColorTransformManager::handle_display_backlight_request_stream(
+                                Rc::clone(color_transform_manager.as_ref().unwrap()),
+                                request_stream,
+                            );
+                        } else {
+                            warn!("failed to forward as A11y protocols are disabled");
+                        }
+                    }
+                    ExposedServices::FocusChainProvider(request_stream) => {
+                        let task = focus_chain_stream_handler.handle_request_stream(request_stream);
+                        service_tasks.push(task);
+                    }
+                    ExposedServices::SceneManager(request_stream) => {
+                        let task = fasync::Task::local(handle_scene_manager_request_stream(
+                            request_stream,
+                            Rc::clone(&scene_manager),
+                        ));
+                        service_tasks.push(task);
+                    }
+                    ExposedServices::InputDeviceRegistry(request_stream) => {
+                        match &input_device_registry_server.handle_request(request_stream).await {
+                            Ok(()) => (),
+                            Err(e) => {
+                                // If `handle_request()` returns `Err`, then the `unbounded_send()` call
+                                // from `handle_request()` failed with either:
+                                // * `TrySendError::SendErrorKind::Full`, or
+                                // * `TrySendError::SendErrorKind::Disconnected`.
+                                //
+                                // These are unexpected, because:
+                                // * `Full` can't happen, because `InputDeviceRegistryServer`
+                                //   uses an `UnboundedSender`.
+                                // * `Disconnected` is highly unlikely, because the corresponding
+                                //   `UnboundedReceiver` lives in `main::input_fut`, and `input_fut's`
+                                //   lifetime is nearly as long as `input_device_registry_server's`.
+                                //
+                                // Nonetheless, InputDeviceRegistry isn't critical to production use.
+                                // So we just log the error and move on.
+                                warn!(
+                                    "failed to forward InputDeviceRegistryRequestStream: {:?}; \
+                                        must restart to enable input injection",
+                                    e
+                                )
+                            }
+                        }
+                    }
+                    ExposedServices::LightSensor(request_stream) => {
+                        if let Some(light_sensor_server) = light_sensor_server.as_ref() {
+                            match light_sensor_server.handle_request(request_stream).await {
+                                Ok(()) => (),
+                                Err(e) => {
+                                    warn!(
+                                        "failed to forward light sensor request via LightSensorRequestStream: {e:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    ExposedServices::MediaButtonsListenerRegistry(request_stream) => {
+                        match &media_buttons_listener_registry_server.handle_request(request_stream).await {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!(
+                                    "failed to forward media buttons listener request via DeviceListenerRegistryRequestStream: {:?}",
+                                    e
+                                )
+                            }
+                        }
+                    }
+                    ExposedServices::FactoryResetCountdown(request_stream) => {
+                        match &factory_reset_countdown_server.handle_request(request_stream).await {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!("failed to forward FactoryResetCountdown: {:?}", e)
+                            }
+                        }
+                    }
+                    ExposedServices::FactoryReset(request_stream) => {
+                        match &factory_reset_device_server.handle_request(request_stream).await {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!("failed to forward fuchsia.recovery.policy.Device: {:?}", e)
+                            }
+                        }
+                    }
+                    ExposedServices::GraphicalPresenter(stream) => {
+                        let task = fasync::Task::local(handle_graphical_presenter_request_stream(
+                            stream,
+                            Rc::clone(&scene_manager),
+                        ));
+                        service_tasks.push(task);
                     }
                 }
             }
-            ExposedServices::FactoryResetCountdown(request_stream) => {
-                match &factory_reset_countdown_server.handle_request(request_stream).await {
-                    Ok(()) => (),
-                    Err(e) => {
-                        warn!("failed to forward FactoryResetCountdown: {:?}", e)
-                    }
-                }
-            }
-            ExposedServices::FactoryReset(request_stream) => {
-                match &factory_reset_device_server.handle_request(request_stream).await {
-                    Ok(()) => (),
-                    Err(e) => {
-                        warn!("failed to forward fuchsia.recovery.policy.Device: {:?}", e)
-                    }
-                }
-            }
-            ExposedServices::GraphicalPresenter(stream) => {
-                fasync::Task::local(handle_graphical_presenter_request_stream(
-                    stream,
-                    Rc::clone(&scene_manager),
-                ))
-                .detach();
-            }
+            _ = service_tasks.select_next_some() => {}
         }
     }
 
@@ -577,8 +595,10 @@ mod tests {
         let (proxy, stream) = create_proxy_and_stream::<GraphicalPresenterMarker>();
         let scene_manager = Rc::new(MockSceneManager::new());
         let mock_scene_manager = Rc::clone(&scene_manager);
-        fasync::Task::local(handle_graphical_presenter_request_stream(stream, mock_scene_manager))
-            .detach();
+        let _presenter_task = fasync::Task::local(handle_graphical_presenter_request_stream(
+            stream,
+            mock_scene_manager,
+        ));
 
         let view_token_pair = scenic::ViewTokenPair::new()?;
         let view_ref_pair = scenic::ViewRefPair::new()?;
@@ -609,8 +629,10 @@ mod tests {
         let (proxy, stream) = create_proxy_and_stream::<GraphicalPresenterMarker>();
         let scene_manager = Rc::new(MockSceneManager::new());
         let mock_scene_manager = Rc::clone(&scene_manager);
-        fasync::Task::local(handle_graphical_presenter_request_stream(stream, mock_scene_manager))
-            .detach();
+        let _presenter_task = fasync::Task::local(handle_graphical_presenter_request_stream(
+            stream,
+            mock_scene_manager,
+        ));
 
         let view_creation_token_pair = scenic::flatland::ViewCreationTokenPair::new()?;
         let expected_viewport_creation_token_koid =
