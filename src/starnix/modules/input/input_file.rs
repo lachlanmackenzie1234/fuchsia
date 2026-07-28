@@ -21,8 +21,8 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_MISC,
     BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_DOWN, KEY_LEFT,
-    KEY_POWER, KEY_RIGHT, KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL,
-    SW_CNT, errno, error, uapi,
+    KEY_POWER, KEY_RIGHT, KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, KEY_VOLUMEUP, LED_CNT, MSC_CNT,
+    REL_CNT, REL_WHEEL, SW_CNT, errno, error, uapi,
 };
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -332,6 +332,7 @@ fn keyboard_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     let mut attrs = BitSet::new();
     attrs.set(BTN_MISC);
     attrs.set(KEY_POWER);
+    attrs.set(KEY_VOLUMEUP);
     attrs.set(KEY_VOLUMEDOWN);
     attrs
 }

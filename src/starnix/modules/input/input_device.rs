@@ -1866,6 +1866,60 @@ mod test {
         .await;
     }
 
+    #[::fuchsia::test]
+    async fn sends_volume_up_button_events() {
+        spawn_kernel_and_run(async move |current_task| {
+            let (_input_device, input_file, buttons_listener) =
+                start_button_input(&current_task).await;
+
+            let volume_up_event = MediaButtonsEvent {
+                volume: Some(1),
+                mic_mute: Some(false),
+                pause: Some(false),
+                camera_disable: Some(false),
+                power: Some(false),
+                function: Some(false),
+                ..Default::default()
+            };
+
+            let _ = buttons_listener.on_event(volume_up_event).await;
+            std::mem::drop(buttons_listener); // Close Zircon channel.
+
+            let events = read_uapi_events(&input_file, &current_task);
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].code, uapi::KEY_VOLUMEUP as u16);
+            assert_eq!(events[0].value, 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn sends_volume_down_button_events() {
+        spawn_kernel_and_run(async move |current_task| {
+            let (_input_device, input_file, buttons_listener) =
+                start_button_input(&current_task).await;
+
+            let volume_down_event = MediaButtonsEvent {
+                volume: Some(-1),
+                mic_mute: Some(false),
+                pause: Some(false),
+                camera_disable: Some(false),
+                power: Some(false),
+                function: Some(false),
+                ..Default::default()
+            };
+
+            let _ = buttons_listener.on_event(volume_down_event).await;
+            std::mem::drop(buttons_listener); // Close Zircon channel.
+
+            let events = read_uapi_events(&input_file, &current_task);
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].code, uapi::KEY_VOLUMEDOWN as u16);
+            assert_eq!(events[0].value, 1);
+        })
+        .await;
+    }
+
     #[test_case(1; "Scroll up")]
     #[test_case(-1; "Scroll down")]
     #[::fuchsia::test]

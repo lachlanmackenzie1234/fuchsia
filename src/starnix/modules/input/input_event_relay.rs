@@ -241,6 +241,9 @@ impl InputEventsRelay {
 
             let mut power_was_pressed = false;
             let mut function_was_pressed = false;
+            let mut volume_up_was_pressed = false;
+            let mut volume_down_was_pressed = false;
+            let mut previous_volume: i8 = 0;
             let mut touch_buttons_were_pressed = new_touch_buttons_bitvec();
 
             loop {
@@ -284,13 +287,21 @@ impl InputEventsRelay {
                     media_buttons_res = media_buttons_future => {
                         match media_buttons_res {
                             Some(Ok(event)) => {
-                                (power_was_pressed, function_was_pressed) =
-                                    self.process_media_button_event(
-                                        &mut default_button_device,
-                                        event,
-                                        power_was_pressed,
-                                        function_was_pressed,
-                                    );
+                                (
+                                    power_was_pressed,
+                                    function_was_pressed,
+                                    volume_up_was_pressed,
+                                    volume_down_was_pressed,
+                                    previous_volume,
+                                ) = self.process_media_button_event(
+                                    &mut default_button_device,
+                                    event,
+                                    power_was_pressed,
+                                    function_was_pressed,
+                                    volume_up_was_pressed,
+                                    volume_down_was_pressed,
+                                    previous_volume,
+                                );
                             }
                             _ => {}
                         }
@@ -512,9 +523,15 @@ impl InputEventsRelay {
         button_event: fuipolicy::MediaButtonsListenerRequest,
         power_was_pressed: bool,
         function_was_pressed: bool,
-    ) -> (bool, bool) {
+        volume_up_was_pressed: bool,
+        volume_down_was_pressed: bool,
+        previous_volume: i8,
+    ) -> (bool, bool, bool, bool, i8) {
         let mut power_was_pressed_after = false;
         let mut function_was_pressed_after = false;
+        let mut volume_up_was_pressed_after = false;
+        let mut volume_down_was_pressed_after = false;
+        let mut previous_volume_after = previous_volume;
         match button_event {
             fuipolicy::MediaButtonsListenerRequest::OnEvent { mut event, responder } => {
                 if let Some(trace_flow_id) = event.trace_flow_id {
@@ -526,11 +543,20 @@ impl InputEventsRelay {
                 }
                 fuchsia_trace::duration!("input", "starnix_process_media_button_event");
 
-                let batch =
-                    parse_fidl_media_button_event(&event, power_was_pressed, function_was_pressed);
+                let batch = parse_fidl_media_button_event(
+                    &event,
+                    power_was_pressed,
+                    function_was_pressed,
+                    volume_up_was_pressed,
+                    volume_down_was_pressed,
+                    previous_volume,
+                );
 
                 power_was_pressed_after = batch.power_is_pressed;
                 function_was_pressed_after = batch.function_is_pressed;
+                volume_up_was_pressed_after = batch.volume_up_is_pressed;
+                volume_down_was_pressed_after = batch.volume_down_is_pressed;
+                previous_volume_after = batch.volume;
 
                 let (converted_events, ignored_events, generated_events) = match batch.events.len()
                 {
@@ -606,7 +632,13 @@ impl InputEventsRelay {
             _ => { /* Ignore deprecated OnMediaButtonsEvent */ }
         }
 
-        (power_was_pressed_after, function_was_pressed_after)
+        (
+            power_was_pressed_after,
+            function_was_pressed_after,
+            volume_up_was_pressed_after,
+            volume_down_was_pressed_after,
+            previous_volume_after,
+        )
     }
 
     fn process_touch_button_event(

@@ -25,6 +25,9 @@ pub struct LinuxButtonEventBatch {
     pub event_time: zx::MonotonicInstant,
     pub power_is_pressed: bool,
     pub function_is_pressed: bool,
+    pub volume_up_is_pressed: bool,
+    pub volume_down_is_pressed: bool,
+    pub volume: i8,
 
     // touch_buttons is of size TOUCH_BUTTON_BITVEC_SIZE to hold all TouchButton enums.
     pub touch_buttons: bit_vec::BitVec,
@@ -37,6 +40,9 @@ impl LinuxButtonEventBatch {
             event_time: zx::MonotonicInstant::get(),
             power_is_pressed: false,
             function_is_pressed: false,
+            volume_up_is_pressed: false,
+            volume_down_is_pressed: false,
+            volume: 0,
             touch_buttons: new_touch_buttons_bitvec(),
         }
     }
@@ -46,6 +52,9 @@ pub fn parse_fidl_media_button_event(
     fidl_event: &MediaButtonsEvent,
     power_was_pressed: bool,
     function_was_pressed: bool,
+    volume_up_was_pressed: bool,
+    volume_down_was_pressed: bool,
+    previous_volume: i8,
 ) -> LinuxButtonEventBatch {
     let mut batch = LinuxButtonEventBatch::new();
     let time = timeval_from_time(batch.event_time);
@@ -59,9 +68,17 @@ pub fn parse_fidl_media_button_event(
 
     batch.power_is_pressed = fidl_event.power.unwrap_or(false);
     batch.function_is_pressed = fidl_event.function.unwrap_or(false);
+
+    let new_volume = fidl_event.volume.unwrap_or(previous_volume);
+    batch.volume_up_is_pressed = new_volume > previous_volume;
+    batch.volume_down_is_pressed = new_volume < previous_volume;
+    batch.volume = new_volume;
+
     for (button_was_pressed, button_is_pressed, key_code) in [
         (power_was_pressed, batch.power_is_pressed, uapi::KEY_POWER),
         (function_was_pressed, batch.function_is_pressed, uapi::KEY_VOLUMEDOWN),
+        (volume_up_was_pressed, batch.volume_up_is_pressed, uapi::KEY_VOLUMEUP),
+        (volume_down_was_pressed, batch.volume_down_is_pressed, uapi::KEY_VOLUMEDOWN),
     ] {
         // Button state changed. Send an event.
         if button_is_pressed != button_was_pressed {
@@ -142,7 +159,7 @@ mod tests {
     #[test]
     fn test_media_button_press_power() {
         let fidl_event = MediaButtonsEvent { power: Some(true), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, false, false);
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false, 0);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -155,7 +172,7 @@ mod tests {
     #[test]
     fn test_media_button_release_power() {
         let fidl_event = MediaButtonsEvent { power: Some(false), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, true, false);
+        let batch = parse_fidl_media_button_event(&fidl_event, true, false, false, false, 0);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -168,9 +185,71 @@ mod tests {
     #[test]
     fn test_media_button_no_change() {
         let fidl_event = MediaButtonsEvent { power: Some(true), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, true, false);
+        let batch = parse_fidl_media_button_event(&fidl_event, true, false, false, false, 0);
 
         assert_eq!(batch.events.len(), 0);
+    }
+
+    #[test]
+    fn test_media_button_press_volume_up() {
+        let fidl_event = MediaButtonsEvent { volume: Some(1), ..Default::default() };
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false, 0);
+
+        assert_eq!(batch.events.len(), 2);
+        assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
+        assert_eq!(batch.events[0].code, uapi::KEY_VOLUMEUP as u16);
+        assert_eq!(batch.events[0].value, 1);
+        assert_eq!(batch.events[1].type_, uapi::EV_SYN as u16);
+        assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
+        assert!(batch.volume_up_is_pressed);
+        assert!(!batch.volume_down_is_pressed);
+        assert_eq!(batch.volume, 1);
+    }
+
+    #[test]
+    fn test_media_button_release_volume_up() {
+        let fidl_event = MediaButtonsEvent { volume: Some(1), ..Default::default() };
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, true, false, 1);
+
+        assert_eq!(batch.events.len(), 2);
+        assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
+        assert_eq!(batch.events[0].code, uapi::KEY_VOLUMEUP as u16);
+        assert_eq!(batch.events[0].value, 0);
+        assert_eq!(batch.events[1].type_, uapi::EV_SYN as u16);
+        assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
+        assert!(!batch.volume_up_is_pressed);
+        assert_eq!(batch.volume, 1);
+    }
+
+    #[test]
+    fn test_media_button_press_volume_down() {
+        let fidl_event = MediaButtonsEvent { volume: Some(-1), ..Default::default() };
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false, 0);
+
+        assert_eq!(batch.events.len(), 2);
+        assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
+        assert_eq!(batch.events[0].code, uapi::KEY_VOLUMEDOWN as u16);
+        assert_eq!(batch.events[0].value, 1);
+        assert_eq!(batch.events[1].type_, uapi::EV_SYN as u16);
+        assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
+        assert!(!batch.volume_up_is_pressed);
+        assert!(batch.volume_down_is_pressed);
+        assert_eq!(batch.volume, -1);
+    }
+
+    #[test]
+    fn test_media_button_release_volume_down() {
+        let fidl_event = MediaButtonsEvent { volume: Some(-1), ..Default::default() };
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, true, -1);
+
+        assert_eq!(batch.events.len(), 2);
+        assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
+        assert_eq!(batch.events[0].code, uapi::KEY_VOLUMEDOWN as u16);
+        assert_eq!(batch.events[0].value, 0);
+        assert_eq!(batch.events[1].type_, uapi::EV_SYN as u16);
+        assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
+        assert!(!batch.volume_down_is_pressed);
+        assert_eq!(batch.volume, -1);
     }
 
     use test_case::test_case;
