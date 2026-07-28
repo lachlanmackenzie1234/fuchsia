@@ -641,18 +641,80 @@ async fn stop_and_collect_samples(
     sample_period: u64,
     vmo_write_offset: &mut u64,
 ) -> Result<(), Errno> {
-    let stats = session_proxy.stop().await;
-
     let seq_lock_wrapper = match seq_lock.get() {
-        Some(Ok(l)) => l,
+        Some(Ok(l)) => Some(l),
         // Initialization failed in a previous mmap() call. Propagate the error.
         Some(Err(e)) => return Err(e.clone()),
-        // Not initialized yet (i.e. mmap() hasn't been called). Skip updating metadata.
-        None => return Ok(()),
+        // Not initialized yet (i.e. mmap() hasn't been called). However, we need to drain the
+        // socket anyway if there is data as to unblock the profiler writing to the socket.
+        None => None,
     };
 
+    let process_socket = async {
+        let mut header = [0; 8];
+        let mut bytes_read = 0;
+        while bytes_read < 8 {
+            match client.read(&mut header[bytes_read..]).await {
+                Ok(0) => break,
+                Ok(n) => bytes_read += n,
+                Err(e) => {
+                    log_warn!("[perf_event_open] Error reading from socket: {:?}", e);
+                    break;
+                }
+            }
+        }
+
+        if bytes_read != 8 || header != FXT_MAGIC_BYTES {
+            if bytes_read > 0 {
+                log_warn!(
+                    "[perf_event_open] Received invalid or non-FXT sample data (bytes_read={})",
+                    bytes_read
+                );
+            }
+            return;
+        }
+
+        let header_cursor = Cursor::new(header);
+        let reader = header_cursor.chain(client);
+        let (mut stream, _task) = SessionParser::new_async(reader);
+        while let Some(record_result) = stream.next().await {
+            match record_result {
+                Ok(TraceRecord::Profiler(ProfilerRecord::Backtrace(backtrace))) => {
+                    if let Some(seq_lock_wrapper) = seq_lock_wrapper {
+                        let ips: Vec<u64> = backtrace.data;
+                        let pid = Some(backtrace.process.0 as u32);
+                        let tid = Some(backtrace.thread.0 as u32);
+                        let perf_record_sample = PerfRecordSample { pid, tid, ips };
+                        let bytes_written = write_record_to_vmo(
+                            perf_record_sample,
+                            perf_data_vmo,
+                            sample_type,
+                            sample_id,
+                            sample_period,
+                            *vmo_write_offset,
+                        );
+                        // Update data_head after writing sample.
+                        if bytes_written > 0 {
+                            *vmo_write_offset += bytes_written;
+                            let mut metadata = seq_lock_wrapper.get();
+                            metadata.data_head = *vmo_write_offset;
+                            seq_lock_wrapper.set_value(metadata);
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
+                    break;
+                }
+            }
+        }
+    };
+
+    let (stats, ()) = futures::join!(session_proxy.stop(), process_socket);
+
     let samples_collected = match stats {
-        Ok(stats) => stats.samples_collected.unwrap(),
+        Ok(stats) => stats.samples_collected.unwrap_or(0),
         Err(e) => return error!(EINVAL, e),
     };
 
@@ -661,74 +723,6 @@ async fn stop_and_collect_samples(
         "[perf_event_open] symbolize sample output and delete the below log_info"
     );
     log_info!("profiler samples_collected: {:?}", samples_collected);
-
-    // Peek at the first 8 bytes to determine if it's FXT or text.
-    let mut header = [0; 8];
-    let mut bytes_read = 0;
-    while bytes_read < 8 {
-        match client.read(&mut header[bytes_read..]).await {
-            Ok(0) => {
-                // Peer closed the socket. This is the normal end of the stream.
-                log_info!("[perf_event_open] Finished reading fxt record from socket.");
-                break;
-            }
-            Ok(n) => bytes_read += n,
-            Err(e) => {
-                log_warn!("[perf_event_open] Error reading from socket: {:?}", e);
-                break;
-            }
-        }
-    }
-
-    if bytes_read != 8 || header != FXT_MAGIC_BYTES {
-        if bytes_read > 0 {
-            log_warn!(
-                "[perf_event_open] Received invalid or non-FXT sample data (bytes_read={})",
-                bytes_read
-            );
-        }
-        let reset_status = session_proxy.reset().await;
-        return match reset_status {
-            Ok(_) => Ok(()),
-            Err(e) => error!(EINVAL, e),
-        };
-    }
-
-    let header_cursor = Cursor::new(header);
-    let reader = header_cursor.chain(client);
-    let (mut stream, _task) = SessionParser::new_async(reader);
-    while let Some(record_result) = stream.next().await {
-        match record_result {
-            Ok(TraceRecord::Profiler(ProfilerRecord::Backtrace(backtrace))) => {
-                let ips: Vec<u64> = backtrace.data;
-                let pid = Some(backtrace.process.0 as u32);
-                let tid = Some(backtrace.thread.0 as u32);
-                let perf_record_sample = PerfRecordSample { pid, tid, ips };
-                let bytes_written = write_record_to_vmo(
-                    perf_record_sample,
-                    perf_data_vmo,
-                    sample_type,
-                    sample_id,
-                    sample_period,
-                    *vmo_write_offset,
-                );
-                // Update data_head after writing sample.
-                if bytes_written > 0 {
-                    *vmo_write_offset += bytes_written;
-                    let mut metadata = seq_lock_wrapper.get();
-                    metadata.data_head = *vmo_write_offset;
-                    seq_lock_wrapper.set_value(metadata);
-                }
-            }
-            Ok(_) => {
-                // Ignore other records.
-            }
-            Err(e) => {
-                log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
-                break;
-            }
-        }
-    }
 
     let reset_status = session_proxy.reset().await;
     return match reset_status {
@@ -1045,3 +1039,68 @@ use crate::vfs::{
     OutputBuffer,
 };
 use crate::{fileops_impl_nonseekable, fileops_impl_noop_sync};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::endpoints::create_proxy;
+    use fuchsia_async as fasync;
+
+    #[::fuchsia::test]
+    async fn test_stop_and_collect_samples_socket_full() {
+        let (session_proxy, session_stream) = create_proxy::<profiler::SessionMarker>();
+        let (client_socket, server_socket) = zx::Socket::create_stream();
+
+        // Fill server_socket until it is no longer writable.
+        // Start with FXT_MAGIC_BYTES so process_socket recognizes FXT format.
+        let _ = server_socket.write(&FXT_MAGIC_BYTES);
+        let buf = [0u8; 1024];
+        while match server_socket.write(&buf) {
+            Ok(_) => true,
+            Err(zx::Status::SHOULD_WAIT) => false,
+            Err(e) => panic!("unexpected error filling socket: {:?}", e),
+        } {}
+
+        let mock_service = async move {
+            let mut session_stream = session_stream.into_stream();
+            let mut server_socket = Some(server_socket);
+            // The profiler is currently single threaded and blocks if the socket is full. Model
+            // this here to ensure we don't deadlock if the socket fills up.
+            while let Some(Ok(request)) = session_stream.next().await {
+                match request {
+                    profiler::SessionRequest::Stop { responder } => {
+                        if let Some(socket) = server_socket.take() {
+                            let _ =
+                                fasync::OnSignals::new(&socket, zx::Signals::SOCKET_WRITABLE).await;
+                            drop(socket);
+                        }
+                        let _ = responder.send(&profiler::SessionResult::default());
+                    }
+                    profiler::SessionRequest::Reset { responder } => {
+                        let _ = responder.send();
+                    }
+                    _ => {}
+                }
+            }
+        };
+
+        let client = fidl::AsyncSocket::from_socket(client_socket);
+        let seq_lock = OnceLock::new();
+        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let mut vmo_write_offset = 0;
+
+        let test_task = stop_and_collect_samples(
+            session_proxy,
+            client,
+            &seq_lock,
+            &perf_data_vmo,
+            0,
+            0,
+            0,
+            &mut vmo_write_offset,
+        );
+
+        let ((), result) = futures::join!(mock_service, test_task);
+        assert!(result.is_ok());
+    }
+}
