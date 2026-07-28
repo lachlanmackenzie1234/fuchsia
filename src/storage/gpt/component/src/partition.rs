@@ -6,6 +6,7 @@ use anyhow::Error;
 use block_client::{ReadOptions, VmoId, WriteOptions};
 use block_server::async_interface::{PassthroughSession, SessionManager};
 use block_server::{DeviceInfo, OffsetMap};
+use fidl::endpoints::{ControlHandle, RequestStream};
 use fidl_fuchsia_storage_block as fblock;
 use fuchsia_async as fasync;
 
@@ -51,7 +52,7 @@ impl Drop for VmoIdWrapper {
 pub struct PartitionBackend {
     partition: Arc<GptPartition>,
     vmo_keys_to_vmoids_map: Mutex<BTreeMap<usize, Arc<VmoIdWrapper>>>,
-    passthrough: bool,
+    offset_map: block_server::OffsetMap,
 }
 
 impl block_server::async_interface::Interface for PartitionBackend {
@@ -62,20 +63,23 @@ impl block_server::async_interface::Interface for PartitionBackend {
         offset_map: OffsetMap,
         block_size: u32,
     ) -> Result<(), Error> {
-        if !self.passthrough || !offset_map.is_empty() {
+        if !offset_map.is_empty() {
             // For now, we don't support double-passthrough.  We could as needed for nested GPT.
-            // If we support this, we can remove I/O and vmoid management from this struct.
+            let _ = stream.control_handle().shutdown_with_epitaph(zx::Status::NOT_SUPPORTED);
+            anyhow::bail!("Client-provided offset maps are not supported");
+        }
+        if self.offset_map.is_empty() {
             return session_manager
                 .serve_session(
                     stream,
-                    offset_map,
+                    OffsetMap::empty(),
                     self.get_info().max_transfer_blocks(),
                     block_size,
                 )
                 .await;
         }
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fblock::SessionMarker>();
-        self.partition.open_passthrough_session(server_end);
+        self.partition.open_passthrough_session(server_end, &self.offset_map);
         let passthrough = PassthroughSession::new(proxy);
         passthrough.serve(stream).await
     }
@@ -149,20 +153,28 @@ impl block_server::async_interface::Interface for PartitionBackend {
 
 impl PartitionBackend {
     #[cfg(test)]
+    pub fn passthrough(&self) -> bool {
+        !self.offset_map.is_empty()
+    }
+
+    #[cfg(test)]
     pub fn vmo_count(&self) -> usize {
         self.vmo_keys_to_vmoids_map.lock().len()
     }
 
-    pub fn new(partition: Arc<GptPartition>, passthrough: bool) -> Arc<Self> {
+    /// If `offset_map` is non-empty, the partition will pass through requests using the provided
+    /// offset map.  Otherwise, the partition will proxy I/O requests (and `read`, `write`, etc will
+    /// be called on this instance).
+    pub fn new(partition: Arc<GptPartition>, offset_map: block_server::OffsetMap) -> Arc<Self> {
         Arc::new(Self {
             partition,
+            offset_map,
             vmo_keys_to_vmoids_map: Mutex::new(BTreeMap::new()),
-            passthrough,
         })
     }
 
-    /// Returns the old info.
-    pub fn update_info(&self, info: gpt::PartitionInfo) -> gpt::PartitionInfo {
+    /// Updates the info.
+    pub fn update_info(&self, info: gpt::PartitionInfo) {
         self.partition.update_info(info)
     }
 

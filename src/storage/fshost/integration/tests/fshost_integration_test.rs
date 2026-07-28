@@ -1684,7 +1684,8 @@ mod fxblob {
             assert_ne!(metadata.name.as_ref().unwrap(), "userdata");
             if metadata.name.as_ref().unwrap() == "super_and_userdata" {
                 found_merged_partition = true;
-                assert_eq!(metadata.start_block_offset, Some(64));
+                assert_eq!(metadata.start_block_offset, None);
+                assert_eq!(metadata.flags, None);
                 assert_eq!(metadata.num_blocks, Some(221789));
                 assert_eq!(metadata.type_guid, Some(fpartition::Guid { value: FVM_TYPE_GUID }));
                 assert_eq!(

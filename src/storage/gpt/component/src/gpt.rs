@@ -5,13 +5,13 @@
 use crate::config::Config;
 use crate::partition::PartitionBackend;
 use crate::partitions_directory::PartitionsDirectory;
-use anyhow::{Context as _, Error, anyhow};
+use anyhow::{Context as _, Error, ensure};
 use block_client::{
-    BlockClient as _, BlockDeviceFlag, BufferSlice, MutableBufferSlice, ReadOptions,
-    RemoteBlockClient, VmoId, WriteOptions,
+    BlockClient as _, BufferSlice, MutableBufferSlice, ReadOptions, RemoteBlockClient, VmoId,
+    WriteOptions,
 };
-use block_server::BlockServer;
 use block_server::async_interface::SessionManager;
+use block_server::{BlockServer, OffsetMap};
 
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_storage_block as fblock;
@@ -37,18 +37,29 @@ fn partition_directory_entry_name(index: u32) -> String {
 // needing to proxy requests through this component.  As such, the idea is that we only pass through
 // "hot" partitions.
 // This list should stay small.
-fn should_passthrough_partition(info: &gpt::PartitionInfo) -> bool {
+fn should_passthrough_partition(info: &block_server::PartitionInfo) -> bool {
     // Partition contains the main filesystem
-    ALL_SYSTEM_PARTITION_LABELS.contains(&info.label.as_str())
+    ALL_SYSTEM_PARTITION_LABELS.contains(&info.name.as_str())
     // Partitions are used for benchmarks which should replicate the performance
     // of the main filesystem
-    || ALL_BENCHMARK_PARTITION_LABELS.contains(&info.label.as_str())
+    || ALL_BENCHMARK_PARTITION_LABELS.contains(&info.name.as_str())
+    // We always pass through composite partitions, since the mechanism we use for passthrough is to
+    // open sessions with an OffsetMap.  We could locally resolve the offsets, but there's no reason
+    // to implement that right now.
+    || info.start_block_offset.is_none()
+}
+
+fn single_partition_mapping(info: &block_server::PartitionInfo) -> Result<OffsetMap, Error> {
+    Ok(OffsetMap::new(vec![block_server::BlockOffsetMapping {
+        target_block_offset: info.start_block_offset.ok_or(zx::Status::INVALID_ARGS)?,
+        length: info.block_count,
+    }])?)
 }
 
 /// A single partition in a GPT device.
 pub struct GptPartition {
     gpt: Weak<GptManager>,
-    info: Mutex<gpt::PartitionInfo>,
+    info: Mutex<block_server::PartitionInfo>,
     block_client: Arc<RemoteBlockClient>,
 }
 
@@ -60,7 +71,7 @@ impl GptPartition {
     pub fn new(
         gpt: &Arc<GptManager>,
         block_client: Arc<RemoteBlockClient>,
-        info: gpt::PartitionInfo,
+        info: block_server::PartitionInfo,
     ) -> Arc<Self> {
         Arc::new(Self { gpt: Arc::downgrade(gpt), info: Mutex::new(info), block_client })
     }
@@ -71,9 +82,8 @@ impl GptPartition {
         }
     }
 
-    /// Replaces the partition info, returning its old value.
-    pub fn update_info(&self, info: gpt::PartitionInfo) -> gpt::PartitionInfo {
-        std::mem::replace(&mut *self.info.lock(), info)
+    pub fn update_info(&self, info: gpt::PartitionInfo) {
+        *self.info.lock() = info.into();
     }
 
     pub fn block_size(&self) -> u32 {
@@ -81,7 +91,7 @@ impl GptPartition {
     }
 
     pub fn block_count(&self) -> u64 {
-        self.info.lock().num_blocks
+        self.info.lock().block_count
     }
 
     /// Attaches the VMO.
@@ -105,16 +115,14 @@ impl GptPartition {
         self.block_client.detach_vmo(vmoid).await
     }
 
-    pub fn open_passthrough_session(&self, session: ServerEnd<fblock::SessionMarker>) {
+    pub fn open_passthrough_session(
+        &self,
+        session: ServerEnd<fblock::SessionMarker>,
+        offset_map: &OffsetMap,
+    ) {
         if let Some(gpt) = self.gpt.upgrade() {
-            let mapping = {
-                let info = self.info.lock();
-                fblock::BlockOffsetMapping {
-                    target_block_offset: info.start_block,
-                    length: info.num_blocks,
-                }
-            };
-            if let Err(error) = gpt.block_proxy.open_session_with_offset_map(session, &mapping) {
+            let mappings: Vec<fblock::BlockOffsetMapping> = offset_map.into();
+            if let Err(error) = gpt.block_proxy.open_session_with_options(session, &mappings[..]) {
                 // Client errors normally come back on `session` but that was already consumed.  The
                 // client will get a PEER_CLOSED without an epitaph.
                 log::warn!(error:?; "Failed to open passthrough session");
@@ -127,11 +135,10 @@ impl GptPartition {
     }
 
     pub fn get_info(&self) -> block_server::DeviceInfo {
-        convert_partition_info(
-            &*self.info.lock(),
-            self.block_client.block_flags(),
-            self.block_client.max_transfer_blocks(),
-        )
+        let mut info = self.info.lock().clone();
+        info.device_flags = self.block_client.block_flags();
+        info.max_transfer_blocks = self.block_client.max_transfer_blocks();
+        block_server::DeviceInfo::Partition(info)
     }
 
     pub async fn read(
@@ -192,7 +199,9 @@ impl GptPartition {
             .absolute_offset(device_block_offset, block_count)
             .map(|offset| offset * self.block_size() as u64)?;
         let len = block_count as u64 * self.block_size() as u64;
-        self.block_client.trim_traced(dev_offset..dev_offset + len, trace_id(trace_flow_id)).await
+        let end = dev_offset.checked_add(len).ok_or(zx::Status::OUT_OF_RANGE)?;
+
+        self.block_client.trim_traced(dev_offset..end, trace_id(trace_flow_id)).await
     }
 
     // Converts a relative range specified by [offset, offset+len) into an absolute offset in the
@@ -200,35 +209,19 @@ impl GptPartition {
     // an invalid offset/len.
     fn absolute_offset(&self, mut offset: u64, len: u32) -> Result<u64, zx::Status> {
         let info = self.info.lock();
-        offset = offset.checked_add(info.start_block).ok_or(zx::Status::OUT_OF_RANGE)?;
+        let Some(start_block) = info.start_block_offset else {
+            // This indicates that a composite partition was not passed through, which is an error
+            // in this library.
+            return Err(zx::Status::BAD_STATE);
+        };
+        offset = offset.checked_add(start_block).ok_or(zx::Status::OUT_OF_RANGE)?;
         let end = offset.checked_add(len as u64).ok_or(zx::Status::OUT_OF_RANGE)?;
-        if end > info.start_block + info.num_blocks {
+        if end > start_block + info.block_count {
             Err(zx::Status::OUT_OF_RANGE)
         } else {
             Ok(offset)
         }
     }
-}
-
-fn convert_partition_info(
-    info: &gpt::PartitionInfo,
-    device_flags: BlockDeviceFlag,
-    max_transfer_blocks: Option<NonZero<u32>>,
-) -> block_server::DeviceInfo {
-    block_server::DeviceInfo::Partition(block_server::PartitionInfo {
-        device_flags,
-        max_transfer_blocks,
-        start_block_offset: Some(info.start_block),
-        block_count: info.num_blocks,
-        type_guid: info.type_guid.to_bytes(),
-        instance_guid: info.instance_guid.to_bytes(),
-        name: info.label.clone(),
-        flags: Some(info.flags),
-    })
-}
-
-fn can_merge(a: &gpt::PartitionInfo, b: &gpt::PartitionInfo) -> bool {
-    a.start_block + a.num_blocks == b.start_block
 }
 
 struct PendingTransaction {
@@ -245,7 +238,7 @@ struct Inner {
     gpt: gpt::Gpt,
     partitions: BTreeMap<u32, Arc<BlockServer<SessionManager<PartitionBackend>>>>,
     // We track these separately so that we do not update them during transaction commit.
-    overlay_partitions: BTreeMap<u32, Arc<BlockServer<SessionManager<PartitionBackend>>>>,
+    composite_partitions: BTreeMap<u32, Arc<BlockServer<SessionManager<PartitionBackend>>>>,
     // Exposes all partitions for discovery by other components.  Should be kept in sync with
     // `partitions`.
     partitions_dir: PartitionsDirectory,
@@ -270,31 +263,42 @@ impl Inner {
         &mut self,
         parent: &Arc<GptManager>,
         index: u32,
-        info: gpt::PartitionInfo,
-        overlay_indexes: Vec<usize>,
+        info: block_server::PartitionInfo,
+        composite_mappings: OffsetMap,
+        composite_indexes: Vec<usize>,
     ) -> Result<(), Error> {
+        ensure!(
+            composite_indexes.is_empty() == composite_mappings.is_empty(),
+            "Composite partitions must provide mappings"
+        );
         let passthrough = should_passthrough_partition(&info);
+        let mappings = if passthrough && composite_mappings.is_empty() {
+            // Synthesize a mapping for a non-composite passthrough partition.
+            single_partition_mapping(&info)?
+        } else {
+            // Either this is a composite partition which already has a mapping, or it is a
+            // non-composite partition which is not passed through (in which case this is an empty
+            // mapping).
+            composite_mappings
+        };
         log::debug!(
             "GPT part {index}{}{}: {info:?}",
-            if !overlay_indexes.is_empty() { " (overlay)" } else { "" },
+            if !composite_indexes.is_empty() { " (composite)" } else { "" },
             if passthrough { " (passthrough)" } else { "" },
         );
-        info.start_block
-            .checked_add(info.num_blocks)
-            .ok_or_else(|| anyhow!("Overflow in partition end"))?;
         let partition = PartitionBackend::new(
             GptPartition::new(parent, self.gpt.client().clone(), info),
-            passthrough,
+            mappings,
         );
         let block_server = Arc::new(BlockServer::new(parent.block_size, partition));
-        if !overlay_indexes.is_empty() {
-            self.partitions_dir.add_overlay(
+        if !composite_indexes.is_empty() {
+            self.partitions_dir.add_composite(
                 &partition_directory_entry_name(index),
                 Arc::downgrade(&block_server),
                 Arc::downgrade(parent),
-                overlay_indexes,
+                composite_indexes,
             );
-            self.overlay_partitions.insert(index, block_server);
+            self.composite_partitions.insert(index, block_server);
         } else {
             self.partitions_dir.add_partition(
                 &partition_directory_entry_name(index),
@@ -313,14 +317,23 @@ impl Inner {
         super_partition: (u32, gpt::PartitionInfo),
         userdata_partition: (u32, gpt::PartitionInfo),
     ) -> Result<(), Error> {
-        let info = gpt::PartitionInfo {
+        let extent1 = block_server::BlockOffsetMapping {
+            target_block_offset: super_partition.1.start_block,
+            length: super_partition.1.num_blocks,
+        };
+        let extent2 = block_server::BlockOffsetMapping {
+            target_block_offset: userdata_partition.1.start_block,
+            length: userdata_partition.1.num_blocks,
+        };
+        let mappings =
+            block_server::OffsetMap::new(block_server::coalesce_mappings(vec![extent1, extent2]))?;
+        let info = block_server::PartitionInfo {
             // TODO(https://fxbug.dev/443980711): This should come from configuration.
-            label: "super_and_userdata".to_string(),
-            type_guid: super_partition.1.type_guid.clone(),
-            instance_guid: super_partition.1.instance_guid.clone(),
-            start_block: super_partition.1.start_block,
-            num_blocks: super_partition.1.num_blocks + userdata_partition.1.num_blocks,
-            flags: super_partition.1.flags,
+            name: "super_and_userdata".to_string(),
+            type_guid: super_partition.1.type_guid.to_bytes(),
+            instance_guid: super_partition.1.instance_guid.to_bytes(),
+            block_count: mappings.total_blocks(),
+            ..Default::default()
         };
         log::trace!(
             "GPT merged parts {:?} + {:?} -> {info:?}",
@@ -331,13 +344,14 @@ impl Inner {
             parent,
             super_partition.0,
             info,
+            mappings,
             vec![super_partition.0 as usize, userdata_partition.0 as usize],
         )
     }
 
     fn bind_all_partitions(&mut self, parent: &Arc<GptManager>) -> Result<(), Error> {
         self.partitions.clear();
-        self.overlay_partitions.clear();
+        self.composite_partitions.clear();
         self.partitions_dir.clear();
 
         let mut partitions = self.gpt.partitions().clone();
@@ -363,21 +377,27 @@ impl Inner {
             if super_part.is_some() && userdata_part.is_some() {
                 let super_part = super_part.unwrap();
                 let userdata_part = userdata_part.unwrap();
-                if can_merge(&super_part.1, &userdata_part.1) {
-                    self.bind_super_and_userdata_partition(parent, super_part, userdata_part)?;
-                } else {
-                    log::warn!("super/userdata cannot be merged");
-                    self.bind_partition(parent, super_part.0, super_part.1, vec![])?;
-                    self.bind_partition(parent, userdata_part.0, userdata_part.1, vec![])?;
-                }
+                self.bind_super_and_userdata_partition(parent, super_part, userdata_part)?;
             } else if super_part.is_some() || userdata_part.is_some() {
                 log::warn!("Only one of super/userdata found; not merging");
                 let (index, info) = super_part.or(userdata_part).unwrap();
-                self.bind_partition(parent, index, info, vec![])?;
+                self.bind_partition(
+                    parent,
+                    index,
+                    block_server::PartitionInfo::from(&info),
+                    OffsetMap::empty(),
+                    vec![],
+                )?;
             }
         }
         for (index, info) in partitions {
-            self.bind_partition(parent, index, info, vec![])?;
+            self.bind_partition(
+                parent,
+                index,
+                block_server::PartitionInfo::from(&info),
+                OffsetMap::empty(),
+                vec![],
+            )?;
         }
         Ok(())
     }
@@ -436,7 +456,7 @@ impl GptManager {
             inner: futures::lock::Mutex::new(Inner {
                 gpt,
                 partitions: BTreeMap::new(),
-                overlay_partitions: BTreeMap::new(),
+                composite_partitions: BTreeMap::new(),
                 partitions_dir: PartitionsDirectory::new(partitions_dir),
                 pending_transaction: None,
             }),
@@ -500,18 +520,21 @@ impl GptManager {
             .filter(|(info, idx)| !info.is_nil() && !pending.added_partitions.contains(idx))
         {
             // Some physical partitions are not tracked in `inner.partitions` (e.g. when we use an
-            // overlay partition to combine two physical partitions).  In this case, we still need
+            // composite partition to combine two physical partitions).  In this case, we still need
             // to propagate the info in the underlying transaction, but there's no need to update
             // the in-memory info.
-            // Note that overlay partitions can't be changed by transactions anyways, so the info
+            // Note that composite partitions can't be changed by transactions anyways, so the info
             // we propagate should be exactly what it was when we created the transaction.
             if let Some(part) = inner.partitions.get(&idx) {
                 part.session_manager().interface().update_info(info.clone());
             }
         }
         for idx in pending.added_partitions {
-            if let Some(info) = inner.gpt.partitions().get(&idx).cloned() {
-                if let Err(error) = inner.bind_partition(self, idx, info, vec![]) {
+            if let Some(gpt_info) = inner.gpt.partitions().get(&idx).cloned() {
+                let partition_info = block_server::PartitionInfo::from(&gpt_info);
+                if let Err(error) =
+                    inner.bind_partition(self, idx, partition_info, OffsetMap::empty(), vec![])
+                {
                     log::error!(error:?; "Failed to bind partition");
                 }
             }
@@ -596,7 +619,7 @@ impl GptManager {
         Ok(())
     }
 
-    pub async fn handle_overlay_partitions_requests(
+    pub async fn handle_composite_partitions_requests(
         &self,
         gpt_indexes: Vec<usize>,
         mut requests: fpartitions::OverlayPartitionRequestStream,
@@ -604,7 +627,7 @@ impl GptManager {
         while let Some(request) = requests.try_next().await.unwrap() {
             match request {
                 fpartitions::OverlayPartitionRequest::GetPartitions { responder } => {
-                    match self.get_overlay_partition_info(&gpt_indexes[..]).await {
+                    match self.get_composite_partition_info(&gpt_indexes[..]).await {
                         Ok(partitions) => responder.send(Ok(&partitions[..])),
                         Err(status) => responder.send(Err(status.into_raw())),
                     }
@@ -617,7 +640,7 @@ impl GptManager {
         Ok(())
     }
 
-    async fn get_overlay_partition_info(
+    async fn get_composite_partition_info(
         &self,
         gpt_indexes: &[usize],
     ) -> Result<Vec<fpartitions::PartitionInfo>, zx::Status> {
@@ -676,7 +699,7 @@ impl GptManager {
         let mut inner = self.inner.lock().await;
         inner.partitions_dir.clear();
         inner.partitions.clear();
-        inner.overlay_partitions.clear();
+        inner.composite_partitions.clear();
         self.shutdown.store(true, Ordering::Relaxed);
         log::info!("Shutting down gpt OK");
     }
@@ -699,7 +722,6 @@ mod tests {
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_storage_block as fblock;
     use fidl_fuchsia_storage_partitions as fpartitions;
-    use fs_management::format::constants::FVM_PARTITION_LABEL;
     use fuchsia_async as fasync;
     use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
     use gpt::{Gpt, Guid, PartitionInfo};
@@ -1748,19 +1770,15 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn offset_map_does_not_allow_partition_overwrite() {
+    async fn open_session_with_options_is_rejected() {
         const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
-        const PART_NAME: &str = FVM_PARTITION_LABEL;
+        const PART_NAME: &str = "foo";
 
         let (block_device, partitions_dir) = setup_with_options(
             VmoBackedServerOptions {
                 initial_contents: InitialContents::FromCapacity(16),
                 block_size: 512,
-                info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::DeviceFlag::READONLY | fblock::DeviceFlag::REMOVABLE,
-                    ..Default::default()
-                }),
                 ..Default::default()
             },
             vec![PartitionInfo {
@@ -1790,25 +1808,90 @@ mod tests {
             connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_dir, "volume")
                 .expect("Failed to open Block service");
 
-        // Attempting to open a session with an offset map that extends past the end of the device
-        // should fail.
+        // Attempting to open a session with a valid offset map should fail.
         let (session, server_end) = fidl::endpoints::create_proxy::<fblock::SessionMarker>();
         part_block
-            .open_session_with_offset_map(
+            .open_session_with_options(
                 server_end,
-                &fblock::BlockOffsetMapping { target_block_offset: 1, length: 2 },
+                &[fblock::BlockOffsetMapping { target_block_offset: 1, length: 2 }],
             )
             .expect("FIDL error");
-        session.get_fifo().await.expect_err("Session should be closed");
+        session
+            .get_fifo()
+            .await
+            .expect_err("Session should be closed because nested mappings are not supported");
 
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_open_session_with_options_rejects_nested_mappings() {
+        let (block_device, partitions_dir) = setup(
+            512,
+            2048,
+            vec![
+                PartitionInfo {
+                    label: "super".to_string(),
+                    type_guid: Guid::from_bytes([1; 16]),
+                    instance_guid: Guid::from_bytes([2; 16]),
+                    start_block: 34,
+                    num_blocks: 10,
+                    flags: 0,
+                },
+                PartitionInfo {
+                    label: "userdata".to_string(),
+                    type_guid: Guid::from_bytes([1; 16]),
+                    instance_guid: Guid::from_bytes([3; 16]),
+                    start_block: 50,
+                    num_blocks: 10,
+                    flags: 0,
+                },
+            ],
+        )
+        .await;
+
+        let partitions_dir_clone = partitions_dir.clone();
+        let runner = GptManager::new_with_config(
+            block_device.connect(),
+            partitions_dir_clone,
+            crate::config::Config { merge_super_and_userdata: true, ..Default::default() },
+        )
+        .await
+        .expect("load should succeed");
+
+        let part_dir = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+
+        let part_block =
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_dir, "volume")
+                .expect("Failed to open Block service");
+
+        let metadata: fblock::PartitionInfo =
+            part_block.get_metadata().await.expect("FIDL error").expect("get_metadata failed");
+        assert_eq!(metadata.name, Some("super_and_userdata".to_string()));
+        assert!(metadata.start_block_offset.is_none());
+        assert!(metadata.flags.is_none());
+
+        // Attempting to open a session with an offset map on a merged GPT partition should fail
+        // because it has static mappings, and nested mappings are not supported.
         let (session, server_end) = fidl::endpoints::create_proxy::<fblock::SessionMarker>();
         part_block
-            .open_session_with_offset_map(
+            .open_session_with_options(
                 server_end,
-                &fblock::BlockOffsetMapping { target_block_offset: 0, length: 3 },
+                &[fblock::BlockOffsetMapping { target_block_offset: 0, length: 3 }],
             )
             .expect("FIDL error");
-        session.get_fifo().await.expect_err("Session should be closed");
+        session.get_fifo().await.expect_err("Session should be closed due to nested mapping");
+
+        {
+            let inner = runner.inner.lock().await;
+            let backend = inner.composite_partitions.get(&0).unwrap().session_manager().interface();
+            assert!(backend.passthrough());
+        }
 
         runner.shutdown().await;
     }
@@ -1855,5 +1938,125 @@ mod tests {
         }
 
         runner.shutdown().await;
+    }
+
+    #[test]
+    fn test_should_passthrough_partition() {
+        use super::{ALL_SYSTEM_PARTITION_LABELS, should_passthrough_partition};
+
+        let system_label = ALL_SYSTEM_PARTITION_LABELS[0].to_string();
+
+        // Single mapping on a system label partition -> should passthrough.
+        let single_config = block_server::PartitionInfo {
+            name: system_label.clone(),
+            type_guid: [1; 16],
+            instance_guid: [2; 16],
+            flags: Some(0),
+            start_block_offset: Some(0),
+            block_count: 100,
+            ..Default::default()
+        };
+        assert!(should_passthrough_partition(&single_config));
+
+        // Multiple mappings on the exact same system label partition -> should passthrough.
+        let multi_config = block_server::PartitionInfo {
+            name: system_label,
+            type_guid: [1; 16],
+            instance_guid: [2; 16],
+            flags: Some(0),
+            start_block_offset: Some(0),
+            block_count: 200,
+            ..Default::default()
+        };
+        assert!(should_passthrough_partition(&multi_config));
+    }
+
+    #[fuchsia::test]
+    async fn test_merged_partition_passthrough_behavior() {
+        // Test Case 1: Discontiguous -> passthrough = false
+        {
+            let (block_device, partitions_dir) = setup(
+                512,
+                2048,
+                vec![
+                    PartitionInfo {
+                        label: "super".to_string(),
+                        type_guid: Guid::from_bytes([1; 16]),
+                        instance_guid: Guid::from_bytes([2; 16]),
+                        start_block: 34,
+                        num_blocks: 10,
+                        flags: 0,
+                    },
+                    PartitionInfo {
+                        label: "userdata".to_string(),
+                        type_guid: Guid::from_bytes([1; 16]),
+                        instance_guid: Guid::from_bytes([3; 16]),
+                        start_block: 50, // Discontiguous (44 != 50)
+                        num_blocks: 10,
+                        flags: 0,
+                    },
+                ],
+            )
+            .await;
+
+            let runner = GptManager::new_with_config(
+                block_device.connect(),
+                partitions_dir,
+                crate::config::Config { merge_super_and_userdata: true, ..Default::default() },
+            )
+            .await
+            .expect("load should succeed");
+
+            {
+                let inner = runner.inner.lock().await;
+                let backend =
+                    inner.composite_partitions.get(&0).unwrap().session_manager().interface();
+                assert!(backend.passthrough());
+            }
+            runner.shutdown().await;
+        }
+
+        // Test Case 2: Contiguous -> passthrough = true (after coalescing it will be 1 mapping)
+        {
+            let (block_device, partitions_dir) = setup(
+                512,
+                2048,
+                vec![
+                    PartitionInfo {
+                        label: "super".to_string(),
+                        type_guid: Guid::from_bytes([1; 16]),
+                        instance_guid: Guid::from_bytes([2; 16]),
+                        start_block: 34,
+                        num_blocks: 10,
+                        flags: 0,
+                    },
+                    PartitionInfo {
+                        label: "userdata".to_string(),
+                        type_guid: Guid::from_bytes([1; 16]),
+                        instance_guid: Guid::from_bytes([3; 16]),
+                        start_block: 44, // Contiguous (34 + 10 = 44)
+                        num_blocks: 10,
+                        flags: 0,
+                    },
+                ],
+            )
+            .await;
+
+            let runner = GptManager::new_with_config(
+                block_device.connect(),
+                partitions_dir,
+                crate::config::Config { merge_super_and_userdata: true, ..Default::default() },
+            )
+            .await
+            .expect("load should succeed");
+
+            {
+                let inner = runner.inner.lock().await;
+                let backend =
+                    inner.composite_partitions.get(&0).unwrap().session_manager().interface();
+                assert!(backend.passthrough());
+            }
+            runner.shutdown().await;
+        }
     }
 }

@@ -127,7 +127,7 @@ impl TestFixture {
 
         let (session_proxy, server) = fidl::endpoints::create_proxy();
         if let Some(mapping) = mapping {
-            proxy.open_session_with_offset_map(server, &mapping).unwrap();
+            proxy.open_session_with_options(server, &[mapping]).unwrap();
         } else {
             proxy.open_session(server).unwrap();
         }

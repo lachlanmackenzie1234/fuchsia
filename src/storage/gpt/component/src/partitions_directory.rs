@@ -44,15 +44,15 @@ impl PartitionsDirectory {
         self.entries.lock().insert(name.to_string(), entry);
     }
 
-    /// Adds an entry for an overlay partition.  Serves the "volume" and "overlay" protocols.
-    pub fn add_overlay<SM: SessionManager + Send + Sync + 'static>(
+    /// Adds an entry for a composite partition.  Serves the "volume" and "overlay" protocols.
+    pub fn add_composite<SM: SessionManager + Send + Sync + 'static>(
         &self,
         name: &str,
         block_server: Weak<BlockServer<SM>>,
         gpt_manager: Weak<GptManager>,
         gpt_indexes: Vec<usize>,
     ) {
-        let entry = PartitionsDirectoryEntry::new_overlay(block_server, gpt_manager, gpt_indexes);
+        let entry = PartitionsDirectoryEntry::new_composite(block_server, gpt_manager, gpt_indexes);
         self.node.add_entry(name, entry.node.clone()).expect("Added an entry twice");
         self.entries.lock().insert(name.to_string(), entry);
     }
@@ -110,7 +110,7 @@ impl PartitionsDirectoryEntry {
         Self { node }
     }
 
-    fn new_overlay<SM: SessionManager + Send + Sync + 'static>(
+    fn new_composite<SM: SessionManager + Send + Sync + 'static>(
         block_server: Weak<BlockServer<SM>>,
         gpt_manager: Weak<GptManager>,
         gpt_indexes: Vec<usize>,
@@ -137,8 +137,9 @@ impl PartitionsDirectoryEntry {
                 let gpt_indexes = gpt_indexes.clone();
                 async move {
                     if let Some(manager) = manager.upgrade() {
-                        if let Err(err) =
-                            manager.handle_overlay_partitions_requests(gpt_indexes, requests).await
+                        if let Err(err) = manager
+                            .handle_composite_partitions_requests(gpt_indexes, requests)
+                            .await
                         {
                             log::error!(err:?; "Error handling requests");
                         }

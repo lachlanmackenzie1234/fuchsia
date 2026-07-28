@@ -129,14 +129,22 @@ void BlockDevice::OpenSession(OpenSessionRequestView request,
   CreateSession(std::move(request->session));
 }
 
-void BlockDevice::OpenSessionWithOffsetMap(OpenSessionWithOffsetMapRequestView request,
-                                           OpenSessionWithOffsetMapCompleter::Sync& completer) {
-  CreateSession(std::move(request->session), request->mapping);
+void BlockDevice::OpenSessionWithOptions(OpenSessionWithOptionsRequestView request,
+                                         OpenSessionWithOptionsCompleter::Sync& completer) {
+  CreateSession(std::move(request->session), request->mappings);
 }
 
 void BlockDevice::CreateSession(
     fidl::ServerEnd<fuchsia_storage_block::Session> session,
-    std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping) {
+    fidl::VectorView<fuchsia_storage_block::wire::BlockOffsetMapping> mappings) {
+  std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping;
+  if (mappings.size() > 1) {
+    session.Close(ZX_ERR_NOT_SUPPORTED);
+    return;
+  }
+  if (!mappings.empty()) {
+    mapping = mappings[0];
+  }
   zx::result server = Server::Create(&self_protocol_, mapping);
   if (server.is_error()) {
     session.Close(server.error_value());

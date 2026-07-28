@@ -28,23 +28,23 @@ use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 pub trait Interface: Send + Sync + Unpin + 'static {
     /// Runs `stream` to completion.
     ///
-    /// `offset_map` is provided by the client, and is used to remap requests.  The extents in
+    /// `offset_map` is provided by the client, and is used to remap requests. The extents in
     /// `offset_map` are already validated to be within the range of the partition (as determined by
-    /// the [`PartitionInfo::block_count`] field).  The implementation is expected to apply these
+    /// the [`PartitionInfo::block_count`] field). The implementation is expected to apply these
     /// mappings to all FIFO requests, and to ensure all FIFO requests fit within the logical
-    /// extents of the offset map.  Note that the default implementation does this for you, and that
+    /// extents of the offset map. Note that the default implementation does this for you, and that
     /// is correct for most implementations.
     ///
     /// Implementors can override this method if they want to create a passthrough session instead
-    /// (and can use [`PassthroughSession`] below to do so).  Generally, a passthrough session would
+    /// (and can use [`PassthroughSession`] below to do so). Generally, a passthrough session would
     /// open a session to its underlying device with an offset map applied
-    /// (`fuchsia.storage.block.Block/OpenSessionWithOffsetMap`), which remaps and restricts
+    /// (`fuchsia.storage.block.Block/OpenSessionWithOptions`), which remaps and restricts
     /// requests to the range the partition should have access to.
     ///
-    /// Nested mappings (i.e.  the case when `offset_map` is Some, but the implementation creates a
-    /// passthrough session with its own mapping) would need to be composed by the implementation.
-    /// At this time, no implementations of passthrough sessions support nested mappings, but we can
-    /// add support as needed.
+    /// Nested mappings (i.e. the case when `offset_map` is non-empty, but the implementation
+    /// creates a passthrough session with its own mapping) would need to be composed by the
+    /// implementation. At this time, no implementations of passthrough sessions support nested
+    /// mappings, but we can add support as needed.
     ///
     /// If the implementor uses a [`PassthroughSession`], the following Interface methods
     /// will not be called, and can be stubbed out:
@@ -70,7 +70,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         )
     }
 
-    /// Called whenever a VMO is attached, prior to the VMO's usage in any other methods.  Whilst
+    /// Called whenever a VMO is attached, prior to the VMO's usage in any other methods. Whilst
     /// the VMO is attached, `vmo` will keep the same address so it is safe to use the pointer
     /// value (as, say, a key into a HashMap).
     fn on_attach_vmo(&self, _vmo: &zx::Vmo) -> impl Future<Output = Result<(), zx::Status>> + Send {
@@ -102,8 +102,9 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     /// Called for a request to write bytes.
     ///
     /// Implementations are responsible for checking that the request block range
-    /// (`[device_block_offset, device_block_offset + block_count)`) falls within valid device/partition
-    /// bounds, and returning `Err(zx::Status::OUT_OF_RANGE)` if it is out of bounds.
+    /// (`[device_block_offset, device_block_offset + block_count)`) falls within valid
+    /// device/partition bounds, and returning `Err(zx::Status::OUT_OF_RANGE)` if it is out of
+    /// bounds.
     fn write(
         &self,
         device_block_offset: u64,

@@ -14,7 +14,7 @@ use block_client::{
     WriteFlags, WriteOptions,
 };
 use block_server::async_interface::{Interface, SessionManager};
-use block_server::{BlockServer, DeviceInfo};
+use block_server::{BlockServer, DeviceInfo, VolumeInfo};
 use device::Device;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
@@ -1452,7 +1452,7 @@ impl Component {
             let inner = fvm.inner.read().await;
             let partition =
                 &inner.metadata.partitions.get(&partition_index).ok_or(zx::Status::INTERNAL)?;
-            DeviceInfo::Volume(block_server::VolumeInfo {
+            DeviceInfo::Volume(VolumeInfo {
                 device_flags: fvm.device.block_flags(),
                 max_transfer_blocks: fvm.device.max_transfer_blocks(),
                 type_guid: partition.type_guid,

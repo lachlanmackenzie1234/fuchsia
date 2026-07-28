@@ -16,6 +16,7 @@ rustc_library("gpt") {
     "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",
     "//src/storage/lib/block_client/rust",
+    "//src/storage/lib/block_server",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:crc",
     "//third_party/rust_crates:log",
@@ -29,7 +30,6 @@ rustc_library("gpt") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/storage/gpt:golden_images",
-    "//src/storage/lib/block_server",
     "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
   ]
   sources = [

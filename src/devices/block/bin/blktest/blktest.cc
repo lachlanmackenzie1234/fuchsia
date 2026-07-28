@@ -225,6 +225,20 @@ TEST(BlkdevTests, blkdev_test_fifo_out_of_bounds) {
     ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
   }
 
+  // Test 3: dev_offset + length integer overflow (UINT64_MAX - 1, length 10)
+  request = {
+      .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
+      .group = 0,
+      .vmoid = vmoid,
+      .length = 10,
+      .vmo_offset = 0,
+      .dev_offset = UINT64_MAX - 1,
+  };
+  ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+
+  request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
+  ASSERT_EQ(block_client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
+
   request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
   ASSERT_EQ(block_client.Transaction(&request, 1), ZX_OK);
 }

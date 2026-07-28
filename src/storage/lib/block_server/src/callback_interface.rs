@@ -89,6 +89,10 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         Ok(())
     }
 
+    /// Called when a new session request stream is opened. Constructs a `SessionHelper` with the
+    /// client-provided `offset_map` and device constraints, spawns the session runner via
+    /// `I::spawn_session`, and processes FIFO requests until the session channel is closed or
+    /// aborted.
     async fn open_session(
         orchestrator: Arc<Self::Orchestrator>,
         mut stream: fblock::SessionRequestStream,

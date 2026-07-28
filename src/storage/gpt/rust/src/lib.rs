@@ -108,6 +108,26 @@ impl PartitionInfo {
     }
 }
 
+impl From<&PartitionInfo> for block_server::PartitionInfo {
+    fn from(info: &PartitionInfo) -> Self {
+        block_server::PartitionInfo {
+            block_count: info.num_blocks,
+            start_block_offset: Some(info.start_block),
+            type_guid: info.type_guid.to_bytes(),
+            instance_guid: info.instance_guid.to_bytes(),
+            name: info.label.clone(),
+            flags: Some(info.flags),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<PartitionInfo> for block_server::PartitionInfo {
+    fn from(info: PartitionInfo) -> Self {
+        block_server::PartitionInfo::from(&info)
+    }
+}
+
 enum WhichHeader {
     Primary,
     Backup,

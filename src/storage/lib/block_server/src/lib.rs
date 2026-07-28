@@ -291,6 +291,22 @@ pub struct BlockOffsetMapping {
     pub length: u64,
 }
 
+/// Merges physically contiguous mappings into single logical mappings.  This is useful because it
+/// prevents requests from being unnecessarily split if they span the two mappings.
+pub fn coalesce_mappings(raw_mappings: Vec<BlockOffsetMapping>) -> Vec<BlockOffsetMapping> {
+    let mut mappings: Vec<BlockOffsetMapping> = Vec::with_capacity(raw_mappings.len());
+    for m in raw_mappings {
+        if let Some(last) = mappings.last_mut()
+            && last.target_block_offset + last.length == m.target_block_offset
+        {
+            last.length += m.length;
+        } else {
+            mappings.push(m);
+        }
+    }
+    mappings
+}
+
 /// Remaps the offset of block requests based on an internal map of contiguous logical extents.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OffsetMap {
@@ -342,7 +358,7 @@ impl OffsetMap {
         self.mappings.is_empty()
     }
 
-    fn total_blocks(&self) -> u64 {
+    pub fn total_blocks(&self) -> u64 {
         self.mappings.iter().map(|m| m.length).sum()
     }
 
@@ -368,7 +384,7 @@ impl TryFrom<&fblock::BlockOffsetMapping> for BlockOffsetMapping {
         if wire.length == 0 {
             return Err(zx::Status::INVALID_ARGS);
         }
-        wire.target_block_offset.checked_add(wire.length).ok_or(zx::Status::INVALID_ARGS)?;
+        wire.target_block_offset.checked_add(wire.length).ok_or(zx::Status::OUT_OF_RANGE)?;
         Ok(BlockOffsetMapping {
             target_block_offset: wire.target_block_offset,
             length: wire.length,
@@ -376,9 +392,47 @@ impl TryFrom<&fblock::BlockOffsetMapping> for BlockOffsetMapping {
     }
 }
 
+impl TryFrom<fblock::BlockOffsetMapping> for BlockOffsetMapping {
+    type Error = zx::Status;
+
+    fn try_from(wire: fblock::BlockOffsetMapping) -> Result<Self, Self::Error> {
+        BlockOffsetMapping::try_from(&wire)
+    }
+}
+
 impl From<&BlockOffsetMapping> for fblock::BlockOffsetMapping {
     fn from(m: &BlockOffsetMapping) -> Self {
         fblock::BlockOffsetMapping { target_block_offset: m.target_block_offset, length: m.length }
+    }
+}
+
+impl From<BlockOffsetMapping> for fblock::BlockOffsetMapping {
+    fn from(m: BlockOffsetMapping) -> Self {
+        fblock::BlockOffsetMapping::from(&m)
+    }
+}
+
+impl TryFrom<&[fblock::BlockOffsetMapping]> for OffsetMap {
+    type Error = zx::Status;
+
+    fn try_from(wire: &[fblock::BlockOffsetMapping]) -> Result<Self, Self::Error> {
+        let raw_mappings: Vec<BlockOffsetMapping> =
+            wire.iter().map(BlockOffsetMapping::try_from).collect::<Result<_, _>>()?;
+        OffsetMap::new(raw_mappings)
+    }
+}
+
+impl TryFrom<Vec<fblock::BlockOffsetMapping>> for OffsetMap {
+    type Error = zx::Status;
+
+    fn try_from(wire: Vec<fblock::BlockOffsetMapping>) -> Result<Self, Self::Error> {
+        OffsetMap::try_from(wire.as_slice())
+    }
+}
+
+impl From<&OffsetMap> for Vec<fblock::BlockOffsetMapping> {
+    fn from(offset_map: &OffsetMap) -> Self {
+        offset_map.mappings.iter().map(fblock::BlockOffsetMapping::from).collect()
     }
 }
 
@@ -543,31 +597,24 @@ impl<SM: SessionManager> BlockServer<SM> {
                     self.block_size,
                 )));
             }
-            fblock::BlockRequest::OpenSessionWithOffsetMap {
+            fblock::BlockRequest::OpenSessionWithOptions {
                 session,
-                mapping,
+                mappings,
                 control_handle: _,
             } => {
                 let info = self.device_info();
-                let mapping: BlockOffsetMapping = match (&mapping).try_into() {
-                    Ok(m) => m,
+                let offset_map: OffsetMap = match mappings.as_slice().try_into() {
+                    Ok(map) => map,
                     Err(status) => {
                         session.close_with_epitaph(status)?;
                         return Ok(None);
                     }
                 };
-                let offset_map = match OffsetMap::new(vec![mapping]) {
-                    Ok(map) => map,
-                    Err(_) => {
-                        session.close_with_epitaph(zx::Status::INVALID_ARGS)?;
-                        return Ok(None);
-                    }
-                };
                 if let Some(max) = info.block_count() {
                     for m in offset_map.mappings() {
-                        if m.target_block_offset + m.length > max {
+                        if m.target_block_offset.checked_add(m.length).unwrap_or(u64::MAX) > max {
                             log::warn!("Invalid mapping for session: {m:?} (max blocks {max})");
-                            session.close_with_epitaph(zx::Status::INVALID_ARGS)?;
+                            session.close_with_epitaph(zx::Status::OUT_OF_RANGE)?;
                             return Ok(None);
                         }
                     }
@@ -1185,7 +1232,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
             }
         }
         let remainder =
-            request.operation.map(&self.offset_map, self.max_transfer_blocks, self.block_size);
+            request.operation.map(&self.offset_map, self.max_transfer_blocks, self.block_size)?;
         if remainder.is_some() {
             active_request.count += 1;
         }
@@ -1352,15 +1399,18 @@ impl Operation {
         offset_map: &OffsetMap,
         max_transfer_blocks: Option<NonZero<u32>>,
         block_size: u32,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, zx::Status> {
         let mut max = match self {
             Operation::Read { .. } | Operation::Write { .. } => max_transfer_blocks.map(u32::from),
             _ => None,
         };
-        let (offset, length) = self.blocks_mut()?;
+        let (offset, length) = match self.blocks_mut() {
+            Some(b) => b,
+            None => return Ok(None),
+        };
         let orig_offset = *offset;
         if !offset_map.is_empty() {
-            let (dev_offset, len) = offset_map.map(*offset).expect("offset out of range");
+            let (dev_offset, len) = offset_map.map(*offset).ok_or(zx::Status::OUT_OF_RANGE)?;
             *offset = dev_offset;
             max = match max {
                 None => Some(len),
@@ -1371,7 +1421,7 @@ impl Operation {
             if *length as u64 > max as u64 {
                 let rem = *length - max;
                 *length = max;
-                return Some(match self {
+                return Ok(Some(match self {
                     Operation::Read {
                         device_block_offset: _,
                         block_count: _,
@@ -1411,10 +1461,10 @@ impl Operation {
                         block_count: rem,
                     },
                     _ => unreachable!(),
-                });
+                }));
             }
         }
-        None
+        Ok(None)
     }
 
     /// Returns true if the specified write flags are set.
@@ -3081,7 +3131,7 @@ mod tests {
                 let (session_proxy, server) = fidl::endpoints::create_proxy();
 
                 let mapping = fblock::BlockOffsetMapping { target_block_offset: 10, length: 20 };
-                proxy.open_session_with_offset_map(server, &mapping).unwrap();
+                proxy.open_session_with_options(server, &[mapping]).unwrap();
 
                 let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
                 let vmo_id = session_proxy
@@ -3212,7 +3262,8 @@ mod tests {
                 })
                 .unwrap_or_else(OffsetMap::empty);
             let mut ops = vec![];
-            while let Some(remainder) = operation.map(&offset_map, max_blocks, BLOCK_SIZE) {
+            while let Some(remainder) = operation.map(&offset_map, max_blocks, BLOCK_SIZE).unwrap()
+            {
                 ops.push(operation);
                 operation = remainder;
             }
@@ -3329,7 +3380,7 @@ mod tests {
             expected_operations: Vec<Operation>,
         ) {
             let mut ops = vec![];
-            while let Some(remainder) = operation.map(offset_map, max_blocks, BLOCK_SIZE) {
+            while let Some(remainder) = operation.map(offset_map, max_blocks, BLOCK_SIZE).unwrap() {
                 ops.push(operation);
                 operation = remainder;
             }
@@ -3877,8 +3928,37 @@ mod tests {
         assert_eq!(zx::Status::from_raw(response.status), zx::Status::OUT_OF_RANGE);
     }
 
+    #[test]
+    fn test_offset_map_coalescing() {
+        use crate::{BlockOffsetMapping, OffsetMap};
+
+        // Mappings 0 and 1 are contiguous in device offset (100..150 + 150..180 = 100..180).
+        // Mapping 2 is not contiguous with 1 (target 250 instead of 180).
+        let mappings = vec![
+            BlockOffsetMapping { target_block_offset: 100, length: 50 },
+            BlockOffsetMapping { target_block_offset: 150, length: 30 },
+            BlockOffsetMapping { target_block_offset: 250, length: 20 },
+        ];
+        let map = OffsetMap::new(crate::coalesce_mappings(mappings)).unwrap();
+
+        assert_eq!(map.mappings().len(), 2);
+        assert_eq!(map.mappings()[0].target_block_offset, 100);
+        assert_eq!(map.mappings()[0].length, 80);
+        assert_eq!(map.mappings()[1].target_block_offset, 250);
+        assert_eq!(map.mappings()[1].length, 20);
+
+        // Logical offset 10 falls in the first extent, but since it coalesces with the second,
+        // extent_remaining_blocks extends to logical offset 80 (80 - 10 = 70).
+        assert_eq!(map.map(10), Some((110, 70)));
+        // Logical offset 55 falls in the second extent, remaining blocks up to logical 80
+        // (80 - 55 = 25).
+        assert_eq!(map.map(55), Some((155, 25)));
+        // Logical offset 85 falls in the third extent, which is not coalesced with the second
+        // (100 - 85 = 15).
+        assert_eq!(map.map(85), Some((255, 15)));
+    }
     #[fuchsia::test]
-    async fn test_open_session_with_offset_map_errors() {
+    async fn test_open_session_with_options_errors() {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         futures::join!(
@@ -3887,13 +3967,14 @@ mod tests {
                 let _ = block_server.handle_requests(stream).await;
             },
             async move {
-                // Test 1: Length 0 mapping -> should close session with INVALID_ARGS epitaph.
+                // Test 1: Mapping with zero length -> should close session with
+                // INVALID_ARGS epitaph.
                 {
                     let (session_proxy, server) = fidl::endpoints::create_proxy();
                     proxy
-                        .open_session_with_offset_map(
+                        .open_session_with_options(
                             server,
-                            &fblock::BlockOffsetMapping { target_block_offset: 0, length: 0 },
+                            &[fblock::BlockOffsetMapping { target_block_offset: 0, length: 0 }],
                         )
                         .unwrap();
                     let res = session_proxy.get_fifo().await;
@@ -3907,19 +3988,19 @@ mod tests {
                 }
 
                 // Test 2: Mappings out of range (exceeding block_count) -> should close with
-                // INVALID_ARGS epitaph.
+                // OUT_OF_RANGE epitaph.
                 {
                     let (session_proxy, server) = fidl::endpoints::create_proxy();
                     let mapping = fblock::BlockOffsetMapping {
                         target_block_offset: u64::MAX - 10, // Way past block_count
                         length: 10,
                     };
-                    proxy.open_session_with_offset_map(server, &mapping).unwrap();
+                    proxy.open_session_with_options(server, &[mapping]).unwrap();
                     let res = session_proxy.get_fifo().await;
                     assert_matches!(
                         res,
                         Err(fidl::Error::ClientChannelClosed {
-                            status: zx::Status::INVALID_ARGS,
+                            status: zx::Status::OUT_OF_RANGE,
                             ..
                         })
                     );

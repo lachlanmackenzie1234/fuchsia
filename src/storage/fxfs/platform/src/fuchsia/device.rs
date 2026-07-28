@@ -309,7 +309,7 @@ impl BlockServer {
                     })
                     .await?;
             }
-            BlockRequest::OpenSessionWithOffsetMap { session, mapping: _, control_handle: _ } => {
+            BlockRequest::OpenSessionWithOptions { session, mappings: _, control_handle: _ } => {
                 session.close_with_epitaph(zx::Status::NOT_SUPPORTED)?;
             }
             // TODO(https://fxbug.dev/293970391)

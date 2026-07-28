@@ -75,8 +75,8 @@ class BlockDevice : public BlockDeviceType,
   // fuchsia_storage_block::Block
   void GetInfo(GetInfoCompleter::Sync& completer) override;
   void OpenSession(OpenSessionRequestView request, OpenSessionCompleter::Sync& completer) override;
-  void OpenSessionWithOffsetMap(OpenSessionWithOffsetMapRequestView request,
-                                OpenSessionWithOffsetMapCompleter::Sync& completer) override;
+  void OpenSessionWithOptions(OpenSessionWithOptionsRequestView request,
+                              OpenSessionWithOptionsCompleter::Sync& completer) override;
 
   void GetTypeGuid(GetTypeGuidCompleter::Sync& completer) override;
   void GetInstanceGuid(GetInstanceGuidCompleter::Sync& completer) override;
@@ -94,7 +94,7 @@ class BlockDevice : public BlockDeviceType,
 
   void CreateSession(
       fidl::ServerEnd<fuchsia_storage_block::Session> session,
-      std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping = std::nullopt);
+      fidl::VectorView<fuchsia_storage_block::wire::BlockOffsetMapping> mappings = {});
 
   // Completion callback that expects StatsCookie as |cookie| and calls upper
   // layer completion cookie.

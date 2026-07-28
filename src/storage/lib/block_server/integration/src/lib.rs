@@ -454,8 +454,18 @@ async fn test_gpt_on_ramdisk() {
 // work.  If passthrough is not enabled, then the test will deadlock (as the sync call will block
 // forever, because the test is single-threaded).
 // Note that the test must be executed on a single thread to be useful.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PassthroughTestCase {
+    SinglePartition,
+    ContiguousMergedPartition,
+    DiscontiguousMergedPartition,
+}
+
+#[test_case(PassthroughTestCase::SinglePartition; "single_partition")]
+#[test_case(PassthroughTestCase::ContiguousMergedPartition; "contiguous_merged_partition")]
+#[test_case(PassthroughTestCase::DiscontiguousMergedPartition; "discontiguous_merged_partition")]
 #[fuchsia::test]
-async fn test_gpt_passthrough_is_enabled() {
+async fn test_gpt_passthrough(case: PassthroughTestCase) {
     let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
         .max_transfer_blocks(MAX_TRANSFER_BLOCKS)
         .build()
@@ -464,24 +474,67 @@ async fn test_gpt_passthrough_is_enabled() {
 
     const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
     const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
-    const PART_NAME: &str = FVM_PARTITION_LABEL;
+    let (partitions, merge_super_and_userdata) = match case {
+        PassthroughTestCase::SinglePartition => (
+            vec![gpt::PartitionInfo {
+                label: FVM_PARTITION_LABEL.to_string(),
+                type_guid: gpt::Guid::from_bytes(PART_TYPE_GUID),
+                instance_guid: gpt::Guid::from_bytes(PART_INSTANCE_GUID),
+                start_block: 4,
+                num_blocks: 4,
+                flags: 0xabcd,
+            }],
+            false,
+        ),
+        PassthroughTestCase::ContiguousMergedPartition => (
+            vec![
+                gpt::PartitionInfo {
+                    label: "super".to_string(),
+                    type_guid: gpt::Guid::from_bytes(PART_TYPE_GUID),
+                    instance_guid: gpt::Guid::from_bytes(PART_INSTANCE_GUID),
+                    start_block: 4,
+                    num_blocks: 2,
+                    flags: 0xabcd,
+                },
+                gpt::PartitionInfo {
+                    label: "userdata".to_string(),
+                    type_guid: gpt::Guid::from_bytes(PART_TYPE_GUID),
+                    instance_guid: gpt::Guid::from_bytes(PART_INSTANCE_GUID),
+                    start_block: 6,
+                    num_blocks: 2,
+                    flags: 0xabcd,
+                },
+            ],
+            true,
+        ),
+        PassthroughTestCase::DiscontiguousMergedPartition => (
+            vec![
+                gpt::PartitionInfo {
+                    label: "super".to_string(),
+                    type_guid: gpt::Guid::from_bytes(PART_TYPE_GUID),
+                    instance_guid: gpt::Guid::from_bytes(PART_INSTANCE_GUID),
+                    start_block: 4,
+                    num_blocks: 2,
+                    flags: 0xabcd,
+                },
+                gpt::PartitionInfo {
+                    label: "userdata".to_string(),
+                    type_guid: gpt::Guid::from_bytes(PART_TYPE_GUID),
+                    instance_guid: gpt::Guid::from_bytes(PART_INSTANCE_GUID),
+                    start_block: 10,
+                    num_blocks: 2,
+                    flags: 0xabcd,
+                },
+            ],
+            true,
+        ),
+    };
+
     {
         let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
         ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");
         let client = Arc::new(block_client::RemoteBlockClient::new(proxy).await.unwrap());
-        gpt::Gpt::format(
-            client,
-            vec![gpt::PartitionInfo {
-                label: PART_NAME.to_string(),
-                type_guid: gpt::Guid::from_bytes(PART_TYPE_GUID),
-                instance_guid: gpt::Guid::from_bytes(PART_INSTANCE_GUID),
-                start_block: 4,
-                num_blocks: 2,
-                flags: 0xabcd,
-            }],
-        )
-        .await
-        .unwrap();
+        gpt::Gpt::format(client, partitions).await.unwrap();
     }
 
     let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
@@ -489,9 +542,13 @@ async fn test_gpt_passthrough_is_enabled() {
 
     let partitions_dir = vfs::directory::immutable::simple();
     let partitions_dir_clone = partitions_dir.clone();
-    let runner = gpt_component::gpt::GptManager::new(proxy, partitions_dir_clone)
-        .await
-        .expect("load should succeed");
+    let runner = gpt_component::gpt::GptManager::new_with_config(
+        proxy,
+        partitions_dir_clone,
+        gpt_component::config::Config { merge_super_and_userdata, ..Default::default() },
+    )
+    .await
+    .expect("load should succeed");
 
     let part_dir = vfs::serve_directory(
         partitions_dir.clone(),
@@ -504,9 +561,9 @@ async fn test_gpt_passthrough_is_enabled() {
     >(&part_dir, "volume")
     .expect("Failed to open Volume service");
 
+    // 1. Send synchronous Flush to verify passthrough avoids deadlocking on a single thread.
     {
         let (session_proxy, server) = fidl::endpoints::create_proxy();
-
         part_block.open_session(server).unwrap();
 
         let fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest> =
@@ -535,6 +592,49 @@ async fn test_gpt_passthrough_is_enabled() {
                 }
             }
         }
+    }
+
+    // 2. Write canary values to the partition and verify the underlying physical blocks.
+    {
+        let client = block_client::RemoteBlockClient::new(part_block).await.unwrap();
+        let canary1 = vec![0xaau8; BLOCK_SIZE as usize];
+        let canary2 = vec![0xbbu8; BLOCK_SIZE as usize];
+
+        // Virtual block 0 corresponds to physical block 4 across all cases.
+        client
+            .write_at(block_client::BufferSlice::Memory(&canary1), 0)
+            .await
+            .expect("write canary1 failed");
+
+        // Virtual block 2 maps to physical block 6 for Single/Contiguous, or 10 for Discontiguous.
+        client
+            .write_at(block_client::BufferSlice::Memory(&canary2), 2 * BLOCK_SIZE as u64)
+            .await
+            .expect("write canary2 failed");
+
+        // Connect directly to the underlying raw ramdisk and verify the physical blocks.
+        let (raw_proxy, raw_server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
+        ramdisk.connect(raw_server.into_channel().into()).expect("Failed to connect to ramdisk");
+        let raw_client = block_client::RemoteBlockClient::new(raw_proxy).await.unwrap();
+
+        let mut read_buf = vec![0u8; BLOCK_SIZE as usize];
+        let offset1 = 4 * BLOCK_SIZE as u64;
+        let offset2 = match case {
+            PassthroughTestCase::DiscontiguousMergedPartition => 10 * BLOCK_SIZE as u64,
+            _ => 6 * BLOCK_SIZE as u64,
+        };
+
+        raw_client
+            .read_at(block_client::MutableBufferSlice::Memory(&mut read_buf), offset1)
+            .await
+            .expect("read first physical block failed");
+        assert_eq!(read_buf, canary1);
+
+        raw_client
+            .read_at(block_client::MutableBufferSlice::Memory(&mut read_buf), offset2)
+            .await
+            .expect("read second physical block failed");
+        assert_eq!(read_buf, canary2);
     }
 
     runner.shutdown().await;
