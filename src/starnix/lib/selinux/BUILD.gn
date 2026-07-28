@@ -94,6 +94,7 @@ rustc_library("selinux") {
     "testdata/micro_policies/no_allow_a_t_b_t_class0_perm0_policy",
     "testdata/micro_policies/security_context_tests_policy",
     "testdata/micro_policies/security_server_tests_policy",
+    "testdata/policies/aosp_sepolicy",
     "testdata/policies/emulator",
     "testdata/policies/selinux_testsuite",
   ]

@@ -16,7 +16,6 @@ use super::{AccessVector, ClassId, NewPolicy, TypeId, U24Index};
 
 pub use selinux_policy_derive::{Parse, Serialize};
 
-// Constants
 /// Flag bit for standard `allow` rules.
 pub const AV_ALLOW_RULE_FLAG: u16 = 0x1;
 /// Flag bit for `auditallow` rules.
@@ -299,14 +298,30 @@ impl From<RuleKind> for u16 {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccessRule {
     key: RuleKey,
+    kind: RuleKind,
     access_vector: AccessVector,
+}
+
+impl AccessRule {
+    /// Returns the [`AccessVector`] for this rule.
+    pub fn access_vector(&self) -> AccessVector {
+        self.access_vector
+    }
 }
 
 /// Type transition, change, or member rule.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TypeTransitionRule {
+pub struct TypeRule {
     key: RuleKey,
+    kind: RuleKind,
     new_type: TypeId,
+}
+
+impl TypeRule {
+    /// Returns the target type ID for this rule transition.
+    pub fn new_type(&self) -> TypeId {
+        self.new_type
+    }
 }
 
 /// Extended permissions rule (allowxperm, auditallowxperm, dontauditxperm).
@@ -315,6 +330,13 @@ pub struct XpermRule {
     key: RuleKey,
     kind: RuleKind,
     extended_permissions: ExtendedPermissions,
+}
+
+impl XpermRule {
+    /// Returns the extended permissions block for this rule.
+    pub fn extended_permissions(&self) -> &ExtendedPermissions {
+        &self.extended_permissions
+    }
 }
 
 /// Lookup key for indexing and matching access vector rules by source domain, target domain, and class.
@@ -359,27 +381,39 @@ impl Validate for RuleKey {
     }
 }
 
-/// Trait implemented by rule types that provide a [`RuleKey`].
+/// Trait implemented by rule types that provide a [`RuleKey`] and [`RuleKind`].
 pub trait HasRuleKey {
     /// Returns the [`RuleKey`] for this rule.
     fn key(&self) -> RuleKey;
+
+    /// Returns the [`RuleKind`] for this rule.
+    fn kind(&self) -> RuleKind;
 }
 
 impl HasRuleKey for AccessRule {
     fn key(&self) -> RuleKey {
         self.key
     }
+    fn kind(&self) -> RuleKind {
+        self.kind
+    }
 }
 
-impl HasRuleKey for TypeTransitionRule {
+impl HasRuleKey for TypeRule {
     fn key(&self) -> RuleKey {
         self.key
+    }
+    fn kind(&self) -> RuleKind {
+        self.kind
     }
 }
 
 impl HasRuleKey for XpermRule {
     fn key(&self) -> RuleKey {
         self.key
+    }
+    fn kind(&self) -> RuleKind {
+        self.kind
     }
 }
 
@@ -419,53 +453,35 @@ impl AccessDecision {
     }
 }
 
-/// Standard access vector decisions (allow, auditallow, dontaudit) for a source, target, and class tuple.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AccessVectorDecision {
-    /// Permissions explicitly granted by matching allow rules.
-    pub allow: Option<AccessVector>,
-    /// Permissions explicitly marked for audit logging on grant.
-    pub auditallow: Option<AccessVector>,
-    /// Permissions explicitly suppressed from audit logging on denial.
-    pub dontaudit: Option<AccessVector>,
-}
-
-/// Container for access vector rules optimizing rule lookups and memory layout while preserving
-/// byte-for-byte serialization.
+/// Lookup table for SELinux rules, optimized for fast queries. It maps a [`RuleKey`]
+/// (source, target, class) to matching rules.
 ///
-/// This structure balances three primary goals:
-/// 1. **Separate Rule-Type Lookup Tables**: Maintains independent lookup tables for each
-///    [`RuleKind`] (such as `allow`, `dontaudit`, and `type_transition`) to avoid the overhead of
-///    hashing rule-type values and eliminate query-side type filtering.
-/// 2. **Homogeneous Payload Arrays**: Stores distinct rule payload types ([`AccessRule`],
-///    [`TypeTransitionRule`], and [`XpermRule`]) in separate contiguous arrays to eliminate memory
-///    and performance penalties from padding when mixing differently sized and aligned payload
-///    types in the same table.
-/// 3. **Byte-for-Byte Serialization**: Retains the original binary policy order via `rule_order` to
-///    re-serialize policy data losslessly without storing ordering metadata inside individual rules.
+/// Rules are grouped into three contiguous arrays based on their payload struct:
+/// 1. [`AccessRule`] (`av_rules`): allow, auditallow, dontaudit.
+/// 2. [`TypeRule`] (`type_rules`): transitions.
+/// 3. [`XpermRule`] (`xperm_rules`): allowxperm, auditallowxperm, dontauditxperm.
 ///
-/// Lookups map [`RuleKey`] hashes to array positions via compact [`U24Index`] values.
+/// Three corresponding [`HashTable`]s map [`RuleKey`]s to the index of the **first** matching rule.
+/// Lookups return an iterator that starts at that index and yields rules until the
+/// key changes. This works because binary policies guarantee rules for the same key
+/// are contiguous.
 #[derive(Debug, Clone)]
 pub struct AccessVectorRules {
     av_rules: Box<[AccessRule]>,
-    type_transitions: Box<[TypeTransitionRule]>,
+    type_rules: Box<[TypeRule]>,
     xperm_rules: Box<[XpermRule]>,
     rule_order: Box<[RuleKind]>,
 
-    allow: HashTable<U24Index>,
-    auditallow: HashTable<U24Index>,
-    dontaudit: HashTable<U24Index>,
-    type_transition: HashTable<U24Index>,
-    allowxperm: HashTable<U24Index>,
-    auditallowxperm: HashTable<U24Index>,
-    dontauditxperm: HashTable<U24Index>,
+    av_table: HashTable<U24Index>,
+    type_transition_table: HashTable<U24Index>,
+    xperms_table: HashTable<U24Index>,
     hasher: RapidBuildHasher,
 }
 
 impl PartialEq for AccessVectorRules {
     fn eq(&self, other: &Self) -> bool {
         self.av_rules == other.av_rules
-            && self.type_transitions == other.type_transitions
+            && self.type_rules == other.type_rules
             && self.xperm_rules == other.xperm_rules
             && self.rule_order == other.rule_order
     }
@@ -473,182 +489,64 @@ impl PartialEq for AccessVectorRules {
 
 impl Eq for AccessVectorRules {}
 
-/// Extended permission decisions (allowxperm, auditallowxperm, dontauditxperm) for a source, target, and class tuple.
-pub struct XpermsDecisions<'a> {
-    /// Iterator yielding extended permissions granted by allowxperm rules.
-    pub allow: XpermsIter<'a>,
-    /// Iterator yielding extended permissions marked for audit logging by auditallowxperm rules.
-    pub auditallow: XpermsIter<'a>,
-    /// Iterator yielding extended permissions suppressed from audit logging by dontauditxperm rules.
-    pub dontaudit: XpermsIter<'a>,
-}
-
 impl AccessVectorRules {
-    /// Constructs a new [`AccessVectorRules`] table and builds dedicated lookup indexes for each rule type.
-    pub fn new(
-        av_rules: Box<[AccessRule]>,
-        type_transitions: Box<[TypeTransitionRule]>,
-        xperm_rules: Box<[XpermRule]>,
-        rule_order: Box<[RuleKind]>,
-    ) -> Result<Self, ParseError> {
-        let hasher = RapidBuildHasher::default();
-
-        let mut allow: HashTable<U24Index> = HashTable::new();
-        let mut auditallow: HashTable<U24Index> = HashTable::new();
-        let mut dontaudit: HashTable<U24Index> = HashTable::new();
-        let mut type_transition: HashTable<U24Index> = HashTable::new();
-
-        let mut allowxperm: HashTable<U24Index> = HashTable::new();
-        let mut auditallowxperm: HashTable<U24Index> = HashTable::new();
-        let mut dontauditxperm: HashTable<U24Index> = HashTable::new();
-
-        let mut av_idx = 0;
-        let mut tr_idx = 0;
-        let mut xp_idx = 0;
-
-        let mut rule_order_iter = rule_order.iter().peekable();
-        while let Some(&kind) = rule_order_iter.next() {
-            match kind {
-                RuleKind::Allow | RuleKind::AuditAllow | RuleKind::DontAudit => {
-                    let table = match kind {
-                        RuleKind::Allow => &mut allow,
-                        RuleKind::AuditAllow => &mut auditallow,
-                        RuleKind::DontAudit => &mut dontaudit,
-                        _ => unreachable!(),
-                    };
-                    insert_rule(table, &hasher, &av_rules, av_idx.try_into()?, kind)?;
-                    av_idx += 1;
-                }
-                RuleKind::TypeTransition | RuleKind::TypeChange | RuleKind::TypeMember => {
-                    if kind == RuleKind::TypeTransition {
-                        insert_rule(
-                            &mut type_transition,
-                            &hasher,
-                            &type_transitions,
-                            tr_idx.try_into()?,
-                            kind,
-                        )?;
-                    }
-                    tr_idx += 1;
-                }
-                RuleKind::AllowXperm | RuleKind::AuditAllowXperm | RuleKind::DontAuditXperm => {
-                    let table = match kind {
-                        RuleKind::AllowXperm => &mut allowxperm,
-                        RuleKind::AuditAllowXperm => &mut auditallowxperm,
-                        RuleKind::DontAuditXperm => &mut dontauditxperm,
-                        _ => unreachable!(),
-                    };
-                    insert_rule(table, &hasher, &xperm_rules, xp_idx.try_into()?, kind)?;
-
-                    while xp_idx + 1 < xperm_rules.len()
-                        && xperm_rules[xp_idx + 1].kind == kind
-                        && xperm_rules[xp_idx + 1].key() == xperm_rules[xp_idx].key()
-                    {
-                        xp_idx += 1;
-                        rule_order_iter.next();
-                    }
-                    xp_idx += 1;
-                }
-            }
-        }
-
-        Ok(Self {
-            av_rules,
-            type_transitions,
-            xperm_rules,
-            rule_order,
-            allow,
-            auditallow,
-            dontaudit,
-            type_transition,
-            allowxperm,
-            auditallowxperm,
-            dontauditxperm,
-            hasher,
-        })
-    }
-
-    /// Finds standard allow, auditallow, and dontaudit access vector decisions for the specified tuple.
-    pub fn find_av_decisions(
-        &self,
-        source: TypeId,
-        target: TypeId,
-        class: ClassId,
-    ) -> AccessVectorDecision {
-        let key = RuleKey::new(source, target, class);
-        let hash = key.hash(&self.hasher);
-
-        let lookup = |table: &HashTable<U24Index>| {
-            let idx = table.find(hash, |&i| self.av_rules[i].key() == key)?;
-            Some(self.av_rules[*idx].access_vector)
+    fn find_rules<'a, R: HasRuleKey>(
+        table: &HashTable<U24Index>,
+        rules: &'a [R],
+        key: RuleKey,
+        hasher: &RapidBuildHasher,
+    ) -> impl Iterator<Item = &'a R> {
+        let hash = key.hash(hasher);
+        let slice = match table.find(hash, |&i| rules[usize::from(i)].key() == key) {
+            Some(&i) => &rules[usize::from(i)..],
+            None => &[],
         };
-
-        AccessVectorDecision {
-            allow: lookup(&self.allow),
-            auditallow: lookup(&self.auditallow),
-            dontaudit: lookup(&self.dontaudit),
-        }
+        slice.iter().take_while(move |rule| rule.key() == key)
     }
 
-    /// Finds the target domain type transition for the specified source, target, and class tuple.
-    pub fn find_type_transition(
+    /// Returns an iterator yielding matching standard access vector rules for the specified tuple.
+    pub fn find_av_rules(
         &self,
         source: TypeId,
         target: TypeId,
         class: ClassId,
-    ) -> Option<TypeId> {
-        let key = RuleKey::new(source, target, class);
-        let hash = key.hash(&self.hasher);
-        let idx = self.type_transition.find(hash, |&i| self.type_transitions[i].key() == key)?;
-        Some(self.type_transitions[*idx].new_type)
+    ) -> impl Iterator<Item = &AccessRule> {
+        Self::find_rules(
+            &self.av_table,
+            &self.av_rules,
+            RuleKey::new(source, target, class),
+            &self.hasher,
+        )
     }
 
-    /// Finds extended permission decisions (allowxperm, auditallowxperm, dontauditxperm) for the specified tuple.
-    pub fn find_xperms_decisions(
+    /// Returns an iterator yielding matching type transition, change, or member rules for the specified tuple.
+    pub fn find_type_rules(
         &self,
         source: TypeId,
         target: TypeId,
         class: ClassId,
-    ) -> XpermsDecisions<'_> {
-        let key = RuleKey::new(source, target, class);
-        let hash = key.hash(&self.hasher);
-
-        let lookup = |table: &HashTable<U24Index>, kind: RuleKind| {
-            let r = table.find(hash, |&r| self.xperm_rules[r].key() == key).copied();
-            match r {
-                Some(r) => {
-                    let slice = &self.xperm_rules[usize::from(r)..];
-                    XpermsIter { iter: slice.iter(), key, kind }
-                }
-                None => XpermsIter { iter: [].iter(), key, kind },
-            }
-        };
-
-        XpermsDecisions {
-            allow: lookup(&self.allowxperm, RuleKind::AllowXperm),
-            auditallow: lookup(&self.auditallowxperm, RuleKind::AuditAllowXperm),
-            dontaudit: lookup(&self.dontauditxperm, RuleKind::DontAuditXperm),
-        }
+    ) -> impl Iterator<Item = &TypeRule> {
+        Self::find_rules(
+            &self.type_transition_table,
+            &self.type_rules,
+            RuleKey::new(source, target, class),
+            &self.hasher,
+        )
     }
-}
 
-/// Iterator over extended permissions rules matching a specific [`RuleKey`].
-pub struct XpermsIter<'a> {
-    iter: std::slice::Iter<'a, XpermRule>,
-    key: RuleKey,
-    kind: RuleKind,
-}
-
-impl<'a> Iterator for XpermsIter<'a> {
-    type Item = &'a ExtendedPermissions;
-    fn next(&mut self) -> Option<Self::Item> {
-        let rule = self.iter.as_slice().first()?;
-        if rule.key() != self.key || rule.kind != self.kind {
-            self.iter = [].iter();
-            return None;
-        }
-        let rule = self.iter.next()?;
-        Some(&rule.extended_permissions)
+    /// Returns an iterator yielding matching extended permission rules for the specified tuple.
+    pub fn find_xperm_rules(
+        &self,
+        source: TypeId,
+        target: TypeId,
+        class: ClassId,
+    ) -> impl Iterator<Item = &XpermRule> {
+        Self::find_rules(
+            &self.xperms_table,
+            &self.xperm_rules,
+            RuleKey::new(source, target, class),
+            &self.hasher,
+        )
     }
 }
 
@@ -657,10 +555,12 @@ impl Parse for AccessVectorRules {
         let count = u32::parse(cursor)? as usize;
 
         let mut av_rules = Vec::new();
-        let mut type_transitions = Vec::new();
+        let mut type_rules = Vec::new();
         let mut xperm_rules = Vec::new();
         let mut rule_order = Vec::with_capacity(count);
 
+        // Split rules out based on the three different kinds of payload (access vector, type, or
+        // extended permissions block).
         for _ in 0..count {
             let header = BinaryAccessVectorRuleHeader::parse(cursor)?;
             let kind = RuleKind::try_from(header.rule_flags)?;
@@ -687,23 +587,38 @@ impl Parse for AccessVectorRules {
                 }
                 RuleKind::TypeTransition | RuleKind::TypeChange | RuleKind::TypeMember => {
                     let new_type = TypeId::parse(cursor)?;
-                    type_transitions.push(TypeTransitionRule { key, new_type });
+                    type_rules.push(TypeRule { key, kind, new_type });
                     rule_order.push(kind);
                 }
                 RuleKind::Allow | RuleKind::AuditAllow | RuleKind::DontAudit => {
                     let access_vector = AccessVector::parse(cursor)?;
-                    av_rules.push(AccessRule { key, access_vector });
+                    av_rules.push(AccessRule { key, kind, access_vector });
                     rule_order.push(kind);
                 }
             }
         }
 
-        Self::new(
-            av_rules.into_boxed_slice(),
-            type_transitions.into_boxed_slice(),
-            xperm_rules.into_boxed_slice(),
-            rule_order.into_boxed_slice(),
-        )
+        let av_rules = av_rules.into_boxed_slice();
+        let type_rules = type_rules.into_boxed_slice();
+        let xperm_rules = xperm_rules.into_boxed_slice();
+        let rule_order = rule_order.into_boxed_slice();
+
+        // Create indexes for each of the rule arrays.
+        let hasher = RapidBuildHasher::default();
+        let av_table = build_index(&av_rules, &hasher)?;
+        let type_transition_table = build_index(&type_rules, &hasher)?;
+        let xperms_table = build_index(&xperm_rules, &hasher)?;
+
+        Ok(Self {
+            av_rules,
+            type_rules,
+            xperm_rules,
+            rule_order,
+            av_table,
+            type_transition_table,
+            xperms_table,
+            hasher,
+        })
     }
 }
 
@@ -712,28 +627,25 @@ impl Serialize for AccessVectorRules {
         let count = self.rule_order.len() as u32;
         count.serialize(writer)?;
 
-        let mut av_idx = 0;
-        let mut tr_idx = 0;
-        let mut xp_idx = 0;
+        let mut av_rules = self.av_rules.iter();
+        let mut type_rules = self.type_rules.iter();
+        let mut xperm_rules = self.xperm_rules.iter();
 
         for &kind in self.rule_order.iter() {
             match kind {
                 RuleKind::Allow | RuleKind::AuditAllow | RuleKind::DontAudit => {
-                    let rule = &self.av_rules[av_idx];
-                    av_idx += 1;
+                    let rule = av_rules.next().unwrap();
                     rule.key.to_header(kind).serialize(writer)?;
                     let val: u32 = rule.access_vector.into();
                     val.serialize(writer)?;
                 }
                 RuleKind::TypeTransition | RuleKind::TypeChange | RuleKind::TypeMember => {
-                    let rule = &self.type_transitions[tr_idx];
-                    tr_idx += 1;
+                    let rule = type_rules.next().unwrap();
                     rule.key.to_header(kind).serialize(writer)?;
                     rule.new_type.serialize(writer)?;
                 }
                 RuleKind::AllowXperm | RuleKind::AuditAllowXperm | RuleKind::DontAuditXperm => {
-                    let rule = &self.xperm_rules[xp_idx];
-                    xp_idx += 1;
+                    let rule = xperm_rules.next().unwrap();
                     rule.key.to_header(kind).serialize(writer)?;
                     rule.extended_permissions.serialize(writer)?;
                 }
@@ -748,7 +660,7 @@ impl Validate for AccessVectorRules {
         for rule in self.av_rules.iter() {
             rule.key.validate(policy)?;
         }
-        for rule in self.type_transitions.iter() {
+        for rule in self.type_rules.iter() {
             rule.key.validate(policy)?;
             rule.new_type.validate(policy)?;
         }
@@ -760,26 +672,37 @@ impl Validate for AccessVectorRules {
     }
 }
 
-/// Inserts an entry into `table` for the given rule's [`RuleKey`].
+/// Builds a [`HashTable<U24Index>`] mapping [`RuleKey`] hashes to the index of the first rule in each contiguous run.
 ///
-/// Returns [`ParseError::DuplicateAccessVectorRule`] if an entry for the same key is already occupied.
-fn insert_rule<R: HasRuleKey>(
-    table: &mut HashTable<U24Index>,
-    hasher: &RapidBuildHasher,
+/// Binary SELinux policies index rules into buckets by `(source, target, class)`, within which rules are sorted by
+/// `(source, target, class, rule_kind)`. Therefore, all rules sharing a given [`RuleKey`] are guaranteed to be contiguous
+/// and well-ordered.
+///
+/// Returns [`ParseError::DuplicateAccessVectorRule`] if non-contiguous rules share the same key.
+fn build_index<R: HasRuleKey>(
     rules: &[R],
-    arr_idx: U24Index,
-    kind: RuleKind,
-) -> Result<(), ParseError> {
-    let key = rules[arr_idx].key();
-    let hash = key.hash(hasher);
+    hasher: &RapidBuildHasher,
+) -> Result<HashTable<U24Index>, ParseError> {
+    let mut table = HashTable::new();
+    let mut offset = 0;
 
-    match table.entry(hash, |&i| rules[i].key() == key, |&i| rules[i].key().hash(hasher)) {
-        Entry::Occupied(_) => Err(ParseError::DuplicateAccessVectorRule { key, kind }),
-        Entry::Vacant(entry) => {
-            entry.insert(arr_idx);
-            Ok(())
-        }
+    for chunk in rules.chunk_by(|a, b| a.key() == b.key()) {
+        let key = chunk[0].key();
+        let u24_idx = offset.try_into()?;
+        let hash = key.hash(hasher);
+
+        let Entry::Vacant(entry) = table.entry(
+            hash,
+            |&i| rules[usize::from(i)].key() == key,
+            |&i| rules[usize::from(i)].key().hash(hasher),
+        ) else {
+            return Err(ParseError::DuplicateAccessVectorRule { key, kind: chunk[0].kind() });
+        };
+        entry.insert(u24_idx);
+        offset += chunk.len();
     }
+
+    Ok(table)
 }
 
 /// On-wire header identifying the source, target, class, and rule flags of an access vector rule.
@@ -862,11 +785,11 @@ mod tests {
         ];
         let mut cursor = PolicyCursor::new(&data);
         let av_rules = AccessVectorRules::parse(&mut cursor).expect("parse rules table");
-        assert_eq!(av_rules.type_transitions.len(), 1);
-        assert_eq!(av_rules.type_transitions[0].key.source_type, TypeId::from_u32(1).unwrap());
-        assert_eq!(av_rules.type_transitions[0].key.target_type, TypeId::from_u32(2).unwrap());
-        assert_eq!(av_rules.type_transitions[0].key.class, ClassId::from_u32(3).unwrap());
-        assert_eq!(av_rules.type_transitions[0].new_type, TypeId::from_u32(10).unwrap());
+        assert_eq!(av_rules.type_rules.len(), 1);
+        assert_eq!(av_rules.type_rules[0].key.source_type, TypeId::from_u32(1).unwrap());
+        assert_eq!(av_rules.type_rules[0].key.target_type, TypeId::from_u32(2).unwrap());
+        assert_eq!(av_rules.type_rules[0].key.class, ClassId::from_u32(3).unwrap());
+        assert_eq!(av_rules.type_rules[0].new_type, TypeId::from_u32(10).unwrap());
 
         let mut writer = Vec::new();
         av_rules.serialize(&mut writer).expect("serialize rules table");
@@ -928,12 +851,14 @@ mod tests {
         let t2 = TypeId::from_u32(2).unwrap();
         let c3 = ClassId::from_u32(3).unwrap();
 
-        let decision = av_rules.find_av_decisions(s1, t2, c3);
-        assert_eq!(decision.allow, Some(AccessVector::from(7)));
-        assert_eq!(decision.auditallow, None);
-        assert_eq!(decision.dontaudit, None);
+        let av_rules_list: Vec<_> = av_rules.find_av_rules(s1, t2, c3).collect();
+        assert_eq!(av_rules_list.len(), 1);
+        assert_eq!(av_rules_list[0].kind(), RuleKind::Allow);
+        assert_eq!(av_rules_list[0].access_vector(), AccessVector::from(7));
 
-        let transition = av_rules.find_type_transition(s1, t2, c3);
-        assert_eq!(transition, Some(TypeId::from_u32(9).unwrap()));
+        let type_rules_list: Vec<_> = av_rules.find_type_rules(s1, t2, c3).collect();
+        assert_eq!(type_rules_list.len(), 1);
+        assert_eq!(type_rules_list[0].kind(), RuleKind::TypeTransition);
+        assert_eq!(type_rules_list[0].new_type(), TypeId::from_u32(9).unwrap());
     }
 }

@@ -1109,7 +1109,8 @@ pub(super) struct RangeTransitionMetadata {
 mod tests {
     use super::super::parse_policy_by_value;
     use crate::new_policy::rules::{
-        XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
+        HasRuleKey, RuleKind, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES,
+        XPERMS_TYPE_NLMSG,
     };
     use crate::new_policy::traits::HasPolicyId;
 
@@ -1125,8 +1126,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1151,8 +1153,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1180,8 +1183,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1211,8 +1215,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 2);
@@ -1243,8 +1248,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1272,8 +1278,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 3);
@@ -1314,8 +1321,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 5);
@@ -1372,8 +1380,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1393,8 +1402,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1421,8 +1431,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1450,8 +1461,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 2);
@@ -1482,8 +1494,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 1);
@@ -1515,8 +1528,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 2);
@@ -1555,8 +1569,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 3);
@@ -1601,8 +1616,9 @@ mod tests {
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
         let rules: Vec<_> = policy
             .access_vector_rules()
-            .find_xperms_decisions(type0, type0, class_id)
-            .allow
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
             .collect();
 
         assert_eq!(rules.len(), 2);
@@ -1635,8 +1651,12 @@ mod tests {
             .id();
 
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
-        let decisions = policy.access_vector_rules().find_xperms_decisions(type0, type0, class_id);
-        let rules: Vec<_> = decisions.auditallow.collect();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AuditAllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
 
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
@@ -1669,8 +1689,12 @@ mod tests {
             .id();
 
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
-        let decisions = policy.access_vector_rules().find_xperms_decisions(type0, type0, class_id);
-        let rules: Vec<_> = decisions.dontaudit.collect();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::DontAuditXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
 
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
@@ -1699,9 +1723,18 @@ mod tests {
             .id();
 
         let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
-        let decisions = policy.access_vector_rules().find_xperms_decisions(type0, type0, class_id);
-        let allow_rules: Vec<_> = decisions.allow.collect();
-        let auditallow_rules: Vec<_> = decisions.auditallow.collect();
+        let allow_rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+        let auditallow_rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AuditAllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
 
         assert_eq!(allow_rules.len(), 1);
         assert_eq!(allow_rules[0].count(), 1);

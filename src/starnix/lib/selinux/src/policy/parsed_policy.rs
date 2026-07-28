@@ -23,8 +23,8 @@ use super::{
 };
 
 use crate::new_policy::rules::{
-    ExtendedPermissions, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES,
-    XPERMS_TYPE_NLMSG, XpermsBitmap,
+    ExtendedPermissions, HasRuleKey, RuleKind, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
+    XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG, XpermsBitmap,
 };
 use crate::new_policy::traits::{HasPolicyId, PolicyId};
 use crate::new_policy::{Class, NewPolicy};
@@ -145,20 +145,17 @@ impl ParsedPolicy {
             let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
             let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
 
-            let decisions = self.new_policy.access_vector_rules().find_av_decisions(
+            for rule in self.new_policy.access_vector_rules().find_av_rules(
                 source_id,
                 target_id,
                 target_class_id,
-            );
-
-            if let Some(allow) = decisions.allow {
-                computed_access_vector |= allow;
-            }
-            if let Some(auditallow) = decisions.auditallow {
-                computed_audit_allow |= auditallow;
-            }
-            if let Some(dontaudit) = decisions.dontaudit {
-                computed_audit_deny &= dontaudit;
+            ) {
+                match rule.kind() {
+                    RuleKind::Allow => computed_access_vector |= rule.access_vector(),
+                    RuleKind::AuditAllow => computed_audit_allow |= rule.access_vector(),
+                    RuleKind::DontAudit => computed_audit_deny &= rule.access_vector(),
+                    _ => {}
+                }
             }
         }
 
@@ -257,30 +254,27 @@ impl ParsedPolicy {
             let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
             let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
 
-            let decisions = self.new_policy.access_vector_rules().find_xperms_decisions(
+            for rule in self.new_policy.access_vector_rules().find_xperm_rules(
                 source_id,
                 target_id,
                 target_class_id,
-            );
-
-            for xperms in decisions.allow {
-                if xperms_types.contains(&xperms.xperms_type()) {
+            ) {
+                let xperms = rule.extended_permissions();
+                if rule.kind() == RuleKind::AllowXperm
+                    && xperms_types.contains(&xperms.xperms_type())
+                {
                     explicit_allow.get_or_insert(XpermsBitmap::NONE);
                 }
-                if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
-                    (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
-                }
-            }
 
-            for xperms in decisions.auditallow {
                 if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
-                    auditallow |= xperms_bitmap;
-                }
-            }
-
-            for xperms in decisions.dontaudit {
-                if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
-                    auditdeny -= xperms_bitmap;
+                    match rule.kind() {
+                        RuleKind::AllowXperm => {
+                            (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
+                        }
+                        RuleKind::AuditAllowXperm => auditallow |= xperms_bitmap,
+                        RuleKind::DontAuditXperm => auditdeny -= xperms_bitmap,
+                        _ => {}
+                    }
                 }
             }
         }

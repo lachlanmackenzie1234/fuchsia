@@ -5,6 +5,7 @@
 use super::arrays::{FsContext, FsUseType};
 use super::security_context::SecurityContext;
 use super::{AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId};
+use crate::new_policy::rules::{HasRuleKey, RuleKind};
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{
     Class, ClassDefault, ClassDefaultRange, CommonSymbol, HandleUnknown, IdAndNameIndexed,
@@ -253,11 +254,13 @@ impl PolicyIndex {
         };
 
         let type_ = override_type.unwrap_or_else(|| {
-            match self.parsed_policy.access_vector_rules().find_type_transition(
-                source.type_(),
-                target.type_(),
-                policy_class.id(),
-            ) {
+            let transition = self
+                .parsed_policy
+                .access_vector_rules()
+                .find_type_rules(source.type_(), target.type_(), policy_class.id())
+                .find(|rule| rule.kind() == RuleKind::TypeTransition)
+                .map(|rule| rule.new_type());
+            match transition {
                 Some(new_type) => new_type,
                 None => match class_defaults.type_() {
                     ClassDefault::Source => source.type_(),
