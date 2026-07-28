@@ -588,33 +588,35 @@ fn recvmsg_internal_with_header(
             continue;
         }
 
-        let expected_size = header_size + ancillary_data.total_size(current_task);
-        let message_bytes = ancillary_data.into_bytes(
-            current_task,
-            flags,
-            cmsg_buffer_size - cmsg_bytes_written,
-        )?;
+        // Calculate the offset where the current message will be written, after alignment.
+        let aligned_offset = cmsg_align(current_task, cmsg_bytes_written)?;
+        let space_available = cmsg_buffer_size.saturating_sub(aligned_offset);
 
-        // If the message is smaller than expected, set the MSG_CTRUNC flag, so the caller can tell
-        // some of the message is missing.
-        let truncated = message_bytes.len() < expected_size;
-        if truncated {
-            message_header.flags |= MSG_CTRUNC;
-        }
-
-        if message_bytes.len() < header_size {
+        if space_available < header_size {
             // Can't fit the header, so stop trying to write.
+            message_header.flags |= MSG_CTRUNC;
             break;
         }
 
-        if !message_bytes.is_empty() {
-            current_task
-                .write_memory((message_header.control + cmsg_bytes_written)?, &message_bytes)?;
-            cmsg_bytes_written += message_bytes.len();
-            if !truncated {
-                cmsg_bytes_written = cmsg_align(current_task, cmsg_bytes_written)?;
-            }
+        let conversion = ancillary_data.into_bytes(
+            current_task,
+            flags,
+            space_available,
+        )?;
+
+        if conversion.truncated {
+            message_header.flags |= MSG_CTRUNC;
         }
+
+        assert!(aligned_offset + conversion.bytes.len() <= cmsg_buffer_size);
+        // Write the message at the aligned offset.
+        current_task
+            .write_memory((message_header.control + aligned_offset)?, &conversion.bytes)?;
+        // Update the total bytes written to the end of this message.
+        cmsg_bytes_written = std::cmp::min(
+            cmsg_align(current_task, aligned_offset + conversion.bytes.len())?,
+            cmsg_buffer_size,
+        );
     }
 
     message_header.control_len = cmsg_bytes_written;
