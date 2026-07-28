@@ -603,8 +603,9 @@ zx_status_t PortDispatcher::CancelKey(uint64_t key) {
     // we can import into a RefPtr instead of creating a new reference.
     fbl::RefPtr<Dispatcher> dispatcher =
         fbl::ImportFromRawPtr(canceled_observer->UnlinkDispatcherLocked());
-    guard.CallUnlocked([dispatcher = ktl::move(dispatcher), canceled_observer]() {
+    guard.CallUnlocked([&dispatcher, canceled_observer]() {
       dispatcher->RemoveObserver(canceled_observer);
+      dispatcher.reset();
     });
     object_cache::UniquePtr<PortObserver> destroyer(canceled_observer);
   }

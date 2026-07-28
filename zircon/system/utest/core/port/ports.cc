@@ -1492,4 +1492,87 @@ TEST(PortTest, CancelKeyAccessDenied) {
   EXPECT_EQ(reduced_port.cancel_key(0u, 0u), ZX_ERR_ACCESS_DENIED);
 }
 
+// Regression test for https://fxbug.dev/540007680
+TEST(PortStressTest, CancelKeyDestructorReentersPortLock) {
+  constexpr uint64_t kChannelKey = 0xC0FFEEull;
+  // Must differ from kChannelKey: these observers have to SURVIVE the cancel_key
+  // so that they are still registered when ~ChannelDispatcher cancels them.
+  constexpr uint64_t kEventKey = 0xBEEFull;
+
+  constexpr size_t kUnitsPerRound = 64;
+  constexpr int kRounds = 16;
+  constexpr int kClosers = 4;
+
+  for (int round = 0; round < kRounds; ++round) {
+    zx::port port;
+    ASSERT_OK(zx::port::create(0u, &port));
+
+    std::vector<zx::channel> targets;
+    targets.reserve(kUnitsPerRound);
+
+    for (size_t i = 0; i < kUnitsPerRound; ++i) {
+      // (1) An event carrying a live observer on `port`. Never signalled, so
+      //     Dispatcher::AddObserver takes the "no active match" path and the
+      //     observer stays in the event's observer list.
+      zx::event ev;
+      ASSERT_OK(zx::event::create(0u, &ev));
+      ASSERT_OK(ev.wait_async(port, kEventKey, ZX_EVENT_SIGNALED, ZX_WAIT_ASYNC_ONCE));
+
+      // (2) Move the event's Handle into a channel message. The Handle object
+      //     survives inside the queued MessagePacket and its observer is NOT
+      //     cancelled by write (see fact 1 above).
+      zx::channel producer, target;
+      ASSERT_OK(zx::channel::create(0u, &producer, &target));
+      zx_handle_t raw_ev = ev.release();
+      ASSERT_OK(producer.write(0u, nullptr, 0u, &raw_ev, 1u));
+
+      // Drop the producer end. The message, and the event handle it owns, stay
+      // queued on `target` until target's ChannelDispatcher is destroyed.
+      producer.reset();
+
+      // (3) The observer we will cancel. ZX_USER_SIGNAL_0 is never asserted on
+      //     a channel unless we assert it, so this observer is still registered
+      //     at cancel_key time. (ZX_CHANNEL_READABLE would match immediately,
+      //     a message is queued and the observer would be consumed before we
+      //     ever got to cancel it.)
+      ASSERT_OK(target.wait_async(port, kChannelKey, ZX_USER_SIGNAL_0, ZX_WAIT_ASYNC_ONCE));
+
+      targets.push_back(std::move(target));
+    }
+
+    // The race. cancel_key walks every kChannelKey observer and, for each,
+    // releases its keep-alive reference at the end of the CallUnlocked
+    // statement, with the port lock back on. The closers try to make that
+    // reference the last one.
+    std::atomic<bool> go{false};
+    std::atomic<size_t> next{0};
+
+    std::thread closers[kClosers];
+    for (auto& closer : closers) {
+      closer = std::thread([&]() {
+        while (!go.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+        }
+        for (;;) {
+          const size_t i = next.fetch_add(1, std::memory_order_relaxed);
+          if (i >= targets.size()) {
+            return;
+          }
+          targets[i].reset();
+        }
+      });
+    }
+
+    go.store(true, std::memory_order_release);
+    const zx_status_t status = port.cancel_key(0u, kChannelKey);
+
+    for (auto& closer : closers) {
+      closer.join();
+    }
+
+    // ZX_ERR_NOT_FOUND simply means the closers won every slot this round.
+    EXPECT_TRUE(status == ZX_OK || status == ZX_ERR_NOT_FOUND);
+  }
+}
+
 }  // namespace
