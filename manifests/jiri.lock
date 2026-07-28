@@ -556,13 +556,13 @@
     },
     {
         "package": "fuchsia/third_party/llvm/linux-amd64",
-        "version": "git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3",
-        "instance_id": "JiznyOpxmjgrss40z4sF1tykIxFMaNvJlzipV6he65IC"
+        "version": "git_revision:dde579becf31add55c5a473f28fd010df36d2490",
+        "instance_id": "8oJY-xHfbrYa0iPAdE7zBbqHv5exK6o-mBduu_GSXh0C"
     },
     {
         "package": "fuchsia/third_party/llvm/linux-arm64",
-        "version": "git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3",
-        "instance_id": "RzTlTepFEDhKahYepE3mIDfR2keF-vp2y-if_c7lnm8C"
+        "version": "git_revision:dde579becf31add55c5a473f28fd010df36d2490",
+        "instance_id": "yMnRlvgNSKkmu6RYKcc6VCayMK6GE7pjxtxX_5pU-Q0C"
     },
     {
         "package": "fuchsia/third_party/ninja/linux-amd64",
