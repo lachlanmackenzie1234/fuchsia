@@ -1200,6 +1200,18 @@ zx::result<std::unique_ptr<Bcache>> Fsck(std::unique_ptr<Bcache> bc, const FsckO
   chk_or->DumpStats();
 
   bc = MinfsChecker::Destroy(std::move(chk_or.value()));
+
+#ifdef __Fuchsia__
+  // All of the Fsck checks were run on the current thread but a separate loop was created in order
+  // to construct the |Minfs| object. Minfs starts serving inspect nodes on that loop. Calling
+  // loop.Quit(), loop.Shutdown(), or ~Loop() from the current thread could cause a crash if a
+  // request is simultaneously being handled on the loop's thread and it tries to bind a FIDL server
+  // to the loop's dispatcher. Posting a task to the loop that quits the loop guarantees that no
+  // other tasks are running and no other tasks will run after it.
+  async::PostTask(dispatcher, [&loop] { loop.Quit(); });
+  loop.JoinThreads();
+#endif
+
   return zx::ok(std::move(bc));
 }
 
