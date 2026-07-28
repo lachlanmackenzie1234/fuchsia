@@ -23,6 +23,7 @@
         {
             // Needed for graphics tests.
             service: [
+                "fuchsia.gpu.magma.PowerService",
                 "fuchsia.gpu.magma.TestService",
                 "fuchsia.gpu.magma.TrustedService",
             ],

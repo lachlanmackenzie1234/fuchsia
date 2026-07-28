@@ -99,10 +99,6 @@ MagmaSystemDevice* MagmaDriverBase::magma_system_device() FIT_REQUIRES(magma_->m
 }
 
 zx::result<> MagmaDriverBase::CreateTestService(MagmaTestServer& test_server) {
-  auto power_protocol =
-      [this](fidl::ServerEnd<fuchsia_gpu_magma::PowerElementProvider> server_end) mutable {
-        fidl::BindServer(dispatcher(), std::move(server_end), this);
-      };
   auto device_protocol =
       [this](fidl::ServerEnd<fuchsia_gpu_magma::CombinedDevice> server_end) mutable {
         fidl::BindServer(dispatcher(), std::move(server_end), &combined_device_server_);
@@ -114,7 +110,6 @@ zx::result<> MagmaDriverBase::CreateTestService(MagmaTestServer& test_server) {
 
   fuchsia_gpu_magma::TestService::InstanceHandler handler({
       .device = std::move(device_protocol),
-      .power_element_provider = std::move(power_protocol),
       .test_device = std::move(test_protocol),
   });
   {
@@ -131,18 +126,12 @@ zx::result<> MagmaDriverBase::CreateTestService(MagmaTestServer& test_server) {
 zx::result<> MagmaDriverBase::ExportServices() {
   // Add the gpu service.
   if (serve_untrusted_service_) {
-    auto power_protocol =
-        [this](fidl::ServerEnd<fuchsia_gpu_magma::PowerElementProvider> server_end) mutable {
-          fidl::BindServer(dispatcher(), std::move(server_end), this);
-        };
     auto device_protocol =
         [this](fidl::ServerEnd<fuchsia_gpu_magma::CombinedDevice> server_end) mutable {
           fidl::BindServer(dispatcher(), std::move(server_end), &combined_device_server_);
         };
 
-    fuchsia_gpu_magma::Service::InstanceHandler handler(
-        {.device = std::move(device_protocol),
-         .power_element_provider = std::move(power_protocol)});
+    fuchsia_gpu_magma::Service::InstanceHandler handler({.device = std::move(device_protocol)});
     {
       auto status = outgoing()->template AddService<fuchsia_gpu_magma::Service>(std::move(handler));
       if (status.is_error()) {
@@ -154,6 +143,29 @@ zx::result<> MagmaDriverBase::ExportServices() {
 
   // Add the trusted gpu service.
   {
+    auto device_protocol =
+        [this](fidl::ServerEnd<fuchsia_gpu_magma::CombinedDevice> server_end) mutable {
+          fidl::BindServer(dispatcher(), std::move(server_end), &trusted_combined_device_server_);
+        };
+
+    fuchsia_gpu_magma::TrustedService::InstanceHandler handler(
+        {.device = std::move(device_protocol)});
+    {
+      auto status =
+          outgoing()->template AddService<fuchsia_gpu_magma::TrustedService>(std::move(handler));
+      if (status.is_error()) {
+        fdf::error("{}(): Failed to add service to outgoing directory: {}", __func__, status);
+        return status.take_error();
+      }
+    }
+  }
+
+  // Add the power service.
+  {
+    auto device_protocol =
+        [this](fidl::ServerEnd<fuchsia_gpu_magma::CombinedDevice> server_end) mutable {
+          fidl::BindServer(dispatcher(), std::move(server_end), &combined_device_server_);
+        };
     auto power_protocol =
         [this](fidl::ServerEnd<fuchsia_gpu_magma::PowerElementProvider> server_end) mutable {
           fidl::BindServer(dispatcher(), std::move(server_end), this);
@@ -162,18 +174,15 @@ zx::result<> MagmaDriverBase::ExportServices() {
         [this](fidl::ServerEnd<fuchsia_gpu_magma::DebugUtils> server_end) mutable {
           fidl::BindServer(dispatcher(), std::move(server_end), this);
         };
-    auto device_protocol =
-        [this](fidl::ServerEnd<fuchsia_gpu_magma::CombinedDevice> server_end) mutable {
-          fidl::BindServer(dispatcher(), std::move(server_end), &trusted_combined_device_server_);
-        };
 
-    fuchsia_gpu_magma::TrustedService::InstanceHandler handler(
-        {.device = std::move(device_protocol),
-         .power_element_provider = std::move(power_protocol),
-         .debug_utils = std::move(debug_utils_protocol)});
+    fuchsia_gpu_magma::PowerService::InstanceHandler handler({
+        .device = std::move(device_protocol),
+        .power_element_provider = std::move(power_protocol),
+        .debug_utils = std::move(debug_utils_protocol),
+    });
     {
       auto status =
-          outgoing()->template AddService<fuchsia_gpu_magma::TrustedService>(std::move(handler));
+          outgoing()->template AddService<fuchsia_gpu_magma::PowerService>(std::move(handler));
       if (status.is_error()) {
         fdf::error("{}(): Failed to add service to outgoing directory: {}", __func__, status);
         return status.take_error();

@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
   fidl::ClientEnd<fuchsia_io::Directory> svc_dir = std::move(svc).value();
 
   auto watcher =
-      component::SyncServiceMemberWatcher<fuchsia_gpu_magma::TrustedService::DebugUtils>(svc_dir);
+      component::SyncServiceMemberWatcher<fuchsia_gpu_magma::PowerService::DebugUtils>(svc_dir);
   zx::result client_end = watcher.GetNextInstance(/*stop_at_idle=*/true);
   if (client_end.is_error()) {
     printf("Failed to open magma device: %s\n", client_end.status_string());

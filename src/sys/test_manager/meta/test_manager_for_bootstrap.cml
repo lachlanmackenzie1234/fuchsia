@@ -77,6 +77,7 @@
         {
             service: [
                 "fuchsia.gpu.magma.PerformanceCounterService",
+                "fuchsia.gpu.magma.PowerService",
                 "fuchsia.gpu.magma.Service",
                 "fuchsia.gpu.magma.TrustedService",
             ],

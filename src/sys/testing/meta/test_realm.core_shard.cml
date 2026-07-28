@@ -403,6 +403,11 @@
             to: "#testing",
         },
         {
+            service: "fuchsia.gpu.magma.PowerService",
+            from: "parent",
+            to: "#testing",
+        },
+        {
             service: "fuchsia.gpu.magma.TrustedService",
             from: "parent",
             to: "#testing",

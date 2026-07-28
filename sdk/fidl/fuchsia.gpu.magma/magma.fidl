@@ -602,12 +602,16 @@ closed protocol DebugUtils {
 @available(added=HEAD)
 service Service {
     device client_end:CombinedDevice;
-    power_element_provider client_end:PowerElementProvider;
 };
 
-/// This service has additional abilities above the normal service.
 @available(added=HEAD)
 service TrustedService {
+    device client_end:CombinedDevice;
+};
+
+@available(added=HEAD)
+service PowerService {
+    // TODO(https://fxbug.dev/538514216): consider removing device
     device client_end:CombinedDevice;
     power_element_provider client_end:PowerElementProvider;
     debug_utils client_end:DebugUtils;
@@ -625,6 +629,5 @@ closed protocol TestDevice2 {
 @available(added=HEAD)
 service TestService {
     device client_end:CombinedDevice;
-    power_element_provider client_end:PowerElementProvider;
     test_device client_end:TestDevice2;
 };

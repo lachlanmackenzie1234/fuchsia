@@ -209,6 +209,7 @@
     expose: [
         {
             service: [
+                "fuchsia.gpu.magma.PowerService",
                 "fuchsia.gpu.magma.TestService",
                 "fuchsia.gpu.magma.TrustedService",
                 "fuchsia.hardware.clock.DebugService",

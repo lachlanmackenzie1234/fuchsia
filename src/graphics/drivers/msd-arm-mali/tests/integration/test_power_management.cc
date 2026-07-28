@@ -67,8 +67,8 @@ fidl::ClientEnd<fuchsia_gpu_magma::DebugUtils> GetMaliDebugUtilsClient() {
     return {};
   }
 
-  component::SyncDirectoryWatcher watcher(
-      *svc_dir, fuchsia_gpu_magma::TrustedService::DebugUtils::ServiceName);
+  component::SyncDirectoryWatcher watcher(*svc_dir,
+                                          fuchsia_gpu_magma::PowerService::DebugUtils::ServiceName);
 
   fidl::ClientEnd<fuchsia_gpu_magma::DebugUtils> debug_utils_client;
 
@@ -79,8 +79,8 @@ fidl::ClientEnd<fuchsia_gpu_magma::DebugUtils> GetMaliDebugUtilsClient() {
     }
 
     zx::result device_client_end =
-        component::ConnectAtMember<fuchsia_gpu_magma::TrustedService::Device>(*svc_dir,
-                                                                              *instance_name);
+        component::ConnectAtMember<fuchsia_gpu_magma::PowerService::Device>(*svc_dir,
+                                                                            *instance_name);
     EXPECT_FALSE(device_client_end.is_error()) << device_client_end.status_string();
     if (device_client_end.is_error()) {
       continue;
@@ -91,8 +91,8 @@ fidl::ClientEnd<fuchsia_gpu_magma::DebugUtils> GetMaliDebugUtilsClient() {
     if (wire_result.ok() && wire_result->value()->is_simple_result() &&
         wire_result->value()->simple_result() == MAGMA_VENDOR_ID_MALI) {
       zx::result debug_utils_client_end =
-          component::ConnectAtMember<fuchsia_gpu_magma::TrustedService::DebugUtils>(*svc_dir,
-                                                                                    *instance_name);
+          component::ConnectAtMember<fuchsia_gpu_magma::PowerService::DebugUtils>(*svc_dir,
+                                                                                  *instance_name);
       EXPECT_FALSE(debug_utils_client_end.is_error()) << debug_utils_client_end.status_string();
       if (debug_utils_client_end.is_ok()) {
         debug_utils_client = std::move(*debug_utils_client_end);

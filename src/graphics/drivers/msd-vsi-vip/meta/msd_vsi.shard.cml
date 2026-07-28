@@ -17,6 +17,7 @@
             service: [
                 "fuchsia.gpu.magma.DependencyInjectionService",
                 "fuchsia.gpu.magma.PerformanceCounterService",
+                "fuchsia.gpu.magma.PowerService",
                 "fuchsia.gpu.magma.TrustedService",
             ],
         },
@@ -31,6 +32,7 @@
             service: [
                 "fuchsia.gpu.magma.DependencyInjectionService",
                 "fuchsia.gpu.magma.PerformanceCounterService",
+                "fuchsia.gpu.magma.PowerService",
                 "fuchsia.gpu.magma.TrustedService",
             ],
             from: "self",
