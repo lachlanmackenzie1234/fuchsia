@@ -9,7 +9,7 @@ mod tx;
 
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
-use std::num::{NonZeroU16, NonZeroU32, NonZeroU64, TryFromIntError};
+use std::num::{NonZeroU16, NonZeroU32, NonZeroU64, NonZeroUsize, TryFromIntError};
 use std::ops::Range;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -795,7 +795,8 @@ impl<K: AllocKind> Pending<K> {
         // the data. That is currently true but not really guaranteed by the
         // API.
         let submitted = ready!(fifo.try_write(cx, &storage[..]))
-            .map_err(|status| Error::Fifo("write", K::REFL.as_str(), status))?;
+            .map_err(|status| Error::Fifo("write", K::REFL.as_str(), status))?
+            .get();
         let _drained = storage.drain(0..submitted);
         Poll::Ready(Ok(submitted))
     }
@@ -856,9 +857,9 @@ impl<T> ReadyBuffer<T> {
                 return Poll::Ready(Ok(desc));
             }
             // Fetch more from the FIFO.
-            let count = ready!(fifo.try_read(cx, &mut data[..]))?;
+            let count: NonZeroUsize = ready!(fifo.try_read(cx, &mut data[..]))?;
             *start = 0;
-            *end = count;
+            *end = count.get();
         }
     }
 }

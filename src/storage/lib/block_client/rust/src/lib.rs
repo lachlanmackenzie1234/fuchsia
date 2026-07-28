@@ -160,7 +160,7 @@ impl FifoState {
             }
             match fifo.try_write(context, slice) {
                 Poll::Ready(Ok(sent)) => {
-                    self.queue.drain(0..sent);
+                    self.queue.drain(0..sent.get());
                 }
                 Poll::Ready(Err(_)) => {
                     self.terminate();
@@ -1245,7 +1245,7 @@ mod tests {
                     let mut request = BlockFifoRequest::default();
                     loop {
                         match reader.read_entries(&mut request).await {
-                            Ok(1) => {}
+                            Ok(n) if n.get() == 1 => {}
                             Err(zx::Status::PEER_CLOSED) => break,
                             Err(e) => panic!("read_entry failed {:?}", e),
                             _ => unreachable!(),

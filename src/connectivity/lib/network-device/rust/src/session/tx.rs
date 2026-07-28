@@ -397,7 +397,10 @@ mod tests {
         assert_eq!(inner.tx_state().lock().max_registered_index, 2);
 
         // Simulate driver completing buf3 and buf5.
-        assert_eq!(tx_receiver.write(&[buf3_desc_id, buf5_desc_id]).expect("write to fifo"), 2);
+        assert_eq!(
+            tx_receiver.write(&[buf3_desc_id, buf5_desc_id]).expect("write to fifo").get(),
+            2
+        );
         drop(buf4);
 
         // Verify server received unregistration for VMO 3 automatically.

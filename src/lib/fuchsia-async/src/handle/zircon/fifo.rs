@@ -7,6 +7,7 @@ use futures::ready;
 use std::fmt;
 use std::future::poll_fn;
 use std::mem::MaybeUninit;
+use std::num::NonZeroUsize;
 use std::task::{Context, Poll};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx::{self as zx, AsHandleRef};
@@ -158,7 +159,7 @@ impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> Fifo<R, W> {
         &self,
         cx: &mut Context<'_>,
         entries: &B,
-    ) -> Poll<Result<usize, zx::Status>> {
+    ) -> Poll<Result<NonZeroUsize, zx::Status>> {
         ready!(self.handle.poll_writable(cx)?);
 
         let entries = entries.as_slice();
@@ -184,7 +185,7 @@ impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> Fifo<R, W> {
         &self,
         cx: &mut Context<'_>,
         entries: &mut B,
-    ) -> Poll<Result<usize, zx::Status>> {
+    ) -> Poll<Result<NonZeroUsize, zx::Status>> {
         ready!(self.handle.poll_readable(cx)?);
 
         let buf = entries.as_mut_ptr();
@@ -225,7 +226,7 @@ impl<R: FifoEntry, W: FifoEntry> FifoWriter<'_, R, W> {
         poll_fn(|cx| {
             while !entries.is_empty() {
                 match ready!(self.0.try_write(cx, entries)) {
-                    Ok(count) => entries = &entries[count..],
+                    Ok(count) => entries = &entries[count.get()..],
                     Err(status) => return Poll::Ready(Err(status)),
                 }
             }
@@ -239,7 +240,7 @@ impl<R: FifoEntry, W: FifoEntry> FifoWriter<'_, R, W> {
         &mut self,
         cx: &mut Context<'_>,
         entries: &B,
-    ) -> Poll<Result<usize, zx::Status>> {
+    ) -> Poll<Result<NonZeroUsize, zx::Status>> {
         self.0.try_write(cx, entries)
     }
 }
@@ -250,7 +251,7 @@ impl<R: FifoEntry, W: FifoEntry> FifoReader<'_, R, W> {
     pub async fn read_entries(
         &mut self,
         entries: &mut (impl ?Sized + FifoReadBuffer<R>),
-    ) -> Result<usize, zx::Status> {
+    ) -> Result<NonZeroUsize, zx::Status> {
         poll_fn(|cx| self.0.try_read(cx, entries)).await
     }
 
@@ -259,7 +260,7 @@ impl<R: FifoEntry, W: FifoEntry> FifoReader<'_, R, W> {
         &mut self,
         cx: &mut Context<'_>,
         entries: &mut B,
-    ) -> Poll<Result<usize, zx::Status>> {
+    ) -> Poll<Result<NonZeroUsize, zx::Status>> {
         self.0.try_read(cx, entries)
     }
 }
@@ -307,7 +308,7 @@ mod tests {
 
         let mut buffer = Entry::default();
         let receiver = rx.read_entries(&mut buffer).map_ok(|count| {
-            assert_eq!(count, 1);
+            assert_eq!(count.get(), 1);
         });
 
         // Sends an entry after the timeout has passed
@@ -398,16 +399,16 @@ mod tests {
             let (mut reader, _) = rx.async_io();
             let count = reader.read_entries(&mut buffer).await?;
             assert_eq!(writes_completed.load(Ordering::SeqCst), 1);
-            assert_eq!(count, 1);
+            assert_eq!(count.get(), 1);
             assert_eq!(buffer, elements[0]);
             let count = reader.read_entries(&mut buffer).await?;
             // At this point, the last write may or may not have
             // been written.
-            assert_eq!(count, 1);
+            assert_eq!(count.get(), 1);
             assert_eq!(buffer, elements[1]);
             let count = reader.read_entries(&mut buffer).await?;
             assert_eq!(writes_completed.load(Ordering::SeqCst), 2);
-            assert_eq!(count, 1);
+            assert_eq!(count.get(), 1);
             assert_eq!(buffer, elements[2]);
             Ok::<(), zx::Status>(())
         };
@@ -436,7 +437,7 @@ mod tests {
             for e in elements {
                 let mut buffer = [Entry::default(); 1];
                 let count = rx.read_entries(&mut buffer[..]).await?;
-                assert_eq!(count, 1);
+                assert_eq!(count.get(), 1);
                 assert_eq!(&buffer[0], e);
             }
             Ok::<(), zx::Status>(())
@@ -467,8 +468,8 @@ mod tests {
                 .read_entries(&mut buffer[..])
                 .await
                 .expect("failed to read entries");
-            assert_eq!(count, elements.len());
-            assert_eq!(&buffer[..count], elements);
+            assert_eq!(count.get(), elements.len());
+            assert_eq!(&buffer[..count.get()], elements);
         };
         let ((), ()) = exec.run_singlethreaded(futures::future::join(write_fut, read_fut));
     }
@@ -488,7 +489,10 @@ mod tests {
             let (mut reader, _) = rx.async_io();
             for e in elements {
                 let mut entry = Entry::default();
-                assert_eq!(reader.read_entries(&mut entry).await.expect("failed to read entry"), 1);
+                assert_eq!(
+                    reader.read_entries(&mut entry).await.expect("failed to read entry").get(),
+                    1
+                );
                 assert_eq!(&entry, e);
             }
         };
@@ -509,7 +513,7 @@ mod tests {
             let mut buffer = MaybeUninit::<Entry>::uninit();
             let count =
                 rx.async_io().0.read_entries(&mut buffer).await.expect("failed to read entries");
-            assert_eq!(count, 1);
+            assert_eq!(count.get(), 1);
             // SAFETY: We just read a new entry into the buffer.
             let read = unsafe { buffer.assume_init() };
             assert_eq!(read, element);
@@ -537,8 +541,8 @@ mod tests {
                 .read_entries(&mut buffer[..])
                 .await
                 .expect("failed to read entries");
-            assert_eq!(count, elements.len());
-            let read = &mut buffer[..count];
+            assert_eq!(count.get(), elements.len());
+            let read = &mut buffer[..count.get()];
             for (i, v) in read.iter_mut().enumerate() {
                 // SAFETY: This is the read region of the buffer, initialized by
                 // reading from the FIFO.

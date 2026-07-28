@@ -381,7 +381,7 @@ impl<I: Interface + ?Sized> Session<I> {
                     poll_fn(|cx| -> Poll<Result<(), zx::Status>> {
                         match ready!(writer.try_write(cx, &responses[..])) {
                             Ok(written) => {
-                                responses.drain(..written);
+                                responses.drain(..written.get());
                                 Poll::Ready(Ok(()))
                             }
                             Err(status) => Poll::Ready(Err(status)),
@@ -428,7 +428,7 @@ impl<I: Interface + ?Sized> Session<I> {
                         0
                     }
                     count = receive_requests => {
-                        count?
+                        count?.get()
                     }
                 )
             };

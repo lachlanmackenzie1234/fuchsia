@@ -6,6 +6,7 @@
 
 use crate::{NullableHandle, Status, ok, sys};
 use std::mem::MaybeUninit;
+use std::num::NonZeroUsize;
 use zerocopy::{FromBytes, IntoBytes};
 
 /// An object representing a Zircon fifo.
@@ -58,7 +59,7 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
     ///
     /// Wraps
     /// [zx_fifo_write](https://fuchsia.dev/fuchsia-src/reference/syscalls/fifo_write.md).
-    pub fn write(&self, buf: &[W]) -> Result<usize, Status> {
+    pub fn write(&self, buf: &[W]) -> Result<NonZeroUsize, Status> {
         // SAFETY: this pointer is valid for the length of the slice
         unsafe { self.write_raw(buf.as_ptr(), buf.len()) }
     }
@@ -69,7 +70,7 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
     /// [zx_fifo_write](https://fuchsia.dev/fuchsia-src/reference/syscalls/fifo_write.md).
     pub fn write_one(&self, elem: &W) -> Result<(), Status> {
         // SAFETY: this pointer is valid for a single element
-        unsafe { self.write_raw(elem, 1).map(|n| debug_assert_eq!(n, 1)) }
+        unsafe { self.write_raw(elem, 1).map(|n| debug_assert_eq!(n.get(), 1)) }
     }
 
     /// Attempts to write some number of elements into the fifo. On success, returns the number of
@@ -81,7 +82,7 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
     /// # Safety
     ///
     /// The caller is responsible for ensuring `buf` is valid to write to for `count` elements.
-    pub unsafe fn write_raw(&self, buf: *const W, count: usize) -> Result<usize, Status> {
+    pub unsafe fn write_raw(&self, buf: *const W, count: usize) -> Result<NonZeroUsize, Status> {
         let mut actual_count = 0;
         // SAFETY: safety requirements for this call are upheld by our caller.
         let status = unsafe {
@@ -93,7 +94,10 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
                 &mut actual_count,
             )
         };
-        ok(status).map(|()| actual_count)
+        ok(status)?;
+        debug_assert_ne!(actual_count, 0);
+        // SAFETY: `zx_fifo_write` returning `ZX_OK` guarantees `actual_count > 0`.
+        Ok(unsafe { NonZeroUsize::new_unchecked(actual_count) })
     }
 
     /// Attempts to read some elements out of the fifo. On success, returns the number of elements
@@ -101,7 +105,7 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
     ///
     /// Wraps
     /// [zx_fifo_read](https://fuchsia.dev/fuchsia-src/reference/syscalls/fifo_read.md).
-    pub fn read(&self, buf: &mut [R]) -> Result<usize, Status> {
+    pub fn read(&self, buf: &mut [R]) -> Result<NonZeroUsize, Status> {
         // SAFETY: the pointer is valid for the length of the slice
         unsafe { self.read_raw(buf.as_mut_ptr(), buf.len()) }
     }
@@ -115,7 +119,7 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
 
         // SAFETY: the reference is valid to write to, and this call will not read from the bytes.
         let valid_count = unsafe { self.read_raw(elem.as_mut_ptr(), 1)? };
-        debug_assert_eq!(valid_count, 1);
+        debug_assert_eq!(valid_count.get(), 1);
 
         // SAFETY: if the previous call succeeded, the kernel has initialized this value.
         Ok(unsafe { elem.assume_init() })
@@ -130,7 +134,7 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
         // SAFETY: the slice is valid to write to for its entire length, and this call will not
         // read from the bytes
         let valid_count = unsafe { self.read_raw(bytes.as_mut_ptr().cast::<R>(), bytes.len())? };
-        let (valid, _uninit) = bytes.split_at_mut(valid_count);
+        let (valid, _uninit) = bytes.split_at_mut(valid_count.get());
 
         // SAFETY: the kernel initialized all bytes, strip out MaybeUninit
         unsafe { Ok(std::slice::from_raw_parts_mut(valid.as_mut_ptr().cast::<R>(), valid.len())) }
@@ -146,7 +150,7 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
     ///
     /// The caller is responsible for ensuring `bytes` points to valid (albeit
     /// not necessarily initialized) memory at least `len` bytes long.
-    pub unsafe fn read_raw(&self, buf: *mut R, count: usize) -> Result<usize, Status> {
+    pub unsafe fn read_raw(&self, buf: *mut R, count: usize) -> Result<NonZeroUsize, Status> {
         let mut actual_count = 0;
         // SAFETY: this call's invariants must be upheld by our caller.
         let status = unsafe {
@@ -158,7 +162,10 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
                 &mut actual_count,
             )
         };
-        ok(status).map(|()| actual_count)
+        ok(status)?;
+        debug_assert_ne!(actual_count, 0);
+        // SAFETY: `zx_fifo_read` returning `ZX_OK` guarantees `actual_count > 0`.
+        Ok(unsafe { NonZeroUsize::new_unchecked(actual_count) })
     }
 }
 
@@ -239,7 +246,7 @@ mod tests {
         fifo1.write_one(b"he").unwrap();
 
         // Should write three elements "ll" "o " "wo" and drop the rest as it is full.
-        assert_eq!(fifo1.write(&[*b"ll", *b"o ", *b"wo", *b"rl", *b"ds"]).unwrap(), 3);
+        assert_eq!(fifo1.write(&[*b"ll", *b"o ", *b"wo", *b"rl", *b"ds"]).unwrap().get(), 3);
 
         // Now that the fifo is full any further attempts to write should fail.
         assert_eq!(fifo1.write(&[*b"bl", *b"ah", *b"bl", *b"ah"]), Err(Status::SHOULD_WAIT));
@@ -248,7 +255,7 @@ mod tests {
 
         // Read remaining 3 entries from the other end.
         let mut read_vec = vec![[0; 2]; 8];
-        assert_eq!(fifo2.read(&mut read_vec).unwrap(), 3);
+        assert_eq!(fifo2.read(&mut read_vec).unwrap().get(), 3);
         assert_eq!(read_vec, &[*b"ll", *b"o ", *b"wo", [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]);
 
         // Reading again should fail as the fifo is empty.

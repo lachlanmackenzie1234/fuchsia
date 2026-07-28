@@ -316,8 +316,8 @@ impl<I: Interface + ?Sized> Session<I> {
                     let (front, _) = queue.responses.as_slices();
                     match self.fifo.write(front) {
                         Ok(count) => {
-                            let full = count < front.len();
-                            queue.responses.drain(..count);
+                            let full = count.get() < front.len();
+                            queue.responses.drain(..count.get());
                             if full {
                                 break;
                             }
