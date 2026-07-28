@@ -21,8 +21,11 @@ load(
 )
 
 test_suite(
-    name = "build_flags_tests",
-    visibility = ["//visibility:public"],
+    name = "host_tests",
+    visibility = [
+        "//build/bazel/host_tests:__subpackages__",
+        "//build/bazel/rules/tests:__subpackages__",
+    ],
 )
 
 # A single build_flags() target defining several attributes for C and C++
@@ -86,7 +89,7 @@ build_flags_cc_binary_host_test(
     name = "check_with_and_without_remove_flags",
     srcs = ["check_with_and_without_remove_flags.cc"],
     build_flags = [":flags1"],
-    disable_build_flags = ["//build/bazel/host_tests/build_flags:flags1"],
+    disable_build_flags = ["//build/bazel/rules/build_flags/tests:flags1"],
 )
 
 # A test to verify that 'includes' (via include_dirs) and 'lib_dirs'
@@ -94,9 +97,9 @@ build_flags_cc_binary_host_test(
 
 build_flags(
     name = "flags_includes_and_lib_dirs",
-    include_dirs = ["build/bazel/host_tests/build_flags/test_include_dir"],
+    include_dirs = ["build/bazel/rules/build_flags/tests/test_include_dir"],
     ldflags = ["-ltest_prebuilt"],
-    lib_dirs = ["build/bazel/host_tests/build_flags/test_lib_dir"],
+    lib_dirs = ["build/bazel/rules/build_flags/tests/test_lib_dir"],
 )
 
 build_flags_cc_binary_host_test(

@@ -9,6 +9,8 @@ load(
 load("@rules_rust//rust:rust_binary.bzl", "rust_binary")
 load("//build/bazel/host_tests:host_test.bzl", "host_test")
 
+visibility("private")
+
 def build_flags_rust_binary_host_test(
         name,
         build_flags = [],

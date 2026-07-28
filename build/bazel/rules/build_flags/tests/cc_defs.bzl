@@ -10,6 +10,8 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//build/bazel/host_tests:host_test.bzl", "host_test")
 
+visibility("private")
+
 def build_flags_cc_binary_host_test(
         name,
         build_flags = [],
