@@ -19,10 +19,6 @@ load(
     "common_build_fuchsia_package_impl",
 )
 load(
-    "@fuchsia_rules_common//packages:providers.bzl",
-    "FuchsiaPackageResourcesInfo",
-)
-load(
     "@fuchsia_rules_common//packages:resources.bzl",
     "fuchsia_find_all_package_resources",
 )
@@ -111,7 +107,6 @@ def _build_fuchsia_package_impl(ctx):
         ffx_package = ctx.executable._package_tool,
         ffx_package_is_ffx = False,
         cmc_tool = ctx.file._cmc_tool,
-        validate_component_manifests_tool = ctx.executable._validate_component_manifests,
         fuchsia_debug_symbol_info = fuchsia_debug_symbol_info,
         api_level = ctx.attr._current_api_level[BuildSettingInfo].value,
     )
@@ -119,10 +114,6 @@ def _build_fuchsia_package_impl(ctx):
 _build_fuchsia_package = rule(
     implementation = _build_fuchsia_package_impl,
     attrs = COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES | {
-        "processed_binaries": attr.label(
-            doc = "Label to a find_and_process_unstripped_binaries() target for this package.",
-            providers = [FuchsiaPackageResourcesInfo, FuchsiaDebugSymbolInfo],
-        ),
         "_package_tool": attr.label(
             # TODO(b/519244675): Replace with a Bazel label once `package-tool` is migrated to Bazel.
             default = "@gn_targets//toolchain_host_x64/src/sys/pkg/bin/package-tool",
@@ -133,11 +124,6 @@ _build_fuchsia_package = rule(
             # TODO(b/519243783): Replace with a Bazel label once `cmc` is migrated to Bazel.
             default = "@gn_targets//toolchain_host_x64/tools/cmc",
             allow_single_file = True,
-        ),
-        "_validate_component_manifests": attr.label(
-            default = "@fuchsia_rules_common//packages/tools:validate_component_manifests",
-            executable = True,
-            cfg = "exec",
         ),
         "_current_api_level": attr.label(
             default = "@//build/bazel/versioning:api_level",

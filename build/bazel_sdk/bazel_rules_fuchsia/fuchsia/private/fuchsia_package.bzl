@@ -11,10 +11,6 @@ load(
     "merge_debug_symbol_infos",
 )
 load(
-    "@fuchsia_rules_common//debug_symbols:providers.bzl",
-    "FuchsiaDebugSymbolInfo",
-)
-load(
     "@fuchsia_rules_common//packages:package.bzl",
     "COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES",
     "common_build_fuchsia_package_impl",
@@ -28,10 +24,6 @@ load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_t
 load(":fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL_ATTRS", "get_fuchsia_api_level")
 load(":fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_transition.bzl", "fuchsia_transition")
-load(
-    ":providers.bzl",
-    "FuchsiaPackageResourcesInfo",
-)
 load(
     ":utils.bzl",
     "append_suffix_to_label",
@@ -289,7 +281,6 @@ def _build_fuchsia_package_impl(ctx):
         ffx_package = sdk.ffx_package,
         ffx_package_is_ffx = True,
         cmc_tool = sdk.cmc,
-        validate_component_manifests_tool = ctx.executable._validate_component_manifests,
         fuchsia_debug_symbol_info = fuchsia_debug_symbol_info,
         api_level = get_fuchsia_api_level(ctx),
     )
@@ -310,10 +301,6 @@ _build_fuchsia_package = rule(
             and written in the package metadata.
             """,
         ),
-        "processed_binaries": attr.label(
-            doc = "Label to a find_and_process_unstripped_binaries() target for this package.",
-            providers = [FuchsiaPackageResourcesInfo, FuchsiaDebugSymbolInfo],
-        ),
         "hack_ignore_cpp": attr.bool(
             doc = "This value is no longer used and will be removed shortly.",
             default = False,
@@ -321,11 +308,6 @@ _build_fuchsia_package = rule(
         "_fuchsia_sdk_debug_symbols": attr.label(
             doc = "Include debug symbols from @fuchsia_sdk.",
             default = "@fuchsia_sdk//:debug_symbols",
-        ),
-        "_validate_component_manifests": attr.label(
-            default = "@fuchsia_rules_common//packages/tools:validate_component_manifests",
-            executable = True,
-            cfg = "exec",
         ),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",

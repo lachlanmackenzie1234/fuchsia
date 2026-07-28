@@ -17,6 +17,10 @@ load(
     "FuchsiaPackagedComponentInfo",
 )
 load(
+    "@fuchsia_rules_common//debug_symbols:providers.bzl",
+    "FuchsiaDebugSymbolInfo",
+)
+load(
     "@fuchsia_rules_common//packages:providers.bzl",
     "FuchsiaCollectedPackageResourcesInfo",
     "FuchsiaDriverToolInfo",
@@ -50,6 +54,7 @@ COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES = {
     ),
     "processed_binaries": attr.label(
         doc = "Label to a find_and_process_unstripped_binaries() target for this package.",
+        providers = [FuchsiaPackageResourcesInfo, FuchsiaDebugSymbolInfo],
     ),
     "collected_resources": attr.label(
         doc = "Label to a fuchsia_find_all_package_resources() target for this package.",
@@ -71,6 +76,12 @@ COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES = {
         the correct platform.
         """,
     ),
+    "_validate_component_manifests": attr.label(
+        doc = "Tool to validate binary paths in component manifests.",
+        default = "@fuchsia_rules_common//packages/tools:validate_component_manifests",
+        executable = True,
+        cfg = "exec",
+    ),
 }
 
 def common_build_fuchsia_package_impl(
@@ -78,7 +89,6 @@ def common_build_fuchsia_package_impl(
         ffx_package,
         ffx_package_is_ffx,
         cmc_tool,
-        validate_component_manifests_tool,
         fuchsia_debug_symbol_info,
         api_level = ""):
     """Common implementation for building fuchsia packages.
@@ -97,8 +107,6 @@ def common_build_fuchsia_package_impl(
         cmc_tool: The component manifest compiler (cmc) tool executable.
         meta_content_append_tool: Tool to append subpackage contents to
           manifests.
-        validate_component_manifests_tool: Tool to validate binary paths in
-          component manifests.
         fuchsia_debug_symbol_info: Pre-merged FuchsiaDebugSymbolInfo provider
           for the package.
         api_level: Optionally specify the target API level.
@@ -224,7 +232,7 @@ def common_build_fuchsia_package_impl(
     component_manifest_files = [c.component_info.manifest for c in packaged_components]
     depfile = ctx.actions.declare_file(pkg_dir + "components_validation.depfile")
     ctx.actions.run(
-        executable = validate_component_manifests_tool,
+        executable = ctx.executable._validate_component_manifests,
         arguments = [
             "--cmc",
             cmc_tool.path,
