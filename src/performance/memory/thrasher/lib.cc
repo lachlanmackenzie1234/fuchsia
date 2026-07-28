@@ -317,7 +317,9 @@ std::optional<MappedFile> map_file(const std::string& filename) {
   if (status != ZX_OK) {
     return std::nullopt;
   }
-  status = fdio_open3(filename.c_str(), static_cast<uint64_t>(fuchsia::io::Flags::PERM_READ_BYTES),
+  status = fdio_open3(filename.c_str(),
+                      static_cast<uint64_t>(fuchsia::io::Flags::PERM_READ_BYTES |
+                                            fuchsia::io::Flags::PERM_GET_ATTRIBUTES),
                       server.release());
   if (status != ZX_OK) {
     return std::nullopt;
