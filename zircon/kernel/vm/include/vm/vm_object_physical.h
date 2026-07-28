@@ -86,6 +86,22 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
   const void* state() const { return &opaque_storage_; }
   void* state() { return &opaque_storage_; }
 
+  static CriticalMutex::ShouldClear ChildListLockAcquire() TA_NO_THREAD_SAFETY_ANALYSIS {
+    return ChildListLock::Get()->lock().Acquire();
+  }
+  static void ChildListLockRelease(CriticalMutex::ShouldClear should_clear)
+      TA_NO_THREAD_SAFETY_ANALYSIS {
+    ChildListLock::Get()->lock().Release(should_clear);
+  }
+
+  bool has_children_locked() const TA_REQ(ChildListLock::Get()) { return children_list_len_ != 0; }
+
+  // There's no way good way to convince the static analysis that the lock() that we hold is
+  // also the VmObject::lock() and so we disable analysis to set the cache_policy_.
+  void set_cache_policy_locked(uint8_t cache_policy) TA_NO_THREAD_SAFETY_ANALYSIS {
+    cache_policy_ = cache_policy;
+  }
+
  private:
   // private constructor (use Create())
   VmObjectPhysical(paddr_t base, uint64_t size, bool is_slice_, uint64_t parent_user_id);

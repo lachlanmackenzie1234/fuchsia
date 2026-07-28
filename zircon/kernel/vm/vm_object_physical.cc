@@ -29,6 +29,14 @@
 
 #define LOCAL_TRACE VM_GLOBAL_TRACE(0)
 
+// LookupContiguousResult maps to the Rust FFI type LookupContiguousResult.
+// This allows returning both status and physical address by value from FFI
+// without needing raw out pointers.
+struct LookupContiguousResult {
+  zx_status_t status;
+  paddr_t paddr;
+};
+
 extern "C" {
 void rust_vm_object_physical_state_init(void* state, paddr_t base, uint64_t size, bool is_slice,
                                         uint64_t parent_user_id);
@@ -40,6 +48,19 @@ bool rust_vm_object_physical_state_get_is_slice(const void* state);
 uint64_t rust_vm_object_physical_state_get_parent_user_id(const void* state);
 VmObjectPhysical* rust_vm_object_physical_state_get_parent_locked(const void* state);
 void rust_vm_object_physical_state_set_parent_locked(void* state, VmObjectPhysical* parent);
+
+LookupContiguousResult rust_vm_object_physical_state_lookup_contiguous_locked(const void* state,
+                                                                              uint64_t offset,
+                                                                              uint64_t len);
+zx_status_t rust_vm_object_physical_state_commit_range_pinned(const void* state, uint64_t offset,
+                                                              uint64_t len);
+zx_status_t rust_vm_object_physical_state_prefetch_range(const void* state, uint64_t offset,
+                                                         uint64_t len);
+zx_status_t rust_vm_object_physical_state_lookup(const void* state, uint64_t offset, uint64_t len,
+                                                 const VmObject::LookupFunction* lookup_fn);
+zx_status_t rust_vm_object_physical_set_mapping_cache_policy(VmObjectPhysical* vmo,
+                                                             const void* state,
+                                                             arch_mmu_flags_t cache_policy);
 }
 
 VmObjectPhysical::VmObjectPhysical(paddr_t base, uint64_t size, bool is_slice,
@@ -220,58 +241,17 @@ void VmObjectPhysical::Dump(uint depth, bool verbose) {
 zx_status_t VmObjectPhysical::Lookup(uint64_t offset, uint64_t len,
                                      VmObject::LookupFunction lookup_fn) {
   canary_.Assert();
-
-  if (unlikely(len == 0)) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  Guard<CriticalMutex> guard{lock()};
-  if (unlikely(!InRange(offset, len, size_locked()))) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  uint64_t cur_offset = RoundDownPageSize(offset);
-  uint64_t end = offset + len;
-  uint64_t end_page_offset = RoundUpPageSize(end);
-
-  paddr_t base_addr = base();
-
-  for (size_t idx = 0; cur_offset < end_page_offset; cur_offset += kPageSize, ++idx) {
-    zx_status_t status = lookup_fn(cur_offset, base_addr + cur_offset);
-    if (unlikely(status != ZX_ERR_NEXT)) {
-      if (status == ZX_ERR_STOP) {
-        return ZX_OK;
-      }
-      return status;
-    }
-  }
-  return ZX_OK;
+  return rust_vm_object_physical_state_lookup(state(), offset, len, &lookup_fn);
 }
 
 zx_status_t VmObjectPhysical::CommitRangePinned(uint64_t offset, uint64_t len, bool write) {
   canary_.Assert();
-
-  if (unlikely(len == 0 || !IsPageRounded(offset))) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  Guard<CriticalMutex> guard{lock()};
-  if (unlikely(!InRange(offset, len, size_locked()))) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-  // Physical VMOs are always committed and so are always pinned.
-  return ZX_OK;
+  return rust_vm_object_physical_state_commit_range_pinned(state(), offset, len);
 }
 
 zx_status_t VmObjectPhysical::PrefetchRange(uint64_t offset, uint64_t len) {
   canary_.Assert();
-
-  if (!InRange(offset, len, rust_vm_object_physical_state_get_size(state()))) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-  if (len == 0) {
-    return ZX_OK;
-  }
-  return ZX_OK;
+  return rust_vm_object_physical_state_prefetch_range(state(), offset, len);
 }
 
 zx_status_t VmObjectPhysical::LookupContiguous(uint64_t offset, uint64_t len, paddr_t* out_paddr) {
@@ -282,54 +262,29 @@ zx_status_t VmObjectPhysical::LookupContiguous(uint64_t offset, uint64_t len, pa
 zx_status_t VmObjectPhysical::LookupContiguousLocked(uint64_t offset, uint64_t len,
                                                      paddr_t* out_paddr) {
   canary_.Assert();
-  if (unlikely(len == 0 || !IsPageRounded(offset))) {
-    return ZX_ERR_INVALID_ARGS;
+  LookupContiguousResult result =
+      rust_vm_object_physical_state_lookup_contiguous_locked(state(), offset, len);
+  if (result.status == ZX_OK && out_paddr != nullptr) {
+    *out_paddr = result.paddr;
   }
-  if (unlikely(!InRange(offset, len, size_locked()))) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-  if (out_paddr) {
-    *out_paddr = base() + offset;
-  }
-  return ZX_OK;
+  return result.status;
 }
 
-zx_status_t VmObjectPhysical::SetMappingCachePolicy(const arch_mmu_flags_t cache_policy) {
-  // Is it a valid cache flag?
-  if (cache_policy & ~ZX_CACHE_POLICY_MASK) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  Guard<CriticalMutex> guard{lock()};
-
-  // If the cache policy is already configured on this VMO and matches
-  // the requested policy then this is a no-op. This is a common practice
-  // in the serialio and magma drivers, but may change.
-  // TODO: revisit this when we shake out more of the future DDK protocol.
-  if (cache_policy == self_locked()->GetMappingCachePolicyLocked()) {
-    return ZX_OK;
-  }
-
-  Guard<CriticalMutex> list_guard{ChildListLock::Get()};
-  // If this VMO is mapped already it is not safe to allow its caching policy to change
-  if (self_locked()->num_mappings_locked() != 0 || children_list_len_ != 0 || parent_locked()) {
-    LTRACEF(
-        "Warning: trying to change cache policy while this vmo has mappings, children or a "
-        "parent!\n");
-    return ZX_ERR_BAD_STATE;
-  }
-
-  // There's no way good way to convince the static analysis that the lock() that we hold is
-  // also the VmObject::lock() and so we disable analysis to set the cache_policy_;
-  [this, &cache_policy]() TA_REQ(lock())
-      TA_NO_THREAD_SAFETY_ANALYSIS { cache_policy_ = cache_policy; }();
-  return ZX_OK;
+zx_status_t VmObjectPhysical::SetMappingCachePolicy(arch_mmu_flags_t cache_policy) {
+  return rust_vm_object_physical_set_mapping_cache_policy(this, state(), cache_policy);
 }
 
 extern "C" {
 VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size, zx_status_t* out_status);
 VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo);
-
+zx_status_t cpp_vm_object_lookup_fn_invoke(const VmObject::LookupFunction* lookup_fn,
+                                           uint64_t offset, paddr_t pa);
+arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy_locked(const VmObjectPhysical* vmo);
+size_t cpp_vm_object_num_mappings_locked(const VmObjectPhysical* vmo);
+bool cpp_child_list_lock_acquire();
+void cpp_child_list_lock_release(bool should_clear);
+bool cpp_vm_object_has_children_locked(const VmObjectPhysical* vmo);
+void cpp_vm_object_set_cache_policy_locked(VmObjectPhysical* vmo, arch_mmu_flags_t cache_policy);
 VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size,
                                                 zx_status_t* out_status) {
   fbl::RefPtr<VmObjectPhysical> vmo;
@@ -339,5 +294,40 @@ VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size,
 
 VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo) {
   return static_cast<VmObject*>(vmo);
+}
+
+zx_status_t cpp_vm_object_lookup_fn_invoke(const VmObject::LookupFunction* lookup_fn,
+                                           uint64_t offset, paddr_t pa) {
+  return (*lookup_fn)(offset, pa);
+}
+
+arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy_locked(const VmObjectPhysical* vmo)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->GetMappingCachePolicyLocked();
+}
+
+size_t cpp_vm_object_num_mappings_locked(const VmObjectPhysical* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->num_mappings_locked();
+}
+
+// Note: We return the `ShouldClear` timeslice extension state as a boolean back to Rust,
+// and receive it back on release. This avoids using a `thread_local` variable to store the
+// token, which would trigger page faults during early boot before TLS is initialized.
+bool cpp_child_list_lock_acquire() TA_NO_THREAD_SAFETY_ANALYSIS {
+  return VmObjectPhysical::ChildListLockAcquire() == CriticalMutex::ShouldClear::Yes;
+}
+
+void cpp_child_list_lock_release(bool should_clear) TA_NO_THREAD_SAFETY_ANALYSIS {
+  VmObjectPhysical::ChildListLockRelease(should_clear ? CriticalMutex::ShouldClear::Yes
+                                                      : CriticalMutex::ShouldClear::No);
+}
+
+bool cpp_vm_object_has_children_locked(const VmObjectPhysical* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->has_children_locked();
+}
+
+void cpp_vm_object_set_cache_policy_locked(VmObjectPhysical* vmo, arch_mmu_flags_t cache_policy)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  vmo->set_cache_policy_locked(cache_policy);
 }
 }

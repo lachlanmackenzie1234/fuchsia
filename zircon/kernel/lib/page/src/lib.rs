@@ -17,3 +17,21 @@ pub const SHIFT: usize = 12;
 
 /// Mask that will extract the offset into a page of an address.
 pub const MASK: usize = 4095;
+
+/// Returns true if `val` is aligned to a page boundary.
+#[inline]
+pub const fn is_aligned(val: usize) -> bool {
+    (val & MASK) == 0
+}
+
+/// Rounds `val` down to the nearest page boundary.
+#[inline]
+pub const fn round_down(val: usize) -> usize {
+    val & !MASK
+}
+
+/// Rounds `val` up to the nearest page boundary.
+#[inline]
+pub const fn round_up(val: usize) -> usize {
+    (val + MASK) & !MASK
+}
