@@ -161,7 +161,7 @@ impl FactoryResetController {
             )
         })?;
         self.store
-            .write(&info)
+            .immediate_write(&info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(info))
             .context("writing factory reset")
