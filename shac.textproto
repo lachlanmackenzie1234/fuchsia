@@ -28,3 +28,11 @@ passthrough_env: {
   is_path: true
 }
 
+allowed_findings_properties: {
+  properties: [
+    {
+      name: "fail_if_missing_label"
+    }
+  ]
+}
+
