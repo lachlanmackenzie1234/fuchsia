@@ -74,6 +74,7 @@ fuchsia_cc_driver(
         "@fuchsia_sdk//pkg/fit",
         "@fuchsia_sdk//pkg/hwreg",
         "@fuchsia_sdk//pkg/inspect",
+        "@fuchsia_sdk//pkg/memory_barriers",
         "@fuchsia_sdk//pkg/sync",
         "@fuchsia_sdk//pkg/trace",
         "@fuchsia_sdk//pkg/zx",

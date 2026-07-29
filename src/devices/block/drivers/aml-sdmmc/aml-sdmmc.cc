@@ -19,10 +19,13 @@
 #include <lib/driver/power/cpp/power-support.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/pinned-vmo.h>
+#include <lib/memory_barriers/memory_barriers.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/sync/completion.h>
 #include <lib/trace/event.h>
+#include <lib/zx/clock.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/time.h>
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
@@ -426,7 +429,14 @@ zx_status_t AmlSdmmc::WaitForInterruptImpl() {
 void AmlSdmmc::ClearStatus() {
   AmlSdmmcStatus::Get()
       .ReadFrom(&*mmio_)
-      .set_reg_value(AmlSdmmcStatus::kClearStatus)
+      .set_rxd_err(0xff)
+      .set_txd_err(1)
+      .set_desc_err(1)
+      .set_resp_err(1)
+      .set_resp_timeout(1)
+      .set_desc_timeout(1)
+      .set_end_of_chain(1)
+      .set_resp_status(1)
       .WriteTo(&*mmio_);
 }
 
@@ -719,10 +729,7 @@ void AmlSdmmc::ConfigureDefaultRegs() {
                             .set_bus_width(AmlSdmmcCfg::kBusWidth1Bit)
                             .reg_value();
   AmlSdmmcCfg::Get().ReadFrom(&*mmio_).set_reg_value(config_val).WriteTo(&*mmio_);
-  AmlSdmmcStatus::Get()
-      .ReadFrom(&*mmio_)
-      .set_reg_value(AmlSdmmcStatus::kClearStatus)
-      .WriteTo(&*mmio_);
+  ClearStatus();
   AmlSdmmcIrqEn::Get()
       .ReadFrom(&*mmio_)
       .set_reg_value(AmlSdmmcStatus::kClearStatus)
@@ -1625,8 +1632,29 @@ zx_status_t AmlSdmmc::Init(const std::string& instance_identifier) {
   // The core clock must be enabled before attempting to access the start register.
   ConfigureDefaultRegs();
 
-  // Stop processing DMA descriptors before releasing quarantine.
+  // Stop processing DMA descriptors and wait for the controller to quiesce before releasing
+  // quarantine.
   AmlSdmmcStart::Get().ReadFrom(&*mmio_).set_desc_busy(0).WriteTo(&*mmio_);
+
+  constexpr zx::duration kQuiesceTimeout = zx::msec(500);  // Arbitrary timeout
+  constexpr zx::duration kYieldTime = zx::msec(5);
+  const zx::time deadline = zx::clock::get_monotonic() + kQuiesceTimeout;
+  while (true) {
+    const auto status_reg = AmlSdmmcStatus::Get().ReadFrom(&*mmio_);
+    if (!status_reg.desc_busy() && !status_reg.core_busy()) {
+      break;
+    }
+    if (zx::clock::get_monotonic() > deadline) {
+      fdf::error("Timed out waiting for DMA engine to quiesce");
+      return ZX_ERR_TIMED_OUT;
+    }
+    zx::nanosleep(zx::deadline_after(kYieldTime));
+  }
+
+  // Issue a Data Synchronization Barrier before releasing quarantined pages to ensure all
+  // in-flight transactions from the hardware are fully observed and processed.
+  BarrierBeforeRelease();
+
   zx_status_t status = bti_.release_quarantine();
   if (status != ZX_OK) {
     fdf::error("Failed to release quarantined pages");

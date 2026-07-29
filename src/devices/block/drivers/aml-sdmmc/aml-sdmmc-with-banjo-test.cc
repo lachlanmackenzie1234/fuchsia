@@ -494,6 +494,20 @@ TEST_F(AmlSdmmcWithBanjoTest, Init) {
                                                                     .reg_value());
 }
 
+TEST_F(AmlSdmmcWithBanjoTest, InitTimeoutDescBusy) {
+  StartDriver();
+
+  AmlSdmmcStatus::Get().FromValue(0).set_desc_busy(1).WriteTo(&*mmio_);
+  EXPECT_EQ(dut_->Init(TestAmlSdmmcWithBanjo::kInstance), ZX_ERR_TIMED_OUT);
+}
+
+TEST_F(AmlSdmmcWithBanjoTest, InitTimeoutCoreBusy) {
+  StartDriver();
+
+  AmlSdmmcStatus::Get().FromValue(0).set_core_busy(1).WriteTo(&*mmio_);
+  EXPECT_EQ(dut_->Init(TestAmlSdmmcWithBanjo::kInstance), ZX_ERR_TIMED_OUT);
+}
+
 TEST_F(AmlSdmmcWithBanjoTest, Tuning) {
   StartDriver();
 

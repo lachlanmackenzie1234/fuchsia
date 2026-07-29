@@ -15,6 +15,7 @@ idk_cc_source_library(
     public_configs = [":memory_barriers_include"],
     stable = False,
     visibility = [
+        "//src/devices/block/drivers/aml-sdmmc:__subpackages__",
         "//src/media:__subpackages__",
         "//src/sysmem:__subpackages__",
         "//vendor/amlogic/drivers:__subpackages__",
