@@ -29,7 +29,6 @@ use fuchsia_inspect_contrib::{inspect_insert, inspect_log, make_inspect_loggable
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::{Future, FutureExt, StreamExt, select};
-use ieee80211::OuiFmt;
 use log::{error, info, warn};
 use num_traits::SaturatingAdd;
 use static_assertions::const_assert_eq;
@@ -517,11 +516,35 @@ const TELEMETRY_EVENT_BUFFER_SIZE: usize = 100;
 const TELEMETRY_QUERY_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(15);
 
 pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
-    wlan_telemetry::TelemetryConfig::default()
+    wlan_telemetry::TelemetryConfig { enable_connect_disconnect: true, ..Default::default() }
 }
 
 pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
-    wlan_telemetry::CobaltAllowlist::Only(HashSet::new())
+    wlan_telemetry::CobaltAllowlist::Only(HashSet::from([
+        metrics::CONNECT_ATTEMPT_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
+        metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID,
+        metrics::DOWNTIME_POST_DISCONNECT_METRIC_ID,
+        metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID,
+        metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_APSD_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_LINK_MEASUREMENT_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_NEIGHBOR_REPORT_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_FT_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_BSS_TRANSITION_MANAGEMENT_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
+        metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+        metrics::TOTAL_DISCONNECT_COUNT_METRIC_ID,
+        metrics::CONNECTED_DURATION_ON_DISCONNECT_METRIC_ID,
+        metrics::DISCONNECT_BREAKDOWN_BY_REASON_CODE_METRIC_ID,
+        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SECURITY_TYPE_METRIC_ID,
+        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_RSSI_BUCKET_METRIC_ID,
+        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SNR_BUCKET_METRIC_ID,
+        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+    ]))
 }
 
 /// Create a struct for sending TelemetryEvent, and a future representing the telemetry loop.
@@ -2362,73 +2385,6 @@ impl StatsLogger {
                     )),
                 });
             }
-
-            for (security_type_dim, counters) in
-                &self.last_1d_detailed_stats.connect_per_security_type
-            {
-                let success_rate = counters.success as f64 / counters.total as f64;
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SECURITY_TYPE_METRIC_ID,
-                    event_codes: vec![*security_type_dim as u32],
-                    payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
-                        success_rate,
-                    )),
-                });
-            }
-
-            for (primary_channel, counters) in
-                &self.last_1d_detailed_stats.connect_per_primary_channel
-            {
-                let success_rate = counters.success as f64 / counters.total as f64;
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
-                    event_codes: vec![*primary_channel as u32],
-                    payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
-                        success_rate,
-                    )),
-                });
-            }
-
-            for (channel_band_dim, counters) in
-                &self.last_1d_detailed_stats.connect_per_channel_band
-            {
-                let success_rate = counters.success as f64 / counters.total as f64;
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
-                    event_codes: vec![*channel_band_dim as u32],
-                    payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
-                        success_rate,
-                    )),
-                });
-            }
-
-            for (rssi_bucket_dim, counters) in &self.last_1d_detailed_stats.connect_per_rssi_bucket
-            {
-                let success_rate = counters.success as f64 / counters.total as f64;
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_RSSI_BUCKET_METRIC_ID,
-                    event_codes: vec![*rssi_bucket_dim as u32],
-                    payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
-                        success_rate,
-                    )),
-                });
-            }
-
-            for (snr_bucket_dim, counters) in &self.last_1d_detailed_stats.connect_per_snr_bucket {
-                let success_rate = counters.success as f64 / counters.total as f64;
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SNR_BUCKET_METRIC_ID,
-                    event_codes: vec![*snr_bucket_dim as u32],
-                    payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
-                        success_rate,
-                    )),
-                });
-            }
         }
 
         self.throttled_error_logger.throttle_error(log_cobalt_batch!(
@@ -2574,12 +2530,6 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        metric_events.push(MetricEvent {
-            metric_id: metrics::TOTAL_DISCONNECT_COUNT_METRIC_ID,
-            event_codes: vec![],
-            payload: MetricEventPayload::Count(1),
-        });
-
         let device_uptime_dim = {
             use metrics::DisconnectBreakdownByDeviceUptimeMetricDimensionDeviceUptime::*;
             match fasync::MonotonicInstant::now() - fasync::MonotonicInstant::from_nanos(0) {
@@ -2611,17 +2561,6 @@ impl StatsLogger {
         metric_events.push(MetricEvent {
             metric_id: metrics::DISCONNECT_BREAKDOWN_BY_CONNECTED_DURATION_METRIC_ID,
             event_codes: vec![connected_duration_dim as u32],
-            payload: MetricEventPayload::Count(1),
-        });
-
-        let disconnect_source_dim =
-            convert::convert_disconnect_source(&disconnect_info.disconnect_source);
-        metric_events.push(MetricEvent {
-            metric_id: metrics::DISCONNECT_BREAKDOWN_BY_REASON_CODE_METRIC_ID,
-            event_codes: vec![
-                disconnect_info.disconnect_source.cobalt_reason_code() as u32,
-                disconnect_source_dim as u32,
-            ],
             payload: MetricEventPayload::Count(1),
         });
 
@@ -2920,12 +2859,6 @@ impl StatsLogger {
             }
         }
 
-        metric_events.push(MetricEvent {
-            metric_id: metrics::CONNECT_ATTEMPT_BREAKDOWN_BY_STATUS_CODE_METRIC_ID,
-            event_codes: vec![code.into_primitive() as u32],
-            payload: MetricEventPayload::Count(1),
-        });
-
         if code != fidl_ieee80211::StatusCode::Success {
             return metric_events;
         }
@@ -3024,67 +2957,10 @@ impl StatsLogger {
     async fn log_device_connected_cobalt_metrics(
         &mut self,
         multiple_bss_candidates: bool,
-        ap_state: &client::types::ApState,
+        _ap_state: &client::types::ApState,
         network_is_likely_hidden: bool,
     ) {
         let mut metric_events = vec![];
-        metric_events.push(MetricEvent {
-            metric_id: metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID,
-            event_codes: vec![],
-            payload: MetricEventPayload::Count(1),
-        });
-
-        let security_type_dim = convert::convert_security_type(&ap_state.original().protection());
-        metric_events.push(MetricEvent {
-            metric_id: metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID,
-            event_codes: vec![security_type_dim as u32],
-            payload: MetricEventPayload::Count(1),
-        });
-
-        if ap_state.original().supports_uapsd() {
-            metric_events.push(MetricEvent {
-                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_APSD_METRIC_ID,
-                event_codes: vec![],
-                payload: MetricEventPayload::Count(1),
-            });
-        }
-
-        if let Some(rm_enabled_cap) = ap_state.original().rm_enabled_cap() {
-            if rm_enabled_cap.link_measurement_enabled() {
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_LINK_MEASUREMENT_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
-            if rm_enabled_cap.neighbor_report_enabled() {
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_NEIGHBOR_REPORT_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
-        }
-
-        if ap_state.original().supports_ft() {
-            metric_events.push(MetricEvent {
-                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_FT_METRIC_ID,
-                event_codes: vec![],
-                payload: MetricEventPayload::Count(1),
-            });
-        }
-
-        if let Some(cap) = ap_state.original().ext_cap().and_then(|cap| cap.ext_caps_octet_3)
-            && cap.bss_transition()
-        {
-            metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_BSS_TRANSITION_MANAGEMENT_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-        }
 
         let is_multi_bss_dim = convert::convert_is_multi_bss(multiple_bss_candidates);
         metric_events.push(MetricEvent {
@@ -3092,18 +2968,6 @@ impl StatsLogger {
             event_codes: vec![is_multi_bss_dim as u32],
             payload: MetricEventPayload::Count(1),
         });
-
-        let oui = ap_state.original().bssid.to_oui_uppercase("");
-        metric_events.push(MetricEvent {
-            metric_id: metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
-            event_codes: vec![],
-            payload: MetricEventPayload::StringValue(oui.clone()),
-        });
-
-        append_device_connected_channel_cobalt_metrics(
-            &mut metric_events,
-            ap_state.tracked.channel,
-        );
 
         if network_is_likely_hidden {
             metric_events.push(MetricEvent {
@@ -6997,11 +6861,6 @@ mod tests {
             vec![client::types::DisconnectReason::DisconnectDetectedFromSme as u32]
         );
 
-        let disconnect_counts =
-            test_helper.get_logged_metrics(metrics::TOTAL_DISCONNECT_COUNT_METRIC_ID);
-        assert_eq!(disconnect_counts.len(), 1);
-        assert_eq!(disconnect_counts[0].payload, MetricEventPayload::Count(1));
-
         let breakdowns_by_device_uptime = test_helper
             .get_logged_metrics(metrics::DISCONNECT_BREAKDOWN_BY_DEVICE_UPTIME_METRIC_ID);
         assert_eq!(breakdowns_by_device_uptime.len(), 1);
@@ -7356,15 +7215,6 @@ mod tests {
         );
         assert_eq!(policy_connect_reasons[0].payload, MetricEventPayload::Count(1));
 
-        let breakdowns_by_status_code = test_helper
-            .get_logged_metrics(metrics::CONNECT_ATTEMPT_BREAKDOWN_BY_STATUS_CODE_METRIC_ID);
-        assert_eq!(breakdowns_by_status_code.len(), 1);
-        assert_eq!(
-            breakdowns_by_status_code[0].event_codes,
-            vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32]
-        );
-        assert_eq!(breakdowns_by_status_code[0].payload, MetricEventPayload::Count(1));
-
         let breakdowns_by_user_wait_time = test_helper
             .get_logged_metrics(metrics::SUCCESSFUL_CONNECT_BREAKDOWN_BY_USER_WAIT_TIME_METRIC_ID);
         // TelemetryEvent::StartEstablishConnection is never sent, so connect start time is never
@@ -7418,30 +7268,6 @@ mod tests {
             test_helper.get_logged_metrics(metrics::CONNECT_TO_LIKELY_HIDDEN_NETWORK_METRIC_ID);
         assert_eq!(network_is_likely_hidden.len(), 1);
         assert_eq!(network_is_likely_hidden[0].payload, MetricEventPayload::Count(1));
-    }
-
-    #[fuchsia::test]
-    fn test_log_connect_attempt_breakdown_by_failed_status_code() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        let event = TelemetryEvent::ConnectResult {
-            iface_id: IFACE_ID,
-            policy_connect_reason: None,
-            result: fake_connect_result(fidl_ieee80211::StatusCode::RefusedCapabilitiesMismatch),
-            multiple_bss_candidates: true,
-            ap_state: random_bss_description!(Wpa2).into(),
-            network_is_likely_hidden: true,
-        };
-        test_helper.telemetry_sender.send(event);
-        test_helper.drain_cobalt_events(&mut test_fut);
-
-        let breakdowns_by_status_code = test_helper
-            .get_logged_metrics(metrics::CONNECT_ATTEMPT_BREAKDOWN_BY_STATUS_CODE_METRIC_ID);
-        assert_eq!(breakdowns_by_status_code.len(), 1);
-        assert_eq!(
-            breakdowns_by_status_code[0].event_codes,
-            vec![fidl_ieee80211::StatusCode::RefusedCapabilitiesMismatch.into_primitive() as u32]
-        );
     }
 
     #[fuchsia::test]
@@ -8108,19 +7934,7 @@ mod tests {
     }
 
     #[test_case(metrics::CONNECT_TO_LIKELY_HIDDEN_NETWORK_METRIC_ID, None; "connect_to_likely_hidden_network")]
-    #[test_case(metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID, None; "number_of_connected_devices")]
-    #[test_case(metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID, None; "breakdown_by_security_type")]
     #[test_case(metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_IS_MULTI_BSS_METRIC_ID, None; "breakdown_by_is_multi_bss")]
-    #[test_case(metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID, None; "breakdown_by_primary_channel")]
-    #[test_case(metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID, None; "breakdown_by_channel_band")]
-    #[test_case(metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
-        Some(vec![
-            MetricEvent {
-                metric_id: metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
-                event_codes: vec![],
-                payload: MetricEventPayload::StringValue("00F620".to_string()),
-            },
-        ]); "number_of_devices_connected_to_specific_oui")]
     #[fuchsia::test(add_test_attr = false)]
     fn test_log_device_connected_cobalt_metrics_on_disconnect_and_periodically(
         metric_id: u32,
