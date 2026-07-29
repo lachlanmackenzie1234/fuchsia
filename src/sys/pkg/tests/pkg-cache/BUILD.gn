@@ -84,20 +84,14 @@ fuchsia_component("pkg-cache-integration-test") {
   ]
 }
 
-fuchsia_component("test-root") {
-  testonly = true
-  manifest = "meta/test-root.cml"
-}
-
 fuchsia_test_package("pkg-cache-integration-tests") {
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
     }
   }
-  test_components = [ ":test-root" ]
+  test_components = [ ":pkg-cache-integration-test" ]
   deps = [
-    ":pkg-cache-integration-test",
     "//src/sys/pkg/bin/pkg-cache:component",
     "//src/sys/pkg/bin/system-update-committer:component",
   ]

@@ -864,10 +864,8 @@ impl TestEnv<BlobfsRamdisk> {
 
 impl<B: Blobfs> TestEnv<B> {
     async fn inspect_hierarchy(&self) -> DiagnosticsHierarchy {
-        let nested_environment_label = format!(
-            "pkg_cache_integration_test/realm_builder\\:{}",
-            self.apps.realm_instance.root.child_name()
-        );
+        let nested_environment_label =
+            format!("realm_builder\\:{}", self.apps.realm_instance.root.child_name());
 
         get_inspect_hierarchy(&nested_environment_label, "pkg_cache").await
     }
