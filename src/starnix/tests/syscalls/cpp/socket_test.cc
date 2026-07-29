@@ -24,6 +24,7 @@
 
 #include <fstream>
 #include <optional>
+#include <set>
 #include <thread>
 
 #include <asm-generic/socket.h>
@@ -497,6 +498,177 @@ TEST(UnixSocket, SendMemFd) {
   EXPECT_EQ(msg.msg_flags, 0);
 }
 #endif  // defined(__NR_memfd_create)
+
+TEST(UnixSocket, ScmRightsTruncation) {
+  int sv_raw[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv_raw));
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  constexpr int kSendFdCount = 4;
+  fbl::unique_fd send_fds[kSendFdCount];
+  for (int i = 0; i < kSendFdCount; i++) {
+    int p[2];
+    ASSERT_EQ(0, pipe(p));
+    send_fds[i].reset(p[0]);
+    close(p[1]);
+  }
+
+  char data = 'x';
+  struct iovec iov = {.iov_base = &data, .iov_len = 1};
+  char sendbuf[CMSG_SPACE(kSendFdCount * sizeof(int))];
+  memset(sendbuf, 0, sizeof(sendbuf));
+  struct msghdr send_msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = sendbuf,
+      .msg_controllen = sizeof(sendbuf),
+  };
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&send_msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(kSendFdCount * sizeof(int));
+  int* cmsg_fds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+  for (int i = 0; i < kSendFdCount; i++) {
+    cmsg_fds[i] = send_fds[i].get();
+  }
+  ASSERT_THAT(sendmsg(sv[0].get(), &send_msg, 0), SyscallSucceedsWithValue(1));
+
+  constexpr int kMaxNumberOfFileDescriptors = 1024;
+  std::set<int> open_fds_before;
+  for (int fd = 0; fd < kMaxNumberOfFileDescriptors; fd++) {
+    if (fcntl(fd, F_GETFD) != -1) {
+      open_fds_before.insert(fd);
+    }
+  }
+
+  char recvbuf[CMSG_LEN(sizeof(int))];
+  memset(recvbuf, 0, sizeof(recvbuf));
+  char rdata = 0;
+  struct iovec riov = {.iov_base = &rdata, .iov_len = 1};
+  struct msghdr recv_msg = {
+      .msg_iov = &riov,
+      .msg_iovlen = 1,
+      .msg_control = recvbuf,
+      .msg_controllen = sizeof(recvbuf),
+  };
+  ASSERT_THAT(recvmsg(sv[1].get(), &recv_msg, 0), SyscallSucceedsWithValue(1));
+
+  EXPECT_NE(0, recv_msg.msg_flags & MSG_CTRUNC);
+
+  int new_fds = 0;
+  for (int fd = 0; fd < kMaxNumberOfFileDescriptors; fd++) {
+    if (fcntl(fd, F_GETFD) != -1 && !open_fds_before.count(fd)) {
+      new_fds++;
+      close(fd);
+    }
+  }
+
+  int parsed_fds = 0;
+  for (struct cmsghdr* c = CMSG_FIRSTHDR(&recv_msg); c; c = CMSG_NXTHDR(&recv_msg, c)) {
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS) {
+      ASSERT_GE(c->cmsg_len, CMSG_LEN(0));
+      parsed_fds = static_cast<int>((c->cmsg_len - CMSG_LEN(0)) / sizeof(int));
+    }
+  }
+
+  EXPECT_EQ(1, parsed_fds);
+  EXPECT_EQ(parsed_fds, new_fds);
+}
+
+class CmsgAlignmentTest : public testing::TestWithParam<int> {};
+
+TEST_P(CmsgAlignmentTest, ScmRightsFollowedByCredentials) {
+  const int num_fds = GetParam();
+
+  int sv_raw[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv_raw));
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  int one = 1;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  constexpr int kMaxFds = 3;
+  ASSERT_LE(num_fds, kMaxFds);
+
+  fbl::unique_fd pipes[kMaxFds];
+  for (int i = 0; i < num_fds; i++) {
+    int p[2];
+    ASSERT_EQ(0, pipe(p));
+    pipes[i].reset(p[0]);
+    close(p[1]);
+  }
+
+  char payload = 'A';
+  struct iovec iov = {.iov_base = &payload, .iov_len = 1};
+
+  char sendbuf[CMSG_SPACE(kMaxFds * sizeof(int))];
+  memset(sendbuf, 0, sizeof(sendbuf));
+  struct msghdr send_msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = sendbuf,
+      .msg_controllen = CMSG_SPACE(num_fds * sizeof(int)),
+  };
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&send_msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(num_fds * sizeof(int));
+  int* fds = reinterpret_cast<int*>(CMSG_DATA(cmsg));
+  for (int i = 0; i < num_fds; i++) {
+    fds[i] = pipes[i].get();
+  }
+  ASSERT_THAT(sendmsg(sv[0].get(), &send_msg, 0), SyscallSucceedsWithValue(1));
+
+  char recvbuf[CMSG_SPACE(kMaxFds * sizeof(int)) + CMSG_SPACE(sizeof(struct ucred))];
+  memset(recvbuf, 0, sizeof(recvbuf));
+  char rdata = 0;
+  struct iovec riov = {.iov_base = &rdata, .iov_len = 1};
+  struct msghdr recv_msg = {
+      .msg_iov = &riov,
+      .msg_iovlen = 1,
+      .msg_control = recvbuf,
+      .msg_controllen = sizeof(recvbuf),
+  };
+  ASSERT_THAT(recvmsg(sv[1].get(), &recv_msg, 0), SyscallSucceedsWithValue(1));
+
+  EXPECT_EQ(recv_msg.msg_flags & MSG_CTRUNC, 0);
+
+  int cmsg_count = 0;
+  bool found_rights = false;
+  bool found_creds = false;
+  for (struct cmsghdr* c = CMSG_FIRSTHDR(&recv_msg); c; c = CMSG_NXTHDR(&recv_msg, c)) {
+    cmsg_count++;
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS) {
+      found_rights = true;
+      ASSERT_GE(c->cmsg_len, CMSG_LEN(0));
+      int received_fds = static_cast<int>((c->cmsg_len - CMSG_LEN(0)) / sizeof(int));
+      ASSERT_EQ(received_fds, num_fds);
+      const int* recv_fds = reinterpret_cast<const int*>(CMSG_DATA(c));
+      for (int i = 0; i < received_fds; i++) {
+        int recv_fd = recv_fds[i];
+        EXPECT_GE(recv_fd, 0);
+        close(recv_fd);
+      }
+    }
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+      found_creds = true;
+      EXPECT_EQ(c->cmsg_len, CMSG_LEN(sizeof(struct ucred)));
+      struct ucred cred;
+      memcpy(&cred, CMSG_DATA(c), sizeof(cred));
+      EXPECT_EQ(cred.pid, getpid());
+      EXPECT_EQ(cred.uid, geteuid());
+      EXPECT_EQ(cred.gid, getegid());
+    }
+  }
+
+  EXPECT_EQ(cmsg_count, 2);
+  EXPECT_TRUE(found_rights);
+  EXPECT_TRUE(found_creds);
+}
+
+INSTANTIATE_TEST_SUITE_P(UnixSocket, CmsgAlignmentTest, testing::Values(1, 2, 3));
 
 // This test verifies that we can concurrently attempt to create the same type of socket from
 // multiple threads.
