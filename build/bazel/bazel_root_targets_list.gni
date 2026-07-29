@@ -51,59 +51,59 @@ declare_args() {
   #
   default_bazel_root_host_targets =
       sdk_host_tool_bazel_targets + _migration_example_bazel_targets +
-      tools_bazel_root_targets +
-      [
-        {
-          bazel_label =
-              "//src/lib/testing/expectation/tool:list_test_expectations"
-          copy_outputs = [
-            {
-              bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
-              ninja = "list_test_expectations"
-            },
-          ]
-          install_host_tool = true
-        },
+      tools_bazel_root_targets
 
-        # First, a target that verifies that the host toolchains work properly,
-        # i.e. can compile and link C++ and Rust binaries properly.
+  default_bazel_root_host_targets += [
+    {
+      bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
+      copy_outputs = [
         {
-          bazel_label = "//build/bazel/toolchains/tests:build"
-          bazel_name = "build.stamp"
-          ninja_name = "bazel_toolchains_tests_build.stamp"
-        },
-        {
-          bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
-          ninja_name = "ffx-efi_bazel_unversioned"
-          copy_outputs = [
-            {
-              bazel = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
-              ninja = "ffx-efi_bazel_unversioned"
-            },
-          ]
-        },
-        {
-          bazel_label = "//build/tools/json_validator:json_validator_valico"
-          install_host_tool = true
-        },
-        {
-          bazel_label = "//build/tools/json_merge"
-          install_host_tool = true
-        },
-        {
-          bazel_label = "//build/tools/formatjson5"
-          install_host_tool = true
-        },
-        {
-          bazel_label = "//build/tools/bazel2gn"
-          copy_outputs = [
-            {
-              bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
-              ninja = "bazel2gn"
-            },
-          ]
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
+          ninja = "list_test_expectations"
         },
       ]
+      install_host_tool = true
+    },
+
+    # First, a target that verifies that the host toolchains work properly,
+    # i.e. can compile and link C++ and Rust binaries properly.
+    {
+      bazel_label = "//build/bazel/toolchains/tests:build"
+      bazel_name = "build.stamp"
+      ninja_name = "bazel_toolchains_tests_build.stamp"
+    },
+    {
+      bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
+      ninja_name = "ffx-efi_bazel_unversioned"
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
+          ninja = "ffx-efi_bazel_unversioned"
+        },
+      ]
+    },
+    {
+      bazel_label = "//build/tools/json_validator:json_validator_valico"
+      install_host_tool = true
+    },
+    {
+      bazel_label = "//build/tools/json_merge"
+      install_host_tool = true
+    },
+    {
+      bazel_label = "//build/tools/formatjson5"
+      install_host_tool = true
+    },
+    {
+      bazel_label = "//build/tools/bazel2gn"
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
+          ninja = "bazel2gn"
+        },
+      ]
+    },
+  ]
 
   # A similar list to extend the list above for custom build configuration
   # in args.gn.
