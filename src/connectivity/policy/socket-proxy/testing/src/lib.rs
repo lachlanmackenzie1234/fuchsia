@@ -3,21 +3,17 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use fidl_fuchsia_net::{IpAddress, SocketAddress};
+use fidl_fuchsia_net::IpAddress;
 use fidl_fuchsia_net_policy_socketproxy::{
-    DnsServerList, FuchsiaNetworkInfo, FuchsiaNetworksProxy, FuchsiaNetworksRequest,
-    FuchsiaNetworksRequestStream, Network, NetworkDnsServers, NetworkInfo,
-    NetworkRegistryAddResult, NetworkRegistryRemoveResult, NetworkRegistrySetDefaultResult,
-    NetworkRegistryUpdateResult, StarnixNetworkInfo, StarnixNetworksProxy,
+    FuchsiaNetworkInfo, FuchsiaNetworksProxy, FuchsiaNetworksRequest, FuchsiaNetworksRequestStream,
+    Network, NetworkDnsServers, NetworkInfo, NetworkRegistryAddResult, NetworkRegistryRemoveResult,
+    NetworkRegistrySetDefaultResult, NetworkRegistryUpdateResult, StarnixNetworkInfo,
+    StarnixNetworksProxy,
 };
 use fidl_fuchsia_posix_socket::OptionalUint32;
 use futures::{FutureExt as _, StreamExt as _};
 use socket_proxy::NetworkRegistryError;
 use std::future::Future;
-
-fn dns_server_list(id: u32) -> DnsServerList {
-    DnsServerList { source_network_id: Some(id), addresses: Some(vec![]), ..Default::default() }
-}
 
 fn starnix_network_info(mark: u32) -> NetworkInfo {
     NetworkInfo::Starnix(StarnixNetworkInfo {
@@ -49,22 +45,12 @@ pub trait ToNetwork {
     fn to_network(self, registry: RegistryType) -> Network;
 }
 
-pub trait ToDnsServerList {
-    fn to_dns_server_list(self) -> DnsServerList;
-}
-
 impl ToNetwork for u32 {
     fn to_network(self, registry: RegistryType) -> Network {
         match registry {
             RegistryType::Starnix => starnix_network(self),
             RegistryType::Fuchsia => fuchsia_network(self),
         }
-    }
-}
-
-impl ToDnsServerList for u32 {
-    fn to_dns_server_list(self) -> DnsServerList {
-        dns_server_list(self)
     }
 }
 
@@ -97,21 +83,9 @@ impl ToNetwork for (u32, Vec<IpAddress>) {
     }
 }
 
-impl ToDnsServerList for (u32, Vec<SocketAddress>) {
-    fn to_dns_server_list(self) -> DnsServerList {
-        DnsServerList { addresses: Some(self.1), ..dns_server_list(self.0) }
-    }
-}
-
 impl<N: ToNetwork + Clone> ToNetwork for &N {
     fn to_network(self, registry: RegistryType) -> Network {
         self.clone().to_network(registry)
-    }
-}
-
-impl<D: ToDnsServerList + Clone> ToDnsServerList for &D {
-    fn to_dns_server_list(self) -> DnsServerList {
-        self.clone().to_dns_server_list()
     }
 }
 

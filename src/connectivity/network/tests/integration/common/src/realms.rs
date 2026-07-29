@@ -27,7 +27,6 @@ use fidl_fuchsia_net_ndp as fnet_ndp;
 use fidl_fuchsia_net_neighbor as fnet_neighbor;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
-use fidl_fuchsia_net_policy_testing as fnp_testing;
 use fidl_fuchsia_net_power as fnet_power;
 use fidl_fuchsia_net_reachability as fnet_reachability;
 use fidl_fuchsia_net_root as fnet_root;
@@ -531,11 +530,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                             component_name
                                         )),
                                         fnetemul::Capability::ChildDep(protocol_dep::<
-                                            fnp_socketproxy::DnsServerWatcherMarker,
-                                        >(
-                                            component_name
-                                        )),
-                                        fnetemul::Capability::ChildDep(protocol_dep::<
                                             fnp_socketproxy::NetworkRegistryMarker,
                                         >(
                                             component_name
@@ -805,7 +799,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     fposix_socket_raw::ProviderMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::StarnixNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
-                    fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![
                     fnetemul::Capability::ChildDep(protocol_dep::<fposix_socket::ProviderMarker>(
@@ -899,10 +892,8 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     constants::fake_socket_proxy::COMPONENT_URL.to_string(),
                 )),
                 exposes: Some(vec![
-                    fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
-                    fnp_testing::FakeSocketProxy_Marker::PROTOCOL_NAME.to_string(),
                 ]),
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![
                     fnetemul::Capability::ChildDep(fnetemul::ChildDep {
@@ -922,7 +913,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 exposes: Some(vec![
                     fnp_properties::NetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
-                    fnp_testing::FakeNetcfgMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 ..Default::default()
             },

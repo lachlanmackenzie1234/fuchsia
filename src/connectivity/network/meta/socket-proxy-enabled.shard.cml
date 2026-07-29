@@ -37,7 +37,6 @@
         {
             protocol: [
                 "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-                "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
             ],
             from: "#socket-proxy",
@@ -55,7 +54,6 @@
         {
             protocol: [
                 "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-                "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
                 "fuchsia.net.policy.socketproxy.StarnixNetworks",
             ],

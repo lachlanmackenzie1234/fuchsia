@@ -6,10 +6,8 @@
 
 use assert_matches::assert_matches;
 use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
-use fidl_fuchsia_net_policy_testing as fnp_testing;
 use fidl_fuchsia_net_root as fnet_root;
 use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
@@ -17,15 +15,13 @@ use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 use futures::channel::mpsc;
-use futures::future::join;
 use futures::lock::Mutex;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
 use log::info;
 use net_declare::fidl_ip_v6;
 use net_types::ip::{Ip, Ipv4};
 use netstack_testing_common::realms::{
-    self, KnownServiceProvider, Manager, ManagerConfig, Netstack, NetstackExt, SocketProxyType,
-    TestSandboxExt as _,
+    self, Manager, ManagerConfig, Netstack, NetstackExt, SocketProxyType,
 };
 use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
@@ -652,93 +648,6 @@ async fn test_network_token_correlation<N: Netstack, M: Manager>(
         },
     )
     .await;
-
-    Ok(())
-}
-
-#[netstack_test]
-#[variant(N, Netstack)]
-async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> {
-    const TEST_INTERFACE: u64 = 1;
-
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox
-        .create_netstack_realm_with::<N, _, _>(name, [KnownServiceProvider::FakeNetcfg])
-        .expect("create netstack realm");
-
-    let fake_netcfg = realm
-        .connect_to_protocol::<fnp_testing::FakeNetcfgMarker>()
-        .expect("could not connect to FakeNetcfg");
-    let networks = realm
-        .connect_to_protocol::<fnp_properties::NetworksMarker>()
-        .expect("could not connect to Networks");
-    let network_registry = realm
-        .connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
-        .expect("could not connect to FakeNetcfg");
-
-    let expected_servers = vec![fnet_name::DnsServer_ {
-        address: Some(net_declare::fidl_socket_addr!("[2001:db8::1]:53")),
-        source: Some(fnet_name::DnsServerSource::SocketProxy(
-            fnet_name::SocketProxyDnsServerSource {
-                source_interface: Some(TEST_INTERFACE),
-                ..Default::default()
-            },
-        )),
-        ..Default::default()
-    }];
-    // TODO(https://fxbug.dev/477980011): This is unnecessary once
-    // DNS servers are derived from NetworkRegistry updates.
-    fake_netcfg.set_dns(&expected_servers).await.expect("Failed to set expected dns servers");
-
-    let expected =
-        vec![fnp_properties::PropertyUpdate::DnsConfiguration(fnp_properties::DnsConfiguration {
-            servers: Some(expected_servers),
-            ..Default::default()
-        })];
-
-    let update_netcfg_fut = async move {
-        network_registry
-            .add(&fnp_socketproxy::Network {
-                network_id: Some(TEST_INTERFACE as u32),
-                info: Some(fnp_socketproxy::NetworkInfo::Starnix(
-                    fnp_socketproxy::StarnixNetworkInfo { mark: Some(1), ..Default::default() },
-                )),
-                dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
-                    v6: Some(vec![net_declare::fidl_ip_v6!("2001:db8::1")]),
-                    v4: Some(vec![]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .await?
-            .expect("add failed");
-
-        let res = network_registry
-            .set_default(&fposix_socket::OptionalUint32::Value(TEST_INTERFACE as u32))
-            .await?;
-
-        Ok::<_, anyhow::Error>(res)
-    };
-    let properties_watch = async move {
-        let network = networks.watch_default().await?.take_network().expect("no network returned");
-
-        let update = networks
-            .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
-                network: Some(network.duplicate().unwrap()),
-                properties: Some(vec![fnp_properties::Property::DnsConfiguration]),
-                ..Default::default()
-            })
-            .await?
-            .map_err(|e| anyhow::anyhow!("Protocol error {e:?}"))?;
-
-        Ok::<_, anyhow::Error>(update)
-    };
-
-    let (res1, res2) = join(update_netcfg_fut, properties_watch).await;
-
-    res1.expect("add network fidl error").expect("add network protocol error");
-    let update = res2.expect("error while watching properties");
-    assert_eq!(update, expected);
 
     Ok(())
 }

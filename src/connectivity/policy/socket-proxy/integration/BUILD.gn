@@ -9,14 +9,12 @@ rustc_test("socket_proxy_integration_test") {
   edition = "2024"
 
   deps = [
-    "../testing",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.policy.socketproxy:fuchsia.net.policy.socketproxy_rust",
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
     "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_rust",
     "//sdk/rust/zx",
-    "//src/connectivity/lib/net-declare",
     "//src/connectivity/policy/socket-proxy:lib",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
@@ -26,7 +24,6 @@ rustc_test("socket_proxy_integration_test") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:test-case",
   ]

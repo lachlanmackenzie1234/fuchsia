@@ -7,9 +7,9 @@
 use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fidl_fuchsia_net_policy_socketproxy::{
-    self as fnp_socketproxy, FuchsiaNetworkInfo, FuchsiaNetworksRequest, Network,
-    NetworkDnsServers, NetworkInfo, NetworkRegistryAddError, NetworkRegistryRemoveError,
-    NetworkRegistrySetDefaultError, NetworkRegistryUpdateError, StarnixNetworksRequest,
+    self as fnp_socketproxy, FuchsiaNetworkInfo, FuchsiaNetworksRequest, Network, NetworkInfo,
+    NetworkRegistryAddError, NetworkRegistryRemoveError, NetworkRegistrySetDefaultError,
+    NetworkRegistryUpdateError, StarnixNetworksRequest,
 };
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect_derive::{IValue, Inspect, Unit};
@@ -21,13 +21,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_posix_socket as fposix_socket,
-};
-
-/// RFC-1035§4.2 specifies port 53 (decimal) as the default port for DNS requests.
-const DEFAULT_DNS_PORT: u16 = 53;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_posix_socket as fposix_socket;
 
 /// If there are networks registered, but no default has been set, this value
 /// will be used, otherwise the mark will be OptionalUint32::Unset(Empty).
@@ -117,33 +113,6 @@ impl RequestForwarder {
 enum CommonErrors {
     MissingNetworkId,
     MissingNetworkInfo,
-    MissingNetworkDnsServers,
-}
-
-trait IpAddressExt {
-    fn to_dns_socket_address(self) -> fnet::SocketAddress;
-}
-
-impl<T: IpAddressExt + Copy> IpAddressExt for &T {
-    fn to_dns_socket_address(self) -> fnet::SocketAddress {
-        (*self).to_dns_socket_address()
-    }
-}
-
-impl IpAddressExt for fnet::Ipv4Address {
-    fn to_dns_socket_address(self) -> fnet::SocketAddress {
-        fnet::SocketAddress::Ipv4(fnet::Ipv4SocketAddress { address: self, port: DEFAULT_DNS_PORT })
-    }
-}
-
-impl IpAddressExt for fnet::Ipv6Address {
-    fn to_dns_socket_address(self) -> fnet::SocketAddress {
-        fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
-            address: self,
-            port: DEFAULT_DNS_PORT,
-            zone_index: 0,
-        })
-    }
 }
 
 trait NetworkInfoExt {
@@ -341,23 +310,6 @@ impl From<&FuchsiaNetworksRequest> for NetworkRegistryRequest {
 pub(crate) struct ValidatedNetwork {
     network_id: u32,
     info: NetworkInfo,
-    dns_servers: NetworkDnsServers,
-}
-
-impl ValidatedNetwork {
-    fn dns_servers(&self) -> Vec<fnet::SocketAddress> {
-        self.dns_servers
-            .v4
-            .iter()
-            .flat_map(|a| a.iter().map(IpAddressExt::to_dns_socket_address))
-            .chain(
-                self.dns_servers
-                    .v6
-                    .iter()
-                    .flat_map(|a| a.iter().map(IpAddressExt::to_dns_socket_address)),
-            )
-            .collect()
-    }
 }
 
 trait ValidateNetworkExt {
@@ -369,13 +321,9 @@ impl ValidateNetworkExt for Network {
         match self {
             Network { network_id: None, .. } => Err(CommonErrors::MissingNetworkId),
             Network { info: None, .. } => Err(CommonErrors::MissingNetworkInfo),
-            Network { dns_servers: None, .. } => Err(CommonErrors::MissingNetworkDnsServers),
-            Network {
-                network_id: Some(network_id),
-                info: Some(info),
-                dns_servers: Some(dns_servers),
-                ..
-            } => Ok(ValidatedNetwork { network_id, info, dns_servers }),
+            Network { network_id: Some(network_id), info: Some(info), .. } => {
+                Ok(ValidatedNetwork { network_id, info })
+            }
         }
     }
 }
@@ -389,7 +337,6 @@ macro_rules! common_errors_impl {
                     match value {
                         MissingNetworkId => <$p>::MissingNetworkId,
                         MissingNetworkInfo => <$p>::MissingNetworkInfo,
-                        MissingNetworkDnsServers => <$p>::MissingNetworkDnsServers,
                     }
                 }
             }
@@ -411,11 +358,6 @@ struct NetworkRegistry {
 }
 
 impl NetworkRegistry {
-    /// Returns a collated list of DnsServerList objects.
-    pub(crate) fn dns_servers(&self) -> Vec<fnp_socketproxy::DnsServerList> {
-        self.networks.dns_servers()
-    }
-
     /// Returns whether the network registry has a default network set.
     pub(crate) fn has_default_network(&self) -> bool {
         self.networks.default_network_id.is_some()
@@ -515,18 +457,6 @@ impl RegisteredNetworks {
         Ok(())
     }
 
-    /// Returns a collated list of DnsServerList objects.
-    pub(crate) fn dns_servers(&self) -> Vec<fnp_socketproxy::DnsServerList> {
-        self.networks
-            .iter()
-            .map(|(id, network)| fnp_socketproxy::DnsServerList {
-                source_network_id: Some(*id),
-                addresses: Some(network.dns_servers()),
-                ..Default::default()
-            })
-            .collect()
-    }
-
     fn current_mark(&self) -> Option<u32> {
         match (self.default_network_id, self.networks.is_empty()) {
             (None, false) => Some(DEFAULT_SOCKET_MARK),
@@ -559,20 +489,6 @@ impl NetworkRegistries {
 
         return self.starnix.lock().await.networks.current_mark();
     }
-
-    // When Fuchsia has a default network, then prefer its DNS
-    // over any existing DNS servers. When it is unset, then
-    // fallback to the DNS servers provided by Starnix.
-    async fn current_dns_servers(&self) -> Vec<fnp_socketproxy::DnsServerList> {
-        {
-            let fuchsia = self.fuchsia.lock().await;
-            if fuchsia.has_default_network() {
-                return fuchsia.dns_servers();
-            }
-        }
-
-        return self.starnix.lock().await.dns_servers();
-    }
 }
 
 #[derive(Debug)]
@@ -588,7 +504,6 @@ pub struct Registry {
     // Reflects the marks that are set on the sockets vended
     // by this component.
     marks: Arc<Mutex<crate::SocketMarks>>,
-    dns_tx: mpsc::Sender<Vec<fnp_socketproxy::DnsServerList>>,
     forwarder_tx: mpsc::Sender<NetworkRegistryRequest>,
     starnix_occupant: Mutex<()>,
     fuchsia_occupant: Mutex<()>,
@@ -633,13 +548,11 @@ macro_rules! handle_registry_request {
 impl Registry {
     pub(crate) fn new(
         marks: Arc<Mutex<crate::SocketMarks>>,
-        dns_tx: mpsc::Sender<Vec<fnp_socketproxy::DnsServerList>>,
         forwarder_tx: mpsc::Sender<NetworkRegistryRequest>,
     ) -> Result<Self, anyhow::Error> {
         Ok(Self {
             networks: Default::default(),
             marks,
-            dns_tx,
             forwarder_tx,
             starnix_occupant: Default::default(),
             fuchsia_occupant: Default::default(),
@@ -731,17 +644,6 @@ impl Registry {
     }
 
     async fn handle_state_changed(&self) -> Result<(), Error> {
-        // We do feed here instead of send so that we don't wait for a flush
-        // in the event that the DnsServerWatcher is not running.
-        self.dns_tx.clone().feed(self.networks.current_dns_servers().await).await.unwrap_or_else(
-            |e| {
-                if !e.is_disconnected() {
-                    // Log if the feed fails for reasons other than disconnection.
-                    error!("Unable to feed DNS update: {e:?}")
-                }
-            },
-        );
-
         // Ensure the mark is updated prior to sending out the response
         // and dropping the registry.
         let mark = self.networks.current_mark().await;
@@ -759,9 +661,9 @@ mod test {
     };
     use futures::channel::mpsc::Receiver;
     use futures::future;
-    use net_declare::{fidl_ip, fidl_socket_addr};
+    use net_declare::fidl_ip;
     use pretty_assertions::assert_eq;
-    use socket_proxy_testing::{RegistryType, ToDnsServerList as _, ToNetwork};
+    use socket_proxy_testing::{RegistryType, ToNetwork};
     use test_case::test_case;
 
     #[derive(Clone, Debug)]
@@ -845,15 +747,6 @@ mod test {
         ) -> Result<(), Error> {
             execute!(self, fuchsia, RegistryType::Fuchsia)
         }
-
-        fn is_err(&self) -> bool {
-            match &self {
-                Op::SetDefault { network_id: _, result } => result.is_err(),
-                Op::Add { network: _, result } => result.is_err(),
-                Op::Update { network: _, result } => result.is_err(),
-                Op::Remove { network_id: _, result } => result.is_err(),
-            }
-        }
     }
 
     enum IncomingService {
@@ -866,7 +759,6 @@ mod test {
         starnix_networks: Arc<Mutex<NetworkRegistry>>,
         fuchsia_networks: Arc<Mutex<NetworkRegistry>>,
         marks: Arc<Mutex<crate::SocketMarks>>,
-        dns_tx: mpsc::Sender<Vec<fnp_socketproxy::DnsServerList>>,
         forwarder_tx: mpsc::Sender<NetworkRegistryRequest>,
     ) -> Result<(), Error> {
         let mut fs = ServiceFs::new();
@@ -879,7 +771,6 @@ mod test {
         let registry = Registry {
             networks: NetworkRegistries { starnix: starnix_networks, fuchsia: fuchsia_networks },
             marks,
-            dns_tx,
             forwarder_tx,
             starnix_occupant: Default::default(),
             fuchsia_occupant: Default::default(),
@@ -897,18 +788,10 @@ mod test {
         Ok(())
     }
 
-    async fn setup_test() -> Result<
-        (
-            RealmInstance,
-            Receiver<Vec<fnp_socketproxy::DnsServerList>>,
-            Receiver<NetworkRegistryRequest>,
-        ),
-        Error,
-    > {
+    async fn setup_test() -> Result<(RealmInstance, Receiver<NetworkRegistryRequest>), Error> {
         let builder = RealmBuilder::new().await?;
         let starnix_networks = Arc::new(Mutex::new(Default::default()));
         let fuchsia_networks = Arc::new(Mutex::new(Default::default()));
-        let (dns_tx, dns_rx) = mpsc::channel(1);
         let (forwarder_tx, forwarder_rx) = mpsc::channel(1);
         let marks = Arc::new(Mutex::new(crate::SocketMarks::default()));
         let registry = builder
@@ -918,14 +801,12 @@ mod test {
                     let starnix_networks = starnix_networks.clone();
                     let fuchsia_networks = fuchsia_networks.clone();
                     let marks = marks.clone();
-                    let dns_tx = dns_tx.clone();
                     move |handles: LocalComponentHandles| {
                         Box::pin(run_registry(
                             handles,
                             starnix_networks.clone(),
                             fuchsia_networks.clone(),
                             marks.clone(),
-                            dns_tx.clone(),
                             forwarder_tx.clone(),
                         ))
                     }
@@ -954,7 +835,7 @@ mod test {
 
         let realm = builder.build().await?;
 
-        Ok((realm, dns_rx, forwarder_rx))
+        Ok((realm, forwarder_rx))
     }
 
     #[test_case(&[
@@ -1019,7 +900,7 @@ mod test {
     ]; "many updates")]
     #[fuchsia::test]
     async fn test_operations<N: ToNetwork + Clone>(operations: &[Op<N>]) -> Result<(), Error> {
-        let (realm, _, _) = setup_test().await?;
+        let (realm, _) = setup_test().await?;
         let starnix_networks = realm
             .root
             .connect_to_protocol_at_exposed_dir()
@@ -1035,152 +916,6 @@ mod test {
             op.execute_starnix(&starnix_networks).await?;
             op.execute_fuchsia(&fuchsia_networks).await?;
         }
-
-        Ok(())
-    }
-
-    #[test_case(&[
-        Op::Add { network: (1, vec![fidl_ip!("192.0.2.0")]), result: Ok(()) },
-    ], vec![(1, vec![fidl_socket_addr!("192.0.2.0:53")]).to_dns_server_list()]
-    ; "normal operation (v4)")]
-    #[test_case(&[
-        Op::Add { network: (1, vec![fidl_ip!("192.0.2.0")]), result: Ok(()) },
-        Op::Update { network: (1, vec![fidl_ip!("192.0.2.1")]), result: Ok(()) },
-    ], vec![(1, vec![fidl_socket_addr!("192.0.2.1:53")]).to_dns_server_list()]
-    ; "update server list (v4)")]
-    #[test_case(&[
-        Op::Add { network: (1, vec![fidl_ip!("2001:db8::1")]), result: Ok(()) },
-    ], vec![(1, vec![fidl_socket_addr!("[2001:db8::1]:53")]).to_dns_server_list()]
-    ; "normal operation (v6)")]
-    #[test_case(&[
-        Op::Add { network: (1, vec![fidl_ip!("2001:db8::1")]), result: Ok(()) },
-        Op::Update { network: (1, vec![fidl_ip!("2001:db8::2")]), result: Ok(()) },
-    ], vec![(1, vec![fidl_socket_addr!("[2001:db8::2]:53")]).to_dns_server_list()]
-    ; "update server list (v6)")]
-    #[test_case(&[
-        Op::Add { network: (1, vec![fidl_ip!("192.0.2.0"), fidl_ip!("2001:db8::1")]), result: Ok(()) },
-    ], vec![(1, vec![fidl_socket_addr!("192.0.2.0:53"), fidl_socket_addr!("[2001:db8::1]:53")]).to_dns_server_list()]
-    ; "normal operation (mixed)")]
-    #[test_case(&[
-        Op::Add { network: (1, vec![fidl_ip!("192.0.2.0"), fidl_ip!("2001:db8::1")]), result: Ok(()) },
-        Op::Update { network: (1, vec![fidl_ip!("192.0.2.1"), fidl_ip!("2001:db8::2")]), result: Ok(()) },
-    ], vec![(1, vec![fidl_socket_addr!("192.0.2.1:53"), fidl_socket_addr!("[2001:db8::2]:53")]).to_dns_server_list()]
-    ; "update server list (mixed)")]
-    #[test_case(&[
-        Op::Add { network: (1, vec![fidl_ip!("192.0.2.0"), fidl_ip!("2001:db8::1")]), result: Ok(()) },
-        Op::Add { network: (2, vec![fidl_ip!("192.0.2.1"), fidl_ip!("2001:db8::2")]), result: Ok(()) },
-        Op::Add { network: (3, vec![fidl_ip!("192.0.2.2"), fidl_ip!("2001:db8::3")]), result: Ok(()) },
-    ], vec![
-        (1, vec![fidl_socket_addr!("192.0.2.0:53"), fidl_socket_addr!("[2001:db8::1]:53")]).to_dns_server_list(),
-        (2, vec![fidl_socket_addr!("192.0.2.1:53"), fidl_socket_addr!("[2001:db8::2]:53")]).to_dns_server_list(),
-        (3, vec![fidl_socket_addr!("192.0.2.2:53"), fidl_socket_addr!("[2001:db8::3]:53")]).to_dns_server_list(),
-    ]; "multiple networks")]
-    #[fuchsia::test]
-    async fn test_dns_tracking<N: ToNetwork + Clone>(
-        operations: &[Op<N>],
-        dns_servers: Vec<fnp_socketproxy::DnsServerList>,
-    ) -> Result<(), Error> {
-        let (realm, mut dns_rx, _) = setup_test().await?;
-        let starnix_networks = realm
-            .root
-            .connect_to_protocol_at_exposed_dir()
-            .context("While connecting to StarnixNetworks")?;
-
-        let mut last_dns = None;
-        for op in operations {
-            // Starnix and Fuchsia registries have the same handling logic, so
-            // use the Starnix registry to confirm this behavior.
-            op.execute_starnix(&starnix_networks).await?;
-            last_dns = Some(dns_rx.next().await.expect("dns update expected after each operation"));
-        }
-
-        let mut last_dns = last_dns.expect("there should be at least one dns update");
-        last_dns.sort_by_key(|a| a.source_network_id);
-        assert_eq!(last_dns, dns_servers);
-
-        Ok(())
-    }
-
-    #[test_case(&[
-        (RegistryType::Fuchsia, Op::Add { network: (1, vec![fidl_ip!("192.0.2.0")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::SetDefault { network_id: Some(1), result: Ok(()) }),
-    ], vec![(1, vec![fidl_socket_addr!("192.0.2.0:53")]).to_dns_server_list()]
-    ; "normal operation Fuchsia (v4)")]
-    #[test_case(&[
-        (RegistryType::Fuchsia, Op::Add { network: (1, vec![fidl_ip!("2001:db8::1")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::SetDefault { network_id: Some(1), result: Ok(()) }),
-    ], vec![(1, vec![fidl_socket_addr!("[2001:db8::1]:53")]).to_dns_server_list()]
-    ; "normal operation Fuchsia (v6)")]
-    #[test_case(&[
-        (RegistryType::Starnix, Op::Add { network: (1, vec![fidl_ip!("192.0.2.0")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::Remove { network_id: 1, result: Err(fnp_socketproxy::NetworkRegistryRemoveError::NotFound) }),
-    ], vec![(1, vec![fidl_socket_addr!("192.0.2.0:53")]).to_dns_server_list()]
-    ; "attempt remove in wrong registry")]
-    #[test_case(&[
-        (RegistryType::Starnix, Op::Add { network: (1, vec![fidl_ip!("192.0.2.0"), fidl_ip!("2001:db8::1")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::Add { network: (2, vec![fidl_ip!("192.0.2.1"), fidl_ip!("2001:db8::2")]), result: Ok(()) }),
-    ], vec![
-        (1, vec![fidl_socket_addr!("192.0.2.0:53"), fidl_socket_addr!("[2001:db8::1]:53")]).to_dns_server_list(),
-    ]; "Fuchsia default absent, use Starnix")]
-    #[test_case(&[
-        (RegistryType::Starnix, Op::Add { network: (1, vec![fidl_ip!("192.0.2.0"), fidl_ip!("2001:db8::1")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::Add { network: (2, vec![fidl_ip!("192.0.2.1"), fidl_ip!("2001:db8::2")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::SetDefault { network_id: Some(2), result: Ok(()) }),
-        ], vec![
-        (2, vec![fidl_socket_addr!("192.0.2.1:53"), fidl_socket_addr!("[2001:db8::2]:53")]).to_dns_server_list(),
-    ]; "Fuchsia default present, use Fuchsia")]
-    #[test_case(&[
-        (RegistryType::Starnix, Op::Add { network: (1, vec![fidl_ip!("192.0.2.0"), fidl_ip!("2001:db8::1")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::Add { network: (2, vec![fidl_ip!("192.0.2.1"), fidl_ip!("2001:db8::2")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::SetDefault { network_id: Some(2), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::SetDefault { network_id: None, result: Ok(()) }),
-        ], vec![
-        (1, vec![fidl_socket_addr!("192.0.2.0:53"), fidl_socket_addr!("[2001:db8::1]:53")]).to_dns_server_list(),
-    ]; "Fallback to Starnix network")]
-    #[test_case(&[
-        (RegistryType::Starnix, Op::Add { network: (1, vec![fidl_ip!("192.0.2.0"), fidl_ip!("2001:db8::1")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::Add { network: (2, vec![fidl_ip!("192.0.2.1"), fidl_ip!("2001:db8::2")]), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::SetDefault { network_id: Some(2), result: Ok(()) }),
-        (RegistryType::Fuchsia, Op::Update { network: (2, vec![fidl_ip!("192.0.2.2"), fidl_ip!("2001:db8::3")]), result: Ok(()) }),
-        ], vec![
-        (2, vec![fidl_socket_addr!("192.0.2.2:53"), fidl_socket_addr!("[2001:db8::3]:53")]).to_dns_server_list(),
-    ]; "Fuchsia default present then updated")]
-    #[fuchsia::test]
-    async fn test_dns_tracking_across_registries<N: ToNetwork + Clone>(
-        operations: &[(RegistryType, Op<N>)],
-        dns_servers: Vec<fnp_socketproxy::DnsServerList>,
-    ) -> Result<(), Error> {
-        let (realm, mut dns_rx, _) = setup_test().await?;
-        let starnix_networks = realm
-            .root
-            .connect_to_protocol_at_exposed_dir()
-            .context("While connecting to StarnixNetworks")?;
-        let fuchsia_networks = realm
-            .root
-            .connect_to_protocol_at_exposed_dir()
-            .context("While connecting to FuchsiaNetworks")?;
-
-        let mut last_dns = None;
-        for (registry, op) in operations {
-            match registry {
-                RegistryType::Starnix => {
-                    op.execute_starnix(&starnix_networks).await?;
-                }
-                RegistryType::Fuchsia => {
-                    op.execute_fuchsia(&fuchsia_networks).await?;
-                }
-            }
-            // When the operation results in an error, we don't expect that to
-            // result in an additional DNS update.
-            if !op.is_err() {
-                last_dns =
-                    Some(dns_rx.next().await.expect("dns update expected after each operation"));
-            }
-        }
-
-        let mut last_dns = last_dns.expect("there should be at least one dns update");
-        last_dns.sort_by_key(|a| a.source_network_id);
-        assert_eq!(last_dns, dns_servers);
 
         Ok(())
     }
@@ -1212,7 +947,7 @@ mod test {
     async fn test_forward_network_update<N: ToNetwork + Clone + std::fmt::Debug>(
         operations: &[Op<N>],
     ) -> Result<(), Error> {
-        let (realm, _, mut forwarder_rx) = setup_test().await?;
+        let (realm, mut forwarder_rx) = setup_test().await?;
         let starnix_networks = realm
             .root
             .connect_to_protocol_at_exposed_dir()

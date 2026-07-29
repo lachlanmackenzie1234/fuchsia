@@ -11,10 +11,8 @@
         {
             protocol: [
                 "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-                "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
                 "fuchsia.net.policy.socketproxy.NetworkRegistry",
-                "fuchsia.net.policy.testing.FakeSocketProxy",
             ],
         },
     ],
@@ -27,10 +25,8 @@
         {
             protocol: [
                 "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-                "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
                 "fuchsia.net.policy.socketproxy.NetworkRegistry",
-                "fuchsia.net.policy.testing.FakeSocketProxy",
             ],
             from: "self",
         },

@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use dns_server_watcher::{DnsServers, DnsServersUpdateSource};
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
-use fidl_fuchsia_net_policy_testing as fnp_testing;
 use fuchsia_component::server::ServiceFs;
 use futures::stream::StreamExt as _;
 use log::debug;
 
 enum IncomingServices {
-    FakeNetcfg(fnp_testing::FakeNetcfgRequestStream),
     NetworkRegistry(fnp_socketproxy::NetworkRegistryRequestStream),
     Networks(fnp_properties::NetworksRequestStream),
 }
@@ -19,7 +16,6 @@ enum IncomingServices {
 impl std::fmt::Debug for IncomingServices {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::FakeNetcfg(_) => f.debug_tuple("FakeNetcfg").finish(),
             Self::NetworkRegistry(_) => f.debug_tuple("NetworkRegistry").finish(),
             Self::Networks(_) => f.debug_tuple("Networks").finish(),
         }
@@ -28,7 +24,6 @@ impl std::fmt::Debug for IncomingServices {
 
 #[derive(Debug)]
 enum Event {
-    FakeNetcfg(Result<fnp_testing::FakeNetcfgRequest, fidl::Error>),
     NetworkRegistryRequest(Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>),
     NetworksAttributesRequest(
         (netcfg::network::ConnectionId, Result<fnp_properties::NetworksRequest, fidl::Error>),
@@ -42,18 +37,14 @@ async fn main() {
     let mut fs = ServiceFs::new_local();
     let _ = fs
         .dir("svc")
-        .add_fidl_service(IncomingServices::FakeNetcfg)
         .add_fidl_service(IncomingServices::NetworkRegistry)
         .add_fidl_service(IncomingServices::Networks);
     let _ = fs.take_and_serve_directory_handle().expect("must serve ServiceFs");
     let mut fs = fs.fuse();
 
-    let mut fake_network_streams =
-        futures::stream::SelectAll::<fnp_testing::FakeNetcfgRequestStream>::default();
     let mut network_registry_streams =
         futures::stream::SelectAll::<fnp_socketproxy::NetworkRegistryRequestStream>::default();
     let mut networks_streams = netcfg::network::ConnectionTagged::default();
-    let mut dns_servers = DnsServers::default();
 
     let mut networks_service = netcfg::network::NetpolNetworksService::default();
 
@@ -61,14 +52,10 @@ async fn main() {
         let event = futures::select! {
             req_stream = fs.select_next_some() => {
                 match req_stream {
-                    IncomingServices::FakeNetcfg(rs) => fake_network_streams.push(rs),
                     IncomingServices::NetworkRegistry(rs) => network_registry_streams.push(rs),
                     IncomingServices::Networks(rs) => networks_streams.push(rs),
                 }
                 continue;
-            }
-            fake_netcfg_req = fake_network_streams.select_next_some() => {
-                Event::FakeNetcfg(fake_netcfg_req)
             }
             network_registry_req = network_registry_streams.select_next_some() => {
                 Event::NetworkRegistryRequest(network_registry_req)
@@ -79,27 +66,19 @@ async fn main() {
         };
 
         match event {
-            Event::FakeNetcfg(req) => match req.expect("fake netcfg fidl error") {
-                fnp_testing::FakeNetcfgRequest::SetDns { servers, responder } => {
-                    dns_servers
-                        .set_servers_from_source(DnsServersUpdateSource::SocketProxy, servers);
-                    networks_service
-                        .update(netcfg::network::PropertyUpdate::dns(&dns_servers))
-                        .await;
-                    responder.send().expect("Could not report response");
-                }
-            },
             Event::NetworkRegistryRequest(req) => {
-                // The DNS servers returned by the delegated networks update are dropped because
-                // fake-netcfg is a test mock that does not administer DNS server state
-                // via LookupAdmin.
-                let _update_result: netcfg::network::DelegatedNetworkUpdateResult =
-                    networks_service.handle_delegated_networks_update(req).await.unwrap_or_else(
-                        |e| {
-                            log::error!("Could not handle delegated network update: {e:?}");
-                            netcfg::network::DelegatedNetworkUpdateResult { dns_servers: None }
-                        },
-                    );
+                let update_result: netcfg::network::DelegatedNetworkUpdateResult = networks_service
+                    .handle_delegated_networks_update(req)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!("Could not handle delegated network update: {e:?}");
+                        netcfg::network::DelegatedNetworkUpdateResult { dns_servers: None }
+                    });
+                if let Some(dns_servers) = update_result.dns_servers {
+                    networks_service
+                        .update(netcfg::network::PropertyUpdate::UpdateDns(dns_servers))
+                        .await;
+                }
             }
             Event::NetworksAttributesRequest((id, req)) => networks_service
                 .handle_network_attributes_request(id, req)

@@ -6367,7 +6367,24 @@ mod tests {
                     .insert(*id, new_host_result.expect("new_host should succeed")),
                 None
             );
-
+            // Manually register Fuchsia networks inside netpol_networks_service,
+            // matching the configure_host production path.
+            if *provisioning_action == Local {
+                netcfg
+                    .netpol_networks_service
+                    .update(network::PropertyUpdate::ChangeNetwork(
+                        network::NetworkId::fuchsia(*id),
+                        network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
+                            added: true,
+                            marks: None,
+                            dns_servers: None,
+                            connectivity_state: None,
+                            name: Some(format!("testif{}", id)),
+                            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+                        }),
+                    ))
+                    .await;
+            }
             // Fake an interface added event. As `has_default_ipv4_route` and
             // `has_default_ipv6_route` are true, the network should be added to
             // the socketproxy state and made as default.

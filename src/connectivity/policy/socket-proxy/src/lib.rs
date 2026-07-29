@@ -5,9 +5,8 @@
 //! Implementation of the network socket proxy.
 //!
 //! Runs proxied versions of fuchsia.posix.socket.Provider and fuchsia.posix.socket.raw.Provider.
-//! Exposes fuchsia.net.policy.socketproxy.StarnixNetworks,
-//! fuchsia.net.policy.socketproxy.FuchsiaNetworks, and
-//! fuchsia.net.policy.socketproxy.DnsServerWatcher.
+//! Exposes fuchsia.net.policy.socketproxy.StarnixNetworks and
+//! fuchsia.net.policy.socketproxy.FuchsiaNetworks.
 
 use anyhow::Context as _;
 use fidl_fuchsia_net as fnet;
@@ -23,7 +22,6 @@ use futures::lock::Mutex;
 use log::{error, info};
 use std::sync::Arc;
 
-mod dns_watcher;
 pub mod registry;
 mod socket_provider;
 
@@ -83,7 +81,6 @@ impl Default for SocketMarks {
 #[derive(Inspect)]
 struct SocketProxy {
     registry: registry::Registry,
-    dns_watcher: dns_watcher::DnsServerWatcher,
     socket_provider: socket_provider::SocketProvider,
 }
 
@@ -92,18 +89,15 @@ impl SocketProxy {
         forwarder_tx: mpsc::Sender<crate::registry::NetworkRegistryRequest>,
     ) -> Result<Self, anyhow::Error> {
         let mark = Arc::new(Mutex::new(SocketMarks::default()));
-        let (dns_tx, dns_rx) = mpsc::channel(1);
         Ok(Self {
-            registry: registry::Registry::new(mark.clone(), dns_tx, forwarder_tx)
+            registry: registry::Registry::new(mark.clone(), forwarder_tx)
                 .context("while creating registry")?,
-            dns_watcher: dns_watcher::DnsServerWatcher::new(Arc::new(Mutex::new(dns_rx))),
             socket_provider: socket_provider::SocketProvider::new(mark),
         })
     }
 }
 
 enum IncomingService {
-    DnsServerWatcher(fnp_socketproxy::DnsServerWatcherRequestStream),
     FuchsiaNetworks(fnp_socketproxy::FuchsiaNetworksRequestStream),
     StarnixNetworks(fnp_socketproxy::StarnixNetworksRequestStream),
     PosixSocket(fidl_fuchsia_posix_socket::ProviderRequestStream),
@@ -130,7 +124,6 @@ pub async fn run() -> Result<(), anyhow::Error> {
         .dir("svc")
         .add_fidl_service(IncomingService::StarnixNetworks)
         .add_fidl_service(IncomingService::FuchsiaNetworks)
-        .add_fidl_service(IncomingService::DnsServerWatcher)
         .add_fidl_service(IncomingService::PosixSocket)
         .add_fidl_service(IncomingService::PosixSocketRaw);
 
@@ -148,7 +141,6 @@ pub async fn run() -> Result<(), anyhow::Error> {
                 IncomingService::FuchsiaNetworks(stream) => {
                     proxy.registry.run_fuchsia(stream).await
                 }
-                IncomingService::DnsServerWatcher(stream) => proxy.dns_watcher.run(stream).await,
                 IncomingService::PosixSocket(stream) => proxy.socket_provider.run(stream).await,
                 IncomingService::PosixSocketRaw(stream) => {
                     proxy.socket_provider.run_raw(stream).await
