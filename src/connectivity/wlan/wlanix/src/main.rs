@@ -440,6 +440,7 @@ async fn handle_wifi_chip_request<I: IfaceManager, P: PowerManager>(
             let result = iface_manager.reset_phy(chip_id).await;
 
             // Notify telemetry that the reset has been triggered.
+            telemetry_sender.send(TelemetryEvent::RecoveryEvent);
             telemetry_sender.send(TelemetryEvent::RecoveryResult {
                 result: if result.is_ok() { Ok(()) } else { Err(()) },
             });
@@ -3902,7 +3903,11 @@ mod tests {
             Poll::Ready(Ok(response)) => response);
         assert_matches!(response, Ok(()));
 
-        // Verify that the telemetry event was sent.
+        // Verify that the telemetry events were sent.
+        assert_matches!(
+            test_helper.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::RecoveryEvent))
+        );
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::RecoveryResult { result: Ok(()) }))
@@ -3957,7 +3962,11 @@ mod tests {
             Poll::Ready(Ok(response)) => response);
         assert_matches!(response, Err(status) if status == zx::Status::INTERNAL.into_raw());
 
-        // Verify that the telemetry event was sent.
+        // Verify that the telemetry events were sent.
+        assert_matches!(
+            test_helper.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::RecoveryEvent))
+        );
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::RecoveryResult { result: Err(()) }))

@@ -67,6 +67,7 @@ pub enum TelemetryEvent {
     /// Unclear power level requested by policy layer
     UnclearPowerDemand(UnclearPowerDemand),
     BatteryChargeStatus(fidl_battery::ChargeStatus),
+    RecoveryEvent,
     RecoveryResult {
         result: Result<(), ()>,
     },
@@ -368,9 +369,14 @@ pub fn serve_telemetry(
                                 toggle_logger.handle_battery_charge_status(charge_status).await;
                             }
                         }
+                        RecoveryEvent => {
+                            if let Some(ref recovery_logger) = recovery_logger {
+                                recovery_logger.handle_recovery_event().await;
+                            }
+                        }
                         RecoveryResult { result } => {
                             if let Some(ref recovery_logger) = recovery_logger {
-                                recovery_logger.handle_recovery_event(result).await;
+                                recovery_logger.handle_recovery_result(result).await;
                             }
                         }
                         SmeTimeout => {
