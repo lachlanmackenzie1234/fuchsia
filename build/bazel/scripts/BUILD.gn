@@ -13,7 +13,10 @@ if (is_host) {
 
   python_build_time_tests("get_git_head_commit_test") {
     tests = [ "get_git_head_commit_test.py" ]
-    inputs = [ "get_git_head_commit.py" ]
+    inputs = [
+      "get_git_head_commit.py",
+      "git_test_utils.py",
+    ]
   }
 
   python_build_time_tests("build_utils_test") {
@@ -26,6 +29,7 @@ if (is_host) {
     inputs = [
       "compute_content_hash.py",
       "get_git_head_commit.py",
+      "git_test_utils.py",
     ]
   }
 

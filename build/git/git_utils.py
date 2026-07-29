@@ -15,6 +15,11 @@ def get_git_path(repo_dir: Path, name: str) -> Path:
     Returns:
         The absolute path as a Path object.
     """
+    # Avoid passing `--path-format=absolute` here. In repositories using the
+    # experimental `reftable` backend (default in newer Git versions with
+    # experimental features enabled), loose reference files like refs/heads/main
+    # do not physically exist on disk, causing `git rev-parse --path-format=absolute`
+    # to fail with a fatal error. Resolving the relative path in Python avoids this.
     ret = subprocess.run(
         [
             "git",
@@ -22,7 +27,6 @@ def get_git_path(repo_dir: Path, name: str) -> Path:
             "-C",
             str(repo_dir),
             "rev-parse",
-            "--path-format=absolute",
             "--git-path",
             name,
         ],
@@ -30,7 +34,10 @@ def get_git_path(repo_dir: Path, name: str) -> Path:
         text=True,
         check=True,
     )
-    return Path(ret.stdout.strip()).resolve()
+    git_path = Path(ret.stdout.strip())
+    if not git_path.is_absolute():
+        git_path = repo_dir / git_path
+    return git_path.resolve()
 
 
 def get_git_ref(repo_dir: Path) -> Path:
@@ -105,6 +112,15 @@ def find_git_head_inputs(
     # Track the ref file (or packed-refs/HEAD fallback)
     ref_path = get_git_ref(repo_dir)
     result.add(ref_path)
+
+    # Track reftable metadata files if they exist (used by the reftable backend)
+    git_reftable = get_git_path(repo_dir, "reftable")
+    if git_reftable.exists():
+        tables_list = git_reftable / "tables.list"
+        if tables_list.exists():
+            result.add(tables_list)
+        else:
+            result.add(git_reftable)
 
     if track_index:
         git_index = get_git_path(repo_dir, "index")

@@ -6,59 +6,40 @@
 """Unit tests for compute_content_hash.py"""
 
 import os
-import subprocess
 import sys
 import tempfile
-import typing as T
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 import compute_content_hash as cch
-
-
-def _git_cmd(git_dir: Path, args: T.Sequence[str | Path]) -> str:
-    """Run git command in a given directory. Return output as a string."""
-    ret = subprocess.run(
-        ["git", "-C", str(git_dir)] + [str(a) for a in args],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    return ret.stdout.strip()
+from git_test_utils import git_cmd, git_init
 
 
 def _setup_first_git_dir(git_dir: Path) -> tuple[str, str]:
-    git_dir.mkdir(parents=True)
-    _git_cmd(git_dir, ["init"])
-    # required to avoid errors on CI build bots when running this test.
-    _git_cmd(git_dir, ["config", "--local", "user.email", "test@example.com"])
-    _git_cmd(git_dir, ["config", "--local", "user.name", "Test User"])
-
+    git_init(git_dir)
     (git_dir / "foo").write_text("1")
-    _git_cmd(git_dir, ["add", "foo"])
-    _git_cmd(git_dir, ["commit", "-m", "first commit"])
-    first_commit = _git_cmd(git_dir, ["rev-parse", "HEAD"])
+    git_cmd(git_dir, ["add", "foo"])
+    git_cmd(git_dir, ["commit", "-m", "first commit"])
+    first_commit = git_cmd(git_dir, ["rev-parse", "HEAD"])
     (git_dir / "foo").write_text("2")
-    _git_cmd(git_dir, ["commit", "-am", "second commit"])
-    second_commit = _git_cmd(git_dir, ["rev-parse", "HEAD"])
+    git_cmd(git_dir, ["commit", "-am", "second commit"])
+    second_commit = git_cmd(git_dir, ["rev-parse", "HEAD"])
     return (first_commit, second_commit)
 
 
 def _setup_second_git_dir(git_dir: Path, submodule_path: Path) -> str:
-    git_dir.mkdir(parents=True)
-    _git_cmd(git_dir, ["init"])
-    # required to avoid errors on CI build bots when running this test.
-    _git_cmd(git_dir, ["config", "--local", "user.email", "test@example.com"])
-    _git_cmd(git_dir, ["config", "--local", "user.name", "Test User"])
+    git_init(git_dir)
 
     # Add a submodule. Using -c protocol.file.allow=always
     # is required to avoid an error message that says:
     # "fatal: transport 'file' not allowed".
     # See https://github.com/flatpak/flatpak-builder/issues/495#issuecomment-1297413908
-    _git_cmd(
+    git_cmd(
         git_dir,
         [
+            "-c",
+            "init.defaultRefFormat=files",
             "-c",
             "protocol.file.allow=always",
             "submodule",
@@ -67,8 +48,8 @@ def _setup_second_git_dir(git_dir: Path, submodule_path: Path) -> str:
             "sub1",
         ],
     )
-    _git_cmd(git_dir, ["commit", "-m", "first commit"])
-    return _git_cmd(git_dir, ["rev-parse", "HEAD"])
+    git_cmd(git_dir, ["commit", "-m", "first commit"])
+    return git_cmd(git_dir, ["rev-parse", "HEAD"])
 
 
 class ComputeContentHashTest(unittest.TestCase):
@@ -149,7 +130,7 @@ class ComputeContentHashTest(unittest.TestCase):
         self.assertEqual(descriptor, "G" + self.second_commit)
 
         # detached HEAD on first git repository.
-        _git_cmd(self.gitdir1, ["checkout", self.first_commit])
+        git_cmd(self.gitdir1, ["checkout", self.first_commit])
         fstate = cch.FileState()
         descriptor = fstate.process_source_path(self.gitdir1)
         self.assertEqual(descriptor, "G" + self.first_commit)
