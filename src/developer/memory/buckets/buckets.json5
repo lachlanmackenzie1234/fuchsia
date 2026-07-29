@@ -26,7 +26,7 @@
     },
     {
         name: "Storage",
-        process: "fshost\\.cm|fxfs-crypt\\.cm|fxfs\\.cm|memfs\\.cm|decompressor-sandbox\\.cm|driver-host-#storage|fvm2\\.cm|stash\\.cm|stash_secure\\.cm",
+        process: "factory_store_providers\\.cm|fshost\\.cm|fxfs-crypt\\.cm|fxfs\\.cm|memfs\\.cm|decompressor-sandbox\\.cm|driver-host-#storage|fvm2\\.cm|stash\\.cm|stash_secure\\.cm",
         vmo: "",
         event_code: 72,
     },
