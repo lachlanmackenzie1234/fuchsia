@@ -89,6 +89,10 @@ input-core
 loop
 tun
 tap
+nls_utf8
+nls_base
+unicode
+nls_ascii
 EOF
 
 # Explicitly disable resume from swap. This is to ensure we never try to to
