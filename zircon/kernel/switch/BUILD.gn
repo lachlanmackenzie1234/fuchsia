@@ -350,6 +350,19 @@ variant("kernel_config") {
     configs += [ "//build/config/zircon:no_threadsafe_statics" ]
   }
 
+  rustflags = []
+
+  # TODO(https://fxbug.dev/529516970): gcc building is exposed as a config due
+  # to some Rust test code generating dynamic relocations specifically when
+  # built against gcc. As this is just tests, this config allows those tests to
+  # be skipped on gcc builders without harm.
+  if (is_gcc) {
+    rustflags += [
+      "--cfg",
+      "gcc",
+    ]
+  }
+
   # Always enable frame pointers in the kernel so there are panic
   # backtraces and such.
   # TODO(mcgrathr): Consider either removing this so there's a
@@ -372,7 +385,7 @@ variant("kernel_config") {
     "CHANNEL_MESSAGE_BODY_TRACING_ENABLED=$channel_message_body_tracing_enabled",
   ]
 
-  rustflags = [ "--cfg=debug_print_level=\"$kernel_debug_print_level\"" ]
+  rustflags += [ "--cfg=debug_print_level=\"$kernel_debug_print_level\"" ]
 
   if (kernel_no_userabi) {
     defines += [ "KERNEL_NO_USERABI" ]
