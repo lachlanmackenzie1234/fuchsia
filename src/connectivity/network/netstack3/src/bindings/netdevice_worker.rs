@@ -202,109 +202,112 @@ impl NetdeviceWorker {
             let _: fasync::JoinHandle<()> = fasync::Scope::current().spawn(fut);
         };
 
+        let mut rx_ready_storage = session.new_rx_ready_storage();
         // Keep a buffer around in case we're receiving fragmented buffers.
         let mut linearized_buffer = Vec::new();
         loop {
-            // Extract result into an enum to avoid too much code in  macro.
-            let mut rx: netdevice_client::Buffer<_> = futures::select! {
-                r = session.recv().fuse() => r.map_err(Error::Client)?,
+            let rx_buffers = futures::select! {
+                r = session.recv(&mut rx_ready_storage).fuse() => r.map_err(Error::Client)?,
                 r = task => match r {
                     Ok(()) => panic!("task should never end cleanly"),
                     Err(e) => return Err(Error::Client(e))
                 }
             };
-            let rx_meta = rx.meta();
-            let port = rx_meta.port();
-            let id = if let Some(id) = state.lock().await.get(&port) {
-                id.clone()
-            } else {
-                debug!("dropping frame for port {:?}, no device mapping available", port);
-                continue;
-            };
+            for rx_result in rx_buffers {
+                let mut rx = rx_result.map_err(Error::Client)?;
+                let rx_meta = rx.meta();
+                let port = rx_meta.port();
+                let id = if let Some(id) = state.lock().await.get(&port) {
+                    id.clone()
+                } else {
+                    debug!("dropping frame for port {:?}, no device mapping available", port);
+                    continue;
+                };
 
-            trace_duration!("netdevice::recv");
+                trace_duration!("netdevice::recv");
 
-            let Some(id) = id.upgrade() else {
-                // This is okay because we hold a weak reference; the device may
-                // be removed under us. Note that when the device removal has
-                // completed, the interface's `PortHandler` will be uninstalled
-                // from the port slab (table of ports for this network device).
-                debug!("received frame for device after it has been removed; device_id={id:?}");
-                // We continue because even though we got frames for a removed
-                // device, this network device may have other ports that will
-                // receive and handle frames.
-                continue;
-            };
+                let Some(id) = id.upgrade() else {
+                    // This is okay because we hold a weak reference; the device may
+                    // be removed under us. Note that when the device removal has
+                    // completed, the interface's `PortHandler` will be uninstalled
+                    // from the port slab (table of ports for this network device).
+                    debug!("received frame for device after it has been removed; device_id={id:?}");
+                    // We continue because even though we got frames for a removed
+                    // device, this network device may have other ports that will
+                    // receive and handle frames.
+                    continue;
+                };
 
-            let frame_type = rx_meta.frame_type().map_err(Error::Client)?.try_into()?;
-            let checksum_offloading = match rx_meta.rx_checksum_offloading() {
-                Some(netdevice_client::ChecksumRxOffloading::Offloaded(n)) => {
-                    ChecksumRxOffloading::Offloaded(Some(n))
-                }
-                None => ChecksumRxOffloading::Offloaded(None),
-            };
-            std::mem::drop(rx_meta);
-            let parsing_context = NetworkParsingContext::new(checksum_offloading);
-            let rx_data = match rx.as_slice_mut() {
-                Some(slice) => slice,
-                None => {
-                    let frame_length = rx.len();
-                    if linearized_buffer.len() < frame_length {
-                        linearized_buffer.resize(frame_length, 0);
+                let frame_type = rx_meta.frame_type().map_err(Error::Client)?.try_into()?;
+                let checksum_offloading = match rx_meta.rx_checksum_offloading() {
+                    Some(netdevice_client::ChecksumRxOffloading::Offloaded(n)) => {
+                        ChecksumRxOffloading::Offloaded(Some(n))
                     }
-                    let linearized = &mut linearized_buffer[..frame_length];
-                    // TODO(https://fxbug.dev/42051635): pass strongly owned
-                    // buffers down to the stack instead of copying it out when
-                    // it's fragmented.
-                    let read_len = rx.io().read_at(0, linearized);
-                    debug_assert_eq!(read_len, frame_length);
-                    linearized
-                }
-            };
-            let buf = packet::Buf::new(rx_data, ..);
-            match id {
-                NetdeviceId::Ethernet(id) => {
-                    match frame_type {
-                        FrameType::Ethernet => {}
-                        f @ FrameType::Ipv4 | f @ FrameType::Ipv6 => {
-                            // NB: When the port was attached, `Ethernet` was
-                            // the only permitted frame type; anything else here
-                            // indicates a bug in `netdevice_client` or the core
-                            // netdevice driver.
-                            return Err(Error::MismatchedRxFrameType {
-                                port_class: PortWireFormat::Ethernet,
-                                frame_type: f,
-                            });
+                    None => ChecksumRxOffloading::Offloaded(None),
+                };
+                std::mem::drop(rx_meta);
+                let parsing_context = NetworkParsingContext::new(checksum_offloading);
+                let rx_data = match rx.as_slice_mut() {
+                    Some(slice) => slice,
+                    None => {
+                        let frame_length = rx.len();
+                        if linearized_buffer.len() < frame_length {
+                            linearized_buffer.resize(frame_length, 0);
                         }
+                        let linearized = &mut linearized_buffer[..frame_length];
+                        // TODO(https://fxbug.dev/42051635): pass strongly owned
+                        // buffers down to the stack instead of copying it out when
+                        // it's fragmented.
+                        let read_len = rx.io().read_at(0, linearized);
+                        debug_assert_eq!(read_len, frame_length);
+                        linearized
                     }
-                    ctx.api().device::<EthernetLinkDevice>().receive_frame(
-                        RecvEthernetFrameMeta { device_id: id.clone(), parsing_context },
-                        buf,
-                    )
-                }
-                NetdeviceId::PureIp(id) => {
-                    let ip_version = match frame_type {
-                        FrameType::Ipv4 => IpVersion::V4,
-                        FrameType::Ipv6 => IpVersion::V6,
-                        f @ FrameType::Ethernet => {
-                            // NB: When the port was attached, `IPv4` & `Ipv6`
-                            // were the only permitted frame types; anything
-                            // else here indicates a bug in `netdevice_client` or
-                            // the core netdevice driver.
-                            return Err(Error::MismatchedRxFrameType {
-                                port_class: PortWireFormat::Ip,
-                                frame_type: f,
-                            });
+                };
+                let buf = packet::Buf::new(rx_data, ..);
+                match id {
+                    NetdeviceId::Ethernet(id) => {
+                        match frame_type {
+                            FrameType::Ethernet => {}
+                            f @ FrameType::Ipv4 | f @ FrameType::Ipv6 => {
+                                // NB: When the port was attached, `Ethernet` was
+                                // the only permitted frame type; anything else here
+                                // indicates a bug in `netdevice_client` or the core
+                                // netdevice driver.
+                                return Err(Error::MismatchedRxFrameType {
+                                    port_class: PortWireFormat::Ethernet,
+                                    frame_type: f,
+                                });
+                            }
                         }
-                    };
-                    ctx.api().device::<PureIpDevice>().receive_frame(
-                        PureIpDeviceReceiveFrameMetadata {
-                            device_id: id.clone(),
-                            ip_version,
-                            parsing_context,
-                        },
-                        buf,
-                    )
+                        ctx.api().device::<EthernetLinkDevice>().receive_frame(
+                            RecvEthernetFrameMeta { device_id: id.clone(), parsing_context },
+                            buf,
+                        )
+                    }
+                    NetdeviceId::PureIp(id) => {
+                        let ip_version = match frame_type {
+                            FrameType::Ipv4 => IpVersion::V4,
+                            FrameType::Ipv6 => IpVersion::V6,
+                            f @ FrameType::Ethernet => {
+                                // NB: When the port was attached, `IPv4` & `Ipv6`
+                                // were the only permitted frame types; anything
+                                // else here indicates a bug in `netdevice_client` or
+                                // the core netdevice driver.
+                                return Err(Error::MismatchedRxFrameType {
+                                    port_class: PortWireFormat::Ip,
+                                    frame_type: f,
+                                });
+                            }
+                        };
+                        ctx.api().device::<PureIpDevice>().receive_frame(
+                            PureIpDeviceReceiveFrameMetadata {
+                                device_id: id.clone(),
+                                ip_version,
+                                parsing_context,
+                            },
+                            buf,
+                        )
+                    }
                 }
             }
         }

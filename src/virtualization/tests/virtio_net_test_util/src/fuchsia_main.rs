@@ -98,6 +98,7 @@ async fn network_device_send(
 
     // It is possible that the device does not yet have rx buffers ready to receive frames, so we
     // loop to ensure that we try sending after the device has its rx buffers ready.
+    let mut rx_ready = netdevice_client::RxReadyStorage::new(1);
     let recv_buf = loop {
         let mut buffer = session.alloc_tx_buffer(config.length).await.expect("allocate tx buffer");
         {
@@ -110,8 +111,8 @@ async fn network_device_send(
         session.send(buffer);
 
         let recv_result = session
-            .recv()
-            .map(|result| Some(result.expect("recv failed")))
+            .recv(&mut rx_ready)
+            .map(|result| Some(result.expect("recv failed").next().unwrap().expect("recv failed")))
             .on_timeout(
                 fuchsia_async::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(1)),
                 || None,

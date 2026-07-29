@@ -77,9 +77,22 @@ impl Session {
         self.inner.send(buffer)
     }
 
-    /// Receives a [`Buffer`] from the network device in this session.
-    pub async fn recv(&self) -> Result<Buffer<Rx>> {
-        self.inner.recv().await
+    /// Creates a new [`RxReadyStorage`] suitable for receiving buffers in this
+    /// session.
+    ///
+    /// The buffer capacity defaults to the session's configured
+    /// `num_rx_buffers`.
+    pub fn new_rx_ready_storage(&self) -> RxReadyStorage {
+        RxReadyStorage::new(self.inner.num_rx_buffers)
+    }
+
+    /// Receives completed [`Buffer`]s from the network device in this session
+    /// into `ready_storage` and returns an iterator over the results.
+    pub async fn recv<'a>(
+        &'a self,
+        ready_storage: &'a mut RxReadyStorage,
+    ) -> Result<impl Iterator<Item = Result<Buffer<Rx>>> + 'a> {
+        self.inner.recv(ready_storage).await
     }
 
     /// Allocates a [`Buffer`] that may later be queued to the network device.
@@ -221,8 +234,8 @@ struct Inner {
     name: String,
     rx: fasync::Fifo<DescId<Rx>>,
     tx: fasync::Fifo<DescId<Tx>>,
-    rx_ready: Mutex<ReadyBuffer<DescId<Rx>>>,
-    tx_ready: Mutex<ReadyBuffer<DescId<Tx>>>,
+    num_rx_buffers: usize,
+    tx_ready: Mutex<ReadyStorage<DescId<Tx>>>,
     tx_idle_listeners: TxIdleListeners,
     tx_state: Mutex<TxState>,
 }
@@ -295,14 +308,16 @@ impl Inner {
         zx::Status::ok(status).map_err(Error::RegisterForTx)?;
         assert_eq!(s, 1);
 
+        let num_rx_buffers = config.num_rx_buffers.get().into();
+
         Ok(Arc::new(Self {
             pool,
             proxy,
             name: name.to_owned(),
             rx,
             tx,
-            rx_ready: Mutex::new(ReadyBuffer::new(config.num_rx_buffers.get().into())),
-            tx_ready: Mutex::new(ReadyBuffer::new(config.num_tx_buffers().get().into())),
+            num_rx_buffers,
+            tx_ready: Mutex::new(ReadyStorage::new(config.num_tx_buffers().get().into())),
             tx_idle_listeners: TxIdleListeners::new(),
             tx_state,
         }))
@@ -315,14 +330,6 @@ impl Inner {
         self.pool.rx_pending.lock().poll_submit(&self.rx, cx)
     }
 
-    /// Polls completed rx descriptors from the driver.
-    ///
-    /// Returns the the head of a completed rx descriptor chain.
-    fn poll_complete_rx(&self, cx: &mut Context<'_>) -> Poll<Result<DescId<Rx>>> {
-        let mut rx_ready = self.rx_ready.lock();
-        rx_ready.poll_with_fifo(cx, &self.rx).map_err(|status| Error::Fifo("read", "rx", status))
-    }
-
     /// Polls to submit tx descriptors that are pending to the driver.
     ///
     /// Returns the number of tx descriptors that are successfully submitted.
@@ -332,22 +339,24 @@ impl Inner {
 
     /// Polls completed tx descriptors from the driver then puts them in pool.
     fn poll_complete_tx(&self, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        let result = {
+        let (count, result) = {
             let mut tx_ready = self.tx_ready.lock();
+            ready!(tx_ready.poll_fifo(cx, &self.tx))
+                .map_err(|status| Error::Fifo("read", "tx", status))?;
             // TODO(https://github.com/rust-lang/rust/issues/63569): Provide entire
             // chain of completed descriptors to the pool at once when slice of
             // MaybeUninit is stabilized.
-            tx_ready.poll_with_fifo(cx, &self.tx).map(|r| match r {
-                Ok(desc) => self.pool.tx_completed(desc),
-                Err(status) => Err(Error::Fifo("read", "tx", status)),
-            })
+            tx_ready
+                .drain()
+                .try_fold(0, |count, desc| match self.pool.tx_completed(desc) {
+                    Ok(()) => Ok(count + 1),
+                    Err(e) => Err((count, e)),
+                })
+                .map_or_else(|(count, e)| (count, Err(e)), |count| (count, Ok(())))
         };
-
-        match &result {
-            Poll::Ready(Ok(())) => self.tx_idle_listeners.tx_complete(),
-            Poll::Pending | Poll::Ready(Err(_)) => {}
-        }
-        result
+        self.tx_idle_listeners.tx_complete(count);
+        result?;
+        Poll::Ready(Ok(()))
     }
 
     /// Sends the [`Buffer`] to the driver.
@@ -362,15 +371,17 @@ impl Inner {
         state.send(&self.proxy, &self.pool, buffer);
     }
 
-    /// Receives a [`Buffer`] from the driver.
+    /// Receives [`Buffer`]s from the driver into `ready_storage`.
     ///
-    /// Waits until there is completed rx buffers from the driver.
-    async fn recv(&self) -> Result<Buffer<Rx>> {
-        poll_fn(|cx| -> Poll<Result<Buffer<Rx>>> {
-            let head = ready!(self.poll_complete_rx(cx))?;
-            Poll::Ready(self.pool.rx_completed(head))
-        })
-        .await
+    /// Waits until there are completed rx buffers from the driver.
+    async fn recv<'a>(
+        &'a self,
+        ready_storage: &'a mut RxReadyStorage,
+    ) -> Result<impl Iterator<Item = Result<Buffer<Rx>>> + 'a> {
+        poll_fn(|cx| ready_storage.poll_fifo(cx, &self.rx))
+            .await
+            .map_err(|status| Error::Fifo("read", "rx", status))?;
+        Ok(ready_storage.drain().map(move |head| self.pool.rx_completed(head)))
     }
 }
 
@@ -802,26 +813,83 @@ impl<K: AllocKind> Pending<K> {
     }
 }
 
-/// An intermediary buffer used to reduce syscall overhead by acting as a proxy
-/// to read entries from a FIFO.
+/// Intermediate storage used to batch-receive rx buffers from a session.
 ///
-/// `ReadyBuffer` caches read entries from a FIFO in pre-allocated memory,
-/// allowing different batch sizes between what is acquired from the FIFO and
-/// what's processed by the caller.
-struct ReadyBuffer<T> {
-    // NB: A vector of `MaybeUninit` here allows us to give a transparent memory
-    // layout to the FIFO object but still move objects out of our buffer
+/// Instances are constructed by calling [`Session::new_rx_ready_storage`].
+pub struct RxReadyStorage {
+    inner: ReadyStorage<DescId<Rx>>,
+}
+
+impl RxReadyStorage {
+    /// Creates an [`RxReadyStorage`] that can hold `capacity` rx descriptor
+    /// IDs.
+    pub fn new(capacity: usize) -> Self {
+        Self { inner: ReadyStorage::new(capacity) }
+    }
+
+    fn poll_fifo(
+        &mut self,
+        cx: &mut Context<'_>,
+        fifo: &fasync::Fifo<DescId<Rx>>,
+    ) -> Poll<std::result::Result<(), zx::Status>> {
+        let Self { inner } = self;
+        inner.poll_fifo(cx, fifo)
+    }
+
+    fn drain(&mut self) -> Drain<'_, DescId<Rx>> {
+        let Self { inner } = self;
+        inner.drain()
+    }
+}
+
+/// Intermediate storage used to reduce syscall overhead by acting as a proxy to
+/// read entries from a FIFO.
+///
+/// `ReadyStorage` caches read entries from a FIFO in pre-allocated memory.
+pub(in crate::session) struct ReadyStorage<T> {
+    // NB: A boxed slice of `MaybeUninit` here allows us to give a transparent
+    // memory layout to the FIFO object but still move objects out of storage
     // without needing a `T: Default` implementation. There's a small added
     // benefit of not paying for memory initialization on creation as well, but
     // that's mostly negligible given all allocation is performed upfront.
-    data: Vec<MaybeUninit<T>>,
+    data: Box<[MaybeUninit<T>]>,
     available: Range<usize>,
 }
 
-impl<T> Drop for ReadyBuffer<T> {
+impl<T> Drop for ReadyStorage<T> {
     fn drop(&mut self) {
-        let Self { data, available } = self;
-        for initialized in &mut data[available.clone()] {
+        let _ = self.drain();
+    }
+}
+
+struct Drain<'a, T> {
+    ready: &'a mut ReadyStorage<T>,
+}
+
+impl<'a, T> Iterator for Drain<'a, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Self { ready: ReadyStorage { data, available: Range { start, end } } } = self;
+        if start != end {
+            let desc = std::mem::replace(&mut data[*start], MaybeUninit::uninit());
+            *start += 1;
+            // SAFETY: Descriptor was in the initialized section, it was
+            // initialized.
+            Some(unsafe { desc.assume_init() })
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, T> Drop for Drain<'a, T> {
+    fn drop(&mut self) {
+        let Self { ready: ReadyStorage { data, available } } = self;
+        let range = available.clone();
+        // TODO(https://github.com/rust-lang/rust/issues/63569): When slice of
+        // MaybeUninit is stabilized we can just drop the whole slice.
+        for initialized in &mut data[range] {
             // SAFETY: the available range keeps track of initialized buffers,
             // we must drop them on drop to uphold `MaybeUninit` expectations.
             unsafe { initialized.assume_init_drop() }
@@ -830,37 +898,33 @@ impl<T> Drop for ReadyBuffer<T> {
     }
 }
 
-impl<T> ReadyBuffer<T> {
-    fn new(capacity: usize) -> Self {
+impl<T> ReadyStorage<T> {
+    pub(crate) fn new(capacity: usize) -> Self {
         let data = std::iter::from_fn(|| Some(MaybeUninit::uninit())).take(capacity).collect();
         Self { data, available: 0..0 }
     }
 
-    fn poll_with_fifo(
+    fn poll_fifo(
         &mut self,
         cx: &mut Context<'_>,
-        fifo: &fuchsia_async::Fifo<T>,
-    ) -> Poll<std::result::Result<T, zx::Status>>
+        fifo: &fasync::Fifo<T>,
+    ) -> Poll<std::result::Result<(), zx::Status>>
     where
         T: fasync::FifoEntry,
     {
         let Self { data, available: Range { start, end } } = self;
-
-        loop {
-            // Always pop from available data first.
-            if *start != *end {
-                let desc = std::mem::replace(&mut data[*start], MaybeUninit::uninit());
-                *start += 1;
-                // SAFETY: Descriptor was in the initialized section, it was
-                // initialized.
-                let desc = unsafe { desc.assume_init() };
-                return Poll::Ready(Ok(desc));
-            }
-            // Fetch more from the FIFO.
+        if *start == *end {
             let count: NonZeroUsize = ready!(fifo.try_read(cx, &mut data[..]))?;
             *start = 0;
             *end = count.get();
         }
+        Poll::Ready(Ok(()))
+    }
+
+    /// Returns an iterator that drains all of the elements from the buffer,
+    /// even if dropped.
+    fn drain(&mut self) -> Drain<'_, T> {
+        Drain { ready: self }
     }
 }
 
@@ -874,14 +938,14 @@ impl TxIdleListeners {
         Self { event: event_listener::Event::new(), tx_in_flight: AtomicUsize::new(0) }
     }
 
-    /// Decreases the number of outstanding tx buffers by 1.
+    /// Decreases the number of outstanding tx buffers by `count`.
     ///
     /// Notifies any tx idle listeners if the number reaches 0.
-    fn tx_complete(&self) {
+    fn tx_complete(&self, count: usize) {
         let Self { event, tx_in_flight } = self;
-        let old_value = tx_in_flight.fetch_sub(1, atomic::Ordering::SeqCst);
-        debug_assert_ne!(old_value, 0);
-        if old_value == 1 {
+        let old_value = tx_in_flight.fetch_sub(count, atomic::Ordering::SeqCst);
+        debug_assert!(old_value >= count);
+        if old_value == count {
             let _notified: usize = event.notify(usize::MAX);
         }
     }
@@ -972,7 +1036,7 @@ mod tests {
     };
     use super::{
         BufferLayout, BufferUsageEstimator, Config, DeviceBaseInfo, DeviceInfo, Error, Inner,
-        Mutex, Pool, ReadyBuffer, Task, TxIdleListeners, TxState,
+        Mutex, Pool, ReadyStorage, Task, TxIdleListeners, TxState,
     };
 
     impl Inner {
@@ -982,12 +1046,22 @@ mod tests {
             name: String,
             rx: Fifo<DescId<Rx>>,
             tx: Fifo<DescId<Tx>>,
-            rx_ready: Mutex<ReadyBuffer<DescId<Rx>>>,
-            tx_ready: Mutex<ReadyBuffer<DescId<Tx>>>,
+            num_rx_buffers: usize,
+            tx_ready: Mutex<ReadyStorage<DescId<Tx>>>,
             tx_idle_listeners: TxIdleListeners,
             tx_state: Mutex<TxState>,
         ) -> Self {
-            Self { pool, proxy, name, rx, tx, rx_ready, tx_ready, tx_idle_listeners, tx_state }
+            Self {
+                pool,
+                proxy,
+                name,
+                rx,
+                tx,
+                num_rx_buffers,
+                tx_ready,
+                tx_idle_listeners,
+                tx_state,
+            }
         }
 
         pub(super) fn tx_state(&self) -> &Mutex<TxState> {
@@ -1215,8 +1289,8 @@ mod tests {
             name: "fake_task".to_string(),
             rx,
             tx,
-            rx_ready: Mutex::new(ReadyBuffer::new(10)),
-            tx_ready: Mutex::new(ReadyBuffer::new(10)),
+            num_rx_buffers: 10,
+            tx_ready: Mutex::new(ReadyStorage::new(10)),
             tx_idle_listeners: TxIdleListeners::new(),
             tx_state,
         });
@@ -1229,5 +1303,39 @@ mod tests {
         // The task should not be able to continue because it can't read from or
         // write to one of the FIFOs.
         assert_matches!(futures::poll!(task.as_mut()), Poll::Ready(Err(Error::Fifo(_, _, _))));
+    }
+
+    #[test_case(1; "drain first")]
+    #[test_case(2; "drain first two")]
+    #[test_case(3; "drain all")]
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn ready_storage_batch_iterator(drain_first_n: usize) {
+        let (handle, fifo_server) = zx::Fifo::<u32>::create(256).unwrap();
+        let fifo_client = Fifo::from_fifo(handle);
+        let items = vec![10u32, 20u32, 30u32];
+        let written = fifo_server.write(&items[..]).expect("write to fifo");
+        assert_eq!(written.get(), 3);
+
+        let mut ready_storage = ReadyStorage::<u32>::new(10);
+
+        // First fetch reads all 3 items into ReadyStorage.
+        poll_fn(|cx| ready_storage.poll_fifo(cx, &fifo_client)).await.expect("fetch from fifo");
+
+        let mut drain = ready_storage.drain();
+        for i in 0..drain_first_n {
+            assert_eq!(drain.next(), Some(items[i]));
+        }
+        if drain_first_n == items.len() {
+            assert_eq!(drain.next(), None);
+        }
+        // Remaining uniterated items should be dropped and `available` reset to
+        // `0..0`.
+        std::mem::drop(drain);
+
+        // Since `available` is an empty range, `poll_fifo` should block on an
+        // empty FIFO.
+        let fetch_fut = poll_fn(|cx| ready_storage.poll_fifo(cx, &fifo_client));
+        futures::pin_mut!(fetch_fut);
+        assert_matches!(futures::poll!(fetch_fut), Poll::Pending);
     }
 }

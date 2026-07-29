@@ -130,10 +130,17 @@ pub async fn send(session: &netdevice_client::Session, port: &netdevice_client::
 }
 
 pub async fn recv(session: &netdevice_client::Session) -> Vec<u8> {
-    let recv_result = session.recv().await.expect("recv failed");
-    let mut buffer = vec![0; recv_result.len()];
-    assert_eq!(recv_result.io().read_at(0, &mut buffer), buffer.len());
-    buffer
+    let mut rx_ready = netdevice_client::RxReadyStorage::new(1);
+    let buffer = session
+        .recv(&mut rx_ready)
+        .await
+        .expect("recv failed")
+        .next()
+        .unwrap()
+        .expect("recv failed");
+    let mut buffer_data = vec![0; buffer.len()];
+    assert_eq!(buffer.io().read_at(0, &mut buffer_data), buffer_data.len());
+    buffer_data
 }
 
 pub fn write_fake_frame(da: ieee80211::MacAddr, sa: ieee80211::MacAddr, payload: &[u8]) -> Vec<u8> {

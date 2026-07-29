@@ -335,8 +335,8 @@ mod tests {
             "test_dynamic".to_string(),
             rx,
             tx,
-            Mutex::new(crate::session::ReadyBuffer::new(10)),
-            Mutex::new(crate::session::ReadyBuffer::new(10)),
+            10,
+            Mutex::new(crate::session::ReadyStorage::new(10)),
             TxIdleListeners::new(),
             tx_state,
         ));

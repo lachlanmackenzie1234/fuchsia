@@ -11,7 +11,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::TryStreamExt as _;
 use futures::future::{Future, FutureExt as _};
-use netdevice_client::{Client, DerivableConfig, Port, Session};
+use netdevice_client::{Client, DerivableConfig, Port, RxReadyStorage, Session};
 use std::convert::TryInto as _;
 use std::io::{Read as _, Write as _};
 use std::pin::pin;
@@ -39,7 +39,14 @@ async fn test_rx() {
                 ..Default::default()
             };
             let () = tun.write_frame(&frame).await.unwrap().expect("failed to write frame");
-            let buff = session.recv().await.expect("failed to recv buffer");
+            let mut rx_ready = RxReadyStorage::new(1);
+            let buff = session
+                .recv(&mut rx_ready)
+                .await
+                .expect("failed to recv buffer")
+                .next()
+                .unwrap()
+                .expect("failed to recv buffer");
             let mut bytes = [0u8; DATA_LEN];
             assert_eq!(buff.io().read_at(0, &mut bytes[..]), DATA_LEN);
             for i in bytes.iter() {
@@ -91,8 +98,15 @@ async fn test_tx() {
 
 // Receives buffer from session and echoes back.
 async fn echo(session: Session, port: Port, frame_count: u32) {
+    let mut rx_ready = RxReadyStorage::new(1);
     for i in 0..frame_count {
-        let buffer = session.recv().await.expect("failed to recv from session");
+        let buffer = session
+            .recv(&mut rx_ready)
+            .await
+            .expect("failed to recv from session")
+            .next()
+            .unwrap()
+            .expect("failed to recv from session");
         assert_eq!(buffer.len(), DATA_LEN);
         let mut bytes = [0u8; DATA_LEN];
         assert_eq!(buffer.io().read(&mut bytes[..]).unwrap(), DATA_LEN);
@@ -186,6 +200,7 @@ async fn test_echo_pair() {
                     );
                     let echo_fut = echo(session1, port1, FRAME_TOTAL_COUNT);
                     let main_fut = async {
+                        let mut rx_ready2 = RxReadyStorage::new(1);
                         for i in 0..FRAME_TOTAL_COUNT {
                             let mut buffer = session2
                                 .alloc_tx_buffer(DATA_LEN)
@@ -206,8 +221,13 @@ async fn test_echo_pair() {
                             );
                             session2.send(buffer);
 
-                            let buffer =
-                                session2.recv().await.expect("failed to recv from the session");
+                            let buffer = session2
+                                .recv(&mut rx_ready2)
+                                .await
+                                .expect("failed to recv from the session")
+                                .next()
+                                .unwrap()
+                                .expect("failed to recv from the session");
                             assert_eq!(
                                 buffer
                                     .io()
@@ -371,6 +391,7 @@ async fn watch_rx_leases() {
         "watch_rx_leases",
         |session, _client| async move {
             let mut leases_stream = pin!(session.watch_rx_leases());
+            let mut rx_ready = RxReadyStorage::new(1);
             for frame_idx in 1..=2 {
                 let (lease, lease_send) = zx::Channel::create();
                 tun.delegate_rx_lease(netdev::DelegatedRxLease {
@@ -386,7 +407,13 @@ async fn watch_rx_leases() {
                     ..Default::default()
                 };
                 tun.write_frame(&frame).await.expect("writing frame").expect("write frame error");
-                let frame = session.recv().await.expect("receive frame");
+                let frame = session
+                    .recv(&mut rx_ready)
+                    .await
+                    .expect("receive frame")
+                    .next()
+                    .unwrap()
+                    .expect("receive frame");
                 assert_matches!(leases_stream.try_next().now_or_never(), None);
                 drop(frame);
                 let yielded_lease = leases_stream
