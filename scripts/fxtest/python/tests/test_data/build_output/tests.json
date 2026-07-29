@@ -69,8 +69,8 @@
         "environments": [],
         "test": {
             "name": "host_cc_tests.static_test",
-            "label": "@@//build/bazel/host_tests/cc_tests:static_test",
-            "path": "bazel_execroot/_main/bazel-out/k8-opt/bin/build/bazel/host_tests/cc_tests/static_test",
+            "label": "@@//build/bazel/rules/host_tests/tests/cc:static_test",
+            "path": "bazel_execroot/_main/bazel-out/k8-opt/bin/build/bazel/rules/host_tests/tests/cc/static_test",
             "os": "linux"
         }
     }

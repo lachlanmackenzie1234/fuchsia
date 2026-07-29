@@ -46,7 +46,7 @@
         {
             "name": "host_cc_tests.static_test",
             "labels": [
-                "@@//build/bazel/host_tests/cc_tests:static_test"
+                "@@//build/bazel/rules/host_tests/tests/cc:static_test"
             ],
             "tags": []
         }

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Macros for defining `host_test()` targets for Rust binaries."""
+
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load(":host_test.bzl", "host_test")
@@ -96,7 +98,7 @@ def define_and_wrap_host_rust_test(
     wrapper target.
 
     The "manual" tag will be set on the leaf rust_test() target. Hence something
-    like `fx bazel test --config=host //build/bazel/host_tests/rust_tests/...`
+    like `fx bazel test --config=host //build/bazel/rules/host_tests/tests/rust/...`
     will correctly only run one test target, instead of two.
 
     Args:
@@ -158,8 +160,8 @@ def legacy_host_rustc_test(
     Unlike rustc_test(), these tests will be usable with `fx test` and `botanist`, and can
     still be run locally using `fx bazel test --config=host <label>`.
 
-    The "manual" tag will be set on the rusc_test() target. In practice something like
-    `fx bazel test --config=host //build/bazel/host_tests/rust_tests/...`
+    The "manual" tag will be set on the rustc_test() target. In practice something like
+    `fx bazel test --config=host //build/bazel/rules/host_tests/tests/rust/...`
     will correctly only run one test target, instead of two for each host_rustc_test()
     definition.
 
@@ -218,8 +220,8 @@ This is a convenience macro to call rustc_test() and host_test() together.
 Unlike rustc_test(), these tests will be usable with `fx test` and `botanist`, and can
 still be run locally using `fx bazel test --config=host <label>`.
 
-The "manual" tag will be set on the rusc_test() target. In practice something like
-`fx bazel test --config=host //build/bazel/host_tests/rust_tests/...`
+The "manual" tag will be set on the rustc_test() target. In practice something like
+`fx bazel test --config=host //build/bazel/rules/host_tests/tests/rust/...`
 will correctly only run one test target, instead of two for each host_rustc_test()
 definition.
 

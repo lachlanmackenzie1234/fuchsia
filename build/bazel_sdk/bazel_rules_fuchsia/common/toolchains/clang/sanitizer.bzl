@@ -60,8 +60,8 @@ def _sanitizer_mode_feature(name, mode):
         # both `--features=asan` and `--features=hwasan` are used:
         #
         # ```
-        # Analyzing: target //build/bazel/host_tests/cc_tests:static_test (58 packages loaded, 9 targets configured)
-        # ERROR: ...../out/default/gen/build/bazel/workspace/build/bazel/host_tests/cc_tests/BUILD.bazel:12:11: in cc_library rule //build/bazel/host_tests/cc_tests:foo:
+        # Analyzing: target //build/bazel/rules/host_tests/tests/cc:static_test (58 packages loaded, 9 targets configured)
+        # ERROR: ...../out/default/gen/build/bazel/workspace/build/bazel/rules/host_tests/tests/cc/BUILD.bazel:12:11: in cc_library rule //build/bazel/rules/host_tests/tests/cc:foo:
         # Traceback (most recent call last):
         #         File "/virtual_builtins_bzl/common/cc/cc_library.bzl", line 33, column 57, in _cc_library_impl
         #         File "/virtual_builtins_bzl/common/cc/cc_common.bzl", line 184, column 49, in _configure_features

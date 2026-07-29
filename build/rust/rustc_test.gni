@@ -124,7 +124,7 @@ template("rustc_test_internal") {
       args = []
       args = [ rebase_path(crate_binary_path, root_build_dir) ] + test_args
 
-      # LINT.ThenChange(//build/bazel/host_tests/host_rustc_test.bzl:rustc_test_invocation)
+      # LINT.ThenChange(//build/bazel/rules/host_tests/host_rustc_test.bzl:rustc_test_invocation)
 
       # The host test should only depend on the _actual_ binary, because only
       # the binary is able to properly depend on the toolchain variants

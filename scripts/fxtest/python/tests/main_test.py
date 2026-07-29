@@ -1260,7 +1260,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     "build",
                     "--host",
                     "--quiet",
-                    "@@//build/bazel/host_tests/cc_tests:static_test",
+                    "@@//build/bazel/rules/host_tests/tests/cc:static_test",
                 ),
                 (
                     "fx",

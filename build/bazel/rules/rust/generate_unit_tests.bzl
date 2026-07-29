@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 load("@rules_rust//rust:rust_test.bzl", "rust_test")
-load("//build/bazel/host_tests:host_rustc_test.bzl", "define_and_wrap_host_rust_test")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "define_and_wrap_host_rust_test")
 
 def generate_unit_tests(
         *,

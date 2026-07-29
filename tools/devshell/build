@@ -46,10 +46,10 @@
 ## Currently only host targets in the Bazel graph that do not depend on GN build
 ## artifacts are supported. For example, one of:
 ##
-##    fx build --host @//build/bazel/host_tests/cc_tests:static_test
-##    fx build --config=host @//build/bazel/host_tests/cc_tests:static_test
-##    fx build --fuchsia_platform @//build/bazel/host_tests/cc_tests:dynamic_test
-##    fx build --config=fuchsia_platform @//build/bazel/host_tests/cc_tests:dynamic_test
+##    fx build --host @//build/bazel/rules/host_tests/tests/cc:static_test
+##    fx build --config=host @//build/bazel/rules/host_tests/tests/cc:static_test
+##    fx build --fuchsia_platform @//build/bazel/rules/host_tests/tests/cc:dynamic_test
+##    fx build --config=fuchsia_platform @//build/bazel/rules/host_tests/tests/cc:dynamic_test
 ##
 ## Otherwise, LABELS_OR_TARGETS is a list of Ninja target paths, GN labels
 ## (beginning with //) or `--toolchain=NAME` options or related aliases (see below).

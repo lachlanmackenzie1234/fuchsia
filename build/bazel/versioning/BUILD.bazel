@@ -54,7 +54,7 @@ config_setting(
 
         # Unlike the other macros in //build/bazel/rules/host/, `go_binary_host_tool()` is a
         # legacy macro, so this setting must be visible where that macro is used.
-        "//build/bazel/host_tests/go_tests:__pkg__",
+        "//build/bazel/rules/host_tests/tests/go:__pkg__",
         "//build/beads/.agent/skills:__subpackages__",
         "//build/tools:__subpackages__",
         "//tools:__subpackages__",

@@ -44,7 +44,7 @@ Migrate GN templates to Bazel following the mapping below.
 
 
 ### Step 3: Migrate go_test target
-1. Add `load("//build/bazel/host_tests:host_go_test.bzl", "host_go_test")` to the BUILD.bazel file if it's not there.
+1. Add `load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")` to the BUILD.bazel file if it's not there.
 
 2. Migrate the `go_test` and set the sources to the test Go sources (e.g. `*_test.go`).
 

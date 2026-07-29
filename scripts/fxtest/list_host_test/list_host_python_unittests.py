@@ -34,7 +34,7 @@ def load_tests_from_file(file_path: str) -> list[str]:
 
         import_paths = test_info["imports"]
         binary_path = test_info["binary"]
-        # LINT.ThenChange(//build/bazel/host_tests/host_py_test.bzl:bazel_host_py_test_info_schema)
+        # LINT.ThenChange(//build/bazel/rules/host_tests/host_py_test.bzl:bazel_host_py_test_info_schema)
 
         for path in import_paths:
             import_path = os.path.join(runfiles_dir, path)

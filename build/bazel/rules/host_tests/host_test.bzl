@@ -2,9 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/host_tests:host_test_data.bzl", "CollectedFuchsiaHostTestDataInfo", "collect_fuchsia_host_test_data_aspect")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
-load("//build/bazel/rules/python:py_toolchain.bzl", "PY_TOOLCHAIN_ATTRS", "generate_python_build_action")
+load(
+    "//build/bazel/rules/host_tests:host_test_data.bzl",
+    "CollectedFuchsiaHostTestDataInfo",
+    "collect_fuchsia_host_test_data_aspect",
+)
+load(
+    "//build/bazel/rules/python:py_toolchain.bzl",
+    "PY_TOOLCHAIN_ATTRS",
+    "generate_python_build_action",
+)
 
 # Set this to True to enable debug print() statements during analysis.
 _DEBUG = False

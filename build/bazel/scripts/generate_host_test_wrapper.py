@@ -27,7 +27,7 @@ class FuchsiaHostTestDataInfo:
     # LINT.IfChange(FuchsiaHostTestDataInfo)
     label: str
     files: dict[str, str] = dataclasses.field(default_factory=dict)
-    # LINT.ThenChange(//build/bazel/host_tests/host_test_data.bzl:FuchsiaHostTestDataInfo)
+    # LINT.ThenChange(//build/bazel/rules/host_tests/host_test_data.bzl:FuchsiaHostTestDataInfo)
 
     @staticmethod
     def from_json(json_value: T.Any) -> "FuchsiaHostTestDataInfo":

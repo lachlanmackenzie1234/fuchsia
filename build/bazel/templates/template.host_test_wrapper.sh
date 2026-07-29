@@ -7,7 +7,7 @@
 # Should be consistent with the output of //build/testing/create_test.sh for non Python
 # host tests.
 
-# See comments in //build/bazel/host_tests/host_test.bzl for details.
+# See comments in //build/bazel/rules/host_tests/host_test.bzl for details.
 set -e
 cd -- "$(dirname "${BASH_SOURCE[0]}")/{{runtime_dir_location}}"
 export RUNFILES_DIR="${PWD}/{{test_name}}.runfiles"

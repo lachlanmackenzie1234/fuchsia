@@ -429,7 +429,7 @@ def parse_aquery_output(
 
     # Filter out the output from unexpected garbage, for example our main_build.py
     # wrapper still appends "Lock acquired, proceeding with build." to stdout when performing
-    # `fx bazel aquery --config=host --output=jsonproto //build/bazel/host_tests/cc_tests/... 2>/dev/null`
+    # `fx bazel aquery --config=host --output=jsonproto //build/bazel/rules/host_tests/tests/cc/... 2>/dev/null`
     start_idx = aquery_output.find("{")
     end_idx = aquery_output.rfind("}")
     if start_idx < 0 or end_idx < 0 or start_idx > end_idx:

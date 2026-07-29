@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Macros for defining `host_test()` targets for Go binaries."""
+
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load(":host_test.bzl", "host_test")
@@ -24,7 +26,7 @@ def legacy_host_go_test(
     still be run locally using `fx bazel test --config=host <label>`.
 
     The "manual" tag will be set on the go_test() target. In practice something like
-    `fx bazel test --config=host //build/bazel/host_tests/go_tests/...`
+    `fx bazel test --config=host //build/bazel/rules/host_tests/tests/go/...`
     will correctly only run one test target, instead of two for each host_go_test()
     definition.
 
@@ -120,7 +122,7 @@ Unlike go_test(), these tests will be usable with `fx test` and `botanist`, and 
 still be run locally using `fx bazel test --config=host <label>`.
 
 The "manual" tag will be set on the go_test() target. In practice something like
-`fx bazel test --config=host //build/bazel/host_tests/go_tests/...`
+`fx bazel test --config=host //build/bazel/rules/host_tests/tests/go/...`
 will correctly only run one test target, instead of two for each host_go_test()
 definition.
 

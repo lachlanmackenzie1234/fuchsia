@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Macros for defining `host_test()` targets for Python binaries."""
+
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_info.bzl", "PyInfo")
 load(":host_test.bzl", "host_test")

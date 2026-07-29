@@ -7,7 +7,7 @@ load(
     "wrap_rust_macro_args_with_build_flags",
 )
 load("@rules_rust//rust:rust_binary.bzl", "rust_binary")
-load("//build/bazel/host_tests:host_test.bzl", "host_test")
+load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 
 visibility("private")
 

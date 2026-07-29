@@ -3,9 +3,9 @@
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
-load("//build/bazel/host_tests:host_test.bzl", "host_test")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 load(
     ":host_tests.bzl",
     "build_flags_cc_binary_host_test",

@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
-load("//build/bazel/host_tests:host_rustc_test.bzl", "host_rustc_test")
-load("//build/bazel/host_tests:host_test.bzl", "host_test")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
