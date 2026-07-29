@@ -172,10 +172,7 @@
             availability: "optional",
         },
         {
-            config: [
-                "fuchsia.http-client.StopOnIdleTimeoutMillis",
-                "fuchsia.http-client.TcpReceiveBufferSizeBytes",
-            ],
+            config: [ "fuchsia.http-client.StopOnIdleTimeoutMillis" ],
             from: "void",
             to: "#http-client",
             availability: "optional",
