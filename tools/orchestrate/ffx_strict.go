@@ -491,6 +491,13 @@ func (c *FFXStrictClient) IsPackageServerRunning(ctx context.Context, repoName s
 	return false, nil
 }
 
+func (c *FFXStrictClient) TargetAdd(ctx context.Context, addr string) error {
+	if err := c.ffxInst.Run(ctx, "target", "add", addr, "--nowait"); err != nil {
+		return fmt.Errorf("target add failed: %w", err)
+	}
+	return nil
+}
+
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
 
 func (c *FFXStrictClient) ApplyEnv(env []string) ([]string, error) {
