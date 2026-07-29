@@ -1245,14 +1245,33 @@ impl FsNodeOps for RemoteNode {
         length: u64,
     ) -> Result<(), Errno> {
         match mode {
-            FallocMode::Allocate { keep_size: false } => {
+            FallocMode::Allocate { keep_size } => {
                 node.fail_if_locked(current_task, &node.info())?;
+
+                let allocate_mode =
+                    if keep_size { AllocateMode::KEEP_SIZE } else { AllocateMode::empty() };
 
                 will_dirty(&[&self.node], || {
                     self.node
                         .io
-                        .allocate(offset, length, AllocateMode::empty())
+                        .allocate(offset, length, allocate_mode)
                         .map_err(|status| from_status_like_fdio!(status))
+                })?;
+                Ok(())
+            }
+            FallocMode::PunchHole => {
+                node.fail_if_locked(current_task, &node.info())?;
+
+                will_dirty(&[&self.node], || {
+                    match self.node.io.allocate(
+                        offset,
+                        length,
+                        AllocateMode::PUNCH_HOLE | AllocateMode::KEEP_SIZE,
+                    ) {
+                        Ok(()) => Ok(()),
+                        Err(zx::Status::NOT_SUPPORTED) => Ok(()),
+                        Err(status) => Err(from_status_like_fdio!(status)),
+                    }
                 })?;
                 Ok(())
             }
