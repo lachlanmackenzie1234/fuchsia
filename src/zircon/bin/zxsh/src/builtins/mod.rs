@@ -14,6 +14,7 @@ pub mod dump;
 pub mod echo;
 pub mod essential;
 pub mod file_utils;
+pub mod fuchsia;
 pub mod list;
 pub mod msleep;
 pub mod printf;
@@ -31,6 +32,7 @@ enum BuiltinType {
     Command,
     Continue,
     Cp,
+    Dm,
     Dot,
     Dump,
     Echo,
@@ -43,6 +45,7 @@ enum BuiltinType {
     Getopts,
     Hash,
     Jobs,
+    K,
     List,
     LeftBracket,
     Local,
@@ -50,6 +53,7 @@ enum BuiltinType {
     Mkdir,
     Msleep,
     Mv,
+    Power,
     Pwd,
     Printf,
     Read,
@@ -102,6 +106,7 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"command", BuiltinType::Command),
     make_entry(b"continue", BuiltinType::Continue),
     make_entry(b"cp", BuiltinType::Cp),
+    make_entry(b"dm", BuiltinType::Dm),
     make_entry(b"dump", BuiltinType::Dump),
     make_entry(b"echo", BuiltinType::Echo),
     make_entry(b"eval", BuiltinType::Eval),
@@ -113,12 +118,14 @@ static BUILTINS: &[BuiltinEntry] = &[
     make_entry(b"getopts", BuiltinType::Getopts),
     make_entry(b"hash", BuiltinType::Hash),
     make_entry(b"jobs", BuiltinType::Jobs),
+    make_entry(b"k", BuiltinType::K),
     make_entry(b"list", BuiltinType::List),
     make_entry(b"local", BuiltinType::Local),
     make_entry(b"ls", BuiltinType::Ls),
     make_entry(b"mkdir", BuiltinType::Mkdir),
     make_entry(b"msleep", BuiltinType::Msleep),
     make_entry(b"mv", BuiltinType::Mv),
+    make_entry(b"power", BuiltinType::Power),
     make_entry(b"printf", BuiltinType::Printf),
     make_entry(b"pwd", BuiltinType::Pwd),
     make_entry(b"read", BuiltinType::Read),
@@ -197,6 +204,7 @@ pub fn run_builtin(
         BuiltinType::Command => essential::builtin_command(args, state, ctx),
         BuiltinType::Continue => essential::builtin_continue(args, state, ctx),
         BuiltinType::Cp => with_io(ctx, args, state, file_utils::builtin_cp),
+        BuiltinType::Dm => with_io(ctx, args, state, fuchsia::builtin_dm),
         BuiltinType::Dot => essential::builtin_dot(args, state, ctx),
         BuiltinType::Dump => with_io(ctx, args, state, dump::builtin_dump),
         BuiltinType::Echo => with_io(ctx, args, state, echo::builtin_echo),
@@ -209,12 +217,14 @@ pub fn run_builtin(
         BuiltinType::Getopts => with_io(ctx, args, state, essential::builtin_getopts),
         BuiltinType::Hash => with_io(ctx, args, state, essential::builtin_hash),
         BuiltinType::Jobs => with_io(ctx, args, state, essential::builtin_jobs),
+        BuiltinType::K => with_io(ctx, args, state, fuchsia::builtin_k),
         BuiltinType::List => with_io(ctx, args, state, list::builtin_list),
         BuiltinType::Local => with_io(ctx, args, state, essential::builtin_local),
         BuiltinType::Ls => with_io(ctx, args, state, file_utils::builtin_ls),
         BuiltinType::Mkdir => with_io(ctx, args, state, file_utils::builtin_mkdir),
         BuiltinType::Msleep => with_io(ctx, args, state, msleep::builtin_msleep),
         BuiltinType::Mv => with_io(ctx, args, state, file_utils::builtin_mv),
+        BuiltinType::Power => with_io(ctx, args, state, fuchsia::builtin_power),
         BuiltinType::Pwd => with_io(ctx, args, state, essential::builtin_pwd),
         BuiltinType::Printf => with_io(ctx, args, state, printf::builtin_printf),
         BuiltinType::Read => with_io(ctx, args, state, essential::builtin_read),

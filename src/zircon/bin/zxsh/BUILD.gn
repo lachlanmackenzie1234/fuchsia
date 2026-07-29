@@ -15,6 +15,7 @@ rustc_binary("bin") {
     "src/builtins/echo.rs",
     "src/builtins/essential.rs",
     "src/builtins/file_utils.rs",
+    "src/builtins/fuchsia.rs",
     "src/builtins/list.rs",
     "src/builtins/mod.rs",
     "src/builtins/msleep.rs",
@@ -61,6 +62,7 @@ rustc_binary("bin") {
     "src/tests/builtins/echo.rs",
     "src/tests/builtins/essential.rs",
     "src/tests/builtins/file_utils.rs",
+    "src/tests/builtins/fuchsia.rs",
     "src/tests/builtins/list.rs",
     "src/tests/builtins/mod.rs",
     "src/tests/builtins/msleep.rs",
@@ -89,9 +91,12 @@ rustc_binary("bin") {
     "src/tty.rs",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_rust",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
+    "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:bitflags",

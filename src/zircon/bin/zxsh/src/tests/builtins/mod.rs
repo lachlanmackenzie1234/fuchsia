@@ -6,6 +6,7 @@ pub mod dump;
 pub mod echo;
 pub mod essential;
 pub mod file_utils;
+pub mod fuchsia;
 pub mod list;
 pub mod msleep;
 pub mod printf;
