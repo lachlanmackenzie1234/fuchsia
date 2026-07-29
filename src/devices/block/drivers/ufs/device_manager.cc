@@ -130,7 +130,7 @@ zx::result<> DeviceManager::WriteAttribute(Attributes attribute, uint32_t value,
 template <typename DescriptorReturnType>
 zx::result<DescriptorReturnType> DeviceManager::ReadDescriptor(DescriptorType descriptor,
                                                                uint8_t index) {
-  ReadDescriptorUpiu read_descriptor_upiu(descriptor, index, sizeof(DescriptorReturnType));
+  ReadDescriptorUpiu read_descriptor_upiu(descriptor, index);
   auto query_response = req_processor_.SendQueryRequestUpiu(read_descriptor_upiu);
   if (query_response.is_error()) {
     return query_response.take_error();
@@ -214,11 +214,6 @@ zx::result<uint32_t> DeviceManager::GetBootLunEnabled() {
 
 zx::result<UnitDescriptor> DeviceManager::ReadUnitDescriptor(uint8_t lun) {
   return ReadDescriptor<UnitDescriptor>(DescriptorType::kUnit, lun);
-}
-
-zx::result<RpmbUnitDescriptor> DeviceManager::ReadRpmbUnitDescriptor() {
-  return ReadDescriptor<RpmbUnitDescriptor>(DescriptorType::kUnit,
-                                            static_cast<uint8_t>(WellKnownLuns::kRpmb));
 }
 
 zx::result<> DeviceManager::SetExceptionEventControl(ExceptionEventControl control) {

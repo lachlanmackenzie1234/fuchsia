@@ -127,8 +127,8 @@ zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendScsiUpiu
         dma_length = zx_system_get_page_size();
       } else {
         dma_offset = io_cmd->device_op.op.rw.offset_vmo * io_cmd->block_size_bytes;
-        dma_length =
-            static_cast<uint64_t>(io_cmd->device_op.op.rw.length) * io_cmd->block_size_bytes;
+        dma_length = static_cast<uint64_t>(io_cmd->device_op.op.rw.length) *
+                     io_cmd->block_size_bytes;
       }
     }
   } else if (data_vmo->is_valid()) {
@@ -278,12 +278,9 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
                response_length);
   auto response = request_list_.GetDescriptorBuffer(slot, response_offset);
 
-  const bool reliable_write = (lun == static_cast<uint8_t>(WellKnownLuns::kRpmb) &&
-                               request.GetDataDirection() == DataDirection::kHostToDevice);
-
-  if (zx::result<> result = FillDescriptorAndSendRequest(
-          slot, request.GetDataDirection(), response_offset, response_length, prdt_offset,
-          prdt_entry_count, reliable_write);
+  if (zx::result<> result =
+          FillDescriptorAndSendRequest(slot, request.GetDataDirection(), response_offset,
+                                       response_length, prdt_offset, prdt_entry_count);
       result.is_error()) {
     fdf::error("Failed to send upiu: {}", result);
     return result.take_error();
@@ -473,15 +470,13 @@ zx_time_t TransferRequestProcessor::GetEarliestTimeoutDeadline() {
 
 zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
     uint8_t slot, const DataDirection data_dir, const uint16_t response_offset,
-    const uint16_t response_length, const uint16_t prdt_offset, const uint32_t prdt_entry_count,
-    const bool reliable_write) {
+    const uint16_t response_length, const uint16_t prdt_offset, const uint32_t prdt_entry_count) {
   auto descriptor = request_list_.GetRequestDescriptor<TransferRequestDescriptor>(slot);
   zx_paddr_t paddr = request_list_.GetSlot(slot).command_descriptor_io->phys();
 
   // Fill up UTP Transfer Request Descriptor.
   CustomMemSet(descriptor, 0, sizeof(TransferRequestDescriptor));
   descriptor->set_interrupt(true);
-  descriptor->set_ru(reliable_write);
   descriptor->set_data_direction(data_dir);
   descriptor->set_command_type(kCommandTypeUfsStorage);
   // If the command was successful, overwrite |overall_command_status| field with |kSuccess|.

@@ -333,9 +333,9 @@ inline size_t GetDescriptorSize(DescriptorType type) {
 
 class ReadDescriptorUpiu : public QueryReadRequestUpiu {
  public:
-  explicit ReadDescriptorUpiu(DescriptorType type, uint8_t index = 0, uint16_t length = 0)
+  explicit ReadDescriptorUpiu(DescriptorType type, uint8_t index = 0)
       : QueryReadRequestUpiu(QueryOpcode::kReadDescriptor, static_cast<uint8_t>(type), index) {
-    GetData<QueryRequestUpiuData>()->length = htobe16(length ? length : GetDescriptorSize(type));
+    GetData<QueryRequestUpiuData>()->length = htobe16(GetDescriptorSize(type));
   }
 };
 

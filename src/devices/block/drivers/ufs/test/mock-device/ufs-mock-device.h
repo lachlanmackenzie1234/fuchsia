@@ -32,9 +32,6 @@ constexpr uint64_t kMockBlockSizeShift = 12;
 constexpr uint64_t kMockBlockSize = (1 << kMockBlockSizeShift);
 constexpr uint64_t kMockTotalDeviceCapacity = (1 << 24);  // 16MB
 
-constexpr uint8_t kMockRpmbLogicalBlockSizeExponent = 9;  // 512 bytes
-constexpr uint64_t kMockRpmbLogicalBlockCount = 1024;     // 512KB
-
 constexpr uint32_t kMajorVersion = 3;
 constexpr uint32_t kMinorVersion = 1;
 constexpr uint32_t kVersionSuffix = 2;

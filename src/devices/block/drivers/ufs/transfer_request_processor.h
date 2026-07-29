@@ -109,16 +109,13 @@ class TransferRequestProcessor : public RequestProcessor {
  private:
   friend class UfsTest;
 
-  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(ScsiCommandUpiu &request,
-                                                                  uint8_t lun, uint8_t slot,
-                                                                  zx::unowned_vmo data_vmo,
-                                                                  IoCommand *io_cmd,
-                                                                  bool synchronous);
+  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(
+      ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
+      IoCommand *io_cmd, bool synchronous);
 
   zx::result<> FillDescriptorAndSendRequest(uint8_t slot, DataDirection data_dir,
                                             uint16_t response_offset, uint16_t response_length,
-                                            uint16_t prdt_offset, uint32_t prdt_entry_count,
-                                            bool reliable_write = false);
+                                            uint16_t prdt_offset, uint32_t prdt_entry_count);
 
   zx::result<> CheckResponse(uint8_t slot_num, AbstractResponseUpiu &response);
   // Check for errors in the following order: OCS -> header_response -> scsi_status

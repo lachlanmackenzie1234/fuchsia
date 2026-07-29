@@ -21,7 +21,6 @@
 
 #include <safemath/safe_conversions.h>
 
-#include "rpmb.h"
 #include "src/devices/block/drivers/ufs/server.h"
 
 namespace ufs {
@@ -590,9 +589,6 @@ zx::result<> Ufs::InitMmioBuffer() {
   return zx::ok();
 }
 
-Ufs::Ufs() : fdf::DriverBase2(kDriverName), hardware_power_element_runner_server_(*this) {}
-Ufs::~Ufs() = default;
-
 zx_status_t Ufs::Init() {
   list_initialize(&pending_commands_);
 
@@ -680,18 +676,6 @@ zx_status_t Ufs::Init() {
     component_inspector_->inspector().emplace(std::move(wb_node));
     component_inspector_->inspector().emplace(std::move(bkop_node));
   }
-
-  if (HasWellKnownLun(WellKnownLuns::kRpmb)) {
-    fdf::info("Initializing RPMB LUN");
-    const auto& geometry = GetDeviceManager().GetGeometryDescriptor();
-    fdf::debug("Ufs Bind: bRPMB_ReadWriteSize = {}", geometry.bRPMB_ReadWriteSize);
-    rpmb_device_ = std::make_unique<UfsRpmbDevice>(this);
-    if (zx_status_t status = rpmb_device_->AddDevice(); status != ZX_OK) {
-      fdf::error("Failed to add RPMB device: {}. Continuing initialization.", status);
-      rpmb_device_.reset();
-    }
-  }
-
   fdf::info("Bind Success");
 
   return ZX_OK;
@@ -1032,16 +1016,7 @@ zx::result<uint32_t> Ufs::AddLogicalUnits() {
     if (scsi_lun.is_error()) {
       return scsi_lun.take_error();
     }
-    zx_status_t status = ZX_OK;
-    for (int retry = 0; retry < kMaxRetries; ++retry) {
-      status = TestUnitReady(kPlaceholderTarget, scsi_lun.value());
-      if (status == ZX_OK) {
-        break;
-      }
-      fdf::warn("TestUnitReady for LUN 0x{:x} failed (attempt {}/{}): {}. Retrying...",
-                static_cast<uint8_t>(lun), retry + 1, kMaxRetries, zx_status_get_string(status));
-    }
-    if (status != ZX_OK) {
+    if (zx_status_t status = TestUnitReady(kPlaceholderTarget, scsi_lun.value()); status != ZX_OK) {
       continue;
     }
     well_known_lun_set_.insert(lun);

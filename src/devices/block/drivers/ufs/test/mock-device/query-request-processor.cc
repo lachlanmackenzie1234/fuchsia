@@ -38,23 +38,8 @@ zx_status_t QueryRequestProcessor::DefaultReadDescriptorHandler(UfsMockDevice &m
                  sizeof(GeometryDescriptor));
   } else if (req_upiu.idn == static_cast<uint8_t>(DescriptorType::kUnit)) {
     uint8_t lun = req_upiu.index;
-    if (lun == static_cast<uint8_t>(WellKnownLuns::kRpmb)) {
-      RpmbUnitDescriptor rpmb_desc = {
-          .bLength = sizeof(RpmbUnitDescriptor),
-          .bDescriptorIDN = static_cast<uint8_t>(DescriptorType::kUnit),
-          .bUnitIndex = lun,
-          .bLUEnable = 1,
-          .bLogicalBlockSize = kMockRpmbLogicalBlockSizeExponent,
-          .qLogicalBlockCount = htobe64(kMockRpmbLogicalBlockCount),
-      };
-      CustomMemCpy(rsp_upiu.command_data.data(), &rpmb_desc, sizeof(RpmbUnitDescriptor));
-    } else if (lun >= kMaxLunCount) {
-      fdf::error("UFS MOCK: read descriptor index (LUN) 0x{:x} is out of bounds", lun);
-      return ZX_ERR_OUT_OF_RANGE;
-    } else {
-      CustomMemCpy(rsp_upiu.command_data.data(), &mock_device.GetLogicalUnit(lun).GetUnitDesc(),
-                   sizeof(UnitDescriptor));
-    }
+    CustomMemCpy(rsp_upiu.command_data.data(), &mock_device.GetLogicalUnit(lun).GetUnitDesc(),
+                 sizeof(UnitDescriptor));
   } else if (req_upiu.idn == static_cast<uint8_t>(DescriptorType::kPower)) {
     CustomMemCpy(rsp_upiu.command_data.data(), &mock_device.GetPowerDesc(),
                  sizeof(PowerParametersDescriptor));

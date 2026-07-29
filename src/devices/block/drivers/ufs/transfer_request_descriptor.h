@@ -39,7 +39,6 @@ struct TransferRequestDescriptor {
 
   // dword 0
   DEF_SUBFIELD(dwords[0], 31, 28, command_type);
-  DEF_SUBBIT(dwords[0], 27, ru);
   DEF_SUBFIELD(dwords[0], 26, 25, data_direction);
   DEF_SUBBIT(dwords[0], 24, interrupt);
   DEF_SUBBIT(dwords[0], 23, ce);
