@@ -646,7 +646,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let descriptor = FsverityStateInner {
             root_digest,
             salt,
-            merkle_tree: descriptor_decoded.leaf_digests()?.to_vec().into(),
+            merkle_tree: descriptor_decoded.leaf_digests()?.into(),
         };
         self.set_fsverity_state_pending(descriptor);
         transaction.add_with_object(

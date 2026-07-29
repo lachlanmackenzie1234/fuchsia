@@ -97,7 +97,7 @@ impl FxSymlink {
                     },
             } => {
                 let link_len =
-                    store.read_encrypted_symlink(self.object_id(), link.to_vec()).await?.len();
+                    store.read_encrypted_symlink(self.object_id(), link.into_vec()).await?.len();
                 Ok(ObjectProperties {
                     refs,
                     allocated_size: 0,

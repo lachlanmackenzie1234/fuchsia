@@ -2732,7 +2732,7 @@ impl ObjectStore {
             Some(Item {
                 value: ObjectValue::Object { kind: ObjectKind::EncryptedSymlink { link, .. }, .. },
                 ..
-            }) => self.read_encrypted_symlink(object_id, link.to_vec()).await,
+            }) => self.read_encrypted_symlink(object_id, link.into_vec()).await,
             Some(Item {
                 value: ObjectValue::Object { kind: ObjectKind::Symlink { link, .. }, .. },
                 ..
