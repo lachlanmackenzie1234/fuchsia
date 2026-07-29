@@ -343,12 +343,6 @@
 
                 // TODO(https://fxbug.dev/322874684): Needs /proc/sys/vm/max_map_count
                 "munmap04",
-
-                // TODO(https://fxbug.dev/496317235): Temporarily skip since
-                // this fails with the currently rolled LTP and will pass with
-                // the next. We don't have a better way to indicate "pass or
-                // fail, but don't crash" in the expectation system.
-                "swapon03",
             ],
         },
     ],
