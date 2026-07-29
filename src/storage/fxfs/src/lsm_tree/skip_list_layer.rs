@@ -30,11 +30,7 @@ struct PointerList<K, V>(Box<[AtomicPtr<SkipListNode<K, V>>]>);
 
 impl<K, V> PointerList<K, V> {
     fn new(count: usize) -> PointerList<K, V> {
-        let mut pointers = Vec::new();
-        for _ in 0..count {
-            pointers.push(AtomicPtr::new(std::ptr::null_mut()));
-        }
-        PointerList(pointers.into_boxed_slice())
+        PointerList((0..count).map(|_| AtomicPtr::new(std::ptr::null_mut())).collect())
     }
 
     fn len(&self) -> usize {
@@ -136,7 +132,7 @@ impl<K, V> Inner<K, V> {
 impl<K, V> SkipListLayer<K, V> {
     pub fn new(max_item_count: usize) -> Arc<SkipListLayer<K, V>> {
         Arc::new(SkipListLayer {
-            pointers: PointerList::new((max_item_count as f32).log2() as usize + 1),
+            pointers: PointerList::new((usize::BITS - max_item_count.leading_zeros()) as usize),
             inner: Mutex::new(Inner::new()),
             write_lock: Mutex::new(()),
             allocated: AtomicU32::new(0),
@@ -504,11 +500,7 @@ impl<K: Key, V: LayerValue> LayerIteratorMut<K, V> for SkipListLayerIterMut<'_, 
         let max_pointers = self.skip_list.pointers.len();
         // This chooses a random number of pointers such that each level has half the number of
         // pointers of the previous one.
-        let pointer_count = max_pointers
-            - min(
-                (rng.random_range(0..2u32.pow(max_pointers as u32) - 1) as f32).log2() as usize,
-                max_pointers - 1,
-            );
+        let pointer_count = min(1 + rng.random::<u32>().trailing_zeros() as usize, max_pointers);
         let node = Box::leak(self.skip_list.alloc_node(item, pointer_count));
         if self.insertion_point.is_none() {
             self.insertion_point = Some(self.prev_pointers.clone());
