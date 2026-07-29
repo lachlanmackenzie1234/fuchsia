@@ -1042,7 +1042,7 @@ impl BinderDriver {
                 )?;
 
                 let transaction = TransactionData {
-                    peer_pid: context.binder_proc.key.pid(),
+                    peer_pid: if oneway { 0 } else { context.binder_proc.key.pid() },
                     peer_tid: context.binder_thread.tid,
                     peer_euid: context.current_task.current_creds().euid,
                     object: {

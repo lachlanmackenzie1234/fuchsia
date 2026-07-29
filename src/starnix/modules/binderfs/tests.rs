@@ -3212,6 +3212,7 @@ pub mod tests {
                 receiver.proc.lock().command_queue.front(),
                 Some(Command::OnewayTransaction(TransactionData {
                     code: FIRST_TRANSACTION_CODE,
+                    peer_pid: 0,
                     ..
                 }))
             );
