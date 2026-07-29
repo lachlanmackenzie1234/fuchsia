@@ -40,7 +40,7 @@ CRATE_ANNOTATIONS = {
     ],
     "libc": [
         crate.annotation(
-            version = "0.2.171",
+            version = "0.2.189",
             rustc_flags = crate.select(
                 common = [
                     "--cfg=libc_priv_mod_use",
@@ -121,7 +121,7 @@ CRATE_ANNOTATIONS = {
                 selects = {
                     "@platforms//os:linux": [
                         "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
-                        "//third_party/rust_crates/vendor/libc-0.2.186:libc",
+                        "//third_party/rust_crates/vendor/libc-0.2.189:libc",
                         "//third_party/rust_crates/ask2patch/memchr",
                         "//third_party/rust_crates/vendor/mio-1.2.1:mio",
                         "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",

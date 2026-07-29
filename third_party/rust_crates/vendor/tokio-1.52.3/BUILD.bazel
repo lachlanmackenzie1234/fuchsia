@@ -118,7 +118,7 @@ rust_library(
         "@platforms//os:linux": [
             "//third_party/rust_crates/ask2patch/memchr",  # @platforms//os:linux
             "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",  # @platforms//os:linux
-            "//third_party/rust_crates/vendor/libc-0.2.186:libc",  # @platforms//os:linux
+            "//third_party/rust_crates/forks/libc-0.2.189:libc",  # @platforms//os:linux
             "//third_party/rust_crates/vendor/mio-1.2.1:mio",  # @platforms//os:linux
             "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",  # @platforms//os:linux
             "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",  # @platforms//os:linux

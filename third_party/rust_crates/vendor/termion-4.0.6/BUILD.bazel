@@ -70,7 +70,7 @@ rust_library(
     }),
     version = "4.0.6",
     deps = [
-        "//third_party/rust_crates/vendor/libc-0.2.186:libc",
+        "//third_party/rust_crates/forks/libc-0.2.189:libc",
         "//third_party/rust_crates/vendor/numtoa-0.2.4:numtoa",
     ],
 )

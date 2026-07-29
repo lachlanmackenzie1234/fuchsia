@@ -71,8 +71,8 @@ rust_library(
     }),
     version = "0.1.8",
     deps = [
+        "//third_party/rust_crates/forks/libc-0.2.189:libc",
         "//third_party/rust_crates/vendor/inotify-sys-0.1.8:build_script_build",
-        "//third_party/rust_crates/vendor/libc-0.2.186:libc",
     ],
 )
 

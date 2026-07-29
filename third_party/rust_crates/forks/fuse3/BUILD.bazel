@@ -77,11 +77,11 @@ rust_library(
     }),
     version = "0.9.0",
     deps = [
+        "//third_party/rust_crates/forks/libc-0.2.189:libc",
         "//third_party/rust_crates/forks/nix-0.29.0:nix",
         "//third_party/rust_crates/vendor/async-notify-0.3.4:async_notify",
         "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
         "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
-        "//third_party/rust_crates/vendor/libc-0.2.186:libc",
         "//third_party/rust_crates/vendor/slab-0.4.11:slab",
         "//third_party/rust_crates/vendor/tokio-1.52.3:tokio",
         "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",

@@ -108,8 +108,8 @@ rust_library(
     version = "1.1.4",
     deps = [
         "//third_party/rust_crates/forks/errno-0.3.14:errno",
+        "//third_party/rust_crates/forks/libc-0.2.189:libc",
         "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
-        "//third_party/rust_crates/vendor/libc-0.2.186:libc",
         "//third_party/rust_crates/vendor/rustix-1.1.4:build_script_build",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
