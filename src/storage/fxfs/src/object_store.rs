@@ -74,12 +74,6 @@ use std::sync::{Arc, OnceLock, Weak};
 use storage_device::Device;
 use uuid::Uuid;
 
-/// Callback invoked during store unlock right after all crypt resources have been acquired
-/// outside the flush lock (when the flush lock is temporarily dropped).
-#[cfg(test)]
-pub static CALLBACK_UNLOCK_RESOURCES_ACQUIRED: crate::test_callback::TestCallback =
-    crate::test_callback::TestCallback::new();
-
 pub use extent::Extent;
 pub use extent_record::{ExtentMode, ExtentValue};
 pub use object_record::{
@@ -2207,8 +2201,7 @@ impl ObjectStore {
         // It's safe to use the crypt service now because we're not holding the flush lock.
         let crypt = do_not_use_crypt;
 
-        #[cfg(test)]
-        CALLBACK_UNLOCK_RESOURCES_ACQUIRED.call();
+        self.filesystem().hooks().on_unlock_resources_acquired();
 
         // --- PHASE 3: Decrypt mutations (outside of lock) ---
 
@@ -3237,15 +3230,16 @@ async fn load_store_info_from_handle(
 #[cfg(test)]
 mod tests {
     use super::{
-        AttributeId, CALLBACK_UNLOCK_RESOURCES_ACQUIRED, FsverityMetadata, HandleOptions,
-        LastObjectId, LastObjectIdInfo, LockKey, MAX_STORE_INFO_SERIALIZED_SIZE, Mutation,
-        NewChildStoreOptions, OBJECT_ID_HI_MASK, ObjectStore, RootDigest, StoreInfo, StoreOptions,
+        AttributeId, FsverityMetadata, HandleOptions, LastObjectId, LastObjectIdInfo, LockKey,
+        MAX_STORE_INFO_SERIALIZED_SIZE, Mutation, NewChildStoreOptions, OBJECT_ID_HI_MASK,
+        ObjectStore, RootDigest, StoreInfo, StoreOptions,
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{
         FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem,
     };
     use crate::fsck::{fsck, fsck_volume};
+    use crate::hooks::{Hooks, HooksHandle};
     use crate::lsm_tree::Query;
     use crate::lsm_tree::types::{ItemRef, LayerIterator};
     use crate::object_handle::{
@@ -3271,7 +3265,7 @@ mod tests {
     };
     use fxfs_insecure_crypto::new_insecure_crypt;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicIsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -3280,9 +3274,18 @@ mod tests {
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 
-    async fn test_filesystem() -> OpenFxFilesystem {
+    async fn test_filesystem_with_hooks(hooks: Arc<HooksHandle>) -> OpenFxFilesystem {
         let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
-        FxFilesystem::new_empty(device).await.expect("new_empty failed")
+        FxFilesystemBuilder::new()
+            .hooks(hooks)
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed")
+    }
+
+    async fn test_filesystem() -> OpenFxFilesystem {
+        test_filesystem_with_hooks(Default::default()).await
     }
 
     #[fuchsia::test]
@@ -5386,7 +5389,10 @@ mod tests {
 
     #[fuchsia::test(threads = 10)]
     async fn test_key_exhaustion_race() {
-        let fs = test_filesystem().await;
+        let fs;
+        let in_hook = AtomicBool::new(false);
+        let (mut hooks, fs_hooks) = Hooks::new();
+        fs = test_filesystem_with_hooks(fs_hooks).await;
 
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let crypt = Arc::new(new_insecure_crypt());
@@ -5418,17 +5424,10 @@ mod tests {
             .expect("create_child_dir failed");
         transaction.commit().await.expect("commit failed");
 
-        let fs_clone = fs.clone();
-        let in_hook = Arc::new(Mutex::new(false));
-        let _guard = crate::filesystem::CALLBACK_BEFORE_COMMIT.set(move || {
-            {
-                let mut in_hook = in_hook.lock();
-                if *in_hook {
-                    return;
-                }
-                *in_hook = true;
+        hooks.set_before_commit(|| {
+            if in_hook.swap(true, Ordering::Relaxed) {
+                return;
             }
-            let fs = fs_clone.clone();
 
             // Run compaction. Since this hook runs before the next transaction acquires the
             // commit lock, this compaction will flush the mutations committed above and consume
@@ -5855,15 +5854,17 @@ mod tests {
         device.reopen(false);
 
         // Phase 2: Reopen and unlock with a race.
-        let fs = FxFilesystemBuilder::new().open(device).await.expect("open failed");
+        let fs;
+        let store1;
+        let (mut hooks, fs_hooks) = Hooks::new();
+        fs = FxFilesystemBuilder::new().hooks(fs_hooks).open(device).await.expect("open failed");
 
-        let store1 = fs.object_manager().store(store1_id).unwrap();
+        store1 = fs.object_manager().store(store1_id).unwrap();
 
         // Set up the callback to trigger a flush of store1 during unlock (when flush
         // lock is dropped).
-        let store1_clone = store1.clone();
-        let _guard = CALLBACK_UNLOCK_RESOURCES_ACQUIRED.set(move || {
-            futures::executor::block_on(store1_clone.flush()).expect("flush failed");
+        hooks.set_unlock_resources_acquired(|| {
+            futures::executor::block_on(store1.flush()).expect("flush failed");
         });
 
         store1.unlock(crypt).await.expect("unlock failed");

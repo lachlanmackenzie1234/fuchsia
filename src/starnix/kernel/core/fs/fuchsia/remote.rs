@@ -4574,17 +4574,20 @@ mod test {
         let commit_count = Arc::new(AtomicUsize::new(0));
         let commit_count_clone = commit_count.clone();
 
-        // Open fixture with pre_commit_hook
+        let (mut hooks, fs_hooks) = fxfs_testing::Hooks::new();
+        hooks.set_pre_commit(move |_transaction| {
+            commit_count_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+
+        // Open fixture with hooks
         let fixture = TestFixture::open(
             DeviceHolder::new(FakeDevice::new(1024 * 1024, 512)),
             TestFixtureOptions {
                 format: true,
                 as_blob: false,
                 encrypted: true,
-                pre_commit_hook: Some(Box::new(move |_transaction| {
-                    commit_count_clone.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                })),
+                hooks: Some(fs_hooks),
                 ..Default::default()
             },
         )

@@ -5269,20 +5269,18 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_failed_create_unnamed_file_transaction() {
-        let fail = Arc::new(AtomicU64::new(0));
-        let fail_clone = fail.clone();
+        let fail = AtomicU64::new(0);
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(|_| {
+            if fail.load(Ordering::Relaxed) > 0 {
+                fail.fetch_sub(1, Ordering::Relaxed);
+                bail!("Aborted transaction");
+            }
+            Ok(())
+        });
         let fixture = TestFixture::open(
             DeviceHolder::new(FakeDevice::new(16384, 512)),
-            TestFixtureOptions {
-                pre_commit_hook: Some(Box::new(move |_| {
-                    if fail_clone.load(Ordering::Relaxed) > 0 {
-                        fail_clone.fetch_sub(1, Ordering::Relaxed);
-                        bail!("Aborted transaction");
-                    }
-                    Ok(())
-                })),
-                ..Default::default()
-            },
+            TestFixtureOptions { hooks: Some(fs_hooks), ..Default::default() },
         )
         .await;
         let root = fixture.root();

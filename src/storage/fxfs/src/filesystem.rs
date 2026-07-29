@@ -4,6 +4,7 @@
 
 use crate::errors::FxfsError;
 use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
+use crate::hooks::HooksHandle;
 use crate::log::*;
 use crate::metrics;
 use crate::object_store::allocator::{Allocator, Hold, Reservation};
@@ -37,12 +38,6 @@ use std::sync::{Arc, OnceLock, Weak};
 use std::task::Poll;
 use std::time::{Duration, Instant};
 use storage_device::{Device, DeviceHolder};
-
-#[cfg(test)]
-use crate::test_callback::TestCallback;
-
-#[cfg(test)]
-pub static CALLBACK_BEFORE_COMMIT: TestCallback = TestCallback::new();
 
 pub const MIN_BLOCK_SIZE: u64 = 4096;
 pub const MAX_BLOCK_SIZE: u64 = u16::MAX as u64 + 1;
@@ -91,8 +86,6 @@ pub struct Info {
 pub type PostCommitHook =
     Option<Box<dyn Fn() -> futures::future::BoxFuture<'static, ()> + Send + Sync>>;
 
-pub type PreCommitHook = Option<Box<dyn Fn(&Transaction<'_>) -> Result<(), Error> + Send + Sync>>;
-
 pub struct Options {
     /// True if the filesystem is read-only.
     pub read_only: bool,
@@ -102,9 +95,8 @@ pub struct Options {
     /// size of unflushed journal contents).  This is exposed for testing purposes.
     pub roll_metadata_key_byte_count: u64,
 
-    /// A callback that runs before every transaction is committed.  If this callback returns an
-    /// error then the transaction is failed with that error.
-    pub pre_commit_hook: PreCommitHook,
+    /// Hooks for filesystem events (e.g. pre_commit, before_commit).
+    pub hooks: Arc<HooksHandle>,
 
     /// A callback that runs after every transaction has been committed.  This will be called whilst
     /// a lock is held which will block more transactions from being committed.
@@ -154,7 +146,7 @@ impl Default for Options {
         Options {
             roll_metadata_key_byte_count: 128 * 1024 * 1024,
             read_only: false,
-            pre_commit_hook: None,
+            hooks: Arc::<HooksHandle>::default(),
             post_commit_hook: None,
             skip_initial_reap: false,
             trim_config: Some((TRIM_AFTER_BOOT_TIMER, TRIM_INTERVAL_TIMER)),
@@ -352,15 +344,6 @@ impl FxFilesystemBuilder {
         self
     }
 
-    /// Sets a callback that runs before every transaction. See `Options::pre_commit_hook`.
-    pub fn pre_commit_hook(
-        mut self,
-        hook: impl Fn(&Transaction<'_>) -> Result<(), Error> + Send + Sync + 'static,
-    ) -> Self {
-        self.options.pre_commit_hook = Some(Box::new(hook));
-        self
-    }
-
     /// Sets a callback that runs after every transaction has been committed. See
     /// `Options::post_commit_hook`.
     pub fn post_commit_hook(
@@ -434,6 +417,11 @@ impl FxFilesystemBuilder {
     pub fn barriers_enabled(mut self, barriers_enabled: bool) -> Self {
         self.options.barriers_enabled = barriers_enabled;
         self.journal_options.barriers_enabled = barriers_enabled;
+        self
+    }
+
+    pub fn hooks(mut self, hooks: Arc<crate::hooks::HooksHandle>) -> Self {
+        self.options.hooks = hooks;
         self
     }
 
@@ -742,9 +730,7 @@ impl FxFilesystem {
         transaction: &mut Transaction<'_>,
         callback: impl FnOnce(u64) -> R + Send,
     ) -> Result<R, Error> {
-        if let Some(hook) = self.options.pre_commit_hook.as_ref() {
-            hook(transaction)?;
-        }
+        self.hooks().on_pre_commit(transaction)?;
         debug_assert_not_too_long!(self.lock_manager.commit_prepare(&transaction));
 
         // Call prepare_commit on all unique objects involved in the transaction.
@@ -776,8 +762,7 @@ impl FxFilesystem {
 
         self.maybe_start_flush_task();
 
-        #[cfg(test)]
-        CALLBACK_BEFORE_COMMIT.call();
+        self.hooks().on_before_commit();
 
         let _guard = debug_assert_not_too_long!(self.commit_mutex.lock());
         let journal_offset = if self.journal().image_builder_mode().is_some() {
@@ -817,6 +802,10 @@ impl FxFilesystem {
 
     pub fn lock_manager(&self) -> &LockManager {
         &self.lock_manager
+    }
+
+    pub fn hooks(&self) -> &Arc<HooksHandle> {
+        &self.options.hooks
     }
 
     pub(crate) fn drop_transaction(&self, transaction: &mut Transaction<'_>) {

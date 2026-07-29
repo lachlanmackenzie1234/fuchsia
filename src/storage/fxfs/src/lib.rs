@@ -25,6 +25,7 @@ pub mod errors;
 pub mod filesystem;
 pub mod fsck;
 pub mod future_with_guard;
+pub mod hooks;
 pub mod log;
 pub mod lsm_tree;
 pub mod metrics;
@@ -34,7 +35,6 @@ pub mod range;
 pub mod round;
 pub mod serialized_types;
 mod stable_hash;
-pub mod test_callback;
 #[cfg(any(test, feature = "benchmark", fuzz))]
 pub mod testing;
 pub mod virtual_device;

@@ -58,7 +58,7 @@ const SPARE_SIZE: u64 = TRANSACTION_METADATA_MAX_AMOUNT;
 // change the kernel state in between them. These two callbacks allow us to place actions between
 // the atomic steps in order to coerce whatever ordering we want.
 #[cfg(test)]
-use fxfs::test_callback::TestCallback;
+use crate::fuchsia::testing::TestCallback;
 #[cfg(test)]
 static CALLBACK_BEFORE_RANGE_COLLECTION: TestCallback = TestCallback::new();
 #[cfg(test)]
@@ -1653,16 +1653,15 @@ mod tests {
             .expect("update_attributes failed");
     }
 
-    async fn open_filesystem(
-        pre_commit_hook: impl Fn(&Transaction<'_>) -> Result<(), Error> + Send + Sync + 'static,
+    async fn open_filesystem() -> (OpenFxFilesystem, FxVolumeAndRoot) {
+        open_filesystem_with_hooks(Default::default()).await
+    }
+
+    async fn open_filesystem_with_hooks(
+        hooks: Arc<fxfs::hooks::HooksHandle>,
     ) -> (OpenFxFilesystem, FxVolumeAndRoot) {
         let device = DeviceHolder::new(FakeDevice::new(BLOCK_COUNT, BLOCK_SIZE));
-        let fs = FxFilesystemBuilder::new()
-            .pre_commit_hook(pre_commit_hook)
-            .format(true)
-            .open(device)
-            .await
-            .unwrap();
+        let fs = FxFilesystemBuilder::new().hooks(hooks).format(true).open(device).await.unwrap();
         let root_volume = root_volume(fs.clone()).await.unwrap();
         let store = root_volume.new_volume("vol", NewChildStoreOptions::default()).await.unwrap();
         let store_object_id = store.store_object_id();
@@ -1687,15 +1686,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_large_flush_requiring_multiple_transactions() {
-        let transaction_count = Arc::new(AtomicU64::new(0));
-        let (fs, volume) = open_filesystem({
-            let transaction_count = transaction_count.clone();
-            move |_| {
-                transaction_count.fetch_add(1, Ordering::Relaxed);
-                Ok(())
-            }
-        })
-        .await;
+        let transaction_count = AtomicU64::new(0);
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(|_| {
+            transaction_count.fetch_add(1, Ordering::Relaxed);
+            Ok::<(), anyhow::Error>(())
+        });
+        let (fs, volume) = open_filesystem_with_hooks(fs_hooks).await;
         let root = open_volume(&volume);
 
         let file = open_file_checked(
@@ -1742,18 +1739,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_multi_transaction_flush_with_failing_middle_transaction() {
-        let fail_transaction_after = Arc::new(AtomicI64::new(i64::MAX));
-        let (fs, volume) = open_filesystem({
-            let fail_transaction_after = fail_transaction_after.clone();
-            move |_| {
-                if fail_transaction_after.fetch_sub(1, Ordering::Relaxed) < 1 {
-                    bail!("Intentionally fail transaction")
-                } else {
-                    Ok(())
-                }
+        let fail_transaction_after = AtomicI64::new(i64::MAX);
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(|_| {
+            if fail_transaction_after.fetch_sub(1, Ordering::Relaxed) < 1 {
+                bail!("Intentionally fail transaction")
+            } else {
+                Ok(())
             }
-        })
-        .await;
+        });
+        let (fs, volume) = open_filesystem_with_hooks(fs_hooks).await;
         let root = open_volume(&volume);
 
         let file = open_file_checked(
@@ -1977,18 +1972,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_timestamps_are_preserved_across_flush_failures() {
-        let fail_transaction = Arc::new(AtomicBool::new(false));
-        let (fs, volume) = open_filesystem({
-            let fail_transaction = fail_transaction.clone();
-            move |_| {
-                if fail_transaction.load(Ordering::Relaxed) {
-                    Err(zx::Status::IO).context("Intentionally fail transaction")
-                } else {
-                    Ok(())
-                }
+        let fail_transaction = AtomicBool::new(false);
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(|_| {
+            if fail_transaction.load(Ordering::Relaxed) {
+                Err(zx::Status::IO).context("Intentionally fail transaction")
+            } else {
+                Ok(())
             }
-        })
-        .await;
+        });
+        let (fs, volume) = open_filesystem_with_hooks(fs_hooks).await;
         let root = open_volume(&volume);
 
         let file = open_file_checked(
@@ -2344,18 +2337,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_retry_shrink_transaction() {
-        let fail_transaction = Arc::new(AtomicBool::new(false));
-        let (fs, volume) = open_filesystem({
-            let fail_transaction = fail_transaction.clone();
-            move |_| {
-                if fail_transaction.load(Ordering::Relaxed) {
-                    bail!("Intentionally fail transaction")
-                } else {
-                    Ok(())
-                }
+        let fail_transaction = AtomicBool::new(false);
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(|_| {
+            if fail_transaction.load(Ordering::Relaxed) {
+                bail!("Intentionally fail transaction")
+            } else {
+                Ok(())
             }
-        })
-        .await;
+        });
+        let (fs, volume) = open_filesystem_with_hooks(fs_hooks).await;
         let root = open_volume(&volume);
 
         let file = open_file_checked(
@@ -2402,18 +2393,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_retry_trim_transaction() {
-        let fail_transaction_after = Arc::new(AtomicI64::new(i64::MAX));
-        let (fs, volume) = open_filesystem({
-            let fail_transaction_after = fail_transaction_after.clone();
-            move |_| {
-                if fail_transaction_after.fetch_sub(1, Ordering::Relaxed) < 1 {
-                    bail!("Intentionally fail transaction")
-                } else {
-                    Ok(())
-                }
+        let fail_transaction_after = AtomicI64::new(i64::MAX);
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(|_| {
+            if fail_transaction_after.fetch_sub(1, Ordering::Relaxed) < 1 {
+                bail!("Intentionally fail transaction")
+            } else {
+                Ok(())
             }
-        })
-        .await;
+        });
+        let (fs, volume) = open_filesystem_with_hooks(fs_hooks).await;
         let root = open_volume(&volume);
 
         let file = open_file_checked(
@@ -3427,19 +3416,17 @@ mod tests {
     async fn test_partial_flush_failure() {
         let fail = Arc::new(AtomicU64::new(u64::MAX));
         let fail_clone = fail.clone();
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(move |_| {
+            if fail_clone.fetch_sub(1, Ordering::Relaxed) == 0 {
+                Err(FxfsError::Unavailable.into())
+            } else {
+                Ok(())
+            }
+        });
         let fixture = TestFixture::open(
             DeviceHolder::new(FakeDevice::new(16384, 512)),
-            TestFixtureOptions {
-                encrypted: false,
-                pre_commit_hook: Some(Box::new(move |_| {
-                    if fail_clone.fetch_sub(1, Ordering::Relaxed) == 0 {
-                        Err(FxfsError::Unavailable.into())
-                    } else {
-                        Ok(())
-                    }
-                })),
-                ..Default::default()
-            },
+            TestFixtureOptions { encrypted: false, hooks: Some(fs_hooks), ..Default::default() },
         )
         .await;
         {
@@ -3483,19 +3470,17 @@ mod tests {
     async fn test_partial_flush_failure_last_chance() {
         let fail = Arc::new(AtomicU64::new(u64::MAX));
         let fail_clone = fail.clone();
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(move |_| {
+            if fail_clone.fetch_sub(1, Ordering::Relaxed) == 0 {
+                Err(FxfsError::Unavailable.into())
+            } else {
+                Ok(())
+            }
+        });
         let fixture = TestFixture::open(
             DeviceHolder::new(FakeDevice::new(16384, 512)),
-            TestFixtureOptions {
-                encrypted: false,
-                pre_commit_hook: Some(Box::new(move |_| {
-                    if fail_clone.fetch_sub(1, Ordering::Relaxed) == 0 {
-                        Err(FxfsError::Unavailable.into())
-                    } else {
-                        Ok(())
-                    }
-                })),
-                ..Default::default()
-            },
+            TestFixtureOptions { encrypted: false, hooks: Some(fs_hooks), ..Default::default() },
         )
         .await;
         {
@@ -4933,7 +4918,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_flush_state_successful_flow() {
-        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let (fs, volume) = open_filesystem().await;
         let store_object_id = volume.volume().store().store_object_id();
         let allocator = fs.allocator();
         let needed = reservation_needed(10);
@@ -4970,7 +4955,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_flush_state_finish_early_puts_back_dirty_pages() {
-        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let (fs, volume) = open_filesystem().await;
         let store_object_id = volume.volume().store().store_object_id();
         let allocator = fs.allocator();
         let needed = reservation_needed(10);
@@ -4999,7 +4984,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_flush_state_finish_early_after_set_flush_batch_count_fails() {
-        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let (fs, volume) = open_filesystem().await;
         let store_object_id = volume.volume().store().store_object_id();
         let allocator = fs.allocator();
         let needed = reservation_needed(10);
@@ -5035,7 +5020,7 @@ mod tests {
     #[fuchsia::test]
     #[should_panic(expected = "ReadyToFlush")]
     async fn test_flush_state_panic_if_take_extra_dirty_pages_not_called() {
-        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let (fs, volume) = open_filesystem().await;
         let store_object_id = volume.volume().store().store_object_id();
         let allocator = fs.allocator();
         let reservation = allocator.reserve_with(Some(store_object_id), |_| 0);
@@ -5053,7 +5038,7 @@ mod tests {
     #[fuchsia::test]
     #[should_panic(expected = "ReadyToFlush")]
     async fn test_flush_state_skipping_steps_panics() {
-        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let (fs, volume) = open_filesystem().await;
         let store_object_id = volume.volume().store().store_object_id();
         let allocator = fs.allocator();
         let reservation = allocator.reserve_with(Some(store_object_id), |_| 0);
@@ -5065,7 +5050,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_drop_last_opened_node_in_mark_dirty() {
-        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let (fs, volume) = open_filesystem().await;
         let root = open_volume(&volume);
         {
             let file = open_file_checked(
