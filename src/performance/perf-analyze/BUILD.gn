@@ -4,9 +4,17 @@
 
 import("//build/host.gni")
 import("//build/python/python_binary.gni")
+import("//build/python/python_host_test.gni")
+
+perf_analyze_sources = [
+  "query.py",
+  "result_formatter.py",
+]
 
 python_binary("perf_analyze_bin") {
   main_source = "perf_analyze.py"
+  sources = perf_analyze_sources
+  deps = [ "//src/performance/lib/tp_shell" ]
   output_name = "perf-analyze.pyz"
 }
 
@@ -20,4 +28,39 @@ copy("copy_perf_analyze") {
 install_host_tools("perf-analyze") {
   deps = [ ":copy_perf_analyze" ]
   outputs = [ "perf-analyze" ]
+}
+
+if (is_host) {
+  python_host_test("perf_analyze_test") {
+    main_source = "perf_analyze_test.py"
+    sources = [ "perf_analyze.py" ] + perf_analyze_sources
+    deps = [ "//src/performance/lib/tp_shell" ]
+    data_sources = [
+      "test-data/sample_fxt.fxt",
+      "test-data/sample_queries.json",
+    ]
+    data_package_name = "test_data"
+  }
+
+  python_host_test("result_formatter_test") {
+    main_source = "result_formatter_test.py"
+    sources = [ "result_formatter.py" ]
+  }
+} else {
+  group("perf_analyze_test") {
+    testonly = true
+    public_deps = [ ":perf_analyze_test($host_toolchain)" ]
+  }
+  group("result_formatter_test") {
+    testonly = true
+    public_deps = [ ":result_formatter_test($host_toolchain)" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":perf_analyze_test",
+    ":result_formatter_test",
+  ]
 }

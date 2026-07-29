@@ -9,8 +9,12 @@ This tool provides CLI commands to query diagnostic plugins and analyze performa
 """
 
 import argparse
+import logging
 import sys
 from typing import Sequence
+
+import result_formatter
+from query import TpShell
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -25,29 +29,67 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Fuchsia Standalone Performance Analysis Tool"
     )
+    parser.add_argument(
+        "--format",
+        choices=["json", "markdown", "text"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose debug logging",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     # 'query' subcommand
     query_parser = subparsers.add_parser(
-        "query", help="Query diagnostic plugins"
+        "query", help="Perform SQL queries on a trace file"
     )
     query_parser.add_argument(
-        "--list-plugins", action="store_true", help="List available plugins"
+        "--trace", required=True, help="Trace file path or URL"
     )
+    group = query_parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--sql", help="SQL query to run")
+    group.add_argument("--batch", help="Batch JSON or @file")
 
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as e:
+        if e.code is None:
+            return 0
+        if isinstance(e.code, int):
+            return e.code
+        print(f"Error: {e.code}", file=sys.stderr)
+        return 1
+
+    # Configure logging based on verbose flag
+    log_level = logging.DEBUG if args.verbose else logging.WARNING
+    logging.basicConfig(
+        level=log_level,
+        format="%(levelname)s:%(name)s:%(message)s",
+        stream=sys.stderr,
+    )
 
     if args.command is None:
         parser.print_help()
         return 2
 
     if args.command == "query":
-        if args.list_plugins:
-            print("No plugins configured.")
+        tp_shell = TpShell()
+        formatter = result_formatter.FORMATTERS[args.format]
+        try:
+            results = tp_shell.query(
+                trace_path=args.trace,
+                sql=args.sql,
+                batch=args.batch,
+            )
+            # Format and print results
+            print(formatter.format_results(results))
             return 0
-        else:
-            query_parser.print_help()
-            return 2
+        except Exception as e:
+            print(formatter.format_error(str(e)))
+            return 1
 
     return 0
 

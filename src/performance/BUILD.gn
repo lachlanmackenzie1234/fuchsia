@@ -17,6 +17,7 @@ group("tests") {
     "ktrace_provider:tests",
     "lib:tests",
     "memory:tests",
+    "perf-analyze:tests",
     "perfetto-bridge:tests",
     "profiler_session_manager:tests",
     "trace/tests",

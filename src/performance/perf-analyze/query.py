@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Query executors for perf-analyze."""
+
+import json
+import os
+from typing import Any
+
+from tp_shell import PerfettoTraceProcessor
+
+
+class TpShell:
+    """Runs raw SQL queries via Perfetto TraceProcessor."""
+
+    def query(
+        self, trace_path: str, sql: str | None = None, batch: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Executes the query specified by args on the given trace."""
+        if not sql and not batch:
+            raise ValueError("Either sql or batch must be provided")
+
+        with PerfettoTraceProcessor(trace_path) as tp:
+            if sql:
+                return tp.run_query(sql)
+            elif batch:
+                batch_data = self._load_batch(batch)
+                results: list[dict[str, Any]] = []
+                for item in batch_data:
+                    if not isinstance(item, dict):
+                        raise ValueError("Batch items must be JSON objects")
+                    q_name = item.get("name")
+                    q_sql = item.get("sql")
+                    if not q_name or not q_sql:
+                        raise ValueError(
+                            "Batch items must contain 'name' and 'sql'"
+                        )
+                    try:
+                        q_results = tp.run_query(q_sql)
+                        results.append({"name": q_name, "results": q_results})
+                    except Exception as e:
+                        results.append({"name": q_name, "error": str(e)})
+                return results
+            return []
+
+    def _load_batch(self, batch_arg: str) -> list[dict[str, Any]]:
+        """Loads batch queries from JSON or file path starting with '@'."""
+        if batch_arg.startswith("@"):
+            file_path = batch_arg[1:]
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"Batch file not found: {file_path}")
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        else:
+            content = batch_arg
+
+        try:
+            data = json.loads(content)
+            if not isinstance(data, list):
+                raise ValueError("Batch content must be a JSON array")
+            return data
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in batch: {e}")
