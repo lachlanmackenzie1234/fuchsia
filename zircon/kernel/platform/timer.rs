@@ -4,10 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
-pub mod power;
-
 /// Monotonic timeline instant in nanoseconds.
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

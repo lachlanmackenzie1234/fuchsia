@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/rust/rustc_library.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 source_set("kernel") {
   sources = [
@@ -24,17 +24,22 @@ source_set("kernel") {
     "owned_wait_queue_pool.cc",
     "percpu.cc",
     "restricted.cc",
+    "restricted_ffi.cc",
     "scheduler.cc",
     "scheduler_pi.cc",
     "scheduler_state.cc",
     "semaphore.cc",
+    "stats_ffi.cc",
     "task_runtime_stats.cc",
     "thread.cc",
+    "thread_ffi.cc",
     "timer.cc",
+    "timer_ffi.cc",
     "wait.cc",
   ]
 
   deps = [
+    ":kernel-rs",
     "//sdk/lib/fit",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/pdev/hw_watchdog",
@@ -101,28 +106,12 @@ group("kernel-tests") {
   deps = [ ":tests" ]
 }
 
-source_set("ffi") {
-  sources = [
-    "restricted_ffi.cc",
-    "stats_ffi.cc",
-    "thread_ffi.cc",
-    "timer_ffi.cc",
-  ]
-  deps = [
-    "//zircon/kernel/lib/kconcurrent",
-    "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/user_copy:headers",
-    "//zircon/kernel/vm:headers",
-  ]
-}
-
-rustc_library("kernel-rs") {
-  edition = "2024"
-  name = "kernel"
-  source_root = "lib.rs"
+kernel_rust_mod("kernel-rs") {
+  output_name = "kernel"
+  source_root = "mod.rs"
   sources = [
     "bits.rs",
-    "lib.rs",
+    "mod.rs",
     "relaxed_atomic.rs",
     "restricted_state.rs",
     "stats.rs",
@@ -140,7 +129,5 @@ rustc_library("kernel-rs") {
     "//zircon/kernel/arch:arch-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/unittest:unittest-rs",
-    "//zircon/kernel/platform:platform-rs",
   ]
-  non_rust_deps = [ ":ffi" ]
 }

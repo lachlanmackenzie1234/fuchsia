@@ -4,18 +4,17 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 use object_constants_rs as object_constants;
 use zx_status::Status;
 
+#[allow(unused_imports)]
 pub use debuglog_types::{ZX_LOG_FLAGS_MASK, dlog_header_t, dlog_record_t};
 pub const DLOG_MAX_RECORD: usize = debuglog_types::DLOG_MAX_RECORD as usize;
 pub const DLOG_MAX_DATA: usize = debuglog_types::DLOG_MAX_DATA as usize;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    fn cpp_dlog_shutdown(deadline: platform_rs::InstantMono) -> i32;
+    fn cpp_dlog_shutdown(deadline: crate::platform_rs::timer::InstantMono) -> i32;
     fn cpp_dlog_write(severity: u32, flags: u32, ptr: *const u8, len: usize) -> i32;
     fn cpp_dlog_reader_init(
         reader: *mut DlogReaderStorage,
@@ -34,7 +33,7 @@ unsafe extern "C" {
 /// Shutdown the debuglog subsystem.
 ///
 /// Blocks, waiting up to |deadline|, for dlog threads to terminate.
-pub fn dlog_shutdown(deadline: platform_rs::InstantMono) -> Result<(), Status> {
+pub fn dlog_shutdown(deadline: crate::platform_rs::timer::InstantMono) -> Result<(), Status> {
     // SAFETY: FFI call to C++ dlog shutdown.
     Status::ok(unsafe { cpp_dlog_shutdown(deadline) })
 }

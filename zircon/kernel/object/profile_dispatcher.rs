@@ -22,7 +22,7 @@ use super::profile_dispatcher_ffi::{
 };
 use super::thread_dispatcher::{SchedulerStateBaseProfile, ThreadDispatcher};
 use super::vm_address_region_dispatcher::{MemoryPriority, VmAddressRegionDispatcher};
-use kernel::types::cpu_mask_t;
+use crate::kernel::types::cpu_mask_t;
 
 use object_constants_rs as object_constants;
 
@@ -46,7 +46,7 @@ fn parse_cpu_mask(set: &zx_cpu_set_t) -> cpu_mask_t {
     zr::static_assert!(counters_rs::SMP_MAX_CPUS <= zx_types::ZX_CPU_SET_MAX_CPUS as usize);
 
     // We throw away any bits beyond SMP_MAX_CPUs.
-    (set.mask[0] as cpu_mask_t) & kernel::bits::bit_mask_u32(counters_rs::SMP_MAX_CPUS)
+    (set.mask[0] as cpu_mask_t) & crate::kernel::bits::bit_mask_u32(counters_rs::SMP_MAX_CPUS)
 }
 
 fn validate_and_create_profile(

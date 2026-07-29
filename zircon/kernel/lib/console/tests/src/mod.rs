@@ -4,181 +4,179 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-// Allow missing safety doc comments for public unsafe extern FFI test helper functions.
-#![allow(clippy::missing_safety_doc)]
-#![allow(unused_crate_dependencies)]
-#![cfg(console_enabled)]
-
-use console_rust::{CMD_AVAIL_ALWAYS, CMD_AVAIL_NORMAL, CmdArgs, static_command};
-use core::ffi::c_int;
-use core::sync::atomic::{AtomicI32, Ordering};
-use zx_status::Status;
-
-macro_rules! zx_status {
-    ($status:expr) => {
-        $status.into_raw()
-    };
-}
-
-// FFI imports.
-unsafe extern "C" {
-    static __start_commands: console_rust::Cmd;
-    static __stop_commands: console_rust::Cmd;
-    fn rust_console_match_command(
-        name: *const core::ffi::c_char,
-        mask: u8,
-    ) -> *const console_rust::Cmd;
-    fn rust_console_get_echo() -> bool;
-    fn rust_console_get_exit() -> bool;
-    fn rust_console_set_exit(val: bool);
-    fn console_run_script_locked(string: *const core::ffi::c_char) -> c_int;
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct FILE {
-    write: unsafe extern "C" fn(
-        *mut core::ffi::c_void,
-        *const core::ffi::c_char,
-        usize,
-    ) -> core::ffi::c_int,
-    ptr: *mut core::ffi::c_void,
-}
-
-unsafe extern "C" {
-    static mut gStdout: FILE;
-}
-
-struct CapturerState {
-    buf: *mut u8,
-    buf_size: usize,
-    len: usize,
-    original_stdout: Option<FILE>,
-}
-
-struct SyncUnsafeCell<T>(core::cell::UnsafeCell<T>);
-
-// SAFETY: This is safe because we only run tests sequentially in the kernel console test thread.
-unsafe impl<T> Sync for SyncUnsafeCell<T> {}
-
-static CAPTURER_STATE: SyncUnsafeCell<CapturerState> =
-    SyncUnsafeCell(core::cell::UnsafeCell::new(CapturerState {
-        buf: core::ptr::null_mut(),
-        buf_size: 0,
-        len: 0,
-        original_stdout: None,
-    }));
-
-unsafe extern "C" fn write_callback(
-    _ptr: *mut core::ffi::c_void,
-    str_ptr: *const core::ffi::c_char,
-    len: usize,
-) -> core::ffi::c_int {
-    let state = unsafe { &mut *CAPTURER_STATE.0.get() };
-    if state.buf.is_null() || state.buf_size == 0 {
-        return 0;
-    }
-    let to_copy = core::cmp::min(len, state.buf_size - 1 - state.len);
-    if to_copy > 0 {
-        unsafe {
-            core::ptr::copy_nonoverlapping(str_ptr as *const u8, state.buf.add(state.len), to_copy);
-        }
-        state.len += to_copy;
-        unsafe { *state.buf.add(state.len) = 0 };
-    }
-    len as core::ffi::c_int
-}
-
-unsafe fn test_capture_stdout_start(buf: *mut u8, size: usize) {
-    let state = unsafe { &mut *CAPTURER_STATE.0.get() };
-    state.buf = buf;
-    state.buf_size = size;
-    state.len = 0;
-    unsafe { *state.buf = 0 };
-    unsafe {
-        state.original_stdout = Some(gStdout);
-        gStdout = FILE { write: write_callback, ptr: core::ptr::null_mut() };
-    }
-}
-
-unsafe fn test_capture_stdout_stop() {
-    let state = unsafe { &mut *CAPTURER_STATE.0.get() };
-    if let Some(orig) = state.original_stdout {
-        unsafe {
-            gStdout = orig;
-        }
-        state.original_stdout = None;
-    }
-    state.buf = core::ptr::null_mut();
-    state.buf_size = 0;
-    state.len = 0;
-}
-
-// Statically registered commands.
-static_command!(
-    TEST_CMD,
-    c"mock_success".as_ptr(),
-    c"mock_success help".as_ptr(),
-    mock_success_callback,
-    CMD_AVAIL_NORMAL
-);
-
-static_command!(
-    MOCK_FAILURE,
-    c"mock_failure".as_ptr(),
-    core::ptr::null(),
-    mock_failure_callback,
-    CMD_AVAIL_NORMAL
-);
-
-static_command!(
-    CMD_MOCK_ALWAYS,
-    c"mock_avail_always".as_ptr(),
-    c"mock_avail_always help".as_ptr(),
-    mock_success_callback,
-    CMD_AVAIL_ALWAYS
-);
-
-static MOCK_CALL_COUNT: AtomicI32 = AtomicI32::new(0);
-
-unsafe extern "C" fn mock_success_callback(
-    _argc: c_int,
-    _argv: *const CmdArgs,
-    _flags: u32,
-) -> c_int {
-    MOCK_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
-    zx_status!(Status::OK)
-}
-
-unsafe extern "C" fn mock_failure_callback(
-    _argc: c_int,
-    _argv: *const CmdArgs,
-    _flags: u32,
-) -> c_int {
-    MOCK_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
-    zx_status!(Status::INVALID_ARGS)
-}
-
-fn contains_command_help(output: &[u8], name: &[u8], help: &[u8]) -> bool {
-    output
-        .split(|&b| b == b'\n')
-        .any(|line| line.starts_with(b"\t") && line[1..].starts_with(name) && line.ends_with(help))
-}
-
-fn find_command_index(output: &[u8], name: &[u8]) -> Option<usize> {
-    for (idx, line) in output.split(|&b| b == b'\n').enumerate() {
-        if line.starts_with(b"\t") && line[1..].starts_with(name) {
-            return Some(idx);
-        }
-    }
-    None
-}
-
 /// Tests for the kernel console.
-#[cfg(ktest)]
+#[cfg(all(console_enabled, ktest))]
 #[unittest::test_suite(name = "console_rust")]
 mod console_tests {
+
+    use crate::console_rust::console::{
+        CMD_AVAIL_ALWAYS, CMD_AVAIL_NORMAL, CMD_FLAG_PANIC, Cmd, CmdArgs, static_command,
+    };
+    use core::ffi::c_int;
+    use core::sync::atomic::{AtomicI32, Ordering};
+    use zx_status::Status;
+
+    macro_rules! zx_status {
+        ($status:expr) => {
+            $status.into_raw()
+        };
+    }
+
+    // FFI imports.
+    unsafe extern "C" {
+        static __start_commands: Cmd;
+        static __stop_commands: Cmd;
+        fn rust_console_match_command(name: *const core::ffi::c_char, mask: u8) -> *const Cmd;
+        fn rust_console_get_echo() -> bool;
+        fn rust_console_get_exit() -> bool;
+        fn rust_console_set_exit(val: bool);
+        fn console_run_script_locked(string: *const core::ffi::c_char) -> c_int;
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct FILE {
+        write: unsafe extern "C" fn(
+            *mut core::ffi::c_void,
+            *const core::ffi::c_char,
+            usize,
+        ) -> core::ffi::c_int,
+        ptr: *mut core::ffi::c_void,
+    }
+
+    unsafe extern "C" {
+        static mut gStdout: FILE;
+    }
+
+    struct CapturerState {
+        buf: *mut u8,
+        buf_size: usize,
+        len: usize,
+        original_stdout: Option<FILE>,
+    }
+
+    struct SyncUnsafeCell<T>(core::cell::UnsafeCell<T>);
+
+    // SAFETY: This is safe because we only run tests sequentially in the kernel console test thread.
+    unsafe impl<T> Sync for SyncUnsafeCell<T> {}
+
+    static CAPTURER_STATE: SyncUnsafeCell<CapturerState> =
+        SyncUnsafeCell(core::cell::UnsafeCell::new(CapturerState {
+            buf: core::ptr::null_mut(),
+            buf_size: 0,
+            len: 0,
+            original_stdout: None,
+        }));
+
+    unsafe extern "C" fn write_callback(
+        _ptr: *mut core::ffi::c_void,
+        str_ptr: *const core::ffi::c_char,
+        len: usize,
+    ) -> core::ffi::c_int {
+        let state = unsafe { &mut *CAPTURER_STATE.0.get() };
+        if state.buf.is_null() || state.buf_size == 0 {
+            return 0;
+        }
+        let to_copy = core::cmp::min(len, state.buf_size - 1 - state.len);
+        if to_copy > 0 {
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    str_ptr as *const u8,
+                    state.buf.add(state.len),
+                    to_copy,
+                );
+            }
+            state.len += to_copy;
+            unsafe { *state.buf.add(state.len) = 0 };
+        }
+        len as core::ffi::c_int
+    }
+
+    unsafe fn test_capture_stdout_start(buf: *mut u8, size: usize) {
+        let state = unsafe { &mut *CAPTURER_STATE.0.get() };
+        state.buf = buf;
+        state.buf_size = size;
+        state.len = 0;
+        unsafe { *state.buf = 0 };
+        unsafe {
+            state.original_stdout = Some(gStdout);
+            gStdout = FILE { write: write_callback, ptr: core::ptr::null_mut() };
+        }
+    }
+
+    unsafe fn test_capture_stdout_stop() {
+        let state = unsafe { &mut *CAPTURER_STATE.0.get() };
+        if let Some(orig) = state.original_stdout {
+            unsafe {
+                gStdout = orig;
+            }
+            state.original_stdout = None;
+        }
+        state.buf = core::ptr::null_mut();
+        state.buf_size = 0;
+        state.len = 0;
+    }
+
+    // Statically registered commands.
+    static_command!(
+        TEST_CMD,
+        c"mock_success".as_ptr(),
+        c"mock_success help".as_ptr(),
+        mock_success_callback,
+        CMD_AVAIL_NORMAL
+    );
+
+    static_command!(
+        MOCK_FAILURE,
+        c"mock_failure".as_ptr(),
+        core::ptr::null(),
+        mock_failure_callback,
+        CMD_AVAIL_NORMAL
+    );
+
+    static_command!(
+        CMD_MOCK_ALWAYS,
+        c"mock_avail_always".as_ptr(),
+        c"mock_avail_always help".as_ptr(),
+        mock_success_callback,
+        CMD_AVAIL_ALWAYS
+    );
+
+    static MOCK_CALL_COUNT: AtomicI32 = AtomicI32::new(0);
+
+    unsafe extern "C" fn mock_success_callback(
+        _argc: c_int,
+        _argv: *const CmdArgs,
+        _flags: u32,
+    ) -> c_int {
+        MOCK_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+        zx_status!(Status::OK)
+    }
+
+    unsafe extern "C" fn mock_failure_callback(
+        _argc: c_int,
+        _argv: *const CmdArgs,
+        _flags: u32,
+    ) -> c_int {
+        MOCK_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+        zx_status!(Status::INVALID_ARGS)
+    }
+
+    fn contains_command_help(output: &[u8], name: &[u8], help: &[u8]) -> bool {
+        output.split(|&b| b == b'\n').any(|line| {
+            line.starts_with(b"\t") && line[1..].starts_with(name) && line.ends_with(help)
+        })
+    }
+
+    fn find_command_index(output: &[u8], name: &[u8]) -> Option<usize> {
+        for (idx, line) in output.split(|&b| b == b'\n').enumerate() {
+            if line.starts_with(b"\t") && line[1..].starts_with(name) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
     use unittest::{
         assert_eq, assert_nonnull, expect_eq, expect_false, expect_lt, expect_ne, expect_true,
     };
@@ -186,10 +184,10 @@ mod console_tests {
     /// Verify size and alignment compatibility with C++ structs.
     #[test]
     fn console_abi_test() {
-        assert_eq!(core::mem::size_of::<console_rust::CmdArgs>(), 40);
-        assert_eq!(core::mem::align_of::<console_rust::CmdArgs>(), 8);
-        assert_eq!(core::mem::size_of::<console_rust::Cmd>(), 32);
-        assert_eq!(core::mem::align_of::<console_rust::Cmd>(), 8);
+        assert_eq!(core::mem::size_of::<CmdArgs>(), 40);
+        assert_eq!(core::mem::align_of::<CmdArgs>(), 8);
+        assert_eq!(core::mem::size_of::<Cmd>(), 32);
+        assert_eq!(core::mem::align_of::<Cmd>(), 8);
     }
 
     /// Test echo command callback in Rust
@@ -356,7 +354,7 @@ mod console_tests {
             test_capture_stdout_start(buf_ptr, 4096);
         }
         // Execute command and stop capturing stdout.
-        let res = unsafe { cb(1, core::ptr::null(), console_rust::CMD_FLAG_PANIC) };
+        let res = unsafe { cb(1, core::ptr::null(), CMD_FLAG_PANIC) };
         unsafe {
             test_capture_stdout_stop();
         }
@@ -378,32 +376,32 @@ mod console_tests {
         // mock_success (CMD_AVAIL_NORMAL) should NOT be printed in panic mode.
         expect_false!(contains_command_help(output, b"mock_success", b"mock_success help"));
     }
-}
 
-// Verifies that the test command is registered correctly from the Rust side.
-// We must expose this via FFI to ensure the C++ tests runner links this file.
-// The alternative would be to move these tests directly into
-// `zircon/kernel/lib/console/rust/src/lib.rs`, but keeping them in a separate
-// test crate avoids cluttering the main library with mocks and helpers.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn command_visibility_from_rust_test() -> bool {
-    unsafe {
-        let start = &__start_commands as *const console_rust::Cmd;
-        let stop = &__stop_commands as *const console_rust::Cmd;
-        let len = stop.offset_from(start) as usize;
-        let commands = core::slice::from_raw_parts(start, len);
+    // Verifies that the test command is registered correctly from the Rust side.
+    // We must expose this via FFI to ensure the C++ tests runner links this file.
+    // The alternative would be to move these tests directly into
+    // `zircon/kernel/lib/console/rust/src/lib.rs`, but keeping them in a separate
+    // test crate avoids cluttering the main library with mocks and helpers.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn command_visibility_from_rust_test() -> bool {
+        unsafe {
+            let start = &__start_commands as *const Cmd;
+            let stop = &__stop_commands as *const Cmd;
+            let len = stop.offset_from(start) as usize;
+            let commands = core::slice::from_raw_parts(start, len);
 
-        for cmd in commands {
-            if core::ffi::CStr::from_ptr(cmd.cmd_str) == c"mock_success" {
-                if core::ffi::CStr::from_ptr(cmd.help_str) != c"mock_success help" {
-                    return false;
+            for cmd in commands {
+                if core::ffi::CStr::from_ptr(cmd.cmd_str) == c"mock_success" {
+                    if core::ffi::CStr::from_ptr(cmd.help_str) != c"mock_success help" {
+                        return false;
+                    }
+                    if cmd.availability_mask != CMD_AVAIL_NORMAL {
+                        return false;
+                    }
+                    return true;
                 }
-                if cmd.availability_mask != CMD_AVAIL_NORMAL {
-                    return false;
-                }
-                return true;
             }
         }
+        false
     }
-    false
 }

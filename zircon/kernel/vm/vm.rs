@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use kernel::types::PAddr;
+use crate::kernel::types::PAddr;
 
 unsafe extern "C" {
     fn cpp_vaddr_to_paddr(va: *const core::ffi::c_void) -> PAddr;

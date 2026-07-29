@@ -10,7 +10,7 @@ use super::thread_dispatcher_ffi::{
 use object_constants_rs as object_constants;
 use zx_status::Status;
 
-pub use kernel::types::cpu_mask_t;
+pub use crate::kernel::types::cpu_mask_t;
 
 /// Opaque byte container matching C++ `SchedulerState::BaseProfile`.
 #[repr(C, align(8))]

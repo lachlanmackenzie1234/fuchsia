@@ -5,9 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 use super::page_state::VmPageState;
+use crate::kernel::types::PAddr;
 use core::ffi::c_void;
 use core::ptr::NonNull;
-use kernel::types::PAddr;
 
 unsafe extern "C" {
     fn cpp_get_count(state: VmPageState) -> u64;

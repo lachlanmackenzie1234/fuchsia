@@ -4,17 +4,15 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
-kernel_rust_crate("console_tests_rust") {
-  testonly = true
-  sources = [ "src/lib.rs" ]
+kernel_rust_mod("console_tests_rust") {
+  source_root = "src/mod.rs"
+  sources = [ "src/mod.rs" ]
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/zr",
-    "//zircon/kernel/lib/console:console_rust",
     "//zircon/kernel/lib/unittest:unittest-rs",
-    "//zircon/kernel/platform:platform-rs",
   ]
 }
 

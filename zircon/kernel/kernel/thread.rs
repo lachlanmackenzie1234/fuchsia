@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::platform_rs::timer::DurationMono;
 use core::ffi::{c_char, c_void};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use platform_rs::DurationMono;
 use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 

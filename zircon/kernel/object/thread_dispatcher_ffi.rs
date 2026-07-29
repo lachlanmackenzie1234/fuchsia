@@ -48,6 +48,6 @@ unsafe extern "C" {
     /// `mask` is the bitmask of CPUs to which the thread can be scheduled.
     pub fn cpp_thread_dispatcher_set_soft_affinity(
         thread: *mut ThreadDispatcher,
-        mask: kernel::types::cpu_mask_t,
+        mask: crate::kernel::types::cpu_mask_t,
     ) -> zx_status_t;
 }

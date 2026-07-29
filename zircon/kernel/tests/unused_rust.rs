@@ -8,7 +8,7 @@
 // working on bringing up more functionality in Rust.  At the moment, this
 // code is not actually used by the kernel.
 
+use console_env as _;
 use counters_rs as _;
 use debug as _;
 use ksync as _;
-use platform_rs as _;

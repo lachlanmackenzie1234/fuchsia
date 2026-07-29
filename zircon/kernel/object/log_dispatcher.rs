@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::debuglog_rs::{DlogReaderStorage, dlog_record_t, dlog_write};
 use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
-use debuglog_rs::{DlogReaderStorage, dlog_record_t, dlog_write};
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};

@@ -16,8 +16,8 @@ macro_rules! resolve_string {
     ($string:literal) => {{
         #[unsafe(link_section = "__fxt_interned_string_table")]
         #[used]
-        static STRING: ::ktrace_rs::InternedString =
-            unsafe { ::ktrace_rs::InternedString::new_raw(concat!($string, "\0").as_ptr()) };
+        static STRING: crate::ktrace_rs::InternedString =
+            unsafe { crate::ktrace_rs::InternedString::new_raw(concat!($string, "\0").as_ptr()) };
         &STRING
     }};
 }
@@ -30,7 +30,7 @@ macro_rules! resolve_category {
         $category
     };
     ($category:literal) => {{
-        ::ktrace_rs::declare_interned_category!(CATEGORY, $category, extern);
+        crate::ktrace_rs::declare_interned_category!(CATEGORY, $category, extern);
         CATEGORY
     }};
 }
@@ -46,24 +46,24 @@ macro_rules! instant {
     ($category:tt, $label:tt, $context:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::Instant,
+                    crate::ktrace_rs::EventType::Instant,
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::timer_current_boot_ticks(),
                     $context,
                     None,
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
         }
     };
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::instant!($category, $label, ::ktrace_rs::Context::Thread $(, $key => $val)*)
+        $crate::instant!($category, $label, crate::ktrace_rs::Context::Thread $(, $key => $val)*)
     };
 }
 
@@ -72,7 +72,7 @@ macro_rules! instant {
 #[macro_export]
 macro_rules! cpu_instant {
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::instant!($category, $label, ::ktrace_rs::Context::Cpu $(, $key => $val)*)
+        $crate::instant!($category, $label, crate::ktrace_rs::Context::Cpu $(, $key => $val)*)
     };
 }
 
@@ -88,24 +88,24 @@ macro_rules! duration_begin {
     ($category:tt, $label:tt, $context:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::DurationBegin,
+                    crate::ktrace_rs::EventType::DurationBegin,
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::timer_current_boot_ticks(),
                     $context,
                     None,
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
         }
     };
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::duration_begin!($category, $label, ::ktrace_rs::Context::Thread $(, $key => $val)*)
+        $crate::duration_begin!($category, $label, crate::ktrace_rs::Context::Thread $(, $key => $val)*)
     };
 }
 
@@ -114,7 +114,7 @@ macro_rules! duration_begin {
 #[macro_export]
 macro_rules! cpu_duration_begin {
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::duration_begin!($category, $label, ::ktrace_rs::Context::Cpu $(, $key => $val)*)
+        $crate::duration_begin!($category, $label, crate::ktrace_rs::Context::Cpu $(, $key => $val)*)
     };
 }
 
@@ -130,24 +130,24 @@ macro_rules! duration_end {
     ($category:tt, $label:tt, $context:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::DurationEnd,
+                    crate::ktrace_rs::EventType::DurationEnd,
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::timer_current_boot_ticks(),
                     $context,
                     None,
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
         }
     };
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::duration_end!($category, $label, ::ktrace_rs::Context::Thread $(, $key => $val)*)
+        $crate::duration_end!($category, $label, crate::ktrace_rs::Context::Thread $(, $key => $val)*)
     };
 }
 
@@ -156,7 +156,7 @@ macro_rules! duration_end {
 #[macro_export]
 macro_rules! cpu_duration_end {
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::duration_end!($category, $label, ::ktrace_rs::Context::Cpu $(, $key => $val)*)
+        $crate::duration_end!($category, $label, crate::ktrace_rs::Context::Cpu $(, $key => $val)*)
     };
 }
 
@@ -174,17 +174,17 @@ macro_rules! counter {
     ($category:tt, $label:tt, $counter_id:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::Counter,
+                    crate::ktrace_rs::EventType::Counter,
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::timer_current_boot_ticks(),
-                    ::ktrace_rs::Context::Thread,
+                    crate::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::Context::Thread,
                     Some($counter_id as u64),
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
@@ -204,17 +204,17 @@ macro_rules! flow_begin {
     ($category:tt, $label:tt, $flow_id:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::FlowBegin,
+                    crate::ktrace_rs::EventType::FlowBegin,
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::timer_current_boot_ticks(),
-                    ::ktrace_rs::Context::Thread,
+                    crate::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::Context::Thread,
                     Some($flow_id as u64),
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
@@ -234,17 +234,17 @@ macro_rules! flow_step {
     ($category:tt, $label:tt, $flow_id:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::FlowStep,
+                    crate::ktrace_rs::EventType::FlowStep,
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::timer_current_boot_ticks(),
-                    ::ktrace_rs::Context::Thread,
+                    crate::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::Context::Thread,
                     Some($flow_id as u64),
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
@@ -264,17 +264,17 @@ macro_rules! flow_end {
     ($category:tt, $label:tt, $flow_id:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::FlowEnd,
+                    crate::ktrace_rs::EventType::FlowEnd,
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::timer_current_boot_ticks(),
-                    ::ktrace_rs::Context::Thread,
+                    crate::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::Context::Thread,
                     Some($flow_id as u64),
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
@@ -294,11 +294,11 @@ macro_rules! flow_end {
 #[macro_export]
 macro_rules! begin_scope {
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        ::ktrace_rs::KTraceScope::begin(
+        crate::ktrace_rs::KTraceScope::begin(
             $crate::resolve_category!($category),
             $crate::resolve_string!($label),
-            ::ktrace_rs::Context::Thread,
-            &[$(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
+            crate::ktrace_rs::Context::Thread,
+            &[$(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
         )
     };
 }
@@ -308,11 +308,11 @@ macro_rules! begin_scope {
 #[macro_export]
 macro_rules! cpu_begin_scope {
     ($category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        ::ktrace_rs::KTraceScope::begin(
+        crate::ktrace_rs::KTraceScope::begin(
             $crate::resolve_category!($category),
             $crate::resolve_string!($label),
-            ::ktrace_rs::Context::Cpu,
-            &[$(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
+            crate::ktrace_rs::Context::Cpu,
+            &[$(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
         )
     };
 }
@@ -324,13 +324,13 @@ macro_rules! begin_scope_cond {
     ($cond:expr, $category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if $cond && ktrace.is_category_enabled(category) {
-                Some(::ktrace_rs::KTraceScope::begin(
+                Some(crate::ktrace_rs::KTraceScope::begin(
                     category,
                     $crate::resolve_string!($label),
-                    ::ktrace_rs::Context::Thread,
-                    &[$(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
+                    crate::ktrace_rs::Context::Thread,
+                    &[$(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
                 ))
             } else {
                 None
@@ -352,24 +352,24 @@ macro_rules! complete {
     ($category:tt, $label:tt, $start_timestamp:expr, $context:expr $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_event(
-                    ::ktrace_rs::EventType::DurationComplete,
+                    crate::ktrace_rs::EventType::DurationComplete,
                     category,
                     $crate::resolve_string!($label),
                     $start_timestamp,
                     $context,
-                    Some(::ktrace_rs::timer_current_boot_ticks().0 as u64),
+                    Some(crate::ktrace_rs::timer_current_boot_ticks().0 as u64),
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
         }
     };
     ($category:tt, $label:tt, $start_timestamp:expr $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::complete!($category, $label, $start_timestamp, ::ktrace_rs::Context::Thread $(, $key => $val)*)
+        $crate::complete!($category, $label, $start_timestamp, crate::ktrace_rs::Context::Thread $(, $key => $val)*)
     };
 }
 
@@ -378,7 +378,7 @@ macro_rules! complete {
 #[macro_export]
 macro_rules! cpu_complete {
     ($category:tt, $label:tt, $start_timestamp:expr $(, $key:tt => $val:expr)* $(,)?) => {
-        $crate::complete!($category, $label, $start_timestamp, ::ktrace_rs::Context::Cpu $(, $key => $val)*)
+        $crate::complete!($category, $label, $start_timestamp, crate::ktrace_rs::Context::Cpu $(, $key => $val)*)
     };
 }
 
@@ -395,14 +395,14 @@ macro_rules! kernel_object {
     ($category:tt, $koid:expr, $obj_type:expr, $name:tt $(, $key:tt => $val:expr)* $(,)?) => {
         {
             let category = $crate::resolve_category!($category);
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             if ktrace.is_category_enabled(category) {
                 ktrace.emit_kernel_object_outlined(
                     $koid as u64,
                     $obj_type as u32,
                     $crate::resolve_string!($name),
                     &[
-                        $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
                 );
             }
@@ -422,13 +422,13 @@ macro_rules! kernel_object {
 macro_rules! kernel_object_always {
     ($koid:expr, $obj_type:expr, $name:tt $(, $key:tt => $val:expr)* $(,)?) => {
         {
-            let ktrace = ::ktrace_rs::KTrace::get_instance();
+            let ktrace = crate::ktrace_rs::KTrace::get_instance();
             ktrace.emit_kernel_object_outlined(
                 $koid as u64,
                 $obj_type as u32,
                 $crate::resolve_string!($name),
                 &[
-                    $(::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                    $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                 ],
             );
         }

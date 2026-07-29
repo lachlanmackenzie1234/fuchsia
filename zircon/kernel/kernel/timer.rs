@@ -140,9 +140,9 @@ zr::static_assert!(core::mem::align_of::<Timer>() == 8);
 #[unittest::test_suite(name = "rust_timer")]
 mod tests {
     use super::{Timer, ZX_CLOCK_MONOTONIC};
+    use crate::platform_rs::timer::DurationMono;
     use core::sync::atomic::{AtomicBool, Ordering};
     use pin_init::stack_pin_init;
-    use platform_rs::DurationMono;
 
     unsafe extern "C" {
         fn cpp_current_mono_time() -> i64;
@@ -175,7 +175,7 @@ mod tests {
                 success = true;
                 break;
             }
-            let _ = crate::thread::sleep_relative(DurationMono(1_000_000)); // 1ms
+            let _ = crate::kernel::thread::sleep_relative(DurationMono(1_000_000)); // 1ms
         }
 
         unittest::expect_true!(success);
@@ -201,7 +201,7 @@ mod tests {
         unittest::expect_true!(cancelled);
 
         // Sleep for a short duration to ensure no callback is running.
-        let _ = crate::thread::sleep_relative(DurationMono(1_000_000)); // 1ms
+        let _ = crate::kernel::thread::sleep_relative(DurationMono(1_000_000)); // 1ms
 
         // Verify that it did not fire.
         unittest::expect_false!(fired.load(Ordering::Acquire));

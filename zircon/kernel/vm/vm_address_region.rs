@@ -7,12 +7,12 @@
 use super::arch_vm_aspace::ArchMmuFlags;
 use super::vm_mapping::VmMapping;
 use super::vm_object::VmObject;
+use crate::kernel::types::VAddr;
 use core::ffi::{CStr, c_char};
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
 use fbl::RefPtr;
 use kalloc::AllocError;
-use kernel::types::VAddr;
 use zr::ToMutPtr;
 use zx_status::Status;
 

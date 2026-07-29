@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::kernel::types::PAddr;
 use core::marker::{PhantomData, PhantomPinned};
-use kernel::types::PAddr;
 use zr::ToMutPtr;
 use zx_status::Status;
 

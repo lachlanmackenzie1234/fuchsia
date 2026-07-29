@@ -4,29 +4,26 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 use unittest as _;
 
+use crate::kernel::thread::{FxtRef, ThreadPtr};
+pub use crate::platform_rs::timer::{InstantBootTicks, timer_current_boot_ticks};
 use arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use core::cell::UnsafeCell;
 use core::mem::{MaybeUninit, size_of};
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 use core::{ffi, ptr, slice};
 use kalloc::Box;
-use kernel::thread::{FxtRef, ThreadPtr};
 pub use kstring::declare_interned_category;
 use kstring::declare_interned_string;
 use kstring::interned_category::InternedCategory;
 pub use kstring::interned_string::InternedString;
-pub use platform_rs::{InstantBootTicks, timer_current_boot_ticks};
 use spsc_buffer::{Buffer, NoOpAllocator, Reservation};
 use zx_status::Status;
 
 // Re-export the ktrace macros from the sub-crate.
+#[allow(unused_imports)]
 pub use ktrace_macro::*;
-#[allow(unused_extern_crates)]
-extern crate self as ktrace_rs;
 
 // LINT.IfChange(KTraceState)
 #[repr(C)]
@@ -779,10 +776,10 @@ pub unsafe extern "C" fn rust_ktrace_init_cpu_buffer(
 #[cfg(all(not(gcc), ktest))]
 #[unittest::test_suite(name = "ktrace_rust")]
 mod tests {
+    use crate::kernel::thread::{FxtRef, ThreadPtr};
     use arch_rs::{InterruptDisableGuard, curr_cpu_num, max_num_cpus};
     use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use core::{ffi, ptr};
-    use kernel::thread::{FxtRef, ThreadPtr};
     use spsc_buffer::Buffer;
     use unittest::{
         assert_eq, assert_ok, expect_eq, expect_false, expect_ne, expect_true, unwrap_ok,

@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::kernel::thread::restricted_enter;
 use crate::object::HandleValue;
 use debug::ltracef;
-use kernel::thread::restricted_enter;
 use syscalls_macro::syscall;
 use user_copy::UserOutPtr;
 use zx_status::{ErrorStatus, Status};

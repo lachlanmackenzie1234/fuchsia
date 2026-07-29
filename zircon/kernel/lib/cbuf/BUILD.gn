@@ -8,6 +8,7 @@ import("//build/components.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/rust/rustc_library.gni")
 import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 static_library("cbuf") {
@@ -38,8 +39,8 @@ rustc_library("cbuf-rs") {
 }
 
 # TODO(b/517130174): Refactor these tests once fxr/1631555 lands.
-kernel_rust_crate("cbuf-rs-tests") {
-  testonly = true
+kernel_rust_mod("cbuf-rs-tests") {
+  output_name = "cbuf_rs_tests"
   source_root = "tests/kernel.rs"
   sources = [ "tests/kernel.rs" ]
   deps = [
@@ -47,7 +48,6 @@ kernel_rust_crate("cbuf-rs-tests") {
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//third_party/rust_crates:pin-init",
-    "//zircon/kernel/kernel:kernel-rs",
   ]
 }
 

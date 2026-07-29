@@ -6,13 +6,13 @@
 
 use super::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
 use super::vm_address_region::VmAddressRegion;
+use crate::kernel::thread::ThreadPtr;
+use crate::kernel::types::PAddr;
 use core::ffi::{CStr, c_char, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
 use fbl::RefPtr;
 use kalloc::AllocError;
-use kernel::thread::ThreadPtr;
-use kernel::types::PAddr;
 use zr::ToMutPtr;
 use zx_status::Status;
 

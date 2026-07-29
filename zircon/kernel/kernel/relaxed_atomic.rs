@@ -21,10 +21,9 @@ pub struct RelaxedAtomic<T> {
 
 // Use a macro to stamp out a bunch of implementations until generic_atomic is stabilized.
 // https://github.com/rust-lang/rust/issues/130539.
-#[macro_export]
 macro_rules! impl_relaxed_atomic {
     ($atomic_type:ident, $prim_type:ty) => {
-        impl $crate::relaxed_atomic::RelaxedAtomic<$atomic_type> {
+        impl RelaxedAtomic<$atomic_type> {
             /// Creates a new `RelaxedAtomic`.
             #[inline]
             pub const fn new(value: $prim_type) -> Self {
@@ -71,7 +70,7 @@ macro_rules! impl_relaxed_atomic {
             }
         }
         paste! {
-            pub type [<Relaxed $atomic_type>] = $crate::relaxed_atomic::RelaxedAtomic<$atomic_type>;
+            pub type [<Relaxed $atomic_type>] = RelaxedAtomic<$atomic_type>;
         }
     };
 }

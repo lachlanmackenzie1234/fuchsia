@@ -4,10 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::kernel::types::PAddr;
 use core::ops::Deref;
 use core::ptr::NonNull;
 use fbl::{IsOpaqueRefCounted, OpaqueRefCountedFacade, RefPtr};
-use kernel::types::PAddr;
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use zr::ToMutPtr;
 use zx_status::Status;

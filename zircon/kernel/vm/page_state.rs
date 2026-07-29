@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use kernel::relaxed_atomic::RelaxedAtomicI64;
+use crate::kernel::relaxed_atomic::RelaxedAtomicI64;
 
 /// Defines the state of a VM page (`vm_page_t`).
 ///

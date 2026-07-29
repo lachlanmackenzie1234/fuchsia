@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 use cbuf::Cbuf;
 use core::ffi::{c_char, c_void};
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -123,14 +121,15 @@ pub extern "C" fn test_cbuf_read_write_race() -> bool {
     // SAFETY: we pass reader_thread_entry and valid pointers. The thread is joined
     // before `cbuf` (and `buf`) goes out of scope.
     unsafe {
-        let thread = match kernel::thread::spawn(thread_name, reader_thread_entry, cbuf_ptr) {
+        let thread = match crate::kernel::thread::spawn(thread_name, reader_thread_entry, cbuf_ptr)
+        {
             Ok(t) => t,
             Err(_) => return false,
         };
 
         for _ in 0..1000 {
             while cbuf.write_char(b'A') == 0 {
-                kernel::thread::r#yield();
+                crate::kernel::thread::r#yield();
             }
         }
 
@@ -319,19 +318,20 @@ pub extern "C" fn test_cbuf_blocking_read() -> bool {
     let ctx_ptr = &mut ctx as *mut BlockingReadContext as *mut c_void;
 
     unsafe {
-        let thread = match kernel::thread::spawn(thread_name, blocking_reader_entry, ctx_ptr) {
+        let thread = match crate::kernel::thread::spawn(thread_name, blocking_reader_entry, ctx_ptr)
+        {
             Ok(t) => t,
             Err(_) => return false,
         };
 
         // Wait until the reader thread is about to read.
         while state.load(Ordering::SeqCst) < 1 {
-            kernel::thread::r#yield();
+            crate::kernel::thread::r#yield();
         }
 
         // Wait until the reader thread is actually blocked.
         while !thread.is_blocked() {
-            kernel::thread::r#yield();
+            crate::kernel::thread::r#yield();
             // If it failed and exited, break.
             if state.load(Ordering::SeqCst) == 3 {
                 break;

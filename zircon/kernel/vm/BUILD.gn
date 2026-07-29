@@ -186,7 +186,6 @@ kernel_rust_mod("vm-rs") {
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
-    "//zircon/kernel/kernel:kernel-rs",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/kernel/switch:allow_dead_code",
     "//zircon/system/ulib/fbl/rust:fbl",

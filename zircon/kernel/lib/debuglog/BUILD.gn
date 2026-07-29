@@ -8,7 +8,7 @@ import("//build/config/current_target_tuple.gni")
 import("//build/config/sysroot.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/rust/rustc_bindgen.gni")
-import("//build/rust/rustc_library.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = [
@@ -26,6 +26,7 @@ source_set("debuglog") {
     "debuglog_ffi.cc",
   ]
   deps = [
+    ":debuglog-rs",
     "//sdk/lib/fit",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/crashlog",
@@ -105,9 +106,8 @@ rustc_library("debuglog-types") {
   ]
 }
 
-rustc_library("debuglog-rs") {
-  edition = "2024"
-  name = "debuglog_rs"
+kernel_rust_mod("debuglog-rs") {
+  output_name = "debuglog_rs"
   source_root = "debuglog.rs"
   sources = [ "debuglog.rs" ]
   deps = [
@@ -117,7 +117,5 @@ rustc_library("debuglog-rs") {
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
-    "//zircon/kernel/platform:platform-rs",
   ]
-  non_rust_deps = [ ":debuglog" ]
 }
