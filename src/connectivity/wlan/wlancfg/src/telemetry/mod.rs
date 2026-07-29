@@ -516,7 +516,11 @@ const TELEMETRY_EVENT_BUFFER_SIZE: usize = 100;
 const TELEMETRY_QUERY_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(15);
 
 pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
-    wlan_telemetry::TelemetryConfig { enable_connect_disconnect: true, ..Default::default() }
+    wlan_telemetry::TelemetryConfig {
+        enable_connect_disconnect: true,
+        device_mobility: wlan_telemetry::DeviceMobility::Stationary,
+        ..Default::default()
+    }
 }
 
 pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {

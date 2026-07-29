@@ -20,7 +20,7 @@ mod config;
 mod convert;
 mod processors;
 pub(crate) mod util;
-pub use crate::config::{CobaltAllowlist, TelemetryConfig};
+pub use crate::config::{CobaltAllowlist, DeviceMobility, TelemetryConfig};
 pub use crate::processors::connect_disconnect::DisconnectInfo;
 pub use crate::processors::pno_scan::PnoScanDisabledReason;
 pub use crate::processors::power::{IfacePowerLevel, UnclearPowerDemand};
@@ -195,6 +195,7 @@ pub fn serve_telemetry(
             &inspect_metadata_node,
             &inspect_metadata_path,
             &time_matrix_client,
+            config.device_mobility,
         )
     });
     let iface_logger = config

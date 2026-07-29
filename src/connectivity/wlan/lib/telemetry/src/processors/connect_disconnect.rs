@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::config::DeviceMobility;
 use crate::convert::{
     convert_channel_band, convert_is_owe_transition, convert_rssi_bucket, convert_security_type,
     convert_snr_bucket,
@@ -200,6 +201,7 @@ pub struct ConnectDisconnectLogger {
     last_connect_failure_at: Arc<Mutex<Option<fasync::BootInstant>>>,
     last_disconnect_at: Arc<Mutex<Option<fasync::MonotonicInstant>>>,
     daily_connect_stats: Mutex<DailyConnectStats>,
+    device_mobility: DeviceMobility,
 }
 
 impl ConnectDisconnectLogger {
@@ -209,6 +211,7 @@ impl ConnectDisconnectLogger {
         inspect_metadata_node: &InspectNode,
         inspect_metadata_path: &str,
         time_matrix_client: &S,
+        device_mobility: DeviceMobility,
     ) -> Self {
         let connect_events = inspect_node.create_child("connect_events");
         let disconnect_events = inspect_node.create_child("disconnect_events");
@@ -237,6 +240,7 @@ impl ConnectDisconnectLogger {
             last_connect_failure_at: Arc::new(Mutex::new(None)),
             last_disconnect_at: Arc::new(Mutex::new(None)),
             daily_connect_stats: Mutex::new(DailyConnectStats::new(fasync::BootInstant::now())),
+            device_mobility,
         };
         this.log_connection_state();
         this
@@ -473,15 +477,21 @@ impl ConnectDisconnectLogger {
     }
 
     pub async fn log_disconnect(&self, info: &DisconnectInfo) {
-        // Mobile devices can be considered idle if they disconnect for reasons associated with
-        // going out of range or are commanded to disconnect by upper layers.
-        //
-        // TODO(500107852): Update this logic to account for non-mobile devices when such devices
-        // use the telemetry library.
-        if !info.disconnect_source.should_log_for_mobile_device() {
-            self.update_connection_state(ConnectionState::Idle(IdleState {}));
-        } else {
-            self.update_connection_state(ConnectionState::Disconnected(DisconnectedState {}));
+        match self.device_mobility {
+            DeviceMobility::Mobile => {
+                // Mobile devices can be considered idle if they disconnect for reasons associated
+                // with going out of range or are commanded to disconnect by upper layers.
+                if !info.disconnect_source.should_log_for_mobile_device() {
+                    self.update_connection_state(ConnectionState::Idle(IdleState {}));
+                } else {
+                    self.update_connection_state(ConnectionState::Disconnected(
+                        DisconnectedState {},
+                    ));
+                }
+            }
+            DeviceMobility::Stationary => {
+                self.update_connection_state(ConnectionState::Disconnected(DisconnectedState {}));
+            }
         }
         let _prev = self.last_disconnect_at.lock().replace(fasync::MonotonicInstant::now());
         self.log_disconnect_inspect(info);
@@ -517,7 +527,9 @@ impl ConnectDisconnectLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        if info.disconnect_source.should_log_for_mobile_device() {
+        if self.device_mobility == DeviceMobility::Mobile
+            && info.disconnect_source.should_log_for_mobile_device()
+        {
             metric_events.push(MetricEvent {
                 metric_id: metrics::DISCONNECT_OCCURRENCE_FOR_MOBILE_DEVICE_METRIC_ID,
                 event_codes: vec![],
@@ -998,6 +1010,7 @@ mod tests {
             &harness.inspect_metadata_node,
             &harness.inspect_metadata_path,
             &client,
+            DeviceMobility::Mobile,
         );
         let bss = random_bss_description!();
         let mut log_connect_attempt = pin!(logger.handle_connect_attempt(
@@ -1076,6 +1089,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Log the event
@@ -1157,6 +1171,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Generate BSS Description
@@ -1236,6 +1251,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let bss_description = random_bss_description!(Wpa2);
@@ -1265,6 +1281,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let wmm_info = vec![0x80]; // U-APSD enabled
@@ -1335,6 +1352,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let bss_description = random_bss_description!(Wpa2);
@@ -1400,6 +1418,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let bss_description = random_bss_description!(Wpa2);
@@ -1462,6 +1481,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let mut bss = random_bss_description!(Wpa2);
@@ -1602,6 +1622,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Generate BSS Description
@@ -1644,6 +1665,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let mut test_fut = pin!(logger.handle_suspend_imminent());
@@ -1668,6 +1690,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let bss_description = random_bss_description!(Wpa2);
@@ -1720,6 +1743,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Log the event
@@ -1812,6 +1836,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Log the event
@@ -1898,6 +1923,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Log the event
@@ -1920,6 +1946,50 @@ mod tests {
         }
     }
 
+    #[test_case(
+        fidl_sme::DisconnectSource::Ap(fidl_sme::DisconnectCause {
+            mlme_event_name: fidl_sme::DisconnectMlmeEventName::DeauthenticateIndication,
+            reason_code: fidl_ieee80211::ReasonCode::UnspecifiedReason,
+        });
+        "mlme_disconnect_source_not_link_failed"
+    )]
+    #[test_case(
+        fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
+            mlme_event_name: fidl_sme::DisconnectMlmeEventName::DeauthenticateIndication,
+            reason_code: fidl_ieee80211::ReasonCode::MlmeLinkFailed,
+        });
+        "mlme_link_failed"
+    )]
+    #[test_case(
+        fidl_sme::DisconnectSource::User(fidl_sme::UserDisconnectReason::Unknown);
+        "user_disconnect_source"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_log_disconnect_for_stationary_device(disconnect_source: fidl_sme::DisconnectSource) {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            DeviceMobility::Stationary,
+        );
+
+        // Log the event
+        let disconnect_info = DisconnectInfo { disconnect_source, ..fake_disconnect_info() };
+        let mut test_fut = pin!(logger.log_disconnect(&disconnect_info));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let metrics = test_helper
+            .get_logged_metrics(metrics::DISCONNECT_OCCURRENCE_FOR_MOBILE_DEVICE_METRIC_ID);
+        assert!(metrics.is_empty());
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Disconnected(_));
+    }
+
     #[fuchsia::test]
     fn test_log_downtime_post_disconnect_on_reconnect() {
         let mut test_helper = setup_test();
@@ -1929,6 +1999,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Connect at 15th second
@@ -2002,6 +2073,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Log connect event to move state to connected
@@ -2050,6 +2122,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Log connect event to move state to connected
@@ -2099,6 +2172,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Log connect failure with credential rejected to move state to idle
@@ -2126,6 +2200,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let mut test_fut = pin!(logger.handle_client_connections_failed_to_start());
@@ -2154,6 +2229,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         let mut test_fut = pin!(logger.handle_client_connections_failed_to_stop());
@@ -2186,6 +2262,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Transition to initial state
@@ -2231,6 +2308,7 @@ mod tests {
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
         );
 
         // Transition to initial state

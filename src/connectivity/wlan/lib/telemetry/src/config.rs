@@ -4,6 +4,13 @@
 
 use std::collections::HashSet;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeviceMobility {
+    #[default]
+    Mobile,
+    Stationary,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TelemetryConfig {
     pub enable_connect_disconnect: bool,
@@ -16,6 +23,7 @@ pub struct TelemetryConfig {
     pub enable_toggle_logger: bool,
     pub enable_tx_power_scenario_logger: bool,
     pub enable_client_iface_counters_logger: bool,
+    pub device_mobility: DeviceMobility,
 }
 
 impl TelemetryConfig {
@@ -31,6 +39,7 @@ impl TelemetryConfig {
             enable_toggle_logger: true,
             enable_tx_power_scenario_logger: true,
             enable_client_iface_counters_logger: true,
+            device_mobility: DeviceMobility::Mobile,
         }
     }
 }
@@ -47,5 +56,22 @@ impl CobaltAllowlist {
             CobaltAllowlist::All => true,
             CobaltAllowlist::Only(set) => set.contains(&metric_id),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fuchsia::test]
+    fn test_telemetry_config_default() {
+        let config = TelemetryConfig::default();
+        assert_eq!(config.device_mobility, DeviceMobility::Mobile);
+    }
+
+    #[fuchsia::test]
+    fn test_telemetry_config_all() {
+        let config = TelemetryConfig::all();
+        assert_eq!(config.device_mobility, DeviceMobility::Mobile);
     }
 }
