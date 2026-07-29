@@ -185,10 +185,11 @@ impl JournalReader {
                     bail!("unexpected end of journal file");
                 }
             }
-            self.buf.as_mut_slice()[self.buf_range.end..].copy_from_slice(buffer.as_slice());
+            buffer.copy_to_slice(&mut self.buf.as_mut_slice()[self.buf_range.end..]);
 
-            let (contents_slice, checksum_slice) =
-                buffer.as_slice().split_at(bs - std::mem::size_of::<Checksum>());
+            let (contents_slice, checksum_slice) = self.buf.as_slice()
+                [self.buf_range.end..self.buf_range.end + bs]
+                .split_at(bs - std::mem::size_of::<Checksum>());
             let stored_checksum = LittleEndian::read_u64(checksum_slice);
 
             match verify_checksum(
@@ -328,7 +329,7 @@ mod tests {
         // Make the journal file a minimum of two blocks since reading to EOF is an error.
         let len = BLOCK_SIZE as usize * 2;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         write_items(FakeObjectHandle::new(object.clone()), &[4u32]).await;
 
@@ -351,7 +352,7 @@ mod tests {
         let handle = FakeObjectHandle::new(object.clone());
         let len = BLOCK_SIZE as usize * 2;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         write_items(FakeObjectHandle::new(object.clone()), &[4u32, 7u32]).await;
 
@@ -371,7 +372,7 @@ mod tests {
         let handle = FakeObjectHandle::new(object.clone());
         let len = BLOCK_SIZE as usize * 3;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let mut writer = JournalWriter::new(BLOCK_SIZE as usize, 0);
         writer.write_record(&4u32).unwrap();
@@ -397,7 +398,7 @@ mod tests {
         let handle = FakeObjectHandle::new(object.clone());
         let len = BLOCK_SIZE as usize * 3;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let mut reader = JournalReader::new(
             FakeObjectHandle::new(object.clone()),
@@ -413,7 +414,7 @@ mod tests {
         let handle = FakeObjectHandle::new(object.clone());
         let len = BLOCK_SIZE as usize * 3;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let mut writer = JournalWriter::new(BLOCK_SIZE as usize, 0);
         // Write one byte so that everything else is misaligned.
@@ -450,7 +451,7 @@ mod tests {
         let handle = FakeObjectHandle::new(object.clone());
         let len = BLOCK_SIZE as usize * 3;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         write_items(FakeObjectHandle::new(object.clone()), &[4u32, 7u32]).await;
 
@@ -530,7 +531,7 @@ mod tests {
         let handle = FakeObjectHandle::new(object.clone());
         let len = BLOCK_SIZE as usize * 3;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let mut writer = JournalWriter::new(BLOCK_SIZE as usize, 0);
         let len = 2 * (BLOCK_SIZE as usize - std::mem::size_of::<Checksum>());
@@ -564,7 +565,7 @@ mod tests {
         let handle = FakeObjectHandle::new(object.clone());
         let len = BLOCK_SIZE as usize * 3;
         let mut buf = handle.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(0u8);
+        buf.fill(0u8);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let mut writer = JournalWriter::new(BLOCK_SIZE as usize, 0);
         let len = BLOCK_SIZE as usize - std::mem::size_of::<Checksum>();
@@ -586,7 +587,7 @@ mod tests {
 
         reader.fill_buf().await.expect("fill_buf failed");
 
-        assert_eq!(&reader.buffer()[..len], &buf.as_slice()[..len]);
+        assert_eq!(&reader.buffer()[..len], &buf.subslice(..len).to_vec());
 
         reader.consume(len);
 

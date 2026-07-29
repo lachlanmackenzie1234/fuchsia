@@ -466,7 +466,7 @@ mod tests {
                 let device = fs.device();
                 for (handle, contents) in handles {
                     let mut buf = device.allocate_buffer(contents.len()).await;
-                    buf.as_mut_slice()[0..contents.len()].copy_from_slice(contents.as_bytes());
+                    buf.copy_from_slice(contents.as_bytes());
                     handle.write_or_append(None, buf.as_ref()).await.unwrap();
                 }
             }
@@ -500,14 +500,13 @@ mod tests {
 
         const CHUNK_READ_SIZE: usize = 131_072; /* 128 KiB */
         let mut inner_buff = image.allocate_buffer(CHUNK_READ_SIZE).await;
-        let outer_device = handle.owner().filesystem().device();
-        let mut outer_buff = outer_device.allocate_buffer(CHUNK_READ_SIZE).await;
+        let mut outer_buff = handle.allocate_buffer(CHUNK_READ_SIZE).await;
         let total = image.size();
         let mut offset = 0;
         while offset < total {
             let amount = std::cmp::min(total - offset, CHUNK_READ_SIZE as u64);
             image.read(offset, inner_buff.as_mut()).await.unwrap();
-            outer_buff.as_mut_slice().copy_from_slice(inner_buff.as_slice());
+            outer_buff.copy_from_buffer(inner_buff.as_ref());
             handle
                 .write_or_append(Some(offset), outer_buff.subslice(0..amount as usize))
                 .await

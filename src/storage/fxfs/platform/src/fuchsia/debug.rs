@@ -143,9 +143,8 @@ impl FileIo for InternalFile {
         let bytes = handle.read(start, buf.as_mut()).await.map_err(map_to_status)?;
         let end = std::cmp::min(offset + buffer.len() as u64, start + bytes as u64);
         if end > offset {
-            buffer[..(end - offset) as usize].copy_from_slice(
-                &buf.as_slice()[(offset - start) as usize..(end - start) as usize],
-            );
+            let target_range = (offset - start) as usize..(end - start) as usize;
+            buf.subslice(target_range).copy_to_slice(&mut buffer[..(end - offset) as usize]);
             Ok(end - start)
         } else {
             Ok(0)

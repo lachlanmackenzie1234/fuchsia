@@ -2122,7 +2122,7 @@ impl<'a> Flusher<'a> {
         info.serialize_with_version(&mut serialized_info)?;
 
         let mut buf = object_handle.allocate_buffer(serialized_info.len()).await;
-        buf.as_mut_slice()[..serialized_info.len()].copy_from_slice(&serialized_info[..]);
+        buf.copy_from_slice(&serialized_info);
         object_handle.txn_write(&mut transaction, 0u64, buf.as_ref()).await?;
 
         reservation_update = ReservationUpdate::new(tree::reservation_amount_from_layer_size(

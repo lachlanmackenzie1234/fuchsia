@@ -48,7 +48,8 @@ async fn save_device(device: DeviceHolder, path: &Path) -> Result<(), Error> {
     let mut offset: u64 = 0;
     while offset < IMAGE_BLOCKS * IMAGE_BLOCK_SIZE as u64 {
         device.read(offset, buf.as_mut()).await?;
-        writer.write_all(buf.as_ref().as_slice())?;
+        let data = buf.to_vec();
+        writer.write_all(&data)?;
         offset += device.block_size() as u64;
     }
     writer.finish()?;

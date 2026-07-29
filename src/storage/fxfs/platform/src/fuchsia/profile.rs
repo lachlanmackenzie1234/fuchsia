@@ -33,6 +33,7 @@ use std::mem::size_of;
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 use vfs::execution_scope::ActiveGuard;
 
 const FILE_OPEN_MARKER: u64 = u64::MAX;
@@ -214,9 +215,8 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                 let mut next_block = block_size;
                 let mut next_offset = size_of::<Self::MessageType>();
                 while next_offset <= actual {
-                    let msg = Self::MessageType::decode_from(
-                        &io_buf.as_slice()[local_offset..next_offset],
-                    );
+                    let data = io_buf.subslice(local_offset..next_offset);
+                    let msg = Self::MessageType::decode_from(data.as_ptr_slice());
 
                     local_offset = next_offset;
                     next_offset = local_offset + size_of::<Self::MessageType>();
@@ -301,7 +301,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                 if next_offset > next_block {
                     // Zero the remainder of the block. Stopping on block boundaries allows us to
                     // resize the I/O without supporting reading/writing half messages to a buffer.
-                    io_buf.as_mut_slice()[offset..next_block].fill(0);
+                    io_buf.as_mut().subslice_mut(offset..next_block).fill(0);
                     if next_block >= IO_SIZE {
                         recording_handle
                             .append(io_buf.as_ref())
@@ -316,11 +316,13 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                         next_block += block_size;
                     }
                 }
-                message.encode_to(&mut io_buf.as_mut_slice()[offset..next_offset]);
+                message.encode_to(
+                    io_buf.as_mut().subslice_mut(offset..next_offset).as_mut_ptr_slice(),
+                );
                 offset = next_offset;
             }
             if offset > 0 {
-                io_buf.as_mut_slice()[offset..next_block].fill(0);
+                io_buf.as_mut().subslice_mut(offset..next_block).fill(0);
                 recording_handle
                     .append(io_buf.subslice(0..next_block))
                     .await
@@ -427,8 +429,8 @@ trait Message: Eq + PartialEq + Sized + Send + Sync + std::hash::Hash + 'static 
 
     fn id(&self) -> Self::IdType;
     fn offset(&self) -> u64;
-    fn encode_to(&self, dest: &mut [u8]);
-    fn decode_from(src: &[u8]) -> Self;
+    fn encode_to(&self, dest: MutPtrByteSlice<'_>);
+    fn decode_from(src: PtrByteSlice<'_>) -> Self;
     fn is_zeroes(&self) -> bool;
     fn from_node_request(node: Arc<dyn FxNode>, offset: u64) -> Result<Self, Error>;
     fn is_open_marker(&self) -> bool;
@@ -466,12 +468,16 @@ impl Message for BlobMessage {
         self.offset
     }
 
-    fn encode_to(&self, dest: &mut [u8]) {
-        self.encode_to_impl(dest.try_into().unwrap());
+    fn encode_to(&self, mut dest: MutPtrByteSlice<'_>) {
+        let mut buf = [0u8; size_of::<Self>()];
+        self.encode_to_impl(&mut buf);
+        dest.copy_from_slice(&buf);
     }
 
-    fn decode_from(src: &[u8]) -> Self {
-        Self::decode_from_impl(src.try_into().unwrap())
+    fn decode_from(src: PtrByteSlice<'_>) -> Self {
+        let mut buf = [0u8; size_of::<Self>()];
+        src.copy_to_slice(&mut buf);
+        Self::decode_from_impl(&buf)
     }
 
     fn is_zeroes(&self) -> bool {
@@ -522,12 +528,16 @@ impl Message for FileMessage {
         self.offset
     }
 
-    fn encode_to(&self, dest: &mut [u8]) {
-        self.encode_to_impl(dest.try_into().unwrap())
+    fn encode_to(&self, mut dest: MutPtrByteSlice<'_>) {
+        let mut buf = [0u8; size_of::<Self>()];
+        self.encode_to_impl(&mut buf);
+        dest.copy_from_slice(&buf);
     }
 
-    fn decode_from(src: &[u8]) -> Self {
-        Self::decode_from_impl(src.try_into().unwrap())
+    fn decode_from(src: PtrByteSlice<'_>) -> Self {
+        let mut buf = [0u8; size_of::<Self>()];
+        src.copy_to_slice(&mut buf);
+        Self::decode_from_impl(&buf)
     }
 
     fn is_zeroes(&self) -> bool {
@@ -799,7 +809,7 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
 mod tests {
     use super::{
         BlobMessage, BlobVolume, FileMessage, FileRecordingHandle, FileVolume, IO_SIZE, Message,
-        RecordedVolume, Request, new_profile_state,
+        MutPtrByteSlice, PtrByteSlice, RecordedVolume, Request, new_profile_state,
     };
     use crate::fuchsia::file::FxFile;
     use crate::fuchsia::fxblob::blob::FxBlob;
@@ -881,7 +891,7 @@ mod tests {
                 delay.await;
             }
             // This relocking has a TOCTOU flavour, but it shouldn't matter for this application.
-            self.inner.lock().data.extend_from_slice(buf.as_slice());
+            buf.append_to(&mut self.inner.lock().data);
             Ok(buf.len() as u64)
         }
 
@@ -929,7 +939,7 @@ mod tests {
 
     #[async_trait]
     impl ReadObjectHandle for FakeReaderWriter {
-        async fn read(&self, offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+        async fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
             let delay = self.inner.lock().delays.pop();
             if let Some(delay) = delay {
                 delay.await;
@@ -939,7 +949,7 @@ mod tests {
             assert!(offset as usize <= inner.data.len());
             let offset_end = std::cmp::min(offset as usize + buf.len(), inner.data.len());
             let size = offset_end - offset as usize;
-            buf.as_mut_slice()[..size].clone_from_slice(&inner.data[offset as usize..offset_end]);
+            buf.subslice_mut(..size).copy_from_slice(&inner.data[offset as usize..offset_end]);
             Ok(size)
         }
 
@@ -952,8 +962,8 @@ mod tests {
     async fn test_encode_decode_blob() {
         let mut buf = [0u8; size_of::<BlobMessage>()];
         let m = BlobMessage { id: [88u8; 32].into(), offset: 77 };
-        m.encode_to(&mut buf.as_mut_slice());
-        let m2 = BlobMessage::decode_from(&buf);
+        m.encode_to(MutPtrByteSlice::from(&mut buf[..]));
+        let m2 = BlobMessage::decode_from(PtrByteSlice::from(&buf[..]));
         assert_eq!(m, m2);
     }
 
@@ -961,8 +971,8 @@ mod tests {
     async fn test_encode_decode_file() {
         let mut buf = [0u8; size_of::<FileMessage>()];
         let m = FileMessage { id: 88, offset: 77 };
-        m.encode_to(&mut buf.as_mut_slice());
-        let m2 = FileMessage::decode_from(&buf);
+        m.encode_to(MutPtrByteSlice::from(&mut buf[..]));
+        let m2 = FileMessage::decode_from(PtrByteSlice::from(&buf[..]));
         assert!(!m2.is_zeroes());
         assert_eq!(m, m2);
     }

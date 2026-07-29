@@ -105,7 +105,7 @@ impl JournalWriter {
         assert!(self.flushable_bytes() >= buf.len());
         let len = buf.len();
         debug_assert!(len % self.block_size == 0);
-        buf.as_mut_slice().copy_from_slice(&self.buf[..len]);
+        buf.copy_from_slice(&self.buf[..len]);
         let offset = self.checkpoint.file_offset;
         self.journal_checkpoint_offset.set(offset);
         self.buf.drain(..len);
@@ -197,12 +197,12 @@ mod tests {
         let mut buf = handle.allocate_buffer(object.get_size() as usize).await;
         assert_eq!(buf.len(), TEST_BLOCK_SIZE);
         handle.read(0, buf.as_mut()).await.expect("read failed");
-        let mut cursor = std::io::Cursor::new(buf.as_slice());
+        let mut reader = buf.as_ptr_slice();
         let value: u32 =
-            u32::deserialize_from(&mut cursor, LATEST_VERSION).expect("deserialize_from failed");
+            u32::deserialize_from(&mut reader, LATEST_VERSION).expect("deserialize_from failed");
         assert_eq!(value, 4u32);
-        let (payload, checksum_slice) =
-            buf.as_slice().split_at(buf.len() - std::mem::size_of::<Checksum>());
+        let data = buf.to_vec();
+        let (payload, checksum_slice) = data.split_at(buf.len() - std::mem::size_of::<Checksum>());
         let checksum = LittleEndian::read_u64(checksum_slice);
         assert_eq!(checksum, fletcher64(payload, 0));
         assert_eq!(
@@ -233,9 +233,9 @@ mod tests {
         let mut buf = handle.allocate_buffer(object.get_size() as usize).await;
         assert_eq!(buf.len(), TEST_BLOCK_SIZE);
         handle.read(0, buf.as_mut()).await.expect("read failed");
-        let mut cursor = std::io::Cursor::new(&buf.as_slice()[checkpoint.file_offset as usize..]);
+        let mut reader = buf.subslice(checkpoint.file_offset as usize..).as_ptr_slice();
         let value: u64 =
-            u64::deserialize_from(&mut cursor, LATEST_VERSION).expect("deserialize_from failed");
+            u64::deserialize_from(&mut reader, LATEST_VERSION).expect("deserialize_from failed");
         assert_eq!(value, 17);
     }
 }

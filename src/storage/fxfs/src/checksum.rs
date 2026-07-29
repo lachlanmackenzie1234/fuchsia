@@ -4,10 +4,10 @@
 
 use crate::errors::FxfsError;
 use anyhow::Error;
-use byteorder::{ByteOrder, LittleEndian};
 use fprint::TypeFingerprint;
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_cfg;
+use storage_ptr_slice::PtrByteSlice;
 use zerocopy::{FromBytes as _, IntoBytes as _};
 
 /// For the foreseeable future, Fxfs will use 64-bit checksums.
@@ -20,11 +20,18 @@ pub type Checksum = u64;
 /// We also use this checksum for integrity validation of potentially out-of-order writes
 /// during Journal replay.
 pub fn fletcher64(buf: &[u8], previous: Checksum) -> Checksum {
+    fletcher64_ptr(buf.into(), previous)
+}
+
+/// Generates a Fletcher64 checksum of |buf| (a pointer slice) seeded by |previous|.
+/// This is completely safe from Rust aliasing UB on allocator-managed memory.
+pub fn fletcher64_ptr(buf: PtrByteSlice<'_>, previous: Checksum) -> Checksum {
     assert!(buf.len() % 4 == 0);
     let mut lo = previous as u32;
     let mut hi = (previous >> 32) as u32;
-    for chunk in buf.chunks(4) {
-        lo = lo.wrapping_add(LittleEndian::read_u32(chunk));
+    for chunk in buf.iter_as::<[u8; 4]>() {
+        let val = u32::from_le_bytes(chunk.read());
+        lo = lo.wrapping_add(val);
         hi = hi.wrapping_add(lo);
     }
     (hi as u64) << 32 | lo as u64

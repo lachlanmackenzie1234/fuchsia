@@ -2161,7 +2161,7 @@ mod tests {
 
             transaction.commit().await.expect("commit failed");
             let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
-            buf.as_mut_slice().copy_from_slice(TEST_DATA);
+            buf.copy_from_slice(TEST_DATA);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             // As this is the first sync, this will actually trigger a new super-block, but normally
             // this would not be the case.
@@ -2184,7 +2184,7 @@ mod tests {
             .expect("open_object failed");
             let mut buf = handle.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize).await;
             assert_eq!(handle.read(0, buf.as_mut()).await.expect("read failed"), TEST_DATA.len());
-            assert_eq!(&buf.as_slice()[..TEST_DATA.len()], TEST_DATA);
+            assert_eq!(buf.subslice(..TEST_DATA.len()).to_vec(), TEST_DATA);
             fsck(fs.clone()).await.expect("fsck failed");
             fs.close().await.expect("Close failed");
         }
@@ -2222,7 +2222,7 @@ mod tests {
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
             let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
-            buf.as_mut_slice().copy_from_slice(TEST_DATA);
+            buf.copy_from_slice(TEST_DATA);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             fs.sync(SyncOptions::default()).await.expect("sync failed");
             object_ids.push(handle.object_id());
@@ -2247,7 +2247,7 @@ mod tests {
                     .expect("create_child_file failed");
                 transaction.commit().await.expect("commit failed");
                 let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
-                buf.as_mut_slice().copy_from_slice(TEST_DATA);
+                buf.copy_from_slice(TEST_DATA);
                 handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
                 object_ids.push(handle.object_id());
             }
@@ -2274,7 +2274,8 @@ mod tests {
                     handle.read(0, buf.as_mut()).await.expect("read failed"),
                     TEST_DATA.len()
                 );
-                assert_eq!(&buf.as_slice()[..TEST_DATA.len()], TEST_DATA);
+                let data = buf.subslice(..TEST_DATA.len()).to_vec();
+                assert_eq!(data, TEST_DATA);
             }
 
             // Write one more object and sync.
@@ -2299,7 +2300,7 @@ mod tests {
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
             let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
-            buf.as_mut_slice().copy_from_slice(TEST_DATA);
+            buf.copy_from_slice(TEST_DATA);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             fs.sync(SyncOptions::default()).await.expect("sync failed");
             object_ids.push(handle.object_id());
@@ -2329,7 +2330,8 @@ mod tests {
                     handle.read(0, buf.as_mut()).await.expect("read failed"),
                     TEST_DATA.len()
                 );
-                assert_eq!(&buf.as_slice()[..TEST_DATA.len()], TEST_DATA);
+                let data = buf.subslice(..TEST_DATA.len()).to_vec();
+                assert_eq!(data, TEST_DATA);
             }
         }
         fs.close().await.expect("close failed");

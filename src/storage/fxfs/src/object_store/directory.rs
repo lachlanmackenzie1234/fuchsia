@@ -2903,9 +2903,9 @@ mod tests {
 
         {
             let mut buf = foo.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize).await;
-            buf.as_mut_slice().fill(0xaa);
+            buf.fill(0xaa);
             foo.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
-            buf.as_mut_slice().fill(0xbb);
+            buf.fill(0xbb);
             bar.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         }
         std::mem::drop(bar);
@@ -2944,7 +2944,7 @@ mod tests {
                 .expect("Open failed");
         let mut buf = bar.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize).await;
         bar.read(0, buf.as_mut()).await.expect("read failed");
-        assert_eq!(buf.as_slice(), vec![0xaa; TEST_DEVICE_BLOCK_SIZE as usize]);
+        assert_eq!(buf.to_vec(), vec![0xaa; TEST_DEVICE_BLOCK_SIZE as usize]);
         fs.close().await.expect("Close failed");
     }
 
@@ -3668,16 +3668,16 @@ mod tests {
             )
             .await
             .expect("open failed");
-            let mut buffer = directory.handle.allocate_buffer(10).await;
+            let mut buf = directory.handle.store().device.allocate_buffer(10).await;
             assert_eq!(
                 directory
                     .handle
-                    .read(AttributeId::TEST_ID, 0, buffer.as_mut())
+                    .read(AttributeId::TEST_ID, 0, buf.as_mut())
                     .await
                     .expect("read failed"),
                 3
             );
-            assert_eq!(&buffer.as_slice()[..3], b"bar");
+            assert_eq!(buf.subslice(0..3).to_vec(), b"bar");
         }
 
         filesystem.close().await.expect("Close failed");

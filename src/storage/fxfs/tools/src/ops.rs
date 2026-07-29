@@ -190,7 +190,7 @@ pub async fn get(vol: &Arc<ObjectStore>, src: &Path) -> Result<Vec<u8>, Error> {
         loop {
             let bytes = handle.read(ofs, buf.as_mut()).await?;
             ofs += bytes as u64;
-            out.extend_from_slice(&buf.as_ref().as_slice()[..bytes]);
+            buf.subslice(..bytes).append_to(&mut out);
             if bytes as u64 != handle.block_size() {
                 break;
             }
@@ -223,7 +223,7 @@ pub async fn put(
     let handle = dir.create_child_file(&mut transaction, &filename).await?;
     transaction.commit().await?;
     let mut buf = handle.allocate_buffer(data.len()).await;
-    buf.as_mut_slice().copy_from_slice(&data);
+    buf.copy_from_slice(&data);
     handle.write_or_append(Some(0), buf.as_ref()).await?;
     handle.flush().await
 }

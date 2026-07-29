@@ -461,6 +461,74 @@ impl<'a> MutPtrByteSlice<'a> {
         assert!(chunk_size > 0, "chunk_size must be > 0");
         ChunksMut { slice: self.reborrow(), chunk_size, offset: 0 }
     }
+
+    /// Returns an `io::Write` adapter for this slice.
+    pub fn writer(self) -> Writer<'a> {
+        Writer::new(self)
+    }
+}
+
+/// An `io::Write` adapter for `MutPtrByteSlice`.
+#[derive(Debug)]
+pub struct Writer<'a> {
+    slice: MutPtrByteSlice<'a>,
+    pos: usize,
+}
+
+impl<'a> Writer<'a> {
+    /// Creates a new writer from a `MutPtrByteSlice`.
+    pub fn new(slice: MutPtrByteSlice<'a>) -> Self {
+        Self { slice, pos: 0 }
+    }
+
+    /// Returns the number of bytes written so far (the current position of the writer).
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
+    /// Returns the remaining unwritten subslice of the buffer.
+    pub fn remaining(&mut self) -> MutPtrByteSlice<'_> {
+        let len = self.slice.len();
+        self.slice.reborrow().subslice_mut(self.pos..len)
+    }
+
+    /// Consumes the writer and returns the subslice containing the data written so far.
+    pub fn into_written(mut self) -> MutPtrByteSlice<'a> {
+        let pos = self.pos;
+        self.slice.subslice_mut(0..pos)
+    }
+}
+
+impl std::io::Write for Writer<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let remaining = self.slice.len() - self.pos;
+        if remaining == 0 {
+            return Ok(0);
+        }
+        let to_write = std::cmp::min(remaining, buf.len());
+        self.slice
+            .reborrow()
+            .subslice_mut(self.pos..self.pos + to_write)
+            .copy_from_slice(&buf[..to_write]);
+        self.pos += to_write;
+        Ok(to_write)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        if buf.len() > self.slice.len() - self.pos {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WriteZero,
+                "failed to write whole buffer",
+            ));
+        }
+        self.slice.reborrow().subslice_mut(self.pos..self.pos + buf.len()).copy_from_slice(buf);
+        self.pos += buf.len();
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 // SAFETY: `PtrByteSlice` is conceptually a read-only view of a byte slice (`&[u8]`).
@@ -685,7 +753,7 @@ impl std::io::Read for PtrByteSlice<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::io::{Read, Write};
     use zerocopy::IntoBytes;
 
     #[derive(Copy, Clone, Debug, FromBytes, IntoBytes)]
@@ -823,5 +891,42 @@ mod tests {
         let mut bytes = [0u8; 3];
         let mut slice = MutPtrByteSlice::from(&mut bytes[..]);
         assert!(slice.write(Aligned4(0)).is_none());
+    }
+
+    #[test]
+    fn test_writer() {
+        let mut bytes = [0u8; 16];
+        let slice = MutPtrByteSlice::from(&mut bytes[..]);
+        let mut writer = slice.writer();
+        assert_eq!(writer.write(&[1, 2, 3]).unwrap(), 3);
+        assert_eq!(writer.position(), 3);
+        writer.write_all(&[4, 5, 6, 7]).unwrap();
+        assert_eq!(writer.position(), 7);
+        assert_eq!(&bytes[..7], &[1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn test_writer_write_all_error() {
+        let mut bytes = [0u8; 4];
+        let slice = MutPtrByteSlice::from(&mut bytes[..]);
+        let mut writer = slice.writer();
+        let err = writer.write_all(&[1, 2, 3, 4, 5]).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::WriteZero);
+        assert_eq!(writer.position(), 0);
+    }
+
+    #[test]
+    fn test_writer_write_full_and_remaining() {
+        let mut bytes = [0u8; 4];
+        let slice = MutPtrByteSlice::from(&mut bytes[..]);
+        let mut writer = slice.writer();
+        assert_eq!(writer.write(&[1, 2, 3, 4, 5]).unwrap(), 4);
+        assert_eq!(writer.position(), 4);
+        assert_eq!(writer.write(&[6]).unwrap(), 0);
+        assert_eq!(writer.remaining().len(), 0);
+        writer.flush().unwrap();
+        let written = writer.into_written();
+        assert_eq!(written.len(), 4);
+        assert_eq!(&bytes[..], &[1, 2, 3, 4]);
     }
 }

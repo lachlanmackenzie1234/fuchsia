@@ -514,7 +514,7 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
                     break;
                 }
                 offset += bytes as u64;
-                read_buf.extend_from_slice(&buf.as_slice()[..bytes]);
+                buf.subslice(..bytes).append_to(&mut read_buf);
             }
 
             let metadata = BlobMetadata::read_from(&handle).await?;

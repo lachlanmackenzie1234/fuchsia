@@ -22,10 +22,10 @@ impl FakeObject {
         FakeObject { buf: Mutex::new(Vec::new()) }
     }
 
-    fn read(&self, offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+    fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
         let our_buf = self.buf.lock();
         let to_do = min(buf.len(), our_buf.len() - offset as usize);
-        buf.as_mut_slice()[0..to_do]
+        buf.subslice_mut(0..to_do)
             .copy_from_slice(&our_buf[offset as usize..offset as usize + to_do]);
         Ok(to_do)
     }
@@ -37,7 +37,7 @@ impl FakeObject {
         if our_buf.len() < required_len {
             our_buf.resize(required_len, 0);
         }
-        our_buf[offset as usize..offset as usize + buf.len()].copy_from_slice(buf.as_slice());
+        buf.copy_to_slice(&mut our_buf[offset as usize..offset as usize + buf.len()]);
         Ok(our_buf.len() as u64)
     }
 

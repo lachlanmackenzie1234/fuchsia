@@ -434,10 +434,10 @@ impl ObjectStore {
             .await
             .context("Failed to read encrypted mutations from journal")?;
         let mut buffer = handle.allocate_buffer(MAX_ENCRYPTED_MUTATIONS_SIZE).await;
-        let mut cursor = std::io::Cursor::new(buffer.as_mut_slice());
+        let mut writer = buffer.writer();
         EncryptedMutations::from_replayed_mutations(self.store_object_id, journaled)
-            .serialize_with_version(&mut cursor)?;
-        let len = cursor.position() as usize;
+            .serialize_with_version(&mut writer)?;
+        let len = writer.position();
         handle.txn_write(&mut end_transaction, handle.get_size(), buffer.subslice(..len)).await?;
 
         self.write_store_info(&mut end_transaction, &new_store_info).await?;

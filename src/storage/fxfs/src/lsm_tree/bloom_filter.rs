@@ -6,6 +6,7 @@ use crate::lsm_tree::types::FuzzyHash;
 use anyhow::{Error, Result};
 use bit_vec::BitVec;
 use std::marker::PhantomData;
+use storage_ptr_slice::PtrByteSlice;
 
 /// A bloom filter provides a probabilistic means of determining if a layer file *might* contain
 /// records related to a given key.
@@ -81,8 +82,13 @@ pub struct BloomFilterStats {
 impl<V: FuzzyHash> BloomFilterReader<V> {
     /// Creates a BloomFilterReader by reading the serialized contents from `buf`.
     /// `seed` and `num_hashes` must match the values passed into BloomFilterWriter.
-    pub fn read(buf: &[u8], seed: u64, num_hashes: usize) -> Result<Self, Error> {
-        Ok(Self { data: BitVec::from_bytes(buf), seed, num_hashes, _type: PhantomData::default() })
+    pub fn read(buf: PtrByteSlice<'_>, seed: u64, num_hashes: usize) -> Result<Self, Error> {
+        Ok(Self {
+            data: BitVec::from_bytes(&buf.to_vec()),
+            seed,
+            num_hashes,
+            _type: PhantomData::default(),
+        })
     }
 
     /// Returns whether the bloom filter *might* contain the given value (or any part of it, for
@@ -237,6 +243,7 @@ impl<T> From<BloomFilterWriter<T>> for BloomFilterReader<T> {
 mod tests {
     use crate::lsm_tree::bloom_filter::{BloomFilterReader, BloomFilterWriter, estimate_params};
     use crate::object_store::allocator::AllocatorKey;
+    use storage_ptr_slice::PtrByteSlice;
 
     #[test]
     fn estimated_params() {
@@ -310,7 +317,8 @@ mod tests {
                 let mut cursor = std::io::Cursor::new(&mut buf);
                 filter.write(&mut cursor).expect("write failed");
             }
-            let filter = BloomFilterReader::read(&buf[..], 0, num_hashes).expect("read failed");
+            let filter = BloomFilterReader::read(PtrByteSlice::from(&buf[..]), 0, num_hashes)
+                .expect("read failed");
             assert!(filter.maybe_contains(key));
         }
     }

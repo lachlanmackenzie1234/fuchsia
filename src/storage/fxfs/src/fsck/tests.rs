@@ -214,7 +214,7 @@ async fn install_items_in_store<K: Key, V: Value>(
     let mut store_info_vec = vec![];
     store_info.serialize_with_version(&mut store_info_vec).expect("serialize failed");
     let mut buf = device.allocate_buffer(store_info_vec.len()).await;
-    buf.as_mut_slice().copy_from_slice(&store_info_vec[..]);
+    buf.copy_from_slice(&store_info_vec[..]);
 
     let mut transaction =
         store_info_handle.new_transaction().await.expect("new_transaction failed");
@@ -396,7 +396,7 @@ async fn test_malformed_allocation() {
         let mut allocator_info_vec = vec![];
         allocator_info.serialize_with_version(&mut allocator_info_vec).expect("serialize failed");
         let mut buf = device.allocate_buffer(allocator_info_vec.len()).await;
-        buf.as_mut_slice().copy_from_slice(&allocator_info_vec[..]);
+        buf.copy_from_slice(&allocator_info_vec[..]);
 
         let handle = ObjectStore::open_object(
             &root_store,
@@ -557,7 +557,6 @@ async fn test_volume_allocation_mismatch() {
     let mut test = FsckTest::new().await;
     let store_id = {
         let fs = test.filesystem();
-        let device = fs.device();
         let store_id = {
             let root_volume = root_volume(fs.clone()).await.unwrap();
             let volume = root_volume
@@ -599,7 +598,7 @@ async fn test_volume_allocation_mismatch() {
                 )
                 .await
                 .expect("new_transaction failed");
-            let buf = device.allocate_buffer(1).await;
+            let buf = handle.allocate_buffer(1).await;
             handle
                 .txn_write(&mut transaction, 1_048_576, buf.as_ref())
                 .await
@@ -2052,7 +2051,7 @@ async fn test_incorrect_merkle_tree_size_one_data_block() {
         transaction.commit_and_continue().await.expect("commit_and_continue transaction failed");
 
         let mut buf = object.allocate_buffer(fs.block_size() as usize).await;
-        buf.as_mut_slice().fill(1);
+        buf.fill(1);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         object
             .enable_verity(fio::VerificationOptions {
@@ -2142,7 +2141,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
         transaction.commit_and_continue().await.expect("commit_and_continue transaction failed");
 
         let mut buf = object.allocate_buffer(1 + 5 * fs.block_size() as usize).await;
-        buf.as_mut_slice().fill(1);
+        buf.fill(1);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         object
             .enable_verity(fio::VerificationOptions {
@@ -3909,7 +3908,7 @@ async fn test_full_disk(read_only: bool) {
         allocator_info.serialize_with_version(&mut allocator_info_vec).expect("serialize failed");
         allocator_info_vec.resize(4096, 0);
         let mut buf = device.allocate_buffer(allocator_info_vec.len()).await;
-        buf.as_mut_slice().copy_from_slice(&allocator_info_vec[..]);
+        buf.copy_from_slice(&allocator_info_vec[..]);
 
         let handle = ObjectStore::open_object(
             &root_store,
@@ -3936,7 +3935,7 @@ async fn test_full_disk(read_only: bool) {
         allocator_info.serialize_with_version(&mut allocator_info_vec).expect("serialize failed");
         allocator_info_vec.resize(4096 * 4, 0);
         let mut buf = device.allocate_buffer(allocator_info_vec.len()).await;
-        buf.as_mut_slice().copy_from_slice(&allocator_info_vec[..]);
+        buf.copy_from_slice(&allocator_info_vec[..]);
 
         let handle = ObjectStore::open_object(
             &root_store,
@@ -4339,7 +4338,7 @@ async fn test_invalid_bloom_filter_for_allocator() {
         let mut allocator_info_vec = vec![];
         allocator_info.serialize_with_version(&mut allocator_info_vec).expect("serialize failed");
         let mut buf = device.allocate_buffer(allocator_info_vec.len()).await;
-        buf.as_mut_slice().copy_from_slice(&allocator_info_vec[..]);
+        buf.copy_from_slice(&allocator_info_vec[..]);
 
         let handle = ObjectStore::open_object(
             &root_store,
@@ -4449,7 +4448,7 @@ async fn test_invalid_bloom_filter_for_volume() {
         let mut store_info_vec = vec![];
         store_info.serialize_with_version(&mut store_info_vec).expect("serialize failed");
         let mut buf = device.allocate_buffer(store_info_vec.len()).await;
-        buf.as_mut_slice().copy_from_slice(&store_info_vec[..]);
+        buf.copy_from_slice(&store_info_vec[..]);
 
         let mut transaction =
             store_info_handle.new_transaction().await.expect("new_transaction failed");

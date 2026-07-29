@@ -136,7 +136,7 @@ mod tests {
             let mut buffer = object.allocate_buffer(block_size * num_blocks).await;
             for i in 0..num_blocks {
                 let buff_range = (i * block_size)..((i + 1) * block_size);
-                buffer.as_mut_slice()[buff_range].fill((i % 0xFF) as u8);
+                buffer.subslice_mut(buff_range).fill((i % 0xFF) as u8);
             }
             object.txn_write(&mut transaction, 0, buffer.as_ref()).await.unwrap();
 
@@ -160,14 +160,15 @@ mod tests {
         // We should be able to read the whole file through our virtual read-only device.
         let mut buffer = handle_as_device.allocate_buffer(BLOCK_SIZE * TEST_FILE_BLOCK_COUNT).await;
         handle_as_device.read(0, buffer.as_mut()).await.unwrap();
+        let data = buffer.to_vec();
         for i in 0..TEST_FILE_BLOCK_COUNT {
             let buff_range = (i * BLOCK_SIZE)..((i + 1) * BLOCK_SIZE);
-            assert_eq!(buffer.as_slice()[buff_range], [(i % 0xFF) as u8; BLOCK_SIZE]);
+            assert_eq!(data[buff_range], [(i % 0xFF) as u8; BLOCK_SIZE]);
         }
 
         // Test reading from an offset.
         let mut buffer = handle_as_device.allocate_buffer(BLOCK_SIZE).await;
         handle_as_device.read((BLOCK_SIZE * 4) as u64, buffer.as_mut()).await.unwrap();
-        assert_eq!(buffer.as_slice(), [4u8; BLOCK_SIZE]);
+        assert_eq!(buffer.to_vec(), [4u8; BLOCK_SIZE]);
     }
 }

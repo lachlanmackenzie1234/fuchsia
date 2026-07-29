@@ -190,11 +190,11 @@ mod tests {
     async fn test_initial_extent() {
         let device = Arc::new(FakeDevice::new(64, 512));
         let mut buffer = device.allocate_buffer(1024).await;
-        buffer.as_mut_slice().fill(1);
+        buffer.fill(1);
         device.write(0, buffer.as_ref()).await.unwrap();
-        buffer.as_mut_slice().fill(2);
+        buffer.fill(2);
         device.write(1024, buffer.as_ref()).await.unwrap();
-        buffer.as_mut_slice().fill(0);
+        buffer.fill(0);
 
         let handle = BootstrapObjectHandle::new(1, device.clone(), 0..0);
         assert_eq!(handle.get_size(), 0);
@@ -203,10 +203,10 @@ mod tests {
         let mut handle = BootstrapObjectHandle::new(1, device.clone(), 1024..2048);
         assert_eq!(handle.get_size(), 1024);
         handle.read(0, buffer.as_mut()).await.expect("read implicit extent");
-        assert_eq!(buffer.as_slice(), &[2u8; 1024]);
+        assert_eq!(buffer.to_vec(), vec![2u8; 1024]);
         handle.push_extent(0, 0..1024);
         handle.read(0, buffer.as_mut()).await.expect("read first explicit extent");
-        assert_eq!(buffer.as_slice(), &[1u8; 1024]);
+        assert_eq!(buffer.to_vec(), vec![1u8; 1024]);
     }
 
     #[fuchsia::test]
@@ -215,36 +215,36 @@ mod tests {
         let mut handle = BootstrapObjectHandle::new(1, device.clone(), 0..0);
 
         let mut buffer = device.allocate_buffer(1024).await;
-        buffer.as_mut_slice().fill(1);
+        buffer.fill(1);
         device.write(0, buffer.as_ref()).await.unwrap();
-        buffer.as_mut_slice().fill(2);
+        buffer.fill(2);
         device.write(1024, buffer.as_ref()).await.unwrap();
-        buffer.as_mut_slice().fill(0);
+        buffer.fill(0);
 
         handle.push_extent(0, 1024..2048);
         handle.push_extent(131072, 0..1024);
 
         assert_eq!(handle.get_size(), 2048);
         handle.read(0, buffer.as_mut()).await.unwrap();
-        assert_eq!(buffer.as_slice(), &[2u8; 1024]);
+        assert_eq!(buffer.to_vec(), vec![2u8; 1024]);
         handle.read(1024, buffer.as_mut()).await.unwrap();
-        assert_eq!(buffer.as_slice(), &[1u8; 1024]);
+        assert_eq!(buffer.to_vec(), vec![1u8; 1024]);
 
         // Discard at an offset greater than any extent was added, which should be a NOP.
         handle.discard_extents(131073);
 
         assert_eq!(handle.get_size(), 2048);
         assert_eq!(handle.read(0, buffer.as_mut()).await.unwrap(), 1024);
-        assert_eq!(buffer.as_slice(), &[2u8; 1024]);
+        assert_eq!(buffer.to_vec(), vec![2u8; 1024]);
         assert_eq!(handle.read(1024, buffer.as_mut()).await.unwrap(), 1024);
-        assert_eq!(buffer.as_slice(), &[1u8; 1024]);
+        assert_eq!(buffer.to_vec(), vec![1u8; 1024]);
 
         // Discard the second extent.
         handle.discard_extents(131072);
 
         assert_eq!(handle.get_size(), 1024);
         assert_eq!(handle.read(0, buffer.as_mut()).await.unwrap(), 1024);
-        assert_eq!(buffer.as_slice(), &[2u8; 1024]);
+        assert_eq!(buffer.to_vec(), vec![2u8; 1024]);
         assert_eq!(handle.read(1024, buffer.as_mut()).await.unwrap(), 0);
     }
 }

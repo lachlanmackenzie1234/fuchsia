@@ -28,7 +28,7 @@ impl<H: WriteObjectHandle> WriteBytes for Writer<'_, H> {
     async fn write_bytes(&mut self, mut buf: &[u8]) -> Result<(), Error> {
         while buf.len() > 0 {
             let to_do = std::cmp::min(buf.len(), BUFFER_SIZE);
-            self.buffer.subslice_mut(..to_do).as_mut_slice().copy_from_slice(&buf[..to_do]);
+            self.buffer.subslice_mut(..to_do).copy_from_slice(&buf[..to_do]);
             self.handle.write_or_append(Some(self.offset), self.buffer.subslice(..to_do)).await?;
             self.offset += to_do as u64;
             buf = &buf[to_do..];
@@ -43,7 +43,7 @@ impl<H: WriteObjectHandle> WriteBytes for Writer<'_, H> {
 
     async fn skip(&mut self, amount: u64) -> Result<(), Error> {
         let mut left = amount as usize;
-        self.buffer.subslice_mut(..std::cmp::min(left, BUFFER_SIZE)).as_mut_slice().fill(0);
+        self.buffer.subslice_mut(..std::cmp::min(left, BUFFER_SIZE)).fill(0);
         while left > 0 {
             let to_do = std::cmp::min(left, BUFFER_SIZE);
             self.handle.write_or_append(Some(self.offset), self.buffer.subslice(..to_do)).await?;

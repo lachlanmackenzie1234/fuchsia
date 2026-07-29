@@ -393,8 +393,8 @@ async fn load_seek_table(
     // No entry for the first data block, assume a lower bound 0.
     seek_table.push(0);
     let mut prev = 0;
-    for chunk in buffer.as_slice().chunks_exact(std::mem::size_of::<u64>()) {
-        let next = LittleEndian::read_u64(chunk);
+    for chunk in buffer.subslice(0..seek_table_size).as_ptr_slice().iter_as::<[u8; 8]>() {
+        let next = u64::from_le_bytes(chunk.read());
         // Should be in strict ascending order, otherwise something's broken, or we've gone off
         // the end and we're reading zeroes.
         if prev > next {
@@ -421,7 +421,7 @@ async fn load_bloom_filter<K: FuzzyHash>(
     let mut buffer = handle.allocate_buffer(layer_info.bloom_filter_size_bytes).await;
     handle.read(bloom_filter_offset, buffer.as_mut()).await.context("Failed to read")?;
     Ok(Some(BloomFilterReader::read(
-        buffer.as_slice(),
+        buffer.subslice(0..layer_info.bloom_filter_size_bytes).as_ptr_slice(),
         layer_info.bloom_filter_seed,
         layer_info.bloom_filter_num_hashes,
     )?))
@@ -432,11 +432,11 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
         let bs = handle.block_size();
         let mut buffer = handle.allocate_buffer(bs as usize).await;
         handle.read(0, buffer.as_mut()).await.context("Failed to read first block")?;
-        let mut cursor = std::io::Cursor::new(buffer.as_slice());
-        let version = Version::deserialize_from(&mut cursor)?;
+        let mut reader = buffer.as_ptr_slice();
+        let version = Version::deserialize_from(&mut reader)?;
 
         ensure!(version <= LATEST_VERSION, FxfsError::InvalidVersion);
-        let header = LayerHeader::deserialize_from_version(&mut cursor, version)
+        let header = LayerHeader::deserialize_from_version(&mut reader, version)
             .context("Failed to deserialize header")?;
         if &header.magic != PERSISTENT_LAYER_MAGIC {
             return Err(anyhow!(FxfsError::Inconsistent).context("Invalid layer file magic"));
@@ -454,7 +454,6 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
                 header.block_size, physical_block_size
             ));
         }
-        std::mem::drop(cursor);
 
         let bs = header.block_size as usize;
         if handle.get_size() < MINIMUM_LAYER_FILE_BLOCKS * bs as u64 {
@@ -472,13 +471,13 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
                 .await
                 .context("Failed to read layer info")?;
             let layer_info_len =
-                LittleEndian::read_u64(&buffer.as_slice()[bs - std::mem::size_of::<u64>()..]);
+                u64::from_le_bytes(buffer.subslice(bs - 8..bs).as_ptr_slice().read().unwrap());
             let layer_info_offset = bs
                 .checked_sub(std::mem::size_of::<u64>() + layer_info_len as usize)
                 .ok_or(FxfsError::Inconsistent)
                 .context("Invalid layer info length")?;
-            let mut cursor = std::io::Cursor::new(&buffer.as_slice()[layer_info_offset..]);
-            LayerInfo::deserialize_from_version(&mut cursor, version)
+            let mut reader = buffer.subslice(layer_info_offset..).as_ptr_slice();
+            LayerInfo::deserialize_from_version(&mut reader, version)
                 .context("Failed to deserialize LayerInfo")?
         };
         std::mem::drop(buffer);

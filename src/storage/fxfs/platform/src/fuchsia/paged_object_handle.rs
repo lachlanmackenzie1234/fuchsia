@@ -583,7 +583,7 @@ impl PagedObjectHandle {
     pub async fn read_uncached(&self, range: std::ops::Range<u64>) -> Result<Buffer<'_>, Error> {
         let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize).await;
         let read = self.handle.read(range.start, buffer.as_mut()).await?;
-        buffer.as_mut_slice()[read..].fill(0);
+        buffer.subslice_mut(read..).fill(0);
 
         #[cfg(test)]
         CALLBACK_AFTER_READ_UNCACHED.call();
@@ -1557,19 +1557,27 @@ impl FlushBatch {
         if self.dirty_byte_count > 0 {
             let mut buffer =
                 handle.allocate_buffer(self.dirty_byte_count.try_into().unwrap()).await;
-            let mut slice = buffer.as_mut_slice();
+            let mut slice = buffer.as_mut();
 
             let mut dirty_ranges = Vec::new();
             for range in &self.ranges {
                 let range = range.clone();
-                let (head, tail) = slice.split_at_mut(
-                    (std::cmp::min(range.end, content_size) - range.start).try_into().unwrap(),
-                );
-                vmo.read(head, range.start)?;
+                let len =
+                    (std::cmp::min(range.end, content_size) - range.start).try_into().unwrap();
+                let (mut head, tail) = slice.split_at_mut(len);
+
+                // SAFETY: The device-backed buffer is valid for writes up to `len` bytes.
+                // Using read_raw performs a direct VMO-to-pointer copy without creating
+                // standard Rust &mut [u8] references, avoiding any compiler aliasing UB.
+                unsafe {
+                    vmo.read_raw(head.as_mut_ptr(), len, range.start)?;
+                }
+
                 slice = tail;
+
                 // Zero out the tail.
                 if range.end > content_size {
-                    let (head, tail) = slice.split_at_mut((range.end - content_size) as usize);
+                    let (mut head, tail) = slice.split_at_mut((range.end - content_size) as usize);
                     head.fill(0);
                     slice = tail;
                 }
@@ -2913,12 +2921,8 @@ mod tests {
             });
             // Drop the guard so that these reads don't get blocked.
             std::mem::drop(guard);
-            while object
-                .handle()
-                .read_uncached(page_size..(page_size * 2))
-                .await
-                .unwrap()
-                .as_slice()[0]
+            while object.handle().read_uncached(page_size..(page_size * 2)).await.unwrap().to_vec()
+                [0]
                 == 1u8
             {
                 fasync::Timer::new(std::time::Duration::from_millis(50)).await;

@@ -176,7 +176,7 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
 
         log::debug!("COH {}: Read {len}@{read_start}", self.source.object_id());
 
-        let data = Vec::from(&read_buf.as_slice()[..len]).into_boxed_slice();
+        let data = read_buf.subslice(..len).to_vec().into_boxed_slice();
         let cached_chunk = CachedChunk(Arc::new(data));
 
         {
@@ -308,7 +308,9 @@ mod tests {
             ensure!(self.allow_reads.load(Ordering::SeqCst), anyhow!("Received unexpected read"));
             let counter = self.counter.fetch_add(1, Ordering::Relaxed);
             self.wait_for_start().await;
-            fill_buf(buf.as_mut_slice(), counter);
+            let mut data = vec![0u8; buf.len()];
+            fill_buf(&mut data, counter);
+            buf.copy_from_slice(&data);
             Ok(buf.len())
         }
 

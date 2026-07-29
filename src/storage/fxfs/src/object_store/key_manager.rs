@@ -525,7 +525,7 @@ mod tests {
 
     fn cipher_text(counter: u8) -> Vec<u8> {
         let mut text = padded_plain_text();
-        cipher(counter).encrypt(0, 0, 0, 0, &mut text).expect("encrypt failed");
+        cipher(counter).encrypt(0, 0, 0, 0, &mut text[..]).expect("encrypt failed");
         // Ensure that encrypt changed the text.
         assert_ne!(&text, &padded_plain_text());
         text
@@ -609,7 +609,7 @@ mod tests {
         let crypt2 = crypt.clone();
 
         let task1 = fasync::Task::spawn(async move {
-            let mut buf = cipher_text(0);
+            let mut plaintext = cipher_text(0);
             to_result(
                 manager1
                     .get_keys(
@@ -624,12 +624,12 @@ mod tests {
                     .find_key(0),
             )
             .unwrap()
-            .decrypt(0, 0, 0, 0, &mut buf)
+            .decrypt(0, 0, 0, 0, &mut plaintext[..])
             .expect("decrypt failed");
-            assert_eq!(&buf, &padded_plain_text());
+            assert_eq!(&plaintext, &padded_plain_text());
         });
         let task2 = fasync::Task::spawn(async move {
-            let mut buf = cipher_text(0);
+            let mut plaintext = cipher_text(0);
             to_result(
                 manager2
                     .get_keys(
@@ -644,22 +644,22 @@ mod tests {
                     .find_key(0),
             )
             .unwrap()
-            .decrypt(0, 0, 0, 0, &mut buf)
+            .decrypt(0, 0, 0, 0, &mut plaintext[..])
             .expect("decrypt failed");
-            assert_eq!(&buf, &padded_plain_text());
+            assert_eq!(&plaintext, &padded_plain_text());
         });
         let task3 = fasync::Task::spawn(async move {
             // Make sure this starts after the get_keys.
             fasync::Timer::new(zx::MonotonicDuration::from_millis(500)).await;
-            let mut buf = cipher_text(0);
+            let mut plaintext = cipher_text(0);
             manager3
                 .get(1)
                 .await
                 .expect("get failed")
                 .expect("missing key")
-                .decrypt(0, 0, 0, 0, &mut buf)
+                .decrypt(0, 0, 0, 0, &mut plaintext[..])
                 .expect("decrypt failed");
-            assert_eq!(&buf, &padded_plain_text());
+            assert_eq!(&plaintext, &padded_plain_text());
         });
 
         TestExecutor::advance_to(MonotonicInstant::after(zx::MonotonicDuration::from_millis(1500)))
@@ -675,15 +675,15 @@ mod tests {
         let manager = Arc::new(KeyManager::new());
 
         manager.insert(1, Arc::new(vec![(0, CipherHolder::Cipher(cipher(0)))].into()), false);
-        let mut buf = cipher_text(0);
+        let mut plaintext = cipher_text(0);
         manager
             .get(1)
             .await
             .expect("get failed")
             .expect("missing key")
-            .decrypt(0, 0, 0, 0, &mut buf)
+            .decrypt(0, 0, 0, 0, &mut plaintext[..])
             .expect("decrypt failed");
-        assert_eq!(&buf, &padded_plain_text());
+        assert_eq!(&plaintext, &padded_plain_text());
         let _ = manager.remove(1);
         assert!(manager.get(1).await.expect("get failed").is_none());
     }

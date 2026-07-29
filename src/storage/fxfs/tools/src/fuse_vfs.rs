@@ -222,13 +222,14 @@ impl FuseFs {
                 if len - ofs > bytes as u64 {
                     // Read `bytes` size of content from buf.
                     ofs += bytes as u64;
-                    out.extend_from_slice(&buf.as_slice()[..bytes]);
+                    buf.subslice(..bytes).append_to(&mut out);
                     if bytes as u64 != handle.block_size() {
                         break;
                     }
                 } else {
                     // Read the remaining content from buf.
-                    out.extend_from_slice(&buf.as_slice()[..(len - ofs) as usize]);
+                    let target_len = (len - ofs) as usize;
+                    buf.subslice(..target_len).append_to(&mut out);
                     break;
                 }
             }
@@ -253,7 +254,7 @@ impl FuseFs {
             let handle = self.get_object_handle(inode).await?;
             let mut buf = handle.allocate_buffer(data.len()).await;
 
-            buf.as_mut_slice().copy_from_slice(data);
+            buf.copy_from_slice(data);
             handle.write_or_append(Some(offset), buf.as_ref()).await?;
             handle.flush().await?;
 

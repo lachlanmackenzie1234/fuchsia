@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::checksum::{Checksum, fletcher64};
+use crate::checksum::{Checksum, fletcher64_ptr};
 use crate::errors::FxfsError;
 use crate::range::RangeExt;
 use anyhow::{Error, anyhow, ensure};
@@ -226,7 +226,8 @@ impl ChecksumList {
                     if *dependency >= journal_offset {
                         if let Some(checksums) = checksum_state.checksum() {
                             device.read(offset, buf.subslice_mut(0..chunk_size)).await?;
-                            let found_checksum = fletcher64(&buf.as_slice()[0..chunk_size], 0);
+                            let found_checksum =
+                                fletcher64_ptr(buf.subslice(0..chunk_size).as_ptr_slice(), 0);
                             if checksums
                                 .iter()
                                 .find(|&&checksum| checksum == found_checksum)
@@ -265,10 +266,10 @@ mod tests {
         let mut buffer = device.allocate_buffer(2048).await;
         let mut list = ChecksumList::new(0);
 
-        buffer.as_mut_slice()[0..512].copy_from_slice(&[1; 512]);
-        buffer.as_mut_slice()[512..1024].copy_from_slice(&[2; 512]);
-        buffer.as_mut_slice()[1024..1536].copy_from_slice(&[3; 512]);
-        buffer.as_mut_slice()[1536..2048].copy_from_slice(&[4; 512]);
+        buffer.as_mut().subslice_mut(0..512).copy_from_slice(&[1; 512]);
+        buffer.as_mut().subslice_mut(512..1024).copy_from_slice(&[2; 512]);
+        buffer.as_mut().subslice_mut(1024..1536).copy_from_slice(&[3; 512]);
+        buffer.as_mut().subslice_mut(1536..2048).copy_from_slice(&[4; 512]);
         device.write(512, buffer.as_ref()).await.expect("write failed");
         list.push(
             1,
@@ -282,7 +283,7 @@ mod tests {
         assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 10);
 
         // Corrupt the middle of the three 512 byte blocks.
-        buffer.as_mut_slice()[512] = 0;
+        buffer.as_mut().subslice_mut(512..513).copy_from_slice(&[0]);
         device.write(512, buffer.as_ref()).await.expect("write failed");
 
         // Verification should fail now.
@@ -300,14 +301,14 @@ mod tests {
         assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 10);
 
         // Now corrupt the block at 2048.
-        buffer.as_mut_slice()[1536] = 0;
+        buffer.as_mut().subslice_mut(1536..1537).copy_from_slice(&[0]);
         device.write(512, buffer.as_ref()).await.expect("write failed");
 
         // This should only validate up to journal offset 3.
         assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 3);
 
         // Corrupt the block that was marked as deallocated in #4.
-        buffer.as_mut_slice()[1024] = 0;
+        buffer.as_mut().subslice_mut(1024..1025).copy_from_slice(&[0]);
         device.write(512, buffer.as_ref()).await.expect("write failed");
 
         // The deallocation in #4 should be ignored and so validation should only succeed up
@@ -321,8 +322,8 @@ mod tests {
         let mut buffer = device.allocate_buffer(2048).await;
         let mut list = ChecksumList::new(2);
 
-        buffer.as_mut_slice()[0..512].copy_from_slice(&[1; 512]);
-        buffer.as_mut_slice()[512..1024].copy_from_slice(&[2; 512]);
+        buffer.as_mut().subslice_mut(0..512).copy_from_slice(&[1; 512]);
+        buffer.as_mut().subslice_mut(512..1024).copy_from_slice(&[2; 512]);
         device.write(512, buffer.as_ref()).await.expect("write failed");
 
         // This entry has the wrong checksum will fail, but it should be ignored anyway because it
@@ -340,7 +341,7 @@ mod tests {
         let mut buffer = device.allocate_buffer(512).await;
         let mut list = ChecksumList::new(1);
 
-        buffer.as_mut_slice().copy_from_slice(&[2; 512]);
+        buffer.copy_from_slice(&[2; 512]);
         device.write(2560, buffer.as_ref()).await.expect("write failed");
 
         list.push(2, 512..1024, &[fletcher64(&[1; 512], 0)], true).unwrap();
@@ -357,7 +358,7 @@ mod tests {
         let mut buffer = device.allocate_buffer(1024).await;
         let mut list = ChecksumList::new(1);
 
-        buffer.as_mut_slice().copy_from_slice(&[2; 1024]);
+        buffer.copy_from_slice(&[2; 1024]);
         device.write(1024, buffer.as_ref()).await.expect("write failed");
 
         let c0 = fletcher64(&[0; 512], 0);
@@ -376,7 +377,7 @@ mod tests {
         let mut buffer = device.allocate_buffer(1024).await;
         let mut list = ChecksumList::new(1);
 
-        buffer.as_mut_slice().copy_from_slice(&[2; 1024]);
+        buffer.copy_from_slice(&[2; 1024]);
         device.write(1024, buffer.as_ref()).await.expect("write failed");
 
         let c1 = fletcher64(&[1; 512], 0);
@@ -393,7 +394,7 @@ mod tests {
         let mut buffer = device.allocate_buffer(1024).await;
         let mut list = ChecksumList::new(1);
 
-        buffer.as_mut_slice().copy_from_slice(&[2; 1024]);
+        buffer.copy_from_slice(&[2; 1024]);
         device.write(1024, buffer.as_ref()).await.expect("write failed");
 
         let c1 = fletcher64(&[1; 512], 0);
@@ -405,7 +406,7 @@ mod tests {
         assert_eq!(list.verify(&device, 2).await.expect("verify failed"), 2);
 
         // Changing the data to ones should be fine now because the other checksums will match.
-        buffer.as_mut_slice().copy_from_slice(&[1; 1024]);
+        buffer.copy_from_slice(&[1; 1024]);
         device.write(1024, buffer.as_ref()).await.expect("write failed");
         assert_eq!(list.verify(&device, 4).await.expect("verify failed"), 4);
     }

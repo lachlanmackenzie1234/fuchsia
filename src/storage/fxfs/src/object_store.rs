@@ -976,7 +976,7 @@ impl ObjectStore {
                 serialized_info
             };
             let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
-            buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
+            buf.copy_from_slice(&serialized_info[..]);
             buf
         };
 
@@ -2874,7 +2874,7 @@ impl ObjectStore {
         let mut serialized_info = Vec::new();
         info.serialize_with_version(&mut serialized_info)?;
         let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
-        buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
+        buf.copy_from_slice(&serialized_info);
         self.store_info_handle.get().unwrap().txn_write(transaction, 0u64, buf.as_ref()).await
     }
 
@@ -3508,7 +3508,7 @@ mod tests {
         store.flush().await.expect("flush failed");
 
         let mut buf = object.allocate_buffer(5).await;
-        buf.as_mut_slice().copy_from_slice(b"hello");
+        buf.copy_from_slice(b"hello");
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
         // Getting the layer-set should cause the flush to stall.
@@ -3568,7 +3568,7 @@ mod tests {
 
             // Allocate an extent in the file.
             let mut buffer = child.allocate_buffer(8192).await;
-            buffer.as_mut_slice().fill(0xaa);
+            buffer.fill(0xaa);
             child.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
 
             child.object_id()
@@ -3640,7 +3640,7 @@ mod tests {
 
             // Allocate an extent in the file.
             let mut buffer = child.allocate_buffer(8192).await;
-            buffer.as_mut_slice().fill(0xaa);
+            buffer.fill(0xaa);
             child.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
 
             child.object_id()
@@ -3763,8 +3763,8 @@ mod tests {
                 transaction.commit().await.expect("commit failed");
 
                 let mut buf = object.allocate_buffer(1000).await;
-                for i in 0..buf.len() {
-                    buf.as_mut_slice()[i] = i as u8;
+                for (i, byte) in buf.as_mut_ptr_slice().iter_as_mut::<u8>().enumerate() {
+                    byte.write(i as u8);
                 }
                 object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
@@ -3795,8 +3795,8 @@ mod tests {
                     .expect("open_object failed");
                     let mut buf = object.allocate_buffer(1000).await;
                     assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), 1000);
-                    for i in 0..buf.len() {
-                        assert_eq!(buf.as_slice()[i], i as u8);
+                    for (i, byte) in buf.as_ptr_slice().iter_as::<u8>().enumerate() {
+                        assert_eq!(byte.read(), i as u8);
                     }
                 }
             };

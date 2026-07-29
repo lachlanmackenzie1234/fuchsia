@@ -1270,7 +1270,7 @@ mod tests {
             tasks.push(fasync::Task::spawn(async move {
                 const TEST_DATA: &[u8] = b"hello";
                 let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
-                buf.as_mut_slice().copy_from_slice(TEST_DATA);
+                buf.copy_from_slice(TEST_DATA);
                 for _ in 0..1500 {
                     handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
                 }
@@ -1690,7 +1690,7 @@ mod tests {
                 let mut transaction =
                     object.new_transaction().await.expect("new_transaction failed");
                 let mut buffer = object.allocate_buffer(4096).await;
-                buffer.as_mut_slice().fill(0xed);
+                buffer.fill(0xed);
                 object
                     .txn_write(&mut transaction, 0, buffer.as_ref())
                     .await
@@ -1787,7 +1787,7 @@ mod tests {
                     let bytes = test_file.read(0, buffer.as_mut()).await.expect("read failed");
                     if bytes == 4096 {
                         let expected = [0xed; 4096];
-                        assert_eq!(buffer.as_slice(), &expected);
+                        assert_eq!(buffer.to_vec(), expected);
                     } else {
                         // If the write didn't make it, the file should have zero bytes.
                         assert_eq!(bytes, 0);
@@ -1796,7 +1796,7 @@ mod tests {
                     // Modify the test file.
                     let mut transaction =
                         test_file.new_transaction().await.expect("new_transaction failed");
-                    buffer.as_mut_slice().fill(0x37);
+                    buffer.fill(0x37);
                     test_file
                         .txn_write(&mut transaction, 0, buffer.as_ref())
                         .await
@@ -1859,7 +1859,8 @@ mod tests {
                         4096
                     );
                     let expected = [0x37; 4096];
-                    assert_eq!(buffer.as_slice(), &expected);
+                    let data = buffer.to_vec();
+                    assert_eq!(data, expected);
                 }
             }
 
@@ -2044,7 +2045,7 @@ mod tests {
 
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         let mut buffer = object.allocate_buffer(4096).await;
-        buffer.as_mut_slice().fill(0xed);
+        buffer.fill(0xed);
         object.txn_write(&mut transaction, 0, buffer.as_ref()).await.expect("txn_write failed");
         transaction.commit().await.expect("commit failed");
 
@@ -2101,7 +2102,7 @@ mod tests {
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
             let mut buffer = object.allocate_buffer(4096).await;
-            buffer.as_mut_slice().fill(0xA7);
+            buffer.fill(0xA7);
             let new_size = object.write_or_append(None, buffer.as_ref()).await.unwrap();
             assert_eq!(new_size, 4096);
         }
@@ -2131,7 +2132,7 @@ mod tests {
                 .expect("open failed");
             // Write some more data.
             let mut buffer = test_file.allocate_buffer(4096).await;
-            buffer.as_mut_slice().fill(0xA8);
+            buffer.fill(0xA8);
             let new_size = test_file.write_or_append(None, buffer.as_ref()).await.unwrap();
             assert_eq!(new_size, 8192);
         }
@@ -2166,8 +2167,9 @@ mod tests {
                 8192,
                 "short read"
             );
-            assert_eq!(buffer.as_slice()[0..4096], [0xA7; 4096]);
-            assert_eq!(buffer.as_slice()[4096..8192], [0xA8; 4096]);
+            let data = buffer.to_vec();
+            assert_eq!(data[0..4096], [0xA7; 4096]);
+            assert_eq!(data[4096..8192], [0xA8; 4096]);
         }
         fs.close().await.expect("close failed");
     }
@@ -2199,7 +2201,7 @@ mod tests {
         {
             let mut write_buf =
                 device.allocate_buffer(EXISTING_FILE_RANGE.length().unwrap() as usize).await;
-            write_buf.as_mut_slice().fill(0xf0);
+            write_buf.fill(0xf0);
             device.write(EXISTING_FILE_RANGE.start, write_buf.as_ref()).await.expect("write");
         }
 
@@ -2264,7 +2266,8 @@ mod tests {
         let mut read_buf =
             test_file.allocate_buffer(EXISTING_FILE_RANGE.length().unwrap() as usize).await;
         test_file.read(0, read_buf.as_mut()).await.expect("read failed");
-        assert_eq!(read_buf.as_slice(), [0xf0; 4096]);
+        let data = read_buf.to_vec();
+        assert_eq!(data, [0xf0; 4096]);
         fs.close().await.expect("closed");
     }
 
@@ -2296,7 +2299,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         let mut buf = handle.allocate_buffer(4096).await;
-        buf.as_mut_slice().fill(0xaa);
+        buf.fill(0xaa);
         loop {
             if handle.write_or_append(None, buf.as_ref()).await.is_err() {
                 break;
@@ -2315,8 +2318,9 @@ mod tests {
             .await;
         device.read(0, buffer.as_mut()).await.expect("read failed");
 
+        let image_data = buffer.to_vec();
         let device = DeviceHolder::new(
-            FakeDevice::from_image(&buffer.as_slice()[..], TEST_DEVICE_BLOCK_SIZE)
+            FakeDevice::from_image(image_data.as_slice(), TEST_DEVICE_BLOCK_SIZE)
                 .expect("from_image failed"),
         );
         let fs =
@@ -2371,7 +2375,7 @@ mod tests {
             transaction.commit().await.expect("commit");
 
             let mut buf = handle.allocate_buffer(BLOCK_SIZE as usize).await;
-            buf.as_mut_slice().fill(0xaa);
+            buf.fill(0xaa);
             handle.write_or_append(None, buf.as_ref()).await.expect("write failed");
         }
 
@@ -2386,12 +2390,14 @@ mod tests {
         let mut buf = device.allocate_buffer(BLOCK_SIZE as usize).await;
 
         device.read(target_sb.first_extent().start, buf.as_mut()).await.expect("read target_sb");
-        assert_eq!(&buf.as_slice()[..8], b"FxfsSupr", "target_sb should have magic bytes");
+        let data = buf.to_vec();
+        assert_eq!(&data[..8], b"FxfsSupr", "target_sb should have magic bytes");
 
-        buf.as_mut_slice().fill(0); // Clear buffer
+        buf.fill(0); // Clear buffer
         device.read(other_sb.first_extent().start, buf.as_mut()).await.expect("read other_sb");
         // Expecting all zeros for `other_sb`
-        assert_eq!(buf.as_slice(), &[0; 4096], "other_sb should be zeroed");
+        let data2 = buf.to_vec();
+        assert_eq!(data2, &[0; 4096], "other_sb should be zeroed");
     }
 
     #[cfg(target_os = "fuchsia")]

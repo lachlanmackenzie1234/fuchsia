@@ -249,7 +249,7 @@ impl FxFile {
     // this when in uncached mode
     pub async fn write_at_uncached(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
         let mut buf = self.handle.uncached_handle().allocate_buffer(content.len()).await;
-        buf.as_mut_slice().copy_from_slice(content);
+        buf.copy_from_slice(content);
         let _ = self
             .handle
             .uncached_handle()
@@ -267,14 +267,14 @@ impl FxFile {
     // this when in uncached mode
     pub async fn read_at_uncached(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
         let mut buf = self.handle.uncached_handle().allocate_buffer(buffer.len()).await;
-        buf.as_mut_slice().fill(0);
+        buf.fill(0);
         let bytes_read = self
             .handle
             .uncached_handle()
             .read(offset, buf.as_mut())
             .await
             .map_err(map_to_status)?;
-        buffer.copy_from_slice(buf.as_slice());
+        buf.copy_to_slice(buffer);
         Ok(bytes_read as u64)
     }
 

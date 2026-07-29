@@ -510,7 +510,7 @@ mod tests {
             transaction.commit().await.expect("commit failed");
 
             let mut buf = handle.allocate_buffer(8192).await;
-            buf.as_mut_slice().fill(0xaa);
+            buf.fill(0xaa);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             store.flush().await.expect("flush failed");
             filesystem.sync(SyncOptions::default()).await.expect("sync failed");

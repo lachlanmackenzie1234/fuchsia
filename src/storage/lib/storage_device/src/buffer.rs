@@ -122,6 +122,11 @@ impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> BufferImpl<'a, H, A> {
         self.subslice_mut(..)
     }
 
+    /// Returns an `io::Write` adapter for this buffer.
+    pub fn writer(&mut self) -> storage_ptr_slice::Writer<'_> {
+        self.slice.reborrow().writer()
+    }
+
     /// Takes a read-write reference to this buffer over `range` (which must be within the size of
     /// the buffer).
     pub fn subslice_mut<R: SliceRange>(&mut self, range: R) -> MutableBufferRef<'_> {
@@ -408,6 +413,11 @@ impl<'a> MutableBufferRef<'a> {
             range: self.range.clone(),
             allocator_id: self.allocator_id,
         }
+    }
+
+    /// Returns an `io::Write` adapter for this buffer.
+    pub fn writer(&mut self) -> storage_ptr_slice::Writer<'_> {
+        self.slice.reborrow().writer()
     }
 
     /// Slices this reference. See Buffer::subslice.

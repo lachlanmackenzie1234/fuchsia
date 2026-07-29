@@ -243,8 +243,8 @@ impl DeliveryBlobWriter {
         // Copy data into transfer buffer, zero pad if required.
         let aligned_len = round_up(len, block_size).ok_or(FxfsError::OutOfRange)?;
         let mut buffer = self.stage.handle().allocate_buffer(aligned_len).await;
-        buffer.as_mut_slice()[..len].copy_from_slice(&self.buffer[..len]);
-        buffer.as_mut_slice()[len..].fill(0);
+        buffer.as_mut().subslice_mut(..len).copy_from_slice(&self.buffer[..len]);
+        buffer.as_mut().subslice_mut(len..).fill(0);
 
         // Overwrite allocated bytes in the object's handle.
         let overwrite_fut = async {
@@ -477,7 +477,7 @@ impl DeliveryBlobWriter {
                     )
                 });
             }
-            self.buffer = Vec::from(payload);
+            self.buffer = payload.to_vec();
             self.header = Some(header);
         }
 

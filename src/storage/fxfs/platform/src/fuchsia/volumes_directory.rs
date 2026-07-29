@@ -1208,7 +1208,7 @@ mod tests {
                 // *NOTE*: We have to unblock our write to the VMO since it's pager backed and could
                 // be running on the same thread as the filesystem is.
                 let vmo = vmo.temp_clone();
-                let data = buff.as_slice()[0..amount as usize].to_vec();
+                let data = buff.subslice(0..amount as usize).to_vec();
                 let offset = offset;
                 unblock(move || vmo.write(&data, offset)).await.expect("vmo write failed");
             }
