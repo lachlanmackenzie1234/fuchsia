@@ -20,11 +20,11 @@ import fidl_fuchsia_hwinfo as f_hwinfo
 import fidl_fuchsia_io as f_io
 import fuchsia_controller_py as fuchsia_controller
 import fuchsia_inspect
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp_using_sl4f
 from honeydew.affordances.connectivity.bluetooth.gap import gap_using_fc
-from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy_using_fc,
 )
@@ -725,18 +725,18 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(
         ffx.FFX,
         "run",
-        return_value="".join(wlan_core_using_fc._REQUIRED_CAPABILITIES),
+        return_value="".join(wlan_core._REQUIRED_CAPABILITIES),
         autospec=True,
     )
     @mock.patch.object(
-        wlan_core_using_fc.AsyncWlanCoreUsingFc,
+        wlan_core.WlanCore,
         "__init__",
         autospec=True,
         return_value=None,
     )
-    def test_wlan_core_using_fc(
+    def test_wlan_core(
         self,
-        wlan_core_using_fc_init: mock.Mock,
+        wlan_core_init: mock.Mock,
         # pylint: disable-next=unused-argument
         mock_ffx_run: mock.Mock,
     ) -> None:
@@ -744,9 +744,9 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         affordance."""
         self.assertIsInstance(
             self.fd_fc_obj.wlan_core,
-            wlan_core_using_fc.AsyncWlanCoreUsingFc,
+            wlan_core.WlanCore,
         )
-        wlan_core_using_fc_init.assert_called_once_with(
+        wlan_core_init.assert_called_once_with(
             self.fd_fc_obj.wlan_core,
             device_name=self.fd_fc_obj._device_info.name,
             ffx=self.fd_fc_obj.ffx,

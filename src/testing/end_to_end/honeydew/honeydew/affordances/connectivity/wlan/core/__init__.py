@@ -1,7 +1,7 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""WLAN affordance implementation using Fuchsia Controller."""
+"""WLAN Core affordance"""
 
 import asyncio
 import logging
@@ -24,7 +24,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
     WlanInterfaces,
 )
-from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
@@ -51,8 +50,8 @@ _REGULATORY_REGION_CONFIGURATOR_PROXY = FidlEndpoint(
 )
 
 
-class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
-    """Async WLAN Core affordance implemented with Fuchsia Controller."""
+class WlanCore(AsyncLazyReady):
+    """WLAN Core affordance"""
 
     def __init__(
         self,

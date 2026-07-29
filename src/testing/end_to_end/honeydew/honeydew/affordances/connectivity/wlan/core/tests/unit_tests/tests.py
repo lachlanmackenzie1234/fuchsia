@@ -1,7 +1,7 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Unit tests for wlan_core_using_fc.py"""
+"""Unit tests WLAN Core affordances"""
 
 import copy
 import types
@@ -17,6 +17,7 @@ import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fidl_fuchsia_wlan_sme as f_wlan_sme
 import fuchsia_controller_py
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.wlan.utils.errors import (
@@ -29,7 +30,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanBand,
     WlanChannel,
 )
-from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
@@ -141,7 +141,7 @@ async def _async_error(err: Exception) -> None:
 
 # pylint: disable=protected-access
 class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for wlan_core_using_fc.py."""
+    """Unit tests for WLAN Core affordances"""
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
@@ -179,7 +179,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             autospec=True,
         )
         self.ffx_transport_obj.run.return_value = "".join(
-            wlan_core_using_fc._REQUIRED_CAPABILITIES
+            wlan_core._REQUIRED_CAPABILITIES
         )
 
         self.device_monitor_proxy = mock.MagicMock(
@@ -197,7 +197,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        self.wlan_core_obj = wlan_core_using_fc.AsyncWlanCoreUsingFc(
+        self.wlan_core_obj = wlan_core.WlanCore(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -212,7 +212,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
         """Test if verify_supported() works."""
         self.ffx_transport_obj.run.return_value = ""
         with self.assertRaises(NotSupportedError):
-            wlan_core_using_fc.AsyncWlanCoreUsingFc(
+            wlan_core.WlanCore(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,

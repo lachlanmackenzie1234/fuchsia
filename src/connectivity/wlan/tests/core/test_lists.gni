@@ -33,7 +33,7 @@ core_tests_for_presubmit_no_shield_box = [
 # should go here, but most tests should likely go into `tests_for_postsubmit`.
 core_tests_for_wlan_presubmit = [
   # Though this test is defined in honeydew, it exercises wlan core
-  "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_core/tests/functional_tests",
+  "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/core/tests/functional_tests",
 ]
 
 # These tests run in blocking CI (~once per hour).

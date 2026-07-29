@@ -24,10 +24,10 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from common.utils.ies import read_ssid
 from core_testing import base_test
-from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
-from honeydew.affordances.connectivity.wlan.wlan_core.wlan_core_using_fc import (
+from honeydew.affordances.connectivity.wlan.core import (
     ConnectTransactionEventHandler,
 )
+from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from mobly import signals, test_runner
 from mobly.asserts import (
     abort_class_if,

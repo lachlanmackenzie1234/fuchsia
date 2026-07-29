@@ -13,9 +13,7 @@ from honeydew.affordances.connectivity.bluetooth.le import le
 from honeydew.affordances.connectivity.netstack import (
     netstack as netstack_module,
 )
-from honeydew.affordances.connectivity.wlan.wlan_core import (
-    wlan_core as wlan_core_module,
-)
+from honeydew.affordances.connectivity.wlan import core as wlan_core
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy as wlan_policy_module,
 )
@@ -350,7 +348,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_core(self) -> wlan_core_module.AsyncWlanCore:
+    def wlan_core(self) -> wlan_core.WlanCore:
         """Returns a Wlan affordance object.
 
         Returns:

@@ -26,6 +26,7 @@ import fidl_fuchsia_hwinfo as f_hwinfo
 import fidl_fuchsia_io as f_io
 import fuchsia_controller_py as fcp
 import fuchsia_inspect
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.bluetooth.avrcp import (
     avrcp,
@@ -41,12 +42,6 @@ from honeydew.affordances.connectivity.netstack import (
 )
 from honeydew.affordances.connectivity.netstack import (
     netstack_using_fc,
-)
-from honeydew.affordances.connectivity.wlan.wlan_core import (
-    wlan_core as wlan_core_module,
-)
-from honeydew.affordances.connectivity.wlan.wlan_core import (
-    wlan_core_using_fc,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy as wlan_policy_module,
@@ -740,13 +735,13 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def wlan_core(self) -> wlan_core_module.AsyncWlanCore:
+    def wlan_core(self) -> wlan_core.WlanCore:
         """Returns a wlan affordance object.
 
         Returns:
-            wlan.AsyncWlanCore object
+            wlan.WlanCore object
         """
-        return wlan_core_using_fc.AsyncWlanCoreUsingFc(
+        return wlan_core.WlanCore(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,

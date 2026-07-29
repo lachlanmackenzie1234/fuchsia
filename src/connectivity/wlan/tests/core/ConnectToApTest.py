@@ -27,7 +27,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from common.utils.ies import Ie, read_ssid
 from core_testing import base_test
-from honeydew.affordances.connectivity.wlan.wlan_core.wlan_core_using_fc import (
+from honeydew.affordances.connectivity.wlan.core import (
     ConnectTransactionEventHandler,
 )
 from mobly import signals, test_runner
