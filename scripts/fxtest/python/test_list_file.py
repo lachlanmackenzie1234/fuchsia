@@ -216,7 +216,9 @@ class Test:
         expects_ssh = (
             self.build.expects_ssh is not None and self.build.expects_ssh
         )
-        return is_linux and (has_device or expects_ssh)
+        return (
+            is_linux and (has_device or expects_ssh) and not self.is_boot_test()
+        )
 
     def is_pure_device_test(self) -> bool:
         """Determine if this test is a pure device test.

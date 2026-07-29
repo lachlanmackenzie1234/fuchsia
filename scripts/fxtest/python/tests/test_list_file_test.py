@@ -11,6 +11,8 @@ from test_list_file import Test
 from test_list_file import TestListEntry
 from test_list_file import TestListFile
 from test_list_file import TestListTagKV
+from tests_json_file import DimensionsEntry
+from tests_json_file import EnvironmentEntry
 from tests_json_file import TestEntry
 from tests_json_file import TestSection
 
@@ -123,3 +125,38 @@ class TestListEntryMethodTest(unittest.TestCase):
         self.assertFalse(not_hermetic1.is_hermetic())
         self.assertFalse(not_hermetic2.is_hermetic())
         self.assertFalse(not_hermetic3.is_hermetic())
+
+
+class TestMethodTest(unittest.TestCase):
+    """Test methods on Test"""
+
+    def test_is_e2e_test(self) -> None:
+        e2e_test = Test(
+            TestEntry(
+                test=TestSection(
+                    name="e2e_test", label="//src/e2e_test", os="linux"
+                ),
+                environments=[
+                    EnvironmentEntry(
+                        dimensions=DimensionsEntry(device_type="AEMU")
+                    )
+                ],
+            )
+        )
+        boot_test = Test(
+            TestEntry(
+                test=TestSection(
+                    name="boot_test", label="//src/boot_test", os="linux"
+                ),
+                environments=[
+                    EnvironmentEntry(
+                        dimensions=DimensionsEntry(device_type="AEMU")
+                    )
+                ],
+                is_boot_test=True,
+            )
+        )
+
+        self.assertTrue(e2e_test.is_e2e_test())
+        self.assertTrue(boot_test.is_boot_test())
+        self.assertFalse(boot_test.is_e2e_test())

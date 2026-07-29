@@ -545,7 +545,7 @@ class TestExecution:
         """
         if self._test.is_boot_test():
             raise TestSkipped(
-                "Boot tests are not supported by `fx test`. Use `fx run-boot-test`."
+                "Boot tests are not supported by `fx test`. Use `fx run-boot-test` or `fx core-tests`."
             )
         if self._test.is_e2e_test() and not flags.e2e:
             raise TestSkipped(

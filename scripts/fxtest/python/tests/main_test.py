@@ -2584,6 +2584,29 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
+    async def test_boot_test_selection_validation_error(self) -> None:
+        """Test that selecting a boot test raises _SelectionValidationError."""
+        mock_test = mock.MagicMock()
+        mock_test.name.return_value = "my_boot_test"
+        mock_test.is_boot_test.return_value = True
+
+        mock_selections = mock.MagicMock()
+        mock_selections.group_matches = []
+        mock_selections.selected = [mock_test]
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = mock.Mock()
+        app._flags = mock.Mock()
+        app._exec_env = mock.Mock()
+
+        with self.assertRaises(main.AsyncMain._SelectionValidationError) as ctx:
+            await app._validate_test_selections(mock_selections)
+
+        err_msg = str(ctx.exception)
+        self.assertIn("Boot tests are not supported by `fx test`.", err_msg)
+        self.assertIn("Use `fx run-boot-test` or `fx core-tests`", err_msg)
+        self.assertIn("my_boot_test", err_msg)
+
     async def test_has_active_device(self) -> None:
         """Tests that _has_active_device correctly detects active devices."""
         app = main.AsyncMain.__new__(main.AsyncMain)

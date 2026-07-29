@@ -661,7 +661,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             flags,
         )
 
-        self.assertTrue(test._test.is_e2e_test())
+        self.assertFalse(test._test.is_e2e_test())
         self.assertFalse(test.is_hermetic())
         env = test.environment()
         assert env is not None
@@ -676,6 +676,10 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(False, "No exception was raised")
         except Exception as e:
             self.assertIsInstance(e, execution.TestSkipped)
+            self.assertEqual(
+                str(e),
+                "Boot tests are not supported by `fx test`. Use `fx run-boot-test` or `fx core-tests`.",
+            )
         recorder.emit_end()
 
     async def test_test_execution_with_package_hash(self) -> None:

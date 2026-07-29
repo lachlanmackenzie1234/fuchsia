@@ -1127,6 +1127,14 @@ class AsyncMain:
                 "No tests found for the following selections:\n "
                 + "\n ".join([str(m) for m in missing_groups])
             )
+        boot_tests = [
+            test.name() for test in selections.selected if test.is_boot_test()
+        ]
+        if boot_tests:
+            tests_str = ", ".join(boot_tests)
+            raise self._SelectionValidationError(
+                f"Boot tests are not supported by `fx test`. Use `fx run-boot-test` or `fx core-tests`:\n  {tests_str}"
+            )
 
         if flags.selection and not flags.e2e:
             e2e_tests = [
