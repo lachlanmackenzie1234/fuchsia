@@ -35,7 +35,10 @@ COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES = {
         mandatory = True,
     ),
     "archive_name": attr.string(
-        doc = "What to name the archive. The .far file will be appended if not in this name. Defaults to package_name",
+        doc = """The name of the generated archive file.
+
+        The extension `.far` will be appended if the name does not already end in this.
+        Defaults to `package_name`""",
     ),
     "package_repository_name": attr.string(
         doc = "Repository name of this package, defaults to None",

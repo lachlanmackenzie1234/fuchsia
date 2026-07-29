@@ -34,6 +34,8 @@ def fuchsia_package(
         name,
         package_name = None,
         archive_name = None,
+        package_repository_name = None,
+        disable_repository_name = None,
         platform = None,
         fuchsia_api_level = None,
         components = [],
@@ -41,14 +43,13 @@ def fuchsia_package(
         tools = [],
         subpackages = [],
         tags = [],
+        testonly = None,
+        visibility = None,
         **kwargs):
     """Builds a fuchsia package.
 
     This rule produces a fuchsia package which can be published to a package
     server and loaded on a device.
-
-    The rule will return both package manifest json file which can be used later
-    in the build system and an archive (.far) of the package which can be shared.
 
     This macro will expand out into several fuchsia tasks that can be run by a
     bazel invocation. Given a package definition, the following targets will be
@@ -71,6 +72,15 @@ def fuchsia_package(
 
     Args:
         name: The target name.
+        package_name: An optional name to use for this package, defaults to `name`.
+        archive_name: An optional name for the generated archive. The extension `.far` will be
+          appended if the name does not already end in this. Defaults to `package_name`.
+        package_repository_name: Optional name of the repository to place this package in.
+        disable_repository_name: Optional name of the repository that contains the pre-existing
+          driver we want to disable. This is only used when we want to disable a pre-existing driver
+          so we can register another driver.
+        platform: Optionally override the platform to build the package for.
+        fuchsia_api_level: The API level to build for.
         components: A list of components to add to this package. The dependencies
           of these targets will have their debug symbols stripped and added to
           the build-id directory.
@@ -78,19 +88,12 @@ def fuchsia_package(
           resources will not have debug symbols stripped.
         tools: Additional tools that should be added to this package.
         subpackages: Additional subpackages that should be added to this package.
-        package_name: An optional name to use for this package, defaults to name.
-        archive_name: An option name for the far file.
         fuchsia_api_level: The API level to build for.
-        platform: Optionally override the platform to build the package for.
-        tags: Forward additional tags to all generated targets.
-        **kwargs: extra attributes to pass along to the build rule.
+        tags: Standard meaning.
+        testonly: Standard meaning.
+        visibility: Standard meaning.
+        **kwargs: Extra attributes to pass along to the build rule.
     """
-
-    # This is only used when we want to disable a pre-existing driver so we can
-    # register another driver.
-    disable_repository_name = kwargs.pop("disable_repository_name", None)
-
-    package_repository_name = kwargs.pop("package_repository_name", None)
 
     _deps_to_search = components + resources + tools
 
@@ -99,6 +102,8 @@ def fuchsia_package(
         name = processed_binaries,
         deps = _deps_to_search,
         tags = tags + ["manual"],
+        testonly = testonly,
+        visibility = ["//visibility:private"],
         **kwargs
     )
 
@@ -107,6 +112,8 @@ def fuchsia_package(
         name = collected_resources,
         deps = _deps_to_search,
         tags = tags + ["manual"],
+        testonly = testonly,
+        visibility = ["//visibility:private"],
         **kwargs
     )
 
@@ -124,6 +131,8 @@ def fuchsia_package(
         platform = platform,
         package_repository_name = package_repository_name,
         tags = tags + ["manual"],
+        testonly = testonly,
+        visibility = ["//visibility:private"],
         **kwargs
     )
 
@@ -134,33 +143,53 @@ def fuchsia_package(
         tools = {tool: tool for tool in tools},
         package_repository_name = package_repository_name,
         disable_repository_name = disable_repository_name,
-        # TODO(b/339099331) fuchsia_packages that are testonly shouldn't have the
+        # TODO(b/339099331): fuchsia_packages that are testonly shouldn't have the
         # full set of tasks.
-        is_test = kwargs.get("testonly", False),
+        is_test = testonly or False,
         tags = tags,
+        testonly = testonly,
+        visibility = visibility,
         **kwargs
     )
 
-def _fuchsia_test_package(
+def fuchsia_test_package(
         *,
         name,
         package_name = None,
         archive_name = None,
-        resources = [],
-        fuchsia_api_level = None,
         platform = None,
-        _test_component_mapping,
-        _components = [],
+        fuchsia_api_level = None,
+        components = [],
+        test_components = [],
+        resources = [],
         subpackages = [],
         test_realm = None,
         tags = [],
-        target_compatible_with = [],
+        visibility = None,
         **kwargs):
     """Defines test variants of fuchsia_package.
 
-    See fuchsia_package for argument descriptions."""
+    Args:
+        name: The target name.
+        package_name: An optional name to use for this package, defaults to `name`.
+        archive_name: An optional name for the generated archive. The extension `.far` will be
+          appended if the name does not already end in this. Defaults to `package_name`.
+        platform: Optionally override the platform to build the package for.
+        fuchsia_api_level: The API level to build for.
+        components: A list of additional components to add to this package.
+        test_components: A list of components to add to this package.
+        resources: A list of additional resources to add to this package.
+        subpackages: Additional subpackages that should be added to this package.
+        test_realm: An optional name for the test realm.
+        tags: Standard meaning.
+        visibility: Standard meaning.
+        **kwargs: Extra attributes to pass along to the build rule.
+    """
 
-    _deps_to_search = _components + resources + _test_component_mapping.values()
+    if "testonly" in kwargs:
+        fail("fuchsia_test_package does not support the 'testonly' attribute; it is always testonly.")
+
+    _deps_to_search = components + resources + test_components
 
     processed_binaries = "%s_fuchsia_package.elf_binaries" % name
     find_and_process_unstripped_binaries(
@@ -168,22 +197,24 @@ def _fuchsia_test_package(
         deps = _deps_to_search,
         testonly = True,
         tags = tags + ["manual"],
-        target_compatible_with = target_compatible_with,
+        visibility = ["//visibility:private"],
+        **kwargs
     )
 
     collected_resources = "%s_fuchsia_package.resources" % name
     fuchsia_find_all_package_resources(
         name = collected_resources,
         deps = _deps_to_search,
-        testonly = True,
         tags = tags + ["manual"],
-        target_compatible_with = target_compatible_with,
+        testonly = True,
+        visibility = ["//visibility:private"],
+        **kwargs
     )
 
     _build_fuchsia_package(
         name = "%s_fuchsia_package" % name,
-        test_components = _test_component_mapping.values(),
-        components = _components,
+        test_components = test_components,
+        components = components,
         resources = resources,
         processed_binaries = processed_binaries,
         collected_resources = collected_resources,
@@ -192,43 +223,24 @@ def _fuchsia_test_package(
         archive_name = archive_name,
         fuchsia_api_level = fuchsia_api_level,
         platform = platform,
-        target_compatible_with = target_compatible_with,
+        package_repository_name = None,
         tags = tags + ["manual"],
         testonly = True,
+        visibility = ["//visibility:private"],
         **kwargs
     )
 
     fuchsia_package_tasks(
         name = name,
         package = "%s_fuchsia_package" % name,
-        component_run_tags = _test_component_mapping.keys(),
+        component_run_tags = [Label(c).name for c in test_components],
+        package_repository_name = None,
+        disable_repository_name = None,
         is_test = True,
         test_realm = test_realm,
         tags = tags,
-        target_compatible_with = target_compatible_with,
-        **kwargs
-    )
-
-def fuchsia_test_package(
-        *,
-        name,
-        test_components = [],
-        components = [],
-        fuchsia_api_level = None,
-        platform = None,
-        **kwargs):
-    """A test variant of fuchsia_test_package
-
-    See _fuchsia_test_package for additional arguments.
-
-
-"""
-    _fuchsia_test_package(
-        name = name,
-        _test_component_mapping = {Label(component).name: component for component in test_components},
-        _components = components,
-        fuchsia_api_level = fuchsia_api_level,
-        platform = platform,
+        testonly = True,
+        visibility = visibility,
         **kwargs
     )
 
@@ -254,7 +266,7 @@ def fuchsia_unittest_package(
         name: This target name.
         unit_tests: The unit_test targets. These targets must have a generated
           fuchsia_test_component with the name <name>.unittest_component.
-        **kwargs: Arguments to forward to the fuchsia_test_package.
+        **kwargs: Extra attributes to pass along to the `fuchsia_test_package`.
     """
 
     fuchsia_test_package(
@@ -286,7 +298,12 @@ def _build_fuchsia_package_impl(ctx):
     )
 
 _build_fuchsia_package = rule(
-    doc = "Builds a fuchsia package.",
+    doc = """
+    Generates an archive for a Fuchsia package containing components, resources, tools, and
+    subpackages.
+
+    This rule invokes the common implementation with SDK-specific tools, data, and configurations.
+    """,
     implementation = _build_fuchsia_package_impl,
     cfg = fuchsia_transition,
     toolchains = [FUCHSIA_TOOLCHAIN_DEFINITION, "@bazel_tools//tools/cpp:toolchain_type"],
