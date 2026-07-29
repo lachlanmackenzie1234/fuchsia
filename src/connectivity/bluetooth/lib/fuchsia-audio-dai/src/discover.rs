@@ -77,10 +77,7 @@ mod tests {
                 move |handles: LocalComponentHandles| {
                     Box::pin(mock_svc(
                         handles,
-                        mock_dai_service_with_io_devices(
-                            "input1".to_string(),
-                            "output1".to_string(),
-                        ),
+                        mock_dai_service_with_io_devices("input1", "output1"),
                     ))
                 },
                 ChildOptions::new().eager(),

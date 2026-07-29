@@ -15,7 +15,7 @@ use crate::node::Node;
 use crate::path::Path;
 use crate::{
     assert_close, assert_get_attr, assert_query, assert_read, assert_read_dirents, assert_seek,
-    assert_write,
+    assert_write, pseudo_directory,
 };
 use assert_matches::assert_matches;
 use flex_client::fidl::DiscoverableProtocolMarker as _;
@@ -36,7 +36,6 @@ use libc::{S_IFDIR, S_IRUSR, S_IXUSR};
 use static_assertions::assert_eq_size;
 use std::path::PathBuf;
 use std::sync::Arc;
-use vfs_macros::pseudo_directory;
 use zx_status::Status;
 
 async fn assert_open_file_err(
@@ -1034,11 +1033,9 @@ async fn add_file_to_empty() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let etc;
+    let etc = Simple::new();
     let dir = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc -> /* empty */
-        },
+        "etc" => etc.clone(),
     };
     #[cfg(feature = "fdomain")]
     let scope = crate::execution_scope::ExecutionScope::new(client.clone());
@@ -1066,13 +1063,12 @@ async fn in_tree_open() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let ssh;
+    let ssh = pseudo_directory! {
+        "sshd_config" => file::read_only(b"# Empty"),
+    };
     let _root = pseudo_directory! {
         "etc" => pseudo_directory! {
-            "ssh" => pseudo_directory! {
-                ssh ->
-                "sshd_config" => file::read_only(b"# Empty"),
-            },
+            "ssh" => ssh.clone(),
         },
     };
 
@@ -1097,14 +1093,13 @@ async fn in_tree_open_path_one_component() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let etc;
-    let _root = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc ->
-            "ssh" => pseudo_directory! {
-                "sshd_config" => file::read_only(b"# Empty"),
-            },
+    let etc = pseudo_directory! {
+        "ssh" => pseudo_directory! {
+            "sshd_config" => file::read_only(b"# Empty"),
         },
+    };
+    let _root = pseudo_directory! {
+        "etc" => etc.clone(),
     };
 
     let path = Path::validate_and_split("ssh").unwrap();
@@ -1129,14 +1124,13 @@ async fn in_tree_open_path_two_components() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let etc;
-    let _root = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc ->
-            "ssh" => pseudo_directory! {
-                "sshd_config" => file::read_only(b"# Empty"),
-            },
+    let etc = pseudo_directory! {
+        "ssh" => pseudo_directory! {
+            "sshd_config" => file::read_only(b"# Empty"),
         },
+    };
+    let _root = pseudo_directory! {
+        "etc" => etc.clone(),
     };
 
     let path = Path::validate_and_split("ssh/sshd_config").unwrap();
@@ -1158,15 +1152,14 @@ async fn in_tree_add_file() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let etc;
-    let dir = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc ->
-            "ssh" => pseudo_directory! {
-                "sshd_config" => file::read_only(b"# Empty"),
-            },
-            "passwd" => file::read_only(b"[redacted]"),
+    let etc = pseudo_directory! {
+        "ssh" => pseudo_directory! {
+            "sshd_config" => file::read_only(b"# Empty"),
         },
+        "passwd" => file::read_only(b"[redacted]"),
+    };
+    let dir = pseudo_directory! {
+        "etc" => etc.clone()
     };
     #[cfg(feature = "fdomain")]
     let scope = crate::execution_scope::ExecutionScope::new(client.clone());
@@ -1202,13 +1195,12 @@ async fn in_tree_remove_file() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let etc;
+    let etc = pseudo_directory! {
+        "fstab" => file::read_only(b"/dev/fs /"),
+        "passwd" => file::read_only(b"[redacted]"),
+    };
     let dir = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc ->
-            "fstab" => file::read_only(b"/dev/fs /"),
-            "passwd" => file::read_only(b"[redacted]"),
-        },
+        "etc" => etc.clone(),
     };
     #[cfg(feature = "fdomain")]
     let scope = crate::execution_scope::ExecutionScope::new(client.clone());
@@ -1250,12 +1242,11 @@ async fn in_tree_move_file() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let etc;
+    let etc = pseudo_directory! {
+        "fstab" => file::read_only(b"/dev/fs /"),
+    };
     let dir = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc ->
-            "fstab" => file::read_only(b"/dev/fs /"),
-        },
+        "etc" => etc.clone()
     };
     #[cfg(feature = "fdomain")]
     let scope = crate::execution_scope::ExecutionScope::new(client.clone());
@@ -1435,15 +1426,14 @@ async fn watch_addition() {
     #[cfg(not(feature = "fdomain"))]
     let client = flex_client::fidl::ZirconClient;
     let _ = &client;
-    let etc;
-    let dir = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc ->
-            "ssh" => pseudo_directory! {
-                "sshd_config" => file::read_only(b"# Empty"),
-            },
-            "passwd" => file::read_only(b"[redacted]"),
+    let etc = pseudo_directory! {
+        "ssh" => pseudo_directory! {
+            "sshd_config" => file::read_only(b"# Empty"),
         },
+        "passwd" => file::read_only(b"[redacted]"),
+    };
+    let dir = pseudo_directory! {
+        "etc" => etc.clone(),
     };
     #[cfg(feature = "fdomain")]
     let scope = crate::execution_scope::ExecutionScope::new(client.clone());
@@ -1501,13 +1491,12 @@ async fn watch_addition() {
 async fn watch_removal() {
     #[cfg(feature = "fdomain")]
     let client = fdomain_local::local_client_empty();
-    let etc;
+    let etc = pseudo_directory! {
+        "fstab" => file::read_only(b"/dev/fs /"),
+        "passwd" => file::read_only(b"[redacted]"),
+    };
     let dir = pseudo_directory! {
-        "etc" => pseudo_directory! {
-            etc ->
-            "fstab" => file::read_only(b"/dev/fs /"),
-            "passwd" => file::read_only(b"[redacted]"),
-        },
+        "etc" => etc.clone(),
     };
     #[cfg(feature = "fdomain")]
     let scope = crate::execution_scope::ExecutionScope::new(client.clone());

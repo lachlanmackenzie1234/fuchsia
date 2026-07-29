@@ -69,6 +69,22 @@ impl Simple {
         })
     }
 
+    /// Constructs a new pseudo directory with the provided entries.
+    ///
+    /// This function is marked `pub` only so the `pseudo_directory!` macro can use it. It should
+    /// not be used directly outside of this crate.
+    #[doc(hidden)]
+    pub fn new_with_entries_and_inode(
+        entries: BTreeMap<Name, Arc<dyn DirectoryEntry>>,
+        inode: u64,
+    ) -> Arc<Self> {
+        Arc::new(Simple {
+            inner: Mutex::new(Inner { entries, watchers: Watchers::new() }),
+            inode,
+            not_found_handler: None,
+        })
+    }
+
     /// Creates a new directory with the provided function that will be called whenever this VFS
     /// receives an open request for a path that is not present in the directory. The handler is
     /// invoked with the full path of the missing entry, relative to the root.
@@ -391,6 +407,68 @@ impl ToRequestFlags for fio::Flags {
     fn to_request_flags(&self) -> RequestFlags {
         RequestFlags::Open3(*self)
     }
+}
+
+#[doc(hidden)]
+pub mod __private {
+    pub const INO_UNKNOWN: u64 = flex_fuchsia_io::INO_UNKNOWN;
+}
+
+/// Builds a pseudo directory using a simple DSL. The directory entry names must be static strings
+/// (`&'static str`).
+///
+/// # Examples
+///
+/// This will construct a small tree of read-only files:
+/// ```
+/// let root = pseudo_directory! {
+///     "etc" => pseudo_directory! {
+///         "fstab" => read_only(b"/dev/fs /"),
+///         "passwd" => read_only(b"[redacted]"),
+///         "shells" => read_only(b"/bin/bash"),
+///         "ssh" => pseudo_directory! {
+///           "sshd_config" => read_only(b"# Empty"),
+///         },
+///     },
+///     "uname" => read_only(b"Fuchsia"),
+/// };
+/// ```
+///
+/// # Panics
+///
+/// This macro will panic if there are duplicate entries or any of the entry names are invalid. See
+/// [`name::validate_name`] for the restrictions.
+#[macro_export]
+macro_rules! pseudo_directory {
+    ( $( $name:expr => $entry:expr ),* $(,)? ) => {{
+        let entries = ::std::collections::BTreeMap::from([
+            $(
+                (
+                    $crate::name::Name::from_static($name),
+                    $entry as ::std::sync::Arc<dyn $crate::directory::entry::DirectoryEntry>,
+                ),
+            )*
+        ]);
+        // Check for duplicate entries by comparing the length of the constructed map with the
+        // number of entries passed in.
+        ::std::assert_eq!(
+            entries.len(),
+            <[()]>::len(&[ $( $crate::__replace_with_unit_type!($name) ),* ]),
+            "Duplicate entries in pseudo_directory!"
+        );
+        $crate::directory::immutable::Simple::new_with_entries_and_inode(
+            entries,
+            $crate::directory::simple::__private::INO_UNKNOWN,
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __replace_with_unit_type {
+    ($_t:tt) => {
+        ()
+    };
 }
 
 #[cfg(test)]

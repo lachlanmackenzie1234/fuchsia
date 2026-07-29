@@ -636,6 +636,7 @@ mod tests {
     use vfs::ToObjectRequest;
     use vfs::directory::entry_container::Directory;
     use vfs::directory::helper::DirectlyMutable;
+    use vfs::directory::simple::Simple as PseudoDir;
     use vfs::execution_scope::ExecutionScope;
     use vfs::file::vmo::read_only;
     use vfs::path::Path as VfsPath;
@@ -675,9 +676,8 @@ mod tests {
         let mut meta_far_contents = vec![];
         package.meta_far().unwrap().read_to_end(&mut meta_far_contents).unwrap();
 
-        let blob_dir = vfs::pseudo_directory! {
-            &package.hash().to_string() => vfs::file::vmo::read_only(meta_far_contents),
-        };
+        let blob_dir = PseudoDir::new();
+        blob_dir.add_entry(package.hash().to_string(), read_only(meta_far_contents)).unwrap();
 
         let (_, blobs) = package.contents();
         for (hash, bytes) in blobs {
@@ -810,9 +810,8 @@ mod tests {
         let mut meta_far_contents = vec![];
         package.meta_far().unwrap().read_to_end(&mut meta_far_contents).unwrap();
 
-        let blob_dir = vfs::pseudo_directory! {
-            &package.hash().to_string() => read_only(meta_far_contents),
-        };
+        let blob_dir = PseudoDir::new();
+        blob_dir.add_entry(package.hash().to_string(), read_only(meta_far_contents)).unwrap();
 
         let (_, blobs) = package.contents();
         for (hash, bytes) in blobs {
@@ -891,13 +890,14 @@ mod tests {
         let mut index_bytes = vec![];
         index.serialize(&mut index_bytes).unwrap();
 
+        let blob_dir = PseudoDir::new();
+        blob_dir.add_entry(package.hash().to_string(), read_only(meta_far_contents)).unwrap();
+
         let bootfs = vfs::pseudo_directory! {
             "data" => vfs::pseudo_directory! {
                 "bootfs_packages" => read_only(index_bytes),
             },
-            "blob" => vfs::pseudo_directory! {
-                package.hash().to_string().as_str() => read_only(meta_far_contents),
-            }
+            "blob" => blob_dir,
         };
 
         let (_task, bootfs_proxy) = serve_vfs_dir(bootfs);
@@ -947,9 +947,8 @@ mod tests {
         let mut meta_far_contents = vec![];
         package.meta_far().unwrap().read_to_end(&mut meta_far_contents).unwrap();
 
-        let blob_dir = vfs::pseudo_directory! {
-            &package.hash().to_string() => read_only(meta_far_contents),
-        };
+        let blob_dir = PseudoDir::new();
+        blob_dir.add_entry(package.hash().to_string(), read_only(meta_far_contents)).unwrap();
 
         let (_, blobs) = package.contents();
         for (hash, bytes) in blobs {
@@ -1058,18 +1057,23 @@ mod tests {
         )]);
         let mut index_bytes = vec![];
         let () = index.serialize(&mut index_bytes).unwrap();
+
+        let blob_dir = PseudoDir::new();
+        blob_dir
+            .add_entry(superpackage.hash().to_string(), read_only(superpackage_far_contents))
+            .unwrap();
+        blob_dir
+            .add_entry(subpackage.hash().to_string(), read_only(subpackage_far_contents))
+            .unwrap();
+        blob_dir
+            .add_entry(subsubpackage.hash().to_string(), read_only(subsubpackage_far_contents))
+            .unwrap();
+
         let bootfs = vfs::pseudo_directory! {
             "data" => vfs::pseudo_directory! {
                 "bootfs_packages" => vfs::file::read_only(index_bytes.as_slice()),
             },
-            "blob" => vfs::pseudo_directory! {
-                superpackage.hash().to_string().as_str() =>
-                    vfs::file::read_only(superpackage_far_contents),
-                subpackage.hash().to_string().as_str() =>
-                    vfs::file::read_only(subpackage_far_contents),
-                subsubpackage.hash().to_string().as_str() =>
-                    vfs::file::read_only(subsubpackage_far_contents),
-            },
+            "blob" => blob_dir,
         };
         let (_task, bootfs_proxy) = serve_vfs_dir(bootfs);
         let resolver = FuchsiaBootResolver::new_from_directory(bootfs_proxy).await.unwrap();

@@ -139,10 +139,7 @@ async fn hfp_audio_gateway_v2_capability_routing() {
         .add_local_child(
             MOCK_SVC_MONIKER,
             move |handles: LocalComponentHandles| {
-                Box::pin(mock_svc(
-                    handles,
-                    mock_dai_service_with_io_devices("input1".to_string(), "output1".to_string()),
-                ))
+                Box::pin(mock_svc(handles, mock_dai_service_with_io_devices("input1", "output1")))
             },
             ChildOptions::new().eager(),
         )

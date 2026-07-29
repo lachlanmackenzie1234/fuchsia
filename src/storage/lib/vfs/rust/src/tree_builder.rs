@@ -381,10 +381,8 @@ mod tests {
     use super::{Error, Simple, TreeBuilder};
 
     // Macros are exported into the root of the crate.
-    use crate::{assert_close, assert_read};
-
     use crate::directory::serve;
-    use crate::file;
+    use crate::{assert_close, assert_read, file, pseudo_directory};
 
     use flex_fuchsia_io as fio;
     #[cfg(not(feature = "fdomain"))]
@@ -401,7 +399,6 @@ mod tests {
     fn empty_dir() -> TreeBuilder {
         TreeBuilder::empty_dir()
     }
-    use vfs_macros::pseudo_directory;
 
     async fn assert_open_file_contents(
         root: &fio::DirectoryProxy,

@@ -81,7 +81,6 @@ common_vfs_args = {
     "src/object_request.rs",
     "src/path.rs",
     "src/protocols.rs",
-    "src/pseudo_directory.rs",
     "src/remote.rs",
     "src/remote/tests.rs",
     "src/request_handler.rs",
@@ -230,7 +229,6 @@ group("tests") {
   deps = [
     ":vfs-tests",
     ":vfs_test($host_toolchain)",
-    "macros:tests",
     "name:tests",
   ]
 }
