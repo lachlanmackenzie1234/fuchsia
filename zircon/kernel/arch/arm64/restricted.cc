@@ -127,18 +127,35 @@ void RestrictedState::ArchSaveStatePreRestrictedEntry(ArchSavedNormalState& arch
   __UNREACHABLE;
 }
 
+namespace {
+
+void RestoreNormalTpidrState(Thread* thread, const ArchSavedNormalState& arch_state) {
+  // Restore TPIDR_EL0 and TPIDRRO_EL0 registers from saved normal state.
+  // TODO(https://fxbug.dev/42076040): Eventually the TPIDR register should be
+  // inside the iframe.
+  __arm_wsr64("tpidr_el0", arch_state.tpidr_el0);
+  __arm_wsr64("tpidrro_el0", arch_state.tpidrro_el0);
+  thread->arch().tpidr_el0 = arch_state.tpidr_el0;
+  thread->arch().tpidrro_el0 = arch_state.tpidrro_el0;
+}
+
+}  // namespace
+
 void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
     const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context,
     zx_restricted_reason_t reason) {
+  Thread* thread = Thread::Current::Get();
+
   zx_thread_state_general_regs_t regs = {};
   regs.pc = vector_table;
   regs.r[0] = context;
   regs.r[1] = reason;
-  regs.tpidr = arch_state.tpidr_el0;
-  [[maybe_unused]] zx_status_t status = arch_set_general_regs(Thread::Current().Get(), &regs);
+  [[maybe_unused]] zx_status_t status = arch_set_general_regs(thread, &regs);
   // This will only fail if register state has not been saved, but this will always
   // have happened by this stage of exception handling.
   DEBUG_ASSERT(status == ZX_OK);
+
+  RestoreNormalTpidrState(thread, arch_state);
 }
 
 namespace {
@@ -212,12 +229,6 @@ void RestrictedState::ArchSaveRestrictedIframeState(zx_restricted_state_t& state
                                                  uint64_t code) {
   DEBUG_ASSERT(arch_ints_disabled());
 
-  // Restore TPIDR_EL0 from saved normal state.
-  // TODO(https://fxbug.dev/42076040): Eventually the TPIDR register should be
-  // inside the iframe.
-  __arm_wsr64("tpidr_el0", arch_state.tpidr_el0);
-  __arm_wsr64("tpidrro_el0", arch_state.tpidrro_el0);
-
   // Set up a mostly empty iframe and return back to normal mode.
   iframe_t iframe{};
 
@@ -228,6 +239,8 @@ void RestrictedState::ArchSaveRestrictedIframeState(zx_restricted_state_t& state
   // Set the ELR such that we return to the vector_table after entering normal
   // mode.
   iframe.elr = vector_table;
+
+  RestoreNormalTpidrState(Thread::Current::Get(), arch_state);
 
   // Load the new state and exit.
   arch_enter_uspace(&iframe);

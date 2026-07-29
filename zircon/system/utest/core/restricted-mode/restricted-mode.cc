@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/arch/intrin.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/exception.h>
 #include <lib/zx/process.h>
@@ -834,5 +835,44 @@ TEST_P(RestrictedMode, PrefetchInstructionAbort) {
   EXPECT_TRUE(r.is_ok());
   EXPECT_EQ(ZX_RESTRICTED_REASON_EXCEPTION, r.value());
   machine.LogState(ZX_RESTRICTED_REASON_EXCEPTION);
+}
+
+TEST_P(RestrictedMode, ExceptionRedirectRestoresTpidrroEl0) {
+  if (machine() != restricted_machine::MachineType::kArm) {
+    ZXTEST_SKIP() << "kArm machine type only test";
+    return;
+  }
+
+  // Save the normal-mode TPIDRRO_EL0 register value before entering restricted mode.
+  const uint64_t normal_tpidrro_before = __arm_rsr64("tpidrro_el0");
+
+  auto helper = GetArchHelper();
+  restricted_machine::Machine machine(environment());
+  ASSERT_TRUE(machine.Initialize());
+  helper->SetInitialState(machine.registers());
+
+  // Set restricted mode's tpidr_el0 to a distinct canary value.
+  // In aarch32 restricted mode, ArchEnterRestricted mirrors state.tpidr_el0 into
+  // hardware TPIDRRO_EL0 (TPIDRURO).
+  constexpr uint64_t kCanaryTpidr = 0xdeadbeef12345678ULL;
+  machine.registers()->restricted_state().tpidr_el0 = kCanaryTpidr;
+
+  // Set the instruction pointer to trigger a CPU exception in restricted mode.
+  auto exc_addr = environment()->SymbolAddress("exception_bounce");
+  ASSERT_OK(exc_addr);
+  machine.registers()->set_pc(exc_addr.value());
+  EXPECT_OK(machine.CommitState());
+
+  // Enter restricted mode and expect an exception.
+  zx::result<uint64_t> r = machine.Enter();
+  ASSERT_OK(r);
+  EXPECT_EQ(ZX_RESTRICTED_REASON_EXCEPTION, r.value());
+
+  // Read normal-mode TPIDRRO_EL0 register after returning to normal mode from exception redirect.
+  const uint64_t normal_tpidrro_after = __arm_rsr64("tpidrro_el0");
+
+  // Verify that the normal-mode TPIDRRO_EL0 register was restored and did not retain
+  // the restricted mode value.
+  EXPECT_EQ(normal_tpidrro_before, normal_tpidrro_after);
 }
 #endif  // defined(__aarch64__)
