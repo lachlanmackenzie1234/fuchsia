@@ -199,6 +199,16 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/fidl/fidlgen_rust:fidlgen_rust"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_rust_/fidlgen_rust"
+        ninja = "fidlgen_rust"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/fidl/fidlmerge:fidlmerge"
     copy_outputs = [
       {
