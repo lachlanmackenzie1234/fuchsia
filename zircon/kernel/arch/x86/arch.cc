@@ -244,11 +244,11 @@ __NO_SAFESTACK __NO_RETURN void x86_secondary_entry(ktl::atomic<unsigned int>* a
   // Set %gs.base to our percpu struct.  This has to be done before
   // calling x86_init_percpu, which initializes most of that struct, so
   // that x86_init_percpu can use safe-stack and/or stack-protector code.
-  struct x86_percpu* const percpu = &ap_percpus[cpu_num - 1];
-  write_msr(X86_MSR_IA32_GS_BASE, (uintptr_t)percpu);
+  x86_percpu& percpu = x86_get_percpu(cpu_num);
+  write_msr(X86_MSR_IA32_GS_BASE, reinterpret_cast<uintptr_t>(&percpu));
 
   // Copy the stack-guard value from the boot CPU's perpcu.
-  percpu->stack_guard = bp_percpu.stack_guard;
+  percpu.stack_guard = bp_percpu.stack_guard;
 
 #if __has_feature(safe_stack)
   // Set up the initial unsafe stack pointer.

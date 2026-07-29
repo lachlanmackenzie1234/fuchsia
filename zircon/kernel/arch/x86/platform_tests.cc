@@ -445,11 +445,10 @@ static bool test_x64_tss_io_bitmap() {
   }
 
   // Validate all initialized Application Processor (AP) TSS bitmaps are similarly protected.
-  if (ap_percpus != nullptr) {
-    for (cpu_num_t cpu_idx = 0; cpu_idx < (arch_max_num_cpus() - 1); ++cpu_idx) {
+  for (cpu_num_t cpu_idx = 0; cpu_idx < (arch_max_num_cpus() - 1); ++cpu_idx) {
+    if (const x86_percpu* ap = x86_get_percpu_for_test(cpu_idx)) {
       for (size_t i = 0; i < IO_BITMAP_BYTES; ++i) {
-        ASSERT_EQ(ap_percpus[cpu_idx].default_tss.tss_bitmap[i], 0xFF,
-                  "TSS bitmap byte not set on AP");
+        ASSERT_EQ(ap->default_tss.tss_bitmap[i], 0xFF, "TSS bitmap byte not set on AP");
       }
     }
   }

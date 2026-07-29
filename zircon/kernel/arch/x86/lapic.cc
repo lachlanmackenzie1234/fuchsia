@@ -273,9 +273,9 @@ static void pv_mask_ipi(cpu_mask_t mask, uint32_t request) {
   const cpu_num_t num_cpus = ktl::min(arch_max_num_cpus(), highest_cpu_set(mask) + 1);
   for (cpu_num_t cpu_id = lowest_cpu_set(mask); cpu_id < num_cpus; cpu_id++) {
     if (BIT(mask, cpu_id)) {
-      struct x86_percpu* percpu = cpu_id == 0 ? &bp_percpu : &ap_percpus[cpu_id - 1];
-      if (percpu->apic_id != INVALID_APIC_ID) {
-        masks[percpu->apic_id / mask_size] |= 1ull << (percpu->apic_id % mask_size);
+      const x86_percpu& percpu = x86_get_percpu(cpu_id);
+      if (percpu.apic_id != INVALID_APIC_ID) {
+        masks[percpu.apic_id / mask_size] |= 1ull << (percpu.apic_id % mask_size);
       }
     }
   }
@@ -345,9 +345,9 @@ void apic_send_mask_ipi(uint8_t vector, cpu_mask_t mask, enum apic_interrupt_del
   const cpu_num_t num_cpus = ktl::min(arch_max_num_cpus(), highest_cpu_set(mask) + 1);
   for (cpu_num_t cpu_id = lowest_cpu_set(mask); cpu_id < num_cpus; cpu_id++) {
     if (BIT(mask, cpu_id)) {
-      struct x86_percpu* percpu = cpu_id == 0 ? &bp_percpu : &ap_percpus[cpu_id - 1];
-      if (percpu->apic_id != INVALID_APIC_ID) {
-        apic_send_ipi(vector, (uint8_t)percpu->apic_id, dm);
+      const x86_percpu& percpu = x86_get_percpu(cpu_id);
+      if (percpu.apic_id != INVALID_APIC_ID) {
+        apic_send_ipi(vector, static_cast<uint8_t>(percpu.apic_id), dm);
       }
     }
   }

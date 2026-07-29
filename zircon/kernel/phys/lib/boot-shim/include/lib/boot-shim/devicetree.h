@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstdint>
 #include <optional>
 #include <source_location>
@@ -656,21 +657,20 @@ class DevicetreeCpuTopologyItem : public DevicetreeItemBase<DevicetreeCpuTopolog
     arch_info_setter_ = std::move(arch_info_setter);
   }
 
-  template <typename T>
+  template <std::default_initializable T>
   std::span<T> Allocate(size_t count, fbl::AllocChecker& ac,
                         std::source_location location = std::source_location::current()) const {
     size_t alloc_size = sizeof(T) * count;
-    auto* alloc = static_cast<T*>((*allocator_)(alloc_size, alignof(T), ac));
+    void* alloc = (*allocator_)(alloc_size, alignof(T), ac);
     if (!alloc) {
       // Log allocation failure. The effect is that the matcher will keep looking and will fail to
       // make progress. But the error will be logged.
       auto* self = const_cast<DevicetreeCpuTopologyItem*>(this);
       self->OnError("Allocation Failed.");
       self->Log("at %s:%u\n", location.file_name(), static_cast<unsigned int>(location.line()));
-      count = 0;
+      return {};
     }
-    memset(alloc, 0, alloc_size);
-    return std::span<T>(alloc, count);
+    return std::span{new (alloc) T[count]{}, count};
   }
 
   template <typename T>

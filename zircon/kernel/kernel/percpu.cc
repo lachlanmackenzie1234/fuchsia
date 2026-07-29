@@ -64,10 +64,6 @@ void percpu::InitializeSecondariesBegin() {
   if (bytes) {
     secondary_processors_ = static_cast<percpu*>(memalign(MAX_CACHE_LINE, bytes));
 
-    // TODO: Remove the need to zero memory by fully initializing all of percpu
-    // members in the constructor / default initializers.
-    memset(secondary_processors_, 0, bytes);
-
     // Construct the secondary percpu instances and add them to the index.
     for (cpu_num_t i = 1; i < processor_count_; i++) {
       processor_index_[i] = &secondary_processors_[i - 1];

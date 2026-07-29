@@ -63,15 +63,15 @@ struct percpu {
   ktl::atomic<uint64_t> chain_lock_conflict_id{1};
 
   // guest entry/exit statistics
-  struct guest_stats gstats;
+  guest_stats gstats = {};
   // thread/cpu level statistics
-  struct cpu_stats stats;
+  cpu_stats stats = {};
 
   // per cpu idle/power thread
   IdlePowerThread idle_power_thread;
 
   // kernel counters arena
-  int64_t* counters;
+  int64_t* counters = nullptr;
 
   // Each cpu maintains a DpcRunner.
   DpcRunner dpc_runner;
@@ -92,7 +92,7 @@ struct percpu {
   //
   // When reading, use |ForEachPreemptDisable|. Although it is not possible to guarantee a
   // consistent snapshot of these counters, it should be good enough for diagnostic uses.
-  vm_page_counts_t vm_page_counts;
+  vm_page_counts_t vm_page_counts{};
 
   // lockup_detector state.
   //

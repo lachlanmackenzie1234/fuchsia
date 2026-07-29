@@ -4,6 +4,7 @@
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
+
 #include "arch/x86/mp.h"
 
 #include <assert.h>
@@ -20,8 +21,6 @@
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
-
-#include <new>
 
 #include <arch/mp.h>
 #include <arch/mp_unplug_event.h>
@@ -42,11 +41,29 @@
 #include <kernel/timer.h>
 #include <ktl/algorithm.h>
 #include <ktl/memory.h>
+#include <ktl/new.h>
+#include <ktl/span.h>
 
 // Enable/disable ktraces local to this file.
 #define LOCAL_KTRACE_ENABLE 0
 
-struct x86_percpu* ap_percpus;
+namespace {
+
+// Placement new is not usually provided for the version with extra alignment
+// requirements, but the use here is always with an aligned pointer.
+struct AlignedForNew {
+  void* ptr = nullptr;
+};
+
+}  // namespace
+
+// Cannot be in a namespace, but uses an internal-linkage type.
+inline void* operator new[](size_t size, ktl::align_val_t align,
+                            AlignedForNew aligned_ptr) noexcept {
+  return aligned_ptr.ptr;
+}
+
+static ktl::span<x86_percpu> ap_percpus;
 uint8_t x86_num_cpus = 1;
 static bool use_monitor = false;
 
@@ -103,8 +120,16 @@ struct x86_percpu bp_percpu = {
     .interrupt_stacks = {},
 };
 
+x86_percpu& x86_get_percpu(cpu_num_t cpu_id) {
+  return cpu_id == 0 ? bp_percpu : ap_percpus[cpu_id - 1];
+}
+
+x86_percpu* x86_get_percpu_for_test(cpu_num_t cpu_id) {
+  return cpu_id == 0 ? &bp_percpu : cpu_id >= ap_percpus.size() ? nullptr : &ap_percpus[cpu_id - 1];
+}
+
 zx_status_t x86_allocate_ap_structures(uint32_t* apic_ids, uint8_t cpu_count) {
-  ASSERT(ap_percpus == nullptr);
+  ASSERT(ap_percpus.empty());
 
   DEBUG_ASSERT(cpu_count >= 1);
   if (cpu_count == 0) {
@@ -112,12 +137,12 @@ zx_status_t x86_allocate_ap_structures(uint32_t* apic_ids, uint8_t cpu_count) {
   }
 
   if (cpu_count > 1) {
-    size_t len = sizeof(*ap_percpus) * (cpu_count - 1);
-    ap_percpus = (x86_percpu*)memalign(MAX_CACHE_LINE, len);
-    if (ap_percpus == nullptr) {
+    const size_t ap_count = cpu_count - 1;
+    if (void* alloc = memalign(MAX_CACHE_LINE, sizeof(x86_percpu) * ap_count)) {
+      ap_percpus = ktl::span{new (AlignedForNew{alloc}) x86_percpu[ap_count]{}, ap_count};
+    } else {
       return ZX_ERR_NO_MEMORY;
     }
-    memset(ap_percpus, 0, len);
 
     // TODO(maniscalco): There's a data race here that we should fix.  We could be racing with the
     // idle thread on this CPU.  Consider reworking the monitor initialization sequence or perhaps
