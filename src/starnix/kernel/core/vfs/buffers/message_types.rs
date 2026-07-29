@@ -136,13 +136,6 @@ fn read_u8_value_from_int_cmsg(data: &[u8]) -> Option<u8> {
     u8::try_from(c_int::read_from_prefix(data).ok()?.0).ok()
 }
 
-pub struct AncillaryDataConvertedToBytes {
-    pub bytes: Vec<u8>,
-    /// Indicates the message was shortened due to insufficient buffer space,
-    /// not due to permission checks
-    pub truncated: bool,
-}
-
 impl AncillaryData {
     /// Creates a new `AncillaryData` instance representing the data in `message`.
     ///
@@ -258,39 +251,22 @@ impl AncillaryData {
         current_task: &CurrentTask,
         flags: SocketMessageFlags,
         space_available: usize,
-    ) -> Result<AncillaryDataConvertedToBytes, Errno> {
+    ) -> Result<Vec<u8>, Errno> {
         let header_size = CMsgHdrPtr::size_of_object_for(current_task);
         let minimum_data_size = self.minimum_size();
 
-        // If there is not enough space available to fit the header, return an empty vector
-        // instead of a partial header.
         if space_available < header_size + minimum_data_size {
-            return Ok(AncillaryDataConvertedToBytes { bytes: vec![], truncated: true });
+            // If there is not enough space available to fit the header, return an empty vector
+            // instead of a partial header.
+            return Ok(vec![]);
         }
 
-        let max_data_bytes = space_available - header_size;
-        // Truncate file descriptors to the number that fit in the remaining buffer space
-        // so that into_controlmsg() only installs fds the receiver can actually see
-        let (limited, space_truncated) = match self {
-            AncillaryData::Unix(UnixControlData::Rights(mut files)) => {
-                let max_fds = max_data_bytes / std::mem::size_of::<FdNumber>();
-                let truncated = files.len() > max_fds;
-                files.truncate(max_fds);
-                (AncillaryData::Unix(UnixControlData::Rights(files)), truncated)
-            }
-            other => (other, false),
-        };
-        let cmsg = limited.into_controlmsg(current_task, flags)?;
+        let cmsg = self.into_controlmsg(current_task, flags)?;
         if let Some(mut cmsg) = cmsg {
-            let data_truncated = cmsg.data.len() > max_data_bytes;
-            cmsg.truncate(max_data_bytes);
-            let bytes = cmsg.into_bytes(current_task).map_err(|_| errno!(EINVAL))?;
-            Ok(AncillaryDataConvertedToBytes {
-                bytes,
-                truncated: space_truncated || data_truncated,
-            })
+            cmsg.truncate(space_available - header_size);
+            cmsg.into_bytes(current_task).map_err(|_| errno!(EINVAL))
         } else {
-            Ok(AncillaryDataConvertedToBytes { bytes: vec![], truncated: space_truncated })
+            return Ok(vec![]);
         }
     }
 }
@@ -625,61 +601,5 @@ impl MessageData for PipeMessageData {
             Self::Owned(d) => MessageData::truncate(d, limit),
             Self::Vmspliced(d) => MessageData::truncate(d, limit),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::testing::spawn_kernel_with_selinux_and_run;
-    use starnix_uapi::device_id::DeviceId;
-    use starnix_uapi::file_mode::{AccessCheck, FileMode};
-    use starnix_uapi::open_flags::OpenFlags;
-
-    fn open_file(current_task: &CurrentTask, name: &str) -> FileHandle {
-        current_task
-            .fs()
-            .root()
-            .create_node(&current_task, name.into(), FileMode::IFREG, DeviceId::NONE)
-            .expect("create_node")
-            .open(current_task, OpenFlags::RDWR, AccessCheck::default())
-            .expect("open")
-    }
-
-    fn make_rights(current_task: &CurrentTask, n: usize) -> AncillaryData {
-        let files: Vec<_> = (0..n).map(|i| open_file(current_task, &format!("file{i}"))).collect();
-        AncillaryData::Unix(UnixControlData::Rights(files))
-    }
-
-    // AncillaryData to bytes conversion does not reflect permission denials in the
-    // `truncated` member.
-    #[::fuchsia::test]
-    async fn into_bytes_permission_denial_no_truncation() {
-        spawn_kernel_with_selinux_and_run(async |current_task, security_server| {
-            // Create and open the files before loading the policy: the test policy
-            // does not allow `kernel_t` to `open` `unlabeled_file_t` files, so they
-            // must already be open before enforcement begins. The `file_receive`
-            // check in `into_bytes()` below then runs against the enforcing policy
-            // and denies the transfer.
-            let data = make_rights(current_task, 2);
-
-            let policy_bytes = include_bytes!(
-                "../../../../lib/selinux/testdata/micro_policies/hooks_tests_policy"
-            )
-            .to_vec();
-            security_server.set_enforcing(true);
-            security_server.load_policy(policy_bytes).expect("policy load failed");
-            security::selinuxfs_policy_loaded(current_task);
-
-            let data_size = data.total_size(current_task);
-            let header_size = CMsgHdrPtr::size_of_object_for(current_task);
-            let space_available = header_size + data_size;
-            let result = data
-                .into_bytes(current_task, SocketMessageFlags::empty(), space_available)
-                .expect("into_bytes");
-            assert!(!result.truncated);
-            assert!(result.bytes.is_empty());
-        })
-        .await;
     }
 }
