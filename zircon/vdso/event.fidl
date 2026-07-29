@@ -62,6 +62,7 @@ closed protocol Event {
     /// [`zx_object_wait_async()`]: object_wait_async.md
     /// [`zx_object_wait_many()`]: object_wait_many.md
     /// [`zx_object_wait_one()`]: object_wait_one.md
+    @rust
     strict Create(struct {
         options uint32;
     }) -> (resource struct {

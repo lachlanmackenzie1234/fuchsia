@@ -134,6 +134,7 @@ kernel_rust_mod("syscalls-rs") {
   sources = [
     "counter.rs",
     "debuglog.rs",
+    "event.rs",
     "lib.rs",
     "profile.rs",
     "restricted.rs",

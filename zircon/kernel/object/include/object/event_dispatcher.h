@@ -7,24 +7,54 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EVENT_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EVENT_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class EventDispatcher
-    : public SoloDispatcher<EventDispatcher, ZX_DEFAULT_EVENT_RIGHTS, ZX_EVENT_SIGNALED> {
+class EventDispatcher;
+
+extern "C" {
+zx_status_t cpp_event_dispatcher_create(uint32_t options,
+                                        KernelHandle<EventDispatcher>* handle_out);
+zx_status_t rust_event_dispatcher_create(uint32_t options, zx_rights_t* rights_out,
+                                         KernelHandle<EventDispatcher>* handle_out);
+}
+
+class EventDispatcher : public Dispatcher {
  public:
   static zx_status_t Create(uint32_t options, KernelHandle<EventDispatcher>* handle,
-                            zx_rights_t* rights);
+                            zx_rights_t* rights) {
+    return rust_event_dispatcher_create(options, rights, handle);
+  }
 
-  ~EventDispatcher();
+  ~EventDispatcher() override;
+
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_EVENT; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return true; }
+
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final;
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  using Dispatcher::UpdateState;
+  using Dispatcher::UpdateStateLocked;
 
  protected:
+  Lock<CriticalMutex>* get_lock() const final;
+
+  friend zx_status_t cpp_event_dispatcher_create(uint32_t options,
+                                                 KernelHandle<EventDispatcher>* handle_out);
   explicit EventDispatcher(uint32_t options);
+
+ private:
+  OpaqueStorage<kEventDispatcherStateSize, kEventDispatcherStateAlign> opaque_storage_;
 };
 
 class MemoryStallEventDispatcher final : public EventDispatcher,

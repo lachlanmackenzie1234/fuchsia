@@ -6,33 +6,29 @@
 
 #include "object/event_dispatcher.h"
 
-#include <lib/counters.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
 #include <fbl/alloc_checker.h>
 
-KCOUNTER(dispatcher_event_create_count, "dispatcher.event.create")
-KCOUNTER(dispatcher_event_destroy_count, "dispatcher.event.destroy")
+extern "C" {
+void rust_event_dispatcher_state_init(void* state, void* disp);
+void rust_event_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_event_dispatcher_state_get_lock(const void* state);
+}  // extern "C"
 
-zx_status_t EventDispatcher::Create(uint32_t options, KernelHandle<EventDispatcher>* handle,
-                                    zx_rights_t* rights) {
-  fbl::AllocChecker ac;
-  KernelHandle event(fbl::AdoptRef(new (&ac) EventDispatcher(options)));
-  if (!ac.check())
-    return ZX_ERR_NO_MEMORY;
-
-  *rights = default_rights();
-  *handle = ktl::move(event);
-  return ZX_OK;
+EventDispatcher::EventDispatcher(uint32_t options) : Dispatcher(0u) {
+  DISPATCHER_VERIFY_OFFSET(EventDispatcher, kEventDispatcherStateOffset);
+  rust_event_dispatcher_state_init(&opaque_storage_, this);
 }
 
-EventDispatcher::EventDispatcher(uint32_t options) {
-  kcounter_add(dispatcher_event_create_count, 1);
-}
+IMPLEMENT_DISPATCHER_RUST_STATE(EventDispatcher, rust_event_dispatcher_state_get_lock,
+                                rust_event_dispatcher_state_destroy)
 
-EventDispatcher::~EventDispatcher() { kcounter_add(dispatcher_event_destroy_count, 1); }
+zx_status_t EventDispatcher::user_signal_self(uint32_t clear_mask, uint32_t set_mask) {
+  return UserSignalSelfSolo(this, clear_mask, set_mask, ZX_EVENT_SIGNALED);
+}
 
 zx_status_t MemoryStallEventDispatcher::Create(zx_system_memory_stall_type_t kind,
                                                zx_duration_mono_t threshold,

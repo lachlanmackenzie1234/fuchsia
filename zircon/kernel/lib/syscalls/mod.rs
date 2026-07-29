@@ -6,6 +6,7 @@
 
 mod counter;
 mod debuglog;
+mod event;
 mod profile;
 mod restricted;
 mod sampler;

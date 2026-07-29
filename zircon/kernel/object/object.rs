@@ -8,6 +8,8 @@ mod counter_dispatcher;
 mod counter_dispatcher_ffi;
 mod dispatcher;
 mod dispatcher_ffi;
+mod event_dispatcher;
+mod event_dispatcher_ffi;
 mod handle;
 mod log_dispatcher;
 mod log_dispatcher_ffi;
@@ -27,6 +29,7 @@ mod vm_address_region_dispatcher_ffi;
 
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
+pub use event_dispatcher::EventDispatcher;
 pub use handle::{HandleValue, KernelHandle};
 pub use log_dispatcher::*;
 pub use process_dispatcher::ProcessDispatcher;

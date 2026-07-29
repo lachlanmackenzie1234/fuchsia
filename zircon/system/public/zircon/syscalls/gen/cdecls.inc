@@ -143,7 +143,7 @@ _ZX_SYSCALL_DECL(debuglog_write, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t options,
                   const void* buffer, size_t buffer_size))
 
-_ZX_SYSCALL_DECL(event_create, zx_status_t, /* no attributes */, 2, (options, out),
+_ZX_SYSCALL_DECL(event_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (options, out),
                  (uint32_t options, _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out))
 
 _ZX_SYSCALL_DECL(eventpair_create, zx_status_t, /* no attributes */, 3, (options, out0, out1),

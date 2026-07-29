@@ -89,28 +89,6 @@ zx_instant_boot_ticks_t sys_ticks_get_boot_via_kernel() {
   return current_boot_ticks();
 }
 
-// zx_status_t zx_event_create
-zx_status_t sys_event_create(uint32_t options, zx_handle_t* out) {
-  LTRACEF("options 0x%x\n", options);
-
-  if (options != 0u)
-    return ZX_ERR_INVALID_ARGS;
-
-  auto up = ProcessDispatcher::GetCurrent();
-  zx_status_t res = up->EnforceBasicPolicy(ZX_POL_NEW_EVENT);
-  if (res != ZX_OK)
-    return res;
-
-  KernelHandle<EventDispatcher> kernel_handle;
-  zx_rights_t rights;
-
-  zx_status_t result = EventDispatcher::Create(options, &kernel_handle, &rights);
-  if (result != ZX_OK) {
-    return result;
-  }
-  return up->MakeAndAddHandle(ktl::move(kernel_handle), rights, out);
-}
-
 // zx_status_t zx_eventpair_create
 zx_status_t sys_eventpair_create(uint32_t options, zx_handle_t* out0, zx_handle_t* out1) {
   if (options != 0u)  // No options defined/supported yet.
