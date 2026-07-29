@@ -39,7 +39,31 @@ impl DisplayInfo {
     }
 
     pub(crate) fn is_finite(&self) -> bool {
-        self.manual_brightness_value.is_finite()
+        self.manual_brightness_value.is_finite() && self.auto_brightness_value.is_finite()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_display_info_is_finite() {
+        let mut info = DisplayInfo::new(false, 0.5, 0.5, true, LowLightMode::Disable, None);
+        assert!(info.is_finite());
+
+        info.manual_brightness_value = f32::NAN;
+        assert!(!info.is_finite());
+
+        info.manual_brightness_value = 0.5;
+        info.auto_brightness_value = f32::NAN;
+        assert!(!info.is_finite());
+
+        info.manual_brightness_value = f32::INFINITY;
+        assert!(!info.is_finite());
+
+        info.auto_brightness_value = f32::NEG_INFINITY;
+        assert!(!info.is_finite());
     }
 }
 
