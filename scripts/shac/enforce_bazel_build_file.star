@@ -2,42 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-def _bazel_default_applicable_licenses(ctx):
-    _DIRECTORIES_TO_IGNORE = [
-        # SDK and IDK targets may not have access to the root license.
-        "build/bazel/fuchsia_idk",
-        "build/bazel_sdk",
-
-        # Third-party code.
-        "prebuilt",
-        "third_party",
-        "src/connectivity/wlan/drivers/third_party",
-        "src/lib/fuchsia-cprng",  # Build file for a third-party Rust crate.
-    ]
-
-    # Checks that non-third-party BUILD.bazel files have default_applicable_licenses set.
-    for f in ctx.scm.affected_files(glob = ["BUILD.bazel"]):
-        should_ignore = False
-        for d in _DIRECTORIES_TO_IGNORE:
-            if f.startswith(d + "/"):
-                should_ignore = True
-                break
-
-        if should_ignore:
-            continue
-
-        contents = str(ctx.io.read_file(f))
-
-        # Match package( ... default_applicable_licenses = ["//:license"] ... )
-        # Using [^)]* to match anything except closing parenthesis to stay within the package call.
-        if not ctx.re.allmatches(r"package\([^)#]*default_applicable_licenses\s*=\s*\[\"//:license\"\][^)]*\)", contents):
-            ctx.emit.finding(
-                level = "error",
-                message = "BUILD.bazel files must include `default_applicable_licenses = [\"//:license\"]` within a `package()` call to set the default file-level license.",
-                filepath = f,
-            )
-
-def _enforce_bazel_build_file(ctx):
+def enforce_bazel_build_file(ctx):
     """Checks that a BUILD.bazel file exists when a new FIDL library is created."""
 
     # Check when :
@@ -81,6 +46,5 @@ def _enforce_bazel_build_file(ctx):
                 message = "BUILD.bazel file is missing in the same directory as the added FIDL BUILD.gn file.",
             )
 
-def register_bazel_checks():
-    shac.register_check(shac.check(_bazel_default_applicable_licenses, formatter = False))
-    shac.register_check(shac.check(_enforce_bazel_build_file))
+def register_bazel_build_file_checks():
+    shac.register_check(shac.check(enforce_bazel_build_file))
