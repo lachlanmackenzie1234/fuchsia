@@ -32,7 +32,14 @@ type WakeGroupOptions = table {
     1: debug_name string:MAX_NAME_LEN;
 };
 
-/// A provider of `WakeGroup`s.
+/// A provider of wake groups.
+///
+/// A wake group represents a set of sockets that should wake up a client when
+/// data arrives on any of them. Each `WakeGroupToken` represents a distinct
+/// wake group.
+///
+/// A socket can only be registered with a wake group on creation. To do so,
+/// pass the `WakeGroupToken` to the appropriate `fuchsia.posix.socket` method.
 @discoverable
 closed protocol WakeGroupProvider {
     /// Creates a new wake group with the provided options.
