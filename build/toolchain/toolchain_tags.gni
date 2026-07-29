@@ -21,6 +21,10 @@ all_toolchain_tags += [
   # tag.
   "kernel",
 
+  # This tag is like the "kernel" tag, but particular to the toolchains in
+  # which in-kernel unit tests are enabled.
+  "kernel-with-tests",
+
   # This indicates the toolchain targets UEFI.
   "efi",
 

@@ -6,6 +6,7 @@
 
 import("//build/rust/build.gni")
 import("//build/rust/rustc_library.gni")
+import("kernel_test_deps.gni")
 
 template("_kernel_rust_mod_impl") {
   gen_dir = "$target_gen_dir/$target_name"
@@ -134,8 +135,19 @@ template("_kernel_rust_mod_impl") {
     },
   ]
 
+  test_deps = []
+  if (defined(invoker.test_deps)) {
+    test_deps_target = "kernel_rust_mod.${target_name}.test_deps"
+    test_deps += [ ":$test_deps_target" ]
+
+    kernel_test_deps(test_deps_target) {
+      visibility = [ ":*" ]
+      public_deps = invoker.test_deps
+    }
+  }
+
   # The primary generated file's details are partially derived from those.
-  gen_deps = []
+  gen_deps = test_deps
   gen_includes = []
   foreach(gen, gen_files) {
     gen_deps += [ ":${gen.name}" ]
@@ -353,6 +365,13 @@ template("_kernel_rust_mod_impl") {
 #     as well as deps on this target.
 #     - Type: list(label)
 #
+#   * test_deps
+#     - Optional: Dependencies only used in the unit tests within the module.
+#       Note that unlike rustc_library(), none of these dependencies may be
+#       testonly. (See `kernel_test_deps()`.)
+#     - Type: list(label)
+#     - Default: []
+#
 #   * metadata, testonly, visibility
 #     - Optional: Usual GN meanings.
 #
@@ -523,7 +542,18 @@ template("kernel_rust_mod_crate_root") {
     },
   ]
 
-  gen_deps = []
+  test_deps = []
+  if (defined(invoker.test_deps)) {
+    test_deps_target = "kernel_rust_mod.${target_name}.test_deps"
+    test_deps += [ ":$test_deps_target" ]
+
+    kernel_test_deps(test_deps_target) {
+      visibility = [ ":*" ]
+      public_deps = invoker.test_deps
+    }
+  }
+
+  gen_deps = test_deps
   gen_inputs = []
   foreach(gen, gen_rsp_files) {
     gen.target = "${targets.main}.${gen.key}.rsp"

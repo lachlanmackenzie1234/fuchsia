@@ -4,15 +4,13 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/rust/rustc_library.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 
-rustc_library("relaxed_atomic-rs") {
+kernel_rust_crate("relaxed_atomic-rs") {
   edition = "2024"
   crate_name = "relaxed_atomic"
   source_root = "lib.rs"
   sources = [ "lib.rs" ]
-  deps = [
-    "//third_party/rust_crates:paste",
-    "//zircon/kernel/lib/unittest:unittest-rs",
-  ]
+  deps = [ "//third_party/rust_crates:paste" ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }

@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use unittest as _;
-
 use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use crate::kernel::thread::{FxtRef, ThreadPtr};
 pub use crate::platform_rs::timer::{InstantBootTicks, timer_current_boot_ticks};

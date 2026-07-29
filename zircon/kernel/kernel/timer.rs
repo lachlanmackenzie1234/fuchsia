@@ -6,7 +6,6 @@
 
 use core::marker::{PhantomData, PhantomPinned};
 use pin_init::pin_data;
-use unittest as _;
 use zr::OpaqueBytes;
 
 unsafe extern "C" {

@@ -34,8 +34,8 @@ kernel_rust_mod("ktrace-rs") {
     "//src/lib/kalloc",
     "//src/lib/kstring",
     "//zircon/kernel/lib/spsc_buffer:spsc-buffer-rs",
-    "//zircon/kernel/lib/unittest:unittest-rs",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 group("tests") {

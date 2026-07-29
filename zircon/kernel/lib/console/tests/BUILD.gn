@@ -12,8 +12,8 @@ kernel_rust_mod("console_tests_rust") {
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/zr",
-    "//zircon/kernel/lib/unittest:unittest-rs",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 source_set("tests") {

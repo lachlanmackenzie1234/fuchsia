@@ -6,6 +6,7 @@
 
 import("//build/rust/build.gni")
 import("//build/rust/rustc_library.gni")
+import("kernel_test_deps.gni")
 
 # Define a Rust crate meant specifically to go into the kernel.
 #
@@ -29,10 +30,30 @@ import("//build/rust/rustc_library.gni")
 #   * name, output_name
 #     - Disallowed: Use $crate_name instead.
 #
+#   * test_deps
+#     - Optional: Dependencies only used in the unit tests within the crate.
+#       Note that unlike rustc_library(), none of these dependencies may be
+#       testonly. (See `kernel_test_deps()`.)
+#     - Type: list(label)
+#     - Default: []
+#
 # See rustc_library() for other parameters.
 #
 template("kernel_rust_crate") {
-  rustc_library(target_name) {
+  main_target = target_name
+
+  test_deps = []
+  if (defined(invoker.test_deps)) {
+    test_deps_target = "kernel_rust_crate.${target_name}.test_deps"
+    test_deps += [ ":$test_deps_target" ]
+
+    kernel_test_deps(test_deps_target) {
+      visibility = [ ":*" ]
+      public_deps = invoker.test_deps
+    }
+  }
+
+  rustc_library(main_target) {
     edition = "2024"
     forward_variables_from(invoker,
                            "*",
@@ -41,11 +62,17 @@ template("kernel_rust_crate") {
                              "metadata",
                              "name",
                              "output_name",
+                             "test_deps",
                            ])
     if (!defined(crate_name)) {
       crate_name = target_name
     }
     crate_name = string_replace(crate_name, "-", "_")
+
+    if (!defined(deps)) {
+      deps = []
+    }
+    deps += test_deps
 
     metadata = {
       rust_mod_import_lines = []

@@ -127,6 +127,6 @@ kernel_rust_mod("kernel-rs") {
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/debug",
-    "//zircon/kernel/lib/unittest:unittest-rs",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }

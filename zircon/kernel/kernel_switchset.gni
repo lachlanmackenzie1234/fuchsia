@@ -92,6 +92,10 @@ template("kernel_switchset") {
         "standalone",
       ]
 
+      if (invoker.unit_tests_enabled) {
+        toolchain_tags += [ "kernel-with-tests" ]
+      }
+
       prefix_configs = [
         "//zircon/kernel/switch:headers",
 
