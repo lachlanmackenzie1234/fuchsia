@@ -63,9 +63,6 @@ def create_device(
                         "bluetooth": {
                             "implementation": "fuchsia-controller",
                         },
-                        "wlan": {
-                            "implementation": "sl4f",
-                        }
                     },
                 }
 

@@ -53,9 +53,6 @@ if (is_host) {
         bluetooth = {
           implementation = "sl4f"
         }
-        wlan = {
-          implementation = "sl4f"
-        }
       }
       transports = {
         ffx = {

@@ -300,9 +300,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                         "bluetooth": {
                             "implementation": "fuchsia-controller",
                         },
-                        "wlan": {
-                            "implementation": "fuchsia-controller",
-                        },
                     }
                 },
             )
@@ -361,9 +358,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 config={
                     "affordances": {
                         "bluetooth": {
-                            "implementation": "sl4f",
-                        },
-                        "wlan": {
                             "implementation": "sl4f",
                         },
                     }

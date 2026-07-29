@@ -18,9 +18,6 @@ CONFIG_DICT: dict[str, Any] = {
         "bluetooth": {
             "implementation": "fuchsia-controller",
         },
-        "wlan": {
-            "implementation": "fuchsia-controller",
-        },
     },
     "transports": {
         "ffx": {

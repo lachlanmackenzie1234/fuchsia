@@ -284,13 +284,6 @@ class FuchsiaDevice:
                 serial_socket=None,
             ),
             ffx_config_data=ffx_config.get_config(),
-            config={
-                "affordances": {
-                    "wlan": {
-                        "implementation": "fuchsia-controller",
-                    },
-                },
-            },
         )
 
     @cached_property
