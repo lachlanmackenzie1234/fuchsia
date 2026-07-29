@@ -2,39 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_binary.gni")
 import("//build/python/python_binary.gni")
 import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
-
-go_library("codegen") {
-  source_dir = "codegen"
-  deps = [ "//tools/fidl/lib/fidlgen" ]
-  sources = [
-    "bits.tmpl",
-    "codegen.go",
-    "enum.tmpl",
-    "ir.go",
-    "protocol.tmpl",
-    "sourcefile.tmpl",
-    "struct.tmpl",
-    "table.tmpl",
-    "union.tmpl",
-  ]
-}
-
-go_binary("fidlgen_python") {
-  sources = [ "main.go" ]
-  deps = [
-    ":codegen",
-    "//tools/fidl/lib/fidlgen",
-  ]
-}
-
-install_host_tools("host") {
-  deps = [ ":fidlgen_python" ]
-  outputs = [ "fidlgen_python" ]
-}
 
 # TODO(https://fxbug.dev/308723467): In other fidlgen_* implementations, there is an associated
 # "goldens" target that depends on each library of bindings generated. However,

@@ -55,6 +55,16 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/fidl/fidlgen_python:fidlgen_python"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_python_/fidlgen_python"
+        ninja = "fidlgen_python"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/fidl/fidlgen_syzkaller:fidlgen_syzkaller"
     copy_outputs = [
       {
