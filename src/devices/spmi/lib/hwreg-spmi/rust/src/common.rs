@@ -11,6 +11,76 @@ use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 /// FromZeros, and Immutable for safe memory casting.
 pub trait RegisterValue: Sized + FromBytes + IntoBytes + FromZeros + Immutable {}
 
+/// Trait implemented by register blocks to provide metadata like address unit size.
+pub trait RegisterBlock {
+    /// The size in bytes of an address unit for this register block.
+    /// Defaults to 1 (byte-addressed).
+    const ADDRESS_UNIT_BYTES: u16 = 1;
+}
+
+/// Helper function to retrieve `ADDRESS_UNIT_BYTES` for a register block as a `const fn`.
+#[doc(hidden)]
+#[inline(always)]
+pub const fn block_address_unit_bytes<B: RegisterBlock>(_: &B) -> u16 {
+    B::ADDRESS_UNIT_BYTES
+}
+
+/// Base trait implemented by register definitions providing device-independent metadata.
+pub trait SpmiRegisterDef {
+    /// The type representing the value of this register.
+    type Value: RegisterValue;
+
+    /// The typestate access mode marker for this register.
+    type Mode;
+
+    /// The address of this register.
+    const ADDRESS: u16;
+}
+
+/// Trait implemented by register definitions to provide type-safe access.
+///
+/// `D` is the device type (e.g., `DeviceType` or custom wrapper implementing [`SpmiDevice`]).
+pub trait SpmiRegister<D>: SpmiRegisterDef {
+    /// The type representing the accessor for this register.
+    type Accessor<'a>
+    where
+        Self: 'a,
+        D: 'a;
+
+    /// Constructs the accessor for this register.
+    fn get_accessor<'a>(spmi: &'a D) -> Self::Accessor<'a>;
+}
+
+/// Helper function that triggers the compile-time contiguity assertion.
+#[doc(hidden)]
+#[inline(always)]
+pub const fn assert_contiguous<B, R1, R2>(_: &B)
+where
+    B: RegisterBlock,
+    R1: SpmiRegisterDef,
+    R2: SpmiRegisterDef,
+{
+    struct ContiguityCheck<B, R1, R2>(std::marker::PhantomData<(B, R1, R2)>);
+
+    impl<B, R1, R2> ContiguityCheck<B, R1, R2>
+    where
+        B: RegisterBlock,
+        R1: SpmiRegisterDef,
+        R2: SpmiRegisterDef,
+    {
+        const ASSERT: () = {
+            let unit = B::ADDRESS_UNIT_BYTES as u32;
+            let val_size = std::mem::size_of::<R1::Value>() as u32;
+            let r1_addr = R1::ADDRESS as u32;
+            let r2_addr = R2::ADDRESS as u32;
+            let step = (val_size + unit - 1) / unit;
+            assert!(r2_addr == r1_addr + step, "Registers are not contiguous");
+        };
+    }
+
+    let _ = ContiguityCheck::<B, R1, R2>::ASSERT;
+}
+
 // --- Typestate Access Modes ---
 // These markers are used to enforce register access rules
 // (Read-Only, Write-Only, Read-Write) at compile time using
@@ -200,25 +270,10 @@ where
 /// ```
 #[macro_export]
 macro_rules! spmi_register {
-    // Helper to map mode and endianness to register type
-    (@map_reg RO, $val:ty, $addr:expr, BE) => {
-        $crate::Register<'a, $val, $crate::ReadOnly, $addr>
-    };
-    (@map_reg RO, $val:ty, $addr:expr, LE) => {
-        $crate::Register<'a, $val, $crate::ReadOnly, $addr>
-    };
-    (@map_reg WO, $val:ty, $addr:expr, BE) => {
-        $crate::Register<'a, $val, $crate::WriteOnly, $addr>
-    };
-    (@map_reg WO, $val:ty, $addr:expr, LE) => {
-        $crate::Register<'a, $val, $crate::WriteOnly, $addr>
-    };
-    (@map_reg RW, $val:ty, $addr:expr, BE) => {
-        $crate::Register<'a, $val, $crate::ReadWrite, $addr>
-    };
-    (@map_reg RW, $val:ty, $addr:expr, LE) => {
-        $crate::Register<'a, $val, $crate::ReadWrite, $addr>
-    };
+    // Helper to map mode to marker types
+    (@mode_type RO) => { $crate::ReadOnly };
+    (@mode_type WO) => { $crate::WriteOnly };
+    (@mode_type RW) => { $crate::ReadWrite };
 
     // Explicit-endian byteorder helpers inside macro
     (@byteorder_type u8, $endianness:ident) => { u8 };
@@ -311,9 +366,27 @@ macro_rules! spmi_register {
                 }
             }
 
+            impl $crate::SpmiRegisterDef for Value {
+                type Value = Self;
+                type Mode = spmi_register!(@mode_type $mode);
+                const ADDRESS: u16 = $addr;
+            }
+
+            impl<D> $crate::SpmiRegister<D> for Value {
+                type Accessor<'a> =
+                    $crate::_Register<'a, Self, spmi_register!(@mode_type $mode), D, $addr>
+                where
+                    Self: 'a,
+                    D: 'a;
+
+                fn get_accessor<'a>(spmi: &'a D) -> Self::Accessor<'a> {
+                    $crate::_Register::new(spmi)
+                }
+            }
+
             /// The register accessor type.
-            pub type Register<'a> =
-                spmi_register!(@map_reg $mode, Value, $addr, $endianness);
+            pub type Register<'a, D = $crate::DeviceType> =
+                $crate::_Register<'a, Value, spmi_register!(@mode_type $mode), D, $addr>;
         }
     };
     // Specialized arm for u8 where endianness is irrelevant
@@ -605,21 +678,11 @@ macro_rules! spmi_register_fields {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! assert_contiguous {
-    ($prev:ident, $curr:ident $(, $rest:ident)*) => {
-        const _: () = assert!(
-            $curr::ADDRESS == $prev::ADDRESS
-                + std::mem::size_of::<$prev::Value>() as u16,
-            concat!(
-                "Registers ",
-                stringify!($prev),
-                " and ",
-                stringify!($curr),
-                " are not contiguous"
-            )
-        );
-        $crate::assert_contiguous!($curr $(, $rest)*);
+    ($regs:expr, $prev:ident, $curr:ident $(, $rest:ident)*) => {
+        $crate::assert_contiguous::<_, $prev::Value, $curr::Value>($regs);
+        $crate::assert_contiguous!($regs, $curr $(, $rest)*);
     };
-    ($last:ident) => {};
+    ($regs:expr, $last:ident) => {};
 }
 
 /// Defines a struct to group multiple SPMI registers.
@@ -631,8 +694,10 @@ macro_rules! assert_contiguous {
 ///
 /// # Arguments
 ///
-/// 1.  `$name`: The identifier for the generated register block struct.
-/// 2.  `{ ... }`: A block defining the registers contained within this block.
+/// 1.  `address_unit: $unit_type:ident` (optional): Specifies the type representing an address unit
+///     for this block (e.g. `u8` for byte-addressed [default], or `u16` for word-addressed).
+/// 2.  `$name`: The identifier for the generated register block struct.
+/// 3.  `{ ... }`: A block defining the registers contained within this block.
 ///     The format of each register definition is:
 ///     `$vis $field_name => $reg_mod,`
 ///     -   `$vis`: Visibility of the register accessor method (e.g., `pub`).
@@ -670,18 +735,46 @@ macro_rules! assert_contiguous {
 /// ```
 #[macro_export]
 macro_rules! spmi_register_block {
+    // Arm 1: with address_unit override
     (
-        pub struct $name:ident {
+        address_unit: $unit_type:ty,
+        $struct_vis:vis struct $name:ident {
             $($tail:tt)*
         }
     ) => {
-        pub struct $name {
-            pub spmi: $crate::DeviceType,
+        $crate::spmi_register_block!(@struct $struct_vis, $name, $($tail)*);
+
+        impl<D> $crate::RegisterBlock for $name<D> {
+            const ADDRESS_UNIT_BYTES: u16 = std::mem::size_of::<$unit_type>() as u16;
+        }
+    };
+
+    // Arm 2: default (byte-addressed)
+    (
+        $struct_vis:vis struct $name:ident {
+            $($tail:tt)*
+        }
+    ) => {
+        $crate::spmi_register_block!(@struct $struct_vis, $name, $($tail)*);
+
+        impl<D> $crate::RegisterBlock for $name<D> {
+            const ADDRESS_UNIT_BYTES: u16 = 1;
+        }
+    };
+
+    // Helper to generate the struct and impl block
+    (
+        @struct $struct_vis:vis, $name:ident,
+        $($tail:tt)*
+    ) => {
+        #[derive(Clone)]
+        $struct_vis struct $name<D = $crate::DeviceType> {
+            pub spmi: D,
         }
 
         #[allow(dead_code)]
-        impl $name {
-            pub fn new(spmi: $crate::DeviceType) -> Self {
+        impl<D: $crate::SpmiDevice> $name<D> {
+            $struct_vis fn new(spmi: D) -> Self {
                 Self { spmi }
             }
 
@@ -751,26 +844,29 @@ macro_rules! spmi_register_block {
                 Ok(())
             }
 
-            spmi_register_block!(@fields $($tail)*);
+            $crate::spmi_register_block!(@fields D, $($tail)*);
         }
     };
 
-    (@fields) => {};
+    (@fields $d:ident) => {};
+    (@fields $d:ident,) => {};
 
     // Case 1: Individual register with trailing fields
-    (@fields $vis:vis $field:ident => $reg_mod:ident, $($tail:tt)*) => {
+    (@fields $d:ident, $(#[$meta:meta])* $vis:vis $field:ident => $reg_mod:ident, $($tail:tt)*) => {
+        $(#[$meta])*
         #[allow(dead_code)]
-        $vis fn $field(&self) -> $reg_mod::Register<'_> {
-            $reg_mod::Register::new(&self.spmi)
+        $vis fn $field(&self) -> <$reg_mod::Value as $crate::SpmiRegister<$d>>::Accessor<'_> {
+            <$reg_mod::Value as $crate::SpmiRegister<$d>>::get_accessor(&self.spmi)
         }
-        spmi_register_block!(@fields $($tail)*);
+        $crate::spmi_register_block!(@fields $d, $($tail)*);
     };
 
     // Case 2: Individual register at end of token stream
-    (@fields $vis:vis $field:ident => $reg_mod:ident) => {
+    (@fields $d:ident, $(#[$meta:meta])* $vis:vis $field:ident => $reg_mod:ident) => {
+        $(#[$meta])*
         #[allow(dead_code)]
-        $vis fn $field(&self) -> $reg_mod::Register<'_> {
-            $reg_mod::Register::new(&self.spmi)
+        $vis fn $field(&self) -> <$reg_mod::Value as $crate::SpmiRegister<$d>>::Accessor<'_> {
+            <$reg_mod::Value as $crate::SpmiRegister<$d>>::get_accessor(&self.spmi)
         }
     };
 }
@@ -783,7 +879,7 @@ macro_rules! spmi_register_block {
 ///
 /// # Arguments
 ///
-/// 1.  `$spmi:expr`: The SPMI device proxy.
+/// 1.  `$regs:expr`: The block struct instance.
 /// 2.  `$( $reg:ident ),*`: A comma-separated list of already-declared
 ///     register modules.
 ///
@@ -807,6 +903,59 @@ macro_rules! spmi_register_block {
 ///     status_be_reg => status_val
 /// ).await?;
 /// ```
+/// Helper macro that calculates contiguous block layout (unit size, base address, and total bytes).
+#[doc(hidden)]
+#[macro_export]
+macro_rules! spmi_contiguous_layout {
+    (@last $head:ident) => {
+        ($head::ADDRESS, std::mem::size_of::<$head::Value>())
+    };
+
+    (@last $head:ident, $( $tail:ident ),+) => {
+        $crate::spmi_contiguous_layout!(@last $( $tail ),+)
+    };
+
+    (@last_val $head:ident) => {
+        $head::Value
+    };
+
+    (@last_val $head:ident, $( $tail:ident ),+) => {
+        $crate::spmi_contiguous_layout!(@last_val $( $tail ),+)
+    };
+
+    ($regs_ref:expr, $head:ident $(, $tail:ident )*) => {{
+        let unit = $crate::block_address_unit_bytes($regs_ref) as usize;
+        let base_addr = $head::ADDRESS;
+        let (last_addr, last_size) = $crate::spmi_contiguous_layout!(@last $head $(, $tail)*);
+        let last_step = (last_size + unit - 1) / unit;
+        let total_units = (last_addr - base_addr) as usize + last_step;
+        let total_bytes = total_units * unit;
+        (unit, base_addr, total_bytes)
+    }};
+}
+
+/// Reads multiple contiguous registers in a single async call to the hardware.
+///
+/// # Module Names and Paths
+/// The macro expects register module names available directly in scope (e.g. `my_reg`).
+/// Module paths (e.g. `submod::my_reg`) are not supported as variable binding identifiers.
+///
+/// # Arguments
+///
+/// 1.  `$regs:expr`: The block struct instance.
+/// 2.  `$head:ident $(, $tail:ident )*`: The register modules to read.
+///
+/// # Examples
+///
+/// ```
+/// // Read both 'general' and 'status' registers together:
+/// // let regs = MySpmiRegisters::new(spmi_proxy);
+/// let (general_val, status_val) = spmi_read_contiguous!(
+///     &regs,
+///     my_reg,
+///     status_be_reg
+/// ).await?;
+/// ```
 #[macro_export]
 macro_rules! spmi_read_contiguous {
     (
@@ -814,34 +963,40 @@ macro_rules! spmi_read_contiguous {
         $head:ident $(, $tail:ident )* $(,)?
     ) => {
         async {
-            $crate::assert_contiguous!($head $(, $tail)*);
+            #[allow(dead_code, non_camel_case_types)]
+            struct ReadAccessCheck<$head: $crate::SpmiRegisterDef, $( $tail: $crate::SpmiRegisterDef ),*>(
+                std::marker::PhantomData<($head, $( $tail ),*)>,
+            )
+            where
+                $head::Mode: $crate::Readable,
+                $( $tail::Mode: $crate::Readable, )*;
+
+            let _ = ReadAccessCheck::<$head::Value, $( $tail::Value ),*>(std::marker::PhantomData);
+
+            let regs_ref = $regs;
+            $crate::assert_contiguous!(regs_ref, $head $(, $tail)*);
             let res: Result<
                 ($head::Value, $( $tail::Value ),*),
                 $crate::Error
-            > = async {
-                let base_addr = $head::ADDRESS;
+            > = async move {
+                let (unit, base_addr, total_bytes) =
+                    $crate::spmi_contiguous_layout!(regs_ref, $head $(, $tail)*);
 
-                let total_size = std::mem::size_of::<$head::Value>()
-                    $( + std::mem::size_of::<$tail::Value>() )*;
-
-                let data = $regs.read_bulk(
+                let data = regs_ref.read_bulk(
                     base_addr,
-                    total_size as u32,
+                    total_bytes as u32,
                 ).await?;
 
-                let mut cursor = 0;
+                let head_offset = ($head::ADDRESS - base_addr) as usize * unit;
                 let $head = $head::Value::from_bytes(
-                    &data[cursor..std::mem::size_of::<$head::Value>()],
+                    &data[head_offset..head_offset + std::mem::size_of::<$head::Value>()],
                 )?;
-                cursor = std::mem::size_of::<$head::Value>();
                 $(
-                    let end = cursor + std::mem::size_of::<$tail::Value>();
+                    let tail_offset = ($tail::ADDRESS - base_addr) as usize * unit;
                     let $tail = $tail::Value::from_bytes(
-                        &data[cursor..end],
+                        &data[tail_offset..tail_offset + std::mem::size_of::<$tail::Value>()],
                     )?;
-                    cursor = end;
                 )*
-                let _ = cursor;
 
                 Ok(($head, $( $tail ),*))
             }.await;
@@ -852,9 +1007,13 @@ macro_rules! spmi_read_contiguous {
 
 /// Writes multiple contiguous registers in a single async call to the hardware.
 ///
-/// This macro accepts an SPMI device proxy and a mapping of register modules
-/// to their values, serializes the values using their correct endianness,
-/// and performs a single async contiguous write.
+/// # Sub-Word Padding
+/// When writing to word-addressed blocks (`address_unit: u16`) containing sub-word registers (e.g. `u8`),
+/// unwritten padding byte positions within a word unit are zero-filled before issuing the bulk write.
+///
+/// # Module Names and Paths
+/// The macro expects register module names available directly in scope (e.g. `my_reg`).
+/// Module paths (e.g. `submod::my_reg`) are not supported as variable binding identifiers.
 ///
 /// # Arguments
 ///
@@ -880,15 +1039,31 @@ macro_rules! spmi_write_contiguous {
         $head:ident => $head_val:expr $(, $tail:ident => $tail_val:expr )* $(,)?
     ) => {
         async {
-            $crate::assert_contiguous!($head $(, $tail)*);
-            let regs_ref = $regs;
-            let res: Result<(), $crate::Error> = async move {
-                let base_addr = $head::ADDRESS;
+            #[allow(dead_code, non_camel_case_types)]
+            struct WriteAccessCheck<$head: $crate::SpmiRegisterDef, $( $tail: $crate::SpmiRegisterDef ),*>(
+                std::marker::PhantomData<($head, $( $tail ),*)>,
+            )
+            where
+                $head::Mode: $crate::Writable,
+                $( $tail::Mode: $crate::Writable, )*;
 
-                let mut bytes = Vec::new();
-                bytes.extend_from_slice(&$head_val.to_bytes());
+            let _ = WriteAccessCheck::<$head::Value, $( $tail::Value ),*>(std::marker::PhantomData);
+
+            let regs_ref = $regs;
+            $crate::assert_contiguous!(regs_ref, $head $(, $tail)*);
+            let res: Result<(), $crate::Error> = async move {
+                let (unit, base_addr, total_bytes) =
+                    $crate::spmi_contiguous_layout!(regs_ref, $head $(, $tail)*);
+
+                let mut bytes = vec![0u8; total_bytes];
+
+                let head_offset = ($head::ADDRESS - base_addr) as usize * unit;
+                bytes[head_offset..head_offset + std::mem::size_of::<$head::Value>()]
+                    .copy_from_slice(&$head_val.to_bytes());
                 $(
-                    bytes.extend_from_slice(&$tail_val.to_bytes());
+                    let tail_offset = ($tail::ADDRESS - base_addr) as usize * unit;
+                    bytes[tail_offset..tail_offset + std::mem::size_of::<$tail::Value>()]
+                        .copy_from_slice(&$tail_val.to_bytes());
                 )*
 
                 regs_ref.write_bulk(base_addr, &bytes).await?;
@@ -1070,6 +1245,37 @@ mod tests {
         assert_eq!(data, &[0x8A, 0x00]);
     }
 
+    struct MockWrapper {
+        device: TestSpmiDevice,
+    }
+
+    impl SpmiDevice for MockWrapper {
+        async fn read_reg(&self, address: u16, size: u32) -> Result<Vec<u8>, crate::Error> {
+            self.device.read_reg(address, size).await
+        }
+        async fn write_reg(&self, address: u16, data: &[u8]) -> Result<(), crate::Error> {
+            self.device.write_reg(address, data).await
+        }
+    }
+
+    spmi_register_block! {
+        pub struct MockWrappedRegs {
+            pub test => test_reg,
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_wrapped_read() {
+        let device = TestSpmiDevice::new();
+        device.write_reg(0xAB, &[0x8A, 0x00]).await.unwrap();
+
+        let wrapper = MockWrapper { device };
+        let regs = MockWrappedRegs::new(wrapper);
+        let val = regs.test().read().await.unwrap();
+        assert_eq!(val.reg_value(), 0x008A);
+        assert_eq!(val.test_bit(), true);
+    }
+
     spmi_register! {
         test_be_reg, u16, 0xEF, RW, BE, {
             pub flag, set_flag: 4;
@@ -1196,6 +1402,56 @@ mod tests {
         assert_eq!(data, &[0x1A, 0x34, 0x12]);
     }
 
+    spmi_register! {
+        test_word_reg_1, u16, 0x10, RW, LE, {}
+    }
+    spmi_register! {
+        test_word_reg_2, u16, 0x11, RW, LE, {}
+    }
+    spmi_register! {
+        test_word_reg_3, u16, 0x12, RW, LE, {}
+    }
+
+    spmi_register_block! {
+        address_unit: u16,
+        pub struct WordAddressedRegs {
+            pub r1 => test_word_reg_1,
+            pub r2 => test_word_reg_2,
+            pub r3 => test_word_reg_3,
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_word_addressed_contiguous() {
+        let device = TestSpmiDevice::new();
+        device.write_reg(0x10, &[0x34, 0x12, 0x78, 0x56]).await.unwrap();
+
+        let regs = WordAddressedRegs::new(device);
+
+        // Note on SPMI addressing: Standard SPMI register addresses refer to byte offsets (where a
+        // 16-bit register spans 2 byte addresses, so contiguous u16 registers have an address diff
+        // of 2). However, some hardware devices use 16-bit word-addressed registers where each
+        // address offset 0x10, 0x11 represents a 16-bit word (address diff of 1). Specifying
+        // `address_unit: u16` in `spmi_register_block!` handles these word-addressed hardware
+        // blocks.
+        let (val_1, val_2) =
+            spmi_read_contiguous!(&regs, test_word_reg_1, test_word_reg_2).await.unwrap();
+        assert_eq!(val_1.reg_value(), 0x1234);
+        assert_eq!(val_2.reg_value(), 0x5678);
+
+        // Write contiguous
+        spmi_write_contiguous!(
+            &regs,
+            test_word_reg_1 => val_1,
+            test_word_reg_2 => val_2
+        )
+        .await
+        .unwrap();
+
+        let data = regs.spmi.read_reg(0x10, 4).await.unwrap();
+        assert_eq!(data, &[0x34, 0x12, 0x78, 0x56]);
+    }
+
     #[fuchsia::test]
     async fn test_read_write_bulk() {
         let device = TestSpmiDevice::new();
@@ -1212,5 +1468,133 @@ mod tests {
         regs.write_bulk(0x88, &[0x1A, 0x2B, 0x3C]).await.unwrap();
         let data = regs.spmi.read_reg(0x88, 3).await.unwrap();
         assert_eq!(data, &[0x1A, 0x2B, 0x3C]);
+    }
+
+    spmi_register! {
+        test_mixed_u8, u8, 0x20, RW, {}
+    }
+    spmi_register! {
+        test_mixed_u16, u16, 0x21, RW, LE, {}
+    }
+
+    spmi_register_block! {
+        address_unit: u16,
+        pub struct WordAddressedMixedRegs {
+            pub u8_reg => test_mixed_u8,
+            pub u16_reg => test_mixed_u16,
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_word_addressed_mixed_sizes_contiguous() {
+        let device = TestSpmiDevice::new();
+        // 0x20 is u8 (occupies byte 0, byte 1 padded 0x00). 0x21 is u16 (bytes 2..4).
+        device.write_reg(0x20, &[0xAB, 0x00, 0x34, 0x12]).await.unwrap();
+
+        let regs = WordAddressedMixedRegs::new(device);
+        let (val_u8, val_u16) =
+            spmi_read_contiguous!(&regs, test_mixed_u8, test_mixed_u16).await.unwrap();
+
+        assert_eq!(val_u8.reg_value(), 0xAB);
+        assert_eq!(val_u16.reg_value(), 0x1234);
+
+        spmi_write_contiguous!(
+            &regs,
+            test_mixed_u8 => val_u8,
+            test_mixed_u16 => val_u16
+        )
+        .await
+        .unwrap();
+
+        let data = regs.spmi.read_reg(0x20, 4).await.unwrap();
+        assert_eq!(data, &[0xAB, 0x00, 0x34, 0x12]);
+    }
+
+    #[derive(
+        Copy,
+        Clone,
+        Debug,
+        PartialEq,
+        Eq,
+        zerocopy::FromBytes,
+        zerocopy::IntoBytes,
+        zerocopy::KnownLayout,
+        zerocopy::Immutable,
+    )]
+    #[repr(C)]
+    pub struct Reg3Byte([u8; 3]);
+    impl RegisterValue for Reg3Byte {}
+
+    impl Reg3Byte {
+        fn from_bytes(bytes: &[u8]) -> Result<Self, crate::Error> {
+            let slice: [u8; 3] = bytes.try_into().unwrap();
+            Ok(Self(slice))
+        }
+        fn to_bytes(&self) -> [u8; 3] {
+            self.0
+        }
+        fn reg_value(&self) -> Self {
+            *self
+        }
+    }
+
+    mod test_3byte_reg {
+        use super::*;
+        pub type Value = Reg3Byte;
+        pub const ADDRESS: u16 = 0x30;
+    }
+
+    impl SpmiRegisterDef for Reg3Byte {
+        type Value = Self;
+        type Mode = crate::ReadWrite;
+        const ADDRESS: u16 = 0x30;
+    }
+
+    impl<D> SpmiRegister<D> for Reg3Byte {
+        type Accessor<'a>
+            = &'a D
+        where
+            Self: 'a,
+            D: 'a;
+        fn get_accessor<'a>(spmi: &'a D) -> Self::Accessor<'a> {
+            spmi
+        }
+    }
+    spmi_register! {
+        test_after_3byte_reg, u16, 0x32, RW, LE, {}
+    }
+
+    spmi_register_block! {
+        address_unit: u16,
+        pub struct WordAddressed3ByteRegs {
+            pub r3b => test_3byte_reg,
+            pub r_next => test_after_3byte_reg,
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_word_addressed_non_multiple_size_contiguous() {
+        let device = TestSpmiDevice::new();
+        // 0x30 is 3 bytes (takes 2 word units = 4 bytes: [0x11, 0x22, 0x33, 0x00]).
+        // 0x32 is u16 (starts at 0x32 = byte offset 4: [0x56, 0x78]).
+        device.write_reg(0x30, &[0x11, 0x22, 0x33, 0x00, 0x56, 0x78]).await.unwrap();
+
+        let regs = WordAddressed3ByteRegs::new(device);
+        let (val_3b, val_next) =
+            spmi_read_contiguous!(&regs, test_3byte_reg, test_after_3byte_reg).await.unwrap();
+
+        assert_eq!(val_3b.reg_value(), Reg3Byte([0x11, 0x22, 0x33]));
+        assert_eq!(val_next.reg_value(), 0x7856);
+
+        spmi_write_contiguous!(
+            &regs,
+            test_3byte_reg => val_3b,
+            test_after_3byte_reg => val_next
+        )
+        .await
+        .unwrap();
+
+        let data = regs.spmi.read_reg(0x30, 6).await.unwrap();
+        assert_eq!(data, &[0x11, 0x22, 0x33, 0x00, 0x56, 0x78]);
     }
 }
