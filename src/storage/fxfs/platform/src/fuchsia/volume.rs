@@ -43,8 +43,9 @@ use std::pin::pin;
 #[cfg(any(test, feature = "testing"))]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
+use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 use vfs::directory::entry::DirectoryEntry;
 use vfs::directory::simple::Simple;
 use vfs::execution_scope::ExecutionScope;
@@ -57,6 +58,8 @@ const DIRENT_CACHE_LIMIT: usize = 2000;
 /// The read ahead/around size to target. Increase reads to be this size within the restrictions of
 /// the format for the target object.
 pub const READ_AHEAD_SIZE: u64 = 128 * 1024;
+
+const BLOB_TRANSFER_VMO_SIZE: usize = 32 * 1024 * 1024;
 
 const PROFILE_DIRECTORY: &str = "profiles";
 
@@ -161,6 +164,14 @@ pub struct FxVolume {
     /// The number of dirty bytes in pager backed VMOs that belong to this volume. VolumesDirectory
     /// holds a count for all volumes. This count is only used for tracing.
     pager_dirty_byte_count: AtomicU64,
+
+    /// A trusted buffer allocator used for reading and decompressing blobs. Unlike the underlying
+    /// block device's buffer allocator (whose VMOs are shared with drivers and thus untrusted),
+    /// this allocator uses VMOs without the TRANSFER right. This prevents foreign processes or
+    /// drivers from mutating memory concurrently, allowing us to safely extract Rust slices
+    /// (`try_as_slice`/`try_as_mut_slice`) and perform zero-copy Merkle tree verification without
+    /// heap copies.
+    blob_allocator: OnceLock<Arc<BufferAllocator>>,
 }
 
 #[fxfs_trace::trace]
@@ -190,11 +201,24 @@ impl FxVolume {
             poisoned: AtomicBool::new(false),
             blob_resupplied_count,
             pager_dirty_byte_count: AtomicU64::new(0),
+            blob_allocator: OnceLock::new(),
         })
     }
 
     pub fn store(&self) -> &Arc<ObjectStore> {
         &self.store
+    }
+
+    /// Returns the trusted buffer allocator for this volume, initializing it on first access.
+    /// This is primarily used by `BlobDirectory` and `FxBlob` to perform zero-copy decompression
+    /// and Merkle verification safely.
+    pub fn blob_allocator(&self) -> &Arc<BufferAllocator> {
+        self.blob_allocator.get_or_init(|| {
+            Arc::new(BufferAllocator::new(
+                self.store().block_size() as usize,
+                BufferSource::new_trusted(BLOB_TRANSFER_VMO_SIZE),
+            ))
+        })
     }
 
     pub fn cache(&self) -> &NodeCache {

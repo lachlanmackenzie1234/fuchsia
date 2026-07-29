@@ -218,8 +218,15 @@ impl FxBlob {
         }
     }
 
+    /// Allocates a device buffer for use with hardware/driver reads.
     fn allocate_buffer(&self, size: u64) -> BufferFuture<'_> {
         self.handle.store().device().allocate_buffer(size as usize)
+    }
+
+    /// Allocates a trusted buffer that no other processes or drivers can access,
+    /// suitable for zero-copy decompression and Merkle tree verification.
+    fn allocate_trusted_buffer(&self, size: u64) -> BufferFuture<'_> {
+        self.handle.owner().blob_allocator().allocate_buffer(size as usize)
     }
 
     async fn read_blocks(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<(), Error> {
@@ -378,7 +385,7 @@ impl PagerBacked for FxBlob {
         ensure!(range.start < self.uncompressed_size, FxfsError::InvalidArgs);
         self.record_page_fault_metric(&range);
 
-        let mut buffer = self.allocate_buffer(range.end - range.start).await;
+        let mut buffer = self.allocate_trusted_buffer(range.end - range.start).await;
         let unaligned_bytes =
             (std::cmp::min(range.end, self.uncompressed_size) - range.start) as usize;
         match &self.compression_info {
@@ -410,12 +417,11 @@ impl PagerBacked for FxBlob {
                     let compressed_buf_range = (compressed_offsets.start - aligned.start) as usize
                         ..(compressed_offsets.end - aligned.start) as usize;
 
-                    let buf = buffer.as_mut_slice();
                     let decompression_result = {
                         fxfs_trace::duration!("blob-decompress", "len" => unaligned_bytes);
                         compression_info.decompress(
-                            &compressed_buf.as_slice()[compressed_buf_range],
-                            &mut buf[..unaligned_bytes],
+                            compressed_buf.as_ptr_slice().subslice(compressed_buf_range),
+                            buffer.subslice_mut(0..unaligned_bytes).try_as_mut_slice().unwrap(),
                             range.start,
                         )
                     };
@@ -423,7 +429,7 @@ impl PagerBacked for FxBlob {
                         Ok(()) => break,
                         Err(error) => {
                             record_decompression_error_crash_report(
-                                compressed_buf.as_slice(),
+                                &compressed_buf.to_vec(),
                                 &range,
                                 &compressed_offsets,
                                 &self.merkle_root,
@@ -450,11 +456,13 @@ impl PagerBacked for FxBlob {
             // TODO(https://fxbug.dev/42073035): This should be offloaded to the kernel at which
             // point we can delete this.
             fxfs_trace::duration!("blob-verify", "len" => unaligned_bytes);
-            self.merkle_verifier
-                .verify(range.start as usize, &buffer.as_slice()[..unaligned_bytes])?;
+            self.merkle_verifier.verify(
+                range.start as usize,
+                buffer.subslice(0..unaligned_bytes).try_as_slice().unwrap(),
+            )?;
         }
         // Zero the tail.
-        buffer.as_mut_slice()[unaligned_bytes..].fill(0);
+        buffer.subslice_mut(unaligned_bytes..buffer.len()).fill(0);
         Ok(buffer)
     }
 }
@@ -676,7 +684,7 @@ mod tests {
             let mut transaction =
                 handle.new_transaction().await.expect("failed to create transaction");
             let mut buf = handle.allocate_buffer(BLOCK_SIZE as usize).await;
-            buf.as_mut_slice().fill(0);
+            buf.fill(0);
             handle
                 .txn_write(&mut transaction, READ_AHEAD_SIZE, buf.as_ref())
                 .await
@@ -960,18 +968,18 @@ mod tests {
         let mut decompressed_data = vec![0u8; CHUNK_SIZE + 1];
 
         compression_info
-            .decompress(&compressed_data, &mut decompressed_data[0..CHUNK_SIZE], 0)
+            .decompress(&compressed_data[..], &mut decompressed_data[0..CHUNK_SIZE], 0)
             .expect("failed to decompress");
         assert_eq!(uncompressed_data, decompressed_data[0..CHUNK_SIZE]);
 
         // Too small of destination buffer.
         compression_info
-            .decompress(&compressed_data, &mut decompressed_data[0..CHUNK_SIZE - 1], 0)
+            .decompress(&compressed_data[..], &mut decompressed_data[0..CHUNK_SIZE - 1], 0)
             .expect_err("decompression should fail");
 
         // Too large of destination buffer.
         compression_info
-            .decompress(&compressed_data, &mut decompressed_data[0..CHUNK_SIZE - 1], 0)
+            .decompress(&compressed_data[..], &mut decompressed_data[0..CHUNK_SIZE - 1], 0)
             .expect_err("decompression should fail");
     }
 
@@ -997,7 +1005,7 @@ mod tests {
 
         // Decompress the entire blob.
         compression_info
-            .decompress(&compressed_data, &mut decompressed_data, 0)
+            .decompress(&compressed_data[..], &mut decompressed_data[..], 0)
             .expect("failed to decompress");
         assert_eq!(uncompressed_data, decompressed_data);
 

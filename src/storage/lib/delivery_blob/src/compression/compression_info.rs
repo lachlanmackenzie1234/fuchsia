@@ -5,7 +5,7 @@
 use crate::compression::{ChunkedArchiveError, CompressionAlgorithm, ThreadLocalDecompressor};
 use std::borrow::Borrow;
 use std::ops::Range;
-use storage_ptr_slice::MutPtrByteSlice;
+use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 
 /// Trait for destination buffers where uncompressed or decompressed blob data is written.
 pub trait DataBuffer: Send + 'static {
@@ -135,12 +135,13 @@ impl CompressionInfo {
     ///   - `dst` must have the exact size of the uncompressed bytes.
     ///   - `dst_start_offset` is the location of the uncompressed bytes within the blob and must be
     ///     chunk aligned. This is necessary for determining the chunk boundaries in `src`.
-    pub fn decompress(
+    pub fn decompress<'a>(
         &self,
-        mut src: &[u8],
+        src: impl Into<PtrByteSlice<'a>>,
         mut dst: &mut [u8],
         dst_start_offset: u64,
     ) -> Result<(), ChunkedArchiveError> {
+        let mut src = src.into();
         if dst_start_offset % self.chunk_size != 0 {
             return Err(ChunkedArchiveError::IntegrityError);
         }
@@ -155,9 +156,11 @@ impl CompressionInfo {
         for chunk_index in start_chunk_index..(start_chunk_index + chunk_count) {
             match self.compressed_offset_for_chunk_index(chunk_index + 1) {
                 Some(end_offset) => {
-                    let (to_decompress, src_remaining) = src
-                        .split_at_checked((end_offset - start_offset) as usize)
-                        .ok_or(ChunkedArchiveError::IntegrityError)?;
+                    let len = (end_offset - start_offset) as usize;
+                    if len > src.len() {
+                        return Err(ChunkedArchiveError::IntegrityError);
+                    }
+                    let (to_decompress, src_remaining) = src.split_at(len);
                     let (to_decompress_into, dst_remaining) = dst
                         .split_at_mut_checked(self.chunk_size as usize)
                         .ok_or(ChunkedArchiveError::IntegrityError)?;
