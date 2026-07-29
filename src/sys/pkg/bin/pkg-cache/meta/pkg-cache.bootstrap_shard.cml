@@ -89,6 +89,7 @@
         {
             directory: [
                 "build-info",
+                "google-root-ssl-certificates",
                 "pkgfs",
                 "root-ssl-certificates",
                 "system",
@@ -116,6 +117,7 @@
             directory: [
                 "build-info",
                 "config-data",
+                "google-root-ssl-certificates",
                 "pkgfs",
                 "root-ssl-certificates",
                 "system",

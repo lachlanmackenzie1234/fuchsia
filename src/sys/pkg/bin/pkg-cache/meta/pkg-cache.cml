@@ -41,6 +41,11 @@
             path: "/specific-base-packages/config-data/meta/data",
         },
         {
+            directory: "google-root-ssl-certificates",
+            rights: [ "r*" ],
+            path: "/specific-base-packages/google_root_ssl_certificates/data",
+        },
+        {
             directory: "root-ssl-certificates",
             rights: [ "r*" ],
             path: "/specific-base-packages/root_ssl_certificates/data",
@@ -137,6 +142,7 @@
             directory: [
                 "build-info",
                 "config-data",
+                "google-root-ssl-certificates",
                 "pkgfs",
                 "root-ssl-certificates",
                 "system",

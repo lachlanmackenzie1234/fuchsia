@@ -197,6 +197,7 @@
                 "dev-class",
                 "dev-topological",
                 "factory",
+                "google-root-ssl-certificates",
                 "pkgfs",
                 "root-ssl-certificates",
                 "system",

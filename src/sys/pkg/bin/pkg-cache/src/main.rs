@@ -417,6 +417,7 @@ async fn main_inner() -> Result<(), Error> {
         "specific-base-packages" => vfs::pseudo_directory! {
             "build-info" => base_package_entry("build-info").await?,
             "config-data" => base_package_entry("config-data").await?,
+            "google_root_ssl_certificates" => base_package_entry("google_root_ssl_certificates").await?,
             "root_ssl_certificates" => base_package_entry("root_ssl_certificates").await?,
             "system_image" => base_package_entry("system_image").await?,
         }
