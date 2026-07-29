@@ -31,14 +31,12 @@ bool IsJournalMetadata(const JournalHeaderBlock* header, uint64_t sequence_numbe
   return true;
 }
 
-// Returns true if the |header| IsJournalMetadata and is of type JournalObjectType::kHeader or
-// JournalObjectType::kRevocation.
+// Returns true if the |header| IsJournalMetadata and is of type JournalObjectType::kHeader.
 bool IsHeader(const JournalHeaderBlock* header, uint64_t sequence_number) {
   if (!IsJournalMetadata(header, sequence_number)) {
     return false;
   }
-  if (header->prefix.ObjectType() != JournalObjectType::kHeader &&
-      header->prefix.ObjectType() != JournalObjectType::kRevocation) {
+  if (header->prefix.ObjectType() != JournalObjectType::kHeader) {
     return false;
   }
   return true;

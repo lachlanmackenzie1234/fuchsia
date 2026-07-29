@@ -135,17 +135,6 @@ zx_status_t ParseJournalEntries(const JournalSuperblock* info, storage::VmoBuffe
     if (!entry)
       break;
 
-    if (entry->header().ObjectType() == JournalObjectType::kRevocation) {
-      // TODO(https://fxbug.dev/42109842): Revocation records advise us to avoid replaying the
-      // provided operations.
-      //
-      // We should implement this by:
-      // 1) Parsing all blocks into a non-|operations| vector
-      // 2) Iterate over |operations| and look for collision
-      // 3) Omit the intersect
-      return ZX_ERR_NOT_SUPPORTED;
-    }
-
     // Replay all operations within this entry.
     ParseBlocks(*journal_buffer, *entry, entry_start, &operation_tree);
 

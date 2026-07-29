@@ -52,9 +52,6 @@ fpromise::result<void, zx_status_t> JournalWriter::WriteData(JournalWorkItem wor
     if (live_metadata_operations_.find(range) != live_metadata_operations_.end()) {
       // Currently, writing the info block is sufficient to "avoid metadata replay", but this is
       // only the case because the JournalWriter is synchronous, single-threaded, and non-caching.
-      // If we enable asynchronous writeback, emitting revocation records may be a more desirable
-      // option than "blocking until all prior operations complete, then blocking on writing the
-      // info block".
       zx_status_t status = WriteInfoBlock();
       if (status != ZX_OK) {
         FX_LOGST(WARNING, "journal") << "Failed to write data: " << zx_status_get_string(status);

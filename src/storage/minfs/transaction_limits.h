@@ -51,11 +51,11 @@ class TransactionLimits {
 
   // Returns the minimum number of blocks required to create a journal guaranteed large enough to
   // hold at least a single journal entry of maximum size, as well as the backup superblock.
-  blk_t GetMinimumIntegrityBlocks() const { return min_integrity_blocks_; }
+  blk_t GetMinimumJournalBlocks() const { return min_journal_blocks_; }
 
-  // Returns the ideal number of blocks to allocate to the integrity section, provided enough space
+  // Returns the ideal number of blocks to allocate to the journal, provided enough space
   // is available.
-  blk_t GetRecommendedIntegrityBlocks() const { return rec_integrity_blocks_; }
+  blk_t GetRecommendedJournalBlocks() const { return rec_journal_blocks_; }
 
   // Maximum number of superblock blocks that can be modified within one transaction.
   // Since there are 2 superblocks (original and backup),
@@ -92,9 +92,9 @@ class TransactionLimits {
   // single transaction.
   void CalculateDataBlocks();
 
-  // Calculates the maximum journal entry size and the minimum size required for the integrity
+  // Calculates the maximum journal entry size and the minimum size required for the journal
   // section of Minfs (journal + backup superblock).
-  void CalculateIntegrityBlocks(blk_t block_bitmap_blocks);
+  void CalculateJournalBlocks(blk_t block_bitmap_blocks);
 
   uint32_t BlockSize() const {
     // Either intentionally or unintenttionally, we do not want to change block
@@ -110,8 +110,8 @@ class TransactionLimits {
   blk_t max_data_blocks_;
   blk_t max_entry_data_blocks_;
   blk_t max_entry_blocks_;
-  blk_t min_integrity_blocks_;
-  blk_t rec_integrity_blocks_;
+  blk_t min_journal_blocks_;
+  blk_t rec_journal_blocks_;
 };
 
 }  // namespace minfs

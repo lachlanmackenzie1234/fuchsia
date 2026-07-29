@@ -52,20 +52,6 @@ TEST(JournalHeaderView, LoadValidHeader) {
   ASSERT_EQ(loaded.ObjectType(), JournalObjectType::kHeader);
 }
 
-TEST(JournalHeaderView, LoadValidRevocation) {
-  uint8_t block[kBlockSize] = {};
-  std::span<uint8_t> span(block, kBlockSize);
-
-  JournalHeaderView header(span, kPayloadBlocks, kSequenceNumber);
-  auto prefix = reinterpret_cast<JournalPrefix*>(block);
-  prefix->flags = kJournalPrefixFlagRevocation;
-
-  auto loaded = fs::JournalHeaderView::Create(span, kSequenceNumber).value();
-  ASSERT_EQ(loaded.PayloadBlocks(), header.PayloadBlocks());
-  ASSERT_EQ(loaded.SequenceNumber(), header.SequenceNumber());
-  ASSERT_EQ(loaded.ObjectType(), JournalObjectType::kRevocation);
-}
-
 TEST(JournalHeaderView, LoadBadMagicNumber) {
   uint8_t block[kBlockSize] = {};
   std::span<uint8_t> span(block, kBlockSize);

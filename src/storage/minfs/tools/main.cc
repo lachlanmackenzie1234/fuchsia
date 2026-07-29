@@ -351,7 +351,7 @@ zx_status_t MinfsCreator::CalculateRequiredSize(off_t* out) {
   info.ino_block = info.abm_block + fbl::round_up(block_bitmap_blocks, 8u);
   info.integrity_start_block = info.ino_block + inode_table_blocks;
   minfs::TransactionLimits limits(info);
-  info.dat_block = info.integrity_start_block + limits.GetRecommendedIntegrityBlocks();
+  info.dat_block = info.integrity_start_block + limits.GetRecommendedJournalBlocks();
 
   *out = (info.dat_block + info.block_count) * info.BlockSize();
   return ZX_OK;

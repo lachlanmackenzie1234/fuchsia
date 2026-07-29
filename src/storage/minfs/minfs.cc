@@ -266,7 +266,7 @@ zx::result<> CreateFvmData(const MountOptions& options, Superblock* info,
 
   // Journal.
   TransactionLimits limits(*info);
-  blk_t journal_blocks = limits.GetRecommendedIntegrityBlocks();
+  blk_t journal_blocks = limits.GetRecommendedJournalBlocks();
   request.length = fbl::round_up(journal_blocks, kBlocksPerSlice) / kBlocksPerSlice;
   request.offset = kFVMBlockJournalStart / kBlocksPerSlice;
   if (status = device->VolumeExtend(request.offset, request.length); status != ZX_OK) {
@@ -326,7 +326,7 @@ zx::result<> VerifySlicesSize(const Superblock& info, const TransactionLimits& l
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  size_t journal_blocks_needed = limits.GetMinimumIntegrityBlocks();
+  size_t journal_blocks_needed = limits.GetMinimumJournalBlocks();
   size_t journal_blocks_allocated = info.integrity_slices * blocks_per_slice;
   if (journal_blocks_needed > journal_blocks_allocated) {
     FX_LOGS(ERROR) << "Not enough slices for journal";
@@ -518,7 +518,7 @@ zx::result<> CheckSuperblock(const Superblock& info, uint32_t max_blocks) {
       return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
     }
 
-    if (info.dat_block - info.integrity_start_block < limits.GetMinimumIntegrityBlocks()) {
+    if (info.dat_block - info.integrity_start_block < limits.GetMinimumJournalBlocks()) {
       FX_LOGS(ERROR) << "journal too small";
       return zx::error(ZX_ERR_BAD_STATE);
     }
@@ -1553,13 +1553,13 @@ zx::result<> Mkfs(const MountOptions& options, Bcache* bc) {
 
       // Calculate the journal size based on other metadata structures.
       TransactionLimits limits(info);
-      journal_blocks = limits.GetRecommendedIntegrityBlocks();
+      journal_blocks = limits.GetRecommendedJournalBlocks();
 
       non_dat_blocks = 8 + fbl::round_up(ibmblks, 8u) + alloc_bitmap_rounded + inoblks;
 
       // If the recommended journal count is too high, try using the minimum instead.
       if (non_dat_blocks + journal_blocks >= blocks) {
-        journal_blocks = limits.GetMinimumIntegrityBlocks();
+        journal_blocks = limits.GetMinimumJournalBlocks();
       }
 
       non_dat_blocks += journal_blocks;

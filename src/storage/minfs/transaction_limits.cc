@@ -79,7 +79,7 @@ zx::result<blk_t> GetRequiredBlockCount(size_t offset, size_t length, size_t blo
 
 TransactionLimits::TransactionLimits(const Superblock& info) : block_size_(info.BlockSize()) {
   CalculateDataBlocks();
-  CalculateIntegrityBlocks(GetBlockBitmapBlocks(info));
+  CalculateJournalBlocks(GetBlockBitmapBlocks(info));
 }
 
 void TransactionLimits::CalculateDataBlocks() {
@@ -104,36 +104,20 @@ void TransactionLimits::CalculateDataBlocks() {
   max_meta_data_blocks_ = std::max(max_directory_blocks, max_indirect_blocks);
 }
 
-void TransactionLimits::CalculateIntegrityBlocks(blk_t block_bitmap_blocks) {
+void TransactionLimits::CalculateJournalBlocks(blk_t block_bitmap_blocks) {
+  // Ensure we have enough space to fit all the block numbers that may be updated in one
+  // transaction. The `max_entry_data_blocks_` represents an upper bound on block descriptors
+  // modified.
+  // Note: If `max_entry_data_blocks_` exceeds `fs::kMaxBlockDescriptors`, the transaction
+  // might be rejected by the journal format which only supports a single header block
+  // (fs::kJournalEntryHeaderBlocks == 1).
   max_entry_data_blocks_ = kMaxSuperblockBlocks + kMaxInodeBitmapBlocks + block_bitmap_blocks +
                            kMaxInodeTableBlocks + max_meta_data_blocks_;
 
-  // Ensure we have enough space to fit all the block numbers that may be updated in one
-  // transaction. This may spill over into multiple blocks.
-  blk_t header_blocks = 1;
-  if (max_entry_data_blocks_ > fs::kMaxBlockDescriptors) {
-    header_blocks += fbl::round_up((max_entry_data_blocks_ - fs::kMaxBlockDescriptors),
-                                   kMinfsDirectPerIndirect) /
-                     kMinfsDirectPerIndirect;
-  }
-
-  // For revocation records, we need to know the maximum number of metadata blocks within the
-  // data section of Minfs that can be deleted within one operation. This is either a directory
-  // vnode's maximum possible number of data blocks + indirect blocks, or a data vnode's maximum
-  // possible number of indirect blocks.
-  blk_t maximum_directory_blocks =
-      GetRequiredBlockCount(0, kMinfsMaxDirectorySize, BlockSize()).value();
-  blk_t maximum_indirect_blocks = kMinfsIndirect + kMinfsDoublyIndirect * kMinfsDirectPerIndirect;
-  blk_t revocation_blocks =
-      fbl::round_up(std::max(maximum_directory_blocks, maximum_indirect_blocks),
-                    kMinfsDirectPerIndirect) /
-      kMinfsDirectPerIndirect;
-
-  blk_t commit_blocks = 1;
-
-  max_entry_blocks_ = header_blocks + revocation_blocks + max_entry_data_blocks_ + commit_blocks;
-  min_integrity_blocks_ = max_entry_blocks_ + kJournalMetadataBlocks + kBackupSuperblockBlocks;
-  rec_integrity_blocks_ = std::max(min_integrity_blocks_, kDefaultJournalBlocks);
+  max_entry_blocks_ =
+      fs::kJournalEntryHeaderBlocks + max_entry_data_blocks_ + fs::kJournalEntryCommitBlocks;
+  min_journal_blocks_ = max_entry_blocks_ + kJournalMetadataBlocks + kBackupSuperblockBlocks;
+  rec_journal_blocks_ = std::max(min_journal_blocks_, static_cast<blk_t>(kDefaultJournalBlocks));
 }
 
 }  // namespace minfs

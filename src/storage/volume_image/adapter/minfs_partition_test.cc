@@ -231,7 +231,7 @@ void CheckSuperblock(const minfs::Superblock& actual_superblock,
       original_superblock.dat_block - original_superblock.integrity_start_block;
   minfs::TransactionLimits limits(original_superblock);
   integrity_blocks =
-      std::max(integrity_blocks, static_cast<uint64_t>(limits.GetRecommendedIntegrityBlocks()));
+      std::max(integrity_blocks, static_cast<uint64_t>(limits.GetRecommendedJournalBlocks()));
 
   auto get_slice_count = [&fvm_options](uint64_t block_count) {
     return GetBlockCount(0, block_count * minfs::kMinfsBlockSize, fvm_options.slice_size);

@@ -225,7 +225,7 @@ fpromise::result<Partition, std::string> CreateMinfsFvmPartition(
 
   integrity_mapping.size = std::max(
       integrity_mapping.count,
-      static_cast<uint64_t>(limits.GetRecommendedIntegrityBlocks()) * minfs::kMinfsBlockSize);
+      static_cast<uint64_t>(limits.GetRecommendedJournalBlocks()) * minfs::kMinfsBlockSize);
   patched_superblock.integrity_slices =
       safemath::checked_cast<uint32_t>(get_slice_count(integrity_mapping));
 

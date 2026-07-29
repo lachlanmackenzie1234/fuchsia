@@ -37,14 +37,12 @@ constexpr uint64_t kJournalEntryMagic = 0x696d616a75726e6cULL;
 
 constexpr uint64_t kJournalPrefixFlagHeader = 1;
 constexpr uint64_t kJournalPrefixFlagCommit = 2;
-constexpr uint64_t kJournalPrefixFlagRevocation = 3;
 constexpr uint64_t kJournalPrefixFlagMask = 0xF;
 
 enum class JournalObjectType {
   kUnknown = 0,
   kHeader,
   kCommit,
-  kRevocation,
 };
 
 // The prefix structure on both header blocks and commit blocks.
@@ -55,8 +53,6 @@ struct JournalPrefix {
         return JournalObjectType::kHeader;
       case kJournalPrefixFlagCommit:
         return JournalObjectType::kCommit;
-      case kJournalPrefixFlagRevocation:
-        return JournalObjectType::kRevocation;
       default:
         return JournalObjectType::kUnknown;
     }
