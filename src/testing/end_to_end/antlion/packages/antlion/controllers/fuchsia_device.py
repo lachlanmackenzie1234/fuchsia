@@ -372,7 +372,9 @@ class FuchsiaDevice:
             self.honeydew_fd.netstack_deprecated_sync.list_interfaces()
         )
         wlan_interfaces_by_mac = (
-            self.honeydew_fd.wlan_core_deprecated_sync.query_interfaces()
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.honeydew_fd.wlan_core.query_interfaces()
+            )
         )
 
         for netstack_iface in netstack_interfaces:

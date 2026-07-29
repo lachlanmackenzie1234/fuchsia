@@ -7,6 +7,7 @@
 import logging
 import time
 
+import fuchsia_async_extension
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from honeydew.fuchsia_device.fuchsia_device import (
     FuchsiaDevice as HdFuchsiaDevice,
@@ -51,13 +52,17 @@ class WlanController:
             f"Verifying DUT country code was correctly set to {country_code}."
         )
         phy_ids_response = (
-            self.honeydew.wlan_core_deprecated_sync.get_phy_id_list()
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.honeydew.wlan_core.get_phy_id_list()
+            )
         )
 
         end_time = time.time() + TIME_TO_WAIT_FOR_COUNTRY_CODE
         while time.time() < end_time:
             for id in phy_ids_response:
-                resp = self.honeydew.wlan_core_deprecated_sync.get_country(id)
+                resp = fuchsia_async_extension.get_loop().run_until_complete(
+                    self.honeydew.wlan_core.get_country(id)
+                )
                 if resp == country_code:
                     return
                 time.sleep(TIME_TO_SLEEP_BETWEEN_RETRIES)

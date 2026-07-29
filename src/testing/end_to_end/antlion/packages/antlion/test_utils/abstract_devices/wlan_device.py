@@ -10,6 +10,7 @@ import enum
 from typing import Protocol, Sequence, runtime_checkable
 
 import fidl_fuchsia_wlan_internal as f_wlan_internal
+import fuchsia_async_extension
 from antlion.controllers import iperf_client
 from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
@@ -388,7 +389,9 @@ class FuchsiaWlanDevice(SupportsWLAN):
         match self.association_mode:
             case AssociationMode.DRIVER:
                 ssid_bss_desc_map = (
-                    self.device.honeydew_fd.wlan_core_deprecated_sync.scan_for_bss_info()
+                    fuchsia_async_extension.get_loop().run_until_complete(
+                        self.device.honeydew_fd.wlan_core.scan_for_bss_info()
+                    )
                 )
 
                 bss_descs_for_ssid = ssid_bss_desc_map.get(target_ssid, None)
@@ -424,8 +427,8 @@ class FuchsiaWlanDevice(SupportsWLAN):
                     protocol=protocol, credentials=credentials
                 )
 
-                return (
-                    self.device.honeydew_fd.wlan_core_deprecated_sync.connect(
+                return fuchsia_async_extension.get_loop().run_until_complete(
+                    self.device.honeydew_fd.wlan_core.connect(
                         ssid=target_ssid,
                         bss_desc=bss_descs_for_ssid[0],
                         authentication=authentication,
@@ -457,7 +460,9 @@ class FuchsiaWlanDevice(SupportsWLAN):
         """
         match self.association_mode:
             case AssociationMode.DRIVER:
-                self.device.honeydew_fd.wlan_core_deprecated_sync.disconnect()
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    self.device.honeydew_fd.wlan_core.disconnect()
+                )
             case AssociationMode.POLICY:
                 self.device.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
                 self.device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
@@ -507,8 +512,8 @@ class FuchsiaWlanDevice(SupportsWLAN):
             )
 
     def get_wlan_interface_id_list(self) -> Sequence[int]:
-        return (
-            self.device.honeydew_fd.wlan_core_deprecated_sync.get_iface_id_list()
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self.device.honeydew_fd.wlan_core.get_iface_id_list()
         )
 
     def get_default_wlan_test_interface(self) -> str:
@@ -519,12 +524,14 @@ class FuchsiaWlanDevice(SupportsWLAN):
         return self.device.wlan_client_test_interface_name
 
     def destroy_wlan_interface(self, iface_id: int) -> None:
-        self.device.honeydew_fd.wlan_core_deprecated_sync.destroy_iface(
-            iface_id
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self.device.honeydew_fd.wlan_core.destroy_iface(iface_id)
         )
 
     def is_connected(self, ssid: str | None = None) -> bool:
-        result = self.device.honeydew_fd.wlan_core_deprecated_sync.status()
+        result = fuchsia_async_extension.get_loop().run_until_complete(
+            self.device.honeydew_fd.wlan_core.status()
+        )
         if result.idle:
             self.device.log.info("Client status idle")
             return False

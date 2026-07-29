@@ -359,15 +359,6 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_core_deprecated_sync(self) -> wlan_core_module.WlanCore:
-        """Returns a Wlan affordance object.
-
-        Returns:
-            wlan.Wlan object
-        """
-
-    @properties.Affordance
-    @abc.abstractmethod
     def netstack(self) -> netstack_module.AsyncNetstack:
         """Returns a netstack affordance object.
 

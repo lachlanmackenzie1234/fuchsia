@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import FrozenSet
 
 import fidl_fuchsia_wlan_common as f_wlan_common
+import fuchsia_async_extension
 from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
@@ -195,8 +196,10 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             WlanError if the DUT interface query fails.
         """
         for wlan_iface in self.dut.get_wlan_interface_id_list():
-            result = self.fuchsia_device.honeydew_fd.wlan_core_deprecated_sync.query_iface(
-                wlan_iface
+            result = fuchsia_async_extension.get_loop().run_until_complete(
+                self.fuchsia_device.honeydew_fd.wlan_core.query_iface(
+                    wlan_iface
+                )
             )
             if result.role == f_wlan_common.WlanMacRole.CLIENT:
                 return utils.mac_address_list_to_str(bytes(result.sta_addr))

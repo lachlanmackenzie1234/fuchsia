@@ -755,21 +755,6 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def wlan_core_deprecated_sync(self) -> wlan_core_module.WlanCore:
-        """Returns a wlan affordance object.
-
-        Returns:
-            wlan.AsyncWlanCore object
-        """
-        return wlan_core_using_fc.WlanCore(
-            device_name=self.device_name,
-            ffx=self.ffx,
-            fuchsia_controller=self.fuchsia_controller,
-            reboot_affordance=self,
-            fuchsia_device_close=self,
-        )
-
-    @properties.Affordance
     def netstack(self) -> netstack_module.AsyncNetstack:
         """Returns a netstack affordance object.
 
