@@ -286,6 +286,23 @@ impl Broker {
         let prev_level = self.update_current_level_internal(element_id, level, &mut inspect_writer);
         inspect_writer.commit(&self.catalog.topology);
 
+        // Check any claims that are marked to deactivate on this element to see
+        // if they can be dropped or deactivated. We do this even if the level
+        // has not changed, as it is possible the last time they were checked,
+        // the element was transitioning.
+        let claims_marked_to_deactivate: Vec<Claim> = self
+            .catalog
+            .claims
+            .activated
+            .marked_to_deactivate_for_element(element_id)
+            .cloned()
+            .collect();
+        if !claims_marked_to_deactivate.is_empty() {
+            let claims_with_no_dependents =
+                self.find_claims_to_drop_or_deactivate(&claims_marked_to_deactivate);
+            self.drop_or_deactivate_claims(&claims_with_no_dependents);
+        }
+
         if prev_level.as_ref() == Some(&level) {
             log::debug!("update_current_level({element_id}): level unchanged from {prev_level:?}");
             return;
@@ -338,30 +355,15 @@ impl Broker {
             return;
         }
         if prev_level.unwrap() > level {
-            // If the level was lowered, first find any claims that have been
-            // marked to deactivate. This is the 'orderly' case, where the level
-            // of the element was lowered as a result of a dropped lease. This
-            // step finds marked-to-deactivate claims and lowers their levels in
-            // an orderly fashion.
             log::debug!(
                 "update_current_level({element_id}): level decreased from {prev_level:?} to {level:?}"
             );
 
-            let claims_marked_to_deactivate: Vec<Claim> = self
-                .catalog
-                .claims
-                .activated
-                .marked_to_deactivate_for_element(element_id)
-                .cloned()
-                .collect();
-            let claims_with_no_dependents =
-                self.find_claims_to_drop_or_deactivate(&claims_marked_to_deactivate);
-            self.drop_or_deactivate_claims(&claims_with_no_dependents);
-
-            // After handling the claims that were dropped properly, we handle those
-            // which were dropped unexpectedly, i.e. 'disorderly' elements. When this
-            // occurs, we compute the set of activated claims that are no longer valid
-            // and immediately deactivate them.
+            // Handle claims that were dropped unexpectedly, i.e.
+            // 'disorderly' elements. When an element's level decreases
+            // without a prior required level drop, we compute the set of
+            // activated claims that are no longer valid and immediately
+            // deactivate them.
             if is_disorderly_update {
                 self.deactivate_broken_claims(element_id, prev_level.unwrap().clone());
             }
@@ -5167,5 +5169,102 @@ mod tests {
         assert_eq!(broker.get_lease_status(lease.id), None);
         assert!(!broker.catalog.leases.contains_key(&lease.id));
         assert!(!broker.catalog.topology.elements.contains_key(&lease.synthetic_element_id));
+    }
+
+    #[fuchsia::test]
+    fn test_stranded_powering_down_lease() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        let element_a = broker
+            .add_element("A", OFF.level, vec![0, 10, 20], vec![])
+            .expect("add_element failed");
+        let element_b = broker
+            .add_element("B", OFF.level, vec![0, 10, 20], vec![])
+            .expect("add_element failed");
+
+        let token_b = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                element_b,
+                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
+            )
+            .expect("register_dependency_token failed");
+
+        // A     B
+        // 20 -> 20
+        // 10 -> 10
+        broker
+            .add_dependency(
+                element_a,
+                fpb::LevelDependency {
+                    dependent_level: Some(10),
+                    requires_token: Some(
+                        token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![10]),
+                    ..Default::default()
+                },
+                &mut EagerInspectWriter,
+            )
+            .expect("add_dependency failed");
+        broker
+            .add_dependency(
+                element_a,
+                fpb::LevelDependency {
+                    dependent_level: Some(20),
+                    requires_token: Some(token_b),
+                    requires_level_by_preference: Some(vec![20]),
+                    ..Default::default()
+                },
+                &mut EagerInspectWriter,
+            )
+            .expect("add_dependency failed");
+
+        let level_10 = IndexedPowerLevel { level: 10, index: 1 };
+        let level_20 = IndexedPowerLevel { level: 20, index: 2 };
+
+        // Acquire Lease 1 on A at level 10.
+        let lease1 =
+            broker.acquire_lease(element_a, level_10.clone(), zx::Koid::from_raw(1)).unwrap();
+        broker.update_current_level(element_b, level_10.clone());
+        broker.update_current_level(element_a, level_10.clone());
+        assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
+
+        // Acquire Lease 2 on A at level 10.
+        let lease2 =
+            broker.acquire_lease(element_a, level_10.clone(), zx::Koid::from_raw(2)).unwrap();
+        assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Satisfied));
+
+        // Bring B to level 20 first so that Lease 3's top claim can be
+        // activated immediately.
+        broker.update_current_level(element_b, level_20.clone());
+
+        // Acquire Lease 3 on A at level 20. This puts element A into
+        // in_transition while transiting to 20.
+        let lease3 =
+            broker.acquire_lease(element_a, level_20.clone(), zx::Koid::from_raw(3)).unwrap();
+
+        // While A is in transition, drop Lease 2.
+        // Because A is in transition, Lease 2's bottom claim (A@10 -> B@10)
+        // cannot be dropped safely, leaving Lease 2 stranded in PoweringDown
+        // until the transition is complete.
+        broker.drop_lease(lease2.id).unwrap();
+        assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::PoweringDown));
+
+        // Complete transition of A to level 20.
+        broker.update_current_level(element_a, level_20.clone());
+        assert_eq!(broker.get_lease_status(lease3.id), Some(LeaseStatus::Satisfied));
+
+        // Now that A is at level 20 and Lease 1 and Lease 3 are SATISFIED,
+        // Lease 2's claims are redundantly covered and Lease 2 is cleanly
+        // vacated (None).
+        assert_eq!(broker.get_lease_status(lease2.id), None);
+
+        // Now drop Lease 3 and step A back down to level 10.
+        broker.drop_lease(lease3.id).unwrap();
+        broker.update_current_level(element_a, level_10.clone());
+        assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
+        assert_eq!(broker.get_lease_status(lease3.id), None);
     }
 }
