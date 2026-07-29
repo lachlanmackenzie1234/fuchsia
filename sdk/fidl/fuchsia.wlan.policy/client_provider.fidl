@@ -261,25 +261,25 @@ type Compatibility = strict enum {
 
 /// Potential error cases for saving and removing network configurations.
 @strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
-type NetworkConfigChangeError = strict enum {
+type NetworkConfigChangeError = strict(removed=NEXT) flexible(added=NEXT) enum {
     GENERAL_ERROR = 1;
 
-    // Error for missing network config field (e.g. id, credential, etc.).
+    /// Error for missing network config field (e.g. id, credential, etc.).
     NETWORK_CONFIG_MISSING_FIELD_ERROR = 2;
 
-    // Error writing network config to storage.
+    /// Error writing network config to storage.
     NETWORK_CONFIG_WRITE_ERROR = 3;
 
-    // Error for zero length SSID.
+    /// Error for zero length SSID.
     SSID_EMPTY_ERROR = 4;
 
-    // Error for invalid credential length.
+    /// Error for invalid credential length.
     CREDENTIAL_LEN_ERROR = 6;
 
-    // Error for invalid security credential for a security type.
+    /// Error for invalid security credential for a security type.
     INVALID_SECURITY_CREDENTIAL_ERROR = 7;
 
-    // Error for an invalid credential type.
+    /// Error for an invalid credential type.
     UNSUPPORTED_CREDENTIAL_ERROR = 8;
 };
 

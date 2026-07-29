@@ -655,7 +655,7 @@
     {
         "kind": "enum",
         "name": "fuchsia.wlan.policy/NetworkConfigChangeError",
-        "strictness": "strict",
+        "strictness": "flexible",
         "type": "uint32"
     },
     {
