@@ -30,11 +30,9 @@ use crate::parser::ast::{ASTBuilder, Command};
 use crate::process::spawn_command;
 use crate::relative;
 use crate::serialization::{Deserialize, Serialize};
-use bstr::{BString, ByteSlice};
+use crate::string::path_buf_to_bstring;
+use bstr::ByteSlice;
 use zerocopy::{FromZeros, IntoBytes};
-
-/// Path to the zxsh binary in the package filesystem.
-pub const ZXSH_PATH: &str = "/pkg/bin/zxsh";
 
 /// Fixed-size layout header at the start of a serialized subshell VMO payload.
 #[derive(
@@ -175,7 +173,11 @@ pub fn spawn_subshell_process(
         .map_err(|error| format!("Vmo::create failed: {}", zx_status_str(error)))?;
     vmo.write(&bytes, 0).map_err(|error| format!("Vmo::write failed: {}", zx_status_str(error)))?;
 
-    let mut argv = vec![BString::from(ZXSH_PATH)];
+    let self_path = std::env::current_exe()
+        .map_err(|error| format!("std::env::current_exe failed: {error}"))?;
+    let self_path_bstring = path_buf_to_bstring(self_path)
+        .ok_or_else(|| "Failed to convert current_exe path to BString".to_string())?;
+    let mut argv = vec![self_path_bstring];
     if script_args == SubshellScriptArgs::Pass {
         argv.push(state.script_name.clone());
         argv.extend(state.args.clone());

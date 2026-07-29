@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//src/zircon/bin/zxsh/zxsh.gni")
+
 import("//build/components.gni")
 import("//build/test.gni")
 
@@ -44,10 +46,13 @@ executable("netsvc") {
     "//zircon/system/ulib/tftp",
     "//zircon/system/ulib/zx",
   ]
-  data_deps = [
+  data_deps = []
+  if (use_zxsh) {
     # netsvc launches /boot/bin/sh for netruncmd.
-    "//zircon/third_party/uapp/dash",
-  ]
+    data_deps += [ "//src/zircon/bin/zxsh:bin" ]
+  } else {
+    data_deps += [ "//zircon/third_party/uapp/dash" ]
+  }
 }
 
 source_set("args") {

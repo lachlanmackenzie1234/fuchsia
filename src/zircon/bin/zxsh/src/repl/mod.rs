@@ -14,11 +14,14 @@ mod completion;
 mod linenoise;
 use std::io::{BufRead, IsTerminal};
 
+const DEFAULT_PS1: &str = "$ ";
+const DEFAULT_PS2: &str = "> ";
+
 fn get_prompt(input_buffer: &BStr, state: &mut ShellState, ctx: &ExecutionContext) -> BString {
     let prompt_var =
         if input_buffer.is_empty() { bstr::BStr::new(b"PS1") } else { bstr::BStr::new(b"PS2") };
     let default_prompt =
-        if input_buffer.is_empty() { BStr::new(b"zxsh> ") } else { BStr::new(b"> ") };
+        if input_buffer.is_empty() { BStr::new(DEFAULT_PS1) } else { BStr::new(DEFAULT_PS2) };
     let prompt_owned = state.get_var(prompt_var);
     let prompt_raw = match &prompt_owned {
         Some(s) => s.as_ref(),
@@ -196,8 +199,8 @@ mod tests {
         let mut state = ShellState::new();
         let ctx = ExecutionContext::initial().unwrap();
 
-        assert_eq!(get_prompt(BStr::new(""), &mut state, &ctx), BStr::new("zxsh> "));
-        assert_eq!(get_prompt(BStr::new("input"), &mut state, &ctx), BStr::new("> "));
+        assert_eq!(get_prompt(BStr::new(""), &mut state, &ctx), BStr::new(DEFAULT_PS1));
+        assert_eq!(get_prompt(BStr::new("input"), &mut state, &ctx), BStr::new(DEFAULT_PS2));
     }
 
     #[test]
@@ -217,8 +220,8 @@ mod tests {
         state.set_var("PS1", "$(( 1 / 0 ))");
         let ctx = ExecutionContext::initial().unwrap();
 
-        // Expands to error -> falls back to default prompt "zxsh> "
-        assert_eq!(get_prompt(BStr::new(""), &mut state, &ctx), BStr::new("zxsh> "));
+        // Expands to error -> falls back to default prompt DEFAULT_PS1
+        assert_eq!(get_prompt(BStr::new(""), &mut state, &ctx), BStr::new(DEFAULT_PS1));
     }
 
     #[test]
