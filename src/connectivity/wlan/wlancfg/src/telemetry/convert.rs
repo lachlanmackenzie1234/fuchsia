@@ -236,6 +236,9 @@ pub fn convert_to_wlan_telemetry_event(
         crate::telemetry::TelemetryEvent::SmeTimeout { .. } => {
             Some(wlan_telemetry::TelemetryEvent::SmeTimeout)
         }
+        crate::telemetry::TelemetryEvent::RecoveryEvent { .. } => {
+            Some(wlan_telemetry::TelemetryEvent::RecoveryEvent)
+        }
         _ => None,
     }
 }
@@ -372,6 +375,15 @@ mod tests {
                 assert_eq!(info.iface_id, 42);
             }
             _ => panic!("Expected Disconnect event"),
+        }
+
+        match convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::RecoveryEvent {
+            reason: crate::telemetry::RecoveryReason::Timeout(
+                crate::telemetry::TimeoutRecoveryMechanism::PhyReset,
+            ),
+        }) {
+            Some(wlan_telemetry::TelemetryEvent::RecoveryEvent) => {}
+            _ => panic!("Expected RecoveryEvent"),
         }
 
         assert!(

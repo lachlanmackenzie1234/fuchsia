@@ -517,6 +517,7 @@ pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
     wlan_telemetry::TelemetryConfig {
         enable_connect_disconnect: true,
         enable_toggle_logger: true,
+        enable_recovery_logger: true,
         device_mobility: wlan_telemetry::DeviceMobility::Stationary,
         ..Default::default()
     }
@@ -550,6 +551,7 @@ pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
         metrics::CLIENT_CONNECTION_ENABLED_OCCURRENCE_METRIC_ID,
         metrics::CLIENT_CONNECTIONS_STOP_AND_START_METRIC_ID,
         metrics::CLIENT_CONNECTION_ENABLED_DURATION_METRIC_ID,
+        metrics::RECOVERY_OCCURRENCE_2_METRIC_ID,
     ]))
 }
 
