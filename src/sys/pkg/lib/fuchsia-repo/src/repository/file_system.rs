@@ -283,6 +283,15 @@ impl RepoProvider for FileSystemRepository {
                 }
             };
 
+            if !matches!(
+                event.kind,
+                notify::EventKind::Create(_)
+                    | notify::EventKind::Modify(_)
+                    | notify::EventKind::Remove(_)
+            ) {
+                return;
+            }
+
             // Send an event if any applied to timestamp.json.
             let timestamp_name = OsStr::new("timestamp.json");
             if event.paths.iter().any(|p| p.file_name() == Some(timestamp_name))
@@ -776,6 +785,29 @@ mod tests {
         // trip over an issue where OSX will tear down the thread local storage before shutting
         // down the thread, which can trigger a panic. To avoid this issue, sleep a little bit
         // after shutting down our stream.
+        drop(watch_stream);
+        fasync::Timer::new(Duration::from_millis(100)).await;
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_watch_ignores_access() {
+        let env = TestEnv::new();
+
+        // Write an initial timestamp.json file.
+        env.write_metadata("timestamp.json", br#"{"version":1}"#);
+
+        let mut watch_stream = env.repo.watch().unwrap().fuse();
+
+        // Opening and reading timestamp.json should not trigger a watch event.
+        let _ = std::fs::read(env.metadata_path.join("timestamp.json")).unwrap();
+
+        futures::select! {
+            _ = watch_stream.next() => {
+                panic!("reading timestamp.json should not trigger a watch event")
+            }
+            _ = fasync::Timer::new(Duration::from_millis(200)).fuse() => (),
+        };
+
         drop(watch_stream);
         fasync::Timer::new(Duration::from_millis(100)).await;
     }
