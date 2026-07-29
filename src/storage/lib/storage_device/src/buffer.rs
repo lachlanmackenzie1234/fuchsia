@@ -20,6 +20,11 @@ pub trait BufferAllocator: Send + Sync + std::fmt::Debug + 'static {
     fn identifier(&self) -> usize {
         std::ptr::from_ref(self).addr()
     }
+
+    /// Returns true if buffers produced by this allocator are trusted (unshared).
+    fn is_trusted(&self) -> bool {
+        false
+    }
 }
 
 pub(super) fn round_down<T>(value: T, granularity: T) -> T
@@ -114,6 +119,7 @@ impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> BufferImpl<'a, H, A> {
             start: new_range.start,
             end: new_range.end,
             allocator_id: self.allocator.borrow().identifier(),
+            trusted: self.allocator.borrow().is_trusted(),
         }
     }
 
@@ -138,6 +144,7 @@ impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> BufferImpl<'a, H, A> {
             slice,
             range: new_range,
             allocator_id: self.allocator.borrow().identifier(),
+            trusted: self.allocator.borrow().is_trusted(),
         }
     }
 
@@ -157,6 +164,28 @@ impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> BufferImpl<'a, H, A> {
         // SAFETY: `&mut self` guarantees exclusive mutable access to this range of `self.len()`
         // bytes.
         unsafe { std::slice::from_raw_parts_mut(self.slice.as_mut_ptr(), self.len()) }
+    }
+
+    /// Returns a reference to the underlying data if the buffer is trusted.
+    /// Returns None if the buffer is untrusted (shared with the driver).
+    pub fn try_as_slice(&self) -> Option<&[u8]> {
+        if self.allocator.borrow().is_trusted() {
+            // SAFETY: The buffer is trusted (not shared), so no concurrent mutation can occur.
+            Some(unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) })
+        } else {
+            None
+        }
+    }
+
+    /// Returns a mutable reference to the underlying data if the buffer is trusted.
+    /// Returns None if the buffer is untrusted (shared with the driver).
+    pub fn try_as_mut_slice(&mut self) -> Option<&mut [u8]> {
+        if self.allocator.borrow().is_trusted() {
+            // SAFETY: The buffer is trusted (not shared), so no concurrent mutation can occur.
+            Some(unsafe { std::slice::from_raw_parts_mut(self.slice.as_mut_ptr(), self.len()) })
+        } else {
+            None
+        }
     }
 
     /// Copies the contents of this buffer into `dest`.
@@ -247,6 +276,7 @@ pub struct BufferRef<'a> {
     /// Opaque identifier derived from the memory address of the `BufferAllocator`.
     /// Used internally to detect foreign buffers allocated from a different allocator.
     allocator_id: usize,
+    trusted: bool,
 }
 
 impl<'a> BufferRef<'a> {
@@ -271,6 +301,17 @@ impl<'a> BufferRef<'a> {
         unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) }
     }
 
+    /// Returns a reference to the underlying data if the buffer is trusted.
+    /// Returns None if the buffer is untrusted (shared with the driver).
+    pub fn try_as_slice(&self) -> Option<&[u8]> {
+        if self.trusted {
+            // SAFETY: The buffer is trusted (not shared), so no concurrent mutation can occur.
+            Some(unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) })
+        } else {
+            None
+        }
+    }
+
     /// Slices and consumes this reference. See Buffer::subslice.
     pub fn subslice<R: SliceRange>(&self, range: R) -> BufferRef<'_> {
         let new_range = subrange(&self.range(), &range);
@@ -281,6 +322,7 @@ impl<'a> BufferRef<'a> {
             start: new_range.start,
             end: new_range.end,
             allocator_id: self.allocator_id,
+            trusted: self.trusted,
         }
     }
 
@@ -294,12 +336,14 @@ impl<'a> BufferRef<'a> {
                 start: ranges.0.start,
                 end: ranges.0.end,
                 allocator_id: self.allocator_id,
+                trusted: self.trusted,
             },
             BufferRef {
                 slice: right_slice,
                 start: ranges.1.start,
                 end: ranges.1.end,
                 allocator_id: self.allocator_id,
+                trusted: self.trusted,
             },
         )
     }
@@ -347,6 +391,7 @@ pub struct MutableBufferRef<'a> {
     /// Opaque identifier derived from the memory address of the `BufferAllocator`.
     /// Used internally to detect foreign buffers allocated from a different allocator.
     allocator_id: usize,
+    trusted: bool,
 }
 
 impl<'a> MutableBufferRef<'a> {
@@ -371,6 +416,7 @@ impl<'a> MutableBufferRef<'a> {
             start: self.range.start,
             end: self.range.end,
             allocator_id: self.allocator_id,
+            trusted: self.trusted,
         }
     }
 
@@ -381,6 +427,7 @@ impl<'a> MutableBufferRef<'a> {
             start: self.range.start,
             end: self.range.end,
             allocator_id: self.allocator_id,
+            trusted: self.trusted,
         }
     }
 
@@ -398,6 +445,28 @@ impl<'a> MutableBufferRef<'a> {
         unsafe { std::slice::from_raw_parts_mut(self.slice.as_mut_ptr(), self.len()) }
     }
 
+    /// Returns a reference to the underlying data if the buffer is trusted.
+    /// Returns None if the buffer is untrusted (shared with the driver).
+    pub fn try_as_slice(&self) -> Option<&[u8]> {
+        if self.trusted {
+            // SAFETY: The buffer is trusted (not shared), so no concurrent mutation can occur.
+            Some(unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) })
+        } else {
+            None
+        }
+    }
+
+    /// Returns a mutable reference to the underlying data if the buffer is trusted.
+    /// Returns None if the buffer is untrusted (shared with the driver).
+    pub fn try_as_mut_slice(&mut self) -> Option<&mut [u8]> {
+        if self.trusted {
+            // SAFETY: The buffer is trusted (not shared), so no concurrent mutation can occur.
+            Some(unsafe { std::slice::from_raw_parts_mut(self.slice.as_mut_ptr(), self.len()) })
+        } else {
+            None
+        }
+    }
+
     /// Reborrows this reference with a lesser lifetime. This mirrors the usual borrowing semantics
     /// (i.e. the borrow ends when the new reference goes out of scope), and exists so that a
     /// MutableBufferRef can be subsliced without consuming it.
@@ -412,6 +481,7 @@ impl<'a> MutableBufferRef<'a> {
             slice: self.slice.reborrow(),
             range: self.range.clone(),
             allocator_id: self.allocator_id,
+            trusted: self.trusted,
         }
     }
 
@@ -431,6 +501,7 @@ impl<'a> MutableBufferRef<'a> {
             start: new_range.start,
             end: new_range.end,
             allocator_id: self.allocator_id,
+            trusted: self.trusted,
         }
     }
 
@@ -454,12 +525,14 @@ impl<'a> MutableBufferRef<'a> {
                 start: ranges.0.start,
                 end: ranges.0.end,
                 allocator_id: self.allocator_id,
+                trusted: self.trusted,
             },
             BufferRef {
                 slice: right_slice,
                 start: ranges.1.start,
                 end: ranges.1.end,
                 allocator_id: self.allocator_id,
+                trusted: self.trusted,
             },
         )
     }
@@ -474,11 +547,13 @@ impl<'a> MutableBufferRef<'a> {
                 slice: left_slice,
                 range: ranges.0,
                 allocator_id: self.allocator_id,
+                trusted: self.trusted,
             },
             MutableBufferRef {
                 slice: right_slice,
                 range: ranges.1,
                 allocator_id: self.allocator_id,
+                trusted: self.trusted,
             },
         )
     }

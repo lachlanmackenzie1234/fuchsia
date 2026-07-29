@@ -18,6 +18,10 @@ impl BufferAllocator for SplittableBufferInner {
         // No-op: Dropping the child `OwnedBuffer` drops its `Arc<dyn BufferAllocator>`,
         // which automatically decrements the `Arc` reference count of `SplittableBufferInner`.
     }
+
+    fn is_trusted(&self) -> bool {
+        self.parent_buffer.try_as_slice().is_some()
+    }
 }
 
 /// A clonable handle referencing the underlying `SplittableBufferInner`.

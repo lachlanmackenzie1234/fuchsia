@@ -27,6 +27,7 @@ mod buffer_source {
         base: *mut u8,
         size: usize,
         vmo: Arc<zx::Vmo>,
+        trusted: bool,
     }
 
     // SAFETY: This is required for the *mut u8 which is just the base address of the VMO mapping
@@ -36,7 +37,27 @@ mod buffer_source {
 
     impl BufferSource {
         pub fn new(size: usize) -> Self {
-            let vmo = Arc::new(zx::Vmo::create(size as u64).unwrap());
+            Self::new_internal(size, false)
+        }
+
+        pub fn new_trusted(size: usize) -> Self {
+            Self::new_internal(size, true)
+        }
+
+        fn new_internal(size: usize, trusted: bool) -> Self {
+            let mut vmo = zx::Vmo::create(size as u64).unwrap();
+            if trusted {
+                // We strip the TRANSFER right to prevent the VMO handle from being transferred
+                // or duplicated to another process (such as a block device driver). Because the
+                // VMO cannot be shared remotely, we guarantee that this memory is strictly
+                // private and cannot be accessed or modified concurrently by hardware or
+                // drivers. This allows us to safely hand out standard Rust references (&[u8]
+                // and &mut [u8]) without risking undefined behavior from aliasing or concurrent
+                // mutation.
+                let rights = zx::Rights::VMO_DEFAULT & !zx::Rights::TRANSFER;
+                vmo = vmo.replace_handle(rights).unwrap();
+            }
+            let vmo = Arc::new(vmo);
             let name = zx::Name::new("transfer-buf").unwrap();
             vmo.set_name(&name).unwrap();
             let flags = zx::VmarFlags::PERM_READ
@@ -44,7 +65,11 @@ mod buffer_source {
                 | zx::VmarFlags::MAP_RANGE
                 | zx::VmarFlags::REQUIRE_NON_RESIZABLE;
             let base = vmar_root_self().map(0, &vmo, 0, size, flags).unwrap() as *mut u8;
-            Self { base, size, vmo }
+            Self { base, size, vmo, trusted }
+        }
+
+        pub fn is_trusted(&self) -> bool {
+            self.trusted
         }
 
         pub fn slice(&self) -> *mut [u8] {
@@ -148,6 +173,14 @@ mod buffer_source {
     impl BufferSource {
         pub fn new(size: usize) -> Self {
             Self { data: UnsafeCell::new(Pin::new(vec![0 as u8; size])) }
+        }
+
+        pub fn new_trusted(size: usize) -> Self {
+            Self::new(size)
+        }
+
+        pub fn is_trusted(&self) -> bool {
+            true
         }
 
         pub fn size(&self) -> usize {
@@ -313,6 +346,10 @@ impl BufferAllocator {
         }
     }
 
+    pub fn is_trusted(&self) -> bool {
+        self.source.is_trusted()
+    }
+
     pub fn block_size(&self) -> usize {
         self.block_size
     }
@@ -445,6 +482,10 @@ impl BufferAllocator {
 impl BufferAllocatorTrait for BufferAllocator {
     fn free_buffer(&self, range: Range<usize>) {
         self.free_buffer(range);
+    }
+
+    fn is_trusted(&self) -> bool {
+        self.is_trusted()
     }
 }
 
@@ -969,5 +1010,49 @@ mod tests {
         assert_eq!(buf2.len(), 4096);
         buf2.as_mut_slice().fill(0xff);
         assert_eq!(buf2.as_slice(), vec![0xff; 4096]);
+    }
+
+    #[fuchsia::test]
+    async fn test_trusted_buffer_apis() {
+        // Untrusted allocator (only relevant/testable on Fuchsia)
+        #[cfg(target_os = "fuchsia")]
+        {
+            let source = BufferSource::new(4096);
+            let allocator = BufferAllocator::new(512, source);
+            let mut buf = allocator.allocate_buffer(4096).await;
+            assert!(buf.try_as_slice().is_none());
+            assert!(buf.as_mut().try_as_mut_slice().is_none());
+        }
+
+        // Trusted allocator (with trusted source)
+        {
+            let source = BufferSource::new_trusted(4096);
+            let allocator = BufferAllocator::new(512, source);
+            let mut buf = allocator.allocate_buffer(4096).await;
+            assert!(buf.try_as_slice().is_some());
+            assert!(buf.as_mut().try_as_mut_slice().is_some());
+
+            // Verify we can actually read/write via slice
+            let slice = buf.try_as_slice().unwrap();
+            assert_eq!(slice.len(), 4096);
+            let mut expected = vec![0u8; 4096];
+            assert_eq!(slice, expected.as_slice());
+
+            let mut bref = buf.as_mut();
+            let slice_mut = bref.try_as_mut_slice().unwrap();
+            slice_mut[0] = 0xff;
+            expected[0] = 0xff;
+            assert_eq!(buf.try_as_slice().unwrap(), expected.as_slice());
+        }
+    }
+
+    #[fuchsia::test]
+    #[cfg(target_os = "fuchsia")]
+    async fn test_trusted_buffer_rights() {
+        use zx;
+        let source = BufferSource::new_trusted(4096);
+        let vmo = source.vmo();
+        let info = vmo.basic_info().expect("failed to get basic info");
+        assert!(!info.rights.contains(zx::Rights::TRANSFER));
     }
 }

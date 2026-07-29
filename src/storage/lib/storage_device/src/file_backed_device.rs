@@ -75,9 +75,13 @@ impl Device for FileBackedDevice {
         assert_eq!(buffer.len() % self.block_size() as usize, 0);
         ensure!(offset + buffer.len() as u64 <= self.size(), "Reading past end of file");
         // This isn't actually async, but that probably doesn't matter for host usage.
-        let mut data = vec![0u8; buffer.len()];
-        self.file.read_exact_at(&mut data, offset)?;
-        buffer.copy_from_slice(&data);
+        if let Some(slice) = buffer.try_as_mut_slice() {
+            self.file.read_exact_at(slice, offset)?;
+        } else {
+            let mut data = vec![0u8; buffer.len()];
+            self.file.read_exact_at(&mut data, offset)?;
+            buffer.copy_from_slice(&data);
+        }
         Ok(())
     }
 
@@ -92,8 +96,12 @@ impl Device for FileBackedDevice {
         assert_eq!(buffer.len() % self.block_size() as usize, 0);
         ensure!(offset + buffer.len() as u64 <= self.size(), "Writing past end of file");
         // This isn't actually async, but that probably doesn't matter for host usage.
-        let data = buffer.to_vec();
-        self.file.write_all_at(&data, offset)?;
+        if let Some(slice) = buffer.try_as_slice() {
+            self.file.write_all_at(slice, offset)?;
+        } else {
+            let data = buffer.to_vec();
+            self.file.write_all_at(&data, offset)?;
+        }
         Ok(())
     }
 
