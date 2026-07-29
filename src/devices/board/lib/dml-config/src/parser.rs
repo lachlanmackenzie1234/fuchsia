@@ -423,6 +423,7 @@ pub async fn publish_dml_devices(
                     irq: Some(fpbus::IrqSpec::Irq(irq.number)),
                     mode: Some(map_interrupt_mode(irq.mode.as_deref())),
                     name: irq.name.clone(),
+                    wake_vector: irq.wake_vector,
                     ..Default::default()
                 });
             }

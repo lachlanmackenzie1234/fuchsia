@@ -20,6 +20,7 @@ pub struct Irq {
     pub name: Option<String>,
     pub number: u32,
     pub mode: Option<String>,
+    pub wake_vector: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -102,7 +103,8 @@ pub fn irq_list(dict: &fdr::Dictionary) -> Vec<Irq> {
         if let Some(number) = get_uint32(dict, &format!("{}.number", prefix)) {
             let name = get_string(dict, &format!("{}.name", prefix));
             let mode = get_string(dict, &format!("{}.mode", prefix));
-            list.push(Irq { name, number, mode });
+            let wake_vector = get_bool(dict, &format!("{}.wake_vector", prefix));
+            list.push(Irq { name, number, mode, wake_vector });
         } else {
             break;
         }
