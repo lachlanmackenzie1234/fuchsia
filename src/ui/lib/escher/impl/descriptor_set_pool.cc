@@ -48,11 +48,7 @@ DescriptorSetPool::DescriptorSetPool(EscherWeakPtr escher,
 
 DescriptorSetPool::~DescriptorSetPool() {
   for (auto pool : pools_) {
-#if VK_HEADER_VERSION >= 350
     ESCHER_CHECKED_VK_RESULT(vk_device().resetDescriptorPool(pool));
-#else
-    vk_device().resetDescriptorPool(pool);
-#endif
     vk_device().destroyDescriptorPool(pool);
   }
   vk_device().destroyDescriptorSetLayout(layout_);
