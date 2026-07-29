@@ -6,9 +6,9 @@
 
 use crate::debuglog_rs::{DLOG_MAX_DATA, ZX_LOG_FLAGS_MASK, dlog_record_t};
 use crate::object::{Dispatcher, HandleValue, LogDispatcher, validate_resource_kind_base};
+use crate::user_copy::{UserInPtr, UserOutPtr};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use user_copy::{UserInPtr, UserOutPtr};
 use zx_status::{ErrorStatus, Status};
 use zx_types::{
     DEBUGLOG_INFO, ZX_HANDLE_INVALID, ZX_LOG_FLAG_READABLE, ZX_RIGHT_READ, ZX_RIGHT_WRITE,

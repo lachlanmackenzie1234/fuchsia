@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use arch_rs::{arch_copy_from_user, arch_copy_to_user};
+use crate::arch_rs::{arch_copy_from_user, arch_copy_to_user};
 use core::mem::MaybeUninit;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx_status::Status;

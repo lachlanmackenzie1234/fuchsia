@@ -33,7 +33,6 @@ kernel_rust_mod("ktrace-rs") {
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
     "//src/lib/kstring",
-    "//zircon/kernel/arch:arch-rs",
     "//zircon/kernel/lib/spsc_buffer:spsc-buffer-rs",
     "//zircon/kernel/lib/unittest:unittest-rs",
   ]

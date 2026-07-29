@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::user_ptr::{UserInOutPtr, UserInPtr, UserOutPtr};
+use super::user_ptr::{UserInOutPtr, UserInPtr, UserOutPtr};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx_status::Status;
 use zx_types::zx_iovec_t;

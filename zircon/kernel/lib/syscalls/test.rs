@@ -5,8 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 use crate::object::HandleValue;
+use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 use syscalls_macro::syscall;
-use user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 use zx_status::{ErrorStatus, Status};
 
 #[syscall]

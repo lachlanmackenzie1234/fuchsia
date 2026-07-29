@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 /// Architecture-specific saved normal mode state for riscv64.
 ///
 /// Currently riscv64 does not need to save any normal mode state across restricted entry.

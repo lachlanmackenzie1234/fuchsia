@@ -16,6 +16,8 @@ group("top") {
     ":main",
     ":rust_panic",
     ":version",
+    "//zircon/kernel/arch:arch-rs",
+    "//zircon/kernel/arch:ffi",
     "//zircon/kernel/arch/$zircon_cpu",
     "//zircon/kernel/kernel",
     "//zircon/kernel/lib/flow-id",  # Used by <kernel/thread.h>.

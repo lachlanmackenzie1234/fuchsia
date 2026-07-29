@@ -4,15 +4,16 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 #[cfg(target_arch = "aarch64")]
+#[allow(unused_imports)]
 pub use arch_arm64::{self as arm64, ArchSavedNormalState};
 
 #[cfg(target_arch = "riscv64")]
+#[allow(unused_imports)]
 pub use arch_riscv64::{self as riscv64, ArchSavedNormalState};
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unused_imports)]
 pub use arch_x86::{self as x86, ArchSavedNormalState};
 
 use zx_status::Status;

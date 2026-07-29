@@ -6,9 +6,9 @@
 
 use crate::kernel::thread::restricted_enter;
 use crate::object::HandleValue;
+use crate::user_copy::UserOutPtr;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use user_copy::UserOutPtr;
 use zx_status::{ErrorStatus, Status};
 use zx_types::{zx_exception_report_t, zx_handle_t, zx_status_t};
 

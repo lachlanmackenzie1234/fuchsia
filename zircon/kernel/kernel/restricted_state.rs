@@ -9,7 +9,7 @@ use kalloc::Box;
 use zx_status::Status;
 use zx_types::{zx_exception_report_t, zx_restricted_state_t, zx_status_t};
 
-use arch_rs::ArchSavedNormalState;
+use crate::arch_rs::ArchSavedNormalState;
 
 const LOCAL_TRACE: u32 = 0;
 

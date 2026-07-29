@@ -175,6 +175,5 @@ if (toolchain_environment == "kernel") {
   kernel_rust_mod("arch_rs_tests") {
     testonly = true
     sources = []
-    deps = [ "//zircon/kernel/arch:arch-rs" ]
   }
 }

@@ -6,9 +6,9 @@
 
 use unittest as _;
 
+use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use crate::kernel::thread::{FxtRef, ThreadPtr};
 pub use crate::platform_rs::timer::{InstantBootTicks, timer_current_boot_ticks};
-use arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use core::cell::UnsafeCell;
 use core::mem::{MaybeUninit, size_of};
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
@@ -776,8 +776,8 @@ pub unsafe extern "C" fn rust_ktrace_init_cpu_buffer(
 #[cfg(all(not(gcc), ktest))]
 #[unittest::test_suite(name = "ktrace_rust")]
 mod tests {
+    use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, max_num_cpus};
     use crate::kernel::thread::{FxtRef, ThreadPtr};
-    use arch_rs::{InterruptDisableGuard, curr_cpu_num, max_num_cpus};
     use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use core::{ffi, ptr};
     use spsc_buffer::Buffer;

@@ -4,12 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 mod user_iovec;
 mod user_ptr;
 mod user_string_view;
 
+#[allow(unused_imports)]
 pub use user_iovec::{UserInIovec, UserInOutIovec, UserOutIovec};
+#[allow(unused_imports)]
 pub use user_ptr::{UserInOutPtr, UserInPtr, UserOutPtr};
+#[allow(unused_imports)]
 pub use user_string_view::UserStringView;

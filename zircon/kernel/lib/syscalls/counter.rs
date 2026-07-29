@@ -5,8 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 use crate::object::{CounterDispatcher, Dispatcher, HandleValue};
+use crate::user_copy::UserOutPtr;
 use syscalls_macro::syscall;
-use user_copy::UserOutPtr;
 use zx_status::{ErrorStatus, Status};
 use zx_types::{ZX_RIGHT_READ, ZX_RIGHT_WRITE};
 

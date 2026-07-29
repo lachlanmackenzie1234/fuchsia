@@ -6,8 +6,8 @@
 
 import("//build/config/compiler_config.gni")
 import("//build/cpp/library_headers.gni")
-import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 # These set the ABI contract between C++ and assembly code.
 # This is kept consistent between the kernel proper and phys
@@ -220,6 +220,7 @@ source_set("x86") {
     "thread.cc",
     "timer_freq.cc",
     "uspace_entry.S",
+    "x86_ffi.cc",
   ]
   deps = [
     ":syscall",
@@ -304,22 +305,15 @@ source_set("syscall") {
   ]
 }
 
-source_set("ffi") {
-  sources = [ "x86_ffi.cc" ]
-  deps = [ "//zircon/kernel/lib/ktl" ]
-}
-
-rustc_library("arch-x86-rs") {
-  edition = "2024"
-  name = "arch_x86"
-  source_root = "src/lib.rs"
-  sources = [ "src/lib.rs" ]
+kernel_rust_mod("arch-x86-rs") {
+  output_name = "arch_x86"
+  source_root = "src/mod.rs"
+  sources = [ "src/mod.rs" ]
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//zircon/kernel/lib/debug",
   ]
-  non_rust_deps = [ ":ffi" ]
 }
 
 source_set("tests") {

@@ -8,10 +8,10 @@ use crate::object::{
     Dispatcher, HandleValue, ProcessDispatcher, ProfileDispatcher, ThreadDispatcher,
     VmAddressRegionDispatcher, validate_resource_kind_base,
 };
+use crate::user_copy::UserInPtr;
 use counters_rs::define_kcounter;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use user_copy::UserInPtr;
 use zx_status::{ErrorStatus, Status};
 use zx_types::{
     ZX_POL_NEW_PROFILE, ZX_RIGHT_APPLY_PROFILE, ZX_RIGHT_MANAGE_THREAD, ZX_RIGHT_OP_CHILDREN,

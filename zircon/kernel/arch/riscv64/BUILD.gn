@@ -6,8 +6,8 @@
 
 import("//build/config/compiler_config.gni")
 import("//build/config/riscv64/riscv64.gni")
-import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 if (toolchain_base_environment == "kernel") {
   # These set the ABI contract between C++ and assembly code.
@@ -84,6 +84,7 @@ if (toolchain_base_environment == "kernel") {
       "mmu.cc",
       "mp.cc",
       "restricted.cc",
+      "riscv64_ffi.cc",
       "sbi.cc",
       "spinlock.cc",
       "stvec.S",
@@ -119,22 +120,15 @@ if (toolchain_base_environment == "kernel") {
     ]
   }
 
-  source_set("ffi") {
-    sources = [ "riscv64_ffi.cc" ]
-    deps = [ "//zircon/kernel/lib/ktl" ]
-  }
-
-  rustc_library("arch-riscv64-rs") {
-    edition = "2024"
-    name = "arch_riscv64"
-    source_root = "src/lib.rs"
-    sources = [ "src/lib.rs" ]
+  kernel_rust_mod("arch-riscv64-rs") {
+    output_name = "arch_riscv64"
+    source_root = "src/mod.rs"
+    sources = [ "src/mod.rs" ]
     deps = [
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//zircon/kernel/lib/debug",
     ]
-    non_rust_deps = [ ":ffi" ]
   }
 
   group("kernel-tests") {

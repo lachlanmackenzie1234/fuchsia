@@ -4,12 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::user_copy::UserOutPtr;
 use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
-use user_copy::UserOutPtr;
 use zx_status::Status;
 use zx_types::{
     ZX_OBJ_TYPE_SAMPLER, ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_TRANSFER, zx_rights_t,

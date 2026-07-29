@@ -6,16 +6,16 @@
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_arch_rs_tests_interrupt_ops() -> bool {
-    let initially_disabled = arch_rs::ints_disabled();
+    let initially_disabled = crate::arch_rs::ints_disabled();
     if initially_disabled {
         return false;
     }
-    arch_rs::disable_ints();
-    if !arch_rs::ints_disabled() {
+    crate::arch_rs::disable_ints();
+    if !crate::arch_rs::ints_disabled() {
         return false;
     }
-    arch_rs::enable_ints();
-    if arch_rs::ints_disabled() {
+    crate::arch_rs::enable_ints();
+    if crate::arch_rs::ints_disabled() {
         return false;
     }
     true
@@ -23,10 +23,10 @@ pub extern "C" fn rust_arch_rs_tests_interrupt_ops() -> bool {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_arch_rs_tests_curr_cpu_num() -> u32 {
-    arch_rs::curr_cpu_num()
+    crate::arch_rs::curr_cpu_num()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_arch_rs_tests_max_num_cpus() -> u32 {
-    arch_rs::max_num_cpus()
+    crate::arch_rs::max_num_cpus()
 }

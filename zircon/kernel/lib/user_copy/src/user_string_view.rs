@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::user_ptr::UserInPtr;
+use super::user_ptr::UserInPtr;
 use zx_status::Status;
 
 /// A wrapper around `zx_string_view_t` passed from userspace into kernel syscalls.

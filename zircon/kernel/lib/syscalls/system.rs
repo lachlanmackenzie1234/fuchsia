@@ -7,8 +7,8 @@
 use core::mem::MaybeUninit;
 
 use crate::object::{HandleValue, validate_system_resource};
+use crate::user_copy::UserOutPtr;
 use syscalls_macro::syscall;
-use user_copy::UserOutPtr;
 use zx_status::{ErrorStatus, Status};
 use zx_types::*;
 

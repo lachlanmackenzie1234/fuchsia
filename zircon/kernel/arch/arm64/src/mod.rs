@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 /// Architecture-specific saved normal mode state for aarch64.
 ///
 /// Saves the normal mode `tpidr_el0` and `tpidrro_el0` system registers across restricted entry.

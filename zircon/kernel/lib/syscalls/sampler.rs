@@ -7,9 +7,9 @@
 use crate::object::{
     Dispatcher, HandleValue, ProcessDispatcher, SamplerDispatcher, validate_ranged_resource,
 };
+use crate::user_copy::{UserInPtr, UserOutPtr};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use user_copy::{UserInPtr, UserOutPtr};
 use zx_status::{ErrorStatus, Status};
 use zx_types::{
     ZX_POL_NEW_SAMPLER, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_SAMPLING_BASE,

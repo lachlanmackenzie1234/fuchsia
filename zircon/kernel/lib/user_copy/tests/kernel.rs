@@ -4,10 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-#![allow(clippy::missing_safety_doc)]
-
-use user_copy::{UserInIovec, UserInOutPtr, UserInPtr, UserOutPtr, UserStringView};
+use crate::user_copy::{UserInIovec, UserInOutPtr, UserInPtr, UserOutPtr, UserStringView};
 use zx_status::Status;
 use zx_types::{zx_iovec_t, zx_status_t};
 
