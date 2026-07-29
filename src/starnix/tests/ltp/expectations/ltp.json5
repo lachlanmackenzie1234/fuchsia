@@ -249,9 +249,14 @@
         {
             type: "skip",
             matchers: [
-                // Flaky tests.
+                // TODO(https://fxbug.dev/536048049): io_pgetevents AIO syscall is not implemented.
                 "io_pgetevents01",
+
+                // Flaky tests.
                 "ptrace06",
+
+                // TODO(https://fxbug.dev/536096605): Test sendmsg on TCP socket with SCM_RIGHTS.
+                // Linux silently ignores it, but Starnix returns EINVAL.
                 "recvmsg01",
 
                 // TODO(https://fxbug.dev/534918239): This test intentionally exhausts disk space to
@@ -265,20 +270,27 @@
                 // TODO(https://fxbug.dev/322874889) requires a working sched_setaffinity
                 "getcpu01",
 
-                // Times out.
-                "cve-2017-10661",
-
-                // These tests are time-consuming, so they often cause timeouts in the
-                // corresponding suites. Consider moving them to separate bundles.
+                // TODO(https://fxbug.dev/540074260): These tests pass but are time-consuming, so
+                // they often cause timeouts in the corresponding suites. Consider moving them to
+                // separate bundles.
                 "cve-2011-0999",
                 "cve-2014-0196",
                 "cve-2016-7117",
-                "fs_fill",
-                "fs_inod01",
-                "hackbench01",
+                "cve-2017-10661",
                 "hackbench02",
-                "linker01",
                 "mtest06",
+
+                // TODO(https://fxbug.dev/441966997): /proc/filesystems misses nodev for tmpfs,
+                // causing LTP to run fs_fill on it. Tmpfs lacks size limits, causing OOM crash.
+                "fs_fill",
+
+                // TODO(https://fxbug.dev/536929400): Test runs a shell script that calls rm in a
+                // loop, causing 2000 execve calls.
+                "fs_inod01",
+
+                // TODO(https://fxbug.dev/536931145): Spawns 2000 processes concurrently.
+                // Too heavy for emulators, causing OOM/ENOMEM during fork setup.
+                "hackbench01",
 
                 // Test sometimes timeout instead of failing
                 "starvation",
