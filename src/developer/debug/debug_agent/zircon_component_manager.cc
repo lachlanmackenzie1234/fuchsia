@@ -469,7 +469,7 @@ class ZirconComponentManager::TestLauncher : public fxl::RefCountedThreadSafe<Te
           fuchsia::diagnostics::BatchIteratorPtr log_listener;
           log_listener.Bind(artifact.log()->batch()->TakeChannel());
           log_listener_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
-              std::move(log_listener), fuchsia::diagnostics::Format::LEGACY_FXT);
+              std::move(log_listener), fuchsia::diagnostics::Format::FXT);
           log_listener_->GetNext(
               [self = fxl::RefPtr<TestLauncher>(this)](auto res) { self->OnLog(std::move(res)); });
         }
