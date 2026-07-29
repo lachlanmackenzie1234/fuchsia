@@ -440,6 +440,7 @@ impl ProtocolSynchronousProxy {
         ProtocolEvent::decode(self.client.wait_for_event::<ProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.versions/Protocol.Foo
     pub fn r#foo(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -447,6 +448,7 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.versions/Protocol.Foo:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -515,6 +517,7 @@ impl ProtocolProxy {
 }
 
 impl ProtocolProxyInterface for ProtocolProxy {
+    // api-coverage-fidl-name:test.versions/Protocol.Foo
     fn r#foo(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -522,6 +525,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.versions/Protocol.Foo:end
 }
 
 pub struct ProtocolEventStream {

@@ -23,6 +23,8 @@ constexpr inline ::fidl::MessageDynamicFlags kTop_GetFoo_DynamicFlags = ::fidl::
 
 ::fidl::Response<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>::Response(::test_middle::MiddleGetFooResponse v) : MiddleGetFooResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
+
 ::fidl::internal::NaturalThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>
 fidl::internal::NaturalClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() const {
   return ::fidl::internal::NaturalThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>(
@@ -38,6 +40,9 @@ fidl::internal::NaturalClientImpl<::test_foreigntypeinresponseusedthroughcompose
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
 
 ::fidl::Result<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>
 fidl::internal::NaturalSyncClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() {
@@ -48,6 +53,7 @@ fidl::internal::NaturalSyncClientImpl<::test_foreigntypeinresponseusedthroughcom
   return ::fidl::internal::DecodeResponseAndFoldError<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
 
 ::fidl::UnownedClientEnd<::test_foreigntypeinresponseusedthroughcompose::Top> fidl::internal::NaturalSyncClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_foreigntypeinresponseusedthroughcompose::Top>(

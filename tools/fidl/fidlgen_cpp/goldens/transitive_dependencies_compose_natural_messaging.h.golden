@@ -55,7 +55,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_transitivedependenciescompose::Top> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_transitivedependenciescompose::Top>> {
  public:
+  // api-coverage-fidl-name:test.transitivedependenciescompose/Top.GetFoo
+
   ::fidl::Result<::test_transitivedependenciescompose::Top::GetFoo> GetFoo();
+  // api-coverage-fidl-name:test.transitivedependenciescompose/Top.GetFoo:end
 
  private:
   ::fidl::UnownedClientEnd<::test_transitivedependenciescompose::Top> _client_end() const;

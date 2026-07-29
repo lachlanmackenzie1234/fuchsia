@@ -288,16 +288,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_error::Example> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_error::Example>> {
  public:
   // Allocates 40 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.error/Example.foo
+
   ::fidl::WireResult<::test_error::Example::Foo>
   Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.error/Example.foo:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_error::Example> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_error::Example>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.error/Example.foo
+
   ::fidl::WireUnownedResult<::test_error::Example::Foo>
   Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.error/Example.foo:end
 };
 
 template <>
@@ -381,7 +387,10 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_error::Example> final : p
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
   // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.error/Example.foo
+
   ::fidl::internal::WireThenable<::test_error::Example::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.error/Example.foo:end
 };
 
 template <>
@@ -396,7 +405,10 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_error::Example> fin
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.error/Example.foo
+
   ::fidl::internal::WireBufferThenable<::test_error::Example::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.error/Example.foo:end
 };
 template <>
 class ::fidl::internal::WireWeakSyncClientImpl<::test_error::Example> final : public ::fidl::internal::WireWeakOnewayClientImpl<::test_error::Example> {
@@ -404,7 +416,10 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_error::Example> final : pu
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 40 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.error/Example.foo
+
   ::fidl::WireResult<::test_error::Example::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.error/Example.foo:end
 };
 
 template <>

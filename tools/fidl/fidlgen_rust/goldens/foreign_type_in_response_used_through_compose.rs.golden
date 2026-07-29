@@ -70,6 +70,7 @@ impl TopSynchronousProxy {
         TopEvent::decode(self.client.wait_for_event::<TopMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
     pub fn r#get_foo(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -86,6 +87,7 @@ impl TopSynchronousProxy {
         )?;
         Ok(_response.foo)
     }
+    // api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -163,6 +165,7 @@ impl TopProxyInterface for TopProxy {
         fidl_test_bottom::Foo,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
     fn r#get_foo(&self) -> Self::GetFooResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -181,6 +184,7 @@ impl TopProxyInterface for TopProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
 }
 
 pub struct TopEventStream {

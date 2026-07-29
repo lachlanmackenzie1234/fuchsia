@@ -78,6 +78,7 @@ impl SomeProtocolSynchronousProxy {
         SomeProtocolEvent::decode(self.client.wait_for_event::<SomeProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
     pub fn r#some_method(
         &self,
         mut union_member: &UnionMember,
@@ -96,6 +97,7 @@ impl SomeProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x.bits_member))
     }
+    // api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -175,6 +177,7 @@ impl SomeProtocolProxyInterface for SomeProtocolProxy {
         SomeProtocolSomeMethodResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
     fn r#some_method(
         &self,
         mut union_member: &UnionMember,
@@ -201,6 +204,7 @@ impl SomeProtocolProxyInterface for SomeProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
 }
 
 pub struct SomeProtocolEventStream {

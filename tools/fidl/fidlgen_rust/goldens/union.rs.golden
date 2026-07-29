@@ -80,6 +80,7 @@ impl TestProtocolSynchronousProxy {
         TestProtocolEvent::decode(self.client.wait_for_event::<TestProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
     pub fn r#strict_union_hence_response_may_be_stack_allocated(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -96,7 +97,9 @@ impl TestProtocolSynchronousProxy {
         )?;
         Ok(_response.xu)
     }
+    // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
 
+    // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
     pub fn r#flexible_union_hence_response_must_be_heap_allocated(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -113,6 +116,7 @@ impl TestProtocolSynchronousProxy {
         )?;
         Ok(_response.xu)
     }
+    // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -199,6 +203,7 @@ impl TestProtocolProxyInterface for TestProtocolProxy {
         StrictBoundedUnion,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
     fn r#strict_union_hence_response_may_be_stack_allocated(
         &self,
     ) -> Self::StrictUnionHenceResponseMayBeStackAllocatedResponseFut {
@@ -219,11 +224,13 @@ impl TestProtocolProxyInterface for TestProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
 
     type FlexibleUnionHenceResponseMustBeHeapAllocatedResponseFut = fidl::client::QueryResponseFut<
         OlderSimpleUnion,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
     fn r#flexible_union_hence_response_must_be_heap_allocated(
         &self,
     ) -> Self::FlexibleUnionHenceResponseMustBeHeapAllocatedResponseFut {
@@ -244,6 +251,7 @@ impl TestProtocolProxyInterface for TestProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 }
 
 pub struct TestProtocolEventStream {

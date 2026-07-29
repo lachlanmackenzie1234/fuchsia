@@ -414,6 +414,7 @@ impl ParentSynchronousProxy {
         ParentEvent::decode(self.client.wait_for_event::<ParentMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
     pub fn r#get_child(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -428,7 +429,9 @@ impl ParentSynchronousProxy {
             )?;
         Ok(_response.c)
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
 
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
     pub fn r#get_child_request(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -445,7 +448,9 @@ impl ParentSynchronousProxy {
         )?;
         Ok(_response.r)
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
 
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild
     pub fn r#take_child(
         &self,
         mut c: fidl::endpoints::ClientEnd<ChildMarker>,
@@ -456,7 +461,9 @@ impl ParentSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild:end
 
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest
     pub fn r#take_child_request(
         &self,
         mut r: fidl::endpoints::ServerEnd<ChildMarker>,
@@ -467,6 +474,7 @@ impl ParentSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -567,6 +575,7 @@ impl ParentProxyInterface for ParentProxy {
         fidl::endpoints::ClientEnd<ChildMarker>,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
     fn r#get_child(&self) -> Self::GetChildResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -588,11 +597,13 @@ impl ParentProxyInterface for ParentProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
 
     type GetChildRequestResponseFut = fidl::client::QueryResponseFut<
         fidl::endpoints::ServerEnd<ChildMarker>,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
     fn r#get_child_request(&self) -> Self::GetChildRequestResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -614,7 +625,9 @@ impl ParentProxyInterface for ParentProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
 
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild
     fn r#take_child(
         &self,
         mut c: fidl::endpoints::ClientEnd<ChildMarker>,
@@ -625,7 +638,9 @@ impl ParentProxyInterface for ParentProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild:end
 
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest
     fn r#take_child_request(
         &self,
         mut r: fidl::endpoints::ServerEnd<ChildMarker>,
@@ -636,6 +651,7 @@ impl ParentProxyInterface for ParentProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest:end
 }
 
 pub struct ParentEventStream {

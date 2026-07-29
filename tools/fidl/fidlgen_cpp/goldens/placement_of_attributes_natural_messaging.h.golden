@@ -37,7 +37,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_placementofattributes::ExampleProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_placementofattributes::ExampleProtocol>> {
  public:
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
   ::fit::result<::fidl::OneWayError> Method(const ::fidl::Request<::test_placementofattributes::ExampleProtocol::Method>& request);
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 
  private:
   ::fidl::UnownedClientEnd<::test_placementofattributes::ExampleProtocol> _client_end() const;

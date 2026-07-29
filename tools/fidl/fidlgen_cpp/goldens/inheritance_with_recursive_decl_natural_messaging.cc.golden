@@ -21,6 +21,8 @@ constexpr inline uint64_t kParent_First_Ordinal = 3973163707930985819lu;
 constexpr inline ::fidl::MessageDynamicFlags kParent_First_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_inheritancewithrecursivedecl
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_inheritancewithrecursivedecl::Parent>::First(::fidl::Request<::test_inheritancewithrecursivedecl::Parent::First> request) const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -31,6 +33,9 @@ fidl::internal::NaturalClientImpl<::test_inheritancewithrecursivedecl::Parent>::
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Parent>::First(::fidl::Request<::test_inheritancewithrecursivedecl::Parent::First> request) {
@@ -41,6 +46,7 @@ fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Paren
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 
 ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Parent> fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Parent>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Parent>(
@@ -110,6 +116,8 @@ constexpr inline uint64_t kChild_Second_Ordinal = 2545123272820824165lu;
 constexpr inline ::fidl::MessageDynamicFlags kChild_Second_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_inheritancewithrecursivedecl
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_inheritancewithrecursivedecl::Child>::First(::fidl::Request<::test_inheritancewithrecursivedecl::Child::First> request) const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -120,6 +128,9 @@ fidl::internal::NaturalClientImpl<::test_inheritancewithrecursivedecl::Child>::F
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_inheritancewithrecursivedecl::Child>::Second(::fidl::Request<::test_inheritancewithrecursivedecl::Child::Second> request) const {
@@ -131,6 +142,9 @@ fidl::internal::NaturalClientImpl<::test_inheritancewithrecursivedecl::Child>::S
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Child>::First(::fidl::Request<::test_inheritancewithrecursivedecl::Child::First> request) {
@@ -141,6 +155,9 @@ fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Child
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Child>::Second(::fidl::Request<::test_inheritancewithrecursivedecl::Child::Second> request) {
@@ -151,6 +168,7 @@ fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Child
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 
 ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Child> fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Child>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Child>(

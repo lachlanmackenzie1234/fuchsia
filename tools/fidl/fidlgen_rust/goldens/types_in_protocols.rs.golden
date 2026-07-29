@@ -659,6 +659,7 @@ impl ProtocolSynchronousProxy {
         ProtocolEvent::decode(self.client.wait_for_event::<ProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
     pub fn r#one_way_basic(
         &self,
         mut uint8: u8,
@@ -683,7 +684,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
     pub fn r#two_way_basic(
         &self,
         mut uint8: u8,
@@ -725,7 +728,9 @@ impl ProtocolSynchronousProxy {
             _response.opt_string,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
     pub fn r#error_basic(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -757,7 +762,9 @@ impl ProtocolSynchronousProxy {
             )
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
     pub fn r#one_way_compound(
         &self,
         mut bits: Bits,
@@ -774,7 +781,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
     pub fn r#two_way_compound(
         &self,
         mut bits: Bits,
@@ -805,7 +814,9 @@ impl ProtocolSynchronousProxy {
             _response.opt_union,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
     pub fn r#error_compound(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -823,7 +834,9 @@ impl ProtocolSynchronousProxy {
         Ok(_response
             .map(|x| (x.bits, x.enum_, x.struct_, x.table, x.union, x.opt_struct, x.opt_union)))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
     pub fn r#one_way_array_basic(
         &self,
         mut array_uint8: &[u8; 5],
@@ -858,7 +871,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
     pub fn r#two_way_array_basic(
         &self,
         mut array_uint8: &[u8; 5],
@@ -925,7 +940,9 @@ impl ProtocolSynchronousProxy {
             _response.array_opt_string,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
     pub fn r#error_array_basic(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -957,7 +974,9 @@ impl ProtocolSynchronousProxy {
             )
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
     pub fn r#one_way_array_compound(
         &self,
         mut array_bits: &[Bits; 5],
@@ -982,7 +1001,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
     pub fn r#two_way_array_compound(
         &self,
         mut array_bits: &[Bits; 5],
@@ -1029,7 +1050,9 @@ impl ProtocolSynchronousProxy {
             _response.array_opt_union,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
     pub fn r#error_array_compound(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1056,7 +1079,9 @@ impl ProtocolSynchronousProxy {
             )
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
     pub fn r#one_way_vector_basic(
         &self,
         mut vector_uint8: &[u8],
@@ -1091,7 +1116,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
     pub fn r#two_way_vector_basic(
         &self,
         mut vector_uint8: &[u8],
@@ -1158,7 +1185,9 @@ impl ProtocolSynchronousProxy {
             _response.vector_opt_string,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
     pub fn r#error_vector_basic(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1190,7 +1219,9 @@ impl ProtocolSynchronousProxy {
             )
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
     pub fn r#one_way_vector_compound(
         &self,
         mut vector_bits: &[Bits],
@@ -1215,7 +1246,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
     pub fn r#two_way_vector_compound(
         &self,
         mut vector_bits: &[Bits],
@@ -1262,7 +1295,9 @@ impl ProtocolSynchronousProxy {
             _response.vector_opt_union,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
     pub fn r#error_vector_compound(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1289,7 +1324,9 @@ impl ProtocolSynchronousProxy {
             )
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
     pub fn r#one_way_vector_optional(
         &self,
         mut opt_vector_uint8: Option<&[u8]>,
@@ -1303,7 +1340,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
     pub fn r#two_way_vector_optional(
         &self,
         mut opt_vector_uint8: Option<&[u8]>,
@@ -1333,7 +1372,9 @@ impl ProtocolSynchronousProxy {
             _response.opt_vector_opt_struct,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
     pub fn r#error_vector_optional(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1352,7 +1393,9 @@ impl ProtocolSynchronousProxy {
             (x.opt_vector_uint8, x.opt_vector_string, x.opt_vector_struct, x.opt_vector_opt_struct)
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
     pub fn r#one_way_array_vector_nested(
         &self,
         mut array_array_uint8: &[[u8; 5]; 5],
@@ -1366,7 +1409,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
     pub fn r#two_way_array_vector_nested(
         &self,
         mut array_array_uint8: &[[u8; 5]; 5],
@@ -1389,7 +1434,9 @@ impl ProtocolSynchronousProxy {
             _response.vector_vector_uint8,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
     pub fn r#error_array_vector_nested(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1408,7 +1455,9 @@ impl ProtocolSynchronousProxy {
             (x.array_array_uint8, x.array_vector_uint8, x.vector_array_uint8, x.vector_vector_uint8)
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
     pub fn r#one_way_resource(
         &self,
         mut handle: fidl::NullableHandle,
@@ -1473,7 +1522,9 @@ impl ProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
     pub fn r#two_way_resource(
         &self,
         mut handle: fidl::NullableHandle,
@@ -1600,7 +1651,9 @@ impl ProtocolSynchronousProxy {
             _response.vector_union,
         ))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
     pub fn r#error_resource(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1647,6 +1700,7 @@ impl ProtocolSynchronousProxy {
             )
         }))
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -2370,6 +2424,7 @@ impl ProtocolProxy {
 }
 
 impl ProtocolProxyInterface for ProtocolProxy {
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
     fn r#one_way_basic(
         &self,
         mut uint8: u8,
@@ -2394,11 +2449,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
 
     type TwoWayBasicResponseFut = fidl::client::QueryResponseFut<
         (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, String, Option<String>),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
     fn r#two_way_basic(
         &self,
         mut uint8: u8,
@@ -2450,11 +2507,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
 
     type ErrorBasicResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorBasicResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
     fn r#error_basic(&self) -> Self::ErrorBasicResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -2488,7 +2547,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
     fn r#one_way_compound(
         &self,
         mut bits: Bits,
@@ -2505,11 +2566,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
 
     type TwoWayCompoundResponseFut = fidl::client::QueryResponseFut<
         (Bits, Enum, Struct, Table, Union, Option<Box<Struct>>, Option<Box<Union>>),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
     fn r#two_way_compound(
         &self,
         mut bits: Bits,
@@ -2551,11 +2614,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
 
     type ErrorCompoundResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorCompoundResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
     fn r#error_compound(&self) -> Self::ErrorCompoundResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -2576,7 +2641,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
     fn r#one_way_array_basic(
         &self,
         mut array_uint8: &[u8; 5],
@@ -2611,6 +2678,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
 
     type TwoWayArrayBasicResponseFut = fidl::client::QueryResponseFut<
         (
@@ -2629,6 +2697,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
         ),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
     fn r#two_way_array_basic(
         &self,
         mut array_uint8: &[u8; 5],
@@ -2716,11 +2785,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
 
     type ErrorArrayBasicResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorArrayBasicResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
     fn r#error_array_basic(&self) -> Self::ErrorArrayBasicResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -2755,7 +2826,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
     fn r#one_way_array_compound(
         &self,
         mut array_bits: &[Bits; 5],
@@ -2780,6 +2853,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
 
     type TwoWayArrayCompoundResponseFut = fidl::client::QueryResponseFut<
         (
@@ -2793,6 +2867,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
         ),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
     fn r#two_way_array_compound(
         &self,
         mut array_bits: &[Bits; 5],
@@ -2855,11 +2930,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
 
     type ErrorArrayCompoundResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorArrayCompoundResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
     fn r#error_array_compound(&self) -> Self::ErrorArrayCompoundResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -2891,7 +2968,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
     fn r#one_way_vector_basic(
         &self,
         mut vector_uint8: &[u8],
@@ -2926,6 +3005,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
 
     type TwoWayVectorBasicResponseFut = fidl::client::QueryResponseFut<
         (
@@ -2944,6 +3024,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
         ),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
     fn r#two_way_vector_basic(
         &self,
         mut vector_uint8: &[u8],
@@ -3031,11 +3112,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
 
     type ErrorVectorBasicResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorVectorBasicResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
     fn r#error_vector_basic(&self) -> Self::ErrorVectorBasicResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -3070,7 +3153,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
     fn r#one_way_vector_compound(
         &self,
         mut vector_bits: &[Bits],
@@ -3095,6 +3180,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
 
     type TwoWayVectorCompoundResponseFut = fidl::client::QueryResponseFut<
         (
@@ -3108,6 +3194,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
         ),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
     fn r#two_way_vector_compound(
         &self,
         mut vector_bits: &[Bits],
@@ -3170,11 +3257,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
 
     type ErrorVectorCompoundResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorVectorCompoundResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
     fn r#error_vector_compound(&self) -> Self::ErrorVectorCompoundResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -3206,7 +3295,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
     fn r#one_way_vector_optional(
         &self,
         mut opt_vector_uint8: Option<&[u8]>,
@@ -3220,6 +3311,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
 
     type TwoWayVectorOptionalResponseFut = fidl::client::QueryResponseFut<
         (
@@ -3230,6 +3322,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
         ),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
     fn r#two_way_vector_optional(
         &self,
         mut opt_vector_uint8: Option<&[u8]>,
@@ -3272,11 +3365,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
 
     type ErrorVectorOptionalResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorVectorOptionalResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
     fn r#error_vector_optional(&self) -> Self::ErrorVectorOptionalResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -3305,7 +3400,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
     fn r#one_way_array_vector_nested(
         &self,
         mut array_array_uint8: &[[u8; 5]; 5],
@@ -3319,11 +3416,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
 
     type TwoWayArrayVectorNestedResponseFut = fidl::client::QueryResponseFut<
         ([[u8; 5]; 5], [Vec<u8>; 5], Vec<[u8; 5]>, Vec<Vec<u8>>),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
     fn r#two_way_array_vector_nested(
         &self,
         mut array_array_uint8: &[[u8; 5]; 5],
@@ -3356,11 +3455,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
 
     type ErrorArrayVectorNestedResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorArrayVectorNestedResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
     fn r#error_array_vector_nested(&self) -> Self::ErrorArrayVectorNestedResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -3389,7 +3490,9 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
 
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
     fn r#one_way_resource(
         &self,
         mut handle: fidl::NullableHandle,
@@ -3454,6 +3557,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
 
     type TwoWayResourceResponseFut = fidl::client::QueryResponseFut<
         (
@@ -3487,6 +3591,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
         ),
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
     fn r#two_way_resource(
         &self,
         mut handle: fidl::NullableHandle,
@@ -3649,11 +3754,13 @@ impl ProtocolProxyInterface for ProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
 
     type ErrorResourceResponseFut = fidl::client::QueryResponseFut<
         ProtocolErrorResourceResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
     fn r#error_resource(&self) -> Self::ErrorResourceResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -3703,6 +3810,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
 }
 
 pub struct ProtocolEventStream {

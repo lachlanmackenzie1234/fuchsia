@@ -21,6 +21,8 @@ constexpr inline uint64_t kFirstProtocol_MethodOnFirst_Ordinal = 635254839367179
 constexpr inline ::fidl::MessageDynamicFlags kFirstProtocol_MethodOnFirst_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_service
 
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_service::FirstProtocol>::MethodOnFirst() const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -29,6 +31,9 @@ fidl::internal::NaturalClientImpl<::test_service::FirstProtocol>::MethodOnFirst(
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
+
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_service::FirstProtocol>::MethodOnFirst() {
@@ -38,6 +43,7 @@ fidl::internal::NaturalSyncClientImpl<::test_service::FirstProtocol>::MethodOnFi
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 
 ::fidl::UnownedClientEnd<::test_service::FirstProtocol> fidl::internal::NaturalSyncClientImpl<::test_service::FirstProtocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_service::FirstProtocol>(
@@ -101,6 +107,8 @@ constexpr inline uint64_t kSecondProtocol_MethodOnSecond_Ordinal = 8121179205110
 constexpr inline ::fidl::MessageDynamicFlags kSecondProtocol_MethodOnSecond_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_service
 
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_service::SecondProtocol>::MethodOnSecond() const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -109,6 +117,9 @@ fidl::internal::NaturalClientImpl<::test_service::SecondProtocol>::MethodOnSecon
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
+
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_service::SecondProtocol>::MethodOnSecond() {
@@ -118,6 +129,7 @@ fidl::internal::NaturalSyncClientImpl<::test_service::SecondProtocol>::MethodOnS
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 
 ::fidl::UnownedClientEnd<::test_service::SecondProtocol> fidl::internal::NaturalSyncClientImpl<::test_service::SecondProtocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_service::SecondProtocol>(

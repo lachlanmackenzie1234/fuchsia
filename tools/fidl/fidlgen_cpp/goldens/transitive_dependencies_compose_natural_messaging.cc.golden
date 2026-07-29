@@ -23,6 +23,8 @@ constexpr inline ::fidl::MessageDynamicFlags kTop_GetFoo_DynamicFlags = ::fidl::
 
 ::fidl::Response<::test_transitivedependenciescompose::Top::GetFoo>::Response(::test_bottom::BottomGetFooResponse v) : BottomGetFooResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.transitivedependenciescompose/Top.GetFoo
+
 ::fidl::internal::NaturalThenable<::test_transitivedependenciescompose::Top::GetFoo>
 fidl::internal::NaturalClientImpl<::test_transitivedependenciescompose::Top>::GetFoo() const {
   return ::fidl::internal::NaturalThenable<::test_transitivedependenciescompose::Top::GetFoo>(
@@ -38,6 +40,9 @@ fidl::internal::NaturalClientImpl<::test_transitivedependenciescompose::Top>::Ge
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.transitivedependenciescompose/Top.GetFoo:end
+
+// api-coverage-fidl-name:test.transitivedependenciescompose/Top.GetFoo
 
 ::fidl::Result<::test_transitivedependenciescompose::Top::GetFoo>
 fidl::internal::NaturalSyncClientImpl<::test_transitivedependenciescompose::Top>::GetFoo() {
@@ -48,6 +53,7 @@ fidl::internal::NaturalSyncClientImpl<::test_transitivedependenciescompose::Top>
   return ::fidl::internal::DecodeResponseAndFoldError<::test_transitivedependenciescompose::Top::GetFoo>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.transitivedependenciescompose/Top.GetFoo:end
 
 ::fidl::UnownedClientEnd<::test_transitivedependenciescompose::Top> fidl::internal::NaturalSyncClientImpl<::test_transitivedependenciescompose::Top>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_transitivedependenciescompose::Top>(

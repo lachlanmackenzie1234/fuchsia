@@ -35,6 +35,8 @@ constexpr inline ::fidl::MessageDynamicFlags kEmptyProtocol_SendAndReceive_Dynam
 
 ::fidl::Response<::test_emptystruct::EmptyProtocol::SendAndReceive>::Response(::test_emptystruct::EmptyProtocolSendAndReceiveResponse v) : EmptyProtocolSendAndReceiveResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
 ::fidl::internal::NaturalThenable<::test_emptystruct::EmptyProtocol::SendAndReceive>
 fidl::internal::NaturalClientImpl<::test_emptystruct::EmptyProtocol>::SendAndReceive(const ::fidl::Request<::test_emptystruct::EmptyProtocol::SendAndReceive>& request) const {
   return ::fidl::internal::NaturalThenable<::test_emptystruct::EmptyProtocol::SendAndReceive>(
@@ -51,6 +53,9 @@ fidl::internal::NaturalClientImpl<::test_emptystruct::EmptyProtocol>::SendAndRec
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_emptystruct::EmptyProtocol>::Send(const ::fidl::Request<::test_emptystruct::EmptyProtocol::Send>& request) const {
@@ -62,6 +67,9 @@ fidl::internal::NaturalClientImpl<::test_emptystruct::EmptyProtocol>::Send(const
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
 
 ::fidl::Result<::test_emptystruct::EmptyProtocol::SendAndReceive>
 fidl::internal::NaturalSyncClientImpl<::test_emptystruct::EmptyProtocol>::SendAndReceive(const ::fidl::Request<::test_emptystruct::EmptyProtocol::SendAndReceive>& request) {
@@ -73,6 +81,9 @@ fidl::internal::NaturalSyncClientImpl<::test_emptystruct::EmptyProtocol>::SendAn
   return ::fidl::internal::DecodeResponseAndFoldError<::test_emptystruct::EmptyProtocol::SendAndReceive>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_emptystruct::EmptyProtocol>::Send(const ::fidl::Request<::test_emptystruct::EmptyProtocol::Send>& request) {
@@ -83,6 +94,7 @@ fidl::internal::NaturalSyncClientImpl<::test_emptystruct::EmptyProtocol>::Send(c
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 
 ::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol> fidl::internal::NaturalSyncClientImpl<::test_emptystruct::EmptyProtocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol>(

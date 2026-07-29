@@ -3624,76 +3624,130 @@ class ::fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownIn
  public:
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay:end
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay
+
     ::fidl::OneWayStatus
     FlexibleOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay:end
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay>
     StrictTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>
     StrictTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion>
     StrictTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable>
     StrictTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr>
     StrictTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr>
     StrictTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr>
     StrictTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr>
     StrictTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay>
     FlexibleTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields>
     FlexibleTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion>
     FlexibleTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable>
     FlexibleTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr>
     FlexibleTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr>
     FlexibleTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr>
     FlexibleTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr>
     FlexibleTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
 
 };
 
@@ -3703,76 +3757,130 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_unknowninteractions::Unk
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay
+
     ::fidl::OneWayStatus
     FlexibleOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay>
     StrictTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields>
     StrictTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion>
     StrictTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable>
     StrictTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr>
     StrictTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr>
     StrictTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr>
     StrictTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr>
     StrictTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay>
     FlexibleTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields>
     FlexibleTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion>
     FlexibleTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable>
     FlexibleTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr>
     FlexibleTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr>
     FlexibleTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr>
     FlexibleTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr>
     FlexibleTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
 
 };
 
@@ -6496,44 +6604,74 @@ class ::fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownIn
  public:
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay:end
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay
+
     ::fidl::OneWayStatus
     FlexibleOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay:end
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay>
     StrictTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields>
     StrictTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion>
     StrictTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable>
     StrictTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr>
     StrictTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr>
     StrictTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr>
     StrictTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr>
     StrictTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
 
 };
 
@@ -6543,44 +6681,74 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_unknowninteractions::Unk
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay
+
     ::fidl::OneWayStatus
     FlexibleOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay>
     StrictTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields>
     StrictTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion>
     StrictTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable>
     StrictTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr>
     StrictTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr>
     StrictTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr>
     StrictTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr>
     StrictTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
 
 };
 
@@ -8738,40 +8906,67 @@ class ::fidl::internal::WireSyncClientImpl<::test_unknowninteractions::UnknownIn
  public:
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay:end
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay>
     StrictTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields>
     StrictTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion>
     StrictTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable>
     StrictTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr>
     StrictTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr>
     StrictTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr>
     StrictTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
+
     ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr>
     StrictTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
 
 };
 
@@ -8781,40 +8976,67 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_unknowninteractions::Unk
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay>
     StrictTwoWay();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields>
     StrictTwoWayFields();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion>
     StrictTwoWayUnion();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable>
     StrictTwoWayTable();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr>
     StrictTwoWayErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr>
     StrictTwoWayFieldsErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr>
     StrictTwoWayUnionErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
+
     ::fidl::WireUnownedResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr>
     StrictTwoWayTableErr();
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
 
 };
 
@@ -9154,10 +9376,17 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_unknowninteractions::Unk
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay
+
   ::fidl::OneWayStatus StrictOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay:end
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay
+
   ::fidl::OneWayStatus FlexibleOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay:end
+
 };
 
 template<>
@@ -9165,37 +9394,101 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_unknowninteractions::Unkn
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay> FlexibleTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields> FlexibleTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion> FlexibleTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable> FlexibleTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr> FlexibleTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr> FlexibleTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr> FlexibleTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr> FlexibleTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
+
 };
 
 template<>
@@ -9204,10 +9497,16 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteraction
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay
+
 ::fidl::OneWayStatus StrictOneWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay
+
 ::fidl::OneWayStatus FlexibleOneWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay:end
 
 };
 
@@ -9217,52 +9516,100 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay> StrictTwoWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> StrictTwoWayFields();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable> StrictTwoWayTable();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr> StrictTwoWayErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay> FlexibleTwoWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields> FlexibleTwoWayFields();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion> FlexibleTwoWayUnion();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable> FlexibleTwoWayTable();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr> FlexibleTwoWayErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr> FlexibleTwoWayFieldsErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr> FlexibleTwoWayUnionErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr> FlexibleTwoWayTableErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
 
 };
 template<>
@@ -9271,52 +9618,101 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_unknowninteractions::Unkno
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay> FlexibleTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields> FlexibleTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion> FlexibleTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable> FlexibleTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr> FlexibleTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr> FlexibleTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr> FlexibleTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr> FlexibleTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
+
 };
 
 template<>
@@ -9419,10 +9815,17 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_unknowninteractions::Unk
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay
+
   ::fidl::OneWayStatus StrictOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay:end
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay
+
   ::fidl::OneWayStatus FlexibleOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay:end
+
 };
 
 template<>
@@ -9430,21 +9833,53 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_unknowninteractions::Unkn
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
+
 };
 
 template<>
@@ -9453,10 +9888,16 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteraction
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay
+
 ::fidl::OneWayStatus StrictOneWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay
+
 ::fidl::OneWayStatus FlexibleOneWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay:end
 
 };
 
@@ -9466,28 +9907,52 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay> StrictTwoWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields> StrictTwoWayFields();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable> StrictTwoWayTable();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr> StrictTwoWayErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
 
 };
 template<>
@@ -9496,28 +9961,53 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_unknowninteractions::Unkno
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
+
 };
 
 template<>
@@ -9620,7 +10110,11 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_unknowninteractions::Unk
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay
+
   ::fidl::OneWayStatus StrictOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay:end
+
 };
 
 template<>
@@ -9628,21 +10122,53 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_unknowninteractions::Unkn
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
+
   ::fidl::internal::WireThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
+
 };
 
 template<>
@@ -9651,7 +10177,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_unknowninteraction
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay
+
 ::fidl::OneWayStatus StrictOneWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay:end
 
 };
 
@@ -9661,28 +10190,52 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_unknowninteractions
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay> StrictTwoWay();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields> StrictTwoWayFields();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable> StrictTwoWayTable();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr> StrictTwoWayErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
+
 ::fidl::internal::WireBufferThenable<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+// api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
 
 };
 template<>
@@ -9691,28 +10244,53 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_unknowninteractions::Unkno
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
+
   ::fidl::WireResult<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
+
 };
 
 template<>

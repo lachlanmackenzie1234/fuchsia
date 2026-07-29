@@ -318,15 +318,30 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>> {
  public:
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
+
   ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> OnlyDenyDart(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>& request);
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
 
   ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> OnlyDenyGo(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& request);
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
 
   ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> OnlyDenyPython(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>& request);
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
 
   ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust> OnlyDenyRust(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>& request);
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
 
   ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller> OnlyDenySyzkaller(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>& request);
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
 
  private:
   ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding> _client_end() const;
@@ -616,9 +631,15 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::ImportsSameNameContext> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::ImportsSameNameContext>> {
  public:
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
+
   ::fit::result<::fidl::OneWayError> Unattributed();
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
 
   ::fit::result<::fidl::OneWayError> AlwaysAppearsInImportingLibrary();
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
 
  private:
   ::fidl::UnownedClientEnd<::test_bindingsdenylist::ImportsSameNameContext> _client_end() const;

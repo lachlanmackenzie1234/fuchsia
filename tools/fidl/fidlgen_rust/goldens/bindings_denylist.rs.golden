@@ -390,6 +390,7 @@ impl DenyEachBindingSynchronousProxy {
         DenyEachBindingEvent::decode(self.client.wait_for_event::<DenyEachBindingMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyCpp
     pub fn r#only_deny_cpp(
         &self,
         mut a: bool,
@@ -407,7 +408,9 @@ impl DenyEachBindingSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.b))
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyCpp:end
 
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
     pub fn r#only_deny_dart(
         &self,
         mut a: bool,
@@ -425,7 +428,9 @@ impl DenyEachBindingSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.b))
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
 
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
     pub fn r#only_deny_go(
         &self,
         mut a: bool,
@@ -443,7 +448,9 @@ impl DenyEachBindingSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.b))
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
 
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
     pub fn r#only_deny_python(
         &self,
         mut a: bool,
@@ -461,7 +468,9 @@ impl DenyEachBindingSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.b))
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
 
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
     pub fn r#only_deny_syzkaller(
         &self,
         mut a: bool,
@@ -479,6 +488,7 @@ impl DenyEachBindingSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.b))
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -597,6 +607,7 @@ impl DenyEachBindingProxyInterface for DenyEachBindingProxy {
         DenyEachBindingOnlyDenyCppResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyCpp
     fn r#only_deny_cpp(&self, mut a: bool) -> Self::OnlyDenyCppResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -618,11 +629,13 @@ impl DenyEachBindingProxyInterface for DenyEachBindingProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyCpp:end
 
     type OnlyDenyDartResponseFut = fidl::client::QueryResponseFut<
         DenyEachBindingOnlyDenyDartResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
     fn r#only_deny_dart(&self, mut a: bool) -> Self::OnlyDenyDartResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -644,11 +657,13 @@ impl DenyEachBindingProxyInterface for DenyEachBindingProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
 
     type OnlyDenyGoResponseFut = fidl::client::QueryResponseFut<
         DenyEachBindingOnlyDenyGoResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
     fn r#only_deny_go(&self, mut a: bool) -> Self::OnlyDenyGoResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -670,11 +685,13 @@ impl DenyEachBindingProxyInterface for DenyEachBindingProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
 
     type OnlyDenyPythonResponseFut = fidl::client::QueryResponseFut<
         DenyEachBindingOnlyDenyPythonResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
     fn r#only_deny_python(&self, mut a: bool) -> Self::OnlyDenyPythonResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -696,11 +713,13 @@ impl DenyEachBindingProxyInterface for DenyEachBindingProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
 
     type OnlyDenySyzkallerResponseFut = fidl::client::QueryResponseFut<
         DenyEachBindingOnlyDenySyzkallerResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
     fn r#only_deny_syzkaller(&self, mut a: bool) -> Self::OnlyDenySyzkallerResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -722,6 +741,7 @@ impl DenyEachBindingProxyInterface for DenyEachBindingProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
 }
 
 pub struct DenyEachBindingEventStream {
@@ -1443,6 +1463,7 @@ impl ImportsSameNameContextSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
     pub fn r#unattributed(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1450,7 +1471,9 @@ impl ImportsSameNameContextSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
 
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
     pub fn r#always_appears_in_importing_library(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1458,6 +1481,7 @@ impl ImportsSameNameContextSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -1531,6 +1555,7 @@ impl ImportsSameNameContextProxy {
 }
 
 impl ImportsSameNameContextProxyInterface for ImportsSameNameContextProxy {
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
     fn r#unattributed(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1538,7 +1563,9 @@ impl ImportsSameNameContextProxyInterface for ImportsSameNameContextProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
 
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
     fn r#always_appears_in_importing_library(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1546,6 +1573,7 @@ impl ImportsSameNameContextProxyInterface for ImportsSameNameContextProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
 }
 
 pub struct ImportsSameNameContextEventStream {

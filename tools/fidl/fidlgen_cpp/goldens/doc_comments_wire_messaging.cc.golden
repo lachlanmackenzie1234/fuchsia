@@ -65,6 +65,8 @@ static_assert(offsetof(::fidl::internal::TransactionalEvent<::test_doccomments::
 
 ::fidl::WireUnownedResult<::test_doccomments::Interface::Method>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_doccomments::Interface::Method>(result) {}
 
+// api-coverage-fidl-name:test.doccomments/Interface.Method
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_doccomments::Interface>::Method() {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_doccomments::Interface::Method> _request_object{};
@@ -72,6 +74,10 @@ static_assert(offsetof(::fidl::internal::TransactionalEvent<::test_doccomments::
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.doccomments/Interface.Method:end
+
+// api-coverage-fidl-name:test.doccomments/Interface.Method
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_doccomments::Interface>::Method() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_doccomments::Interface::Method>();
@@ -86,6 +92,8 @@ static_assert(offsetof(::fidl::internal::TransactionalEvent<::test_doccomments::
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.doccomments/Interface.Method:end
 
 ::fidl::internal::WireEventDispatcher<::test_doccomments::Interface>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_doccomments::Interface>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -201,6 +209,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalEvent<::t
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalEvent<::test_doccomments::Interface::OnEvent>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalEvent<::test_doccomments::Interface::OnEvent>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.doccomments/Interface.Method
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_doccomments::Interface>::Method() {
   ::fidl::internal::TransactionalRequest<::test_doccomments::Interface::Method> _request{};
@@ -208,12 +218,18 @@ fidl::internal::WireSyncClientImpl<::test_doccomments::Interface>::Method() {
       ::fidl::UnownedClientEnd<::test_doccomments::Interface>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.doccomments/Interface.Method:end
+
+// api-coverage-fidl-name:test.doccomments/Interface.Method
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_doccomments::Interface>::Method() {
   ::fidl::internal::TransactionalRequest<::test_doccomments::Interface::Method> _request{};
   return ::fidl::WireUnownedResult<::test_doccomments::Interface::Method>(
       ::fidl::UnownedClientEnd<::test_doccomments::Interface>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.doccomments/Interface.Method:end
 
 ::fidl::OneWayStatus fidl::internal::WireWeakEventSender<::test_doccomments::Interface>::OnEvent() {
   ::fidl::internal::TransactionalEvent<::test_doccomments::Interface::OnEvent> _response{};

@@ -233,8 +233,11 @@ class ::fidl::internal::WireSyncClientImpl<::test_doccomments::Interface> final 
   /// method comment #3
   //
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.doccomments/Interface.Method
+
   ::fidl::OneWayStatus
   Method();
+  // api-coverage-fidl-name:test.doccomments/Interface.Method:end
 };
 
 template <>
@@ -244,8 +247,11 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_doccomments::Interface> 
   ///
   /// method comment #3
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.doccomments/Interface.Method
+
   ::fidl::OneWayStatus
   Method();
+  // api-coverage-fidl-name:test.doccomments/Interface.Method:end
 };
 
 // Pure-virtual interface to be implemented by a server.
@@ -408,7 +414,10 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_doccomments::Interface> 
   /// method comment #3
   //
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.doccomments/Interface.Method
+
   ::fidl::OneWayStatus Method();
+  // api-coverage-fidl-name:test.doccomments/Interface.Method:end
 };
 
 template <>
@@ -427,7 +436,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_doccomments::Inter
   /// method comment #3
   //
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.doccomments/Interface.Method
+
   ::fidl::OneWayStatus Method();
+  // api-coverage-fidl-name:test.doccomments/Interface.Method:end
 };
 
 template <>

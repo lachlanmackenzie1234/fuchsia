@@ -104,9 +104,15 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>> {
  public:
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
+
   ::fidl::Result<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail> ComposedCallWhichMayFail(const ::fidl::Request<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>& request);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
+
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
 
   ::fidl::Result<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail> CallWhichMayFail(const ::fidl::Request<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>& request);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 
  private:
   ::fidl::UnownedClientEnd<::test_errorsyntax::ExampleUseOfErrorSyntax> _client_end() const;

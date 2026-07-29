@@ -69,6 +69,7 @@ impl SubSynchronousProxy {
         SubEvent::decode(self.client.wait_for_event::<SubMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.inheritance/sub.foo
     pub fn r#foo(
         &self,
         mut s: &str,
@@ -82,6 +83,7 @@ impl SubSynchronousProxy {
         )?;
         Ok(_response.y)
     }
+    // api-coverage-fidl-name:test.inheritance/sub.foo:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -155,6 +157,7 @@ impl SubProxy {
 impl SubProxyInterface for SubProxy {
     type FooResponseFut =
         fidl::client::QueryResponseFut<i64, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.inheritance/sub.foo
     fn r#foo(&self, mut s: &str) -> Self::FooResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -173,6 +176,7 @@ impl SubProxyInterface for SubProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.inheritance/sub.foo:end
 }
 
 pub struct SubEventStream {
@@ -502,6 +506,7 @@ impl Super_SynchronousProxy {
         Super_Event::decode(self.client.wait_for_event::<Super_Marker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.inheritance/super.foo
     pub fn r#foo(
         &self,
         mut s: &str,
@@ -515,6 +520,7 @@ impl Super_SynchronousProxy {
         )?;
         Ok(_response.y)
     }
+    // api-coverage-fidl-name:test.inheritance/super.foo:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -588,6 +594,7 @@ impl Super_Proxy {
 impl Super_ProxyInterface for Super_Proxy {
     type FooResponseFut =
         fidl::client::QueryResponseFut<i64, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.inheritance/super.foo
     fn r#foo(&self, mut s: &str) -> Self::FooResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -606,6 +613,7 @@ impl Super_ProxyInterface for Super_Proxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.inheritance/super.foo:end
 }
 
 pub struct Super_EventStream {

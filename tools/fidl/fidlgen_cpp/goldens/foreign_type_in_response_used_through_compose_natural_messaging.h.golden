@@ -55,7 +55,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>> {
  public:
+  // api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
+
   ::fidl::Result<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> GetFoo();
+  // api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
 
  private:
   ::fidl::UnownedClientEnd<::test_foreigntypeinresponseusedthroughcompose::Top> _client_end() const;

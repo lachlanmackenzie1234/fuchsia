@@ -289,16 +289,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_versions::Protocol> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_versions::Protocol>> {
  public:
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.versions/Protocol.Foo
+
   ::fidl::OneWayStatus
   Foo();
+  // api-coverage-fidl-name:test.versions/Protocol.Foo:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_versions::Protocol> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_versions::Protocol>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.versions/Protocol.Foo
+
   ::fidl::OneWayStatus
   Foo();
+  // api-coverage-fidl-name:test.versions/Protocol.Foo:end
 };
 
 // Pure-virtual interface to be implemented by a server.
@@ -506,7 +512,10 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_versions::Protocol> : pu
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.versions/Protocol.Foo
+
   ::fidl::OneWayStatus Foo();
+  // api-coverage-fidl-name:test.versions/Protocol.Foo:end
 };
 
 template <>
@@ -521,7 +530,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_versions::Protocol
   using BufferClientImplBase::BufferClientImplBase;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.versions/Protocol.Foo
+
   ::fidl::OneWayStatus Foo();
+  // api-coverage-fidl-name:test.versions/Protocol.Foo:end
 };
 
 template <>

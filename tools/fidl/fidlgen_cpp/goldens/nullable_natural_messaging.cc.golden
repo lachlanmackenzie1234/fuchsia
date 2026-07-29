@@ -23,6 +23,8 @@ constexpr inline ::fidl::MessageDynamicFlags kSimpleProtocol_Add_DynamicFlags = 
 
 ::fidl::Response<::test_nullable::SimpleProtocol::Add>::Response(::test_nullable::SimpleProtocolAddResponse v) : SimpleProtocolAddResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
+
 ::fidl::internal::NaturalThenable<::test_nullable::SimpleProtocol::Add>
 fidl::internal::NaturalClientImpl<::test_nullable::SimpleProtocol>::Add(const ::fidl::Request<::test_nullable::SimpleProtocol::Add>& request) const {
   return ::fidl::internal::NaturalThenable<::test_nullable::SimpleProtocol::Add>(
@@ -39,6 +41,9 @@ fidl::internal::NaturalClientImpl<::test_nullable::SimpleProtocol>::Add(const ::
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
 
 ::fidl::Result<::test_nullable::SimpleProtocol::Add>
 fidl::internal::NaturalSyncClientImpl<::test_nullable::SimpleProtocol>::Add(const ::fidl::Request<::test_nullable::SimpleProtocol::Add>& request) {
@@ -50,6 +55,7 @@ fidl::internal::NaturalSyncClientImpl<::test_nullable::SimpleProtocol>::Add(cons
   return ::fidl::internal::DecodeResponseAndFoldError<::test_nullable::SimpleProtocol::Add>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
 
 ::fidl::UnownedClientEnd<::test_nullable::SimpleProtocol> fidl::internal::NaturalSyncClientImpl<::test_nullable::SimpleProtocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_nullable::SimpleProtocol>(

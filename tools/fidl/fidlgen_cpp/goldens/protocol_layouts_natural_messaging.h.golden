@@ -433,35 +433,80 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_protocollayouts::MainProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_protocollayouts::MainProtocol>> {
  public:
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed
+
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> TwoWayAnonComposed(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError> TwoWayAnonComposedWithError(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayNamedComposed> TwoWayNamedComposed(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayNamedComposed>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError> TwoWayNamedComposedWithError(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayImport> TwoWayImport(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayImport>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayImportWithError> TwoWayImportWithError(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayImportWithError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayLocal> TwoWayLocal(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayLocal>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayLocalWithError> TwoWayLocalWithError(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayLocalWithError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayAnon> TwoWayAnon(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayAnon>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError
 
   ::fidl::Result<::test_protocollayouts::MainProtocol::TwoWayAnonWithError> TwoWayAnonWithError(const ::fidl::Request<::test_protocollayouts::MainProtocol::TwoWayAnonWithError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed
 
   ::fit::result<::fidl::OneWayError> OneWayAnonComposed(const ::fidl::Request<::test_protocollayouts::MainProtocol::OneWayAnonComposed>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed
 
   ::fit::result<::fidl::OneWayError> OneWayNamedComposed(const ::fidl::Request<::test_protocollayouts::MainProtocol::OneWayNamedComposed>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport
 
   ::fit::result<::fidl::OneWayError> OneWayImport(const ::fidl::Request<::test_protocollayouts::MainProtocol::OneWayImport>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal
 
   ::fit::result<::fidl::OneWayError> OneWayLocal(const ::fidl::Request<::test_protocollayouts::MainProtocol::OneWayLocal>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal:end
+
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon
 
   ::fit::result<::fidl::OneWayError> OneWayAnon(const ::fidl::Request<::test_protocollayouts::MainProtocol::OneWayAnon>& request);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon:end
 
  private:
   ::fidl::UnownedClientEnd<::test_protocollayouts::MainProtocol> _client_end() const;
@@ -953,19 +998,40 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_protocollayouts::OpenProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_protocollayouts::OpenProtocol>> {
  public:
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError
+
   ::fidl::Result<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError> FlexibleTwoWayNoError(const ::fidl::Request<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError
 
   ::fidl::Result<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError> FlexibleTwoWayWithError(const ::fidl::Request<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError
 
   ::fidl::Result<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError> StrictTwoWayNoError(const ::fidl::Request<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError
 
   ::fidl::Result<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError> StrictTwoWayWithError(const ::fidl::Request<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError>& request);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError:end
+
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay
 
   ::fit::result<::fidl::OneWayError> FlexibleOneWay(const ::fidl::Request<::test_protocollayouts::OpenProtocol::FlexibleOneWay>& request);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay:end
+
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay
 
   ::fit::result<::fidl::OneWayError> StrictOneWay(const ::fidl::Request<::test_protocollayouts::OpenProtocol::StrictOneWay>& request);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay:end
+
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload
 
   ::fit::result<::fidl::OneWayError> FlexibleOneWayNamedPayload(const ::fidl::Request<::test_protocollayouts::OpenProtocol::FlexibleOneWayNamedPayload>& request);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload:end
 
  private:
   ::fidl::UnownedClientEnd<::test_protocollayouts::OpenProtocol> _client_end() const;

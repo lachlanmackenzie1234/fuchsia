@@ -63,6 +63,8 @@ static_assert(offsetof(::test_placementofattributes::wire::ExampleProtocolMethod
 
 ::fidl::WireUnownedResult<::test_placementofattributes::ExampleProtocol::Method>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_placementofattributes::ExampleProtocol::Method>(result) {}
 
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_placementofattributes::ExampleProtocol>::Method(const ::test_exampleusing::wire::Empty& arg) {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_placementofattributes::ExampleProtocol::Method> _request_object{arg};
@@ -70,6 +72,10 @@ static_assert(offsetof(::test_placementofattributes::wire::ExampleProtocolMethod
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
+
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_placementofattributes::ExampleProtocol>::Method(const ::test_exampleusing::wire::Empty& arg) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_placementofattributes::ExampleProtocol::Method>();
@@ -84,6 +90,8 @@ static_assert(offsetof(::test_placementofattributes::wire::ExampleProtocolMethod
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 
 ::fidl::internal::WireEventDispatcher<::test_placementofattributes::ExampleProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_placementofattributes::ExampleProtocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -169,6 +177,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<:
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_placementofattributes::ExampleProtocol::Method>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_placementofattributes::ExampleProtocol::Method>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_placementofattributes::ExampleProtocol>::Method(const ::test_exampleusing::wire::Empty& arg) {
   ::fidl::internal::TransactionalRequest<::test_placementofattributes::ExampleProtocol::Method> _request{arg};
@@ -176,12 +186,18 @@ fidl::internal::WireSyncClientImpl<::test_placementofattributes::ExampleProtocol
       ::fidl::UnownedClientEnd<::test_placementofattributes::ExampleProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
+
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_placementofattributes::ExampleProtocol>::Method(const ::test_exampleusing::wire::Empty& arg) {
   ::fidl::internal::TransactionalRequest<::test_placementofattributes::ExampleProtocol::Method> _request{arg};
   return ::fidl::WireUnownedResult<::test_placementofattributes::ExampleProtocol::Method>(
       ::fidl::UnownedClientEnd<::test_placementofattributes::ExampleProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 
 #pragma clang diagnostic pop
 

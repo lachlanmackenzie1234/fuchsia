@@ -36,6 +36,8 @@ constexpr inline ::fidl::MessageDynamicFlags kExampleUseOfErrorSyntax_CallWhichM
   }
 }
 
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
+
 ::fidl::internal::NaturalThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>
 fidl::internal::NaturalClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::ComposedCallWhichMayFail(const ::fidl::Request<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>& request) const {
   return ::fidl::internal::NaturalThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>(
@@ -52,6 +54,7 @@ fidl::internal::NaturalClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
 
 ::fidl::Response<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>::Response(::fit::result<uint32_t, ::test_errorsyntax::ExampleUseOfErrorSyntaxCallWhichMayFailResponse> v) : result(std::move(v)) {}
 ::test_errorsyntax::ExampleUseOfErrorSyntaxCallWhichMayFailResult fidl::internal::ResponseMessageConverter<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>::IntoDomainObject(const ::fidl::Response<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>& m) {
@@ -61,6 +64,8 @@ fidl::internal::NaturalClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
 
 ::fidl::internal::NaturalThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>
 fidl::internal::NaturalClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::CallWhichMayFail(const ::fidl::Request<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>& request) const {
@@ -78,6 +83,9 @@ fidl::internal::NaturalClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
+
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
 
 ::fidl::Result<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>
 fidl::internal::NaturalSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::ComposedCallWhichMayFail(const ::fidl::Request<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>& request) {
@@ -89,6 +97,9 @@ fidl::internal::NaturalSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSynta
   return ::fidl::internal::DecodeResponseAndFoldError<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
+
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
 
 ::fidl::Result<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>
 fidl::internal::NaturalSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::CallWhichMayFail(const ::fidl::Request<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>& request) {
@@ -100,6 +111,7 @@ fidl::internal::NaturalSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSynta
   return ::fidl::internal::DecodeResponseAndFoldError<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 
 ::fidl::UnownedClientEnd<::test_errorsyntax::ExampleUseOfErrorSyntax> fidl::internal::NaturalSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_errorsyntax::ExampleUseOfErrorSyntax>(

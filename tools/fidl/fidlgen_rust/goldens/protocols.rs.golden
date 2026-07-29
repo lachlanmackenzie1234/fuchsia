@@ -533,6 +533,7 @@ impl ChannelProtocolSynchronousProxy {
         ChannelProtocolEvent::decode(self.client.wait_for_event::<ChannelProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
     pub fn r#method_a(&self, mut a: i64, mut b: i64) -> Result<(), fidl::Error> {
         self.client.send::<ChannelProtocolMethodARequest>(
             (a, b),
@@ -540,7 +541,9 @@ impl ChannelProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
 
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
     pub fn r#method_b(
         &self,
         mut a: i64,
@@ -559,7 +562,9 @@ impl ChannelProtocolSynchronousProxy {
         )?;
         Ok(_response.result)
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
 
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
     pub fn r#take_handle(
         &self,
         mut h: fidl::NullableHandle,
@@ -577,7 +582,9 @@ impl ChannelProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
 
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
     pub fn r#mutate_socket(
         &self,
         mut a: fidl::Socket,
@@ -595,6 +602,7 @@ impl ChannelProtocolSynchronousProxy {
         )?;
         Ok(_response.b)
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -686,6 +694,7 @@ impl ChannelProtocolProxy {
 }
 
 impl ChannelProtocolProxyInterface for ChannelProtocolProxy {
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
     fn r#method_a(&self, mut a: i64, mut b: i64) -> Result<(), fidl::Error> {
         self.client.send::<ChannelProtocolMethodARequest>(
             (a, b),
@@ -693,9 +702,11 @@ impl ChannelProtocolProxyInterface for ChannelProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
 
     type MethodBResponseFut =
         fidl::client::QueryResponseFut<i64, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
     fn r#method_b(&self, mut a: i64, mut b: i64) -> Self::MethodBResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -714,9 +725,11 @@ impl ChannelProtocolProxyInterface for ChannelProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
 
     type TakeHandleResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
     fn r#take_handle(&self, mut h: fidl::NullableHandle) -> Self::TakeHandleResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -735,9 +748,11 @@ impl ChannelProtocolProxyInterface for ChannelProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
 
     type MutateSocketResponseFut =
         fidl::client::QueryResponseFut<fidl::Socket, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
     fn r#mutate_socket(&self, mut a: fidl::Socket) -> Self::MutateSocketResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -756,6 +771,7 @@ impl ChannelProtocolProxyInterface for ChannelProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
 }
 
 pub struct ChannelProtocolEventStream {
@@ -1329,6 +1345,7 @@ impl DiscoverableProtocolSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
     pub fn r#method(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1336,6 +1353,7 @@ impl DiscoverableProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -1405,6 +1423,7 @@ impl DiscoverableProtocolProxy {
 }
 
 impl DiscoverableProtocolProxyInterface for DiscoverableProtocolProxy {
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
     fn r#method(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1412,6 +1431,7 @@ impl DiscoverableProtocolProxyInterface for DiscoverableProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
 }
 
 pub struct DiscoverableProtocolEventStream {
@@ -1681,6 +1701,7 @@ impl HandleRightsProtocolSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
     pub fn r#no_response_method(&self, mut h: fidl::Socket) -> Result<(), fidl::Error> {
         self.client.send::<HandleRightsProtocolNoResponseMethodRequest>(
             (h,),
@@ -1688,7 +1709,9 @@ impl HandleRightsProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
 
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
     pub fn r#response_method(
         &self,
         mut h: fidl::Socket,
@@ -1706,6 +1729,7 @@ impl HandleRightsProtocolSynchronousProxy {
         )?;
         Ok(_response.h)
     }
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -1783,6 +1807,7 @@ impl HandleRightsProtocolProxy {
 }
 
 impl HandleRightsProtocolProxyInterface for HandleRightsProtocolProxy {
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
     fn r#no_response_method(&self, mut h: fidl::Socket) -> Result<(), fidl::Error> {
         self.client.send::<HandleRightsProtocolNoResponseMethodRequest>(
             (h,),
@@ -1790,9 +1815,11 @@ impl HandleRightsProtocolProxyInterface for HandleRightsProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
 
     type ResponseMethodResponseFut =
         fidl::client::QueryResponseFut<fidl::Socket, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
     fn r#response_method(&self, mut h: fidl::Socket) -> Self::ResponseMethodResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1812,6 +1839,7 @@ impl HandleRightsProtocolProxyInterface for HandleRightsProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
 }
 
 pub struct HandleRightsProtocolEventStream {
@@ -2211,6 +2239,7 @@ impl ManyParametersSynchronousProxy {
         ManyParametersEvent::decode(self.client.wait_for_event::<ManyParametersMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
     pub fn r#fifteen(
         &self,
         mut p1: bool,
@@ -2235,6 +2264,7 @@ impl ManyParametersSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -2322,6 +2352,7 @@ impl ManyParametersProxy {
 }
 
 impl ManyParametersProxyInterface for ManyParametersProxy {
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
     fn r#fifteen(
         &self,
         mut p1: bool,
@@ -2346,6 +2377,7 @@ impl ManyParametersProxyInterface for ManyParametersProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
 }
 
 pub struct ManyParametersEventStream {
@@ -2685,6 +2717,7 @@ impl MethodWithUnionSynchronousProxy {
         MethodWithUnionEvent::decode(self.client.wait_for_event::<MethodWithUnionMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
     pub fn r#union_method(
         &self,
         mut u: &TheUnion,
@@ -2702,6 +2735,7 @@ impl MethodWithUnionSynchronousProxy {
         )?;
         Ok(_response.u)
     }
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -2780,6 +2814,7 @@ impl MethodWithUnionProxyInterface for MethodWithUnionProxy {
         Option<Box<TheUnion>>,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
     fn r#union_method(&self, mut u: &TheUnion) -> Self::UnionMethodResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -2799,6 +2834,7 @@ impl MethodWithUnionProxyInterface for MethodWithUnionProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
 }
 
 pub struct MethodWithUnionEventStream {
@@ -3452,6 +3488,7 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
     pub fn r#no_request_no_response(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -3459,7 +3496,9 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
 
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
     pub fn r#no_request_empty_response(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -3476,7 +3515,9 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
 
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
     pub fn r#no_request_with_response(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -3493,7 +3534,9 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
         )?;
         Ok(_response.ret)
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
 
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
     pub fn r#with_request_no_response(&self, mut arg: &str) -> Result<(), fidl::Error> {
         self.client.send::<WithAndWithoutRequestResponseWithRequestNoResponseRequest>(
             (arg,),
@@ -3501,7 +3544,9 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
 
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
     pub fn r#with_request_empty_response(
         &self,
         mut arg: &str,
@@ -3519,7 +3564,9 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
 
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
     pub fn r#with_request_with_response(
         &self,
         mut arg: &str,
@@ -3537,6 +3584,7 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
         )?;
         Ok(_response.ret)
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -3638,6 +3686,7 @@ impl WithAndWithoutRequestResponseProxy {
 }
 
 impl WithAndWithoutRequestResponseProxyInterface for WithAndWithoutRequestResponseProxy {
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
     fn r#no_request_no_response(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -3645,9 +3694,11 @@ impl WithAndWithoutRequestResponseProxyInterface for WithAndWithoutRequestRespon
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
 
     type NoRequestEmptyResponseResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
     fn r#no_request_empty_response(&self) -> Self::NoRequestEmptyResponseResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -3666,9 +3717,11 @@ impl WithAndWithoutRequestResponseProxyInterface for WithAndWithoutRequestRespon
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
 
     type NoRequestWithResponseResponseFut =
         fidl::client::QueryResponseFut<String, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
     fn r#no_request_with_response(&self) -> Self::NoRequestWithResponseResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -3687,7 +3740,9 @@ impl WithAndWithoutRequestResponseProxyInterface for WithAndWithoutRequestRespon
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
 
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
     fn r#with_request_no_response(&self, mut arg: &str) -> Result<(), fidl::Error> {
         self.client.send::<WithAndWithoutRequestResponseWithRequestNoResponseRequest>(
             (arg,),
@@ -3695,9 +3750,11 @@ impl WithAndWithoutRequestResponseProxyInterface for WithAndWithoutRequestRespon
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
 
     type WithRequestEmptyResponseResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
     fn r#with_request_empty_response(
         &self,
         mut arg: &str,
@@ -3722,9 +3779,11 @@ impl WithAndWithoutRequestResponseProxyInterface for WithAndWithoutRequestRespon
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
 
     type WithRequestWithResponseResponseFut =
         fidl::client::QueryResponseFut<String, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
     fn r#with_request_with_response(
         &self,
         mut arg: &str,
@@ -3749,6 +3808,7 @@ impl WithAndWithoutRequestResponseProxyInterface for WithAndWithoutRequestRespon
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
 }
 
 pub struct WithAndWithoutRequestResponseEventStream {
@@ -4510,6 +4570,7 @@ impl WithErrorSyntaxSynchronousProxy {
         WithErrorSyntaxEvent::decode(self.client.wait_for_event::<WithErrorSyntaxMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
     pub fn r#response_as_struct(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -4526,7 +4587,9 @@ impl WithErrorSyntaxSynchronousProxy {
         )?;
         Ok(_response.map(|x| (x.a, x.b, x.c)))
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
 
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
     pub fn r#error_as_primitive(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -4543,7 +4606,9 @@ impl WithErrorSyntaxSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
 
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
     pub fn r#error_as_enum(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -4560,7 +4625,9 @@ impl WithErrorSyntaxSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
 
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
     pub fn r#handle_in_result(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -4577,6 +4644,7 @@ impl WithErrorSyntaxSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.h))
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -4681,6 +4749,7 @@ impl WithErrorSyntaxProxyInterface for WithErrorSyntaxProxy {
         WithErrorSyntaxResponseAsStructResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
     fn r#response_as_struct(&self) -> Self::ResponseAsStructResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4702,11 +4771,13 @@ impl WithErrorSyntaxProxyInterface for WithErrorSyntaxProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
 
     type ErrorAsPrimitiveResponseFut = fidl::client::QueryResponseFut<
         WithErrorSyntaxErrorAsPrimitiveResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
     fn r#error_as_primitive(&self) -> Self::ErrorAsPrimitiveResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4728,11 +4799,13 @@ impl WithErrorSyntaxProxyInterface for WithErrorSyntaxProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
 
     type ErrorAsEnumResponseFut = fidl::client::QueryResponseFut<
         WithErrorSyntaxErrorAsEnumResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
     fn r#error_as_enum(&self) -> Self::ErrorAsEnumResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4754,11 +4827,13 @@ impl WithErrorSyntaxProxyInterface for WithErrorSyntaxProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
 
     type HandleInResultResponseFut = fidl::client::QueryResponseFut<
         WithErrorSyntaxHandleInResultResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
     fn r#handle_in_result(&self) -> Self::HandleInResultResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4780,6 +4855,7 @@ impl WithErrorSyntaxProxyInterface for WithErrorSyntaxProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
 }
 
 pub struct WithErrorSyntaxEventStream {
@@ -5423,6 +5499,7 @@ impl WithProtocolEndsSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
     pub fn r#client_ends(
         &self,
         mut in_: fidl::endpoints::ClientEnd<DiscoverableProtocolMarker>,
@@ -5440,7 +5517,9 @@ impl WithProtocolEndsSynchronousProxy {
         )?;
         Ok(_response.out)
     }
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
 
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
     pub fn r#server_ends(
         &self,
         mut in_: Option<fidl::endpoints::ServerEnd<DiscoverableProtocolMarker>>,
@@ -5458,7 +5537,9 @@ impl WithProtocolEndsSynchronousProxy {
         )?;
         Ok(_response.out)
     }
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
 
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
     pub fn r#struct_containing_ends(
         &self,
         mut in_: ProtocolEnds,
@@ -5476,6 +5557,7 @@ impl WithProtocolEndsSynchronousProxy {
         )?;
         Ok(_response.out)
     }
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -5572,6 +5654,7 @@ impl WithProtocolEndsProxyInterface for WithProtocolEndsProxy {
         Option<fidl::endpoints::ClientEnd<DiscoverableProtocolMarker>>,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
     fn r#client_ends(
         &self,
         mut in_: fidl::endpoints::ClientEnd<DiscoverableProtocolMarker>,
@@ -5597,11 +5680,13 @@ impl WithProtocolEndsProxyInterface for WithProtocolEndsProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
 
     type ServerEndsResponseFut = fidl::client::QueryResponseFut<
         fidl::endpoints::ServerEnd<DiscoverableProtocolMarker>,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
     fn r#server_ends(
         &self,
         mut in_: Option<fidl::endpoints::ServerEnd<DiscoverableProtocolMarker>>,
@@ -5626,9 +5711,11 @@ impl WithProtocolEndsProxyInterface for WithProtocolEndsProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
 
     type StructContainingEndsResponseFut =
         fidl::client::QueryResponseFut<ProtocolEnds, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
     fn r#struct_containing_ends(
         &self,
         mut in_: ProtocolEnds,
@@ -5651,6 +5738,7 @@ impl WithProtocolEndsProxyInterface for WithProtocolEndsProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
 }
 
 pub struct WithProtocolEndsEventStream {

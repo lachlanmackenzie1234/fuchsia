@@ -82,6 +82,7 @@ impl ProtocolSynchronousProxy {
         ProtocolEvent::decode(self.client.wait_for_event::<ProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
     pub fn r#request_strict_response_flexible(
         &self,
         mut s: &StrictFoo,
@@ -99,7 +100,9 @@ impl ProtocolSynchronousProxy {
         )?;
         Ok(_response.f)
     }
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
 
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
     pub fn r#request_flexible_response_strict(
         &self,
         mut s: &FlexibleFoo,
@@ -117,6 +120,7 @@ impl ProtocolSynchronousProxy {
         )?;
         Ok(_response.f)
     }
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -199,6 +203,7 @@ impl ProtocolProxy {
 impl ProtocolProxyInterface for ProtocolProxy {
     type RequestStrictResponseFlexibleResponseFut =
         fidl::client::QueryResponseFut<FlexibleFoo, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
     fn r#request_strict_response_flexible(
         &self,
         mut s: &StrictFoo,
@@ -221,9 +226,11 @@ impl ProtocolProxyInterface for ProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
 
     type RequestFlexibleResponseStrictResponseFut =
         fidl::client::QueryResponseFut<StrictFoo, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
     fn r#request_flexible_response_strict(
         &self,
         mut s: &FlexibleFoo,
@@ -246,6 +253,7 @@ impl ProtocolProxyInterface for ProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
 }
 
 pub struct ProtocolEventStream {

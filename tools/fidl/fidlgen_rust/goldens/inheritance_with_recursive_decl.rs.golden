@@ -90,6 +90,7 @@ impl ChildSynchronousProxy {
         ChildEvent::decode(self.client.wait_for_event::<ChildMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
     pub fn r#first(
         &self,
         mut request: fidl::endpoints::ServerEnd<ParentMarker>,
@@ -100,7 +101,9 @@ impl ChildSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
 
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
     pub fn r#second(
         &self,
         mut request: fidl::endpoints::ServerEnd<ParentMarker>,
@@ -111,6 +114,7 @@ impl ChildSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -189,6 +193,7 @@ impl ChildProxy {
 }
 
 impl ChildProxyInterface for ChildProxy {
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
     fn r#first(
         &self,
         mut request: fidl::endpoints::ServerEnd<ParentMarker>,
@@ -199,7 +204,9 @@ impl ChildProxyInterface for ChildProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
 
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
     fn r#second(
         &self,
         mut request: fidl::endpoints::ServerEnd<ParentMarker>,
@@ -210,6 +217,7 @@ impl ChildProxyInterface for ChildProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 }
 
 pub struct ChildEventStream {
@@ -498,6 +506,7 @@ impl ParentSynchronousProxy {
         ParentEvent::decode(self.client.wait_for_event::<ParentMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
     pub fn r#first(
         &self,
         mut request: fidl::endpoints::ServerEnd<ParentMarker>,
@@ -508,6 +517,7 @@ impl ParentSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -579,6 +589,7 @@ impl ParentProxy {
 }
 
 impl ParentProxyInterface for ParentProxy {
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
     fn r#first(
         &self,
         mut request: fidl::endpoints::ServerEnd<ParentMarker>,
@@ -589,6 +600,7 @@ impl ParentProxyInterface for ParentProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 }
 
 pub struct ParentEventStream {

@@ -165,17 +165,27 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_union::Tes
 
 ::fidl::WireUnownedResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>(result) {}
 
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
 ::fidl::internal::WireThenable<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> fidl::internal::WireWeakAsyncClientImpl<::test_union::TestProtocol>::StrictUnionHenceResponseMayBeStackAllocated() {
   ::fidl::internal::TransactionalRequest<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> _request{};
   return ::fidl::internal::WireThenable<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
 
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
 ::fidl::internal::WireThenable<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> fidl::internal::WireWeakAsyncClientImpl<::test_union::TestProtocol>::FlexibleUnionHenceResponseMustBeHeapAllocated() {
   ::fidl::internal::TransactionalRequest<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> _request{};
   return ::fidl::internal::WireThenable<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
 
 ::fidl::internal::WireBufferThenable<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> fidl::internal::WireWeakAsyncBufferClientImpl<::test_union::TestProtocol>::StrictUnionHenceResponseMayBeStackAllocated() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>();
@@ -184,12 +194,20 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_union::Tes
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
 ::fidl::internal::WireBufferThenable<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> fidl::internal::WireWeakAsyncBufferClientImpl<::test_union::TestProtocol>::FlexibleUnionHenceResponseMustBeHeapAllocated() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>();
   ::fidl::internal::TransactionalRequest<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> _request{};
   return ::fidl::internal::WireBufferThenable<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
 
 ::fidl::WireResult<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>
 fidl::internal::WireWeakSyncClientImpl<::test_union::TestProtocol>::StrictUnionHenceResponseMayBeStackAllocated() {
@@ -200,6 +218,10 @@ fidl::internal::WireWeakSyncClientImpl<::test_union::TestProtocol>::StrictUnionH
       });
 }
 
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
 ::fidl::WireResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>
 fidl::internal::WireWeakSyncClientImpl<::test_union::TestProtocol>::FlexibleUnionHenceResponseMustBeHeapAllocated() {
   return _client_base()->MakeSyncCallWith(
@@ -208,6 +230,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_union::TestProtocol>::FlexibleUnio
         return ::fidl::WireResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>(::fidl::UnownedClientEnd<::test_union::TestProtocol>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 
 ::fidl::internal::WireEventDispatcher<::test_union::TestProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_union::TestProtocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -500,12 +524,18 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
 ::fidl::WireResult<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>
 fidl::internal::WireSyncClientImpl<::test_union::TestProtocol>::StrictUnionHenceResponseMayBeStackAllocated() {
   ::fidl::internal::TransactionalRequest<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> _request{};
   return ::fidl::WireResult<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>(
       ::fidl::UnownedClientEnd<::test_union::TestProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
+
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
 
 ::fidl::WireUnownedResult<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>
 fidl::internal::WireSyncBufferClientImpl<::test_union::TestProtocol>::StrictUnionHenceResponseMayBeStackAllocated() {
@@ -514,6 +544,10 @@ fidl::internal::WireSyncBufferClientImpl<::test_union::TestProtocol>::StrictUnio
       ::fidl::UnownedClientEnd<::test_union::TestProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
 
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
 ::fidl::WireResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>
 fidl::internal::WireSyncClientImpl<::test_union::TestProtocol>::FlexibleUnionHenceResponseMustBeHeapAllocated() {
   ::fidl::internal::TransactionalRequest<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> _request{};
@@ -521,12 +555,18 @@ fidl::internal::WireSyncClientImpl<::test_union::TestProtocol>::FlexibleUnionHen
       ::fidl::UnownedClientEnd<::test_union::TestProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
 ::fidl::WireUnownedResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>
 fidl::internal::WireSyncBufferClientImpl<::test_union::TestProtocol>::FlexibleUnionHenceResponseMustBeHeapAllocated() {
   ::fidl::internal::TransactionalRequest<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> _request{};
   return ::fidl::WireUnownedResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>(
       ::fidl::UnownedClientEnd<::test_union::TestProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 
 #pragma clang diagnostic pop
 

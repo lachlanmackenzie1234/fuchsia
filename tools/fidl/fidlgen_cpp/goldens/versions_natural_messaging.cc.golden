@@ -57,6 +57,8 @@ constexpr inline uint64_t kProtocol_Foo_Ordinal = 6231434419097198905lu;
 constexpr inline ::fidl::MessageDynamicFlags kProtocol_Foo_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_versions
 
+// api-coverage-fidl-name:test.versions/Protocol.Foo
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_versions::Protocol>::Foo() const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -65,6 +67,9 @@ fidl::internal::NaturalClientImpl<::test_versions::Protocol>::Foo() const {
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.versions/Protocol.Foo:end
+
+// api-coverage-fidl-name:test.versions/Protocol.Foo
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_versions::Protocol>::Foo() {
@@ -74,6 +79,7 @@ fidl::internal::NaturalSyncClientImpl<::test_versions::Protocol>::Foo() {
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.versions/Protocol.Foo:end
 
 ::fidl::UnownedClientEnd<::test_versions::Protocol> fidl::internal::NaturalSyncClientImpl<::test_versions::Protocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_versions::Protocol>(

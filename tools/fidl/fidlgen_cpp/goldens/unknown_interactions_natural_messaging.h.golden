@@ -606,41 +606,95 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_unknowninteractions::UnknownInteractionsProtocol>> {
  public:
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
+
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWay> FlexibleTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFields> FlexibleTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnion> FlexibleTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTable> FlexibleTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayErr> FlexibleTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayFieldsErr> FlexibleTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayUnionErr> FlexibleTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsProtocol::FlexibleTwoWayTableErr> FlexibleTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay
 
   ::fit::result<::fidl::OneWayError> StrictOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay
 
   ::fit::result<::fidl::OneWayError> FlexibleOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay:end
 
  private:
   ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsProtocol> _client_end() const;
@@ -1325,25 +1379,55 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_unknowninteractions::UnknownInteractionsAjarProtocol>> {
  public:
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
+
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsAjarProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay
 
   ::fit::result<::fidl::OneWayError> StrictOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay
 
   ::fit::result<::fidl::OneWayError> FlexibleOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay:end
 
  private:
   ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsAjarProtocol> _client_end() const;
@@ -1890,23 +1974,50 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_unknowninteractions::UnknownInteractionsClosedProtocol>> {
  public:
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
+
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWay> StrictTwoWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFields> StrictTwoWayFields();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnion> StrictTwoWayUnion();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTable> StrictTwoWayTable();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayErr> StrictTwoWayErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayFieldsErr> StrictTwoWayFieldsErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayUnionErr> StrictTwoWayUnionErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
 
   ::fidl::Result<::test_unknowninteractions::UnknownInteractionsClosedProtocol::StrictTwoWayTableErr> StrictTwoWayTableErr();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
+
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay
 
   ::fit::result<::fidl::OneWayError> StrictOneWay();
+  // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay:end
 
  private:
   ::fidl::UnownedClientEnd<::test_unknowninteractions::UnknownInteractionsClosedProtocol> _client_end() const;

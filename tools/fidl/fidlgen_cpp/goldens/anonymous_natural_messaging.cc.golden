@@ -30,6 +30,8 @@ constexpr inline ::fidl::MessageDynamicFlags kSomeProtocol_SomeMethod_DynamicFla
   }
 }
 
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
+
 ::fidl::internal::NaturalThenable<::test_anonymous::SomeProtocol::SomeMethod>
 fidl::internal::NaturalClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(const ::fidl::Request<::test_anonymous::SomeProtocol::SomeMethod>& request) const {
   return ::fidl::internal::NaturalThenable<::test_anonymous::SomeProtocol::SomeMethod>(
@@ -46,6 +48,9 @@ fidl::internal::NaturalClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(co
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
 
 ::fidl::Result<::test_anonymous::SomeProtocol::SomeMethod>
 fidl::internal::NaturalSyncClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(const ::fidl::Request<::test_anonymous::SomeProtocol::SomeMethod>& request) {
@@ -57,6 +62,7 @@ fidl::internal::NaturalSyncClientImpl<::test_anonymous::SomeProtocol>::SomeMetho
   return ::fidl::internal::DecodeResponseAndFoldError<::test_anonymous::SomeProtocol::SomeMethod>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
 
 ::fidl::UnownedClientEnd<::test_anonymous::SomeProtocol> fidl::internal::NaturalSyncClientImpl<::test_anonymous::SomeProtocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_anonymous::SomeProtocol>(

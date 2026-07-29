@@ -473,24 +473,36 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>> {
  public:
   // Allocates 40 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
+
   ::fidl::WireResult<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>
   ComposedCallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
 
   // Allocates 40 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
+
   ::fidl::WireResult<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>
   CallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
+
   ::fidl::WireUnownedResult<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail>
   ComposedCallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
 
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
+
   ::fidl::WireUnownedResult<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail>
   CallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 };
 
 template <>
@@ -615,9 +627,16 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_errorsyntax::ExampleUseOf
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
   // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
+
   ::fidl::internal::WireThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail> ComposedCallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
+
   // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
+
   ::fidl::internal::WireThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail> CallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 };
 
 template <>
@@ -632,10 +651,16 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_errorsyntax::Exampl
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
+
   ::fidl::internal::WireBufferThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail> ComposedCallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
+
   ::fidl::internal::WireBufferThenable<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail> CallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 };
 template <>
 class ::fidl::internal::WireWeakSyncClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax> final : public ::fidl::internal::WireWeakOnewayClientImpl<::test_errorsyntax::ExampleUseOfErrorSyntax> {
@@ -643,10 +668,16 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_errorsyntax::ExampleUseOfE
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 40 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
+
   ::fidl::WireResult<::test_errorsyntax::ExampleUseOfErrorSyntax::ComposedCallWhichMayFail> ComposedCallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
 
   // Allocates 40 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
+
   ::fidl::WireResult<::test_errorsyntax::ExampleUseOfErrorSyntax::CallWhichMayFail> CallWhichMayFail(::fidl::StringView s);
+  // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 };
 
 template <>

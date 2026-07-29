@@ -29,6 +29,8 @@ constexpr inline ::fidl::MessageDynamicFlags kProtocol_RequestFlexibleResponseSt
 
 ::fidl::Response<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>::Response(::test_requestflexibleenvelope::ProtocolRequestStrictResponseFlexibleResponse v) : ProtocolRequestStrictResponseFlexibleResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
+
 ::fidl::internal::NaturalThenable<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>
 fidl::internal::NaturalClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(const ::fidl::Request<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>& request) const {
   return ::fidl::internal::NaturalThenable<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>(
@@ -45,8 +47,11 @@ fidl::internal::NaturalClientImpl<::test_requestflexibleenvelope::Protocol>::Req
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
 
 ::fidl::Response<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>::Response(::test_requestflexibleenvelope::ProtocolRequestFlexibleResponseStrictResponse v) : ProtocolRequestFlexibleResponseStrictResponse(std::move(v)) {}
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
 
 ::fidl::internal::NaturalThenable<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>
 fidl::internal::NaturalClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(const ::fidl::Request<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>& request) const {
@@ -64,6 +69,9 @@ fidl::internal::NaturalClientImpl<::test_requestflexibleenvelope::Protocol>::Req
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
 
 ::fidl::Result<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>
 fidl::internal::NaturalSyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(const ::fidl::Request<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>& request) {
@@ -75,6 +83,9 @@ fidl::internal::NaturalSyncClientImpl<::test_requestflexibleenvelope::Protocol>:
   return ::fidl::internal::DecodeResponseAndFoldError<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
 
 ::fidl::Result<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>
 fidl::internal::NaturalSyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(const ::fidl::Request<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>& request) {
@@ -86,6 +97,7 @@ fidl::internal::NaturalSyncClientImpl<::test_requestflexibleenvelope::Protocol>:
   return ::fidl::internal::DecodeResponseAndFoldError<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
 
 ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol> fidl::internal::NaturalSyncClientImpl<::test_requestflexibleenvelope::Protocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol>(

@@ -290,16 +290,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_inheritance::Super> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_inheritance::Super>> {
  public:
   // Allocates 24 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.inheritance/super.foo
+
   ::fidl::WireResult<::test_inheritance::Super::Foo>
   Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/super.foo:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_inheritance::Super> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_inheritance::Super>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.inheritance/super.foo
+
   ::fidl::WireUnownedResult<::test_inheritance::Super::Foo>
   Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/super.foo:end
 };
 
 template <>
@@ -629,16 +635,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_inheritance::Sub> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_inheritance::Sub>> {
  public:
   // Allocates 24 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.inheritance/sub.foo
+
   ::fidl::WireResult<::test_inheritance::Sub::Foo>
   Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/sub.foo:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_inheritance::Sub> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_inheritance::Sub>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.inheritance/sub.foo
+
   ::fidl::WireUnownedResult<::test_inheritance::Sub::Foo>
   Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/sub.foo:end
 };
 
 template <>
@@ -718,7 +730,10 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_inheritance::Super> final
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
   // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.inheritance/super.foo
+
   ::fidl::internal::WireThenable<::test_inheritance::Super::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/super.foo:end
 };
 
 template <>
@@ -733,7 +748,10 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_inheritance::Super>
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.inheritance/super.foo
+
   ::fidl::internal::WireBufferThenable<::test_inheritance::Super::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/super.foo:end
 };
 template <>
 class ::fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Super> final : public ::fidl::internal::WireWeakOnewayClientImpl<::test_inheritance::Super> {
@@ -741,7 +759,10 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Super> final 
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 24 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.inheritance/super.foo
+
   ::fidl::WireResult<::test_inheritance::Super::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/super.foo:end
 };
 
 template <>
@@ -781,7 +802,10 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_inheritance::Sub> final :
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
   // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.inheritance/sub.foo
+
   ::fidl::internal::WireThenable<::test_inheritance::Sub::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/sub.foo:end
 };
 
 template <>
@@ -796,7 +820,10 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_inheritance::Sub> f
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.inheritance/sub.foo
+
   ::fidl::internal::WireBufferThenable<::test_inheritance::Sub::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/sub.foo:end
 };
 template <>
 class ::fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Sub> final : public ::fidl::internal::WireWeakOnewayClientImpl<::test_inheritance::Sub> {
@@ -804,7 +831,10 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Sub> final : 
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 24 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.inheritance/sub.foo
+
   ::fidl::WireResult<::test_inheritance::Sub::Foo> Foo(::fidl::StringView s);
+  // api-coverage-fidl-name:test.inheritance/sub.foo:end
 };
 
 template <>

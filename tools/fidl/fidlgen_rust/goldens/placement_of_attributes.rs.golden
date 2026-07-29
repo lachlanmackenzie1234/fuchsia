@@ -71,6 +71,7 @@ impl ExampleProtocolSynchronousProxy {
         ExampleProtocolEvent::decode(self.client.wait_for_event::<ExampleProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
     pub fn r#method(&self, mut arg: &fidl_test_exampleusing::Empty) -> Result<(), fidl::Error> {
         self.client.send::<ExampleProtocolMethodRequest>(
             (arg,),
@@ -78,6 +79,7 @@ impl ExampleProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -146,6 +148,7 @@ impl ExampleProtocolProxy {
 }
 
 impl ExampleProtocolProxyInterface for ExampleProtocolProxy {
+    // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
     fn r#method(&self, mut arg: &fidl_test_exampleusing::Empty) -> Result<(), fidl::Error> {
         self.client.send::<ExampleProtocolMethodRequest>(
             (arg,),
@@ -153,6 +156,7 @@ impl ExampleProtocolProxyInterface for ExampleProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 }
 
 pub struct ExampleProtocolEventStream {

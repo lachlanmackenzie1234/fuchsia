@@ -37,7 +37,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Parent> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Parent>> {
  public:
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
   ::fit::result<::fidl::OneWayError> First(::fidl::Request<::test_inheritancewithrecursivedecl::Parent::First> request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 
  private:
   ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Parent> _client_end() const;
@@ -162,9 +165,15 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Child> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_inheritancewithrecursivedecl::Child>> {
  public:
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
   ::fit::result<::fidl::OneWayError> First(::fidl::Request<::test_inheritancewithrecursivedecl::Child::First> request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
+
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
 
   ::fit::result<::fidl::OneWayError> Second(::fidl::Request<::test_inheritancewithrecursivedecl::Child::Second> request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 
  private:
   ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Child> _client_end() const;

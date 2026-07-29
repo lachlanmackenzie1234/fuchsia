@@ -301,6 +301,8 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
 
 ::fidl::WireUnownedResult<::test_protocolrequest::Parent::TakeChildRequest>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocolrequest::Parent::TakeChildRequest>(result) {}
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocolrequest::Parent>::TakeChild(::fidl::ClientEnd<::test_protocolrequest::Child>&& c) {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChild> _request_object{std::move(c)};
@@ -308,6 +310,10 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocolrequest::Parent>::TakeChildRequest(::fidl::ServerEnd<::test_protocolrequest::Child>&& r) {
   __UNINITIALIZED
@@ -317,17 +323,29 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
+
 ::fidl::internal::WireThenable<::test_protocolrequest::Parent::GetChild> fidl::internal::WireWeakAsyncClientImpl<::test_protocolrequest::Parent>::GetChild() {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChild> _request{};
   return ::fidl::internal::WireThenable<::test_protocolrequest::Parent::GetChild>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
+
 ::fidl::internal::WireThenable<::test_protocolrequest::Parent::GetChildRequest> fidl::internal::WireWeakAsyncClientImpl<::test_protocolrequest::Parent>::GetChildRequest() {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChildRequest> _request{};
   return ::fidl::internal::WireThenable<::test_protocolrequest::Parent::GetChildRequest>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocolrequest::Parent>::TakeChild(::fidl::ClientEnd<::test_protocolrequest::Child>&& c) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::TakeChild>();
@@ -343,6 +361,10 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocolrequest::Parent>::TakeChildRequest(::fidl::ServerEnd<::test_protocolrequest::Child>&& r) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::TakeChildRequest>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -357,6 +379,10 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
+
 ::fidl::internal::WireBufferThenable<::test_protocolrequest::Parent::GetChild> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocolrequest::Parent>::GetChild() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::GetChild>();
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChild> _request{};
@@ -364,12 +390,20 @@ static_assert(offsetof(::test_protocolrequest::wire::ParentTakeChildRequestReque
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
+
 ::fidl::internal::WireBufferThenable<::test_protocolrequest::Parent::GetChildRequest> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocolrequest::Parent>::GetChildRequest() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocolrequest::Parent::GetChildRequest>();
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChildRequest> _request{};
   return ::fidl::internal::WireBufferThenable<::test_protocolrequest::Parent::GetChildRequest>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
 
 ::fidl::WireResult<::test_protocolrequest::Parent::GetChild>
 fidl::internal::WireWeakSyncClientImpl<::test_protocolrequest::Parent>::GetChild() {
@@ -380,6 +414,10 @@ fidl::internal::WireWeakSyncClientImpl<::test_protocolrequest::Parent>::GetChild
       });
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
+
 ::fidl::WireResult<::test_protocolrequest::Parent::GetChildRequest>
 fidl::internal::WireWeakSyncClientImpl<::test_protocolrequest::Parent>::GetChildRequest() {
   return _client_base()->MakeSyncCallWith(
@@ -388,6 +426,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_protocolrequest::Parent>::GetChild
         return ::fidl::WireResult<::test_protocolrequest::Parent::GetChildRequest>(::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocolrequest::Parent>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocolrequest::Parent>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -778,12 +818,18 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<:
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChildRequest>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChildRequest>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
+
 ::fidl::WireResult<::test_protocolrequest::Parent::GetChild>
 fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::GetChild() {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChild> _request{};
   return ::fidl::WireResult<::test_protocolrequest::Parent::GetChild>(
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
 
 ::fidl::WireUnownedResult<::test_protocolrequest::Parent::GetChild>
 fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::GetChild() {
@@ -792,12 +838,20 @@ fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::GetChi
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
+
 ::fidl::WireResult<::test_protocolrequest::Parent::GetChildRequest>
 fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::GetChildRequest() {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::GetChildRequest> _request{};
   return ::fidl::WireResult<::test_protocolrequest::Parent::GetChildRequest>(
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
 
 ::fidl::WireUnownedResult<::test_protocolrequest::Parent::GetChildRequest>
 fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::GetChildRequest() {
@@ -806,12 +860,20 @@ fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::GetChi
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::TakeChild(::fidl::ClientEnd<::test_protocolrequest::Child>&& c) {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChild> _request{std::move(c)};
   return ::fidl::WireResult<::test_protocolrequest::Parent::TakeChild>(
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild
 
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::TakeChild(::fidl::ClientEnd<::test_protocolrequest::Child>&& c) {
@@ -820,6 +882,10 @@ fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::TakeCh
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::TakeChildRequest(::fidl::ServerEnd<::test_protocolrequest::Child>&& r) {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChildRequest> _request{std::move(r)};
@@ -827,12 +893,18 @@ fidl::internal::WireSyncClientImpl<::test_protocolrequest::Parent>::TakeChildReq
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest:end
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_protocolrequest::Parent>::TakeChildRequest(::fidl::ServerEnd<::test_protocolrequest::Child>&& r) {
   ::fidl::internal::TransactionalRequest<::test_protocolrequest::Parent::TakeChildRequest> _request{std::move(r)};
   return ::fidl::WireUnownedResult<::test_protocolrequest::Parent::TakeChildRequest>(
       ::fidl::UnownedClientEnd<::test_protocolrequest::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest:end
 
 #pragma clang diagnostic pop
 

@@ -29,6 +29,8 @@ constexpr inline ::fidl::MessageDynamicFlags kTestProtocol_FlexibleUnionHenceRes
 
 ::fidl::Response<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>::Response(::test_union::TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse v) : TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
 ::fidl::internal::NaturalThenable<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>
 fidl::internal::NaturalClientImpl<::test_union::TestProtocol>::StrictUnionHenceResponseMayBeStackAllocated() const {
   return ::fidl::internal::NaturalThenable<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>(
@@ -44,8 +46,11 @@ fidl::internal::NaturalClientImpl<::test_union::TestProtocol>::StrictUnionHenceR
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
 
 ::fidl::Response<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>::Response(::test_union::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse v) : TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse(std::move(v)) {}
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
 
 ::fidl::internal::NaturalThenable<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>
 fidl::internal::NaturalClientImpl<::test_union::TestProtocol>::FlexibleUnionHenceResponseMustBeHeapAllocated() const {
@@ -62,6 +67,9 @@ fidl::internal::NaturalClientImpl<::test_union::TestProtocol>::FlexibleUnionHenc
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
 
 ::fidl::Result<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>
 fidl::internal::NaturalSyncClientImpl<::test_union::TestProtocol>::StrictUnionHenceResponseMayBeStackAllocated() {
@@ -72,6 +80,9 @@ fidl::internal::NaturalSyncClientImpl<::test_union::TestProtocol>::StrictUnionHe
   return ::fidl::internal::DecodeResponseAndFoldError<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
 
 ::fidl::Result<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>
 fidl::internal::NaturalSyncClientImpl<::test_union::TestProtocol>::FlexibleUnionHenceResponseMustBeHeapAllocated() {
@@ -82,6 +93,7 @@ fidl::internal::NaturalSyncClientImpl<::test_union::TestProtocol>::FlexibleUnion
   return ::fidl::internal::DecodeResponseAndFoldError<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 
 ::fidl::UnownedClientEnd<::test_union::TestProtocol> fidl::internal::NaturalSyncClientImpl<::test_union::TestProtocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_union::TestProtocol>(

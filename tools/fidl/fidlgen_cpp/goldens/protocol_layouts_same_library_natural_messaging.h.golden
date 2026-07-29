@@ -190,17 +190,35 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_protocollayoutssamelibrary::ComposedProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_protocollayoutssamelibrary::ComposedProtocol>> {
  public:
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposed
+
   ::fidl::Result<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayAnonComposed> TwoWayAnonComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayAnonComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposed:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposedWithError
 
   ::fidl::Result<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayAnonComposedWithError> TwoWayAnonComposedWithError(const ::fidl::Request<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayAnonComposedWithError>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposedWithError:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposed
 
   ::fidl::Result<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayNamedComposed> TwoWayNamedComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayNamedComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposed:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposedWithError
 
   ::fidl::Result<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayNamedComposedWithError> TwoWayNamedComposedWithError(const ::fidl::Request<::test_protocollayoutssamelibrary::ComposedProtocol::TwoWayNamedComposedWithError>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposedWithError:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayAnonComposed
 
   ::fit::result<::fidl::OneWayError> OneWayAnonComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::ComposedProtocol::OneWayAnonComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayAnonComposed:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayNamedComposed
 
   ::fit::result<::fidl::OneWayError> OneWayNamedComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::ComposedProtocol::OneWayNamedComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayNamedComposed:end
 
  private:
   ::fidl::UnownedClientEnd<::test_protocollayoutssamelibrary::ComposedProtocol> _client_end() const;
@@ -712,29 +730,65 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_protocollayoutssamelibrary::MainProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_protocollayoutssamelibrary::MainProtocol>> {
  public:
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposed
+
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnonComposed> TwoWayAnonComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnonComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposed:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposedWithError
 
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnonComposedWithError> TwoWayAnonComposedWithError(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnonComposedWithError>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposedWithError:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposed
 
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayNamedComposed> TwoWayNamedComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayNamedComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposed:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposedWithError
 
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayNamedComposedWithError> TwoWayNamedComposedWithError(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayNamedComposedWithError>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposedWithError:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocal
 
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayLocal> TwoWayLocal(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayLocal>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocal:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocalWithError
 
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayLocalWithError> TwoWayLocalWithError(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayLocalWithError>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocalWithError:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnon
 
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnon> TwoWayAnon(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnon>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnon:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonWithError
 
   ::fidl::Result<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnonWithError> TwoWayAnonWithError(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::TwoWayAnonWithError>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonWithError:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnonComposed
 
   ::fit::result<::fidl::OneWayError> OneWayAnonComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::OneWayAnonComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnonComposed:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayNamedComposed
 
   ::fit::result<::fidl::OneWayError> OneWayNamedComposed(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::OneWayNamedComposed>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayNamedComposed:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayLocal
 
   ::fit::result<::fidl::OneWayError> OneWayLocal(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::OneWayLocal>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayLocal:end
+
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnon
 
   ::fit::result<::fidl::OneWayError> OneWayAnon(const ::fidl::Request<::test_protocollayoutssamelibrary::MainProtocol::OneWayAnon>& request);
+  // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnon:end
 
  private:
   ::fidl::UnownedClientEnd<::test_protocollayoutssamelibrary::MainProtocol> _client_end() const;

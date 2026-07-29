@@ -233,6 +233,8 @@ constexpr inline ::fidl::MessageDynamicFlags kProtocol_EventResource_DynamicFlag
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayBasic>::Response(::test_typesinprotocols::Basic v) : Basic(std::move(v)) {}
 
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
+
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayBasic>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayBasic>& request) const {
   return ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayBasic>(
@@ -249,6 +251,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayBasi
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorBasic>::Response(::fit::result<uint32_t, ::test_typesinprotocols::Basic> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorBasicResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorBasic>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorBasic>& m) {
@@ -258,6 +261,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayBasi
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorBasic>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorBasic() const {
@@ -274,8 +279,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorBasic
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayCompound>::Response(::test_typesinprotocols::Compound v) : Compound(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayCompound>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayCompound>& request) const {
@@ -293,6 +301,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayComp
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorCompound>::Response(::fit::result<uint32_t, ::test_typesinprotocols::Compound> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorCompoundResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorCompound>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorCompound>& m) {
@@ -302,6 +311,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayComp
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorCompound>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorCompound() const {
@@ -318,8 +329,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorCompo
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayArrayBasic>::Response(::test_typesinprotocols::ArrayBasic v) : ArrayBasic(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayArrayBasic>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayArrayBasic>& request) const {
@@ -337,6 +351,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArra
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorArrayBasic>::Response(::fit::result<uint32_t, ::test_typesinprotocols::ArrayBasic> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorArrayBasicResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorArrayBasic>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorArrayBasic>& m) {
@@ -346,6 +361,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArra
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorArrayBasic>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayBasic() const {
@@ -362,8 +379,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorArray
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayArrayCompound>::Response(::test_typesinprotocols::ArrayCompound v) : ArrayCompound(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayArrayCompound>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayArrayCompound>& request) const {
@@ -381,6 +401,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArra
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorArrayCompound>::Response(::fit::result<uint32_t, ::test_typesinprotocols::ArrayCompound> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorArrayCompoundResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorArrayCompound>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorArrayCompound>& m) {
@@ -390,6 +411,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArra
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorArrayCompound>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayCompound() const {
@@ -406,8 +429,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorArray
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayVectorBasic>::Response(::test_typesinprotocols::VectorBasic v) : VectorBasic(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayVectorBasic>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayVectorBasic>& request) const {
@@ -425,6 +451,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVect
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorVectorBasic>::Response(::fit::result<uint32_t, ::test_typesinprotocols::VectorBasic> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorVectorBasicResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorVectorBasic>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorVectorBasic>& m) {
@@ -434,6 +461,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVect
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorVectorBasic>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorBasic() const {
@@ -450,8 +479,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorVecto
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayVectorCompound>::Response(::test_typesinprotocols::VectorCompound v) : VectorCompound(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayVectorCompound>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayVectorCompound>& request) const {
@@ -469,6 +501,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVect
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorVectorCompound>::Response(::fit::result<uint32_t, ::test_typesinprotocols::VectorCompound> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorVectorCompoundResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorVectorCompound>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorVectorCompound>& m) {
@@ -478,6 +511,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVect
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorVectorCompound>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorCompound() const {
@@ -494,8 +529,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorVecto
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayVectorOptional>::Response(::test_typesinprotocols::VectorOptional v) : VectorOptional(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayVectorOptional>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorOptional(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayVectorOptional>& request) const {
@@ -513,6 +551,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVect
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorVectorOptional>::Response(::fit::result<uint32_t, ::test_typesinprotocols::VectorOptional> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorVectorOptionalResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorVectorOptional>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorVectorOptional>& m) {
@@ -522,6 +561,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayVect
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorVectorOptional>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorOptional() const {
@@ -538,8 +579,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorVecto
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>::Response(::test_typesinprotocols::ArrayVectorNested v) : ArrayVectorNested(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayVectorNested(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>& request) const {
@@ -557,6 +601,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArra
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>::Response(::fit::result<uint32_t, ::test_typesinprotocols::ArrayVectorNested> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorArrayVectorNestedResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>::IntoDomainObject(const ::fidl::Response<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>& m) {
@@ -566,6 +611,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayArra
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayVectorNested() const {
@@ -582,8 +629,11 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorArray
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::TwoWayResource>::Response(::test_typesinprotocols::Resource v) : Resource(std::move(v)) {}
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::TwoWayResource>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayResource(::fidl::Request<::test_typesinprotocols::Protocol::TwoWayResource> request) const {
@@ -601,6 +651,7 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayReso
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
 
 ::fidl::Response<::test_typesinprotocols::Protocol::ErrorResource>::Response(::fit::result<uint32_t, ::test_typesinprotocols::Resource> v) : result(std::move(v)) {}
 ::test_typesinprotocols::ProtocolErrorResourceResult fidl::internal::ResponseMessageConverter<::test_typesinprotocols::Protocol::ErrorResource>::IntoDomainObject(::fidl::Response<::test_typesinprotocols::Protocol::ErrorResource> m) {
@@ -610,6 +661,8 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::TwoWayReso
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
 
 ::fidl::internal::NaturalThenable<::test_typesinprotocols::Protocol::ErrorResource>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorResource() const {
@@ -626,6 +679,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::ErrorResou
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayBasic>& request) const {
@@ -637,6 +693,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayBasi
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayCompound>& request) const {
@@ -648,6 +707,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayComp
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayArrayBasic>& request) const {
@@ -659,6 +721,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayArra
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayArrayCompound>& request) const {
@@ -670,6 +735,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayArra
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayVectorBasic>& request) const {
@@ -681,6 +749,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayVect
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayVectorCompound>& request) const {
@@ -692,6 +763,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayVect
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorOptional(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayVectorOptional>& request) const {
@@ -703,6 +777,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayVect
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayVectorNested(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayArrayVectorNested>& request) const {
@@ -714,6 +791,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayArra
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayResource(::fidl::Request<::test_typesinprotocols::Protocol::OneWayResource> request) const {
@@ -725,6 +805,9 @@ fidl::internal::NaturalClientImpl<::test_typesinprotocols::Protocol>::OneWayReso
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayBasic>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayBasic>& request) {
@@ -736,6 +819,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayBasic>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorBasic>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorBasic() {
@@ -746,6 +832,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorB
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorBasic>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayCompound>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayCompound>& request) {
@@ -757,6 +846,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayCompound>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorCompound>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorCompound() {
@@ -767,6 +859,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorC
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorCompound>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayArrayBasic>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayArrayBasic>& request) {
@@ -778,6 +873,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayArrayBasic>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorArrayBasic>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayBasic() {
@@ -788,6 +886,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorA
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorArrayBasic>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayArrayCompound>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayArrayCompound>& request) {
@@ -799,6 +900,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayArrayCompound>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorArrayCompound>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayCompound() {
@@ -809,6 +913,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorA
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorArrayCompound>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayVectorBasic>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayVectorBasic>& request) {
@@ -820,6 +927,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayVectorBasic>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorVectorBasic>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorBasic() {
@@ -830,6 +940,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorV
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorVectorBasic>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayVectorCompound>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayVectorCompound>& request) {
@@ -841,6 +954,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayVectorCompound>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorVectorCompound>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorCompound() {
@@ -851,6 +967,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorV
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorVectorCompound>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayVectorOptional>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayVectorOptional(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayVectorOptional>& request) {
@@ -862,6 +981,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayVectorOptional>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorVectorOptional>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorVectorOptional() {
@@ -872,6 +994,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorV
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorVectorOptional>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayArrayVectorNested(const ::fidl::Request<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>& request) {
@@ -883,6 +1008,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorArrayVectorNested() {
@@ -893,6 +1021,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorA
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
 
 ::fidl::Result<::test_typesinprotocols::Protocol::TwoWayResource>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWayResource(::fidl::Request<::test_typesinprotocols::Protocol::TwoWayResource> request) {
@@ -904,6 +1035,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::TwoWay
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::TwoWayResource>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
 
 ::fidl::Result<::test_typesinprotocols::Protocol::ErrorResource>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorResource() {
@@ -914,6 +1048,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::ErrorR
   return ::fidl::internal::DecodeResponseAndFoldError<::test_typesinprotocols::Protocol::ErrorResource>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayBasic>& request) {
@@ -924,6 +1061,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayCompound>& request) {
@@ -934,6 +1074,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayArrayBasic>& request) {
@@ -944,6 +1087,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayArrayCompound>& request) {
@@ -954,6 +1100,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorBasic(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayVectorBasic>& request) {
@@ -964,6 +1113,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorCompound(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayVectorCompound>& request) {
@@ -974,6 +1126,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayVectorOptional(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayVectorOptional>& request) {
@@ -984,6 +1139,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayArrayVectorNested(const ::fidl::Request<::test_typesinprotocols::Protocol::OneWayArrayVectorNested>& request) {
@@ -994,6 +1152,9 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
+
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWayResource(::fidl::Request<::test_typesinprotocols::Protocol::OneWayResource> request) {
@@ -1004,6 +1165,7 @@ fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::OneWay
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
 
 ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol> fidl::internal::NaturalSyncClientImpl<::test_typesinprotocols::Protocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_typesinprotocols::Protocol>(

@@ -90,6 +90,8 @@ constexpr inline ::fidl::MessageDynamicFlags kDenyEachBinding_OnlyDenySyzkaller_
   }
 }
 
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
+
 ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>
 fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyDart(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>& request) const {
   return ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>(
@@ -106,6 +108,7 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
 
 ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>::Response(::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> v) : result(std::move(v)) {}
 ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult fidl::internal::ResponseMessageConverter<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>::IntoDomainObject(const ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& m) {
@@ -115,6 +118,8 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
 
 ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>
 fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyGo(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& request) const {
@@ -132,6 +137,7 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
 
 ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>::Response(::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonResponse> v) : result(std::move(v)) {}
 ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonResult fidl::internal::ResponseMessageConverter<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>::IntoDomainObject(const ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>& m) {
@@ -141,6 +147,8 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
 
 ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>
 fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyPython(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>& request) const {
@@ -158,6 +166,7 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
 
 ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>::Response(::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenyRustResponse> v) : result(std::move(v)) {}
 ::test_bindingsdenylist::DenyEachBindingOnlyDenyRustResult fidl::internal::ResponseMessageConverter<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>::IntoDomainObject(const ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>& m) {
@@ -167,6 +176,8 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
 
 ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>
 fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyRust(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>& request) const {
@@ -184,6 +195,7 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
 
 ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>::Response(::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenySyzkallerResponse> v) : result(std::move(v)) {}
 ::test_bindingsdenylist::DenyEachBindingOnlyDenySyzkallerResult fidl::internal::ResponseMessageConverter<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>::IntoDomainObject(const ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>& m) {
@@ -193,6 +205,8 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
     return DomainObject::WithResponse(std::move(m.value()));
   }
 }
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
 
 ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>
 fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenySyzkaller(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>& request) const {
@@ -210,6 +224,9 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBinding>::Onl
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
 
 ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>
 fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyDart(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>& request) {
@@ -221,6 +238,9 @@ fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>:
   return ::fidl::internal::DecodeResponseAndFoldError<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
 
 ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>
 fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyGo(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& request) {
@@ -232,6 +252,9 @@ fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>:
   return ::fidl::internal::DecodeResponseAndFoldError<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
 
 ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>
 fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyPython(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>& request) {
@@ -243,6 +266,9 @@ fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>:
   return ::fidl::internal::DecodeResponseAndFoldError<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
 
 ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>
 fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyRust(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>& request) {
@@ -254,6 +280,9 @@ fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>:
   return ::fidl::internal::DecodeResponseAndFoldError<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
 
 ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>
 fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenySyzkaller(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>& request) {
@@ -265,6 +294,7 @@ fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>:
   return ::fidl::internal::DecodeResponseAndFoldError<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
 
 ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding> fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(
@@ -480,6 +510,8 @@ constexpr inline uint64_t kImportsSameNameContext_AlwaysAppearsInImportingLibrar
 constexpr inline ::fidl::MessageDynamicFlags kImportsSameNameContext_AlwaysAppearsInImportingLibrary_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_bindingsdenylist
 
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::Unattributed() const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -488,6 +520,9 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::ImportsSameNameContex
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::AlwaysAppearsInImportingLibrary() const {
@@ -497,6 +532,9 @@ fidl::internal::NaturalClientImpl<::test_bindingsdenylist::ImportsSameNameContex
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::Unattributed() {
@@ -506,6 +544,9 @@ fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::ImportsSameNameCo
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::AlwaysAppearsInImportingLibrary() {
@@ -515,6 +556,7 @@ fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::ImportsSameNameCo
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
 
 ::fidl::UnownedClientEnd<::test_bindingsdenylist::ImportsSameNameContext> fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_bindingsdenylist::ImportsSameNameContext>(

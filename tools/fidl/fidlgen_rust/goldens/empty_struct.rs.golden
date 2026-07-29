@@ -73,6 +73,7 @@ impl EmptyProtocolSynchronousProxy {
         EmptyProtocolEvent::decode(self.client.wait_for_event::<EmptyProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
     pub fn r#send_(&self, mut e: &Empty) -> Result<(), fidl::Error> {
         self.client.send::<EmptyProtocolSendRequest>(
             (e,),
@@ -80,7 +81,9 @@ impl EmptyProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
     pub fn r#send_and_receive(
         &self,
         mut e: &Empty,
@@ -98,6 +101,7 @@ impl EmptyProtocolSynchronousProxy {
         )?;
         Ok(_response.e)
     }
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -173,6 +177,7 @@ impl EmptyProtocolProxy {
 }
 
 impl EmptyProtocolProxyInterface for EmptyProtocolProxy {
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
     fn r#send_(&self, mut e: &Empty) -> Result<(), fidl::Error> {
         self.client.send::<EmptyProtocolSendRequest>(
             (e,),
@@ -180,9 +185,11 @@ impl EmptyProtocolProxyInterface for EmptyProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 
     type SendAndReceiveResponseFut =
         fidl::client::QueryResponseFut<Empty, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
     fn r#send_and_receive(&self, mut e: &Empty) -> Self::SendAndReceiveResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -201,6 +208,7 @@ impl EmptyProtocolProxyInterface for EmptyProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 }
 
 pub struct EmptyProtocolEventStream {

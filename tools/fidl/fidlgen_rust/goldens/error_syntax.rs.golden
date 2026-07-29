@@ -84,6 +84,7 @@ impl ExampleUseOfErrorSyntaxSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
     pub fn r#composed_call_which_may_fail(
         &self,
         mut s: &str,
@@ -104,7 +105,9 @@ impl ExampleUseOfErrorSyntaxSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.value))
     }
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
 
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
     pub fn r#call_which_may_fail(
         &self,
         mut s: &str,
@@ -122,6 +125,7 @@ impl ExampleUseOfErrorSyntaxSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.value))
     }
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -211,6 +215,7 @@ impl ExampleUseOfErrorSyntaxProxyInterface for ExampleUseOfErrorSyntaxProxy {
         fidl_test_errorsyntax_parent::ParentUsesErrorSyntaxComposedCallWhichMayFailResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail
     fn r#composed_call_which_may_fail(
         &self,
         mut s: &str,
@@ -234,11 +239,13 @@ impl ExampleUseOfErrorSyntaxProxyInterface for ExampleUseOfErrorSyntaxProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.ComposedCallWhichMayFail:end
 
     type CallWhichMayFailResponseFut = fidl::client::QueryResponseFut<
         ExampleUseOfErrorSyntaxCallWhichMayFailResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail
     fn r#call_which_may_fail(&self, mut s: &str) -> Self::CallWhichMayFailResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -260,6 +267,7 @@ impl ExampleUseOfErrorSyntaxProxyInterface for ExampleUseOfErrorSyntaxProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.errorsyntax/ExampleUseOfErrorSyntax.CallWhichMayFail:end
 }
 
 pub struct ExampleUseOfErrorSyntaxEventStream {

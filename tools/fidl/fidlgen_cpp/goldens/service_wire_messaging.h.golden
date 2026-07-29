@@ -185,16 +185,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_service::FirstProtocol> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_service::FirstProtocol>> {
  public:
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
   ::fidl::OneWayStatus
   MethodOnFirst();
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_service::FirstProtocol> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_service::FirstProtocol>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
   ::fidl::OneWayStatus
   MethodOnFirst();
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 };
 
 // Pure-virtual interface to be implemented by a server.
@@ -379,16 +385,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_service::SecondProtocol> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_service::SecondProtocol>> {
  public:
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
   ::fidl::OneWayStatus
   MethodOnSecond();
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_service::SecondProtocol> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_service::SecondProtocol>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
   ::fidl::OneWayStatus
   MethodOnSecond();
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 };
 
 // Pure-virtual interface to be implemented by a server.
@@ -924,7 +936,10 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_service::FirstProtocol> 
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
   ::fidl::OneWayStatus MethodOnFirst();
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 };
 
 template <>
@@ -939,7 +954,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_service::FirstProt
   using BufferClientImplBase::BufferClientImplBase;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
   ::fidl::OneWayStatus MethodOnFirst();
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 };
 
 template <>
@@ -985,7 +1003,10 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_service::SecondProtocol>
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
   ::fidl::OneWayStatus MethodOnSecond();
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 };
 
 template <>
@@ -1000,7 +1021,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_service::SecondPro
   using BufferClientImplBase::BufferClientImplBase;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
   ::fidl::OneWayStatus MethodOnSecond();
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 };
 
 template <>

@@ -4738,112 +4738,193 @@ class ::fidl::internal::WireSyncClientImpl<::test_typesinprotocols::Protocol> fi
  public:
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
+
     ::fidl::OneWayStatus
     OneWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayBasic>
     TwoWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorBasic>
     ErrorBasic();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
 
     // Allocates 112 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
+
     ::fidl::OneWayStatus
     OneWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
 
     // Allocates 96 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayCompound>
     TwoWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorCompound>
     ErrorCompound();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
+
     ::fidl::OneWayStatus
     OneWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayBasic>
     TwoWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayBasic>
     ErrorArrayBasic();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
 
     // Allocates 400 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
+
     ::fidl::OneWayStatus
     OneWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
 
     // Allocates 384 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayCompound>
     TwoWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayCompound>
     ErrorArrayCompound();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
+
     ::fidl::OneWayStatus
     OneWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorBasic>
     TwoWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorBasic>
     ErrorVectorBasic();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
+
     ::fidl::OneWayStatus
     OneWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorCompound>
     TwoWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorCompound>
     ErrorVectorCompound();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
+
     ::fidl::OneWayStatus
     OneWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorOptional>
     TwoWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorOptional>
     ErrorVectorOptional();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
+
     ::fidl::OneWayStatus
     OneWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>
     TwoWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>
     ErrorArrayVectorNested();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
+
     ::fidl::OneWayStatus
     OneWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayResource>
     TwoWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
+
     ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorResource>
     ErrorResource();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
 
 };
 
@@ -4853,112 +4934,193 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_typesinprotocols::Protoc
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
+
     ::fidl::OneWayStatus
     OneWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayBasic>
     TwoWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorBasic>
     ErrorBasic();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
+
     ::fidl::OneWayStatus
     OneWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayCompound>
     TwoWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorCompound>
     ErrorCompound();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
+
     ::fidl::OneWayStatus
     OneWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayArrayBasic>
     TwoWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorArrayBasic>
     ErrorArrayBasic();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
+
     ::fidl::OneWayStatus
     OneWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayArrayCompound>
     TwoWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorArrayCompound>
     ErrorArrayCompound();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
+
     ::fidl::OneWayStatus
     OneWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayVectorBasic>
     TwoWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorVectorBasic>
     ErrorVectorBasic();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
+
     ::fidl::OneWayStatus
     OneWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayVectorCompound>
     TwoWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorVectorCompound>
     ErrorVectorCompound();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
+
     ::fidl::OneWayStatus
     OneWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayVectorOptional>
     TwoWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorVectorOptional>
     ErrorVectorOptional();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
+
     ::fidl::OneWayStatus
     OneWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested>
     TwoWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorArrayVectorNested>
     ErrorArrayVectorNested();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
+
     ::fidl::OneWayStatus
     OneWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::TwoWayResource>
     TwoWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
+
     ::fidl::WireUnownedResult<::test_typesinprotocols::Protocol::ErrorResource>
     ErrorResource();
+    // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
 
 };
 
@@ -5744,31 +5906,59 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_typesinprotocols::Protoc
   using ClientImplBase::ClientImplBase;
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
+
   ::fidl::OneWayStatus OneWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
 
   // Allocates 112 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
+
   ::fidl::OneWayStatus OneWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
+
   ::fidl::OneWayStatus OneWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
 
   // Allocates 400 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
+
   ::fidl::OneWayStatus OneWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
+
   ::fidl::OneWayStatus OneWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
+
   ::fidl::OneWayStatus OneWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
+
   ::fidl::OneWayStatus OneWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
+
   ::fidl::OneWayStatus OneWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
+
   ::fidl::OneWayStatus OneWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
+
 };
 
 template<>
@@ -5776,41 +5966,113 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_typesinprotocols::Protoco
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayBasic> TwoWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorBasic> ErrorBasic();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
+
     // Allocates 96 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayCompound> TwoWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorCompound> ErrorCompound();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayArrayBasic> TwoWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorArrayBasic> ErrorArrayBasic();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
+
     // Allocates 384 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayArrayCompound> TwoWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorArrayCompound> ErrorArrayCompound();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayVectorBasic> TwoWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorVectorBasic> ErrorVectorBasic();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayVectorCompound> TwoWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorVectorCompound> ErrorVectorCompound();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayVectorOptional> TwoWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorVectorOptional> ErrorVectorOptional();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested> TwoWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorArrayVectorNested> ErrorArrayVectorNested();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::TwoWayResource> TwoWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
+
   ::fidl::internal::WireThenable<::test_typesinprotocols::Protocol::ErrorResource> ErrorResource();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
+
 };
 
 template<>
@@ -5819,31 +6081,58 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_typesinprotocols::
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic
+
 ::fidl::OneWayStatus OneWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound
+
 ::fidl::OneWayStatus OneWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic
+
 ::fidl::OneWayStatus OneWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound
+
 ::fidl::OneWayStatus OneWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic
+
 ::fidl::OneWayStatus OneWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound
+
 ::fidl::OneWayStatus OneWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional
+
 ::fidl::OneWayStatus OneWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayVectorOptional:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested
+
 ::fidl::OneWayStatus OneWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayArrayVectorNested:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource
+
 ::fidl::OneWayStatus OneWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.OneWayResource:end
 
 };
 
@@ -5853,58 +6142,112 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_typesinprotocols::P
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayBasic> TwoWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorBasic> ErrorBasic();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayCompound> TwoWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorCompound> ErrorCompound();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayBasic> TwoWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayBasic> ErrorArrayBasic();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayCompound> TwoWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayCompound> ErrorArrayCompound();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorBasic> TwoWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorBasic> ErrorVectorBasic();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorCompound> TwoWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorCompound> ErrorVectorCompound();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayVectorOptional> TwoWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorVectorOptional> ErrorVectorOptional();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested> TwoWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorArrayVectorNested> ErrorArrayVectorNested();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::TwoWayResource> TwoWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
+
 ::fidl::internal::WireBufferThenable<::test_typesinprotocols::Protocol::ErrorResource> ErrorResource();
+// api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
 
 };
 template<>
@@ -5913,58 +6256,113 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_typesinprotocols::Protocol
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayBasic> TwoWayBasic(uint8_t uint8, uint16_t uint16, uint32_t uint32, uint64_t uint64, int8_t int8, int16_t int16, int32_t int32, int64_t int64, float float32, double float64, ::fidl::StringView string, ::fidl::StringView opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayBasic:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorBasic> ErrorBasic();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorBasic:end
 
   // Allocates 96 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayCompound> TwoWayCompound(::test_typesinprotocols::wire::Bits bits, ::test_typesinprotocols::wire::Enum enum_, const ::test_typesinprotocols::wire::Struct& struct_, ::test_typesinprotocols::wire::Table table, ::test_typesinprotocols::wire::Union union_, ::fidl::ObjectView<::test_typesinprotocols::wire::Struct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::Union> opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayCompound:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorCompound> ErrorCompound();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorCompound:end
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayBasic> TwoWayArrayBasic(const ::fidl::Array<uint8_t, 5>& array_uint8, const ::fidl::Array<uint16_t, 5>& array_uint16, const ::fidl::Array<uint32_t, 5>& array_uint32, const ::fidl::Array<uint64_t, 5>& array_uint64, const ::fidl::Array<int8_t, 5>& array_int8, const ::fidl::Array<int16_t, 5>& array_int16, const ::fidl::Array<int32_t, 5>& array_int32, const ::fidl::Array<int64_t, 5>& array_int64, const ::fidl::Array<float, 5>& array_float32, const ::fidl::Array<double, 5>& array_float64, const ::fidl::Array<::fidl::StringView, 5>& array_string, const ::fidl::Array<::fidl::StringView, 5>& array_opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayBasic:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayBasic> ErrorArrayBasic();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayBasic:end
 
   // Allocates 384 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayCompound> TwoWayArrayCompound(const ::fidl::Array<::test_typesinprotocols::wire::Bits, 5>& array_bits, const ::fidl::Array<::test_typesinprotocols::wire::Enum, 5>& array_enum, const ::fidl::Array<::test_typesinprotocols::wire::Struct, 5>& array_struct, const ::fidl::Array<::test_typesinprotocols::wire::Table, 5>& array_table, const ::fidl::Array<::test_typesinprotocols::wire::Union, 5>& array_union, const ::fidl::Array<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>, 5>& array_opt_struct, const ::fidl::Array<::fidl::WireOptional<::test_typesinprotocols::wire::Union>, 5>& array_opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayCompound:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayCompound> ErrorArrayCompound();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayCompound:end
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorBasic> TwoWayVectorBasic(::fidl::VectorView<uint8_t> vector_uint8, ::fidl::VectorView<uint16_t> vector_uint16, ::fidl::VectorView<uint32_t> vector_uint32, ::fidl::VectorView<uint64_t> vector_uint64, ::fidl::VectorView<int8_t> vector_int8, ::fidl::VectorView<int16_t> vector_int16, ::fidl::VectorView<int32_t> vector_int32, ::fidl::VectorView<int64_t> vector_int64, ::fidl::VectorView<float> vector_float32, ::fidl::VectorView<double> vector_float64, ::fidl::VectorView<::fidl::StringView> vector_string, ::fidl::VectorView<::fidl::StringView> vector_opt_string);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorBasic:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorBasic> ErrorVectorBasic();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorBasic:end
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorCompound> TwoWayVectorCompound(::fidl::VectorView<::test_typesinprotocols::wire::Bits> vector_bits, ::fidl::VectorView<::test_typesinprotocols::wire::Enum> vector_enum, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::Table> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::Union> vector_union, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> vector_opt_struct, ::fidl::VectorView<::fidl::WireOptional<::test_typesinprotocols::wire::Union>> vector_opt_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorCompound:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorCompound> ErrorVectorCompound();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorCompound:end
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayVectorOptional> TwoWayVectorOptional(::fidl::VectorView<uint8_t> opt_vector_uint8, ::fidl::VectorView<::fidl::StringView> opt_vector_string, ::fidl::VectorView<::test_typesinprotocols::wire::Struct> opt_vector_struct, ::fidl::VectorView<::fidl::ObjectView<::test_typesinprotocols::wire::Struct>> opt_vector_opt_struct);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayVectorOptional:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorVectorOptional> ErrorVectorOptional();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorVectorOptional:end
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayArrayVectorNested> TwoWayArrayVectorNested(const ::fidl::Array<::fidl::Array<uint8_t, 5>, 5>& array_array_uint8, const ::fidl::Array<::fidl::VectorView<uint8_t>, 5>& array_vector_uint8, ::fidl::VectorView<::fidl::Array<uint8_t, 5>> vector_array_uint8, ::fidl::VectorView<::fidl::VectorView<uint8_t>> vector_vector_uint8);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayArrayVectorNested:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorArrayVectorNested> ErrorArrayVectorNested();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorArrayVectorNested:end
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::TwoWayResource> TwoWayResource(::zx::handle&& handle, ::zx::vmo&& vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& server_end, ::test_typesinprotocols::wire::ResourceStruct&& struct_, ::test_typesinprotocols::wire::ResourceTable table, ::test_typesinprotocols::wire::ResourceUnion union_, ::zx::handle&& opt_handle, ::zx::vmo&& opt_vmo, ::fidl::ClientEnd<::test_typesinprotocols::Protocol>&& opt_client_end, ::fidl::ServerEnd<::test_typesinprotocols::Protocol>&& opt_server_end, ::fidl::ObjectView<::test_typesinprotocols::wire::ResourceStruct> opt_struct, ::fidl::WireOptional<::test_typesinprotocols::wire::ResourceUnion> opt_union, ::fidl::Array<::zx::handle, 5>&& array_handle, ::fidl::Array<::zx::vmo, 5>&& array_vmo, ::fidl::Array<::fidl::ClientEnd<::test_typesinprotocols::Protocol>, 5>&& array_client_end, ::fidl::Array<::fidl::ServerEnd<::test_typesinprotocols::Protocol>, 5>&& array_server_end, ::fidl::Array<::test_typesinprotocols::wire::ResourceStruct, 5>&& array_struct, ::fidl::Array<::test_typesinprotocols::wire::ResourceTable, 5>&& array_table, ::fidl::Array<::test_typesinprotocols::wire::ResourceUnion, 5>&& array_union, ::fidl::VectorView<::zx::handle> vector_handle, ::fidl::VectorView<::zx::vmo> vector_vmo, ::fidl::VectorView<::fidl::ClientEnd<::test_typesinprotocols::Protocol>> vector_client_end, ::fidl::VectorView<::fidl::ServerEnd<::test_typesinprotocols::Protocol>> vector_server_end, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceStruct> vector_struct, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceTable> vector_table, ::fidl::VectorView<::test_typesinprotocols::wire::ResourceUnion> vector_union);
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.TwoWayResource:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource
+
   ::fidl::WireResult<::test_typesinprotocols::Protocol::ErrorResource> ErrorResource();
+  // api-coverage-fidl-name:test.typesinprotocols/Protocol.ErrorResource:end
+
 };
 
 template<>

@@ -45,7 +45,10 @@ class ::fidl::internal::NaturalSyncClientImpl<::test_doccomments::Interface> fin
   /// method comment #1
   ///
   /// method comment #3
+  // api-coverage-fidl-name:test.doccomments/Interface.Method
+
   ::fit::result<::fidl::OneWayError> Method();
+  // api-coverage-fidl-name:test.doccomments/Interface.Method:end
 
  private:
   ::fidl::UnownedClientEnd<::test_doccomments::Interface> _client_end() const;

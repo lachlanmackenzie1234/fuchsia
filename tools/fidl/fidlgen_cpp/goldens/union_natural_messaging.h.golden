@@ -82,9 +82,15 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_union::TestProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_union::TestProtocol>> {
  public:
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
   ::fidl::Result<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> StrictUnionHenceResponseMayBeStackAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
 
   ::fidl::Result<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> FlexibleUnionHenceResponseMustBeHeapAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 
  private:
   ::fidl::UnownedClientEnd<::test_union::TestProtocol> _client_end() const;

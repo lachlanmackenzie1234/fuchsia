@@ -57,6 +57,8 @@ constexpr ::fidl::MessageDynamicFlags kFirstProtocol_MethodOnFirst_DynamicFlags 
 
 ::fidl::WireUnownedResult<::test_service::FirstProtocol::MethodOnFirst>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_service::FirstProtocol::MethodOnFirst>(result) {}
 
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_service::FirstProtocol>::MethodOnFirst() {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_service::FirstProtocol::MethodOnFirst> _request_object{};
@@ -64,6 +66,10 @@ constexpr ::fidl::MessageDynamicFlags kFirstProtocol_MethodOnFirst_DynamicFlags 
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
+
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_service::FirstProtocol>::MethodOnFirst() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_service::FirstProtocol::MethodOnFirst>();
@@ -78,6 +84,8 @@ constexpr ::fidl::MessageDynamicFlags kFirstProtocol_MethodOnFirst_DynamicFlags 
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 
 ::fidl::internal::WireEventDispatcher<::test_service::FirstProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_service::FirstProtocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -153,6 +161,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<:
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_service::FirstProtocol::MethodOnFirst>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_service::FirstProtocol::MethodOnFirst>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_service::FirstProtocol>::MethodOnFirst() {
   ::fidl::internal::TransactionalRequest<::test_service::FirstProtocol::MethodOnFirst> _request{};
@@ -160,12 +170,18 @@ fidl::internal::WireSyncClientImpl<::test_service::FirstProtocol>::MethodOnFirst
       ::fidl::UnownedClientEnd<::test_service::FirstProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
+
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_service::FirstProtocol>::MethodOnFirst() {
   ::fidl::internal::TransactionalRequest<::test_service::FirstProtocol::MethodOnFirst> _request{};
   return ::fidl::WireUnownedResult<::test_service::FirstProtocol::MethodOnFirst>(
       ::fidl::UnownedClientEnd<::test_service::FirstProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 
 namespace test_service {
 
@@ -212,6 +228,8 @@ constexpr ::fidl::MessageDynamicFlags kSecondProtocol_MethodOnSecond_DynamicFlag
 
 ::fidl::WireUnownedResult<::test_service::SecondProtocol::MethodOnSecond>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_service::SecondProtocol::MethodOnSecond>(result) {}
 
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_service::SecondProtocol>::MethodOnSecond() {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_service::SecondProtocol::MethodOnSecond> _request_object{};
@@ -219,6 +237,10 @@ constexpr ::fidl::MessageDynamicFlags kSecondProtocol_MethodOnSecond_DynamicFlag
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
+
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_service::SecondProtocol>::MethodOnSecond() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_service::SecondProtocol::MethodOnSecond>();
@@ -233,6 +255,8 @@ constexpr ::fidl::MessageDynamicFlags kSecondProtocol_MethodOnSecond_DynamicFlag
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 
 ::fidl::internal::WireEventDispatcher<::test_service::SecondProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_service::SecondProtocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -308,6 +332,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<:
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_service::SecondProtocol::MethodOnSecond>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_service::SecondProtocol::MethodOnSecond>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_service::SecondProtocol>::MethodOnSecond() {
   ::fidl::internal::TransactionalRequest<::test_service::SecondProtocol::MethodOnSecond> _request{};
@@ -315,12 +341,18 @@ fidl::internal::WireSyncClientImpl<::test_service::SecondProtocol>::MethodOnSeco
       ::fidl::UnownedClientEnd<::test_service::SecondProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
+
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_service::SecondProtocol>::MethodOnSecond() {
   ::fidl::internal::TransactionalRequest<::test_service::SecondProtocol::MethodOnSecond> _request{};
   return ::fidl::WireUnownedResult<::test_service::SecondProtocol::MethodOnSecond>(
       ::fidl::UnownedClientEnd<::test_service::SecondProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 
 #pragma clang diagnostic pop
 

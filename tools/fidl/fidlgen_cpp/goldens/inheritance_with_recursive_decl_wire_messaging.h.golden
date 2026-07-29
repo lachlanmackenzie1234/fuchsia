@@ -184,16 +184,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Parent> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Parent>> {
  public:
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
   ::fidl::OneWayStatus
   First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Parent> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Parent>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
   ::fidl::OneWayStatus
   First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 };
 
 // Pure-virtual interface to be implemented by a server.
@@ -466,24 +472,36 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Child> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Child>> {
  public:
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
   ::fidl::OneWayStatus
   First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
   ::fidl::OneWayStatus
   Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Child> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Child>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
   ::fidl::OneWayStatus
   First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
 
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
   ::fidl::OneWayStatus
   Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 };
 
 // Pure-virtual interface to be implemented by a server.
@@ -535,7 +553,10 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_inheritancewithrecursive
   using ClientImplBase::ClientImplBase;
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
   ::fidl::OneWayStatus First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 };
 
 template <>
@@ -550,7 +571,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_inheritancewithrec
   using BufferClientImplBase::BufferClientImplBase;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
   ::fidl::OneWayStatus First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 };
 
 template <>
@@ -596,10 +620,16 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_inheritancewithrecursive
   using ClientImplBase::ClientImplBase;
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
   ::fidl::OneWayStatus First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
   ::fidl::OneWayStatus Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 };
 
 template <>
@@ -614,10 +644,16 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_inheritancewithrec
   using BufferClientImplBase::BufferClientImplBase;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
   ::fidl::OneWayStatus First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
   ::fidl::OneWayStatus Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request);
+  // api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 };
 
 template <>

@@ -30,6 +30,8 @@ constexpr inline ::fidl::MessageDynamicFlags kExample_foo_DynamicFlags = ::fidl:
   }
 }
 
+// api-coverage-fidl-name:test.error/Example.foo
+
 ::fidl::internal::NaturalThenable<::test_error::Example::Foo>
 fidl::internal::NaturalClientImpl<::test_error::Example>::Foo(const ::fidl::Request<::test_error::Example::Foo>& request) const {
   return ::fidl::internal::NaturalThenable<::test_error::Example::Foo>(
@@ -46,6 +48,9 @@ fidl::internal::NaturalClientImpl<::test_error::Example>::Foo(const ::fidl::Requ
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.error/Example.foo:end
+
+// api-coverage-fidl-name:test.error/Example.foo
 
 ::fidl::Result<::test_error::Example::Foo>
 fidl::internal::NaturalSyncClientImpl<::test_error::Example>::Foo(const ::fidl::Request<::test_error::Example::Foo>& request) {
@@ -57,6 +62,7 @@ fidl::internal::NaturalSyncClientImpl<::test_error::Example>::Foo(const ::fidl::
   return ::fidl::internal::DecodeResponseAndFoldError<::test_error::Example::Foo>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.error/Example.foo:end
 
 ::fidl::UnownedClientEnd<::test_error::Example> fidl::internal::NaturalSyncClientImpl<::test_error::Example>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_error::Example>(

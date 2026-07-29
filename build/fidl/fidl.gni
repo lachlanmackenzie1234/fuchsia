@@ -167,6 +167,8 @@ template("fidl") {
              invoker.sdk_category == "partner",
          "`stable` must be true unless the category is 'partner'.")
 
+  not_needed(invoker, [ "enable_api_coverage" ])
+
   # Define values that will be used to generate other variables here so that
   # such use does not count as having used the member of `common_parameters.
   _fidl_target_name = target_name
@@ -457,6 +459,7 @@ template("fidl") {
         forward_variables_from(invoker,
                                [
                                  "applicable_licenses",
+                                 "enable_api_coverage",
                                  "testonly",
                                  "visibility",
                                  "public_deps",
@@ -492,6 +495,7 @@ template("fidl") {
                                [
                                  "applicable_licenses",
                                  "disable_rustdoc",
+                                 "enable_api_coverage",
                                  "public_deps",
                                  "testonly",
                                  "visibility",

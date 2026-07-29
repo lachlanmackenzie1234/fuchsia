@@ -71,6 +71,7 @@ impl FirstProtocolSynchronousProxy {
         FirstProtocolEvent::decode(self.client.wait_for_event::<FirstProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
     pub fn r#method_on_first(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -78,6 +79,7 @@ impl FirstProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -146,6 +148,7 @@ impl FirstProtocolProxy {
 }
 
 impl FirstProtocolProxyInterface for FirstProtocolProxy {
+    // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
     fn r#method_on_first(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -153,6 +156,7 @@ impl FirstProtocolProxyInterface for FirstProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 }
 
 pub struct FirstProtocolEventStream {
@@ -417,6 +421,7 @@ impl SecondProtocolSynchronousProxy {
         SecondProtocolEvent::decode(self.client.wait_for_event::<SecondProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
     pub fn r#method_on_second(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -424,6 +429,7 @@ impl SecondProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -492,6 +498,7 @@ impl SecondProtocolProxy {
 }
 
 impl SecondProtocolProxyInterface for SecondProtocolProxy {
+    // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
     fn r#method_on_second(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -499,6 +506,7 @@ impl SecondProtocolProxyInterface for SecondProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 }
 
 pub struct SecondProtocolEventStream {

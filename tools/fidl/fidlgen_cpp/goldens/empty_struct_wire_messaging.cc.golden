@@ -153,6 +153,8 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_emptystruc
 
 ::fidl::WireUnownedResult<::test_emptystruct::EmptyProtocol::SendAndReceive>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_emptystruct::EmptyProtocol::SendAndReceive>(result) {}
 
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_emptystruct::EmptyProtocol>::Send(const ::test_emptystruct::wire::Empty& e) {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_emptystruct::EmptyProtocol::Send> _request_object{e};
@@ -161,11 +163,19 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_emptystruc
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
 ::fidl::internal::WireThenable<::test_emptystruct::EmptyProtocol::SendAndReceive> fidl::internal::WireWeakAsyncClientImpl<::test_emptystruct::EmptyProtocol>::SendAndReceive(const ::test_emptystruct::wire::Empty& e) {
   ::fidl::internal::TransactionalRequest<::test_emptystruct::EmptyProtocol::SendAndReceive> _request{e};
   return ::fidl::internal::WireThenable<::test_emptystruct::EmptyProtocol::SendAndReceive>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_emptystruct::EmptyProtocol>::Send(const ::test_emptystruct::wire::Empty& e) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_emptystruct::EmptyProtocol::Send>();
@@ -181,12 +191,20 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_emptystruc
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
 ::fidl::internal::WireBufferThenable<::test_emptystruct::EmptyProtocol::SendAndReceive> fidl::internal::WireWeakAsyncBufferClientImpl<::test_emptystruct::EmptyProtocol>::SendAndReceive(const ::test_emptystruct::wire::Empty& e) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_emptystruct::EmptyProtocol::SendAndReceive>();
   ::fidl::internal::TransactionalRequest<::test_emptystruct::EmptyProtocol::SendAndReceive> _request{e};
   return ::fidl::internal::WireBufferThenable<::test_emptystruct::EmptyProtocol::SendAndReceive>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
 
 ::fidl::WireResult<::test_emptystruct::EmptyProtocol::SendAndReceive>
 fidl::internal::WireWeakSyncClientImpl<::test_emptystruct::EmptyProtocol>::SendAndReceive(const ::test_emptystruct::wire::Empty& e) {
@@ -196,6 +214,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_emptystruct::EmptyProtocol>::SendA
         return ::fidl::WireResult<::test_emptystruct::EmptyProtocol::SendAndReceive>(::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 
 ::fidl::internal::WireEventDispatcher<::test_emptystruct::EmptyProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_emptystruct::EmptyProtocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -466,12 +486,18 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_emptystruct::EmptyProtocol::SendAndReceive>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_emptystruct::EmptyProtocol::SendAndReceive>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_emptystruct::EmptyProtocol>::Send(const ::test_emptystruct::wire::Empty& e) {
   ::fidl::internal::TransactionalRequest<::test_emptystruct::EmptyProtocol::Send> _request{e};
   return ::fidl::WireResult<::test_emptystruct::EmptyProtocol::Send>(
       ::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
 
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_emptystruct::EmptyProtocol>::Send(const ::test_emptystruct::wire::Empty& e) {
@@ -480,6 +506,10 @@ fidl::internal::WireSyncBufferClientImpl<::test_emptystruct::EmptyProtocol>::Sen
       ::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
 
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
 ::fidl::WireResult<::test_emptystruct::EmptyProtocol::SendAndReceive>
 fidl::internal::WireSyncClientImpl<::test_emptystruct::EmptyProtocol>::SendAndReceive(const ::test_emptystruct::wire::Empty& e) {
   ::fidl::internal::TransactionalRequest<::test_emptystruct::EmptyProtocol::SendAndReceive> _request{e};
@@ -487,12 +517,18 @@ fidl::internal::WireSyncClientImpl<::test_emptystruct::EmptyProtocol>::SendAndRe
       ::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
 ::fidl::WireUnownedResult<::test_emptystruct::EmptyProtocol::SendAndReceive>
 fidl::internal::WireSyncBufferClientImpl<::test_emptystruct::EmptyProtocol>::SendAndReceive(const ::test_emptystruct::wire::Empty& e) {
   ::fidl::internal::TransactionalRequest<::test_emptystruct::EmptyProtocol::SendAndReceive> _request{e};
   return ::fidl::WireUnownedResult<::test_emptystruct::EmptyProtocol::SendAndReceive>(
       ::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 
 ::fidl::OneWayStatus fidl::internal::WireWeakEventSender<::test_emptystruct::EmptyProtocol>::Receive(const ::test_emptystruct::wire::Empty& e) {
   ::fidl::internal::TransactionalEvent<::test_emptystruct::EmptyProtocol::Receive> _response{e};

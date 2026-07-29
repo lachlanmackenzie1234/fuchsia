@@ -200,13 +200,25 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_protocolrequest::Parent> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_protocolrequest::Parent>> {
  public:
+  // api-coverage-fidl-name:test.protocolrequest/Parent.GetChild
+
   ::fidl::Result<::test_protocolrequest::Parent::GetChild> GetChild();
+  // api-coverage-fidl-name:test.protocolrequest/Parent.GetChild:end
+
+  // api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest
 
   ::fidl::Result<::test_protocolrequest::Parent::GetChildRequest> GetChildRequest();
+  // api-coverage-fidl-name:test.protocolrequest/Parent.GetChildRequest:end
+
+  // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild
 
   ::fit::result<::fidl::OneWayError> TakeChild(::fidl::Request<::test_protocolrequest::Parent::TakeChild> request);
+  // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChild:end
+
+  // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest
 
   ::fit::result<::fidl::OneWayError> TakeChildRequest(::fidl::Request<::test_protocolrequest::Parent::TakeChildRequest> request);
+  // api-coverage-fidl-name:test.protocolrequest/Parent.TakeChildRequest:end
 
  private:
   ::fidl::UnownedClientEnd<::test_protocolrequest::Parent> _client_end() const;

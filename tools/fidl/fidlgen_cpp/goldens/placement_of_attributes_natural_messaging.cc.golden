@@ -21,6 +21,8 @@ constexpr inline uint64_t kExampleProtocol_Method_Ordinal = 6023439637367187273l
 constexpr inline ::fidl::MessageDynamicFlags kExampleProtocol_Method_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_placementofattributes
 
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_placementofattributes::ExampleProtocol>::Method(const ::fidl::Request<::test_placementofattributes::ExampleProtocol::Method>& request) const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -31,6 +33,9 @@ fidl::internal::NaturalClientImpl<::test_placementofattributes::ExampleProtocol>
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
+
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_placementofattributes::ExampleProtocol>::Method(const ::fidl::Request<::test_placementofattributes::ExampleProtocol::Method>& request) {
@@ -41,6 +46,7 @@ fidl::internal::NaturalSyncClientImpl<::test_placementofattributes::ExampleProto
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 
 ::fidl::UnownedClientEnd<::test_placementofattributes::ExampleProtocol> fidl::internal::NaturalSyncClientImpl<::test_placementofattributes::ExampleProtocol>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_placementofattributes::ExampleProtocol>(

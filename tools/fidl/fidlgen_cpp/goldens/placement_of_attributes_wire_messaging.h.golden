@@ -179,16 +179,22 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_placementofattributes::ExampleProtocol> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_placementofattributes::ExampleProtocol>> {
  public:
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
   ::fidl::OneWayStatus
   Method(const ::test_exampleusing::wire::Empty& arg);
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_placementofattributes::ExampleProtocol> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_placementofattributes::ExampleProtocol>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
   ::fidl::OneWayStatus
   Method(const ::test_exampleusing::wire::Empty& arg);
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 };
 
 // Pure-virtual interface to be implemented by a server.
@@ -233,7 +239,10 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_placementofattributes::E
   using ClientImplBase::ClientImplBase;
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
   ::fidl::OneWayStatus Method(const ::test_exampleusing::wire::Empty& arg);
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 };
 
 template <>
@@ -248,7 +257,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_placementofattribu
   using BufferClientImplBase::BufferClientImplBase;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method
+
   ::fidl::OneWayStatus Method(const ::test_exampleusing::wire::Empty& arg);
+  // api-coverage-fidl-name:test.placementofattributes/ExampleProtocol.Method:end
 };
 
 template <>

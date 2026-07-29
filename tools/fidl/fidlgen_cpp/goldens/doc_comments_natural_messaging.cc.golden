@@ -27,6 +27,8 @@ constexpr inline uint64_t kInterface_OnEvent_Ordinal = 28780186509098736lu;
 constexpr inline ::fidl::MessageDynamicFlags kInterface_OnEvent_DynamicFlags = ::fidl::MessageDynamicFlags::kStrictMethod;
 }  // namespace test_doccomments
 
+// api-coverage-fidl-name:test.doccomments/Interface.Method
+
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalClientImpl<::test_doccomments::Interface>::Method() const {
   ::fidl::internal::NaturalMessageEncoder _encoder{
@@ -35,6 +37,9 @@ fidl::internal::NaturalClientImpl<::test_doccomments::Interface>::Method() const
   ::fidl::OneWayStatus status = client_base().SendOneWay(_encoded_message);
   return ::fidl::internal::ToFitxResult(status);
 }
+// api-coverage-fidl-name:test.doccomments/Interface.Method:end
+
+// api-coverage-fidl-name:test.doccomments/Interface.Method
 
 ::fit::result<::fidl::OneWayError>
 fidl::internal::NaturalSyncClientImpl<::test_doccomments::Interface>::Method() {
@@ -44,6 +49,7 @@ fidl::internal::NaturalSyncClientImpl<::test_doccomments::Interface>::Method() {
   msg.Write(_client_end().handle());
   return ::fidl::internal::ToFitxResult(::fidl::OneWayStatus{msg});
 }
+// api-coverage-fidl-name:test.doccomments/Interface.Method:end
 
 ::fidl::UnownedClientEnd<::test_doccomments::Interface> fidl::internal::NaturalSyncClientImpl<::test_doccomments::Interface>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_doccomments::Interface>(

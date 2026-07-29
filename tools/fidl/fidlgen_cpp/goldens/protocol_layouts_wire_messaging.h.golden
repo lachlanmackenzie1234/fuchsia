@@ -2688,64 +2688,109 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocollayouts::MainProtocol>
  public:
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed
+
     ::fidl::OneWayStatus
     OneWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolOneWayAnonComposedRequest ComposedProtocolOneWayAnonComposedRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed:end
 
     // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>
     TwoWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest ComposedProtocolTwoWayAnonComposedRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed:end
 
     // Allocates 88 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError>
     TwoWayAnonComposedWithError(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest ComposedProtocolTwoWayAnonComposedWithErrorRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed
+
     ::fidl::OneWayStatus
     OneWayNamedComposed(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed:end
 
     // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposed>
     TwoWayNamedComposed(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed:end
 
     // Allocates 88 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError>
     TwoWayNamedComposedWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport
+
     ::fidl::OneWayStatus
     OneWayImport(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport:end
 
     // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayImport>
     TwoWayImport(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport:end
 
     // Allocates 88 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayImportWithError>
     TwoWayImportWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal
+
     ::fidl::OneWayStatus
     OneWayLocal(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal:end
 
     // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayLocal>
     TwoWayLocal(::test_protocollayouts::wire::LocalUnionPayload LocalUnionPayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal:end
 
     // Allocates 40 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayLocalWithError>
     TwoWayLocalWithError(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon
+
     ::fidl::OneWayStatus
     OneWayAnon(::test_protocollayouts::wire::MainProtocolOneWayAnonRequest MainProtocolOneWayAnonRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon:end
 
     // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnon>
     TwoWayAnon(::test_protocollayouts::wire::MainProtocolTwoWayAnonRequest MainProtocolTwoWayAnonRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon:end
 
     // Allocates 40 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError
+
     ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonWithError>
     TwoWayAnonWithError(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRequest MainProtocolTwoWayAnonWithErrorRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError:end
 
 };
 
@@ -2755,64 +2800,109 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocollayouts::MainPro
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed
+
     ::fidl::OneWayStatus
     OneWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolOneWayAnonComposedRequest ComposedProtocolOneWayAnonComposedRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposed>
     TwoWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest ComposedProtocolTwoWayAnonComposedRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError>
     TwoWayAnonComposedWithError(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest ComposedProtocolTwoWayAnonComposedWithErrorRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed
+
     ::fidl::OneWayStatus
     OneWayNamedComposed(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposed>
     TwoWayNamedComposed(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError>
     TwoWayNamedComposedWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport
+
     ::fidl::OneWayStatus
     OneWayImport(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayImport>
     TwoWayImport(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayImportWithError>
     TwoWayImportWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal
+
     ::fidl::OneWayStatus
     OneWayLocal(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayLocal>
     TwoWayLocal(::test_protocollayouts::wire::LocalUnionPayload LocalUnionPayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayLocalWithError>
     TwoWayLocalWithError(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon
+
     ::fidl::OneWayStatus
     OneWayAnon(::test_protocollayouts::wire::MainProtocolOneWayAnonRequest MainProtocolOneWayAnonRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayAnon>
     TwoWayAnon(::test_protocollayouts::wire::MainProtocolTwoWayAnonRequest MainProtocolTwoWayAnonRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::MainProtocol::TwoWayAnonWithError>
     TwoWayAnonWithError(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRequest MainProtocolTwoWayAnonWithErrorRequest);
+    // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError:end
 
 };
 
@@ -4463,32 +4553,53 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocollayouts::OpenProtocol>
  public:
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay
+
     ::fidl::OneWayStatus
     FlexibleOneWay(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError
+
     ::fidl::WireResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError>
     FlexibleTwoWayNoError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError
+
     ::fidl::WireResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError>
     FlexibleTwoWayWithError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError:end
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError
+
     ::fidl::WireResult<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError>
     StrictTwoWayNoError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError
+
     ::fidl::WireResult<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError>
     StrictTwoWayWithError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError:end
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload
+
     ::fidl::OneWayStatus
     FlexibleOneWayNamedPayload(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload:end
 
 };
 
@@ -4498,32 +4609,53 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocollayouts::OpenPro
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay
+
     ::fidl::OneWayStatus
     FlexibleOneWay(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError>
     FlexibleTwoWayNoError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError>
     FlexibleTwoWayWithError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay
+
     ::fidl::OneWayStatus
     StrictOneWay(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError>
     StrictTwoWayNoError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError
+
     ::fidl::WireUnownedResult<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError>
     StrictTwoWayWithError(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload
+
     ::fidl::OneWayStatus
     FlexibleOneWayNamedPayload(int32_t value);
+    // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload:end
 
 };
 
@@ -4739,19 +4871,35 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::MainPro
   using ClientImplBase::ClientImplBase;
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed
+
   ::fidl::OneWayStatus OneWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolOneWayAnonComposedRequest ComposedProtocolOneWayAnonComposedRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed:end
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed
+
   ::fidl::OneWayStatus OneWayNamedComposed(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed:end
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport
+
   ::fidl::OneWayStatus OneWayImport(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport:end
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal
+
   ::fidl::OneWayStatus OneWayLocal(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal:end
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon
+
   ::fidl::OneWayStatus OneWayAnon(::test_protocollayouts::wire::MainProtocolOneWayAnonRequest MainProtocolOneWayAnonRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon:end
+
 };
 
 template<>
@@ -4759,25 +4907,65 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocollayouts::MainProt
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> TwoWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest ComposedProtocolTwoWayAnonComposedRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed:end
+
     // Allocates 40 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError> TwoWayAnonComposedWithError(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest ComposedProtocolTwoWayAnonComposedWithErrorRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError:end
+
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposed> TwoWayNamedComposed(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed:end
+
     // Allocates 40 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError> TwoWayNamedComposedWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError:end
+
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayImport> TwoWayImport(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport:end
+
     // Allocates 40 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayImportWithError> TwoWayImportWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError:end
+
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayLocal> TwoWayLocal(::test_protocollayouts::wire::LocalUnionPayload LocalUnionPayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal:end
+
     // Allocates 40 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayLocalWithError> TwoWayLocalWithError(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError:end
+
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayAnon> TwoWayAnon(::test_protocollayouts::wire::MainProtocolTwoWayAnonRequest MainProtocolTwoWayAnonRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon:end
+
     // Allocates 40 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::MainProtocol::TwoWayAnonWithError> TwoWayAnonWithError(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRequest MainProtocolTwoWayAnonWithErrorRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError:end
+
 };
 
 template<>
@@ -4786,19 +4974,34 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::M
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed
+
 ::fidl::OneWayStatus OneWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolOneWayAnonComposedRequest ComposedProtocolOneWayAnonComposedRequest);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnonComposed:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed
+
 ::fidl::OneWayStatus OneWayNamedComposed(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayNamedComposed:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport
+
 ::fidl::OneWayStatus OneWayImport(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayImport:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal
+
 ::fidl::OneWayStatus OneWayLocal(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayLocal:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon
+
 ::fidl::OneWayStatus OneWayAnon(::test_protocollayouts::wire::MainProtocolOneWayAnonRequest MainProtocolOneWayAnonRequest);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.OneWayAnon:end
 
 };
 
@@ -4808,34 +5011,64 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::Ma
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> TwoWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest ComposedProtocolTwoWayAnonComposedRequest);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError> TwoWayAnonComposedWithError(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest ComposedProtocolTwoWayAnonComposedWithErrorRequest);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposed> TwoWayNamedComposed(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError> TwoWayNamedComposedWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayImport> TwoWayImport(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayImportWithError> TwoWayImportWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayLocal> TwoWayLocal(::test_protocollayouts::wire::LocalUnionPayload LocalUnionPayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayLocalWithError> TwoWayLocalWithError(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnon> TwoWayAnon(::test_protocollayouts::wire::MainProtocolTwoWayAnonRequest MainProtocolTwoWayAnonRequest);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::MainProtocol::TwoWayAnonWithError> TwoWayAnonWithError(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRequest MainProtocolTwoWayAnonWithErrorRequest);
+// api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError:end
 
 };
 template<>
@@ -4844,34 +5077,65 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocollayouts::MainProto
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposed> TwoWayAnonComposed(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest ComposedProtocolTwoWayAnonComposedRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposed:end
 
   // Allocates 88 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonComposedWithError> TwoWayAnonComposedWithError(::test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest ComposedProtocolTwoWayAnonComposedWithErrorRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonComposedWithError:end
 
   // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposed> TwoWayNamedComposed(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposed:end
 
   // Allocates 88 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayNamedComposedWithError> TwoWayNamedComposedWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayNamedComposedWithError:end
 
   // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayImport> TwoWayImport(::test_protocollayouts_imported::wire::ImportUnionPayload ImportUnionPayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImport:end
 
   // Allocates 88 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayImportWithError> TwoWayImportWithError(::test_protocollayouts_imported::wire::ImportTablePayload ImportTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayImportWithError:end
 
   // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayLocal> TwoWayLocal(::test_protocollayouts::wire::LocalUnionPayload LocalUnionPayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocal:end
 
   // Allocates 40 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayLocalWithError> TwoWayLocalWithError(::test_protocollayouts::wire::LocalTablePayload LocalTablePayload);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayLocalWithError:end
 
   // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnon> TwoWayAnon(::test_protocollayouts::wire::MainProtocolTwoWayAnonRequest MainProtocolTwoWayAnonRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnon:end
 
   // Allocates 40 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError
+
   ::fidl::WireResult<::test_protocollayouts::MainProtocol::TwoWayAnonWithError> TwoWayAnonWithError(::test_protocollayouts::wire::MainProtocolTwoWayAnonWithErrorRequest MainProtocolTwoWayAnonWithErrorRequest);
+  // api-coverage-fidl-name:test.protocollayouts/MainProtocol.TwoWayAnonWithError:end
+
 };
 
 template<>
@@ -4950,13 +5214,23 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_protocollayouts::OpenPro
   using ClientImplBase::ClientImplBase;
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay
+
   ::fidl::OneWayStatus FlexibleOneWay(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay
+
   ::fidl::OneWayStatus StrictOneWay(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload
+
   ::fidl::OneWayStatus FlexibleOneWayNamedPayload(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload:end
+
 };
 
 template<>
@@ -4964,13 +5238,29 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocollayouts::OpenProt
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError> FlexibleTwoWayNoError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError:end
+
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError> FlexibleTwoWayWithError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError:end
+
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError> StrictTwoWayNoError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError:end
+
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError
+
   ::fidl::internal::WireThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError> StrictTwoWayWithError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError:end
+
 };
 
 template<>
@@ -4979,13 +5269,22 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocollayouts::O
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay
+
 ::fidl::OneWayStatus FlexibleOneWay(int32_t value);
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay
+
 ::fidl::OneWayStatus StrictOneWay(int32_t value);
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictOneWay:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload
+
 ::fidl::OneWayStatus FlexibleOneWayNamedPayload(int32_t value);
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleOneWayNamedPayload:end
 
 };
 
@@ -4995,16 +5294,28 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocollayouts::Op
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError> FlexibleTwoWayNoError(int32_t value);
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError> FlexibleTwoWayWithError(int32_t value);
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError> StrictTwoWayNoError(int32_t value);
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError
+
 ::fidl::internal::WireBufferThenable<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError> StrictTwoWayWithError(int32_t value);
+// api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError:end
 
 };
 template<>
@@ -5013,16 +5324,29 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocollayouts::OpenProto
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError
+
   ::fidl::WireResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayNoError> FlexibleTwoWayNoError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayNoError:end
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError
+
   ::fidl::WireResult<::test_protocollayouts::OpenProtocol::FlexibleTwoWayWithError> FlexibleTwoWayWithError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.FlexibleTwoWayWithError:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError
+
   ::fidl::WireResult<::test_protocollayouts::OpenProtocol::StrictTwoWayNoError> StrictTwoWayNoError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayNoError:end
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError
+
   ::fidl::WireResult<::test_protocollayouts::OpenProtocol::StrictTwoWayWithError> StrictTwoWayWithError(int32_t value);
+  // api-coverage-fidl-name:test.protocollayouts/OpenProtocol.StrictTwoWayWithError:end
+
 };
 
 template<>

@@ -107,6 +107,7 @@ impl ComposedProtocolSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayAnonComposed
     pub fn r#one_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolOneWayAnonComposedRequest,
@@ -117,7 +118,9 @@ impl ComposedProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayAnonComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposed
     pub fn r#two_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedRequest,
@@ -135,7 +138,9 @@ impl ComposedProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposedWithError
     pub fn r#two_way_anon_composed_with_error(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedWithErrorRequest,
@@ -153,7 +158,9 @@ impl ComposedProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposedWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayNamedComposed
     pub fn r#one_way_named_composed(&self, mut payload: &TablePayload) -> Result<(), fidl::Error> {
         self.client.send::<TablePayload>(
             payload,
@@ -161,7 +168,9 @@ impl ComposedProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayNamedComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposed
     pub fn r#two_way_named_composed(
         &self,
         mut payload: &UnionPayload,
@@ -176,7 +185,9 @@ impl ComposedProtocolSynchronousProxy {
             )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposedWithError
     pub fn r#two_way_named_composed_with_error(
         &self,
         mut payload: &TablePayload,
@@ -194,6 +205,7 @@ impl ComposedProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposedWithError:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -307,6 +319,7 @@ impl ComposedProtocolProxy {
 }
 
 impl ComposedProtocolProxyInterface for ComposedProtocolProxy {
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayAnonComposed
     fn r#one_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolOneWayAnonComposedRequest,
@@ -317,11 +330,13 @@ impl ComposedProtocolProxyInterface for ComposedProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayAnonComposed:end
 
     type TwoWayAnonComposedResponseFut = fidl::client::QueryResponseFut<
         ComposedProtocolTwoWayAnonComposedResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposed
     fn r#two_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedRequest,
@@ -346,11 +361,13 @@ impl ComposedProtocolProxyInterface for ComposedProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposed:end
 
     type TwoWayAnonComposedWithErrorResponseFut = fidl::client::QueryResponseFut<
         ComposedProtocolTwoWayAnonComposedWithErrorResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposedWithError
     fn r#two_way_anon_composed_with_error(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedWithErrorRequest,
@@ -378,7 +395,9 @@ impl ComposedProtocolProxyInterface for ComposedProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayAnonComposedWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayNamedComposed
     fn r#one_way_named_composed(&self, mut payload: &TablePayload) -> Result<(), fidl::Error> {
         self.client.send::<TablePayload>(
             payload,
@@ -386,9 +405,11 @@ impl ComposedProtocolProxyInterface for ComposedProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.OneWayNamedComposed:end
 
     type TwoWayNamedComposedResponseFut =
         fidl::client::QueryResponseFut<TablePayload, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposed
     fn r#two_way_named_composed(
         &self,
         mut payload: &UnionPayload,
@@ -410,11 +431,13 @@ impl ComposedProtocolProxyInterface for ComposedProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposed:end
 
     type TwoWayNamedComposedWithErrorResponseFut = fidl::client::QueryResponseFut<
         ComposedProtocolTwoWayNamedComposedWithErrorResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposedWithError
     fn r#two_way_named_composed_with_error(
         &self,
         mut payload: &TablePayload,
@@ -439,6 +462,7 @@ impl ComposedProtocolProxyInterface for ComposedProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/ComposedProtocol.TwoWayNamedComposedWithError:end
 }
 
 pub struct ComposedProtocolEventStream {
@@ -1272,6 +1296,7 @@ impl MainProtocolSynchronousProxy {
         MainProtocolEvent::decode(self.client.wait_for_event::<MainProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnonComposed
     pub fn r#one_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolOneWayAnonComposedRequest,
@@ -1282,7 +1307,9 @@ impl MainProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnonComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposed
     pub fn r#two_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedRequest,
@@ -1300,7 +1327,9 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposedWithError
     pub fn r#two_way_anon_composed_with_error(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedWithErrorRequest,
@@ -1318,7 +1347,9 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposedWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayNamedComposed
     pub fn r#one_way_named_composed(&self, mut payload: &TablePayload) -> Result<(), fidl::Error> {
         self.client.send::<TablePayload>(
             payload,
@@ -1326,7 +1357,9 @@ impl MainProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayNamedComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposed
     pub fn r#two_way_named_composed(
         &self,
         mut payload: &UnionPayload,
@@ -1340,7 +1373,9 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposed:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposedWithError
     pub fn r#two_way_named_composed_with_error(
         &self,
         mut payload: &TablePayload,
@@ -1358,7 +1393,9 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposedWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayLocal
     pub fn r#one_way_local(&self, mut payload: &TablePayload) -> Result<(), fidl::Error> {
         self.client.send::<TablePayload>(
             payload,
@@ -1366,7 +1403,9 @@ impl MainProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayLocal:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocal
     pub fn r#two_way_local(
         &self,
         mut payload: &UnionPayload,
@@ -1380,7 +1419,9 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocal:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocalWithError
     pub fn r#two_way_local_with_error(
         &self,
         mut payload: &TablePayload,
@@ -1398,7 +1439,9 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocalWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnon
     pub fn r#one_way_anon(
         &self,
         mut payload: &MainProtocolOneWayAnonRequest,
@@ -1409,7 +1452,9 @@ impl MainProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnon:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnon
     pub fn r#two_way_anon(
         &self,
         mut payload: &MainProtocolTwoWayAnonRequest,
@@ -1427,7 +1472,9 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnon:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonWithError
     pub fn r#two_way_anon_with_error(
         &self,
         mut payload: &MainProtocolTwoWayAnonWithErrorRequest,
@@ -1445,6 +1492,7 @@ impl MainProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonWithError:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -1607,6 +1655,7 @@ impl MainProtocolProxy {
 }
 
 impl MainProtocolProxyInterface for MainProtocolProxy {
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnonComposed
     fn r#one_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolOneWayAnonComposedRequest,
@@ -1617,11 +1666,13 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnonComposed:end
 
     type TwoWayAnonComposedResponseFut = fidl::client::QueryResponseFut<
         ComposedProtocolTwoWayAnonComposedResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposed
     fn r#two_way_anon_composed(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedRequest,
@@ -1646,11 +1697,13 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposed:end
 
     type TwoWayAnonComposedWithErrorResponseFut = fidl::client::QueryResponseFut<
         ComposedProtocolTwoWayAnonComposedWithErrorResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposedWithError
     fn r#two_way_anon_composed_with_error(
         &self,
         mut payload: &ComposedProtocolTwoWayAnonComposedWithErrorRequest,
@@ -1678,7 +1731,9 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonComposedWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayNamedComposed
     fn r#one_way_named_composed(&self, mut payload: &TablePayload) -> Result<(), fidl::Error> {
         self.client.send::<TablePayload>(
             payload,
@@ -1686,9 +1741,11 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayNamedComposed:end
 
     type TwoWayNamedComposedResponseFut =
         fidl::client::QueryResponseFut<TablePayload, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposed
     fn r#two_way_named_composed(
         &self,
         mut payload: &UnionPayload,
@@ -1710,11 +1767,13 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposed:end
 
     type TwoWayNamedComposedWithErrorResponseFut = fidl::client::QueryResponseFut<
         ComposedProtocolTwoWayNamedComposedWithErrorResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposedWithError
     fn r#two_way_named_composed_with_error(
         &self,
         mut payload: &TablePayload,
@@ -1739,7 +1798,9 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayNamedComposedWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayLocal
     fn r#one_way_local(&self, mut payload: &TablePayload) -> Result<(), fidl::Error> {
         self.client.send::<TablePayload>(
             payload,
@@ -1747,9 +1808,11 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayLocal:end
 
     type TwoWayLocalResponseFut =
         fidl::client::QueryResponseFut<TablePayload, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocal
     fn r#two_way_local(&self, mut payload: &UnionPayload) -> Self::TwoWayLocalResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1768,11 +1831,13 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocal:end
 
     type TwoWayLocalWithErrorResponseFut = fidl::client::QueryResponseFut<
         MainProtocolTwoWayLocalWithErrorResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocalWithError
     fn r#two_way_local_with_error(
         &self,
         mut payload: &TablePayload,
@@ -1794,7 +1859,9 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayLocalWithError:end
 
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnon
     fn r#one_way_anon(
         &self,
         mut payload: &MainProtocolOneWayAnonRequest,
@@ -1805,11 +1872,13 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.OneWayAnon:end
 
     type TwoWayAnonResponseFut = fidl::client::QueryResponseFut<
         MainProtocolTwoWayAnonResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnon
     fn r#two_way_anon(
         &self,
         mut payload: &MainProtocolTwoWayAnonRequest,
@@ -1832,11 +1901,13 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
                 _decode,
             )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnon:end
 
     type TwoWayAnonWithErrorResponseFut = fidl::client::QueryResponseFut<
         MainProtocolTwoWayAnonWithErrorResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonWithError
     fn r#two_way_anon_with_error(
         &self,
         mut payload: &MainProtocolTwoWayAnonWithErrorRequest,
@@ -1861,6 +1932,7 @@ impl MainProtocolProxyInterface for MainProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.protocollayoutssamelibrary/MainProtocol.TwoWayAnonWithError:end
 }
 
 pub struct MainProtocolEventStream {

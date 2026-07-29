@@ -71,9 +71,15 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_emptystruct::EmptyProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_emptystruct::EmptyProtocol>> {
  public:
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
   ::fidl::Result<::test_emptystruct::EmptyProtocol::SendAndReceive> SendAndReceive(const ::fidl::Request<::test_emptystruct::EmptyProtocol::SendAndReceive>& request);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
+
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
 
   ::fit::result<::fidl::OneWayError> Send(const ::fidl::Request<::test_emptystruct::EmptyProtocol::Send>& request);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 
  private:
   ::fidl::UnownedClientEnd<::test_emptystruct::EmptyProtocol> _client_end() const;

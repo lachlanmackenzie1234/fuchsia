@@ -495,11 +495,17 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
 
   ::fidl::WireUnownedResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>(result) {}
 
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
+
   ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> fidl::internal::WireWeakAsyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyDart(bool a) {
     ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> _request{ a };
     return ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
 
   ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> fidl::internal::WireWeakAsyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyGo(bool a) {
     ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> _request{ a };
@@ -507,11 +513,19 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
+
   ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> fidl::internal::WireWeakAsyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyPython(bool a) {
     ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> _request{ a };
     return ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
 
   ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust> fidl::internal::WireWeakAsyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyRust(bool a) {
     ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust> _request{ a };
@@ -519,11 +533,19 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
+
   ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller> fidl::internal::WireWeakAsyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenySyzkaller(bool a) {
     ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller> _request{ a };
     return ::fidl::internal::WireThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
 
 ::fidl::internal::WireBufferThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> fidl::internal::WireWeakAsyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyDart(bool a) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>();
@@ -532,12 +554,20 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
+
 ::fidl::internal::WireBufferThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> fidl::internal::WireWeakAsyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyGo(bool a) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>();
   ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> _request{ a };
   return ::fidl::internal::WireBufferThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
 
 ::fidl::internal::WireBufferThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> fidl::internal::WireWeakAsyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyPython(bool a) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>();
@@ -546,6 +576,10 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
+
 ::fidl::internal::WireBufferThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust> fidl::internal::WireWeakAsyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyRust(bool a) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>();
   ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust> _request{ a };
@@ -553,12 +587,20 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
+
 ::fidl::internal::WireBufferThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller> fidl::internal::WireWeakAsyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenySyzkaller(bool a) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>();
   ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller> _request{ a };
   return ::fidl::internal::WireBufferThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
 
   ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>
   fidl::internal::WireWeakSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyDart(bool a) {
@@ -569,6 +611,10 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
         });
   }
 
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
+
   ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>
   fidl::internal::WireWeakSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyGo(bool a) {
     return _client_base()->MakeSyncCallWith(
@@ -577,6 +623,10 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
           return ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>(::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
 
   ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>
   fidl::internal::WireWeakSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyPython(bool a) {
@@ -587,6 +637,10 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
         });
   }
 
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
+
   ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>
   fidl::internal::WireWeakSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyRust(bool a) {
     return _client_base()->MakeSyncCallWith(
@@ -596,6 +650,10 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
         });
   }
 
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
+
   ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>
   fidl::internal::WireWeakSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenySyzkaller(bool a) {
     return _client_base()->MakeSyncCallWith(
@@ -604,6 +662,8 @@ fidl::WireServer<::test_bindingsdenylist::OnlyCppAndDeps>::Handler fidl::WireSer
           return ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>(::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
 
 ::fidl::internal::WireEventDispatcher<::test_bindingsdenylist::DenyEachBinding>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_bindingsdenylist::DenyEachBinding>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -1496,12 +1556,18 @@ return MakeReply(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenySyzkaller
   template
   struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
+
       ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>
       fidl::internal::WireSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyDart(bool a) {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> _request{ a };
         return ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>(
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart
 
       ::fidl::WireUnownedResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>
       fidl::internal::WireSyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyDart(bool a) {
@@ -1510,12 +1576,20 @@ return MakeReply(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenySyzkaller
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
+
       ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>
       fidl::internal::WireSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyGo(bool a) {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> _request{ a };
         return ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>(
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
 
       ::fidl::WireUnownedResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>
       fidl::internal::WireSyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyGo(bool a) {
@@ -1524,12 +1598,20 @@ return MakeReply(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenySyzkaller
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
+
       ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>
       fidl::internal::WireSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyPython(bool a) {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> _request{ a };
         return ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>(
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
 
       ::fidl::WireUnownedResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>
       fidl::internal::WireSyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyPython(bool a) {
@@ -1538,12 +1620,20 @@ return MakeReply(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenySyzkaller
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
+
       ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>
       fidl::internal::WireSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyRust(bool a) {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust> _request{ a };
         return ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>(
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust
 
       ::fidl::WireUnownedResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>
       fidl::internal::WireSyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenyRust(bool a) {
@@ -1552,6 +1642,10 @@ return MakeReply(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenySyzkaller
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyRust:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
+
       ::fidl::WireResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>
       fidl::internal::WireSyncClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenySyzkaller(bool a) {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller> _request{ a };
@@ -1559,12 +1653,18 @@ return MakeReply(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenySyzkaller
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller
+
       ::fidl::WireUnownedResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>
       fidl::internal::WireSyncBufferClientImpl<::test_bindingsdenylist::DenyEachBinding>::OnlyDenySyzkaller(bool a) {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller> _request{ a };
         return ::fidl::WireUnownedResult<::test_bindingsdenylist::DenyEachBinding::OnlyDenySyzkaller>(
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::DenyEachBinding>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenySyzkaller:end
 
 ::fidl::internal::WireEventDispatcher<::test_bindingsdenylist::Allowed>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_bindingsdenylist::Allowed>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -1697,6 +1797,8 @@ fidl::WireServer<::test_bindingsdenylist::Allowed>::Handler fidl::WireServer<::t
 
   ::fidl::WireUnownedResult<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary>(result) {}
 
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::Unattributed() {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::ImportsSameNameContext::Unattributed> _request_object{  };
@@ -1705,6 +1807,10 @@ fidl::WireServer<::test_bindingsdenylist::Allowed>::Handler fidl::WireServer<::t
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
 
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
+
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::AlwaysAppearsInImportingLibrary() {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary> _request_object{  };
@@ -1712,6 +1818,10 @@ fidl::WireServer<::test_bindingsdenylist::Allowed>::Handler fidl::WireServer<::t
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
+  // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::Unattributed() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_bindingsdenylist::ImportsSameNameContext::Unattributed>();
@@ -1727,6 +1837,10 @@ fidl::WireServer<::test_bindingsdenylist::Allowed>::Handler fidl::WireServer<::t
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
+
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::AlwaysAppearsInImportingLibrary() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -1740,6 +1854,8 @@ fidl::WireServer<::test_bindingsdenylist::Allowed>::Handler fidl::WireServer<::t
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
 
 ::fidl::internal::WireEventDispatcher<::test_bindingsdenylist::ImportsSameNameContext>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_bindingsdenylist::ImportsSameNameContext>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -1848,12 +1964,18 @@ fidl::WireServer<::test_bindingsdenylist::ImportsSameNameContext>::Handler fidl:
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary>, ::fidl::internal::WireCodingConstraintEmpty, true>;
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::Unattributed() {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::ImportsSameNameContext::Unattributed> _request{  };
         return ::fidl::WireResult<::test_bindingsdenylist::ImportsSameNameContext::Unattributed>(
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::ImportsSameNameContext>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed
 
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::Unattributed() {
@@ -1862,6 +1984,10 @@ fidl::WireServer<::test_bindingsdenylist::ImportsSameNameContext>::Handler fidl:
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::ImportsSameNameContext>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.Unattributed:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::AlwaysAppearsInImportingLibrary() {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary> _request{  };
@@ -1869,12 +1995,18 @@ fidl::WireServer<::test_bindingsdenylist::ImportsSameNameContext>::Handler fidl:
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::ImportsSameNameContext>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
+
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_bindingsdenylist::ImportsSameNameContext>::AlwaysAppearsInImportingLibrary() {
         ::fidl::internal::TransactionalRequest<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary> _request{  };
         return ::fidl::WireUnownedResult<::test_bindingsdenylist::ImportsSameNameContext::AlwaysAppearsInImportingLibrary>(
           ::fidl::UnownedClientEnd<::test_bindingsdenylist::ImportsSameNameContext>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.bindingsdenylist/ImportsSameNameContext.AlwaysAppearsInImportingLibrary:end
 
 #pragma clang diagnostic pop
 

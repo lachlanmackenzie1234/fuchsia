@@ -23,6 +23,8 @@ constexpr inline ::fidl::MessageDynamicFlags ksuper_foo_DynamicFlags = ::fidl::M
 
 ::fidl::Response<::test_inheritance::Super::Foo>::Response(::test_inheritance::SuperFooResponse v) : SuperFooResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.inheritance/super.foo
+
 ::fidl::internal::NaturalThenable<::test_inheritance::Super::Foo>
 fidl::internal::NaturalClientImpl<::test_inheritance::Super>::Foo(const ::fidl::Request<::test_inheritance::Super::Foo>& request) const {
   return ::fidl::internal::NaturalThenable<::test_inheritance::Super::Foo>(
@@ -39,6 +41,9 @@ fidl::internal::NaturalClientImpl<::test_inheritance::Super>::Foo(const ::fidl::
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.inheritance/super.foo:end
+
+// api-coverage-fidl-name:test.inheritance/super.foo
 
 ::fidl::Result<::test_inheritance::Super::Foo>
 fidl::internal::NaturalSyncClientImpl<::test_inheritance::Super>::Foo(const ::fidl::Request<::test_inheritance::Super::Foo>& request) {
@@ -50,6 +55,7 @@ fidl::internal::NaturalSyncClientImpl<::test_inheritance::Super>::Foo(const ::fi
   return ::fidl::internal::DecodeResponseAndFoldError<::test_inheritance::Super::Foo>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.inheritance/super.foo:end
 
 ::fidl::UnownedClientEnd<::test_inheritance::Super> fidl::internal::NaturalSyncClientImpl<::test_inheritance::Super>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_inheritance::Super>(
@@ -124,6 +130,8 @@ constexpr inline ::fidl::MessageDynamicFlags ksub_foo_DynamicFlags = ::fidl::Mes
 
 ::fidl::Response<::test_inheritance::Sub::Foo>::Response(::test_inheritance::SuperFooResponse v) : SuperFooResponse(std::move(v)) {}
 
+// api-coverage-fidl-name:test.inheritance/sub.foo
+
 ::fidl::internal::NaturalThenable<::test_inheritance::Sub::Foo>
 fidl::internal::NaturalClientImpl<::test_inheritance::Sub>::Foo(const ::fidl::Request<::test_inheritance::Sub::Foo>& request) const {
   return ::fidl::internal::NaturalThenable<::test_inheritance::Sub::Foo>(
@@ -140,6 +148,9 @@ fidl::internal::NaturalClientImpl<::test_inheritance::Sub>::Foo(const ::fidl::Re
         return base->SendTwoWay(msg, response_context);
       });
 }
+// api-coverage-fidl-name:test.inheritance/sub.foo:end
+
+// api-coverage-fidl-name:test.inheritance/sub.foo
 
 ::fidl::Result<::test_inheritance::Sub::Foo>
 fidl::internal::NaturalSyncClientImpl<::test_inheritance::Sub>::Foo(const ::fidl::Request<::test_inheritance::Sub::Foo>& request) {
@@ -151,6 +162,7 @@ fidl::internal::NaturalSyncClientImpl<::test_inheritance::Sub>::Foo(const ::fidl
   return ::fidl::internal::DecodeResponseAndFoldError<::test_inheritance::Sub::Foo>(
       msg.Call(_client_end().handle(), response_storage.view()), nullptr);
 }
+// api-coverage-fidl-name:test.inheritance/sub.foo:end
 
 ::fidl::UnownedClientEnd<::test_inheritance::Sub> fidl::internal::NaturalSyncClientImpl<::test_inheritance::Sub>::_client_end() const {
   return ::fidl::UnownedClientEnd<::test_inheritance::Sub>(

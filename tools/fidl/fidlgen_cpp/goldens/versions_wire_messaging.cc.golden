@@ -97,6 +97,8 @@ constexpr ::fidl::MessageDynamicFlags kProtocol_Foo_DynamicFlags = ::fidl::Messa
 
 ::fidl::WireUnownedResult<::test_versions::Protocol::Foo>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_versions::Protocol::Foo>(result) {}
 
+// api-coverage-fidl-name:test.versions/Protocol.Foo
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_versions::Protocol>::Foo() {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_versions::Protocol::Foo> _request_object{};
@@ -104,6 +106,10 @@ constexpr ::fidl::MessageDynamicFlags kProtocol_Foo_DynamicFlags = ::fidl::Messa
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.versions/Protocol.Foo:end
+
+// api-coverage-fidl-name:test.versions/Protocol.Foo
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_versions::Protocol>::Foo() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_versions::Protocol::Foo>();
@@ -118,6 +124,8 @@ constexpr ::fidl::MessageDynamicFlags kProtocol_Foo_DynamicFlags = ::fidl::Messa
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.versions/Protocol.Foo:end
 
 ::fidl::internal::WireEventDispatcher<::test_versions::Protocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_versions::Protocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -234,6 +242,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<:
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_versions::Protocol::Foo>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_versions::Protocol::Foo>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.versions/Protocol.Foo
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_versions::Protocol>::Foo() {
   ::fidl::internal::TransactionalRequest<::test_versions::Protocol::Foo> _request{};
@@ -241,12 +251,18 @@ fidl::internal::WireSyncClientImpl<::test_versions::Protocol>::Foo() {
       ::fidl::UnownedClientEnd<::test_versions::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.versions/Protocol.Foo:end
+
+// api-coverage-fidl-name:test.versions/Protocol.Foo
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_versions::Protocol>::Foo() {
   ::fidl::internal::TransactionalRequest<::test_versions::Protocol::Foo> _request{};
   return ::fidl::WireUnownedResult<::test_versions::Protocol::Foo>(
       ::fidl::UnownedClientEnd<::test_versions::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.versions/Protocol.Foo:end
 
 #pragma clang diagnostic pop
 

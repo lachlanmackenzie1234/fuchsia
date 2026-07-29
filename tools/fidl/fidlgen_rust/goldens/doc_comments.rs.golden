@@ -74,6 +74,7 @@ impl InterfaceSynchronousProxy {
     /// method comment #1
     ///
     /// method comment #3
+    // api-coverage-fidl-name:test.doccomments/Interface.Method
     pub fn r#method(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -81,6 +82,7 @@ impl InterfaceSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.doccomments/Interface.Method:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -152,6 +154,7 @@ impl InterfaceProxy {
 }
 
 impl InterfaceProxyInterface for InterfaceProxy {
+    // api-coverage-fidl-name:test.doccomments/Interface.Method
     fn r#method(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -159,6 +162,7 @@ impl InterfaceProxyInterface for InterfaceProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.doccomments/Interface.Method:end
 }
 
 pub struct InterfaceEventStream {

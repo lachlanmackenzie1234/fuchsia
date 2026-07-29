@@ -415,24 +415,36 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_emptystruct::EmptyProtocol> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_emptystruct::EmptyProtocol>> {
  public:
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
+
   ::fidl::OneWayStatus
   Send(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
   ::fidl::WireResult<::test_emptystruct::EmptyProtocol::SendAndReceive>
   SendAndReceive(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_emptystruct::EmptyProtocol> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_emptystruct::EmptyProtocol>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
+
   ::fidl::OneWayStatus
   Send(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
   ::fidl::WireUnownedResult<::test_emptystruct::EmptyProtocol::SendAndReceive>
   SendAndReceive(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 };
 
 template <>
@@ -514,7 +526,10 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_emptystruct::EmptyProtoc
   using ClientImplBase::ClientImplBase;
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
+
   ::fidl::OneWayStatus Send(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 };
 
 template <>
@@ -522,7 +537,10 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_emptystruct::EmptyProtoco
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
   // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
   ::fidl::internal::WireThenable<::test_emptystruct::EmptyProtocol::SendAndReceive> SendAndReceive(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 };
 
 template <>
@@ -531,7 +549,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_emptystruct::Empty
   using BufferClientImplBase::BufferClientImplBase;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send
+
   ::fidl::OneWayStatus Send(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.Send:end
 };
 
 template <>
@@ -540,7 +561,10 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_emptystruct::EmptyP
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
   ::fidl::internal::WireBufferThenable<::test_emptystruct::EmptyProtocol::SendAndReceive> SendAndReceive(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 };
 template <>
 class ::fidl::internal::WireWeakSyncClientImpl<::test_emptystruct::EmptyProtocol> final : public ::fidl::internal::WireWeakOnewayClientImpl<::test_emptystruct::EmptyProtocol> {
@@ -548,7 +572,10 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_emptystruct::EmptyProtocol
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive
+
   ::fidl::WireResult<::test_emptystruct::EmptyProtocol::SendAndReceive> SendAndReceive(const ::test_emptystruct::wire::Empty& e);
+  // api-coverage-fidl-name:test.emptystruct/EmptyProtocol.SendAndReceive:end
 };
 
 template <>

@@ -97,11 +97,17 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_nullable::
 
 ::fidl::WireUnownedResult<::test_nullable::SimpleProtocol::Add>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_nullable::SimpleProtocol::Add>(result) {}
 
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
+
 ::fidl::internal::WireThenable<::test_nullable::SimpleProtocol::Add> fidl::internal::WireWeakAsyncClientImpl<::test_nullable::SimpleProtocol>::Add(int32_t a, int32_t b) {
   ::fidl::internal::TransactionalRequest<::test_nullable::SimpleProtocol::Add> _request{a, b};
   return ::fidl::internal::WireThenable<::test_nullable::SimpleProtocol::Add>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
 
 ::fidl::internal::WireBufferThenable<::test_nullable::SimpleProtocol::Add> fidl::internal::WireWeakAsyncBufferClientImpl<::test_nullable::SimpleProtocol>::Add(int32_t a, int32_t b) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_nullable::SimpleProtocol::Add>();
@@ -109,6 +115,10 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_nullable::
   return ::fidl::internal::WireBufferThenable<::test_nullable::SimpleProtocol::Add>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
 
 ::fidl::WireResult<::test_nullable::SimpleProtocol::Add>
 fidl::internal::WireWeakSyncClientImpl<::test_nullable::SimpleProtocol>::Add(int32_t a, int32_t b) {
@@ -118,6 +128,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_nullable::SimpleProtocol>::Add(int
         return ::fidl::WireResult<::test_nullable::SimpleProtocol::Add>(::fidl::UnownedClientEnd<::test_nullable::SimpleProtocol>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
 
 ::fidl::internal::WireEventDispatcher<::test_nullable::SimpleProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_nullable::SimpleProtocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -295,6 +307,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_nullable::SimpleProtocol::Add>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_nullable::SimpleProtocol::Add>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
+
 ::fidl::WireResult<::test_nullable::SimpleProtocol::Add>
 fidl::internal::WireSyncClientImpl<::test_nullable::SimpleProtocol>::Add(int32_t a, int32_t b) {
   ::fidl::internal::TransactionalRequest<::test_nullable::SimpleProtocol::Add> _request{a, b};
@@ -302,12 +316,18 @@ fidl::internal::WireSyncClientImpl<::test_nullable::SimpleProtocol>::Add(int32_t
       ::fidl::UnownedClientEnd<::test_nullable::SimpleProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
+
 ::fidl::WireUnownedResult<::test_nullable::SimpleProtocol::Add>
 fidl::internal::WireSyncBufferClientImpl<::test_nullable::SimpleProtocol>::Add(int32_t a, int32_t b) {
   ::fidl::internal::TransactionalRequest<::test_nullable::SimpleProtocol::Add> _request{a, b};
   return ::fidl::WireUnownedResult<::test_nullable::SimpleProtocol::Add>(
       ::fidl::UnownedClientEnd<::test_nullable::SimpleProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
 
 #pragma clang diagnostic pop
 

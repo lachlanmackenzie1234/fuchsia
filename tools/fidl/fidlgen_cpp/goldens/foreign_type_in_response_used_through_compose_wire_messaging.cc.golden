@@ -90,11 +90,17 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_foreigntyp
 
 ::fidl::WireUnownedResult<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>(result) {}
 
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
+
 ::fidl::internal::WireThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> fidl::internal::WireWeakAsyncClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() {
   ::fidl::internal::TransactionalRequest<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> _request{};
   return ::fidl::internal::WireThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
 
 ::fidl::internal::WireBufferThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> fidl::internal::WireWeakAsyncBufferClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>();
@@ -102,6 +108,10 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_foreigntyp
   return ::fidl::internal::WireBufferThenable<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
 
 ::fidl::WireResult<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>
 fidl::internal::WireWeakSyncClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() {
@@ -111,6 +121,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_foreigntypeinresponseusedthroughco
         return ::fidl::WireResult<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>(::fidl::UnownedClientEnd<::test_foreigntypeinresponseusedthroughcompose::Top>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
 
 ::fidl::internal::WireEventDispatcher<::test_foreigntypeinresponseusedthroughcompose::Top>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_foreigntypeinresponseusedthroughcompose::Top>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -278,6 +290,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
+
 ::fidl::WireResult<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>
 fidl::internal::WireSyncClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() {
   ::fidl::internal::TransactionalRequest<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> _request{};
@@ -285,12 +299,18 @@ fidl::internal::WireSyncClientImpl<::test_foreigntypeinresponseusedthroughcompos
       ::fidl::UnownedClientEnd<::test_foreigntypeinresponseusedthroughcompose::Top>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo
+
 ::fidl::WireUnownedResult<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>
 fidl::internal::WireSyncBufferClientImpl<::test_foreigntypeinresponseusedthroughcompose::Top>::GetFoo() {
   ::fidl::internal::TransactionalRequest<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo> _request{};
   return ::fidl::WireUnownedResult<::test_foreigntypeinresponseusedthroughcompose::Top::GetFoo>(
       ::fidl::UnownedClientEnd<::test_foreigntypeinresponseusedthroughcompose::Top>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.foreigntypeinresponseusedthroughcompose/Top.GetFoo:end
 
 #pragma clang diagnostic pop
 

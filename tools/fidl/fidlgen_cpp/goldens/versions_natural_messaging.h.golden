@@ -135,7 +135,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_versions::Protocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_versions::Protocol>> {
  public:
+  // api-coverage-fidl-name:test.versions/Protocol.Foo
+
   ::fit::result<::fidl::OneWayError> Foo();
+  // api-coverage-fidl-name:test.versions/Protocol.Foo:end
 
  private:
   ::fidl::UnownedClientEnd<::test_versions::Protocol> _client_end() const;

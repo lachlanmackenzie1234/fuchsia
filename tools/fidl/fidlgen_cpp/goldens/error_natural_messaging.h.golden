@@ -66,7 +66,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_error::Example> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_error::Example>> {
  public:
+  // api-coverage-fidl-name:test.error/Example.foo
+
   ::fidl::Result<::test_error::Example::Foo> Foo(const ::fidl::Request<::test_error::Example::Foo>& request);
+  // api-coverage-fidl-name:test.error/Example.foo:end
 
  private:
   ::fidl::UnownedClientEnd<::test_error::Example> _client_end() const;

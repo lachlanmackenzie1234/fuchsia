@@ -63,6 +63,8 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ParentFirstReq
 
 ::fidl::WireUnownedResult<::test_inheritancewithrecursivedecl::Parent::First>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_inheritancewithrecursivedecl::Parent::First>(result) {}
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_inheritancewithrecursivedecl::Parent>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Parent::First> _request_object{std::move(request)};
@@ -70,6 +72,10 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ParentFirstReq
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_inheritancewithrecursivedecl::Parent>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_inheritancewithrecursivedecl::Parent::First>();
@@ -84,6 +90,8 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ParentFirstReq
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 
 ::fidl::internal::WireEventDispatcher<::test_inheritancewithrecursivedecl::Parent>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_inheritancewithrecursivedecl::Parent>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -172,6 +180,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<:
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Parent::First>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Parent::First>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Parent>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Parent::First> _request{std::move(request)};
@@ -179,12 +189,18 @@ fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Parent>:
       ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Parent>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Parent::First> _request{std::move(request)};
   return ::fidl::WireUnownedResult<::test_inheritancewithrecursivedecl::Parent::First>(
       ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Parent>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Parent.First:end
 
 namespace test_inheritancewithrecursivedecl {
 
@@ -285,6 +301,8 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ChildSecondReq
 
 ::fidl::WireUnownedResult<::test_inheritancewithrecursivedecl::Child::Second>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_inheritancewithrecursivedecl::Child::Second>(result) {}
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_inheritancewithrecursivedecl::Child>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Child::First> _request_object{std::move(request)};
@@ -293,6 +311,10 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ChildSecondReq
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_inheritancewithrecursivedecl::Child>::Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   __UNINITIALIZED
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Child::Second> _request_object{std::move(request)};
@@ -300,6 +322,10 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ChildSecondReq
       ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_inheritancewithrecursivedecl::Child>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_inheritancewithrecursivedecl::Child::First>();
@@ -315,6 +341,10 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ChildSecondReq
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_inheritancewithrecursivedecl::Child>::Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_inheritancewithrecursivedecl::Child::Second>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -328,6 +358,8 @@ static_assert(offsetof(::test_inheritancewithrecursivedecl::wire::ChildSecondReq
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 
 ::fidl::internal::WireEventDispatcher<::test_inheritancewithrecursivedecl::Child>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_inheritancewithrecursivedecl::Child>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -462,12 +494,18 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<:
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Child::Second>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Child::Second>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Child>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Child::First> _request{std::move(request)};
   return ::fidl::WireResult<::test_inheritancewithrecursivedecl::Child::First>(
       ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Child>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First
 
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Child>::First(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
@@ -476,6 +514,10 @@ fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Ch
       ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Child>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.First:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Child>::Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Child::Second> _request{std::move(request)};
@@ -483,12 +525,18 @@ fidl::internal::WireSyncClientImpl<::test_inheritancewithrecursivedecl::Child>::
       ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Child>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second
+
 ::fidl::OneWayStatus
 fidl::internal::WireSyncBufferClientImpl<::test_inheritancewithrecursivedecl::Child>::Second(::fidl::ServerEnd<::test_inheritancewithrecursivedecl::Parent>&& request) {
   ::fidl::internal::TransactionalRequest<::test_inheritancewithrecursivedecl::Child::Second> _request{std::move(request)};
   return ::fidl::WireUnownedResult<::test_inheritancewithrecursivedecl::Child::Second>(
       ::fidl::UnownedClientEnd<::test_inheritancewithrecursivedecl::Child>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.inheritancewithrecursivedecl/Child.Second:end
 
 #pragma clang diagnostic pop
 

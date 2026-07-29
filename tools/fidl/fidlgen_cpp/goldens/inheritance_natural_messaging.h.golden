@@ -57,7 +57,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_inheritance::Super> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_inheritance::Super>> {
  public:
+  // api-coverage-fidl-name:test.inheritance/super.foo
+
   ::fidl::Result<::test_inheritance::Super::Foo> Foo(const ::fidl::Request<::test_inheritance::Super::Foo>& request);
+  // api-coverage-fidl-name:test.inheritance/super.foo:end
 
  private:
   ::fidl::UnownedClientEnd<::test_inheritance::Super> _client_end() const;
@@ -202,7 +205,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_inheritance::Sub> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_inheritance::Sub>> {
  public:
+  // api-coverage-fidl-name:test.inheritance/sub.foo
+
   ::fidl::Result<::test_inheritance::Sub::Foo> Foo(const ::fidl::Request<::test_inheritance::Sub::Foo>& request);
+  // api-coverage-fidl-name:test.inheritance/sub.foo:end
 
  private:
   ::fidl::UnownedClientEnd<::test_inheritance::Sub> _client_end() const;

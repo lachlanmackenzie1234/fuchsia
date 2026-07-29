@@ -419,6 +419,8 @@
 
   ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestNoResponse() {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::NoRequestNoResponse> _request_object{  };
@@ -426,6 +428,10 @@
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
 
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestNoResponse(::fidl::StringView arg) {
     __UNINITIALIZED
@@ -435,11 +441,19 @@
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
 
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestEmptyResponse() {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> _request{  };
     return ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
 
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestWithResponse() {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> _request{  };
@@ -447,17 +461,29 @@
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestEmptyResponse(::fidl::StringView arg) {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> _request{ arg };
     return ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestWithResponse(::fidl::StringView arg) {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> _request{ arg };
     return ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestNoResponse() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithAndWithoutRequestResponse::NoRequestNoResponse>();
@@ -473,6 +499,10 @@
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
+
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestNoResponse(::fidl::StringView arg) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithAndWithoutRequestResponse::WithRequestNoResponse>();
   ::fit::result<::fidl::Error, ::fidl::BufferSpan> _allocation =
@@ -487,12 +517,20 @@
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestEmptyResponse() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>();
   ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
 
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestWithResponse() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>();
@@ -501,6 +539,10 @@
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestEmptyResponse(::fidl::StringView arg) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>();
   ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> _request{ arg };
@@ -508,12 +550,20 @@
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestWithResponse(::fidl::StringView arg) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>();
   ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> _request{ arg };
   return ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
 
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestEmptyResponse() {
@@ -524,6 +574,10 @@
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
+
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestWithResponse() {
     return _client_base()->MakeSyncCallWith(
@@ -532,6 +586,10 @@
           return ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>(::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
 
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestEmptyResponse(::fidl::StringView arg) {
@@ -542,6 +600,10 @@
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestWithResponse(::fidl::StringView arg) {
     return _client_base()->MakeSyncCallWith(
@@ -550,6 +612,8 @@
           return ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>(::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::WithAndWithoutRequestResponse>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::WithAndWithoutRequestResponse>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -1238,12 +1302,18 @@ fidl::internal::WireCompleterBase<::test_protocols::WithAndWithoutRequestRespons
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalEvent<::test_protocols::WithAndWithoutRequestResponse::OnWithResponse>, ::fidl::internal::WireCodingConstraintEmpty, true>;
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalEvent<::test_protocols::WithAndWithoutRequestResponse::OnWithResponse>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestNoResponse() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::NoRequestNoResponse> _request{  };
         return ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestNoResponse>(
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
 
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestNoResponse() {
@@ -1252,12 +1322,20 @@ fidl::internal::WireCompleterBase<::test_protocols::WithAndWithoutRequestRespons
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
       ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestEmptyResponse() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> _request{  };
         return ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>(
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
 
       ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestEmptyResponse() {
@@ -1266,12 +1344,20 @@ fidl::internal::WireCompleterBase<::test_protocols::WithAndWithoutRequestRespons
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
+
       ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestWithResponse() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> _request{  };
         return ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>(
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
 
       ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::NoRequestWithResponse() {
@@ -1280,12 +1366,20 @@ fidl::internal::WireCompleterBase<::test_protocols::WithAndWithoutRequestRespons
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestNoResponse(::fidl::StringView arg) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestNoResponse> _request{ arg };
         return ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestNoResponse>(
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
 
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestNoResponse(::fidl::StringView arg) {
@@ -1294,12 +1388,20 @@ fidl::internal::WireCompleterBase<::test_protocols::WithAndWithoutRequestRespons
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
       ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestEmptyResponse(::fidl::StringView arg) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> _request{ arg };
         return ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>(
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
 
       ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestEmptyResponse(::fidl::StringView arg) {
@@ -1308,6 +1410,10 @@ fidl::internal::WireCompleterBase<::test_protocols::WithAndWithoutRequestRespons
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
       ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestWithResponse(::fidl::StringView arg) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> _request{ arg };
@@ -1315,12 +1421,18 @@ fidl::internal::WireCompleterBase<::test_protocols::WithAndWithoutRequestRespons
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
       ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithAndWithoutRequestResponse>::WithRequestWithResponse(::fidl::StringView arg) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> _request{ arg };
         return ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>(
           ::fidl::UnownedClientEnd<::test_protocols::WithAndWithoutRequestResponse>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
 
 ::fidl::OneWayStatus fidl::internal::WireWeakEventSender<::test_protocols::WithAndWithoutRequestResponse>::OnEmptyResponse() {
   ::fidl::internal::TransactionalEvent<::test_protocols::WithAndWithoutRequestResponse::OnEmptyResponse> _response{ };
@@ -1746,11 +1858,17 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
 
   ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::HandleInResult>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::WithErrorSyntax::HandleInResult>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
+
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ResponseAsStruct> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithErrorSyntax>::ResponseAsStruct() {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::ResponseAsStruct> _request{  };
     return ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ResponseAsStruct>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
 
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsPrimitive() {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> _request{  };
@@ -1758,17 +1876,29 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
+
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ErrorAsEnum> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsEnum() {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::ErrorAsEnum> _request{  };
     return ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ErrorAsEnum>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::HandleInResult> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithErrorSyntax>::HandleInResult() {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::HandleInResult> _request{  };
     return ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::HandleInResult>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
+
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
 
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::ResponseAsStruct> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithErrorSyntax>::ResponseAsStruct() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithErrorSyntax::ResponseAsStruct>();
@@ -1777,12 +1907,20 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
+
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsPrimitive() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>();
   ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
+
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
 
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::ErrorAsEnum> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsEnum() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithErrorSyntax::ErrorAsEnum>();
@@ -1791,12 +1929,20 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
+
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::HandleInResult> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithErrorSyntax>::HandleInResult() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithErrorSyntax::HandleInResult>();
   ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::HandleInResult> _request{  };
   return ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::HandleInResult>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
 
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::ResponseAsStruct>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithErrorSyntax>::ResponseAsStruct() {
@@ -1807,6 +1953,10 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsPrimitive() {
     return _client_base()->MakeSyncCallWith(
@@ -1815,6 +1965,10 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
           return ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>(::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
 
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsEnum>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsEnum() {
@@ -1825,6 +1979,10 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::HandleInResult>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithErrorSyntax>::HandleInResult() {
     return _client_base()->MakeSyncCallWith(
@@ -1833,6 +1991,8 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::WithA
           return ::fidl::WireResult<::test_protocols::WithErrorSyntax::HandleInResult>(::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::WithErrorSyntax>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::WithErrorSyntax>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -2510,12 +2670,18 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
   template
   struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_protocols::WithErrorSyntax::HandleInResult>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
+
       ::fidl::WireResult<::test_protocols::WithErrorSyntax::ResponseAsStruct>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithErrorSyntax>::ResponseAsStruct() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::ResponseAsStruct> _request{  };
         return ::fidl::WireResult<::test_protocols::WithErrorSyntax::ResponseAsStruct>(
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
 
       ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::ResponseAsStruct>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithErrorSyntax>::ResponseAsStruct() {
@@ -2524,12 +2690,20 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
       ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsPrimitive() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> _request{  };
         return ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>(
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
 
       ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsPrimitive() {
@@ -2538,12 +2712,20 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
+
       ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsEnum>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsEnum() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::ErrorAsEnum> _request{  };
         return ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsEnum>(
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
 
       ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::ErrorAsEnum>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithErrorSyntax>::ErrorAsEnum() {
@@ -2552,6 +2734,10 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
       ::fidl::WireResult<::test_protocols::WithErrorSyntax::HandleInResult>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithErrorSyntax>::HandleInResult() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::HandleInResult> _request{  };
@@ -2559,12 +2745,18 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
       ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::HandleInResult>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithErrorSyntax>::HandleInResult() {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithErrorSyntax::HandleInResult> _request{  };
         return ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::HandleInResult>(
           ::fidl::UnownedClientEnd<::test_protocols::WithErrorSyntax>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
 
   namespace test_protocols {
 
@@ -2874,6 +3066,8 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
 
   ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::MutateSocket>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::ChannelProtocol::MutateSocket>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocols::ChannelProtocol>::MethodA(int64_t a, int64_t b) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MethodA> _request_object{ a, b };
@@ -2882,11 +3076,19 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
 
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
   ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::MethodB> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::ChannelProtocol>::MethodB(int64_t a, int64_t b) {
     ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MethodB> _request{ a, b };
     return ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::MethodB>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
 
   ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::TakeHandle> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::ChannelProtocol>::TakeHandle(::zx::handle&& h) {
     ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::TakeHandle> _request{ std::move(h) };
@@ -2894,11 +3096,19 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
   ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::MutateSocket> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::ChannelProtocol>::MutateSocket(::zx::socket&& a) {
     ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MutateSocket> _request{ std::move(a) };
     return ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::MutateSocket>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
+
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::ChannelProtocol>::MethodA(int64_t a, int64_t b) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::ChannelProtocol::MethodA>();
@@ -2914,12 +3124,20 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
+
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
 ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::MethodB> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::ChannelProtocol>::MethodB(int64_t a, int64_t b) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::ChannelProtocol::MethodB>();
   ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MethodB> _request{ a, b };
   return ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::MethodB>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
+
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
 
 ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::TakeHandle> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::ChannelProtocol>::TakeHandle(::zx::handle&& h) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::ChannelProtocol::TakeHandle>();
@@ -2928,12 +3146,20 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
+
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
 ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::MutateSocket> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::ChannelProtocol>::MutateSocket(::zx::socket&& a) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::ChannelProtocol::MutateSocket>();
   ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MutateSocket> _request{ std::move(a) };
   return ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::MutateSocket>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
 
   ::fidl::WireResult<::test_protocols::ChannelProtocol::MethodB>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::ChannelProtocol>::MethodB(int64_t a, int64_t b) {
@@ -2944,6 +3170,10 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
+
   ::fidl::WireResult<::test_protocols::ChannelProtocol::TakeHandle>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::ChannelProtocol>::TakeHandle(::zx::handle&& h) {
     return _client_base()->MakeSyncCallWith(
@@ -2953,6 +3183,10 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
   ::fidl::WireResult<::test_protocols::ChannelProtocol::MutateSocket>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::ChannelProtocol>::MutateSocket(::zx::socket&& a) {
     return _client_base()->MakeSyncCallWith(
@@ -2961,6 +3195,8 @@ return MakeReply(::test_protocols::wire::WithErrorSyntaxHandleInResultResult::Wi
           return ::fidl::WireResult<::test_protocols::ChannelProtocol::MutateSocket>(::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::ChannelProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::ChannelProtocol>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -3501,12 +3737,18 @@ fidl::internal::WireCompleterBase<::test_protocols::ChannelProtocol::MutateSocke
   template
   struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_protocols::ChannelProtocol::MutateSocket>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocols::ChannelProtocol>::MethodA(int64_t a, int64_t b) {
         ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MethodA> _request{ a, b };
         return ::fidl::WireResult<::test_protocols::ChannelProtocol::MethodA>(
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
 
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::ChannelProtocol>::MethodA(int64_t a, int64_t b) {
@@ -3515,12 +3757,20 @@ fidl::internal::WireCompleterBase<::test_protocols::ChannelProtocol::MutateSocke
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
       ::fidl::WireResult<::test_protocols::ChannelProtocol::MethodB>
       fidl::internal::WireSyncClientImpl<::test_protocols::ChannelProtocol>::MethodB(int64_t a, int64_t b) {
         ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MethodB> _request{ a, b };
         return ::fidl::WireResult<::test_protocols::ChannelProtocol::MethodB>(
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
 
       ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::MethodB>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::ChannelProtocol>::MethodB(int64_t a, int64_t b) {
@@ -3529,12 +3779,20 @@ fidl::internal::WireCompleterBase<::test_protocols::ChannelProtocol::MutateSocke
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
+
       ::fidl::WireResult<::test_protocols::ChannelProtocol::TakeHandle>
       fidl::internal::WireSyncClientImpl<::test_protocols::ChannelProtocol>::TakeHandle(::zx::handle&& h) {
         ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::TakeHandle> _request{ std::move(h) };
         return ::fidl::WireResult<::test_protocols::ChannelProtocol::TakeHandle>(
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
 
       ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::TakeHandle>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::ChannelProtocol>::TakeHandle(::zx::handle&& h) {
@@ -3543,6 +3801,10 @@ fidl::internal::WireCompleterBase<::test_protocols::ChannelProtocol::MutateSocke
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
       ::fidl::WireResult<::test_protocols::ChannelProtocol::MutateSocket>
       fidl::internal::WireSyncClientImpl<::test_protocols::ChannelProtocol>::MutateSocket(::zx::socket&& a) {
         ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MutateSocket> _request{ std::move(a) };
@@ -3550,12 +3812,18 @@ fidl::internal::WireCompleterBase<::test_protocols::ChannelProtocol::MutateSocke
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
       ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::MutateSocket>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::ChannelProtocol>::MutateSocket(::zx::socket&& a) {
         ::fidl::internal::TransactionalRequest<::test_protocols::ChannelProtocol::MutateSocket> _request{ std::move(a) };
         return ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::MutateSocket>(
           ::fidl::UnownedClientEnd<::test_protocols::ChannelProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
 
 ::fidl::OneWayStatus fidl::internal::WireWeakEventSender<::test_protocols::ChannelProtocol>::EventA(int64_t a, int64_t b) {
   ::fidl::internal::TransactionalEvent<::test_protocols::ChannelProtocol::EventA> _response{a, b };
@@ -3654,6 +3922,8 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Chann
 
   ::fidl::WireUnownedResult<::test_protocols::DiscoverableProtocol::Method>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::DiscoverableProtocol::Method>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocols::DiscoverableProtocol>::Method() {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocols::DiscoverableProtocol::Method> _request_object{  };
@@ -3661,6 +3931,10 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Chann
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
+  // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
+
+// api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::DiscoverableProtocol>::Method() {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::DiscoverableProtocol::Method>();
@@ -3675,6 +3949,8 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Chann
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::DiscoverableProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::DiscoverableProtocol>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -3750,6 +4026,8 @@ fidl::WireServer<::test_protocols::DiscoverableProtocol>::Handler fidl::WireServ
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_protocols::DiscoverableProtocol::Method>, ::fidl::internal::WireCodingConstraintEmpty, true>;
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_protocols::DiscoverableProtocol::Method>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocols::DiscoverableProtocol>::Method() {
         ::fidl::internal::TransactionalRequest<::test_protocols::DiscoverableProtocol::Method> _request{  };
@@ -3757,12 +4035,18 @@ fidl::WireServer<::test_protocols::DiscoverableProtocol>::Handler fidl::WireServ
           ::fidl::UnownedClientEnd<::test_protocols::DiscoverableProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
+
+      // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::DiscoverableProtocol>::Method() {
         ::fidl::internal::TransactionalRequest<::test_protocols::DiscoverableProtocol::Method> _request{  };
         return ::fidl::WireUnownedResult<::test_protocols::DiscoverableProtocol::Method>(
           ::fidl::UnownedClientEnd<::test_protocols::DiscoverableProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::AnotherDiscoverableProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::AnotherDiscoverableProtocol>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -3999,6 +4283,8 @@ fidl::WireServer<::test_protocols::PlatformServer>::Handler fidl::WireServer<::t
 
   ::fidl::WireUnownedResult<::test_protocols::HandleRightsProtocol::ResponseMethod>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::HandleRightsProtocol::ResponseMethod>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocols::HandleRightsProtocol>::NoResponseMethod(::zx::socket&& h) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocols::HandleRightsProtocol::NoResponseMethod> _request_object{ std::move(h) };
@@ -4007,11 +4293,19 @@ fidl::WireServer<::test_protocols::PlatformServer>::Handler fidl::WireServer<::t
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
 
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
+
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
   ::fidl::internal::WireThenable<::test_protocols::HandleRightsProtocol::ResponseMethod> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::HandleRightsProtocol>::ResponseMethod(::zx::socket&& h) {
     ::fidl::internal::TransactionalRequest<::test_protocols::HandleRightsProtocol::ResponseMethod> _request{ std::move(h) };
     return ::fidl::internal::WireThenable<::test_protocols::HandleRightsProtocol::ResponseMethod>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
+
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::HandleRightsProtocol>::NoResponseMethod(::zx::socket&& h) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::HandleRightsProtocol::NoResponseMethod>();
@@ -4027,12 +4321,20 @@ fidl::WireServer<::test_protocols::PlatformServer>::Handler fidl::WireServer<::t
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
 
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
+
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
 ::fidl::internal::WireBufferThenable<::test_protocols::HandleRightsProtocol::ResponseMethod> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::HandleRightsProtocol>::ResponseMethod(::zx::socket&& h) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::HandleRightsProtocol::ResponseMethod>();
   ::fidl::internal::TransactionalRequest<::test_protocols::HandleRightsProtocol::ResponseMethod> _request{ std::move(h) };
   return ::fidl::internal::WireBufferThenable<::test_protocols::HandleRightsProtocol::ResponseMethod>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
+
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
 
   ::fidl::WireResult<::test_protocols::HandleRightsProtocol::ResponseMethod>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::HandleRightsProtocol>::ResponseMethod(::zx::socket&& h) {
@@ -4042,6 +4344,8 @@ fidl::WireServer<::test_protocols::PlatformServer>::Handler fidl::WireServer<::t
           return ::fidl::WireResult<::test_protocols::HandleRightsProtocol::ResponseMethod>(::fidl::UnownedClientEnd<::test_protocols::HandleRightsProtocol>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::HandleRightsProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::HandleRightsProtocol>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -4331,12 +4635,18 @@ fidl::internal::WireCompleterBase<::test_protocols::HandleRightsProtocol::Respon
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalEvent<::test_protocols::HandleRightsProtocol::AnEvent>, ::fidl::internal::WireCodingConstraintEmpty, true>;
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalEvent<::test_protocols::HandleRightsProtocol::AnEvent>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocols::HandleRightsProtocol>::NoResponseMethod(::zx::socket&& h) {
         ::fidl::internal::TransactionalRequest<::test_protocols::HandleRightsProtocol::NoResponseMethod> _request{ std::move(h) };
         return ::fidl::WireResult<::test_protocols::HandleRightsProtocol::NoResponseMethod>(
           ::fidl::UnownedClientEnd<::test_protocols::HandleRightsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
+
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
 
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::HandleRightsProtocol>::NoResponseMethod(::zx::socket&& h) {
@@ -4345,6 +4655,10 @@ fidl::internal::WireCompleterBase<::test_protocols::HandleRightsProtocol::Respon
           ::fidl::UnownedClientEnd<::test_protocols::HandleRightsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
+
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
       ::fidl::WireResult<::test_protocols::HandleRightsProtocol::ResponseMethod>
       fidl::internal::WireSyncClientImpl<::test_protocols::HandleRightsProtocol>::ResponseMethod(::zx::socket&& h) {
         ::fidl::internal::TransactionalRequest<::test_protocols::HandleRightsProtocol::ResponseMethod> _request{ std::move(h) };
@@ -4352,12 +4666,18 @@ fidl::internal::WireCompleterBase<::test_protocols::HandleRightsProtocol::Respon
           ::fidl::UnownedClientEnd<::test_protocols::HandleRightsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
+
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
       ::fidl::WireUnownedResult<::test_protocols::HandleRightsProtocol::ResponseMethod>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::HandleRightsProtocol>::ResponseMethod(::zx::socket&& h) {
         ::fidl::internal::TransactionalRequest<::test_protocols::HandleRightsProtocol::ResponseMethod> _request{ std::move(h) };
         return ::fidl::WireUnownedResult<::test_protocols::HandleRightsProtocol::ResponseMethod>(
           ::fidl::UnownedClientEnd<::test_protocols::HandleRightsProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
 
 ::fidl::OneWayStatus fidl::internal::WireWeakEventSender<::test_protocols::HandleRightsProtocol>::AnEvent(::zx::socket&& h) {
   ::fidl::internal::TransactionalEvent<::test_protocols::HandleRightsProtocol::AnEvent> _response{std::move(h) };
@@ -4679,11 +4999,17 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Handl
 
   ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::StructContainingEnds>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::WithProtocolEnds::StructContainingEnds>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
+
   ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::ClientEnds> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithProtocolEnds>::ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in) {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::ClientEnds> _request{ std::move(in) };
     return ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::ClientEnds>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
 
   ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::ServerEnds> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithProtocolEnds>::ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in) {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::ServerEnds> _request{ std::move(in) };
@@ -4691,11 +5017,19 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Handl
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
 
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
   ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::StructContainingEnds> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithProtocolEnds>::StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in) {
     ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::StructContainingEnds> _request{ std::move(in) };
     return ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::StructContainingEnds>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
+
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
 
 ::fidl::internal::WireBufferThenable<::test_protocols::WithProtocolEnds::ClientEnds> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithProtocolEnds>::ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithProtocolEnds::ClientEnds>();
@@ -4704,6 +5038,10 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Handl
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
+
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithProtocolEnds::ServerEnds> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithProtocolEnds>::ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithProtocolEnds::ServerEnds>();
   ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::ServerEnds> _request{ std::move(in) };
@@ -4711,12 +5049,20 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Handl
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
+
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithProtocolEnds::StructContainingEnds> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithProtocolEnds>::StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::WithProtocolEnds::StructContainingEnds>();
   ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::StructContainingEnds> _request{ std::move(in) };
   return ::fidl::internal::WireBufferThenable<::test_protocols::WithProtocolEnds::StructContainingEnds>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
 
   ::fidl::WireResult<::test_protocols::WithProtocolEnds::ClientEnds>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithProtocolEnds>::ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in) {
@@ -4727,6 +5073,10 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Handl
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
   ::fidl::WireResult<::test_protocols::WithProtocolEnds::ServerEnds>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithProtocolEnds>::ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in) {
     return _client_base()->MakeSyncCallWith(
@@ -4736,6 +5086,10 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Handl
         });
   }
 
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
   ::fidl::WireResult<::test_protocols::WithProtocolEnds::StructContainingEnds>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithProtocolEnds>::StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in) {
     return _client_base()->MakeSyncCallWith(
@@ -4744,6 +5098,8 @@ fidl::OneWayStatus fidl::internal::WireBufferEventSender<::test_protocols::Handl
           return ::fidl::WireResult<::test_protocols::WithProtocolEnds::StructContainingEnds>(::fidl::UnownedClientEnd<::test_protocols::WithProtocolEnds>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::WithProtocolEnds>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::WithProtocolEnds>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -5227,12 +5583,18 @@ fidl::internal::WireCompleterBase<::test_protocols::WithProtocolEnds::StructCont
   template
   struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_protocols::WithProtocolEnds::StructContainingEnds>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
+
       ::fidl::WireResult<::test_protocols::WithProtocolEnds::ClientEnds>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithProtocolEnds>::ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::ClientEnds> _request{ std::move(in) };
         return ::fidl::WireResult<::test_protocols::WithProtocolEnds::ClientEnds>(
           ::fidl::UnownedClientEnd<::test_protocols::WithProtocolEnds>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
 
       ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::ClientEnds>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithProtocolEnds>::ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in) {
@@ -5241,12 +5603,20 @@ fidl::internal::WireCompleterBase<::test_protocols::WithProtocolEnds::StructCont
           ::fidl::UnownedClientEnd<::test_protocols::WithProtocolEnds>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
       ::fidl::WireResult<::test_protocols::WithProtocolEnds::ServerEnds>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithProtocolEnds>::ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::ServerEnds> _request{ std::move(in) };
         return ::fidl::WireResult<::test_protocols::WithProtocolEnds::ServerEnds>(
           ::fidl::UnownedClientEnd<::test_protocols::WithProtocolEnds>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
 
       ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::ServerEnds>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithProtocolEnds>::ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in) {
@@ -5255,6 +5625,10 @@ fidl::internal::WireCompleterBase<::test_protocols::WithProtocolEnds::StructCont
           ::fidl::UnownedClientEnd<::test_protocols::WithProtocolEnds>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
       ::fidl::WireResult<::test_protocols::WithProtocolEnds::StructContainingEnds>
       fidl::internal::WireSyncClientImpl<::test_protocols::WithProtocolEnds>::StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::StructContainingEnds> _request{ std::move(in) };
@@ -5262,12 +5636,18 @@ fidl::internal::WireCompleterBase<::test_protocols::WithProtocolEnds::StructCont
           ::fidl::UnownedClientEnd<::test_protocols::WithProtocolEnds>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
       ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::StructContainingEnds>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithProtocolEnds>::StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in) {
         ::fidl::internal::TransactionalRequest<::test_protocols::WithProtocolEnds::StructContainingEnds> _request{ std::move(in) };
         return ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::StructContainingEnds>(
           ::fidl::UnownedClientEnd<::test_protocols::WithProtocolEnds>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
 
   namespace test_protocols {
 
@@ -5337,6 +5717,8 @@ fidl::internal::WireCompleterBase<::test_protocols::WithProtocolEnds::StructCont
 
   ::fidl::WireUnownedResult<::test_protocols::ManyParameters::Fifteen>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::ManyParameters::Fifteen>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
+
   ::fidl::OneWayStatus fidl::internal::WireWeakOnewayClientImpl<::test_protocols::ManyParameters>::Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15) {
     __UNINITIALIZED
     ::fidl::internal::TransactionalRequest<::test_protocols::ManyParameters::Fifteen> _request_object{ p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15 };
@@ -5344,6 +5726,10 @@ fidl::internal::WireCompleterBase<::test_protocols::WithProtocolEnds::StructCont
         ::fidl::internal::AllowUnownedInputRef{}, &_request_object);
     return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
   }
+
+  // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
+
+// api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
 
 ::fidl::OneWayStatus fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::ManyParameters>::Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::ManyParameters::Fifteen>();
@@ -5358,6 +5744,8 @@ fidl::internal::WireCompleterBase<::test_protocols::WithProtocolEnds::StructCont
       _allocation->data, _buffer_size, &_request);
   return _client_base()->SendOneWay(_request_message.GetOutgoingMessage());
 }
+
+// api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::ManyParameters>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::ManyParameters>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -5443,6 +5831,8 @@ fidl::WireServer<::test_protocols::ManyParameters>::Handler fidl::WireServer<::t
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_protocols::ManyParameters::Fifteen>, ::fidl::internal::WireCodingConstraintEmpty, true>;
   template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalRequest<::test_protocols::ManyParameters::Fifteen>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncClientImpl<::test_protocols::ManyParameters>::Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15) {
         ::fidl::internal::TransactionalRequest<::test_protocols::ManyParameters::Fifteen> _request{ p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15 };
@@ -5450,12 +5840,18 @@ fidl::WireServer<::test_protocols::ManyParameters>::Handler fidl::WireServer<::t
           ::fidl::UnownedClientEnd<::test_protocols::ManyParameters>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
+
+      // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
+
       ::fidl::OneWayStatus
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::ManyParameters>::Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15) {
         ::fidl::internal::TransactionalRequest<::test_protocols::ManyParameters::Fifteen> _request{ p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15 };
         return ::fidl::WireUnownedResult<::test_protocols::ManyParameters::Fifteen>(
           ::fidl::UnownedClientEnd<::test_protocols::ManyParameters>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
 
   namespace test_protocols {
 
@@ -5548,11 +5944,17 @@ fidl::WireServer<::test_protocols::ManyParameters>::Handler fidl::WireServer<::t
 
   ::fidl::WireUnownedResult<::test_protocols::MethodWithUnion::UnionMethod>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_protocols::MethodWithUnion::UnionMethod>(result) {}
 
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
   ::fidl::internal::WireThenable<::test_protocols::MethodWithUnion::UnionMethod> fidl::internal::WireWeakAsyncClientImpl<::test_protocols::MethodWithUnion>::UnionMethod(::test_protocols::wire::TheUnion u) {
     ::fidl::internal::TransactionalRequest<::test_protocols::MethodWithUnion::UnionMethod> _request{ u };
     return ::fidl::internal::WireThenable<::test_protocols::MethodWithUnion::UnionMethod>{
         _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
   }
+
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
+
+// api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
 
 ::fidl::internal::WireBufferThenable<::test_protocols::MethodWithUnion::UnionMethod> fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::MethodWithUnion>::UnionMethod(::test_protocols::wire::TheUnion u) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_protocols::MethodWithUnion::UnionMethod>();
@@ -5560,6 +5962,10 @@ fidl::WireServer<::test_protocols::ManyParameters>::Handler fidl::WireServer<::t
   return ::fidl::internal::WireBufferThenable<::test_protocols::MethodWithUnion::UnionMethod>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
+
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
 
   ::fidl::WireResult<::test_protocols::MethodWithUnion::UnionMethod>
   fidl::internal::WireWeakSyncClientImpl<::test_protocols::MethodWithUnion>::UnionMethod(::test_protocols::wire::TheUnion u) {
@@ -5569,6 +5975,8 @@ fidl::WireServer<::test_protocols::ManyParameters>::Handler fidl::WireServer<::t
           return ::fidl::WireResult<::test_protocols::MethodWithUnion::UnionMethod>(::fidl::UnownedClientEnd<::test_protocols::MethodWithUnion>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
         });
   }
+
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
 
 ::fidl::internal::WireEventDispatcher<::test_protocols::MethodWithUnion>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_protocols::MethodWithUnion>* event_handler)
 : IncomingEventDispatcher(event_handler) {}
@@ -5752,6 +6160,8 @@ fidl::internal::WireCompleterBase<::test_protocols::MethodWithUnion::UnionMethod
   template
   struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_protocols::MethodWithUnion::UnionMethod>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+      // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
       ::fidl::WireResult<::test_protocols::MethodWithUnion::UnionMethod>
       fidl::internal::WireSyncClientImpl<::test_protocols::MethodWithUnion>::UnionMethod(::test_protocols::wire::TheUnion u) {
         ::fidl::internal::TransactionalRequest<::test_protocols::MethodWithUnion::UnionMethod> _request{ u };
@@ -5759,12 +6169,18 @@ fidl::internal::WireCompleterBase<::test_protocols::MethodWithUnion::UnionMethod
           ::fidl::UnownedClientEnd<::test_protocols::MethodWithUnion>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
       }
 
+      // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
+
+      // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
       ::fidl::WireUnownedResult<::test_protocols::MethodWithUnion::UnionMethod>
       fidl::internal::WireSyncBufferClientImpl<::test_protocols::MethodWithUnion>::UnionMethod(::test_protocols::wire::TheUnion u) {
         ::fidl::internal::TransactionalRequest<::test_protocols::MethodWithUnion::UnionMethod> _request{ u };
         return ::fidl::WireUnownedResult<::test_protocols::MethodWithUnion::UnionMethod>(
           ::fidl::UnownedClientEnd<::test_protocols::MethodWithUnion>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
       }
+
+      // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
 
 #pragma clang diagnostic pop
 

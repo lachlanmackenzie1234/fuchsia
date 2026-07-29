@@ -35,7 +35,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_service::FirstProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_service::FirstProtocol>> {
  public:
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst
+
   ::fit::result<::fidl::OneWayError> MethodOnFirst();
+  // api-coverage-fidl-name:test.service/FirstProtocol.MethodOnFirst:end
 
  private:
   ::fidl::UnownedClientEnd<::test_service::FirstProtocol> _client_end() const;
@@ -148,7 +151,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_service::SecondProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_service::SecondProtocol>> {
  public:
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond
+
   ::fit::result<::fidl::OneWayError> MethodOnSecond();
+  // api-coverage-fidl-name:test.service/SecondProtocol.MethodOnSecond:end
 
  private:
   ::fidl::UnownedClientEnd<::test_service::SecondProtocol> _client_end() const;

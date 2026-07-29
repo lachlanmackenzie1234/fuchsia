@@ -96,6 +96,7 @@ impl SimpleProtocolSynchronousProxy {
         SimpleProtocolEvent::decode(self.client.wait_for_event::<SimpleProtocolMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
     pub fn r#add(
         &self,
         mut a: i32,
@@ -114,6 +115,7 @@ impl SimpleProtocolSynchronousProxy {
         )?;
         Ok(_response.sum)
     }
+    // api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -188,6 +190,7 @@ impl SimpleProtocolProxy {
 impl SimpleProtocolProxyInterface for SimpleProtocolProxy {
     type AddResponseFut =
         fidl::client::QueryResponseFut<i32, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
     fn r#add(&self, mut a: i32, mut b: i32) -> Self::AddResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -206,6 +209,7 @@ impl SimpleProtocolProxyInterface for SimpleProtocolProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
 }
 
 pub struct SimpleProtocolEventStream {

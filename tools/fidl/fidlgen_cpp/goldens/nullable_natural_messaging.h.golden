@@ -57,7 +57,10 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_nullable::SimpleProtocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_nullable::SimpleProtocol>> {
  public:
+  // api-coverage-fidl-name:test.nullable/SimpleProtocol.Add
+
   ::fidl::Result<::test_nullable::SimpleProtocol::Add> Add(const ::fidl::Request<::test_nullable::SimpleProtocol::Add>& request);
+  // api-coverage-fidl-name:test.nullable/SimpleProtocol.Add:end
 
  private:
   ::fidl::UnownedClientEnd<::test_nullable::SimpleProtocol> _client_end() const;

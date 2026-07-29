@@ -95,11 +95,17 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_error::Exa
 
 ::fidl::WireUnownedResult<::test_error::Example::Foo>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_error::Example::Foo>(result) {}
 
+// api-coverage-fidl-name:test.error/Example.foo
+
 ::fidl::internal::WireThenable<::test_error::Example::Foo> fidl::internal::WireWeakAsyncClientImpl<::test_error::Example>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_error::Example::Foo> _request{s};
   return ::fidl::internal::WireThenable<::test_error::Example::Foo>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.error/Example.foo:end
+
+// api-coverage-fidl-name:test.error/Example.foo
 
 ::fidl::internal::WireBufferThenable<::test_error::Example::Foo> fidl::internal::WireWeakAsyncBufferClientImpl<::test_error::Example>::Foo(::fidl::StringView s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_error::Example::Foo>();
@@ -107,6 +113,10 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_error::Exa
   return ::fidl::internal::WireBufferThenable<::test_error::Example::Foo>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.error/Example.foo:end
+
+// api-coverage-fidl-name:test.error/Example.foo
 
 ::fidl::WireResult<::test_error::Example::Foo>
 fidl::internal::WireWeakSyncClientImpl<::test_error::Example>::Foo(::fidl::StringView s) {
@@ -116,6 +126,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_error::Example>::Foo(::fidl::Strin
         return ::fidl::WireResult<::test_error::Example::Foo>(::fidl::UnownedClientEnd<::test_error::Example>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.error/Example.foo:end
 
 ::fidl::internal::WireEventDispatcher<::test_error::Example>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_error::Example>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -318,6 +330,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_error::Example::Foo>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_error::Example::Foo>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.error/Example.foo
+
 ::fidl::WireResult<::test_error::Example::Foo>
 fidl::internal::WireSyncClientImpl<::test_error::Example>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_error::Example::Foo> _request{s};
@@ -325,12 +339,18 @@ fidl::internal::WireSyncClientImpl<::test_error::Example>::Foo(::fidl::StringVie
       ::fidl::UnownedClientEnd<::test_error::Example>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.error/Example.foo:end
+
+// api-coverage-fidl-name:test.error/Example.foo
+
 ::fidl::WireUnownedResult<::test_error::Example::Foo>
 fidl::internal::WireSyncBufferClientImpl<::test_error::Example>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_error::Example::Foo> _request{s};
   return ::fidl::WireUnownedResult<::test_error::Example::Foo>(
       ::fidl::UnownedClientEnd<::test_error::Example>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.error/Example.foo:end
 
 #pragma clang diagnostic pop
 

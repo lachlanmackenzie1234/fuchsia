@@ -73,6 +73,7 @@ impl ExampleSynchronousProxy {
         ExampleEvent::decode(self.client.wait_for_event::<ExampleMarker>(deadline)?)
     }
 
+    // api-coverage-fidl-name:test.error/Example.foo
     pub fn r#foo(
         &self,
         mut s: &str,
@@ -90,6 +91,7 @@ impl ExampleSynchronousProxy {
         )?;
         Ok(_response.map(|x| x.y))
     }
+    // api-coverage-fidl-name:test.error/Example.foo:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -168,6 +170,7 @@ impl ExampleProxyInterface for ExampleProxy {
         ExampleFooResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.error/Example.foo
     fn r#foo(&self, mut s: &str) -> Self::FooResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -186,6 +189,7 @@ impl ExampleProxyInterface for ExampleProxy {
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.error/Example.foo:end
 }
 
 pub struct ExampleEventStream {

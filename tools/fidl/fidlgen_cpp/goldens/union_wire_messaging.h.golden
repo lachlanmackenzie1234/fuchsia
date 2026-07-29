@@ -465,24 +465,36 @@ template <>
 class ::fidl::internal::WireSyncClientImpl<::test_union::TestProtocol> final : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::WireSyncClientImpl<::test_union::TestProtocol>> {
  public:
   // Allocates 80 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
   ::fidl::WireResult<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>
   StrictUnionHenceResponseMayBeStackAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
   ::fidl::WireResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>
   FlexibleUnionHenceResponseMustBeHeapAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 };
 
 template <>
 class ::fidl::internal::WireSyncBufferClientImpl<::test_union::TestProtocol> final : public ::fidl::internal::SyncEndpointBufferVeneer<::fidl::internal::WireSyncBufferClientImpl<::test_union::TestProtocol>> {
  public:
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
   ::fidl::WireUnownedResult<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated>
   StrictUnionHenceResponseMayBeStackAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
 
   // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
   ::fidl::WireUnownedResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated>
   FlexibleUnionHenceResponseMustBeHeapAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 };
 
 template <>
@@ -595,9 +607,16 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_union::TestProtocol> fina
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
   // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
   ::fidl::internal::WireThenable<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> StrictUnionHenceResponseMayBeStackAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
+
   // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
   ::fidl::internal::WireThenable<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> FlexibleUnionHenceResponseMustBeHeapAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 };
 
 template <>
@@ -612,10 +631,16 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_union::TestProtocol
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
   ::fidl::internal::WireBufferThenable<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> StrictUnionHenceResponseMayBeStackAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
 
   // Caller provides the backing storage for FIDL message.
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
   ::fidl::internal::WireBufferThenable<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> FlexibleUnionHenceResponseMustBeHeapAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 };
 template <>
 class ::fidl::internal::WireWeakSyncClientImpl<::test_union::TestProtocol> final : public ::fidl::internal::WireWeakOnewayClientImpl<::test_union::TestProtocol> {
@@ -623,10 +648,16 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_union::TestProtocol> final
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 80 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated
+
   ::fidl::WireResult<::test_union::TestProtocol::StrictUnionHenceResponseMayBeStackAllocated> StrictUnionHenceResponseMayBeStackAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.StrictUnionHenceResponseMayBeStackAllocated:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated
+
   ::fidl::WireResult<::test_union::TestProtocol::FlexibleUnionHenceResponseMustBeHeapAllocated> FlexibleUnionHenceResponseMustBeHeapAllocated();
+  // api-coverage-fidl-name:test.union/TestProtocol.FlexibleUnionHenceResponseMustBeHeapAllocated:end
 };
 
 template <>

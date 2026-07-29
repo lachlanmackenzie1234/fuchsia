@@ -1070,6 +1070,7 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay
     pub fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1077,7 +1078,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay
     pub fn r#flexible_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1085,7 +1088,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
     pub fn r#strict_two_way(&self, ___deadline: zx::MonotonicInstant) -> Result<(), fidl::Error> {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
@@ -1099,7 +1104,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
     pub fn r#strict_two_way_fields(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1116,7 +1123,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         )?;
         Ok(_response.some_field)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
     pub fn r#strict_two_way_union(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1133,7 +1142,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
     pub fn r#strict_two_way_table(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1150,7 +1161,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
     pub fn r#strict_two_way_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1167,7 +1180,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
     pub fn r#strict_two_way_fields_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1184,7 +1199,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x.some_field))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
     pub fn r#strict_two_way_union_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1201,7 +1218,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
     pub fn r#strict_two_way_table_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -1218,6 +1237,7 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -1361,6 +1381,7 @@ impl UnknownInteractionsAjarProtocolProxy {
 }
 
 impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarProtocolProxy {
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay
     fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1368,7 +1389,9 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictOneWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay
     fn r#flexible_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -1376,9 +1399,11 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.FlexibleOneWay:end
 
     type StrictTwoWayResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay
     fn r#strict_two_way(&self) -> Self::StrictTwoWayResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1397,9 +1422,11 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWay:end
 
     type StrictTwoWayFieldsResponseFut =
         fidl::client::QueryResponseFut<i32, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields
     fn r#strict_two_way_fields(&self) -> Self::StrictTwoWayFieldsResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1418,11 +1445,13 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFields:end
 
     type StrictTwoWayUnionResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion
     fn r#strict_two_way_union(&self) -> Self::StrictTwoWayUnionResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1444,11 +1473,13 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnion:end
 
     type StrictTwoWayTableResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsAjarProtocolStrictTwoWayTableResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable
     fn r#strict_two_way_table(&self) -> Self::StrictTwoWayTableResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1470,11 +1501,13 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTable:end
 
     type StrictTwoWayErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsAjarProtocolStrictTwoWayErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr
     fn r#strict_two_way_err(&self) -> Self::StrictTwoWayErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1496,11 +1529,13 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayErr:end
 
     type StrictTwoWayFieldsErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr
     fn r#strict_two_way_fields_err(&self) -> Self::StrictTwoWayFieldsErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1526,11 +1561,13 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayFieldsErr:end
 
     type StrictTwoWayUnionErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr
     fn r#strict_two_way_union_err(&self) -> Self::StrictTwoWayUnionErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1556,11 +1593,13 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayUnionErr:end
 
     type StrictTwoWayTableErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsAjarProtocolStrictTwoWayTableErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr
     fn r#strict_two_way_table_err(&self) -> Self::StrictTwoWayTableErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -1586,6 +1625,7 @@ impl UnknownInteractionsAjarProtocolProxyInterface for UnknownInteractionsAjarPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsAjarProtocol.StrictTwoWayTableErr:end
 }
 
 pub struct UnknownInteractionsAjarProtocolEventStream {
@@ -3905,6 +3945,7 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay
     pub fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -3912,7 +3953,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
     pub fn r#strict_two_way(&self, ___deadline: zx::MonotonicInstant) -> Result<(), fidl::Error> {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
@@ -3926,7 +3969,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
     pub fn r#strict_two_way_fields(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -3943,7 +3988,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         )?;
         Ok(_response.some_field)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
     pub fn r#strict_two_way_union(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -3960,7 +4007,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
     pub fn r#strict_two_way_table(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -3977,7 +4026,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
     pub fn r#strict_two_way_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -3994,7 +4045,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
     pub fn r#strict_two_way_fields_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -4011,7 +4064,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x.some_field))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
     pub fn r#strict_two_way_union_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -4028,7 +4083,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
     pub fn r#strict_two_way_table_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -4045,6 +4102,7 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -4183,6 +4241,7 @@ impl UnknownInteractionsClosedProtocolProxy {
 }
 
 impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClosedProtocolProxy {
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay
     fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -4190,9 +4249,11 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictOneWay:end
 
     type StrictTwoWayResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay
     fn r#strict_two_way(&self) -> Self::StrictTwoWayResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4211,9 +4272,11 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWay:end
 
     type StrictTwoWayFieldsResponseFut =
         fidl::client::QueryResponseFut<i32, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields
     fn r#strict_two_way_fields(&self) -> Self::StrictTwoWayFieldsResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4232,11 +4295,13 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFields:end
 
     type StrictTwoWayUnionResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion
     fn r#strict_two_way_union(&self) -> Self::StrictTwoWayUnionResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4259,11 +4324,13 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnion:end
 
     type StrictTwoWayTableResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsClosedProtocolStrictTwoWayTableResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable
     fn r#strict_two_way_table(&self) -> Self::StrictTwoWayTableResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4286,11 +4353,13 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTable:end
 
     type StrictTwoWayErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsClosedProtocolStrictTwoWayErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr
     fn r#strict_two_way_err(&self) -> Self::StrictTwoWayErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4312,11 +4381,13 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayErr:end
 
     type StrictTwoWayFieldsErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr
     fn r#strict_two_way_fields_err(&self) -> Self::StrictTwoWayFieldsErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4342,11 +4413,13 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayFieldsErr:end
 
     type StrictTwoWayUnionErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr
     fn r#strict_two_way_union_err(&self) -> Self::StrictTwoWayUnionErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4372,11 +4445,13 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayUnionErr:end
 
     type StrictTwoWayTableErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsClosedProtocolStrictTwoWayTableErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr
     fn r#strict_two_way_table_err(&self) -> Self::StrictTwoWayTableErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -4402,6 +4477,7 @@ impl UnknownInteractionsClosedProtocolProxyInterface for UnknownInteractionsClos
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsClosedProtocol.StrictTwoWayTableErr:end
 }
 
 pub struct UnknownInteractionsClosedProtocolEventStream {
@@ -7403,6 +7479,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         )
     }
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay
     pub fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -7410,7 +7487,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay
     pub fn r#flexible_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -7418,7 +7497,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
     pub fn r#strict_two_way(&self, ___deadline: zx::MonotonicInstant) -> Result<(), fidl::Error> {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
@@ -7432,7 +7513,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
     pub fn r#strict_two_way_fields(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7449,7 +7532,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         )?;
         Ok(_response.some_field)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
     pub fn r#strict_two_way_union(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7466,7 +7551,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
     pub fn r#strict_two_way_table(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7483,7 +7570,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         )?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
     pub fn r#strict_two_way_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7500,7 +7589,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
     pub fn r#strict_two_way_fields_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7517,7 +7608,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x.some_field))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
     pub fn r#strict_two_way_union_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7534,7 +7627,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
     pub fn r#strict_two_way_table_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7551,7 +7646,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             )?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
     pub fn r#flexible_two_way(&self, ___deadline: zx::MonotonicInstant) -> Result<(), fidl::Error> {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
@@ -7566,7 +7663,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way")?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
     pub fn r#flexible_two_way_fields(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7584,7 +7683,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
                 .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_fields")?;
         Ok(_response.some_field)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
     pub fn r#flexible_two_way_union(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7602,7 +7703,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
                 .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_union")?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
     pub fn r#flexible_two_way_table(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7620,7 +7723,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
                 .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_table")?;
         Ok(_response)
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
     pub fn r#flexible_two_way_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7638,7 +7743,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_err")?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
     pub fn r#flexible_two_way_fields_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7657,7 +7764,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_fields_err")?;
         Ok(_response.map(|x| x.some_field))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
     pub fn r#flexible_two_way_union_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7676,7 +7785,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_union_err")?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
     pub fn r#flexible_two_way_table_err(
         &self,
         ___deadline: zx::MonotonicInstant,
@@ -7695,6 +7806,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_table_err")?;
         Ok(_response.map(|x| x))
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -7900,6 +8012,7 @@ impl UnknownInteractionsProtocolProxy {
 }
 
 impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolProxy {
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay
     fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -7907,7 +8020,9 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             fidl::encoding::DynamicFlags::empty(),
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictOneWay:end
 
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay
     fn r#flexible_one_way(&self) -> Result<(), fidl::Error> {
         self.client.send::<fidl::encoding::EmptyPayload>(
             (),
@@ -7915,9 +8030,11 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleOneWay:end
 
     type StrictTwoWayResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay
     fn r#strict_two_way(&self) -> Self::StrictTwoWayResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -7936,9 +8053,11 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWay:end
 
     type StrictTwoWayFieldsResponseFut =
         fidl::client::QueryResponseFut<i32, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields
     fn r#strict_two_way_fields(&self) -> Self::StrictTwoWayFieldsResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -7957,11 +8076,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFields:end
 
     type StrictTwoWayUnionResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolStrictTwoWayUnionResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion
     fn r#strict_two_way_union(&self) -> Self::StrictTwoWayUnionResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -7983,11 +8104,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnion:end
 
     type StrictTwoWayTableResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolStrictTwoWayTableResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable
     fn r#strict_two_way_table(&self) -> Self::StrictTwoWayTableResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8009,11 +8132,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTable:end
 
     type StrictTwoWayErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolStrictTwoWayErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr
     fn r#strict_two_way_err(&self) -> Self::StrictTwoWayErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8035,11 +8160,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayErr:end
 
     type StrictTwoWayFieldsErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolStrictTwoWayFieldsErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr
     fn r#strict_two_way_fields_err(&self) -> Self::StrictTwoWayFieldsErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8064,11 +8191,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayFieldsErr:end
 
     type StrictTwoWayUnionErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolStrictTwoWayUnionErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr
     fn r#strict_two_way_union_err(&self) -> Self::StrictTwoWayUnionErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8093,11 +8222,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayUnionErr:end
 
     type StrictTwoWayTableErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolStrictTwoWayTableErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr
     fn r#strict_two_way_table_err(&self) -> Self::StrictTwoWayTableErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8122,9 +8253,11 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.StrictTwoWayTableErr:end
 
     type FlexibleTwoWayResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay
     fn r#flexible_two_way(&self) -> Self::FlexibleTwoWayResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8144,9 +8277,11 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWay:end
 
     type FlexibleTwoWayFieldsResponseFut =
         fidl::client::QueryResponseFut<i32, fidl::encoding::DefaultFuchsiaResourceDialect>;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields
     fn r#flexible_two_way_fields(&self) -> Self::FlexibleTwoWayFieldsResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8168,11 +8303,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFields:end
 
     type FlexibleTwoWayUnionResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolFlexibleTwoWayUnionResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion
     fn r#flexible_two_way_union(&self) -> Self::FlexibleTwoWayUnionResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8197,11 +8334,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnion:end
 
     type FlexibleTwoWayTableResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolFlexibleTwoWayTableResponse,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable
     fn r#flexible_two_way_table(&self) -> Self::FlexibleTwoWayTableResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8226,11 +8365,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTable:end
 
     type FlexibleTwoWayErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolFlexibleTwoWayErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr
     fn r#flexible_two_way_err(&self) -> Self::FlexibleTwoWayErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8253,11 +8394,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayErr:end
 
     type FlexibleTwoWayFieldsErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr
     fn r#flexible_two_way_fields_err(&self) -> Self::FlexibleTwoWayFieldsErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8283,11 +8426,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayFieldsErr:end
 
     type FlexibleTwoWayUnionErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolFlexibleTwoWayUnionErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr
     fn r#flexible_two_way_union_err(&self) -> Self::FlexibleTwoWayUnionErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8313,11 +8458,13 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayUnionErr:end
 
     type FlexibleTwoWayTableErrResponseFut = fidl::client::QueryResponseFut<
         UnknownInteractionsProtocolFlexibleTwoWayTableErrResult,
         fidl::encoding::DefaultFuchsiaResourceDialect,
     >;
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr
     fn r#flexible_two_way_table_err(&self) -> Self::FlexibleTwoWayTableErrResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
@@ -8343,6 +8490,7 @@ impl UnknownInteractionsProtocolProxyInterface for UnknownInteractionsProtocolPr
             _decode,
         )
     }
+    // api-coverage-fidl-name:test.unknowninteractions/UnknownInteractionsProtocol.FlexibleTwoWayTableErr:end
 }
 
 pub struct UnknownInteractionsProtocolEventStream {

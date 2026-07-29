@@ -1054,28 +1054,46 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::WithAndWithoutReque
  public:
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
+
     ::fidl::OneWayStatus
     NoRequestNoResponse();
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
     ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>
     NoRequestEmptyResponse();
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
 
     // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
+
     ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>
     NoRequestWithResponse();
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
+
     ::fidl::OneWayStatus
     WithRequestNoResponse(::fidl::StringView arg);
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
 
     // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
     ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>
     WithRequestEmptyResponse(::fidl::StringView arg);
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
 
     // Request is heap-allocated. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
     ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>
     WithRequestWithResponse(::fidl::StringView arg);
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
 
 };
 
@@ -1085,28 +1103,46 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithAndWithou
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
+
     ::fidl::OneWayStatus
     NoRequestNoResponse();
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
     ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse>
     NoRequestEmptyResponse();
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
+
     ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse>
     NoRequestWithResponse();
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
+
     ::fidl::OneWayStatus
     WithRequestNoResponse(::fidl::StringView arg);
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
     ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse>
     WithRequestEmptyResponse(::fidl::StringView arg);
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
     ::fidl::WireUnownedResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse>
     WithRequestWithResponse(::fidl::StringView arg);
+    // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
 
 };
 
@@ -2136,20 +2172,32 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::WithErrorSyntax> fi
  public:
 
     // Allocates 72 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
+
     ::fidl::WireResult<::test_protocols::WithErrorSyntax::ResponseAsStruct>
     ResponseAsStruct();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
     ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>
     ErrorAsPrimitive();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
+
     ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsEnum>
     ErrorAsEnum();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
     ::fidl::WireResult<::test_protocols::WithErrorSyntax::HandleInResult>
     HandleInResult();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
 
 };
 
@@ -2159,20 +2207,32 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithErrorSynt
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
+
     ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::ResponseAsStruct>
     ResponseAsStruct();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
     ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive>
     ErrorAsPrimitive();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
+
     ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::ErrorAsEnum>
     ErrorAsEnum();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
     ::fidl::WireUnownedResult<::test_protocols::WithErrorSyntax::HandleInResult>
     HandleInResult();
+    // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
 
 };
 
@@ -3119,20 +3179,32 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::ChannelProtocol> fi
  public:
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
+
     ::fidl::OneWayStatus
     MethodA(int64_t a, int64_t b);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
 
     // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
     ::fidl::WireResult<::test_protocols::ChannelProtocol::MethodB>
     MethodB(int64_t a, int64_t b);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
+
     ::fidl::WireResult<::test_protocols::ChannelProtocol::TakeHandle>
     TakeHandle(::zx::handle&& h);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
     ::fidl::WireResult<::test_protocols::ChannelProtocol::MutateSocket>
     MutateSocket(::zx::socket&& a);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
 
 };
 
@@ -3142,20 +3214,32 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::ChannelProtoc
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
+
     ::fidl::OneWayStatus
     MethodA(int64_t a, int64_t b);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
     ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::MethodB>
     MethodB(int64_t a, int64_t b);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
+
     ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::TakeHandle>
     TakeHandle(::zx::handle&& h);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
     ::fidl::WireUnownedResult<::test_protocols::ChannelProtocol::MutateSocket>
     MutateSocket(::zx::socket&& a);
+    // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
 
 };
 
@@ -3462,8 +3546,11 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::DiscoverableProtoco
  public:
 
     // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
+
     ::fidl::OneWayStatus
     Method();
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
 
 };
 
@@ -3473,8 +3560,11 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::DiscoverableP
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
+
     ::fidl::OneWayStatus
     Method();
+    // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
 
 };
 
@@ -4162,12 +4252,18 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::HandleRightsProtoco
  public:
 
     // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
+
     ::fidl::OneWayStatus
     NoResponseMethod(::zx::socket&& h);
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
     ::fidl::WireResult<::test_protocols::HandleRightsProtocol::ResponseMethod>
     ResponseMethod(::zx::socket&& h);
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
 
 };
 
@@ -4177,12 +4273,18 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::HandleRightsP
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
+
     ::fidl::OneWayStatus
     NoResponseMethod(::zx::socket&& h);
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
     ::fidl::WireUnownedResult<::test_protocols::HandleRightsProtocol::ResponseMethod>
     ResponseMethod(::zx::socket&& h);
+    // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
 
 };
 
@@ -4942,16 +5044,25 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::WithProtocolEnds> f
  public:
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
+
     ::fidl::WireResult<::test_protocols::WithProtocolEnds::ClientEnds>
     ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in);
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
     ::fidl::WireResult<::test_protocols::WithProtocolEnds::ServerEnds>
     ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in);
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
 
     // Allocates 64 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
     ::fidl::WireResult<::test_protocols::WithProtocolEnds::StructContainingEnds>
     StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in);
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
 
 };
 
@@ -4961,16 +5072,25 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::WithProtocolE
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
+
     ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::ClientEnds>
     ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in);
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
     ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::ServerEnds>
     ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in);
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
     ::fidl::WireUnownedResult<::test_protocols::WithProtocolEnds::StructContainingEnds>
     StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in);
+    // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
 
 };
 
@@ -5274,8 +5394,11 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::ManyParameters> fin
  public:
 
     // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
+
     ::fidl::OneWayStatus
     Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15);
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
 
 };
 
@@ -5285,8 +5408,11 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::ManyParameter
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
+
     ::fidl::OneWayStatus
     Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15);
+    // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
 
 };
 
@@ -5599,8 +5725,11 @@ class ::fidl::internal::WireSyncClientImpl<::test_protocols::MethodWithUnion> fi
  public:
 
     // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
     ::fidl::WireResult<::test_protocols::MethodWithUnion::UnionMethod>
     UnionMethod(::test_protocols::wire::TheUnion u);
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
 
 };
 
@@ -5610,8 +5739,11 @@ class ::fidl::internal::WireSyncBufferClientImpl<::test_protocols::MethodWithUni
  public:
 
     // Caller provides the backing storage for FIDL message via an argument to `.buffer()`.
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
     ::fidl::WireUnownedResult<::test_protocols::MethodWithUnion::UnionMethod>
     UnionMethod(::test_protocols::wire::TheUnion u);
+    // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
 
 };
 
@@ -5687,10 +5819,17 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_protocols::WithAndWithou
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
+
   ::fidl::OneWayStatus NoRequestNoResponse();
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
+
   ::fidl::OneWayStatus WithRequestNoResponse(::fidl::StringView arg);
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
+
 };
 
 template<>
@@ -5698,13 +5837,29 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithAndWithout
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> NoRequestEmptyResponse();
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
+
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> NoRequestWithResponse();
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> WithRequestEmptyResponse(::fidl::StringView arg);
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
+
     // The request and callback are allocated on the heap.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
   ::fidl::internal::WireThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> WithRequestWithResponse(::fidl::StringView arg);
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
+
 };
 
 template<>
@@ -5713,10 +5868,16 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::WithAnd
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse
+
 ::fidl::OneWayStatus NoRequestNoResponse();
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestNoResponse:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse
+
 ::fidl::OneWayStatus WithRequestNoResponse(::fidl::StringView arg);
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestNoResponse:end
 
 };
 
@@ -5726,16 +5887,28 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithAndW
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> NoRequestEmptyResponse();
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> NoRequestWithResponse();
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> WithRequestEmptyResponse(::fidl::StringView arg);
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> WithRequestWithResponse(::fidl::StringView arg);
+// api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
 
 };
 template<>
@@ -5744,16 +5917,29 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithAndWithoutR
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse
+
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestEmptyResponse> NoRequestEmptyResponse();
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestEmptyResponse:end
 
   // Allocates 16 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse
+
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::NoRequestWithResponse> NoRequestWithResponse();
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.NoRequestWithResponse:end
 
   // Allocates 16 bytes of response buffer on the stack. Request is heap-allocated.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse
+
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestEmptyResponse> WithRequestEmptyResponse(::fidl::StringView arg);
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestEmptyResponse:end
 
   // Request is heap-allocated. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse
+
   ::fidl::WireResult<::test_protocols::WithAndWithoutRequestResponse::WithRequestWithResponse> WithRequestWithResponse(::fidl::StringView arg);
+  // api-coverage-fidl-name:test.protocols/WithAndWithoutRequestResponse.WithRequestWithResponse:end
+
 };
 
 template<>
@@ -5813,13 +5999,29 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithErrorSynta
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
+
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ResponseAsStruct> ResponseAsStruct();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> ErrorAsPrimitive();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
+
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::ErrorAsEnum> ErrorAsEnum();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
+
     // Allocates 16 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
   ::fidl::internal::WireThenable<::test_protocols::WithErrorSyntax::HandleInResult> HandleInResult();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
+
 };
 
 template<>
@@ -5834,16 +6036,28 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithErro
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::ResponseAsStruct> ResponseAsStruct();
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> ErrorAsPrimitive();
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::ErrorAsEnum> ErrorAsEnum();
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithErrorSyntax::HandleInResult> HandleInResult();
+// api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
 
 };
 template<>
@@ -5852,16 +6066,29 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithErrorSyntax
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 72 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct
+
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::ResponseAsStruct> ResponseAsStruct();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ResponseAsStruct:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive
+
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsPrimitive> ErrorAsPrimitive();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsPrimitive:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum
+
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::ErrorAsEnum> ErrorAsEnum();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.ErrorAsEnum:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult
+
   ::fidl::WireResult<::test_protocols::WithErrorSyntax::HandleInResult> HandleInResult();
+  // api-coverage-fidl-name:test.protocols/WithErrorSyntax.HandleInResult:end
+
 };
 
 template<>
@@ -5900,7 +6127,11 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_protocols::ChannelProtoc
   using ClientImplBase::ClientImplBase;
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
+
   ::fidl::OneWayStatus MethodA(int64_t a, int64_t b);
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
+
 };
 
 template<>
@@ -5908,11 +6139,23 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocols::ChannelProtoco
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
   ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::MethodB> MethodB(int64_t a, int64_t b);
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
+
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
+
   ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::TakeHandle> TakeHandle(::zx::handle&& h);
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
+
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
   ::fidl::internal::WireThenable<::test_protocols::ChannelProtocol::MutateSocket> MutateSocket(::zx::socket&& a);
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
+
 };
 
 template<>
@@ -5921,7 +6164,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::Channel
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA
+
 ::fidl::OneWayStatus MethodA(int64_t a, int64_t b);
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodA:end
 
 };
 
@@ -5931,13 +6177,22 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::ChannelP
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
 ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::MethodB> MethodB(int64_t a, int64_t b);
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
+
 ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::TakeHandle> TakeHandle(::zx::handle&& h);
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
 ::fidl::internal::WireBufferThenable<::test_protocols::ChannelProtocol::MutateSocket> MutateSocket(::zx::socket&& a);
+// api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
 
 };
 template<>
@@ -5946,13 +6201,23 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocols::ChannelProtocol
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 56 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB
+
   ::fidl::WireResult<::test_protocols::ChannelProtocol::MethodB> MethodB(int64_t a, int64_t b);
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MethodB:end
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle
+
   ::fidl::WireResult<::test_protocols::ChannelProtocol::TakeHandle> TakeHandle(::zx::handle&& h);
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.TakeHandle:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket
+
   ::fidl::WireResult<::test_protocols::ChannelProtocol::MutateSocket> MutateSocket(::zx::socket&& a);
+  // api-coverage-fidl-name:test.protocols/ChannelProtocol.MutateSocket:end
+
 };
 
 template<>
@@ -5999,7 +6264,11 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_protocols::DiscoverableP
   using ClientImplBase::ClientImplBase;
 
   // Allocates 32 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
+
   ::fidl::OneWayStatus Method();
+  // api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
+
 };
 
 template<>
@@ -6014,7 +6283,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::Discove
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method
+
 ::fidl::OneWayStatus Method();
+// api-coverage-fidl-name:test.protocols/DiscoverableProtocol.Method:end
 
 };
 
@@ -6183,7 +6455,11 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_protocols::HandleRightsP
   using ClientImplBase::ClientImplBase;
 
   // Allocates 40 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
+
   ::fidl::OneWayStatus NoResponseMethod(::zx::socket&& h);
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
+
 };
 
 template<>
@@ -6191,7 +6467,11 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocols::HandleRightsPr
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
   ::fidl::internal::WireThenable<::test_protocols::HandleRightsProtocol::ResponseMethod> ResponseMethod(::zx::socket&& h);
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
+
 };
 
 template<>
@@ -6200,7 +6480,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::HandleR
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod
+
 ::fidl::OneWayStatus NoResponseMethod(::zx::socket&& h);
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.NoResponseMethod:end
 
 };
 
@@ -6210,7 +6493,10 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::HandleRi
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
 ::fidl::internal::WireBufferThenable<::test_protocols::HandleRightsProtocol::ResponseMethod> ResponseMethod(::zx::socket&& h);
+// api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
 
 };
 template<>
@@ -6219,7 +6505,11 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocols::HandleRightsPro
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod
+
   ::fidl::WireResult<::test_protocols::HandleRightsProtocol::ResponseMethod> ResponseMethod(::zx::socket&& h);
+  // api-coverage-fidl-name:test.protocols/HandleRightsProtocol.ResponseMethod:end
+
 };
 
 template<>
@@ -6271,11 +6561,23 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocols::WithProtocolEn
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
+
   ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::ClientEnds> ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in);
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
+
     // Allocates 24 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
   ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::ServerEnds> ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in);
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
+
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
   ::fidl::internal::WireThenable<::test_protocols::WithProtocolEnds::StructContainingEnds> StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in);
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
+
 };
 
 template<>
@@ -6290,13 +6592,22 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::WithProt
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithProtocolEnds::ClientEnds> ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in);
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithProtocolEnds::ServerEnds> ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in);
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
 ::fidl::internal::WireBufferThenable<::test_protocols::WithProtocolEnds::StructContainingEnds> StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in);
+// api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
 
 };
 template<>
@@ -6305,13 +6616,23 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocols::WithProtocolEnd
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds
+
   ::fidl::WireResult<::test_protocols::WithProtocolEnds::ClientEnds> ClientEnds(::fidl::ClientEnd<::test_protocols::DiscoverableProtocol>&& in);
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ClientEnds:end
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds
+
   ::fidl::WireResult<::test_protocols::WithProtocolEnds::ServerEnds> ServerEnds(::fidl::ServerEnd<::test_protocols::DiscoverableProtocol>&& in);
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.ServerEnds:end
 
   // Allocates 64 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds
+
   ::fidl::WireResult<::test_protocols::WithProtocolEnds::StructContainingEnds> StructContainingEnds(::test_protocols::wire::ProtocolEnds&& in);
+  // api-coverage-fidl-name:test.protocols/WithProtocolEnds.StructContainingEnds:end
+
 };
 
 template<>
@@ -6350,7 +6671,11 @@ class ::fidl::internal::WireWeakOnewayClientImpl<::test_protocols::ManyParameter
   using ClientImplBase::ClientImplBase;
 
   // Allocates 48 bytes of message buffer on the stack. No heap allocation necessary.
+  // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
+
   ::fidl::OneWayStatus Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15);
+  // api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
+
 };
 
 template<>
@@ -6365,7 +6690,10 @@ class ::fidl::internal::WireWeakOnewayBufferClientImpl<::test_protocols::ManyPar
   using BufferClientImplBase::BufferClientImplBase;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen
+
 ::fidl::OneWayStatus Fifteen(bool p1, bool p2, bool p3, bool p4, bool p5, bool p6, bool p7, bool p8, bool p9, bool p10, bool p11, bool p12, bool p13, bool p14, bool p15);
+// api-coverage-fidl-name:test.protocols/ManyParameters.Fifteen:end
 
 };
 
@@ -6421,7 +6749,11 @@ class ::fidl::internal::WireWeakAsyncClientImpl<::test_protocols::MethodWithUnio
  public:
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
     // Allocates 32 bytes of request buffer on the stack. The callback is stored on the heap.
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
   ::fidl::internal::WireThenable<::test_protocols::MethodWithUnion::UnionMethod> UnionMethod(::test_protocols::wire::TheUnion u);
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
+
 };
 
 template<>
@@ -6436,7 +6768,10 @@ class ::fidl::internal::WireWeakAsyncBufferClientImpl<::test_protocols::MethodWi
   using WireWeakOnewayBufferClientImpl::WireWeakOnewayBufferClientImpl;
 
 // Caller provides the backing storage for FIDL message.
+// api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
 ::fidl::internal::WireBufferThenable<::test_protocols::MethodWithUnion::UnionMethod> UnionMethod(::test_protocols::wire::TheUnion u);
+// api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
 
 };
 template<>
@@ -6445,7 +6780,11 @@ class ::fidl::internal::WireWeakSyncClientImpl<::test_protocols::MethodWithUnion
   using WireWeakOnewayClientImpl::WireWeakOnewayClientImpl;
 
   // Allocates 32 bytes of request buffer on the stack. Response is heap-allocated.
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod
+
   ::fidl::WireResult<::test_protocols::MethodWithUnion::UnionMethod> UnionMethod(::test_protocols::wire::TheUnion u);
+  // api-coverage-fidl-name:test.protocols/MethodWithUnion.UnionMethod:end
+
 };
 
 template<>

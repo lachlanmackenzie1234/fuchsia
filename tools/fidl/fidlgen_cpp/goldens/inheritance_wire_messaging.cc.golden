@@ -96,11 +96,17 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_inheritanc
 
 ::fidl::WireUnownedResult<::test_inheritance::Super::Foo>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_inheritance::Super::Foo>(result) {}
 
+// api-coverage-fidl-name:test.inheritance/super.foo
+
 ::fidl::internal::WireThenable<::test_inheritance::Super::Foo> fidl::internal::WireWeakAsyncClientImpl<::test_inheritance::Super>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_inheritance::Super::Foo> _request{s};
   return ::fidl::internal::WireThenable<::test_inheritance::Super::Foo>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.inheritance/super.foo:end
+
+// api-coverage-fidl-name:test.inheritance/super.foo
 
 ::fidl::internal::WireBufferThenable<::test_inheritance::Super::Foo> fidl::internal::WireWeakAsyncBufferClientImpl<::test_inheritance::Super>::Foo(::fidl::StringView s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_inheritance::Super::Foo>();
@@ -108,6 +114,10 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_inheritanc
   return ::fidl::internal::WireBufferThenable<::test_inheritance::Super::Foo>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.inheritance/super.foo:end
+
+// api-coverage-fidl-name:test.inheritance/super.foo
 
 ::fidl::WireResult<::test_inheritance::Super::Foo>
 fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Super>::Foo(::fidl::StringView s) {
@@ -117,6 +127,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Super>::Foo(::fidl::S
         return ::fidl::WireResult<::test_inheritance::Super::Foo>(::fidl::UnownedClientEnd<::test_inheritance::Super>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.inheritance/super.foo:end
 
 ::fidl::internal::WireEventDispatcher<::test_inheritance::Super>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_inheritance::Super>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -294,6 +306,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_inheritance::Super::Foo>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_inheritance::Super::Foo>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.inheritance/super.foo
+
 ::fidl::WireResult<::test_inheritance::Super::Foo>
 fidl::internal::WireSyncClientImpl<::test_inheritance::Super>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_inheritance::Super::Foo> _request{s};
@@ -301,12 +315,18 @@ fidl::internal::WireSyncClientImpl<::test_inheritance::Super>::Foo(::fidl::Strin
       ::fidl::UnownedClientEnd<::test_inheritance::Super>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.inheritance/super.foo:end
+
+// api-coverage-fidl-name:test.inheritance/super.foo
+
 ::fidl::WireUnownedResult<::test_inheritance::Super::Foo>
 fidl::internal::WireSyncBufferClientImpl<::test_inheritance::Super>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_inheritance::Super::Foo> _request{s};
   return ::fidl::WireUnownedResult<::test_inheritance::Super::Foo>(
       ::fidl::UnownedClientEnd<::test_inheritance::Super>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.inheritance/super.foo:end
 
 namespace test_inheritance {
 
@@ -392,11 +412,17 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_inheritanc
 
 ::fidl::WireUnownedResult<::test_inheritance::Sub::Foo>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_inheritance::Sub::Foo>(result) {}
 
+// api-coverage-fidl-name:test.inheritance/sub.foo
+
 ::fidl::internal::WireThenable<::test_inheritance::Sub::Foo> fidl::internal::WireWeakAsyncClientImpl<::test_inheritance::Sub>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_inheritance::Sub::Foo> _request{s};
   return ::fidl::internal::WireThenable<::test_inheritance::Sub::Foo>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.inheritance/sub.foo:end
+
+// api-coverage-fidl-name:test.inheritance/sub.foo
 
 ::fidl::internal::WireBufferThenable<::test_inheritance::Sub::Foo> fidl::internal::WireWeakAsyncBufferClientImpl<::test_inheritance::Sub>::Foo(::fidl::StringView s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_inheritance::Sub::Foo>();
@@ -404,6 +430,10 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_inheritanc
   return ::fidl::internal::WireBufferThenable<::test_inheritance::Sub::Foo>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.inheritance/sub.foo:end
+
+// api-coverage-fidl-name:test.inheritance/sub.foo
 
 ::fidl::WireResult<::test_inheritance::Sub::Foo>
 fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Sub>::Foo(::fidl::StringView s) {
@@ -413,6 +443,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_inheritance::Sub>::Foo(::fidl::Str
         return ::fidl::WireResult<::test_inheritance::Sub::Foo>(::fidl::UnownedClientEnd<::test_inheritance::Sub>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.inheritance/sub.foo:end
 
 ::fidl::internal::WireEventDispatcher<::test_inheritance::Sub>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_inheritance::Sub>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -590,6 +622,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_inheritance::Sub::Foo>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_inheritance::Sub::Foo>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.inheritance/sub.foo
+
 ::fidl::WireResult<::test_inheritance::Sub::Foo>
 fidl::internal::WireSyncClientImpl<::test_inheritance::Sub>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_inheritance::Sub::Foo> _request{s};
@@ -597,12 +631,18 @@ fidl::internal::WireSyncClientImpl<::test_inheritance::Sub>::Foo(::fidl::StringV
       ::fidl::UnownedClientEnd<::test_inheritance::Sub>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.inheritance/sub.foo:end
+
+// api-coverage-fidl-name:test.inheritance/sub.foo
+
 ::fidl::WireUnownedResult<::test_inheritance::Sub::Foo>
 fidl::internal::WireSyncBufferClientImpl<::test_inheritance::Sub>::Foo(::fidl::StringView s) {
   ::fidl::internal::TransactionalRequest<::test_inheritance::Sub::Foo> _request{s};
   return ::fidl::WireUnownedResult<::test_inheritance::Sub::Foo>(
       ::fidl::UnownedClientEnd<::test_inheritance::Sub>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.inheritance/sub.foo:end
 
 #pragma clang diagnostic pop
 

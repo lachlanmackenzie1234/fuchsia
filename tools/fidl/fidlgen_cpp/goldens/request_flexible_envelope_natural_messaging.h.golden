@@ -86,9 +86,15 @@ template <>
 class ::fidl::internal::NaturalSyncClientImpl<::test_requestflexibleenvelope::Protocol> final
     : public ::fidl::internal::SyncEndpointManagedVeneer<::fidl::internal::NaturalSyncClientImpl<::test_requestflexibleenvelope::Protocol>> {
  public:
+  // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
+
   ::fidl::Result<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> RequestStrictResponseFlexible(const ::fidl::Request<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>& request);
+  // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
+
+  // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
 
   ::fidl::Result<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> RequestFlexibleResponseStrict(const ::fidl::Request<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>& request);
+  // api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
 
  private:
   ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol> _client_end() const;

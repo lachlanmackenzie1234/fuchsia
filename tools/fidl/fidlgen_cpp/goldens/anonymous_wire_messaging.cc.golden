@@ -96,11 +96,17 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_anonymous:
 
 ::fidl::WireUnownedResult<::test_anonymous::SomeProtocol::SomeMethod>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_anonymous::SomeProtocol::SomeMethod>(result) {}
 
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
+
 ::fidl::internal::WireThenable<::test_anonymous::SomeProtocol::SomeMethod> fidl::internal::WireWeakAsyncClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(::test_anonymous::wire::UnionMember union_member, ::test_anonymous::wire::TableMember table_member) {
   ::fidl::internal::TransactionalRequest<::test_anonymous::SomeProtocol::SomeMethod> _request{union_member, table_member};
   return ::fidl::internal::WireThenable<::test_anonymous::SomeProtocol::SomeMethod>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
 
 ::fidl::internal::WireBufferThenable<::test_anonymous::SomeProtocol::SomeMethod> fidl::internal::WireWeakAsyncBufferClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(::test_anonymous::wire::UnionMember union_member, ::test_anonymous::wire::TableMember table_member) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_anonymous::SomeProtocol::SomeMethod>();
@@ -108,6 +114,10 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_anonymous:
   return ::fidl::internal::WireBufferThenable<::test_anonymous::SomeProtocol::SomeMethod>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
 
 ::fidl::WireResult<::test_anonymous::SomeProtocol::SomeMethod>
 fidl::internal::WireWeakSyncClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(::test_anonymous::wire::UnionMember union_member, ::test_anonymous::wire::TableMember table_member) {
@@ -117,6 +127,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_anonymous::SomeProtocol>::SomeMeth
         return ::fidl::WireResult<::test_anonymous::SomeProtocol::SomeMethod>(::fidl::UnownedClientEnd<::test_anonymous::SomeProtocol>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
 
 ::fidl::internal::WireEventDispatcher<::test_anonymous::SomeProtocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_anonymous::SomeProtocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -319,6 +331,8 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_anonymous::SomeProtocol::SomeMethod>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_anonymous::SomeProtocol::SomeMethod>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
+
 ::fidl::WireResult<::test_anonymous::SomeProtocol::SomeMethod>
 fidl::internal::WireSyncClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(::test_anonymous::wire::UnionMember union_member, ::test_anonymous::wire::TableMember table_member) {
   ::fidl::internal::TransactionalRequest<::test_anonymous::SomeProtocol::SomeMethod> _request{union_member, table_member};
@@ -326,12 +340,18 @@ fidl::internal::WireSyncClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(:
       ::fidl::UnownedClientEnd<::test_anonymous::SomeProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod
+
 ::fidl::WireUnownedResult<::test_anonymous::SomeProtocol::SomeMethod>
 fidl::internal::WireSyncBufferClientImpl<::test_anonymous::SomeProtocol>::SomeMethod(::test_anonymous::wire::UnionMember union_member, ::test_anonymous::wire::TableMember table_member) {
   ::fidl::internal::TransactionalRequest<::test_anonymous::SomeProtocol::SomeMethod> _request{union_member, table_member};
   return ::fidl::WireUnownedResult<::test_anonymous::SomeProtocol::SomeMethod>(
       ::fidl::UnownedClientEnd<::test_anonymous::SomeProtocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.anonymous/SomeProtocol.SomeMethod:end
 
 #pragma clang diagnostic pop
 

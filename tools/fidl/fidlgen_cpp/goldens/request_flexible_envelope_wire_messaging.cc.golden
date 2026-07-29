@@ -177,17 +177,27 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_requestfle
 
 ::fidl::WireUnownedResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>::WireUnownedResult(const ::fidl::Status& result) : ::fidl::BaseWireResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>(result) {}
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
+
 ::fidl::internal::WireThenable<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> fidl::internal::WireWeakAsyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(::test_requestflexibleenvelope::wire::StrictFoo s) {
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> _request{s};
   return ::fidl::internal::WireThenable<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
+
 ::fidl::internal::WireThenable<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> fidl::internal::WireWeakAsyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(::test_requestflexibleenvelope::wire::FlexibleFoo s) {
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> _request{s};
   return ::fidl::internal::WireThenable<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>{
       _client_base(), ::fidl::WriteOptions{}, ::fidl::internal::AllowUnownedInputRef{}, &_request};
 }
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
 
 ::fidl::internal::WireBufferThenable<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> fidl::internal::WireWeakAsyncBufferClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(::test_requestflexibleenvelope::wire::StrictFoo s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>();
@@ -196,12 +206,20 @@ static_assert(offsetof(::fidl::internal::TransactionalResponse<::test_requestfle
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
+
 ::fidl::internal::WireBufferThenable<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> fidl::internal::WireWeakAsyncBufferClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(::test_requestflexibleenvelope::wire::FlexibleFoo s) {
   constexpr uint32_t _buffer_size = ::fidl::AsyncClientMethodBufferSizeInChannel<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>();
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> _request{s};
   return ::fidl::internal::WireBufferThenable<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>{
       _client_base(), ::fidl::WriteOptions{}, _allocator(), _buffer_size, &_request};
 }
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
 
 ::fidl::WireResult<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>
 fidl::internal::WireWeakSyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(::test_requestflexibleenvelope::wire::StrictFoo s) {
@@ -212,6 +230,10 @@ fidl::internal::WireWeakSyncClientImpl<::test_requestflexibleenvelope::Protocol>
       });
 }
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
+
 ::fidl::WireResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>
 fidl::internal::WireWeakSyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(::test_requestflexibleenvelope::wire::FlexibleFoo s) {
   return _client_base()->MakeSyncCallWith(
@@ -220,6 +242,8 @@ fidl::internal::WireWeakSyncClientImpl<::test_requestflexibleenvelope::Protocol>
         return ::fidl::WireResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>(::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol>(_transport->get<::fidl::internal::ChannelTransport>()), &_request);
       });
 }
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
 
 ::fidl::internal::WireEventDispatcher<::test_requestflexibleenvelope::Protocol>::WireEventDispatcher(::fidl::internal::WireEventHandlerInterface<::test_requestflexibleenvelope::Protocol>* event_handler)
     : IncomingEventDispatcher(event_handler) {}
@@ -532,12 +556,18 @@ void ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>, ::fidl::internal::WireCodingConstraintEmpty, true>;
 template struct ::fidl::internal::WireCodingTraits<::fidl::internal::TransactionalResponse<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>, ::fidl::internal::WireCodingConstraintEmpty, false>;
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
+
 ::fidl::WireResult<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>
 fidl::internal::WireSyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(::test_requestflexibleenvelope::wire::StrictFoo s) {
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible> _request{s};
   return ::fidl::WireResult<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>(
       ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible
 
 ::fidl::WireUnownedResult<::test_requestflexibleenvelope::Protocol::RequestStrictResponseFlexible>
 fidl::internal::WireSyncBufferClientImpl<::test_requestflexibleenvelope::Protocol>::RequestStrictResponseFlexible(::test_requestflexibleenvelope::wire::StrictFoo s) {
@@ -546,6 +576,10 @@ fidl::internal::WireSyncBufferClientImpl<::test_requestflexibleenvelope::Protoco
       ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestStrictResponseFlexible:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
+
 ::fidl::WireResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>
 fidl::internal::WireSyncClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(::test_requestflexibleenvelope::wire::FlexibleFoo s) {
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> _request{s};
@@ -553,12 +587,18 @@ fidl::internal::WireSyncClientImpl<::test_requestflexibleenvelope::Protocol>::Re
       ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), &_request);
 }
 
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict
+
 ::fidl::WireUnownedResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>
 fidl::internal::WireSyncBufferClientImpl<::test_requestflexibleenvelope::Protocol>::RequestFlexibleResponseStrict(::test_requestflexibleenvelope::wire::FlexibleFoo s) {
   ::fidl::internal::TransactionalRequest<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict> _request{s};
   return ::fidl::WireUnownedResult<::test_requestflexibleenvelope::Protocol::RequestFlexibleResponseStrict>(
       ::fidl::UnownedClientEnd<::test_requestflexibleenvelope::Protocol>(_transport().get<::fidl::internal::ChannelTransport>()), _allocator(), &_request);
 }
+
+// api-coverage-fidl-name:test.requestflexibleenvelope/Protocol.RequestFlexibleResponseStrict:end
 
 #pragma clang diagnostic pop
 

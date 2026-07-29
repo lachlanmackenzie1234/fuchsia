@@ -585,7 +585,11 @@ template("fidl_cpp_family") {
       bindings_flavor = "cpp"
       fidlgen_tool = "//tools/fidl/fidlgen_cpp"
       experiments = []
-      if (fidl_api_coverage) {
+      not_needed(invoker, [ "enable_api_coverage" ])
+      _enable_api_coverage =
+          fidl_api_coverage ||
+          (defined(invoker.enable_api_coverage) && invoker.enable_api_coverage)
+      if (_enable_api_coverage) {
         experiments += [ "api_coverage" ]
       }
 
