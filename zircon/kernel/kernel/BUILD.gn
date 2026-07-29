@@ -24,7 +24,6 @@ source_set("kernel") {
     "owned_wait_queue_pool.cc",
     "percpu.cc",
     "restricted.cc",
-    "restricted_ffi.cc",
     "scheduler.cc",
     "scheduler_pi.cc",
     "scheduler_state.cc",
@@ -104,6 +103,7 @@ group("kernel-tests") {
 
 source_set("ffi") {
   sources = [
+    "restricted_ffi.cc",
     "stats_ffi.cc",
     "thread_ffi.cc",
     "timer_ffi.cc",

@@ -20,7 +20,7 @@ zx_status_t rust_restricted_state_create(zx_exception_report_t* exception_report
                                          RestrictedState** out_ptr);
 void rust_restricted_state_destroy(RestrictedState* ptr);
 
-#if defined(__riscv)
+#if defined(__riscv) || defined(__x86_64__)
 void rust_arch_dump(const zx_restricted_state_t* state);
 zx_status_t rust_arch_validate_state_pre_restricted_entry(const zx_restricted_state_t* state);
 void rust_arch_save_state_pre_restricted_entry(ArchSavedNormalState* state);
@@ -34,7 +34,7 @@ void rust_arch_redirect_restricted_exception_to_normal(const ArchSavedNormalStat
                                                        zx_restricted_reason_t reason);
 [[noreturn]] void rust_arch_enter_full(const ArchSavedNormalState* arch_state,
                                        uintptr_t vector_table, uintptr_t context, uint64_t code);
-#endif
+#endif  // defined(__riscv) || defined(__x86_64__)
 
 // Helpers called from Rust
 zx_status_t cpp_restricted_state_create_vmo_mapping(void** out_vmo, void** out_mapping,
@@ -118,7 +118,7 @@ fbl::RefPtr<VmObjectPaged> RestrictedState::vmo() const {
   return fbl::RefPtr<VmObjectPaged>(reinterpret_cast<VmObjectPaged*>(vmo_));
 }
 
-#if defined(__riscv)
+#if defined(__riscv) || defined(__x86_64__)
 void RestrictedState::ArchDump(const zx_restricted_state_t& state) { rust_arch_dump(&state); }
 
 zx_status_t RestrictedState::ArchValidateStatePreRestrictedEntry(
@@ -159,4 +159,4 @@ void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
                                                  uint64_t code) {
   rust_arch_enter_full(&arch_state, vector_table, context, code);
 }
-#endif
+#endif  // defined(__riscv) || defined(__x86_64__)

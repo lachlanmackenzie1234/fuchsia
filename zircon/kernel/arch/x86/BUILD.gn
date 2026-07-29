@@ -314,6 +314,11 @@ rustc_library("arch-x86-rs") {
   name = "arch_x86"
   source_root = "src/lib.rs"
   sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//zircon/kernel/lib/debug",
+  ]
   non_rust_deps = [ ":ffi" ]
 }
 
