@@ -269,7 +269,7 @@ template("graphics_compute_compile_glsl_shader_foreach") {
       args = [
         "-Os",
         "--strip-debug",
-        "--compact-ids",
+        "--canonicalize-ids",
         "{{source}}",
         "-o",
         rebase_path(outputs[0], root_build_dir),
