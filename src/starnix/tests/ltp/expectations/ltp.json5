@@ -45,7 +45,6 @@
                 "clone09",
                 "cpuacct_1_1",
                 "cve-2015-7550",
-                "cve-2016-5195",
                 "cve-2016-9604",
                 "cve-2016-9793",
                 "cve-2017-12192",
@@ -343,6 +342,11 @@
 
                 // TODO(https://fxbug.dev/322874684): Needs /proc/sys/vm/max_map_count
                 "munmap04",
+
+                // TODO(https://fxbug.dev/466422484): Was previously failing, but now passes with the
+                // migration to use LTP ZIP archive. Temporarily skipping until the migration lands,
+                // after which I'll remove this entirely to expect pass.
+                "cve-2016-5195",
             ],
         },
     ],
