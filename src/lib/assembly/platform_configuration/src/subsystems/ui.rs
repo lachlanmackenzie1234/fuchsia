@@ -138,9 +138,22 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             "fuchsia.scenic.InputNoncritical",
             Config::new(ConfigValueType::Bool, ui_config.input_noncritical.into()),
         )?;
+        if ui_config.display_composition_enable_heuristics {
+            ensure!(
+                ui_config.display_composition,
+                "display_composition_enable_heuristics can only be enabled if display_composition is enabled"
+            );
+        }
         builder.set_config_capability(
             "fuchsia.scenic.DisplayComposition",
             Config::new(ConfigValueType::Bool, ui_config.display_composition.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.scenic.DisplayCompositionEnableHeuristics",
+            Config::new(
+                ConfigValueType::Bool,
+                ui_config.display_composition_enable_heuristics.into(),
+            ),
         )?;
         builder.set_config_capability(
             "fuchsia.scenic.ICanHazDisplayId",

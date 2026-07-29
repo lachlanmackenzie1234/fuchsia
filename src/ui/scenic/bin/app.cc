@@ -128,6 +128,13 @@ uint64_t GetDisplayRotation(scenic_structured_config::Config values) {
   return 0;
 }
 
+display::CoordinatorProxy::CheckConfigHeuristics GetCheckConfigHeuristics(
+    const scenic_structured_config::Config& values) {
+  return display::CoordinatorProxy::CheckConfigHeuristics{
+      .enable_heuristics = values.display_composition_enable_heuristics(),
+  };
+}
+
 // Logs Scenic's structured config values.
 void LogConfig(const scenic_structured_config::Config& values) {
   FX_LOGS(INFO) << "Scenic renderer: " << ToString(GetRendererType(values))
@@ -136,7 +143,8 @@ void LogConfig(const scenic_structured_config::Config& values) {
                 << " frame_prediction_margin(us): " << values.frame_prediction_margin_in_us()
                 << " pointer auto focus: " << values.pointer_auto_focus()
                 << " display_composition: " << values.display_composition()
-                << " i_can_haz_display_id: "
+                << " display_composition_enable_heuristics: "
+                << values.display_composition_enable_heuristics() << " i_can_haz_display_id: "
                 << GetDisplayId(values)
                        .value_or(display::WireDisplayId{
                            .value = fuchsia_hardware_display_types::kInvalidDispId,
@@ -281,13 +289,14 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
 
   // Instantiate DisplayManager and schedule a task to inject the display coordinator into it, once
   // it becomes available.
-  display_manager_.emplace(GetDisplayId(config_values_), GetDisplayMode(config_values_),
-                           GetDisplayModeConstraints(config_values_),
-                           this->inspect_node_.CreateChild("DisplayManager"),
-                           [this, completer = std::move(display_bridge.completer),
-                            display_wait_log = std::move(display_wait_log)]() mutable {
-                             completer.complete_ok(display_manager_->default_display_shared());
-                           });
+  display_manager_.emplace(
+      GetDisplayId(config_values_), GetDisplayMode(config_values_),
+      GetDisplayModeConstraints(config_values_), this->inspect_node_.CreateChild("DisplayManager"),
+      [this, completer = std::move(display_bridge.completer),
+       display_wait_log = std::move(display_wait_log)]() mutable {
+        completer.complete_ok(display_manager_->default_display_shared());
+      },
+      GetCheckConfigHeuristics(config_values_));
 
   // Log a warning if Scenic is waiting for the Display Coordinator channels to be provided.
   auto dc_handles_wait_log = std::make_unique<fxl::CancelableClosure>([] {

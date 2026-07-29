@@ -39,7 +39,9 @@ class DisplayManager {
   DisplayManager(std::optional<WireDisplayId> i_can_haz_display_id,
                  std::optional<size_t> display_mode_index_override,
                  DisplayModeConstraints display_mode_constraints, inspect::Node inspect_node,
-                 fit::closure display_available_cb);
+                 fit::closure display_available_cb,
+                 CoordinatorProxy::CheckConfigHeuristics check_config_heuristics = {
+                     .enable_heuristics = false});
   ~DisplayManager() = default;
 
   void BindDefaultDisplayCoordinator(
@@ -75,6 +77,8 @@ class DisplayManager {
                WireConfigStamp displayed_config_stamp, WireVsyncAckCookie cookie);
 
   std::shared_ptr<CoordinatorProxy> coordinator_proxy_;
+
+  const CoordinatorProxy::CheckConfigHeuristics check_config_heuristics_;
 
   std::shared_ptr<display::DisplayCoordinatorListener> display_coordinator_listener_;
 

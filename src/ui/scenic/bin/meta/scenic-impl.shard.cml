@@ -92,6 +92,11 @@
             type: "bool",
         },
         {
+            config: "fuchsia.scenic.DisplayCompositionEnableHeuristics",
+            key: "display_composition_enable_heuristics",
+            type: "bool",
+        },
+        {
             config: "fuchsia.scenic.UseFlatland2UberstructSchema",
             key: "use_flatland2_uberstruct_schema",
             type: "bool",

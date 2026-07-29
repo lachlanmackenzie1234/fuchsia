@@ -133,6 +133,9 @@ async fn assemble_realm(
     builder
         .add_route(
             Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.scenic.DisplayCompositionEnableHeuristics",
+                ))
                 .capability(Capability::configuration("fuchsia.scenic.FrameCounterOverlay"))
                 .capability(Capability::configuration("fuchsia.scenic.FramePredictionMarginInUs"))
                 .capability(Capability::configuration(

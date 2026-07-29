@@ -70,6 +70,7 @@
                 "fuchsia.recovery.DisplayRotation",
                 "fuchsia.recovery.UseFxBlob",
                 "fuchsia.scenic.DisplayComposition",
+                "fuchsia.scenic.DisplayCompositionEnableHeuristics",
                 "fuchsia.scenic.DisplayRotation",
                 "fuchsia.scenic.FrameCounterOverlay",
                 "fuchsia.scenic.FramePredictionMarginInUs",

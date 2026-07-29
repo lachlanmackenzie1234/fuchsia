@@ -330,6 +330,7 @@ void UITestRealm::ConfigureScenic() {
   realm_builder_.AddChild("config", "#meta/config.cm", {});
 
   std::vector<component_testing::Capability> config_capabilities = {
+      component_testing::Config{.name = "fuchsia.scenic.DisplayCompositionEnableHeuristics"},
       component_testing::Config{.name = "fuchsia.scenic.FrameCounterOverlay"},
       component_testing::Config{.name =
                                     "fuchsia.scenic.FrameSchedulerMinPredictedFrameDurationInUs"},

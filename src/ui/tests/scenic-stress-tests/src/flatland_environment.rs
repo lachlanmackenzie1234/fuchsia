@@ -76,6 +76,9 @@ impl FlatlandEnvironment {
                     ))
                     .capability(Capability::configuration("fuchsia.scenic.PointerAutoFocus"))
                     .capability(Capability::configuration("fuchsia.scenic.DisplayComposition"))
+                    .capability(Capability::configuration(
+                        "fuchsia.scenic.DisplayCompositionEnableHeuristics",
+                    ))
                     .capability(Capability::configuration("fuchsia.scenic.ICanHazDisplayId"))
                     .capability(Capability::configuration("fuchsia.scenic.ICanHazDisplayMode"))
                     .capability(Capability::configuration("fuchsia.scenic.DisplayRotation"))

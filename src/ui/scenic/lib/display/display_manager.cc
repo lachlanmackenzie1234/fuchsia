@@ -49,8 +49,10 @@ DisplayManager::DisplayManager(fit::closure display_available_cb)
 DisplayManager::DisplayManager(std::optional<WireDisplayId> i_can_haz_display_id,
                                std::optional<size_t> display_mode_index_override,
                                DisplayModeConstraints display_mode_constraints,
-                               inspect::Node inspect_node, fit::closure display_available_cb)
-    : i_can_haz_display_id_(i_can_haz_display_id),
+                               inspect::Node inspect_node, fit::closure display_available_cb,
+                               CoordinatorProxy::CheckConfigHeuristics check_config_heuristics)
+    : check_config_heuristics_(check_config_heuristics),
+      i_can_haz_display_id_(i_can_haz_display_id),
       display_mode_index_override_(display_mode_index_override),
       display_mode_constraints_(std::move(display_mode_constraints)),
       display_available_cb_(std::move(display_available_cb)),
@@ -64,8 +66,7 @@ void DisplayManager::BindDefaultDisplayCoordinator(
   FX_DCHECK(coordinator.is_valid());
 
   coordinator_proxy_ = std::make_shared<CoordinatorProxy>(
-      std::move(coordinator), dispatcher,
-      CoordinatorProxy::CheckConfigHeuristics{.enable_heuristics = true},
+      std::move(coordinator), dispatcher, check_config_heuristics_,
       inspect_node_.CreateChild("Display Coordinator Proxy"));
 
   display_coordinator_listener_ = std::make_shared<display::DisplayCoordinatorListener>(

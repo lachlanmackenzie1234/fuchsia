@@ -96,6 +96,7 @@
             config: [
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.scenic.DisplayComposition",
+                "fuchsia.scenic.DisplayCompositionEnableHeuristics",
                 "fuchsia.scenic.DisplayRotation",
                 "fuchsia.scenic.FrameCounterOverlay",
                 "fuchsia.scenic.FramePredictionMarginInUs",
