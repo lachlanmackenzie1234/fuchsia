@@ -12,6 +12,12 @@ namespace internal {
 // TODO(madhaviyengar): Move this constant to zircon/fidl.h
 constexpr uint32_t kUserspaceTxidMask = 0x7FFFFFFF;
 
+ResponseContext::~ResponseContext() {
+  if (client_base_ != nullptr) {
+    client_base_->ForgetAsyncTxn(txid_, this);
+  }
+}
+
 std::shared_ptr<ClientBase> ClientBase::Create(
     AnyTransport&& transport, async_dispatcher_t* dispatcher,
     AnyIncomingEventDispatcher&& event_dispatcher, AsyncEventHandler* error_handler,
@@ -78,6 +84,7 @@ zx_txid_t ClientBase::PrepareAsyncTxn(ResponseContext* context) {
     } while (unlikely(!context->txid_));  // txid must be non-zero.
   } while (unlikely(!contexts_.insert_or_find(context)));
 
+  context->client_base_ = this;
   list_add_tail(&delete_list_, context);
 
   return context->txid_;
@@ -94,6 +101,7 @@ bool ClientBase::ForgetAsyncTxn(zx_txid_t txid, ResponseContext* context) {
   if (it != contexts_.end() && &*it == context) {
     contexts_.erase(it);
     list_delete(static_cast<list_node_t*>(context));
+    context->client_base_ = nullptr;
     return true;
   }
   return false;
@@ -113,6 +121,7 @@ void ClientBase::ReleaseResponseContexts(fidl::UnbindInfo info) {
   list_for_every_safe(&delete_list, node, temp_node) {
     list_delete(node);
     auto* context = static_cast<ResponseContext*>(node);
+    context->client_base_ = nullptr;
     // |kClose| is never used on the client side.
     ZX_DEBUG_ASSERT(info.reason() != fidl::Reason::kClose);
     context->OnError(ErrorFromUnbindInfo(info));
@@ -222,6 +231,7 @@ std::optional<UnbindInfo> ClientBase::Dispatch(fidl::IncomingHeaderAndMessage& m
     context = contexts_.erase(hdr->txid);
     if (likely(context != nullptr)) {
       list_delete(static_cast<list_node_t*>(context));
+      context->client_base_ = nullptr;
     } else {
       // Received unknown txid.
       return UnbindInfo{

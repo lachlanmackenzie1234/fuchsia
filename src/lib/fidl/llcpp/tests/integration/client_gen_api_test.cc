@@ -821,4 +821,34 @@ TEST(AllClients, DrainAllMessageInPeerClosedSendError) {
   do_test(fidl::WireSharedClient<Values>{});
 }
 
+TEST(WireClient, DestructorTeardownUaf) {
+  auto [local, remote] = fidl::Endpoints<Values>::Create();
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+
+  class VulnerableOwner : public fidl::WireResponseContext<Values::Echo> {
+   public:
+    VulnerableOwner(fidl::ClientEnd<Values> client_end, async_dispatcher_t* dispatcher)
+        : client_(std::move(client_end), dispatcher) {}
+
+    void MakeCall() { client_->Echo(fidl::StringView("foo")).ThenExactlyOnce(this); }
+
+    void OnResult(fidl::WireUnownedResult<Values::Echo>& result) override { called = true; }
+
+    bool called = false;
+
+   private:
+    fidl::WireClient<Values> client_;
+  };
+
+  {
+    auto owner = std::make_unique<VulnerableOwner>(std::move(local), loop.dispatcher());
+    owner->MakeCall();
+    // Destroy the owner immediately. This destroys both the client and the ResponseContext.
+    owner.reset();
+  }
+
+  // Run the loop to process the asynchronous teardown.
+  loop.RunUntilIdle();
+}
+
 }  // namespace

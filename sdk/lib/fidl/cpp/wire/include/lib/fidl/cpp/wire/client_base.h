@@ -34,6 +34,7 @@ namespace fidl {
 namespace internal {
 
 class ClientControlBlock;
+class ClientBase;
 
 // A mixin into |ResponseContext| to handle the asynchronous error delivery
 // aspects.
@@ -85,7 +86,7 @@ class ResponseContext : public fidl::internal_wavl::WAVLTreeContainable<Response
       : fidl::internal_wavl::WAVLTreeContainable<ResponseContext*>(),
         list_node_t(LIST_INITIAL_CLEARED_VALUE),
         ordinal_(ordinal) {}
-  virtual ~ResponseContext() = default;
+  virtual ~ResponseContext();
 
   // |ResponseContext| objects are "pinned" in memory.
   ResponseContext(const ResponseContext& other) = delete;
@@ -148,6 +149,7 @@ class ResponseContext : public fidl::internal_wavl::WAVLTreeContainable<Response
 
   const uint64_t ordinal_;  // Expected ordinal for the response.
   zx_txid_t txid_ = 0;      // Zircon txid of outstanding transaction.
+  ClientBase* client_base_ = nullptr;
 };
 
 }  // namespace internal

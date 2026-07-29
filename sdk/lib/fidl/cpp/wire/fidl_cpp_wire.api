@@ -6,7 +6,7 @@
   "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/base_wire_result.h": "2f4e3a86718641963f2a0c6133e6e558",
   "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/channel.h": "fa8f5409b12dca9bf6842aa1ef7655cb",
   "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/client.h": "336bebd4a44ba97c048b569def250fc8",
-  "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/client_base.h": "fc3b20f3010fe9b9c506f4b31d57f650",
+  "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/client_base.h": "e761d8c0eb2f51c24aa420960ef8baf0",
   "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/coding_errors.h": "be750bc859242469747a577ad4145cec",
   "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/connect_service.h": "f026bf1b7111117d5812c14255767e48",
   "pkg/fidl_cpp_wire/include/lib/fidl/cpp/wire/decoded_value.h": "7a8e90cf66823415144a094fe6e896f3",
