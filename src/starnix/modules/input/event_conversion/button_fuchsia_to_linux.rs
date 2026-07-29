@@ -27,7 +27,6 @@ pub struct LinuxButtonEventBatch {
     pub function_is_pressed: bool,
     pub volume_up_is_pressed: bool,
     pub volume_down_is_pressed: bool,
-    pub volume: i8,
 
     // touch_buttons is of size TOUCH_BUTTON_BITVEC_SIZE to hold all TouchButton enums.
     pub touch_buttons: bit_vec::BitVec,
@@ -42,7 +41,6 @@ impl LinuxButtonEventBatch {
             function_is_pressed: false,
             volume_up_is_pressed: false,
             volume_down_is_pressed: false,
-            volume: 0,
             touch_buttons: new_touch_buttons_bitvec(),
         }
     }
@@ -54,7 +52,6 @@ pub fn parse_fidl_media_button_event(
     function_was_pressed: bool,
     volume_up_was_pressed: bool,
     volume_down_was_pressed: bool,
-    previous_volume: i8,
 ) -> LinuxButtonEventBatch {
     let mut batch = LinuxButtonEventBatch::new();
     let time = timeval_from_time(batch.event_time);
@@ -69,10 +66,9 @@ pub fn parse_fidl_media_button_event(
     batch.power_is_pressed = fidl_event.power.unwrap_or(false);
     batch.function_is_pressed = fidl_event.function.unwrap_or(false);
 
-    let new_volume = fidl_event.volume.unwrap_or(previous_volume);
-    batch.volume_up_is_pressed = new_volume > previous_volume;
-    batch.volume_down_is_pressed = new_volume < previous_volume;
-    batch.volume = new_volume;
+    let volume = fidl_event.volume.unwrap_or(0);
+    batch.volume_up_is_pressed = volume > 0;
+    batch.volume_down_is_pressed = volume < 0;
 
     for (button_was_pressed, button_is_pressed, key_code) in [
         (power_was_pressed, batch.power_is_pressed, uapi::KEY_POWER),
@@ -159,7 +155,7 @@ mod tests {
     #[test]
     fn test_media_button_press_power() {
         let fidl_event = MediaButtonsEvent { power: Some(true), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false, 0);
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -172,7 +168,7 @@ mod tests {
     #[test]
     fn test_media_button_release_power() {
         let fidl_event = MediaButtonsEvent { power: Some(false), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, true, false, false, false, 0);
+        let batch = parse_fidl_media_button_event(&fidl_event, true, false, false, false);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -185,7 +181,7 @@ mod tests {
     #[test]
     fn test_media_button_no_change() {
         let fidl_event = MediaButtonsEvent { power: Some(true), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, true, false, false, false, 0);
+        let batch = parse_fidl_media_button_event(&fidl_event, true, false, false, false);
 
         assert_eq!(batch.events.len(), 0);
     }
@@ -193,7 +189,7 @@ mod tests {
     #[test]
     fn test_media_button_press_volume_up() {
         let fidl_event = MediaButtonsEvent { volume: Some(1), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false, 0);
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -203,13 +199,12 @@ mod tests {
         assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
         assert!(batch.volume_up_is_pressed);
         assert!(!batch.volume_down_is_pressed);
-        assert_eq!(batch.volume, 1);
     }
 
     #[test]
     fn test_media_button_release_volume_up() {
-        let fidl_event = MediaButtonsEvent { volume: Some(1), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, false, false, true, false, 1);
+        let fidl_event = MediaButtonsEvent { volume: Some(0), ..Default::default() };
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, true, false);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -218,13 +213,13 @@ mod tests {
         assert_eq!(batch.events[1].type_, uapi::EV_SYN as u16);
         assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
         assert!(!batch.volume_up_is_pressed);
-        assert_eq!(batch.volume, 1);
+        assert!(!batch.volume_down_is_pressed);
     }
 
     #[test]
     fn test_media_button_press_volume_down() {
         let fidl_event = MediaButtonsEvent { volume: Some(-1), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false, 0);
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, false);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -234,13 +229,12 @@ mod tests {
         assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
         assert!(!batch.volume_up_is_pressed);
         assert!(batch.volume_down_is_pressed);
-        assert_eq!(batch.volume, -1);
     }
 
     #[test]
     fn test_media_button_release_volume_down() {
-        let fidl_event = MediaButtonsEvent { volume: Some(-1), ..Default::default() };
-        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, true, -1);
+        let fidl_event = MediaButtonsEvent { volume: Some(0), ..Default::default() };
+        let batch = parse_fidl_media_button_event(&fidl_event, false, false, false, true);
 
         assert_eq!(batch.events.len(), 2);
         assert_eq!(batch.events[0].type_, uapi::EV_KEY as u16);
@@ -248,8 +242,8 @@ mod tests {
         assert_eq!(batch.events[0].value, 0);
         assert_eq!(batch.events[1].type_, uapi::EV_SYN as u16);
         assert_eq!(batch.events[1].code, uapi::SYN_REPORT as u16);
+        assert!(!batch.volume_up_is_pressed);
         assert!(!batch.volume_down_is_pressed);
-        assert_eq!(batch.volume, -1);
     }
 
     use test_case::test_case;

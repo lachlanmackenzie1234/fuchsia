@@ -243,7 +243,6 @@ impl InputEventsRelay {
             let mut function_was_pressed = false;
             let mut volume_up_was_pressed = false;
             let mut volume_down_was_pressed = false;
-            let mut previous_volume: i8 = 0;
             let mut touch_buttons_were_pressed = new_touch_buttons_bitvec();
 
             loop {
@@ -292,7 +291,6 @@ impl InputEventsRelay {
                                     function_was_pressed,
                                     volume_up_was_pressed,
                                     volume_down_was_pressed,
-                                    previous_volume,
                                 ) = self.process_media_button_event(
                                     &mut default_button_device,
                                     event,
@@ -300,7 +298,6 @@ impl InputEventsRelay {
                                     function_was_pressed,
                                     volume_up_was_pressed,
                                     volume_down_was_pressed,
-                                    previous_volume,
                                 );
                             }
                             _ => {}
@@ -525,13 +522,11 @@ impl InputEventsRelay {
         function_was_pressed: bool,
         volume_up_was_pressed: bool,
         volume_down_was_pressed: bool,
-        previous_volume: i8,
-    ) -> (bool, bool, bool, bool, i8) {
+    ) -> (bool, bool, bool, bool) {
         let mut power_was_pressed_after = false;
         let mut function_was_pressed_after = false;
         let mut volume_up_was_pressed_after = false;
         let mut volume_down_was_pressed_after = false;
-        let mut previous_volume_after = previous_volume;
         match button_event {
             fuipolicy::MediaButtonsListenerRequest::OnEvent { mut event, responder } => {
                 if let Some(trace_flow_id) = event.trace_flow_id {
@@ -549,14 +544,12 @@ impl InputEventsRelay {
                     function_was_pressed,
                     volume_up_was_pressed,
                     volume_down_was_pressed,
-                    previous_volume,
                 );
 
                 power_was_pressed_after = batch.power_is_pressed;
                 function_was_pressed_after = batch.function_is_pressed;
                 volume_up_was_pressed_after = batch.volume_up_is_pressed;
                 volume_down_was_pressed_after = batch.volume_down_is_pressed;
-                previous_volume_after = batch.volume;
 
                 let (converted_events, ignored_events, generated_events) = match batch.events.len()
                 {
@@ -637,7 +630,6 @@ impl InputEventsRelay {
             function_was_pressed_after,
             volume_up_was_pressed_after,
             volume_down_was_pressed_after,
-            previous_volume_after,
         )
     }
 
