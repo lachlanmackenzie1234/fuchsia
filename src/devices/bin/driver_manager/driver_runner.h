@@ -30,7 +30,6 @@
 
 #include "fidl/fuchsia.power.broker/cpp/natural_types.h"
 #include "src/devices/bin/driver_loader/loader.h"
-#include "src/devices/bin/driver_manager/all_drivers_element.h"
 #include "src/devices/bin/driver_manager/bind/bind_manager.h"
 #include "src/devices/bin/driver_manager/bootup_tracker.h"
 #include "src/devices/bin/driver_manager/composite/composite_manager_bridge.h"
@@ -42,6 +41,7 @@
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/offer_injection.h"
 #include "src/devices/bin/driver_manager/pending_node_manager.h"
+#include "src/devices/bin/driver_manager/power/power_manager.h"
 #include "src/devices/bin/driver_manager/runner.h"
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
 #include "src/devices/bin/driver_manager/shutdown/node_remover.h"
@@ -60,8 +60,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                      public fidl::WireServer<fuchsia_driver_index::DriverNotifier>,
                      public fidl::WireServer<fuchsia_driver_crash::CrashIntrospect>,
                      public fidl::Server<fuchsia_driver_token::NodeBusTopology>,
-                     public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
-                     public fidl::WireServer<fuchsia_power_system::CpuElementManager>,
                      public fidl::WireServer<fuchsia_driver_token::Debug>,
                      public BindManagerBridge,
                      public CompositeManagerBridge,
@@ -126,19 +124,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_driver_token::NodeBusTopology> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override;
-
-  void SetLevel(SetLevelRequestView request, SetLevelCompleter::Sync& completer) override;
-
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override;
-
-  void GetCpuDependencyToken(GetCpuDependencyTokenCompleter::Sync& completer) override;
-  void AddExecutionStateDependency(AddExecutionStateDependencyRequestView request,
-                                   AddExecutionStateDependencyCompleter::Sync& completer) override;
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_power_system::CpuElementManager> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // fidl::WireServer<fuchsia_driver_token::Debug>
@@ -232,7 +217,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   fpromise::promise<inspect::Inspector> Inspect() const;
 
-  bool SuspendEnabled() override { return power_topology_.is_valid(); }
+  bool SuspendEnabled() override { return power_manager_ && power_manager_->SuspendEnabled(); }
 
   std::vector<fuchsia_driver_development::wire::CompositeNodeInfo> GetCompositeListInfo(
       fidl::AnyArena& arena) const;
@@ -241,7 +226,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   std::shared_ptr<Node> root_node() const { return root_node_; }
 
-  fidl::Client<fuchsia_power_broker::Topology>& power_topology() { return power_topology_; }
+  PowerManager* power_manager() { return power_manager_.get(); }
 
   // Only exposed for testing.
   void BootupDoneForTesting() { bootup_tracker_->BootupDoneForTesting(); }
@@ -261,16 +246,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::optional<fuchsia_power_broker::DependencyToken> StorageElementToken() override;
 
   void RebootSystem() override;
-
-  void CreateStoragePowerElement(fuchsia_power_broker::DependencyToken driver_token,
-                                 fuchsia_power_broker::PowerLevel power_level,
-                                 fit::callback<void()> post_creation);
-  void PublishCpuElementManager(component::OutgoingDirectory& outgoing);
-
-  // Asynchronously kicks off the process of fetching the Cpu token from SAG. The token is used to
-  // make drivers' power elements depend on the Cpu element and allow them to prevent system
-  // suspension.
-  void FetchCpuToken();
 
  private:
   // NodeManager interface.
@@ -319,8 +294,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   void OnBindingStateChanged() override { bootup_tracker_->NotifyBindingChanged(); }
   void OnNodeBound(std::shared_ptr<const Node> node) override {
-    if (all_drivers_) {
-      all_drivers_->OnNodeBound(std::move(node));
+    if (power_manager_) {
+      power_manager_->OnNodeBound(std::move(node));
     }
   }
 
@@ -339,8 +314,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       std::optional<zx::eventpair> initial_lease_token, bool is_hermetic_power_test,
       fit::callback<void(zx::result<bool>)> cb) override;
 
-  void CreateAllDriversPowerElement();
-
   void OnBootupComplete();
 
   uint64_t next_driver_host_id_ = 0;
@@ -353,8 +326,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   fidl::ServerBindingGroup<fuchsia_driver_crash::CrashIntrospect> crash_introspect_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_token::NodeBusTopology> bus_topo_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_index::DriverNotifier> driver_notifier_bindings_;
-  fidl::ServerBindingGroup<fuchsia_power_broker::ElementRunner> storage_element_runner_;
-  fidl::ServerBindingGroup<fuchsia_power_system::CpuElementManager> cpu_element_server_;
   async_dispatcher_t* const dispatcher_;
   std::shared_ptr<Node> root_node_;
 
@@ -391,24 +362,9 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::optional<fidl::WireSharedClient<fuchsia_driver_loader::DriverHostLauncher>>
       driver_host_launcher_;
 
-  fidl::Client<fuchsia_power_broker::Topology> power_topology_;
-
-  fidl::ClientEnd<fuchsia_power_broker::Lessor> storage_lessor_;
+  std::unique_ptr<PowerManager> power_manager_;
 
   MemoryAttributor memory_attributor_;
-
-  // Either a vector of callbacks to run when we get a storage token or the token once we
-  // receive it.
-  std::variant<CallbackSet, PowerDependencyToken> storage_callbacks_or_token_ = CallbackSet();
-  fidl::Client<fuchsia_power_broker::ElementControl> storage_control_;
-
-  std::optional<fidl::Client<fuchsia_power_system::CpuElementManager>> cpu_element_client_;
-  std::variant<CallbackSet, PowerDependencyToken> cpu_callbacks_or_token_ = CallbackSet();
-
-  bool wait_for_storage_token_from_driver_;
-
-  std::optional<fuchsia_power_broker::DependencyToken> all_drivers_token_;
-  std::shared_ptr<AllDriversElement> all_drivers_;
 
   fidl::Client<fuchsia_hardware_power_statecontrol::Admin> statecontrol_admin_;
 };

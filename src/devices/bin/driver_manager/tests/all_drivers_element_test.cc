@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/devices/bin/driver_manager/all_drivers_element.h"
+#include "src/devices/bin/driver_manager/power/all_drivers_element.h"
 
 #include <gtest/gtest.h>
 

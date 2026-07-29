@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/devices/bin/driver_manager/all_drivers_element.h"
+#include "src/devices/bin/driver_manager/power/all_drivers_element.h"
 
 #include <memory>
 #include <unordered_set>
 #include <vector>
 
-#include "src/devices/bin/driver_manager/driver_runner.h"
+#include "src/devices/bin/driver_manager/power/power_manager.h"
 #include "src/devices/lib/log/log.h"
 
 namespace driver_manager {
@@ -123,8 +123,8 @@ bool HasBoundDescendants(const std::shared_ptr<const Node>& start_node) {
 
 }  // namespace
 
-AllDriversElement::AllDriversElement(DriverRunner* runner, std::shared_ptr<Node> root)
-    : root_(root), driver_runner_(runner) {}
+AllDriversElement::AllDriversElement(PowerManager* power_manager, std::shared_ptr<Node> root)
+    : root_(root), power_manager_(power_manager) {}
 
 void AllDriversElement::AttachElement(async_dispatcher_t* dispatcher, PowerElementHandles handles) {
   element_control_ = std::move(handles.element_control);
@@ -228,7 +228,7 @@ void AllDriversElement::AcquireLease(std::shared_ptr<const Node> node,
     schema.dependencies(std::move(deps));
   }
 
-  driver_runner_->power_topology()
+  power_manager_->power_topology()
       ->Lease(std::move(schema))
       .Then([weak_self = weak_from_this(), topo_path, lease_token = std::move(lease_token),
              deferred = std::move(deferred)](

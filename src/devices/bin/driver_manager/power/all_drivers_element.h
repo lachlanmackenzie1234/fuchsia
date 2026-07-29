@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_ALL_DRIVERS_ELEMENT_H_
-#define SRC_DEVICES_BIN_DRIVER_MANAGER_ALL_DRIVERS_ELEMENT_H_
+#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_POWER_ALL_DRIVERS_ELEMENT_H_
+#define SRC_DEVICES_BIN_DRIVER_MANAGER_POWER_ALL_DRIVERS_ELEMENT_H_
 
 #include <fidl/fuchsia.power.broker/cpp/wire.h>
 #include <lib/async/dispatcher.h>
@@ -15,7 +15,7 @@
 
 namespace driver_manager {
 
-class DriverRunner;
+class PowerManager;
 
 // AllDriversElement is an ElementRunner server that handles leasing all leaf driver nodes in
 // the system.
@@ -24,7 +24,7 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
  public:
   friend class AllDriversElementTest;
 
-  AllDriversElement(DriverRunner* runner, std::shared_ptr<Node> root);
+  AllDriversElement(PowerManager* power_manager, std::shared_ptr<Node> root);
 
   void SetLevel(SetLevelRequestView request, SetLevelCompleter::Sync& completer) override;
 
@@ -93,9 +93,9 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   std::weak_ptr<Node> root_;
 
   // Owns this AllDriversElement.
-  DriverRunner* driver_runner_;
+  PowerManager* power_manager_;
 };
 
 }  // namespace driver_manager
 
-#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_ALL_DRIVERS_ELEMENT_H_
+#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_POWER_ALL_DRIVERS_ELEMENT_H_

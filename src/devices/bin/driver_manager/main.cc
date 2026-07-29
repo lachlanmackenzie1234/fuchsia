@@ -183,9 +183,9 @@ int main(int argc, char** argv) {
   std::shared_ptr<driver_manager::Devfs> devfs;
   driver_runner->root_node()->SetupDevfsForRootNode(devfs);
   driver_runner->PublishComponentRunner(outgoing);
-  driver_runner->PublishCpuElementManager(outgoing);
+  driver_runner->power_manager()->PublishCpuElementManager(outgoing);
   driver_runner->StartDevfsDriver(devfs);
-  driver_runner->FetchCpuToken();
+  driver_runner->power_manager()->FetchCpuToken();
 
   // If power management is enabled, but we're not supposed to wait for a storage token from a
   // storage driver, initialize the storage power element immediately.
@@ -193,9 +193,9 @@ int main(int argc, char** argv) {
   // TODO(https://fxbug.dev/479254641) Be lazier, only initialize storage once we hit drivers
   // that need it.
   if (config.power_suspend_enabled() && !config.wait_for_suspending_token()) {
-    driver_runner->CreateStoragePowerElement(fuchsia_power_broker::DependencyToken(zx::event()),
-                                             static_cast<fuchsia_power_broker::PowerLevel>(1),
-                                             []() {});
+    driver_runner->power_manager()->CreateStoragePowerElement(
+        fuchsia_power_broker::DependencyToken(zx::event()),
+        static_cast<fuchsia_power_broker::PowerLevel>(1), []() {});
   }
 
   // Find and load v2 Drivers.

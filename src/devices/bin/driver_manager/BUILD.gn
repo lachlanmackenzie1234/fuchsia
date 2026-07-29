@@ -45,8 +45,6 @@ source_set("component_owner") {
 
 source_set("driver_runner") {
   sources = [
-    "all_drivers_element.cc",
-    "all_drivers_element.h",
     "async_sharder.cc",
     "async_sharder.h",
     "bind/bind_manager.cc",
@@ -84,6 +82,10 @@ source_set("driver_runner") {
     "pending_node_manager.cc",
     "pending_node_manager.h",
     "pkg_utils.h",
+    "power/all_drivers_element.cc",
+    "power/all_drivers_element.h",
+    "power/power_manager.cc",
+    "power/power_manager.h",
     "resource.cc",
     "resource.h",
     "runner.cc",
