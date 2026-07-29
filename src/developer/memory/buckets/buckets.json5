@@ -32,7 +32,7 @@
     },
     {
         name: "Scenic",
-        process: "root_presenter\\.cm|scenic\\.cm",
+        process: "root_presenter\\.cm|scenic\\.cm|image-compression\\.cm",
         vmo: "",
         event_code: 9,
     },
