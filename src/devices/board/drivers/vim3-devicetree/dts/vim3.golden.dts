@@ -279,7 +279,7 @@
 		compatible = "amlogic,power";
 		fuchsia,legacy-power;
 		phandle = <0x0e>;
-		regulator-names = "pwm_vreg_little\0pwm_vreg_big";
+		regulator-names = "vreg-pwm-little\0vreg-pwm-big";
 		regulators = <0x2c 0x2d>;
 	};
 
@@ -291,7 +291,7 @@
 		pwms = <0x18 0x00 0x4e2 0x00>;
 		regulator-max-microvolt = <0x100590>;
 		regulator-min-microvolt = <0xa8750>;
-		regulator-name = "pwm_vreg_big";
+		regulator-name = "vreg-pwm-big";
 		regulator-step-microvolt = <0x3e8>;
 	};
 
@@ -303,7 +303,7 @@
 		pwms = <0x18 0x09 0x4e2 0x00>;
 		regulator-max-microvolt = <0x100590>;
 		regulator-min-microvolt = <0xa8750>;
-		regulator-name = "pwm_vreg_little";
+		regulator-name = "vreg-pwm-little";
 		regulator-step-microvolt = <0x3e8>;
 	};
 

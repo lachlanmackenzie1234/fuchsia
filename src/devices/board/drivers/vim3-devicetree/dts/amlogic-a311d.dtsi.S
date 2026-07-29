@@ -97,7 +97,7 @@
 		#power-domain-cells = <1>;
 		fuchsia,legacy-power;
 		regulators = <&vddcpu0 &vddcpu1>;
-		regulator-names = "pwm_vreg_little", "pwm_vreg_big";
+		regulator-names = "vreg-pwm-little", "vreg-pwm-big";
 	};
 
 	canvas: canvas@ff638000 {
@@ -128,7 +128,7 @@
 
 	vddcpu0: pwm_a0_d-regulator {
 		compatible = "amlogic,pwm-regulator";
-		regulator-name = "pwm_vreg_little";
+		regulator-name = "vreg-pwm-little";
 		pwms = <&pwm 9 1250 0>;
 
 		// A311D_PWM_A0_D
@@ -141,7 +141,7 @@
 
 	vddcpu1: pwm_a-regulator {
 		compatible = "amlogic,pwm-regulator";
-		regulator-name = "pwm_vreg_big";
+		regulator-name = "vreg-pwm-big";
 		pwms = <&pwm 0 1250 0>;
 
 		// A311D_PWM_A

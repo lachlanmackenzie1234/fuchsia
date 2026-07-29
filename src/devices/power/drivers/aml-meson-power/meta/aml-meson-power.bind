@@ -36,12 +36,12 @@ optional parent "pwm-primary" {
 // For Vim3
 optional parent "vreg-pwm-little" {
   fuchsia.hardware.vreg.Service == fuchsia.hardware.vreg.Service.ZirconTransport;
-  fuchsia.regulator.NAME == fuchsia.amlogic.platform.a311d.NAME.PWM_VREG_LITTLE;
+  fuchsia.regulator.NAME == "vreg-pwm-little";
 }
 
 optional parent "vreg-pwm-big" {
   fuchsia.hardware.vreg.Service == fuchsia.hardware.vreg.Service.ZirconTransport;
-  fuchsia.regulator.NAME == fuchsia.amlogic.platform.a311d.NAME.PWM_VREG_BIG;
+  fuchsia.regulator.NAME == "vreg-pwm-big";
 }
 
 optional parent "pin-control" {
