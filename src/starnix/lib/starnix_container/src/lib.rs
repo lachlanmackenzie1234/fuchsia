@@ -10,9 +10,10 @@ use std::path::{Component, Path};
 use anyhow::{Context, Result, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 use ext4_extract::ext4_extract;
+use fidl_fuchsia_component_decl as fcdecl;
 use flate2::read::GzDecoder;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
-use fuchsia_url::RelativePackageUrl;
+use fuchsia_url::{FuchsiaPkgAbsoluteComponentUrl, RelativeComponentUrl, RelativePackageUrl};
 
 use ext4_extract::remote_bundle as rb;
 
@@ -288,6 +289,8 @@ impl StarnixContainerGenerator {
     pub fn build(self, deps: &mut Depfile) -> Result<()> {
         // Track inputs and outputs for producing a depfile for incremental build correctness.
 
+        validate_manifests_in_base(&self.base, &self.hals, self.skip_subpackages)?;
+
         // Bootstrap the package builder with the contents of the base package, but update the
         // internal and published names.
         let mut builder = self.clone().clone_package(&self.base, &self.outdir.to_string(), deps)?;
@@ -432,6 +435,8 @@ impl StarnixContainerGenerator {
 
 impl StarnixContainerRepackager {
     pub fn build(self, deps: &mut Depfile) -> Result<Utf8PathBuf> {
+        validate_manifests_in_base(&self.base, &self.hals, self.skip_subpackages)?;
+
         std::fs::create_dir_all(&self.outdir)
             .with_context(|| format!("Failed to create output directory {}", self.outdir))?;
 
@@ -526,6 +531,85 @@ impl StarnixContainerRepackager {
 
         Ok(output_manifest_path)
     }
+}
+
+fn validate_manifests_in_base(
+    base_package_path: &Utf8Path,
+    hals: &[Utf8PathBuf],
+    skip_subpackages: bool,
+) -> Result<()> {
+    let hal_names = hals
+        .iter()
+        .map(|hal| {
+            let manifest = PackageManifest::try_load_from(hal)?;
+            Ok(manifest.name().to_string())
+        })
+        .collect::<Result<Vec<String>>>()?;
+
+    if hal_names.is_empty() {
+        return Ok(());
+    }
+
+    let base_manifest = PackageManifest::try_load_from(base_package_path)?;
+    let meta_far_blob = base_manifest
+        .blobs()
+        .iter()
+        .find(|b| b.path == PackageManifest::META_FAR_BLOB_PATH)
+        .context("base package missing meta.far")?;
+
+    let meta_far_bytes = std::fs::read(&meta_far_blob.source_path)?;
+    let mut far_reader = fuchsia_archive::Utf8Reader::new(Cursor::new(meta_far_bytes))?;
+    let paths: Vec<String> = far_reader.list().map(|e| e.path().to_string()).collect();
+    for path in paths {
+        if path.ends_with(".cm") {
+            let contents = far_reader.read_file(&path)?;
+            validate_manifest_bytes(&contents, &hal_names, skip_subpackages)
+                .with_context(|| format!("Validating manifest {}", path))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_manifest_bytes(
+    bytes: &[u8],
+    hal_names: &[String],
+    skip_subpackages: bool,
+) -> Result<()> {
+    let component_decl: fcdecl::Component =
+        fidl::unpersist(bytes).context("failed to unpersist component decl")?;
+
+    if let Some(children) = component_decl.children {
+        for child in children {
+            let Some(url_str) = child.url else {
+                continue;
+            };
+
+            if let Ok(relative_url) = RelativeComponentUrl::parse(&url_str) {
+                let package_name = relative_url.package_url().as_ref();
+                if hal_names.iter().any(|n| n == package_name) {
+                    if skip_subpackages {
+                        bail!(
+                            "HAL child '{}' uses relative URL '{}' but skip_subpackages is true",
+                            child.name.as_deref().unwrap_or_default(),
+                            url_str
+                        );
+                    }
+                }
+            } else if let Ok(absolute_url) = FuchsiaPkgAbsoluteComponentUrl::parse(&url_str) {
+                let package_name = absolute_url.name().as_ref();
+                if hal_names.iter().any(|n| n == package_name) {
+                    if !skip_subpackages {
+                        bail!(
+                            "HAL child '{}' uses absolute URL '{}' but skip_subpackages is false",
+                            child.name.as_deref().unwrap_or_default(),
+                            url_str
+                        );
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1048,6 +1132,198 @@ mod tests {
         let (blobs, subpackages) = manifest.into_blobs_and_subpackages();
         assert_eq!(blobs.len(), 7);
         assert_eq!(subpackages.len(), 0);
+
+        Ok(())
+    }
+
+    fn fake_base_with_component(outdir: &Utf8Path, component: &fcdecl::Component) -> Utf8PathBuf {
+        let base_manifest_path = outdir.join("base_package_manifest.json");
+        let mut builder = PackageBuilder::new_platform_internal_package("test-base");
+        let test_blob_path = outdir.join("test-blob-file");
+        std::fs::write(&test_blob_path, "test-base-blob").unwrap();
+        builder.add_file_as_blob("data/test", &test_blob_path).unwrap();
+
+        let component_bytes = ::fidl::persist(component).unwrap();
+        builder.add_contents_to_far("meta/test.cm", component_bytes, outdir).unwrap();
+
+        builder.manifest_path(&base_manifest_path);
+        let _ = builder.build(&outdir, outdir.join("base-meta.far")).unwrap();
+        base_manifest_path
+    }
+
+    #[test]
+    fn test_hal_manifest_validation() -> Result<()> {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+
+        // Build a fake HAL.
+        let hal_manifest_path = outdir.join("hal_package_manifest.json");
+        let mut builder = PackageBuilder::new_platform_internal_package("test-hal");
+        builder.add_contents_as_blob("data/hal", "test-hal-blob", &outdir).unwrap();
+        builder.manifest_path(&hal_manifest_path);
+        let _ = builder.build(&outdir, outdir.join("hal-meta.far")).unwrap();
+
+        // Case 1: skip_subpackages = true, relative URL -> Should Fail
+        {
+            let component = fcdecl::Component {
+                children: Some(vec![fcdecl::Child {
+                    name: Some("test-hal-child".to_string()),
+                    url: Some("test-hal#meta/some_hal.cm".to_string()),
+                    startup: Some(fcdecl::StartupMode::Lazy),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            };
+            let base_dir = outdir.join("case1-base");
+            std::fs::create_dir_all(&base_dir).unwrap();
+            let base_manifest_path = fake_base_with_component(&base_dir, &component);
+            let container = StarnixContainerGenerator {
+                name: "test-name".into(),
+                outdir: outdir.join("case1"),
+                base: base_manifest_path,
+                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ramdisk: vec![],
+                hals: vec![hal_manifest_path.clone()],
+                init: vec![],
+                skip_subpackages: true,
+                fstab: None,
+                file_overrides: vec![],
+            };
+            let mut deps = Depfile::new();
+            let result = container.build(&mut deps);
+            assert!(result.is_err());
+            assert!(format!("{:#}", result.unwrap_err()).contains("uses relative URL"));
+        }
+
+        // Case 2: skip_subpackages = true, absolute URL -> Should Pass
+        {
+            let component = fcdecl::Component {
+                children: Some(vec![fcdecl::Child {
+                    name: Some("test-hal-child".to_string()),
+                    url: Some("fuchsia-pkg://fuchsia.com/test-hal#meta/some_hal.cm".to_string()),
+                    startup: Some(fcdecl::StartupMode::Lazy),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            };
+            let base_dir = outdir.join("case2-base");
+            std::fs::create_dir_all(&base_dir).unwrap();
+            let base_manifest_path = fake_base_with_component(&base_dir, &component);
+            let container = StarnixContainerGenerator {
+                name: "test-name".into(),
+                outdir: outdir.join("case2"),
+                base: base_manifest_path,
+                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ramdisk: vec![],
+                hals: vec![hal_manifest_path.clone()],
+                init: vec![],
+                skip_subpackages: true,
+                fstab: None,
+                file_overrides: vec![],
+            };
+            let mut deps = Depfile::new();
+            let result = container.build(&mut deps);
+            assert!(result.is_ok());
+        }
+
+        // Case 3: skip_subpackages = false, relative URL -> Should Pass
+        {
+            let component = fcdecl::Component {
+                children: Some(vec![fcdecl::Child {
+                    name: Some("test-hal-child".to_string()),
+                    url: Some("test-hal#meta/some_hal.cm".to_string()),
+                    startup: Some(fcdecl::StartupMode::Lazy),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            };
+            let base_dir = outdir.join("case3-base");
+            std::fs::create_dir_all(&base_dir).unwrap();
+            let base_manifest_path = fake_base_with_component(&base_dir, &component);
+            let container = StarnixContainerGenerator {
+                name: "test-name".into(),
+                outdir: outdir.join("case3"),
+                base: base_manifest_path,
+                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ramdisk: vec![],
+                hals: vec![hal_manifest_path.clone()],
+                init: vec![],
+                skip_subpackages: false,
+                fstab: None,
+                file_overrides: vec![],
+            };
+            let mut deps = Depfile::new();
+            let result = container.build(&mut deps);
+            assert!(result.is_ok());
+        }
+
+        // Case 4: skip_subpackages = false, absolute URL -> Should Fail
+        {
+            let component = fcdecl::Component {
+                children: Some(vec![fcdecl::Child {
+                    name: Some("test-hal-child".to_string()),
+                    url: Some("fuchsia-pkg://fuchsia.com/test-hal#meta/some_hal.cm".to_string()),
+                    startup: Some(fcdecl::StartupMode::Lazy),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            };
+            let base_dir = outdir.join("case4-base");
+            std::fs::create_dir_all(&base_dir).unwrap();
+            let base_manifest_path = fake_base_with_component(&base_dir, &component);
+            let container = StarnixContainerGenerator {
+                name: "test-name".into(),
+                outdir: outdir.join("case4"),
+                base: base_manifest_path,
+                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ramdisk: vec![],
+                hals: vec![hal_manifest_path.clone()],
+                init: vec![],
+                skip_subpackages: false,
+                fstab: None,
+                file_overrides: vec![],
+            };
+            let mut deps = Depfile::new();
+            let result = container.build(&mut deps);
+            assert!(result.is_err());
+            assert!(format!("{:#}", result.unwrap_err()).contains("uses absolute URL"));
+        }
+
+        // Case 5: Non-HAL child relative URL with skip_subpackages = true -> Should Pass
+        {
+            let component = fcdecl::Component {
+                children: Some(vec![fcdecl::Child {
+                    name: Some("other-child".to_string()),
+                    url: Some("other-package#meta/other.cm".to_string()),
+                    startup: Some(fcdecl::StartupMode::Lazy),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            };
+            let base_dir = outdir.join("case5-base");
+            std::fs::create_dir_all(&base_dir).unwrap();
+            let base_manifest_path = fake_base_with_component(&base_dir, &component);
+            let container = StarnixContainerGenerator {
+                name: "test-name".into(),
+                outdir: outdir.join("case5"),
+                base: base_manifest_path,
+                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ramdisk: vec![],
+                hals: vec![hal_manifest_path.clone()],
+                init: vec![],
+                skip_subpackages: true,
+                fstab: None,
+                file_overrides: vec![],
+            };
+            let mut deps = Depfile::new();
+            let result = container.build(&mut deps);
+            assert!(result.is_ok());
+        }
 
         Ok(())
     }

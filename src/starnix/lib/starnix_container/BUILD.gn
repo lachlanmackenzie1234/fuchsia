@@ -28,8 +28,10 @@ rustc_library("starnix_container") {
   ]
 
   deps = [
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//src/lib/assembly/config_schema",
     "//src/lib/depfile",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-url",
     "//src/storage/ext4/lib/ext4_extract",
     "//src/storage/ext4/lib/metadata",
