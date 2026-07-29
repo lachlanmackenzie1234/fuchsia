@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <lib/fit/defer.h>
 #include <stdio.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -675,6 +676,44 @@ TEST_F(OverlayFsTest, RenameDir) {
   // Lower FS should not change.
   EXPECT_EQ(ReadDir(lower_), (std::vector{DirEntry::Dir("d1")}));
   EXPECT_EQ(ReadFileContent(lower_ + "/d1/a"), "a");
+}
+
+// During `exec()` the old address-space is torn-down, which can result in locks being taken while
+// dropping `mmap()`ed resources. Reproduce an example of this situation and validate that it does
+// not trigger a lock-dependency panic.
+// This is a regression test for https://fxbug.dev/540127035
+TEST_F(OverlayFsTest, DropUncachedDirEntryDuringExecPassesLockDep) {
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  std::string file_path = overlay_ + "/mapped_file";
+  ASSERT_TRUE(files::WriteFile(file_path, "test content"));
+
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // 1. Open the file on OverlayFS and map it into the process address space.
+    int fd = open(file_path.c_str(), O_RDONLY);
+    ASSERT_THAT(fd, SyscallSucceeds());
+
+    void* addr = mmap(nullptr, sysconf(_SC_PAGESIZE), PROT_READ, MAP_PRIVATE, fd, 0);
+    ASSERT_NE(addr, MAP_FAILED);
+
+    // 2. Close the file descriptor before calling execve().
+    // This ensures that the FileMapping in MemoryManager holds the sole
+    // remaining strong reference to the underlying DirEntry.
+    ASSERT_THAT(close(fd), SyscallSucceeds());
+
+    // 3. Calling execve() replaces the MemoryManager, dropping the FileMapping.
+    // On uncached filesystems, this drops the last strong reference to DirEntry
+    // and triggers child removal from the parent directory while TaskCredsLock
+    // is held by execve().
+    char* const argv[] = {const_cast<char*>(exit_zero_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(exit_zero_path.c_str(), argv, envp), SyscallSucceeds());
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
 }
 
 class OverlayFsAccessTest : public OverlayFsTest {

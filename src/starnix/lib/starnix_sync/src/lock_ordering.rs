@@ -128,6 +128,7 @@ lock_ordering! {
     SimpleDirectoryEntriesLock => RwQueueInnerLock,
     SyslogSubscriptionLock => PortWaiterCallbacksLock,
     SyslogSubscriptionLock => WaitQueueImplLock,
+    TaskCredsLock => DirEntryChildrenRecursiveLevel,
     TaskCredsLock => FsNodeInfoRecursiveLevel,
     TaskCredsLock => TaskFilesLock,
     TaskFilesLock => FdTableMutableStateLock,
