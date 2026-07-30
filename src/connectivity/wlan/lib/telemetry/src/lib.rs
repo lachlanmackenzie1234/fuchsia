@@ -25,6 +25,7 @@ pub use crate::processors::connect_disconnect::DisconnectInfo;
 pub use crate::processors::pno_scan::PnoScanDisabledReason;
 pub use crate::processors::power::{IfacePowerLevel, UnclearPowerDemand};
 pub use crate::processors::scan::ScanResult;
+pub use crate::processors::sme_timeout::TimeoutSource;
 pub use crate::processors::toggle_events::ClientConnectionsToggleEvent;
 pub use util::sender::TelemetrySender;
 #[cfg(test)]
@@ -71,7 +72,9 @@ pub enum TelemetryEvent {
     RecoveryResult {
         result: Result<(), ()>,
     },
-    SmeTimeout,
+    SmeTimeout {
+        source: TimeoutSource,
+    },
     ChipPowerUpFailure,
     ChipPowerDownFailure,
     ResetTxPowerScenario,
@@ -379,9 +382,9 @@ pub fn serve_telemetry(
                                 recovery_logger.handle_recovery_result(result).await;
                             }
                         }
-                        SmeTimeout => {
+                        SmeTimeout { source } => {
                             if let Some(ref sme_timeout_logger) = sme_timeout_logger {
-                                sme_timeout_logger.handle_sme_timeout_event().await;
+                                sme_timeout_logger.handle_sme_timeout_event(source).await;
                             }
                         }
                         ResetTxPowerScenario => {

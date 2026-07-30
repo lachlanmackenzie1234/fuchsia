@@ -7,7 +7,6 @@ use crate::client::types as client_types;
 use crate::config_management::network_config::Credential;
 use crate::mode_management::iface_manager_types::*;
 use crate::mode_management::{Defect, IfaceFailure};
-use crate::telemetry;
 use anyhow::{Error, bail, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
@@ -16,6 +15,7 @@ use fuchsia_async::TimeoutExt;
 use futures::channel::{mpsc, oneshot};
 use futures::{TryFutureExt, TryStreamExt};
 use log::{info, warn};
+use wlan_telemetry::TimeoutSource;
 
 // A long amount of time that a scan should be able to finish within. If a scan takes longer than
 // this is indicates something is wrong.
@@ -240,7 +240,7 @@ impl SmeForScan {
             .on_timeout(SCAN_TIMEOUT, || {
                 self.report_defect(Defect::Iface(IfaceFailure::Timeout {
                     iface_id: self.iface_id,
-                    source: telemetry::TimeoutSource::Scan,
+                    source: TimeoutSource::Scan,
                 }));
                 Err(format_err!("Timed out waiting on scan response from SME"))
             })
@@ -300,7 +300,7 @@ impl SmeForClientStateMachine {
             .on_timeout(CONNECT_TIMEOUT, || {
                 self.report_defect(Defect::Iface(IfaceFailure::Timeout {
                     iface_id: self.iface_id,
-                    source: telemetry::TimeoutSource::Connect,
+                    source: TimeoutSource::Connect,
                 }));
                 Err(format_err!("Timed out waiting for connect result from SME."))
             })
@@ -316,7 +316,7 @@ impl SmeForClientStateMachine {
             .on_timeout(DISCONNECT_TIMEOUT, || {
                 self.report_defect(Defect::Iface(IfaceFailure::Timeout {
                     iface_id: self.iface_id,
-                    source: telemetry::TimeoutSource::Disconnect,
+                    source: TimeoutSource::Disconnect,
                 }));
                 Err(format_err!("Timed out waiting for disconnect"))
             })
@@ -408,7 +408,7 @@ impl SmeForApStateMachine {
             .on_timeout(START_AP_TIMEOUT, || {
                 self.report_defect(Defect::Iface(IfaceFailure::Timeout {
                     iface_id: self.iface_id,
-                    source: telemetry::TimeoutSource::ApStart,
+                    source: TimeoutSource::ApStart,
                 }));
                 Err(format_err!("Timed out waiting for AP to start"))
             })
@@ -422,7 +422,7 @@ impl SmeForApStateMachine {
             .on_timeout(STOP_AP_TIMEOUT, || {
                 self.report_defect(Defect::Iface(IfaceFailure::Timeout {
                     iface_id: self.iface_id,
-                    source: telemetry::TimeoutSource::ApStop,
+                    source: TimeoutSource::ApStop,
                 }));
                 Err(format_err!("Timed out waiting for AP to stop"))
             })
@@ -436,7 +436,7 @@ impl SmeForApStateMachine {
             .on_timeout(AP_STATUS_TIMEOUT, || {
                 self.report_defect(Defect::Iface(IfaceFailure::Timeout {
                     iface_id: self.iface_id,
-                    source: telemetry::TimeoutSource::ApStatus,
+                    source: TimeoutSource::ApStatus,
                 }));
                 Err(format_err!("Timed out waiting for AP status"))
             })
@@ -1587,10 +1587,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut scan_result_fut), Poll::Ready(Err(_)));
         assert_eq!(
             defect_receiver.try_next().expect("missing empty scan results error"),
-            Some(Defect::Iface(IfaceFailure::Timeout {
-                iface_id,
-                source: telemetry::TimeoutSource::Scan,
-            })),
+            Some(Defect::Iface(IfaceFailure::Timeout { iface_id, source: TimeoutSource::Scan })),
         );
     }
 
@@ -1668,7 +1665,7 @@ mod tests {
             defect_receiver.try_next().expect("missing empty scan results error"),
             Some(Defect::Iface(IfaceFailure::Timeout {
                 iface_id,
-                source: telemetry::TimeoutSource::Disconnect,
+                source: TimeoutSource::Disconnect,
             })),
         );
     }
@@ -1882,10 +1879,7 @@ mod tests {
         }
         assert_eq!(
             defect_receiver.try_next().expect("missing connection timeout"),
-            Some(Defect::Iface(IfaceFailure::Timeout {
-                iface_id,
-                source: telemetry::TimeoutSource::Connect,
-            })),
+            Some(Defect::Iface(IfaceFailure::Timeout { iface_id, source: TimeoutSource::Connect })),
         );
     }
 
@@ -2023,10 +2017,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
         assert_eq!(
             defect_receiver.try_next().expect("missing connection timeout"),
-            Some(Defect::Iface(IfaceFailure::Timeout {
-                iface_id,
-                source: telemetry::TimeoutSource::ApStart,
-            })),
+            Some(Defect::Iface(IfaceFailure::Timeout { iface_id, source: TimeoutSource::ApStart })),
         );
     }
 
@@ -2103,10 +2094,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
         assert_eq!(
             defect_receiver.try_next().expect("missing connection timeout"),
-            Some(Defect::Iface(IfaceFailure::Timeout {
-                iface_id,
-                source: telemetry::TimeoutSource::ApStop,
-            })),
+            Some(Defect::Iface(IfaceFailure::Timeout { iface_id, source: TimeoutSource::ApStop })),
         );
     }
 
@@ -2185,7 +2173,7 @@ mod tests {
             defect_receiver.try_next().expect("missing connection timeout"),
             Some(Defect::Iface(IfaceFailure::Timeout {
                 iface_id,
-                source: telemetry::TimeoutSource::ApStatus,
+                source: TimeoutSource::ApStatus,
             })),
         );
     }

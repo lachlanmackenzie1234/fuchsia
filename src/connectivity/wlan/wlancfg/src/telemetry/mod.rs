@@ -39,7 +39,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
 use wlan_common::channel::{Cbw, Channel};
 use wlan_metrics_registry as metrics;
-use wlan_telemetry::ThrottledErrorLogger;
+use wlan_telemetry::{ThrottledErrorLogger, TimeoutSource};
 
 // Include a timeout on stats calls so that if the driver deadlocks, telemtry doesn't get stuck.
 const GET_IFACE_STATS_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
@@ -491,20 +491,6 @@ impl RecoveryRecord {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum TimeoutSource {
-    Scan,
-    Connect,
-    Disconnect,
-    ClientStatus,
-    WmmStatus,
-    ApStart,
-    ApStop,
-    ApStatus,
-    GetIfaceStats,
-    GetHistogramStats,
-}
-
 pub type RecoveryOutcome = metrics::ConnectivityWlanMetricDimensionResult;
 
 /// Capacity of "first come, first serve" slots available to clients of
@@ -563,6 +549,7 @@ pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
         metrics::BAD_TX_RATE_METRIC_ID,
         metrics::INTERFACE_CREATION_FAILURE_METRIC_ID,
         metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID,
+        metrics::SME_OPERATION_TIMEOUT_METRIC_ID,
         metrics::SME_OPERATION_TIMEOUT_2_METRIC_ID,
     ]))
 }
@@ -1732,9 +1719,7 @@ impl Telemetry {
             TelemetryEvent::RecoveryEvent { reason } => {
                 self.stats_logger.log_recovery_occurrence(reason).await;
             }
-            TelemetryEvent::SmeTimeout { source } => {
-                self.stats_logger.log_sme_timeout(source).await;
-
+            TelemetryEvent::SmeTimeout { .. } => {
                 // If timeouts have been a consistent issue to the point that recovery has been
                 // requested and operations are still timing out, record a recovery failure.
                 if let Some(recovery_reason) = self.stats_logger.recovery_record.timeout.take() {
@@ -4175,51 +4160,6 @@ impl StatsLogger {
                 .await;
             }
         }
-    }
-
-    async fn log_sme_timeout(&mut self, source: TimeoutSource) {
-        let dimension = match source {
-            TimeoutSource::Scan => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::Scan_
-            }
-            TimeoutSource::Connect => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::Connect_
-            }
-            TimeoutSource::Disconnect => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::Disconnect_
-            }
-            TimeoutSource::ClientStatus => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ClientStatus_
-            }
-            TimeoutSource::WmmStatus => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::WmmStatus_
-            }
-            TimeoutSource::ApStart => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ApStart_
-            }
-            TimeoutSource::ApStop => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ApStop_
-            }
-            TimeoutSource::ApStatus => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ApStatus_
-            }
-            TimeoutSource::GetIfaceStats => {
-                // TODO(https://fxbug.dev/404889275): Consider renaming the Cobalt
-                // dimension name to no longer to refer to "counter"
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::GetCounterStats_
-            }
-            TimeoutSource::GetHistogramStats => {
-                metrics::SmeOperationTimeoutMetricDimensionStalledOperation::GetHistogramStats_
-            }
-        };
-
-        self.throttled_error_logger.throttle_error(log_cobalt!(
-            self.cobalt_proxy,
-            log_occurrence,
-            metrics::SME_OPERATION_TIMEOUT_METRIC_ID,
-            1,
-            &[dimension.as_event_code()],
-        ))
     }
 }
 
@@ -9967,82 +9907,6 @@ mod tests {
             test_helper.get_logged_metrics(metrics::CONNECTION_RSSI_AVERAGE_METRIC_ID).len(),
             1
         );
-    }
-
-    #[test_case(
-        TimeoutSource::Scan,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::Scan_ ;
-        "log scan timeout"
-    )]
-    #[test_case(
-        TimeoutSource::Connect,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::Connect_ ;
-        "log connect"
-    )]
-    #[test_case(
-        TimeoutSource::Disconnect,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::Disconnect_ ;
-        "log disconnect timeout"
-    )]
-    #[test_case(
-        TimeoutSource::ClientStatus,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ClientStatus_ ;
-        "log client status timeout"
-    )]
-    #[test_case(
-        TimeoutSource::WmmStatus,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::WmmStatus_ ;
-        "log WMM status timeout"
-    )]
-    #[test_case(
-        TimeoutSource::ApStart,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ApStart_ ;
-        "log AP start timeout"
-    )]
-    #[test_case(
-        TimeoutSource::ApStop,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ApStop_ ;
-        "log Ap stop timeout"
-    )]
-    #[test_case(
-        TimeoutSource::ApStatus,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::ApStatus_ ;
-        "log AP status timeout"
-    )]
-    #[test_case(
-        TimeoutSource::GetIfaceStats,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::GetCounterStats_ ;
-        "log iface stats timeout"
-    )]
-    #[test_case(
-        TimeoutSource::GetHistogramStats,
-        metrics::SmeOperationTimeoutMetricDimensionStalledOperation::GetHistogramStats_ ;
-        "log histogram stats timeout"
-    )]
-    #[fuchsia::test(add_test_attr = false)]
-    fn test_log_sme_timeout(
-        source: TimeoutSource,
-        expected_dimension: metrics::SmeOperationTimeoutMetricDimensionStalledOperation,
-    ) {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        // Send the timeout event
-        test_helper.telemetry_sender.send(TelemetryEvent::SmeTimeout { source });
-
-        // Run the telemetry loop until it stalls.
-        assert_matches!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-
-        // Expect that Cobalt has been notified of the timeout
-        assert_matches!(
-            test_helper.exec.run_until_stalled(&mut test_helper.cobalt_stream.next()),
-            Poll::Ready(Some(Ok(fidl_fuchsia_metrics::MetricEventLoggerRequest::LogOccurrence {
-                metric_id, event_codes, responder, ..
-            }))) => {
-                assert_eq!(metric_id, metrics::SME_OPERATION_TIMEOUT_METRIC_ID);
-                assert_eq!(event_codes, vec![expected_dimension.as_event_code()]);
-
-                assert!(responder.send(Ok(())).is_ok());
-        });
     }
 
     struct TestHelper {

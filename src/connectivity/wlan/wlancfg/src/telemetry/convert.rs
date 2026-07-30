@@ -233,8 +233,8 @@ pub fn convert_to_wlan_telemetry_event(
         crate::telemetry::TelemetryEvent::IfaceDestructionResult(Err(())) => {
             Some(wlan_telemetry::TelemetryEvent::IfaceDestructionFailure)
         }
-        crate::telemetry::TelemetryEvent::SmeTimeout { .. } => {
-            Some(wlan_telemetry::TelemetryEvent::SmeTimeout)
+        crate::telemetry::TelemetryEvent::SmeTimeout { source } => {
+            Some(wlan_telemetry::TelemetryEvent::SmeTimeout { source: *source })
         }
         crate::telemetry::TelemetryEvent::RecoveryEvent { .. } => {
             Some(wlan_telemetry::TelemetryEvent::RecoveryEvent)
@@ -347,9 +347,11 @@ mod tests {
         }
 
         match convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::SmeTimeout {
-            source: crate::telemetry::TimeoutSource::Scan,
+            source: wlan_telemetry::TimeoutSource::Scan,
         }) {
-            Some(wlan_telemetry::TelemetryEvent::SmeTimeout) => {}
+            Some(wlan_telemetry::TelemetryEvent::SmeTimeout {
+                source: wlan_telemetry::TimeoutSource::Scan,
+            }) => {}
             _ => panic!("Expected SmeTimeout event"),
         }
 

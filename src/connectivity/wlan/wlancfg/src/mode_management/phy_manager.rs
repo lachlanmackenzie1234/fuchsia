@@ -11,16 +11,15 @@ use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_device_service as fidl_service;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_inspect::{self as inspect, NumericProperty};
 use ieee80211::{MacAddr, MacAddrBytes, NULL_ADDR};
 use log::{error, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::iter::Iterator;
 use thiserror::Error;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_device_service as fidl_service,
-    fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 // Number of seconds that recoverable event histories should be stored.  Store past events for 24
 // hours (86400s).
@@ -982,17 +981,16 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints;
+    use fidl_fuchsia_wlan_device_service as fidl_service;
+    use fidl_fuchsia_wlan_sme as fidl_sme;
     use fuchsia_async::{TestExecutor, run_singlethreaded};
+    use fuchsia_inspect as inspect;
     use futures::channel::mpsc;
     use futures::stream::StreamExt;
     use futures::task::Poll;
     use std::pin::pin;
     use test_case::test_case;
     use zx::sys::{ZX_ERR_NOT_FOUND, ZX_OK};
-    use {
-        fidl_fuchsia_wlan_device_service as fidl_service, fidl_fuchsia_wlan_sme as fidl_sme,
-        fuchsia_inspect as inspect,
-    };
 
     /// Hold the client and service ends for DeviceMonitor to allow mocking DeviceMonitor responses
     /// for unit tests.
@@ -4774,7 +4772,7 @@ mod tests {
         // Log a timeout.
         phy_manager.record_defect(Defect::Iface(IfaceFailure::Timeout {
             iface_id: 1,
-            source: telemetry::TimeoutSource::Scan,
+            source: wlan_telemetry::TimeoutSource::Scan,
         }));
 
         // Verify that the defect was recorded.
@@ -4783,7 +4781,7 @@ mod tests {
         // Verify that the defect was reported to telemetry.
         assert_matches!(
             test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::SmeTimeout { source: telemetry::TimeoutSource::Scan }))
+            Ok(Some(TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Scan }))
         )
     }
 }

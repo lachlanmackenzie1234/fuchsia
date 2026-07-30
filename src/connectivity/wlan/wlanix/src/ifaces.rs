@@ -666,7 +666,9 @@ impl ClientIface for SmeClientIface {
                 .scan(&scan_request)
                 .map_err(|e| format_err!("Failed to request scan: {:?}", e))
                 .on_timeout(SCAN_TIMEOUT, || {
-                    self.telemetry_sender.send(TelemetryEvent::SmeTimeout);
+                    self.telemetry_sender.send(TelemetryEvent::SmeTimeout {
+                        source: wlan_telemetry::TimeoutSource::Scan,
+                    });
                     Err(format_err!("Timed out waiting on scan response from SME"))
                 })
                 .fuse()
@@ -792,7 +794,9 @@ impl ClientIface for SmeClientIface {
             .map(|res| (res, false))
             .on_timeout(CONNECT_TIMEOUT, || {
                 warn!("Timed out waiting for connect result");
-                self.telemetry_sender.send(TelemetryEvent::SmeTimeout);
+                self.telemetry_sender.send(TelemetryEvent::SmeTimeout {
+                    source: wlan_telemetry::TimeoutSource::Connect,
+                });
                 (
                     Ok(fidl_sme::ConnectResult {
                         code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
@@ -837,7 +841,9 @@ impl ClientIface for SmeClientIface {
             .disconnect(fidl_sme::UserDisconnectReason::Unknown)
             .map_err(|e| format_err!("Failed to request disconnect: {:?}", e))
             .on_timeout(DISCONNECT_TIMEOUT, || {
-                self.telemetry_sender.send(TelemetryEvent::SmeTimeout);
+                self.telemetry_sender.send(TelemetryEvent::SmeTimeout {
+                    source: wlan_telemetry::TimeoutSource::Disconnect,
+                });
                 Err(format_err!("Timed out waiting for disconnect"))
             })
             .await?;
@@ -2396,7 +2402,10 @@ mod tests {
 
         let event =
             assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
-        assert_matches!(event, TelemetryEvent::SmeTimeout);
+        assert_matches!(
+            event,
+            TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Scan }
+        );
     }
 
     /// Build a WEP credential with the provided key saved as key 0. The key needs to be 5 or 13
@@ -3113,7 +3122,10 @@ mod tests {
 
         let event =
             assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
-        assert_matches!(event, TelemetryEvent::SmeTimeout);
+        assert_matches!(
+            event,
+            TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Connect }
+        );
     }
 
     #[test_case(
@@ -3273,7 +3285,10 @@ mod tests {
 
         let event =
             assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
-        assert_matches!(event, TelemetryEvent::SmeTimeout);
+        assert_matches!(
+            event,
+            TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Disconnect }
+        );
     }
 
     #[test]

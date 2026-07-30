@@ -5,19 +5,20 @@
 use crate::client::connection_selection::ConnectionSelectionRequester;
 use crate::client::roaming::local_roam_manager::RoamManager;
 use crate::config_management::SavedNetworksManagerApi;
-use crate::telemetry::{TelemetrySender, TimeoutSource};
+use crate::telemetry::TelemetrySender;
 use crate::util::listener;
 use anyhow::Error;
 use fuchsia_async as fasync;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_inspect_contrib::inspect_insert;
 use fuchsia_inspect_contrib::log::WriteInspect;
+use futures::Future;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use futures::Future;
 use std::borrow::Cow;
 use std::convert::Infallible;
 use std::sync::Arc;
+use wlan_telemetry::TimeoutSource;
 
 pub mod device_monitor;
 mod iface_manager;
