@@ -211,6 +211,20 @@ class PauseArguments(DapBaseModel):
     thread_id: int
 
 
+class StepOutArguments(DapBaseModel):
+    """Arguments for `stepOut` request.
+
+    Attributes:
+        thread_id: Specifies the thread for which to step out.
+        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
+        granularity: Stepping granularity ('statement' | 'line' | 'instruction').
+    """
+
+    thread_id: int
+    single_thread: bool | None = None
+    granularity: str | None = None
+
+
 class LaunchArguments(DapBaseModel):
     """Arguments for `launch` request."""
 

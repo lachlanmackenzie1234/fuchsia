@@ -22,6 +22,7 @@ from pydap.models import (
     ScopesArguments,
     SetBreakpointsArguments,
     StackTraceArguments,
+    StepOutArguments,
     VariablesArguments,
 )
 
@@ -315,6 +316,39 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
         resp = await send_task
         self.assertTrue(resp.success)
+
+    async def test_step_out(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        args = StepOutArguments(
+            thread_id=1, single_thread=True, granularity="line"
+        )
+        send_task = asyncio.create_task(client.step_out(args))
+
+        await asyncio.sleep(0)
+        await client._write_queue.join()
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "stepOut",
+        }
+
+        feed_dap_response(reader, response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["arguments"]["threadId"], 1)
+        self.assertTrue(req_val["arguments"]["singleThread"])
+        self.assertEqual(req_val["arguments"]["granularity"], "line")
 
     async def test_threads(self) -> None:
         client = DapClient()

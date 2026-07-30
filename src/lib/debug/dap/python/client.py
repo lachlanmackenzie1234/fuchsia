@@ -26,6 +26,7 @@ from .models import (
     SetBreakpointsResponse,
     StackTraceArguments,
     StackTraceResponse,
+    StepOutArguments,
     ThreadsResponse,
     VariablesArguments,
     VariablesResponse,
@@ -428,6 +429,18 @@ class DapClient:
             The response model.
         """
         resp = await self._send_request("pause", args)
+        return Response.model_validate(resp)
+
+    async def step_out(self, args: StepOutArguments) -> Response:
+        """Sends a stepOut request.
+
+        Args:
+            args: Arguments for the stepOut request.
+
+        Returns:
+            The response model.
+        """
+        resp = await self._send_request("stepOut", args)
         return Response.model_validate(resp)
 
     async def threads(self) -> ThreadsResponse:

@@ -21,6 +21,7 @@ from .models import (
     ScopesResponse,
     StackTraceArguments,
     StackTraceResponse,
+    StepOutArguments,
     ThreadsResponse,
     VariablesArguments,
     VariablesResponse,
