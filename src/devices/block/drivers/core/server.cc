@@ -227,11 +227,21 @@ zx::result<vmoid_t> Server::FindVmoIdLocked() {
 }
 
 zx::result<vmoid_t> Server::AttachVmo(zx::vmo vmo) {
+  zx_info_vmo_t info;
+  if (zx_status_t status = vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+  if (info.flags & ZX_INFO_VMO_RESIZABLE) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   fbl::AutoLock server_lock(&server_lock_);
   zx::result vmoid = FindVmoIdLocked();
   if (vmoid.is_ok()) {
     fbl::AllocChecker ac;
-    fbl::RefPtr<IoBuffer> ibuf = fbl::AdoptRef(new (&ac) IoBuffer(std::move(vmo), vmoid.value()));
+    fbl::RefPtr<IoBuffer> ibuf =
+        fbl::AdoptRef(new (&ac) IoBuffer(std::move(vmo), vmoid.value(), info.size_bytes));
     if (!ac.check()) {
       return zx::error(ZX_ERR_NO_MEMORY);
     }
@@ -459,7 +469,7 @@ zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
   }
   const auto& chunks = chunks_res.value();
 
-  // Hack to ensure that the vmo is valid.
+  // Ensure that the range is within the vmo.
   // In the future, this code will be responsible for pinning VMO pages,
   // and the completion will be responsible for un-pinning those same pages.
   auto vmo_offset_bytes = safemath::CheckMul(request->vmo_offset, bsz);
@@ -467,8 +477,7 @@ zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
   if (!vmo_offset_bytes.IsValid() || !length_bytes.IsValid()) {
     return ZX_ERR_OUT_OF_RANGE;
   }
-  zx_status_t status =
-      iobuf->ValidateVmoHack(length_bytes.ValueOrDie(), vmo_offset_bytes.ValueOrDie());
+  zx_status_t status = iobuf->ValidateVmo(length_bytes.ValueOrDie(), vmo_offset_bytes.ValueOrDie());
   if (status != ZX_OK) {
     return status;
   }

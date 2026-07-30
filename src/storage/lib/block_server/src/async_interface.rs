@@ -266,8 +266,8 @@ impl<I: Interface + ?Sized> SessionManager<I> {
 
         // Make sure we detach VMOs when we go out of scope.
         scopeguard::defer! {
-            for (_, (vmo, _)) in session.helper.take_vmos() {
-                self.interface.on_detach_vmo(&vmo);
+            for (_, registered_vmo) in session.helper.take_vmos() {
+                self.interface.on_detach_vmo(&registered_vmo.vmo);
             }
         }
 

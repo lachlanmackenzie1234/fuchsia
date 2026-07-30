@@ -774,13 +774,43 @@ impl<SM: SessionManager> BlockServer<SM> {
     }
 }
 
+pub(crate) struct RegisteredVmo {
+    pub vmo: Arc<zx::Vmo>,
+    pub size: u64,
+    pub mapping: Option<Arc<VmoMapping>>,
+}
+
+impl RegisteredVmo {
+    /// Validates that a request range (`vmo_offset` to `vmo_offset + length`, in bytes) falls
+    /// within the bounds of this VMO.
+    fn validate_request(&self, vmo_offset: u64, length: u64) -> Result<(), zx::Status> {
+        if vmo_offset > self.size || self.size - vmo_offset < length {
+            Err(zx::Status::OUT_OF_RANGE)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Returns the cached VMO mapping if available, or creates and caches a new mapping.
+    fn get_or_create_mapping(&mut self) -> Result<Arc<VmoMapping>, zx::Status> {
+        match &self.mapping {
+            Some(mapping) => Ok(mapping.clone()),
+            None => {
+                let mapping = VmoMapping::new(&self.vmo, self.size as usize)?;
+                self.mapping = Some(mapping.clone());
+                Ok(mapping)
+            }
+        }
+    }
+}
+
 struct SessionHelper<SM: SessionManager> {
     orchestrator: Arc<SM::Orchestrator>,
     offset_map: OffsetMap,
     max_transfer_blocks: Option<NonZero<u32>>,
     block_size: u32,
     peer_fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest>,
-    vmos: Mutex<BTreeMap<u16, (Arc<zx::Vmo>, Option<Arc<VmoMapping>>)>>,
+    vmos: Mutex<BTreeMap<u16, RegisteredVmo>>,
 }
 
 struct VmoMapping {
@@ -789,8 +819,7 @@ struct VmoMapping {
 }
 
 impl VmoMapping {
-    fn new(vmo: &zx::Vmo) -> Result<Arc<Self>, zx::Status> {
-        let size = vmo.get_size().unwrap() as usize;
+    fn new(vmo: &zx::Vmo, size: usize) -> Result<Arc<Self>, zx::Status> {
         Ok(Arc::new(Self {
             base: fuchsia_runtime::vmar_root_self()
                 .map(0, vmo, 0, size, zx::VmarFlags::PERM_WRITE | zx::VmarFlags::PERM_READ)
@@ -863,6 +892,12 @@ impl<SM: SessionManager> SessionHelper<SM> {
                 Ok(HandleRequestResult::Ok)
             }
             fblock::SessionRequest::AttachVmo { vmo, responder } => {
+                let info = vmo.info().map_err(Error::from)?;
+                if info.flags.contains(zx::VmoInfoFlags::RESIZABLE) {
+                    responder.send(Err(zx::Status::INVALID_ARGS.into_raw()))?;
+                    return Ok(HandleRequestResult::Ok);
+                }
+                let size = info.size_bytes;
                 let vmo = Arc::new(vmo);
                 let vmo_id = {
                     let mut vmos = self.vmos.lock();
@@ -886,7 +921,10 @@ impl<SM: SessionManager> SessionHelper<SM> {
                                 })
                             }
                         };
-                        vmos.insert(vmo_id, (vmo.clone(), None));
+                        vmos.insert(
+                            vmo_id,
+                            RegisteredVmo { vmo: vmo.clone(), size, mapping: None },
+                        );
                         vmo_id
                     }
                 };
@@ -1116,7 +1154,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                 vmo_offset,
                 ..
             }) => match self.vmos.lock().get_mut(&request.vmoid) {
-                Some((vmo, mapping)) => {
+                Some(registered_vmo) => {
                     if flags.contains(BlockIoFlag::DECOMPRESS_WITH_ZSTD) {
                         let compressed_range = request.compressed_prefix_bytes as usize
                             ..request.compressed_prefix_bytes as usize
@@ -1147,68 +1185,70 @@ impl<SM: SessionManager> SessionHelper<SM> {
                             };
 
                             // To decompress, we need to have the target VMO mapped (cached).
-                            match mapping {
-                                Some(mapping) => Ok(mapping.clone()),
-                                None => {
-                                    VmoMapping::new(&vmo).inspect(|m| *mapping = Some(m.clone()))
-                                }
-                            }
-                            .and_then(|mapping| {
-                                // Make sure the `vmo_offset` and `uncompressed_bytes` are within
-                                // range.
-                                if vmo_offset
-                                    .checked_add(request.uncompressed_bytes as u64)
-                                    .is_some_and(|end| end <= mapping.size as u64)
-                                {
-                                    Ok(mapping)
-                                } else {
-                                    Err(zx::Status::OUT_OF_RANGE)
-                                }
-                            })
-                            .map(|mapping| {
-                                // Convert the operation into a `StartDecompressedRead`
-                                // operation. For non-fragmented requests, this will be the only
-                                // operation, but if it's a fragmented read,
-                                // `ContinueDecompressedRead` operations will follow.
-                                operation = Ok(Operation::StartDecompressedRead {
-                                    required_buffer_size,
-                                    device_block_offset,
-                                    block_count,
-                                    options,
-                                });
-                                // Record sufficient information so that we can decompress when all
-                                // the requests complete.
-                                decompression_info = Some(DecompressionInfo {
-                                    compressed_range,
-                                    bytes_so_far,
-                                    mapping,
-                                    uncompressed_range: vmo_offset
-                                        ..vmo_offset + request.uncompressed_bytes as u64,
-                                    buffer: None,
-                                });
-                                None
-                            })
+                            registered_vmo
+                                .get_or_create_mapping()
+                                .and_then(|mapping| {
+                                    // Make sure the `vmo_offset` and `uncompressed_bytes` are within
+                                    // range.
+                                    if vmo_offset
+                                        .checked_add(request.uncompressed_bytes as u64)
+                                        .is_some_and(|end| end <= mapping.size as u64)
+                                    {
+                                        Ok(mapping)
+                                    } else {
+                                        Err(zx::Status::OUT_OF_RANGE)
+                                    }
+                                })
+                                .map(|mapping| {
+                                    // Convert the operation into a `StartDecompressedRead`
+                                    // operation. For non-fragmented requests, this will be the only
+                                    // operation, but if it's a fragmented read,
+                                    // `ContinueDecompressedRead` operations will follow.
+                                    operation = Ok(Operation::StartDecompressedRead {
+                                        required_buffer_size,
+                                        device_block_offset,
+                                        block_count,
+                                        options,
+                                    });
+                                    // Record sufficient information so that we can decompress when
+                                    // all the requests complete.
+                                    decompression_info = Some(DecompressionInfo {
+                                        compressed_range,
+                                        bytes_so_far,
+                                        mapping,
+                                        uncompressed_range: vmo_offset
+                                            ..vmo_offset + request.uncompressed_bytes as u64,
+                                        buffer: None,
+                                    });
+                                    None
+                                })
                         }
                     } else {
-                        Ok(Some(vmo.clone()))
+                        registered_vmo
+                            .validate_request(vmo_offset, request_bytes)
+                            .map(|()| Some(registered_vmo.vmo.clone()))
                     }
                 }
                 None => Err(zx::Status::IO),
             },
-            Ok(Operation::Write { .. }) => self
-                .vmos
-                .lock()
-                .get(&request.vmoid)
-                .cloned()
-                .map_or(Err(zx::Status::IO), |(vmo, _)| Ok(Some(vmo))),
-            Ok(Operation::CloseVmo) => {
-                self.vmos.lock().remove(&request.vmoid).map_or(Err(zx::Status::IO), |(vmo, _)| {
-                    let vmo_clone = vmo.clone();
-                    // Make sure the VMO is dropped after all current Epoch guards have been
-                    // dropped.
-                    Epoch::global().defer(move || drop(vmo_clone));
-                    Ok(Some(vmo))
+            Ok(Operation::Write { vmo_offset, .. }) => {
+                self.vmos.lock().get(&request.vmoid).map_or(Err(zx::Status::IO), |registered_vmo| {
+                    registered_vmo
+                        .validate_request(vmo_offset, request_bytes)
+                        .map(|()| Some(registered_vmo.vmo.clone()))
                 })
+            }
+            Ok(Operation::CloseVmo) => {
+                self.vmos.lock().remove(&request.vmoid).map_or(
+                    Err(zx::Status::IO),
+                    |registered_vmo| {
+                        let vmo_clone = registered_vmo.vmo.clone();
+                        // Make sure the VMO is dropped after all current Epoch guards have been
+                        // dropped.
+                        Epoch::global().defer(move || drop(vmo_clone));
+                        Ok(Some(registered_vmo.vmo))
+                    },
+                )
             }
             _ => Ok(None),
         }
@@ -1241,7 +1281,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
         })
     }
 
-    fn take_vmos(&self) -> BTreeMap<u16, (Arc<zx::Vmo>, Option<Arc<VmoMapping>>)> {
+    fn take_vmos(&self) -> BTreeMap<u16, RegisteredVmo> {
         std::mem::take(&mut *self.vmos.lock())
     }
 
@@ -1674,7 +1714,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_barriers_ordering() {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
-        let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+        let vmo = zx::Vmo::create(2 * zx::system_get_page_size() as u64).unwrap();
         let barrier_called = Arc::new(AtomicBool::new(false));
 
         futures::join!(
@@ -1928,6 +1968,26 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_attach_resizable_vmo_fails() {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
+        let resizable_vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 4096).unwrap();
+
+        futures::join!(
+            async {
+                let block_server = BlockServer::new(BLOCK_SIZE, Arc::new(MockInterface::default()));
+                block_server.handle_requests(stream).await.unwrap();
+            },
+            async move {
+                let (session_proxy, server) = fidl::endpoints::create_proxy();
+                proxy.open_session(server).unwrap();
+                let res = session_proxy.attach_vmo(resizable_vmo).await.unwrap();
+                assert_eq!(res, Err(zx::sys::ZX_ERR_INVALID_ARGS));
+                std::mem::drop(proxy);
+            }
+        );
+    }
+
+    #[fuchsia::test]
     async fn test_close() {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
@@ -2095,7 +2155,7 @@ mod tests {
 
             proxy.open_session(server).unwrap();
 
-            let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+            let vmo = zx::Vmo::create(2 * zx::system_get_page_size() as u64).unwrap();
             let vmo_id = session_proxy
                 .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
                 .await
@@ -2388,6 +2448,15 @@ mod tests {
                     Err(zx::Status::INVALID_ARGS)
                 );
 
+                assert_eq!(
+                    test(
+                        &mut fifo,
+                        BlockFifoRequest { vmo_offset: 8, length: 1, ..good_read_request() }
+                    )
+                    .await,
+                    Err(zx::Status::OUT_OF_RANGE)
+                );
+
                 // WRITE
 
                 let good_write_request = || BlockFifoRequest {
@@ -2437,6 +2506,15 @@ mod tests {
                 assert_eq!(
                     test(&mut fifo, BlockFifoRequest { length: 0, ..good_write_request() }).await,
                     Err(zx::Status::INVALID_ARGS)
+                );
+
+                assert_eq!(
+                    test(
+                        &mut fifo,
+                        BlockFifoRequest { vmo_offset: 8, length: 1, ..good_write_request() }
+                    )
+                    .await,
+                    Err(zx::Status::OUT_OF_RANGE)
                 );
 
                 // CLOSE VMO
@@ -3161,7 +3239,7 @@ mod tests {
                 let mapping = fblock::BlockOffsetMapping { target_block_offset: 10, length: 20 };
                 proxy.open_session_with_options(server, &[mapping]).unwrap();
 
-                let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+                let vmo = zx::Vmo::create(2 * zx::system_get_page_size() as u64).unwrap();
                 let vmo_id = session_proxy
                     .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
                     .await
@@ -4117,7 +4195,7 @@ mod tests {
                 let (session_proxy, server) = fidl::endpoints::create_proxy();
                 proxy.open_session(server).unwrap();
 
-                let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+                let vmo = zx::Vmo::create(2 * zx::system_get_page_size() as u64).unwrap();
                 let vmo_id = session_proxy
                     .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
                     .await

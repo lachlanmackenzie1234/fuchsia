@@ -114,6 +114,14 @@ TEST_F(ServerTest, AttachVmo) {
   AttachVmo(/*do_fill=*/false);
 }
 
+TEST_F(ServerTest, AttachResizableVmoFails) {
+  CreateServer();
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(8192, ZX_VMO_RESIZABLE, &vmo));
+  zx::result vmoid_or = server_->AttachVmo(std::move(vmo));
+  ASSERT_EQ(vmoid_or.status_value(), ZX_ERR_INVALID_ARGS);
+}
+
 TEST_F(ServerTest, CloseVMO) {
   CreateServer();
   AttachVmo(/*do_fill=*/false);

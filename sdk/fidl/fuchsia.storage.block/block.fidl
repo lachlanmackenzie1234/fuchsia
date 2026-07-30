@@ -151,9 +151,10 @@ closed protocol Session {
         fifo zx.Handle:<FIFO>;
     }) error zx.Status;
 
-    /// Attaches a VMO to the session.
+    /// Attaches a VMO to the session. Resizable VMOs are not supported and will return
+    /// `ZX_ERR_INVALID_ARGS`.
     ///
-    /// Returns an identifer that can be used to refer to the VMO.
+    /// Returns an identifier that can be used to refer to the VMO.
     strict AttachVmo(resource struct {
         vmo zx.Handle:VMO;
     }) -> (struct {

@@ -293,12 +293,21 @@ impl BlockServer {
                                 }
                             }
                             block::SessionRequest::AttachVmo { vmo, responder } => {
-                                match self.get_vmo_id(vmo) {
-                                    Some(vmo_id) => {
-                                        responder.send(Ok(&block::VmoId { id: vmo_id }))?
+                                match vmo.info() {
+                                    Ok(info)
+                                        if info.flags.contains(zx::VmoInfoFlags::RESIZABLE) =>
+                                    {
+                                        responder.send(Err(zx::Status::INVALID_ARGS.into_raw()))?;
                                     }
-                                    None => {
-                                        responder.send(Err(zx::Status::NO_RESOURCES.into_raw()))?
+                                    Ok(_) => match self.get_vmo_id(vmo) {
+                                        Some(vmo_id) => {
+                                            responder.send(Ok(&block::VmoId { id: vmo_id }))?
+                                        }
+                                        None => responder
+                                            .send(Err(zx::Status::NO_RESOURCES.into_raw()))?,
+                                    },
+                                    Err(status) => {
+                                        responder.send(Err(status.into_raw()))?;
                                     }
                                 }
                             }
@@ -569,6 +578,26 @@ mod tests {
                         Err(e) => panic!("unexpected error {:?}", e),
                     }
                 }
+            },
+            async {
+                let provider = serve_test_file_backed_volume(&fixture).await;
+                provider.connect_channel_to_block(server).unwrap();
+            }
+        );
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_attach_resizable_vmo() {
+        let fixture = TestFixture::new().await;
+        let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
+        join!(
+            async {
+                let block_client = RemoteBlockClient::new(volume).await.unwrap();
+                let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 4096).unwrap();
+                // SAFETY: Test code. Only attach once, no other mappings.
+                let status = unsafe { block_client.attach_vmo(&vmo) }.await.unwrap_err();
+                assert_eq!(status, zx::Status::INVALID_ARGS);
             },
             async {
                 let provider = serve_test_file_backed_volume(&fixture).await;
