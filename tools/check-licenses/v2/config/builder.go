@@ -17,19 +17,17 @@ import (
 // Builder handles the Assembly Phase, scanning directories for config files
 // and aggregating them into a MasterConfig.
 type Builder struct {
-	FuchsiaDir string
-	Config     *MasterConfig
-	seen       map[string]bool
+	Config *MasterConfig
+	seen   map[string]bool
 }
 
 // NewBuilder creates a new config assembler.
 func NewBuilder(fuchsiaDir string) *Builder {
 	b := &Builder{
-		FuchsiaDir: fuchsiaDir,
-		Config:     NewMasterConfig(fuchsiaDir),
-		seen:       make(map[string]bool),
+		Config: NewMasterConfig(fuchsiaDir),
+		seen:   make(map[string]bool),
 	}
-	b.Config.PatternsDir = filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
+	b.Config.PatternsDir = filepath.Join(b.Config.FuchsiaDir, "tools", "check-licenses", "assets", "patterns")
 	return b
 }
 
@@ -40,7 +38,7 @@ func (b *Builder) Assemble() error {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to load manifests: %v\n", err)
 	}
 
-	seedFile := filepath.Join(b.FuchsiaDir, "tools", "check-licenses", "v2", "config.json")
+	seedFile := filepath.Join(b.Config.FuchsiaDir, "tools", "check-licenses", "v2", "config.json")
 	if _, err := os.Stat(seedFile); os.IsNotExist(err) {
 		// Fallback for tests or environments where the seed file doesn't exist
 		return nil
@@ -111,7 +109,7 @@ func (b *Builder) parseConfigFile(path string) error {
 	for _, include := range f.Includes {
 		absInclude := include
 		if !filepath.IsAbs(include) {
-			absInclude = filepath.Join(b.FuchsiaDir, include)
+			absInclude = filepath.Join(b.Config.FuchsiaDir, include)
 		}
 
 		info, err := os.Stat(absInclude)
@@ -246,8 +244,8 @@ type Package struct {
 // LoadManifests scans the manifests and integration directories and populates the mapping.
 func (b *Builder) LoadManifests() error {
 	dirsToScan := []string{
-		filepath.Join(b.FuchsiaDir, "manifests"),
-		filepath.Join(b.FuchsiaDir, "integration"),
+		filepath.Join(b.Config.FuchsiaDir, "manifests"),
+		filepath.Join(b.Config.FuchsiaDir, "integration"),
 	}
 
 	for _, dir := range dirsToScan {
