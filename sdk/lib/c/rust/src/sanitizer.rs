@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use core::ffi::{CStr, c_char, c_size_t};
-use zx::sys::zx_handle_t;
+use zx::sys::{ZX_LOG_RECORD_DATA_MAX, zx_handle_t};
 use zx::{NullableHandle, Vmo};
 
 // <zircon/sanitizer.h>
@@ -77,26 +77,22 @@ pub fn fast_backtrace(pc_buffer: &mut [usize]) -> &mut [usize] {
 /// `zx_libc::sanitizer::log()` when the buffer fills or the object is dropped.
 #[derive(Debug)]
 pub struct Log {
-    buffer: [u8; 224],
-    n: u8,
+    buffer: [u8; ZX_LOG_RECORD_DATA_MAX],
+    used: usize,
 }
 
 impl Log {
     pub fn new() -> Log {
-        Log { buffer: [0; _], n: 0 }
-    }
-
-    fn used(&self) -> usize {
-        self.n as usize
+        Log { buffer: [0; _], used: 0 }
     }
 
     fn space(&self) -> usize {
-        self.buffer.len() - self.used()
+        self.buffer.len() - self.used
     }
 
     fn flush(&mut self) {
-        let buf = &self.buffer[0..self.used()];
-        self.n = 0;
+        let buf = &self.buffer[0..self.used];
+        self.used = 0;
 
         // SAFETY: The string was vetted on the way into the buffer.
         let s = unsafe { str::from_utf8_unchecked(buf) };
@@ -116,23 +112,44 @@ impl core::fmt::Write for Log {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         let mut left = s;
         while !left.is_empty() {
-            let to_copy = left.floor_char_boundary(self.space());
-            let used = self.used();
-            let buf = &mut self.buffer[used..(used + to_copy)];
-            let (chunk, rest) = left.split_at(to_copy);
-            left = rest;
-            if chunk.is_empty() {
-                if buf.is_empty() {
+            // Find a newline in `left` that fits within the remaining space in
+            // the buffer. If found, chunk up to the newline. Otherwise, take
+            // as many full UTF-8 code points as can fit in the remaining space.
+            let (to_copy, has_newline) = match left.find('\n') {
+                Some(pos) if pos <= self.space() => (pos, true),
+                _ => (left.floor_char_boundary(self.space()), false),
+            };
+
+            // If no characters fit and there is no newline to complete a line,
+            // flush the buffer to make room.
+            if to_copy == 0 && !has_newline {
+                if self.used == 0 {
                     // Pathological case with no valid UTF-8 chars at all.
-                    return core::fmt::Result::Err(core::fmt::Error);
+                    return Err(core::fmt::Error);
                 }
-                // No space because the buffer is full.  Flush and iterate.
-                self.flush()
+                self.flush();
+                continue;
+            }
+
+            // Copy the chunk into the buffer.
+            let (chunk, rest) = left.split_at(to_copy);
+            let buf = &mut self.buffer[self.used..self.used + to_copy];
+            buf.copy_from_slice(chunk.as_bytes());
+            self.used += to_copy;
+
+            if has_newline {
+                // Skip the newline character and flush the completed log line.
+                left = &rest[1..];
+                self.flush();
             } else {
-                self.n += chunk.len() as u8;
-                buf.copy_from_slice(chunk.as_bytes())
+                left = rest;
+                // If the buffer is now full, flush it to free up space for
+                // subsequent writes.
+                if self.space() == 0 {
+                    self.flush();
+                }
             }
         }
-        core::fmt::Result::Ok(())
+        Ok(())
     }
 }
