@@ -7,8 +7,8 @@
 import("//build/config/current_target_tuple.gni")
 import("//build/config/sysroot.gni")
 import("//build/cpp/library_headers.gni")
-import("//build/rust/rustc_bindgen.gni")
 import("//build/rust/rustc_library.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
 
 library_headers("headers") {
   headers = [ "lib/object-constants.h" ]
@@ -22,13 +22,11 @@ source_set("object-constants") {
   public_deps = [ ":headers" ]
 }
 
-rustc_bindgen("object-constants-bindings.bindgen") {
-  visibility = [ ":*" ]
+kernel_bindgen_crate("object-constants-rs") {
   headers = [ "include/lib/object-constants.h" ]
   cpp = true
 
-  output_name = "object_constants_bindings.rs"
-  deps = [ ":headers" ]
+  non_rust_deps = [ ":headers" ]
 
   notice_year = 2026
 
@@ -37,13 +35,6 @@ rustc_bindgen("object-constants-bindings.bindgen") {
   expect_lints = [ "non_upper_case_globals" ]
 
   raw_lines = [ "#![no_std]" ]
-}
-
-rustc_library("object-constants-rs") {
-  edition = "2024"
-  source_root = "$target_gen_dir/object_constants_bindings.rs"
-  sources = [ "$target_gen_dir/object_constants_bindings.rs" ]
-  deps = [ ":object-constants-bindings.bindgen" ]
 }
 
 group("tests") {

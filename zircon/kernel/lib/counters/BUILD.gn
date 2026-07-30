@@ -7,8 +7,8 @@
 import("//build/config/current_target_tuple.gni")
 import("//build/config/sysroot.gni")
 import("//build/cpp/library_headers.gni")
-import("//build/rust/rustc_bindgen.gni")
 import("//build/rust/rustc_library.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/params.gni")
 
 source_set("counters") {
@@ -77,13 +77,11 @@ group("boot_tests") {
   testonly = true
 }
 
-rustc_bindgen("counters-bindings.bindgen") {
-  visibility = [ ":*" ]
+kernel_bindgen_crate("counters-bindings") {
   headers = [ "bindgen.h" ]
   cpp = true
 
-  output_name = "counters_bindings.rs"
-  deps = [ ":headers" ]
+  non_rust_deps = [ ":headers" ]
 
   type_allowlist = [ "counters::.*" ]
 
@@ -96,11 +94,4 @@ rustc_bindgen("counters-bindings.bindgen") {
     "non_camel_case_types",
     "non_upper_case_globals",
   ]
-}
-
-rustc_library("counters-bindings") {
-  edition = "2024"
-  source_root = "$target_gen_dir/counters_bindings.rs"
-  sources = [ "$target_gen_dir/counters_bindings.rs" ]
-  deps = [ ":counters-bindings.bindgen" ]
 }

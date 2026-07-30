@@ -7,7 +7,7 @@
 import("//build/config/current_target_tuple.gni")
 import("//build/config/sysroot.gni")
 import("//build/cpp/library_headers.gni")
-import("//build/rust/rustc_bindgen.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
@@ -65,17 +65,12 @@ group("boot_tests") {
   testonly = true
 }
 
-rustc_bindgen("debuglog-bindings.bindgen") {
-  visibility = [ ":*" ]
-  headers = [ "include/lib/debuglog_types.h" ]
-  deps = [ ":headers" ]
-  if (is_fuchsia && !is_kernel) {
-    deps += [ "//build/config/fuchsia:source_deps" ]
-  }
-
-  output_name = "debuglog_bindings.rs"
-
+kernel_bindgen_crate("debuglog-types") {
   cpp = true
+  headers = [ "include/lib/debuglog_types.h" ]
+
+  non_rust_deps = [ ":headers" ]
+  deps = [ "//third_party/rust_crates:zerocopy" ]
 
   additional_bindgen_flags = [
     "--with-derive-default",
@@ -93,17 +88,6 @@ rustc_bindgen("debuglog-bindings.bindgen") {
   expect_lints = [ "non_camel_case_types" ]
 
   raw_lines = [ "#![no_std]" ]
-}
-
-rustc_library("debuglog-types") {
-  edition = "2024"
-  name = "debuglog_types"
-  source_root = "$target_gen_dir/debuglog_bindings.rs"
-  sources = [ "$target_gen_dir/debuglog_bindings.rs" ]
-  deps = [
-    ":debuglog-bindings.bindgen",
-    "//third_party/rust_crates:zerocopy",
-  ]
 }
 
 kernel_rust_mod("debuglog-rs") {
