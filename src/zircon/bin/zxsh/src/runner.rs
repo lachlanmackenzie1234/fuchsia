@@ -7,9 +7,22 @@ use crate::parser::ast::ASTBuilder;
 use crate::parser::{parse_script, tokenize};
 use crate::string::parse_int;
 use bstr::{BStr, ByteSlice};
+use std::io::Write;
 
 /// Run a script from a byte slice.
-pub fn run_string(input: &BStr, mut state: ShellState) -> i32 {
+pub fn run_string(input: &BStr, state: ShellState) -> i32 {
+    let mut ctx = match ExecutionContext::initial() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Context error: {}", e);
+            return 1;
+        }
+    };
+    run_string_with_context(input, state, &mut ctx)
+}
+
+/// Run a script from a byte slice with a pre-created execution context.
+fn run_string_with_context(input: &BStr, mut state: ShellState, ctx: &mut ExecutionContext) -> i32 {
     let mut builder = ASTBuilder::new();
     let tokens = match tokenize(input.as_bytes()) {
         Ok(t) => t,
@@ -25,35 +38,28 @@ pub fn run_string(input: &BStr, mut state: ShellState) -> i32 {
             return 1;
         }
     };
-    let mut ctx = match ExecutionContext::initial() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Context error: {}", e);
-            return 1;
-        }
-    };
     let mut last_code = 0;
     for &cmd_offset in &cmds {
-        match eval_command(&mut builder, cmd_offset, &mut state, &mut ctx) {
+        match eval_command(&mut builder, cmd_offset, &mut state, ctx) {
             Ok(EvalOutcome::Code(c)) => {
                 last_code = c;
             }
             Ok(EvalOutcome::Exit(c)) => {
-                run_exit_trap(&mut state, &mut ctx);
+                run_exit_trap(&mut state, ctx);
                 return c;
             }
             Ok(EvalOutcome::Return(c)) => {
-                run_exit_trap(&mut state, &mut ctx);
+                run_exit_trap(&mut state, ctx);
                 return c;
             }
             Ok(EvalOutcome::Break(_)) => {
                 eprintln!("zxsh: break: can only break from a loop");
-                run_exit_trap(&mut state, &mut ctx);
+                run_exit_trap(&mut state, ctx);
                 return 1;
             }
             Ok(EvalOutcome::Continue(_)) => {
                 eprintln!("zxsh: continue: can only continue from a loop");
-                run_exit_trap(&mut state, &mut ctx);
+                run_exit_trap(&mut state, ctx);
                 return 1;
             }
             Err(e) => {
@@ -65,12 +71,12 @@ pub fn run_string(input: &BStr, mut state: ShellState) -> i32 {
                     code_bstr.as_ref().and_then(|b| parse_int::<i32>(b.as_bytes())).unwrap_or(1);
                 let code = if code == 0 { 1 } else { code };
                 state.set_last_status(code);
-                run_exit_trap(&mut state, &mut ctx);
+                run_exit_trap(&mut state, ctx);
                 return code;
             }
         }
     }
-    run_exit_trap(&mut state, &mut ctx);
+    run_exit_trap(&mut state, ctx);
     last_code
 }
 
@@ -90,7 +96,20 @@ pub fn run_script(path: &BStr, state: ShellState) -> i32 {
             return 1;
         }
     };
-    run_string(BStr::new(&content), state)
+    let mut ctx = match ExecutionContext::initial() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Context error: {}", e);
+            return 1;
+        }
+    };
+    if state.opt_verbose {
+        if let Some(mut err) = ctx.stderr() {
+            let _ = err.write_all(&content);
+            let _ = err.flush();
+        }
+    }
+    run_string_with_context(BStr::new(&content), state, &mut ctx)
 }
 
 #[cfg(test)]
@@ -148,6 +167,21 @@ mod tests {
         let path_bstr = BStr::new(script_file.to_str().unwrap());
         assert_eq!(run_script(path_bstr, ShellState::new()), 0);
 
+        let mut state_verbose = ShellState::new();
+        state_verbose.opt_verbose = true;
+        assert_eq!(run_script(path_bstr, state_verbose), 0);
+
         let _ = std::fs::remove_file(script_file);
+    }
+
+    #[test]
+    fn test_verbose_and_xtrace() {
+        let mut state_v = ShellState::new();
+        state_v.opt_verbose = true;
+        assert_eq!(run_string(BStr::new("a=10"), state_v), 0);
+
+        let mut state_x = ShellState::new();
+        state_x.opt_xtrace = true;
+        assert_eq!(run_string(BStr::new("a=10"), state_x), 0);
     }
 }

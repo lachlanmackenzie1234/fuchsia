@@ -109,19 +109,14 @@ pub fn eval_command(
     state: &mut ShellState,
     ctx: &mut ExecutionContext,
 ) -> Result<EvalOutcome, String> {
-    if state.opt_xtrace || state.opt_verbose {
+    if state.opt_xtrace {
         if let Some(ref mut stderr) = ctx.stderr() {
             let cmd = builder.get_ref(cmd_ptr);
             if cmd.tag.is_traceable() {
                 let formatted = command_to_bstring(cmd, builder);
-                if state.opt_xtrace {
-                    let ps4_prefix =
-                        expand::expand_prompt(BStr::new(b"PS4"), BStr::new(b"+ "), state, ctx);
-                    let _ = writeln!(stderr, "{}{}", ps4_prefix, formatted);
-                }
-                if state.opt_verbose {
-                    let _ = writeln!(stderr, "{}", formatted);
-                }
+                let ps4_prefix =
+                    expand::expand_prompt(BStr::new(b"PS4"), BStr::new(b"+ "), state, ctx);
+                let _ = writeln!(stderr, "{}{}", ps4_prefix, formatted);
             }
         }
     }

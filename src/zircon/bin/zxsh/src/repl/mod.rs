@@ -12,7 +12,7 @@ use bstr::{BStr, BString, ByteSlice, ByteVec};
 
 mod completion;
 mod linenoise;
-use std::io::{BufRead, IsTerminal};
+use std::io::{BufRead, IsTerminal, Write};
 
 const DEFAULT_PS1: &str = "$ ";
 const DEFAULT_PS2: &str = "> ";
@@ -105,6 +105,13 @@ pub fn run_repl_reader<R: BufRead>(
                 }
             }
         };
+
+        if state.opt_verbose && !is_tty {
+            if let Some(mut err) = ctx.stderr() {
+                let _ = err.write_all(line.as_bytes());
+                let _ = err.flush();
+            }
+        }
 
         let sigint = ctx.signal_state.is_pending(ShellSignals::INT);
         ctx.signal_state.clear(ShellSignals::INT);
@@ -230,5 +237,15 @@ mod tests {
         let cursor = Cursor::new(input);
         let res = run_repl_reader(cursor, ShellState::new(), false);
         assert_eq!(res, None);
+    }
+
+    #[test]
+    fn test_run_repl_reader_verbose() {
+        let input = "x=10\nexit 0\n";
+        let cursor = Cursor::new(input);
+        let mut state = ShellState::new();
+        state.opt_verbose = true;
+        let res = run_repl_reader(cursor, state, false);
+        assert_eq!(res, Some(0));
     }
 }
