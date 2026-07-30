@@ -193,17 +193,26 @@ std::array<zx_handle_t, kChildHandleCount> ExtractHandles(zx::channel bootstrap)
   zx::debuglog log;
   // Read the command line and the essential handles from the kernel.
   std::array<zx_handle_t, kChildHandleCount> handles = {};
-  uint32_t actual_handles;
-  zx_signals_t pending;
-  zx_status_t status = bootstrap.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), &pending);
-  check(log, status, "cannot wait for bootstrap channel to be readable");
-  bootstrap.read(0, nullptr, handles.data(), 0, handles.size(), nullptr, &actual_handles);
-  check(log, status, "cannot read bootstrap message");
+  uint32_t actual_handles = 0;
 
-  if (actual_handles != kHandleCount) {
-    fail(log, "read %u handles instead of %u", actual_handles, kHandleCount);
+  // Attempt to read two messages from the bootstrap channel. If the first doesn't contain the
+  // required number of handles, read the second. This is to accommodate the new userboot protocol.
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    zx_signals_t pending;
+    zx_status_t status = bootstrap.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), &pending);
+    check(log, status, "cannot wait for bootstrap channel to be readable");
+    status =
+        bootstrap.read(0, nullptr, handles.data(), 0, handles.size(), nullptr, &actual_handles);
+    check(log, status, "cannot read bootstrap message");
+
+    if (actual_handles == kHandleCount || actual_handles == kExperimentalProtocolHandleCount) {
+      return handles;
+    }
+    zx_handle_close_many(handles.data(), actual_handles);
+    handles.fill(ZX_HANDLE_INVALID);
   }
-  return handles;
+
+  fail(log, "read %u handles instead of %u", actual_handles, kHandleCount);
 }
 
 // std::source_location cannot be guaranteed not to generate initialized data
