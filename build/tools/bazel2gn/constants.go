@@ -162,6 +162,10 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// We do not need to include the "stamp" destination in GN because it is implicitly created by
 	// the rule.
 	"stamp_group": {"stamp": true},
+	// The Bazel test target attribute `size` is not supported in GN.
+	"go_test":      {"size": true},
+	"host_go_test": {"size": true},
+	"rustc_test":   {"size": true},
 }
 
 // Common Bazel attributes that use different names in GN.

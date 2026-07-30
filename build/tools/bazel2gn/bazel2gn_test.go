@@ -81,6 +81,7 @@ go_binary(
 
 go_test(
 	name = "bazel2gn_tests",
+	size = "small",
 	embed = [ ":bazel2gn" ],
 	srcs = [
 		"bazel2gn_test.go",
