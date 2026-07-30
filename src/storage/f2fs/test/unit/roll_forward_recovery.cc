@@ -33,24 +33,29 @@ block_t StartBidxOfNodeWithoutVnode(NodePage &node_page) {
   constexpr uint32_t kOfsIndirectNode1 = 3;
   constexpr uint32_t kOfsIndirectNode2 = 4 + kNidsPerBlock;
   constexpr uint32_t kOfsDoubleIndirectNode = 5 + 2 * kNidsPerBlock;
-  uint32_t node_ofs = node_page.OfsOfNode(), NumOfIndirectNodes = 0;
+  size_t node_ofs = node_page.OfsOfNode();
+  size_t num_of_indirect_nodes = 0;
 
   if (node_ofs == kOfsInode) {
     return 0;
-  } else if (node_ofs <= kOfsDirectNode2) {
-    NumOfIndirectNodes = 0;
+  }
+  if (node_ofs <= kOfsDirectNode2) {
+    num_of_indirect_nodes = 0;
   } else if (node_ofs >= kOfsIndirectNode1 && node_ofs < kOfsIndirectNode2) {
-    NumOfIndirectNodes = 1;
+    num_of_indirect_nodes = 1;
   } else if (node_ofs >= kOfsIndirectNode2 && node_ofs < kOfsDoubleIndirectNode) {
-    NumOfIndirectNodes = 2;
+    num_of_indirect_nodes = 2;
+  } else if (node_ofs == kOfsDoubleIndirectNode || node_ofs == kOfsDoubleIndirectNode + 1) {
+    num_of_indirect_nodes = 3;
   } else {
-    NumOfIndirectNodes = (node_ofs - kOfsDoubleIndirectNode - 2) / (kNidsPerBlock + 1);
+    num_of_indirect_nodes = (node_ofs - kOfsDoubleIndirectNode - 2) / (kNidsPerBlock + 1) + 4;
   }
 
-  uint32_t bidx = node_ofs - NumOfIndirectNodes - 1;
+  size_t bidx = node_ofs - num_of_indirect_nodes - 1;
   // Since the test does not use InlineXattr, Use |kAddrsPerInode| value instead of
   // |VnodeF2fs::GetAddrsPerInode| function.
-  return (kAddrsPerInode + safemath::CheckMul(bidx, kAddrsPerBlock)).ValueOrDie();
+  return safemath::checked_cast<block_t>(
+      (kAddrsPerInode + safemath::CheckMul(bidx, kAddrsPerBlock)).ValueOrDie());
 }
 
 zx::result<pgoff_t> CheckNodePage(F2fs *fs, NodePage &node_page) {
@@ -1277,5 +1282,82 @@ TEST(FsyncRecoveryTest, Fdatasync) {
   EXPECT_EQ(Fsck(std::move(bc), FsckOptions{.repair = false}, &bc), ZX_OK);
 }
 
+TEST(FsyncRecoveryTest, DoubleIndirectFsyncRecovery) {
+  std::unique_ptr<BcacheMapper> bc;
+  FileTester::MkfsOnFakeDev(&bc, kSectorCount100MiB);
+
+  std::unique_ptr<F2fs> fs;
+  MountOptions options{};
+  // Enable roll-forward recovery
+  ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
+
+  fbl::RefPtr<VnodeF2fs> root;
+  FileTester::CreateRoot(fs.get(), &root);
+  fbl::RefPtr<Dir> root_dir = fbl::RefPtr<Dir>::Downcast(std::move(root));
+
+  // 1. Create file and write a block in the double-indirect subtree.
+  // The double-indirect subtree (Level 3) starts at block index 2,075,607.
+  zx::result file_fs_vnode = root_dir->Create("fsync_large_file", fs::CreationType::kFile);
+  ASSERT_TRUE(file_fs_vnode.is_ok()) << file_fs_vnode.status_string();
+  fbl::RefPtr<VnodeF2fs> fsync_vnode = fbl::RefPtr<VnodeF2fs>::Downcast(*std::move(file_fs_vnode));
+  File *file = static_cast<File *>(fsync_vnode.get());
+
+  // Sync the filesystem to checkpoint the newly created file and parent directory.
+  // This ensures that the subsequent SyncFile() executes the fast-path roll-forward recovery
+  // rather than falling back to a full checkpoint.
+  fs->SyncFs(true);
+
+  // Write signature data to block 2075607. F2FS supports sparse files, so writing
+  // at this offset will allocate the double-indirect path (1 double-indirect,
+  // 1 indirect, 1 direct node) without allocating the intermediate data blocks.
+  std::vector<uint8_t> w_buf(kBlockSize, 0xAA);
+  size_t out;
+  const size_t target_offset = 2075607ULL * kBlockSize;
+  ASSERT_EQ(FileTester::Write(file, w_buf.data(), kBlockSize, target_offset, &out), ZX_OK);
+  ASSERT_EQ(out, kBlockSize);
+
+  // 2. Fsync the file to log the node mappings.
+  ASSERT_EQ(fsync_vnode->SyncFile(false), ZX_OK);
+
+  ASSERT_EQ(fsync_vnode->Close(), ZX_OK);
+  fsync_vnode = nullptr;
+  ASSERT_EQ(root_dir->Close(), ZX_OK);
+  root_dir = nullptr;
+
+  // 3. Trigger Sudden Power Off (SPO) to simulate crash.
+  FileTester::SuddenPowerOff(std::move(fs), &bc);
+
+  // 4. Remount with roll-forward recovery enabled.
+  ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
+  FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
+
+  // 5. Open the recovered file and verify the signature data at the double-indirect offset.
+  fbl::RefPtr<VnodeF2fs> recovered_root;
+  FileTester::CreateRoot(fs.get(), &recovered_root);
+  fbl::RefPtr<Dir> recovered_root_dir = fbl::RefPtr<Dir>::Downcast(std::move(recovered_root));
+
+  fbl::RefPtr<fs::Vnode> recovered_vn;
+  FileTester::Lookup(recovered_root_dir.get(), "fsync_large_file", &recovered_vn);
+  File *recovered_file = static_cast<File *>(recovered_vn.get());
+
+  std::vector<uint8_t> r_buf(kBlockSize, 0);
+  FileTester::ReadFromFile(recovered_file, r_buf.data(), kBlockSize, target_offset);
+
+  // On the broken codebase, the direct node page was not fsynced due to classification
+  // inversion, so the block was never logged and will recover as a sparse hole (all zeroes).
+  EXPECT_EQ(std::memcmp(r_buf.data(), w_buf.data(), kBlockSize), 0)
+      << "Signature data at double-indirect offset was not recovered!";
+
+  ASSERT_EQ(recovered_vn->Close(), ZX_OK);
+  recovered_vn = nullptr;
+  ASSERT_EQ(recovered_root_dir->Close(), ZX_OK);
+  recovered_root_dir = nullptr;
+
+  // Cleanup
+  FileTester::Unmount(std::move(fs), &bc);
+  EXPECT_EQ(Fsck(std::move(bc), FsckOptions{.repair = false}, &bc), ZX_OK);
+}
 }  // namespace
 }  // namespace f2fs

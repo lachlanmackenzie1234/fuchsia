@@ -1194,5 +1194,70 @@ TEST_F(NodeManagerTest, DnodeBidxConsistency) {
   vn = nullptr;
 }
 
+TEST_F(NodeManagerTest, IsDnodeDoubleIndirectSubtree) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // Test node classification in double-indirect subtrees (files > ~8MB).
+  // In double-indirect subtrees, nodes appear in repeating groups of (kNidsPerBlock + 1):
+  // 1 Indirect Node followed by kNidsPerBlock Direct Nodes.
+  constexpr uint32_t kOfsDoubleIndirectNode = 5 + 2 * kNidsPerBlock;
+
+  fbl::RefPtr<VnodeF2fs> vnode;
+  FileTester::VnodeWithoutParent(fs_.get(), S_IFREG, vnode);
+  ASSERT_TRUE(vnode->NewInodePage().is_ok());
+
+  // Allocate nodes in the double-indirect subtree (level 3).
+  const pgoff_t direct_blks = kAddrsPerBlock;
+  const pgoff_t indirect_blks = static_cast<const pgoff_t>(kAddrsPerBlock) * kNidsPerBlock;
+  const pgoff_t double_indirect_index = kAddrsPerInode + direct_blks * 2 + indirect_blks * 2;
+
+  {
+    LockedPage dnode_page;
+    ASSERT_EQ(GetLockedDnodePage(*vnode, double_indirect_index, &dnode_page), ZX_OK);
+
+    // 1. Verify the leaf Direct Node at level 3 (offset 2043 = kOfsDoubleIndirectNode + 2).
+    // Without the fix in NodePage::IsDnode(), IsDnode() erroneously returned false.
+    EXPECT_TRUE(dnode_page.GetPage<NodePage>().IsDnode())
+        << "Leaf node in double-indirect subtree must be classified as "
+           "a Direct Node (Dnode).";
+    EXPECT_EQ(dnode_page.GetPage<NodePage>().OfsOfNode(), kOfsDoubleIndirectNode + 2);
+    EXPECT_EQ(dnode_page.GetPage<NodePage>().StartBidxOfNode(vnode->GetAddrsPerInode()),
+              double_indirect_index);
+  }
+
+  // 2. Verify the intermediate Indirect Node at level 2 (offset 2042 = kOfsDoubleIndirectNode + 1).
+  // Without the fix in NodePage::IsDnode(), IsDnode() erroneously returned true.
+  auto path_or = vnode->GetNodePath(double_indirect_index);
+  ASSERT_TRUE(path_or.is_ok());
+
+  nid_t ind_nid;
+  {
+    LockedPage ipage;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(vnode->Ino(), &ipage), ZX_OK);
+    nid_t dind_nid = ipage.GetPage<NodePage>().GetNid(path_or->offset_in_node[0]);
+
+    LockedPage dind_page;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(dind_nid, &dind_page), ZX_OK);
+    EXPECT_FALSE(dind_page.GetPage<NodePage>().IsDnode())
+        << "Double indirect node must not be classified as a Direct Node (Dnode).";
+    EXPECT_EQ(dind_page.GetPage<NodePage>().OfsOfNode(), kOfsDoubleIndirectNode);
+    ind_nid = dind_page.GetPage<NodePage>().GetNid(path_or->offset_in_node[1]);
+  }
+
+  {
+    LockedPage ind_page;
+    ASSERT_EQ(fs_->GetNodeManager().GetNodePage(ind_nid, &ind_page), ZX_OK);
+    EXPECT_FALSE(ind_page.GetPage<NodePage>().IsDnode())
+        << "Intermediate node in double-indirect subtree must not be "
+           "classified as a Direct Node (Dnode).";
+    EXPECT_EQ(ind_page.GetPage<NodePage>().OfsOfNode(), kOfsDoubleIndirectNode + 1);
+  }
+
+  // Clean up allocated nodes so vnode teardown succeeds cleanly.
+  ASSERT_EQ(vnode->TruncateInodeBlocks(double_indirect_index), ZX_OK);
+  vnode->SetBlockCount(0);
+  fs_->SyncFs();
+  ASSERT_EQ(vnode->Close(), ZX_OK);
+  vnode.reset();
+}
+
 }  // namespace
 }  // namespace f2fs

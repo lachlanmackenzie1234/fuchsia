@@ -59,7 +59,10 @@ bool NodePage::IsDnode() const {
   }
   if (ofs >= kOfsDoubleIndirectNode + 1) {
     ofs -= kOfsDoubleIndirectNode + 1;
-    if (ofs % (kNidsPerBlock + 1)) {
+    // In the double-indirect subtree, nodes appear in repeating groups of (N + 1) nodes:
+    // 1 Indirect Node followed by N Direct Nodes. Therefore, if the relative offset
+    // is a multiple of (N + 1), it is an Indirect Node, not a Direct Node.
+    if (ofs % (kNidsPerBlock + 1) == 0) {
       return false;
     }
   }
@@ -142,21 +145,30 @@ void NodePage::SetDentryMark(bool mark) {
 }
 
 size_t NodePage::StartBidxOfNode(size_t num_addrs) const {
-  size_t node_ofs = OfsOfNode(), NumOfIndirectNodes = 0;
+  size_t node_ofs = OfsOfNode();
+  size_t num_of_indirect_nodes = 0;
 
   if (node_ofs == kOfsInode) {
     return 0;
-  } else if (node_ofs <= kOfsDirectNode2) {
-    NumOfIndirectNodes = 0;
+  }
+  if (node_ofs <= kOfsDirectNode2) {
+    num_of_indirect_nodes = 0;
   } else if (node_ofs >= kOfsIndirectNode1 && node_ofs < kOfsIndirectNode2) {
-    NumOfIndirectNodes = 1;
+    num_of_indirect_nodes = 1;
   } else if (node_ofs >= kOfsIndirectNode2 && node_ofs < kOfsDoubleIndirectNode) {
-    NumOfIndirectNodes = 2;
+    num_of_indirect_nodes = 2;
+  } else if (node_ofs == kOfsDoubleIndirectNode || node_ofs == kOfsDoubleIndirectNode + 1) {
+    num_of_indirect_nodes = 3;
   } else {
-    NumOfIndirectNodes = (node_ofs - kOfsDoubleIndirectNode - 2) / (kNidsPerBlock + 1);
+    // Add 4 to account for preceding indirect nodes:
+    // - 3 indirect nodes in levels 1 and 2 (kOfsIndirectNode1, kOfsIndirectNode2,
+    // kOfsDoubleIndirectNode)
+    // - 1 intermediate indirect node (offset kOfsDoubleIndirectNode + 1) inside this Level 3
+    // subtree.
+    num_of_indirect_nodes = (node_ofs - kOfsDoubleIndirectNode - 2) / (kNidsPerBlock + 1) + 4;
   }
 
-  size_t bidx = node_ofs - NumOfIndirectNodes - 1;
+  size_t bidx = node_ofs - num_of_indirect_nodes - 1;
   return (num_addrs + safemath::CheckMul(bidx, kAddrsPerBlock)).ValueOrDie();
 }
 

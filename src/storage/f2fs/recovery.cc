@@ -46,7 +46,7 @@ zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
     if (!node_page->IsFsyncDnode()) {
       blkaddr = page.GetPage<NodePage>().NextBlkaddrOfNode();
       page->ClearUptodate();
-      if (node_page->IsInode() && node_page->IsDentDnode()) {
+      if (node_page->IsInode()) {
         inode_pages.push_back(std::move(node_page));
       }
       continue;
@@ -149,7 +149,10 @@ void F2fs::CheckIndexInPrevNodes(block_t blkaddr) {
   }
   nid_t ino = node_page.GetPage<NodePage>().InoOfNode();
   zx::result vnode = GetVnode(ino);
-  ZX_ASSERT(vnode.is_ok());
+  if (vnode.is_error()) {
+    FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, GetVnode error: " << vnode.status_string();
+    return;
+  }
   size_t bidx = node_page.GetPage<NodePage>().StartBidxOfNode(vnode->GetAddrsPerInode()) +
                 LeToCpu(sum.ofs_in_node);
 
