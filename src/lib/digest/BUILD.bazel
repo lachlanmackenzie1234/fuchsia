@@ -26,6 +26,8 @@ cc_library(
     deps = [
         "//sdk/lib/stdcompat",
         "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+        "//zircon/third_party/ulib/safemath",
         "@boringssl//:crypto",
         "@boringssl//:ssl",
     ],

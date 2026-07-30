@@ -14,6 +14,7 @@
 
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
+#include <safemath/checked_math.h>
 
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/hash-list.h"
@@ -206,16 +207,31 @@ zx_status_t MerkleTreeVerifier::Verify(const void *buf, size_t buf_len, size_t d
   return next_->Verify(buf, buf_len, data_off);
 }
 
-size_t CalculateMerkleTreeSize(size_t data_size, size_t node_size, bool use_compact_format) {
-  ZX_ASSERT_MSG(NodeDigest::IsValidNodeSize(node_size), "node_size=%lu", node_size);
+zx::result<size_t> CalculateMerkleTreeSize(size_t data_size, size_t node_size,
+                                           bool use_compact_format) {
+  if (!NodeDigest::IsValidNodeSize(node_size)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
   size_t merkle_tree_size = 0;
   while (data_size > node_size) {
-    size_t list_size = CalculateHashListSize(data_size, node_size);
-    // The non compact format pads the hash list to be a multiple of the node size.
-    data_size = use_compact_format ? list_size : fbl::round_up(list_size, node_size);
-    merkle_tree_size += data_size;
+    auto list_size_result = CalculateHashListSize(data_size, node_size);
+    if (list_size_result.is_error()) {
+      return list_size_result.take_error();
+    }
+    size_t list_size = *list_size_result;
+    if (use_compact_format) {
+      data_size = list_size;
+    } else {
+      if (!safemath::CheckAdd(list_size, node_size - 1).AssignIfValid(&data_size)) {
+        return zx::error(ZX_ERR_OUT_OF_RANGE);
+      }
+      data_size = (data_size / node_size) * node_size;
+    }
+    if (!safemath::CheckAdd(merkle_tree_size, data_size).AssignIfValid(&merkle_tree_size)) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
   }
-  return merkle_tree_size;
+  return zx::ok(merkle_tree_size);
 }
 
 }  // namespace digest

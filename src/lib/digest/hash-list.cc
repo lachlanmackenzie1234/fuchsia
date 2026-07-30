@@ -12,6 +12,7 @@
 #include <algorithm>
 
 #include <fbl/algorithm.h>
+#include <safemath/checked_math.h>
 
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/node-digest.h"
@@ -167,12 +168,25 @@ void HashListVerifier::HandleOne(const Digest &digest) {
   verified_ &= (digest.Equals(list() + list_off(), GetDigestSize()));
 }
 
-size_t CalculateHashListSize(size_t data_size, size_t node_size) {
+zx::result<size_t> CalculateHashListSize(size_t data_size, size_t node_size) {
   NodeDigest node_digest;
-  ZX_ASSERT_MSG(node_digest.SetNodeSize(node_size) == ZX_OK, "node_size=%lu", node_size);
+  if (zx_status_t status = node_digest.SetNodeSize(node_size); status != ZX_OK) {
+    return zx::error(status);
+  }
   size_t digest_size = node_digest.len();
-  return std::max(node_digest.ToNode(node_digest.NextAligned(data_size)) * digest_size,
-                  digest_size);
+  if (data_size == 0) {
+    return zx::ok(digest_size);
+  }
+  size_t rounded_size;
+  if (!safemath::CheckAdd(data_size, node_size - 1).AssignIfValid(&rounded_size)) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+  size_t num_nodes = rounded_size / node_size;
+  size_t list_size;
+  if (!safemath::CheckMul(num_nodes, digest_size).AssignIfValid(&list_size)) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+  return zx::ok(list_size);
 }
 
 }  // namespace digest

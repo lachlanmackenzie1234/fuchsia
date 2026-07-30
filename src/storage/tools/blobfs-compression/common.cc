@@ -67,8 +67,12 @@ zx_status_t BlobfsCompress(const uint8_t* src, const size_t src_sz, uint8_t* des
   chunked_compression::ChunkedCompressor compressor(params);
 
   // Using non-compact merkle tree size by default because it's bigger than compact merkle tree.
-  const size_t merkle_tree_size =
+  auto merkle_tree_size_result =
       digest::CalculateMerkleTreeSize(src_sz, digest::kDefaultNodeSize, false);
+  if (merkle_tree_size_result.is_error()) {
+    return merkle_tree_size_result.error_value();
+  }
+  const size_t merkle_tree_size = *merkle_tree_size_result;
   size_t compressed_size;
   size_t output_limit = params.ComputeOutputSizeLimit(src_sz);
   std::vector<uint8_t> output_buffer;

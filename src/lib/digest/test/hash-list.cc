@@ -225,14 +225,28 @@ TEST(HashListVerifier, Verify) {
 }
 
 TEST(HashList, CalculateHashListSize) {
-  EXPECT_EQ(kSha256Length, CalculateHashListSize(0, kDefaultNodeSize));
-  EXPECT_EQ(kSha256Length, CalculateHashListSize(1, kDefaultNodeSize));
-  EXPECT_EQ(kSha256Length, CalculateHashListSize(10, kDefaultNodeSize));
-  EXPECT_EQ(kSha256Length, CalculateHashListSize(kDefaultNodeSize - 1, kDefaultNodeSize));
-  EXPECT_EQ(kSha256Length, CalculateHashListSize(kDefaultNodeSize, kDefaultNodeSize));
-  EXPECT_EQ(kSha256Length * 2, CalculateHashListSize(kDefaultNodeSize + 1, kDefaultNodeSize));
-  EXPECT_EQ(kSha256Length * 40, CalculateHashListSize(kDefaultNodeSize * 40, kDefaultNodeSize));
-  EXPECT_EQ(kSha256Length * 41, CalculateHashListSize(kDefaultNodeSize * 40 + 1, kDefaultNodeSize));
+  EXPECT_EQ(kSha256Length, CalculateHashListSize(0, kDefaultNodeSize).value());
+  EXPECT_EQ(kSha256Length, CalculateHashListSize(1, kDefaultNodeSize).value());
+  EXPECT_EQ(kSha256Length, CalculateHashListSize(10, kDefaultNodeSize).value());
+  EXPECT_EQ(kSha256Length, CalculateHashListSize(kDefaultNodeSize - 1, kDefaultNodeSize).value());
+  EXPECT_EQ(kSha256Length, CalculateHashListSize(kDefaultNodeSize, kDefaultNodeSize).value());
+  EXPECT_EQ(kSha256Length * 2,
+            CalculateHashListSize(kDefaultNodeSize + 1, kDefaultNodeSize).value());
+  EXPECT_EQ(kSha256Length * 40,
+            CalculateHashListSize(kDefaultNodeSize * 40, kDefaultNodeSize).value());
+  EXPECT_EQ(kSha256Length * 41,
+            CalculateHashListSize(kDefaultNodeSize * 40 + 1, kDefaultNodeSize).value());
+}
+
+TEST(HashList, CalculateHashListSizeError) {
+  // Invalid node size
+  EXPECT_EQ(CalculateHashListSize(100, 0).status_value(), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(CalculateHashListSize(100, 3).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Overflow
+  EXPECT_EQ(
+      CalculateHashListSize(std::numeric_limits<size_t>::max(), kDefaultNodeSize).status_value(),
+      ZX_ERR_OUT_OF_RANGE);
 }
 
 }  // namespace

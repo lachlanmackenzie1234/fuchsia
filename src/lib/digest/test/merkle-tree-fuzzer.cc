@@ -72,7 +72,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   ASAN_UNPOISON_MEMORY_REGION(buffer.data(), buffer.size());
 
   // Check that the Merkle tree size calculations match.
-  ZX_ASSERT(tree.size() ==
-            digest::CalculateMerkleTreeSize(buffer.size(), node_size, use_compact_format));
+  auto merkle_tree_size =
+      digest::CalculateMerkleTreeSize(buffer.size(), node_size, use_compact_format);
+  ZX_ASSERT(merkle_tree_size.is_ok());
+  ZX_ASSERT(tree.size() == *merkle_tree_size);
   return 0;
 }

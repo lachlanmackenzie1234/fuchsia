@@ -289,9 +289,13 @@ int main(int argc, char** argv) {
                                  blobfs::kDefaultBlobfsDeliveryBlobType, source->size())
                                  .value();
   if (!options.compressed_file.empty()) {
-    const size_t dest_buffer_size =
-        params.ComputeOutputSizeLimit(source->size()) +
+    auto merkle_tree_size_result =
         digest::CalculateMerkleTreeSize(source->size(), digest::kDefaultNodeSize, false);
+    if (merkle_tree_size_result.is_error()) {
+      return merkle_tree_size_result.error_value();
+    }
+    const size_t dest_buffer_size =
+        params.ComputeOutputSizeLimit(source->size()) + *merkle_tree_size_result;
     error_code = MapFileForWriting(options.compressed_file_fd, options.compressed_file.c_str(),
                                    dest_buffer_size, &dest_data);
     if (error_code) {

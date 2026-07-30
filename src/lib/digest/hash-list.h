@@ -4,6 +4,7 @@
 #ifndef SRC_LIB_DIGEST_HASH_LIST_H_
 #define SRC_LIB_DIGEST_HASH_LIST_H_
 
+#include <lib/zx/result.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/errors.h>
@@ -164,8 +165,9 @@ class HashListVerifier : public internal::HashList<const uint8_t> {
 // Convenience method for calculating the minimum size needed to hold a hash list for the given
 // |data_size|.
 //
-// Panics if |node_size| does not satisfy |NodeDigest::IsValidNodeSize|.
-size_t CalculateHashListSize(size_t data_size, size_t node_size);
+// Returns ZX_ERR_INVALID_ARGS if |node_size| does not satisfy |NodeDigest::IsValidNodeSize|.
+// Returns ZX_ERR_OUT_OF_RANGE on overflow.
+zx::result<size_t> CalculateHashListSize(size_t data_size, size_t node_size);
 
 }  // namespace digest
 

@@ -96,7 +96,11 @@ class CompactMerkleTreeAtEndBlobLayout : public BlobLayout {
     // The exact compressed size of a blob isn't stored.  An upper bound can be determined from the
     // total size of the blob minus the Merkle tree size.  See https://fxbug.dev/42120973.
     uint64_t total_size = BytesThatFitInBlocks(inode.block_count, blobfs_block_size);
-    uint64_t merkle_tree_size = CalculateMerkleTreeSize(inode.blob_size);
+    auto merkle_tree_size_result = CalculateMerkleTreeSize(inode.blob_size);
+    if (merkle_tree_size_result.is_error()) {
+      return merkle_tree_size_result.take_error();
+    }
+    uint64_t merkle_tree_size = *merkle_tree_size_result;
     uint64_t data_size;
     if (!safemath::CheckSub(total_size, merkle_tree_size).AssignIfValid(&data_size)) {
       return zx::error(ZX_ERR_INVALID_ARGS);
@@ -110,7 +114,11 @@ class CompactMerkleTreeAtEndBlobLayout : public BlobLayout {
 
   static zx::result<std::unique_ptr<CompactMerkleTreeAtEndBlobLayout>> CreateFromSizes(
       uint64_t file_size, uint64_t data_size, uint64_t blobfs_block_size) {
-    uint64_t merkle_tree_size = CalculateMerkleTreeSize(file_size);
+    auto merkle_tree_size_result = CalculateMerkleTreeSize(file_size);
+    if (merkle_tree_size_result.is_error()) {
+      return merkle_tree_size_result.take_error();
+    }
+    uint64_t merkle_tree_size = *merkle_tree_size_result;
     if (!AreSizesValid(file_size, data_size, merkle_tree_size, blobfs_block_size)) {
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
@@ -119,9 +127,17 @@ class CompactMerkleTreeAtEndBlobLayout : public BlobLayout {
   }
 
  private:
-  static uint64_t CalculateMerkleTreeSize(uint64_t file_size) {
-    return digest::CalculateMerkleTreeSize(file_size, digest::kDefaultNodeSize,
-                                           /*use_compact_format=*/true);
+  static zx::result<uint64_t> CalculateMerkleTreeSize(uint64_t file_size) {
+    if (!safemath::IsValueInRangeForNumericType<size_t>(file_size)) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    auto result =
+        digest::CalculateMerkleTreeSize(static_cast<size_t>(file_size), digest::kDefaultNodeSize,
+                                        /*use_compact_format=*/true);
+    if (result.is_error()) {
+      return result.take_error();
+    }
+    return zx::ok(*result);
   }
 
   static bool AreSizesValid(uint64_t file_size, uint64_t data_size, uint64_t merkle_tree_size,
@@ -185,7 +201,11 @@ class PaddedMerkleTreeAtStartBlobLayout : public BlobLayout {
     // The exact compressed size of a blob isn't stored.  An upper bound can be determined from the
     // total number of blocks minus the number of Merkle tree blocks.  See
     // https://fxbug.dev/42120973.
-    uint64_t merkle_tree_size = CalculateMerkleTreeSize(inode.blob_size);
+    auto merkle_tree_size_result = CalculateMerkleTreeSize(inode.blob_size);
+    if (merkle_tree_size_result.is_error()) {
+      return merkle_tree_size_result.take_error();
+    }
+    uint64_t merkle_tree_size = *merkle_tree_size_result;
     if (merkle_tree_size > MaxBytesThatCanFitInBlocks(blobfs_block_size)) {
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
@@ -205,7 +225,11 @@ class PaddedMerkleTreeAtStartBlobLayout : public BlobLayout {
 
   static zx::result<std::unique_ptr<PaddedMerkleTreeAtStartBlobLayout>> CreateFromSizes(
       uint64_t file_size, uint64_t data_size, uint64_t blobfs_block_size) {
-    uint64_t merkle_tree_size = CalculateMerkleTreeSize(file_size);
+    auto merkle_tree_size_result = CalculateMerkleTreeSize(file_size);
+    if (merkle_tree_size_result.is_error()) {
+      return merkle_tree_size_result.take_error();
+    }
+    uint64_t merkle_tree_size = *merkle_tree_size_result;
     if (!AreSizesValid(file_size, data_size, merkle_tree_size, blobfs_block_size)) {
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
@@ -214,9 +238,17 @@ class PaddedMerkleTreeAtStartBlobLayout : public BlobLayout {
   }
 
  private:
-  static uint64_t CalculateMerkleTreeSize(uint64_t file_size) {
-    return digest::CalculateMerkleTreeSize(file_size, digest::kDefaultNodeSize,
-                                           /*use_compact_format=*/false);
+  static zx::result<uint64_t> CalculateMerkleTreeSize(uint64_t file_size) {
+    if (!safemath::IsValueInRangeForNumericType<size_t>(file_size)) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    auto result =
+        digest::CalculateMerkleTreeSize(static_cast<size_t>(file_size), digest::kDefaultNodeSize,
+                                        /*use_compact_format=*/false);
+    if (result.is_error()) {
+      return result.take_error();
+    }
+    return zx::ok(*result);
   }
 
   static bool AreSizesValid(uint64_t file_size, uint64_t data_size, uint64_t merkle_tree_size,

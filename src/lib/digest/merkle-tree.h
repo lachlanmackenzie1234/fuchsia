@@ -5,6 +5,7 @@
 #ifndef SRC_LIB_DIGEST_MERKLE_TREE_H_
 #define SRC_LIB_DIGEST_MERKLE_TREE_H_
 
+#include <lib/zx/result.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
@@ -121,9 +122,11 @@ class MerkleTreeVerifier : public internal::MerkleTree<const uint8_t, const void
 // Convenience method for calculating the minimum size needed to hold a Merkle tree for the given
 // |data_size|.  It does NOT include room for the root digest.
 //
-// Panics if |node_size| does not satisfy |NodeDigest::IsValidNodeSize|.
+// Returns ZX_ERR_INVALID_ARGS if |node_size| does not satisfy |NodeDigest::IsValidNodeSize|.
 // |use_compact_format| specifies if the size should not include padding in the hash lists.
-size_t CalculateMerkleTreeSize(size_t data_size, size_t node_size, bool use_compact_format);
+// Returns ZX_ERR_OUT_OF_RANGE on overflow.
+zx::result<size_t> CalculateMerkleTreeSize(size_t data_size, size_t node_size,
+                                           bool use_compact_format);
 
 }  // namespace digest
 

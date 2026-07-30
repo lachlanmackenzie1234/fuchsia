@@ -17,11 +17,15 @@ static_library("digest") {
     "node-digest.cc",
   ]
 
-  deps = [ "//third_party/boringssl" ]
+  deps = [
+    "//third_party/boringssl",
+    "//zircon/third_party/ulib/safemath",
+  ]
   public_deps = [
     "//sdk/lib/stdcompat",
     "//zircon/system/public",
     "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
   ]
 }
 

@@ -349,8 +349,23 @@ TEST_P(MerkleTreeTest, Verify) {
 TEST_P(MerkleTreeTest, CalculateMerkleTreeSize) {
   TreeParam tree_param = GetTreeParam();
   EXPECT_EQ(CalculateMerkleTreeSize(tree_param.data_len, tree_param.node_size,
-                                    tree_param.use_compact_format),
+                                    tree_param.use_compact_format)
+                .value(),
             tree_param.tree_len);
+}
+
+TEST(MerkleTreeCalculationTest, CalculateMerkleTreeSizeError) {
+  // Invalid node size
+  EXPECT_EQ(CalculateMerkleTreeSize(100, 0, false).status_value(), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(CalculateMerkleTreeSize(100, 3, false).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Overflow
+  EXPECT_EQ(CalculateMerkleTreeSize(std::numeric_limits<size_t>::max(), kDefaultNodeSize, false)
+                .status_value(),
+            ZX_ERR_OUT_OF_RANGE);
+  EXPECT_EQ(CalculateMerkleTreeSize(std::numeric_limits<size_t>::max(), kDefaultNodeSize, true)
+                .status_value(),
+            ZX_ERR_OUT_OF_RANGE);
 }
 
 class MerkleTreeStaticMethodsTest : public TestWithParam<const TestData *> {
