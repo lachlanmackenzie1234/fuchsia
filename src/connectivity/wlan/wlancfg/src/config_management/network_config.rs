@@ -9,6 +9,7 @@ use arbitrary::Arbitrary;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fuchsia_async as fasync;
+use log::info;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
@@ -712,6 +713,7 @@ pub enum NetworkConfigError {
     CredentialTypeInvalid,
     FileWriteError,
     LegacyWriteError,
+    MaxSavedNetworksReached,
 }
 
 impl Debug for NetworkConfigError {
@@ -746,6 +748,9 @@ impl Debug for NetworkConfigError {
             NetworkConfigError::LegacyWriteError => {
                 write!(f, "error writing network config to legacy storage")
             }
+            NetworkConfigError::MaxSavedNetworksReached => {
+                write!(f, "maximum number of saved networks reached")
+            }
         }
     }
 }
@@ -770,6 +775,12 @@ impl From<NetworkConfigError> for fidl_policy::NetworkConfigChangeError {
             }
             NetworkConfigError::FileWriteError | NetworkConfigError::LegacyWriteError => {
                 fidl_policy::NetworkConfigChangeError::NetworkConfigWriteError
+            }
+            NetworkConfigError::MaxSavedNetworksReached => {
+                // TODO(fxbug.dev/540428410): Convert this to the corresponding error after it can
+                // be added to the API. For now, log if the error comes up.
+                info!("Converting NetworkConfigError::MaxSavedNetworksReached to GeneralError");
+                fidl_policy::NetworkConfigChangeError::GeneralError
             }
         }
     }

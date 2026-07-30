@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use wlan_storage::policy::{POLICY_STORAGE_ID, PolicyStorage};
 
 const MAX_CONFIGS_PER_SSID: usize = 1;
+pub const MAX_SAVED_NETWORKS: usize = 1000;
 
 /// The Saved Network Manager keeps track of saved networks and provides thread-safe access to
 /// saved networks. Networks are saved by NetworkConfig and accessed by their NetworkIdentifier
@@ -318,14 +319,22 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
         credential: Credential,
     ) -> Result<Option<NetworkConfig>, NetworkConfigError> {
         let mut saved_networks = self.saved_networks.lock().await;
+        let num_saved_networks = saved_networks.len();
         let network_entry = saved_networks.entry(network_id.clone());
 
+        // Check if the network has already been saved.
         if let Entry::Occupied(network_configs) = &network_entry
             && network_configs.get().iter().any(|cfg| cfg.credential == credential)
         {
             info!("Saving a previously saved network with same password.");
             return Ok(None);
         }
+
+        // Check if there are too many saved networks.
+        if num_saved_networks >= MAX_SAVED_NETWORKS {
+            return Err(NetworkConfigError::MaxSavedNetworksReached);
+        }
+
         let network_config =
             NetworkConfig::new(network_id.clone(), credential.clone(), false, None)?;
         let network_configs = network_entry.or_default();
@@ -804,6 +813,44 @@ mod tests {
 
         // since none have been connected to yet, we don't care which config was removed
         assert_eq!(MAX_CONFIGS_PER_SSID, saved_networks.lookup(&network_id).await.len());
+    }
+
+    #[fuchsia::test]
+    async fn store_fails_when_max_saved_networks_reached() {
+        let saved_networks = SavedNetworksManager::new_for_test().await;
+
+        // Pre-populate the hashmap with MAX_SAVED_NETWORKS (1000) unique saved networks
+        // directly in memory to avoid writing to persistent storage 1000 times.
+        let mut map = HashMap::with_capacity(MAX_SAVED_NETWORKS);
+        for i in 0..MAX_SAVED_NETWORKS {
+            let ssid = format!("ssid_{i}");
+            let network_id =
+                NetworkIdentifier::try_from(ssid.as_str(), SecurityType::Wpa2).unwrap();
+            let config = NetworkConfig::new(
+                network_id.clone(),
+                Credential::Password(b"password123".to_vec()),
+                false,
+                None,
+            )
+            .unwrap();
+            assert!(map.insert(network_id, vec![config]).is_none());
+        }
+
+        {
+            let mut saved_map = saved_networks.saved_networks.lock().await;
+            *saved_map = map;
+        }
+
+        assert_eq!(saved_networks.known_network_count().await, MAX_SAVED_NETWORKS);
+
+        // Try to save a 1001st network with a new unique SSID
+        let new_network_id =
+            NetworkIdentifier::try_from("overflow_ssid", SecurityType::Wpa2).unwrap();
+        let result = saved_networks
+            .store(new_network_id, Credential::Password(b"password123".to_vec()))
+            .await;
+
+        assert_eq!(result, Err(NetworkConfigError::MaxSavedNetworksReached));
     }
 
     #[fuchsia::test]
