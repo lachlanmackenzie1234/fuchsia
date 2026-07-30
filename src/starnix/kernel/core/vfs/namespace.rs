@@ -5,6 +5,7 @@
 use crate::security;
 use crate::task::{
     CurrentTask, EventHandler, Kernel, MountsWriteToken, Task, WaitCanceler, Waiter,
+    register_delayed_call,
 };
 use crate::time::utc;
 use crate::vfs::fs_registry::FsRegistry;
@@ -2065,13 +2066,10 @@ impl Drop for Mount {
         self.relations.peer_group.update(None);
         self.relations.upstream.update(None);
         if peer_group.is_some() || upstream.is_some() {
-            fuchsia_rcu::rcu_drop(scopeguard::guard(
-                (kernel, peer_group, upstream),
-                |(kernel, peer_group, upstream)| {
-                    let guard = kernel.mounts_lock();
-                    Mount::unregister_from_peer_group_and_upstream(&guard, peer_group, upstream);
-                },
-            ));
+            register_delayed_call(move |_current_task| {
+                let guard = kernel.mounts_lock();
+                Mount::unregister_from_peer_group_and_upstream(&guard, peer_group, upstream);
+            });
         }
     }
 }

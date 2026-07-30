@@ -36,6 +36,27 @@ pub trait CurrentTaskReleasable {
     fn release_with_context(&mut self, context: &CurrentTask);
 }
 
+struct DelayedCallback<F>(F);
+
+impl<F> Releasable for DelayedCallback<F>
+where
+    F: FnOnce(&CurrentTask) + 'static,
+{
+    type Context<'a> = &'a CurrentTask;
+
+    fn release<'a>(self, context: Self::Context<'a>) {
+        (self.0)(context);
+    }
+}
+
+/// Register a callback to be run during delayed release.
+pub fn register_delayed_call<F>(callback: F)
+where
+    F: FnOnce(&CurrentTask) + 'static,
+{
+    register_delayed_release(DelayedCallback(callback));
+}
+
 thread_local! {
     /// Container of all `FileObject` that are not used anymore, but have not been closed yet.
     static RELEASERS: RefCell<Option<LocalReleasers>> =
@@ -110,5 +131,29 @@ impl DelayedReleaser {
             let list = cell.borrow_mut().take().expect("DelayedReleaser hasn't been finalized");
             assert!(list.is_empty());
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::spawn_kernel_and_run;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[::fuchsia::test]
+    async fn test_register_delayed_call() {
+        spawn_kernel_and_run(async move |current_task| {
+            let flag = Arc::new(AtomicBool::new(false));
+            let flag_clone = flag.clone();
+            register_delayed_call(move |_current_task| {
+                flag_clone.store(true, Ordering::SeqCst);
+            });
+
+            assert!(!flag.load(Ordering::SeqCst));
+            DelayedReleaser::default().apply(current_task);
+            assert!(flag.load(Ordering::SeqCst));
+        })
+        .await;
     }
 }
