@@ -11,7 +11,6 @@ pub mod parser;
 pub mod view;
 
 mod constraints;
-mod extensible_bitmap;
 mod security_context;
 
 pub use crate::new_policy::{

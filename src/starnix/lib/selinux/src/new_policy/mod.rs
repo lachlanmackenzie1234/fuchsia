@@ -30,11 +30,12 @@ use traits::Validate;
 pub use u24_index::U24Index;
 
 pub(super) mod booleans;
+pub(super) mod policy_cap;
 pub(super) mod types;
 pub(super) mod users;
 
 pub use access_vector::AccessVector;
-pub use bitmap::{ExtensibleBitmap, IdSpan};
+pub use bitmap::IdSpan;
 pub use booleans::ConditionalBoolean;
 pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
@@ -47,6 +48,7 @@ pub use indexed::IdAndNameIndexed;
 pub use mls::{Category, Sensitivity};
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
+pub use policy_cap::{PolicyCap, PolicyCapSet};
 pub use roles::{Role, RoleId, RoleSet};
 pub use rules::{AccessDecision, AccessVectorRules, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap};
 pub use types::*;
@@ -88,7 +90,7 @@ pub struct NewPolicy {
     version: PolicyVersion,
     config: Config,
     counts: Counts,
-    policy_capabilities: ExtensibleBitmap,
+    policy_capabilities: PolicyCapSet,
     permissive_map: PermissiveTypeSet,
     common_symbols: IdAndNameIndexed<SymbolArray<CommonSymbol>>,
     classes: IdAndNameIndexed<SymbolArray<Class>>,
@@ -124,8 +126,8 @@ impl NewPolicy {
         self.config.handle_unknown()
     }
 
-    /// Returns the policy capabilities bitmap.
-    pub fn policy_capabilities(&self) -> &ExtensibleBitmap {
+    /// Returns the policy capabilities set.
+    pub fn policy_capabilities(&self) -> &PolicyCapSet {
         &self.policy_capabilities
     }
 

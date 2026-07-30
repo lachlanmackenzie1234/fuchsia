@@ -10,7 +10,8 @@ use super::arrays::{
     RoleTransitions, SimpleArray,
 };
 use super::error::{ParseError, ValidateError};
-use super::extensible_bitmap::ExtensibleBitmap;
+use crate::new_policy::TypeSet;
+use crate::new_policy::bitmap::IdSet;
 
 use super::constraints::evaluate_constraint;
 use super::parser::{PolicyCursor, PolicyData};
@@ -35,7 +36,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -74,7 +74,7 @@ pub struct ParsedPolicy {
     generic_fs_contexts: CustomKeyHashedView<GenericFsContext>,
     range_transitions: SimpleArray<RangeTransition>,
     /// Extensible bitmaps that encode associations between types and attributes.
-    attribute_maps: Vec<ExtensibleBitmap>,
+    attribute_maps: Vec<TypeSet>,
 }
 
 impl Deref for ParsedPolicy {
@@ -87,7 +87,7 @@ impl Deref for ParsedPolicy {
 impl ParsedPolicy {
     /// Returns true if the specified capability is in the policy's enabled capabilities set.
     pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
-        self.new_policy.policy_capabilities().is_set(policy_cap as u32)
+        self.new_policy.policy_capabilities().contains(policy_cap)
     }
 
     /// Computes the access granted to `source_type` on `target_type`, for the specified
@@ -133,28 +133,24 @@ impl ParsedPolicy {
         let mut computed_audit_allow = AccessVector::NONE;
         let mut computed_audit_deny = AccessVector::ALL;
 
-        let source_attribute_bitmap: &ExtensibleBitmap =
+        let source_attribute_set: &TypeSet =
             &self.attribute_maps[(source_type.as_u32() - 1) as usize];
-        let target_attribute_bitmap: &ExtensibleBitmap =
+        let target_attribute_set: &TypeSet =
             &self.attribute_maps[(target_type.as_u32() - 1) as usize];
 
-        for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
-            source_attribute_bitmap.indices_of_set_bits(),
-            target_attribute_bitmap.indices_of_set_bits(),
-        ) {
-            let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
-            let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
-
-            for rule in self.new_policy.access_vector_rules().find_av_rules(
-                source_id,
-                target_id,
-                target_class_id,
-            ) {
-                match rule.kind() {
-                    RuleKind::Allow => computed_access_vector |= rule.access_vector(),
-                    RuleKind::AuditAllow => computed_audit_allow |= rule.access_vector(),
-                    RuleKind::DontAudit => computed_audit_deny &= rule.access_vector(),
-                    _ => {}
+        for source_id in source_attribute_set.iter() {
+            for target_id in target_attribute_set.iter() {
+                for rule in self.new_policy.access_vector_rules().find_av_rules(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                ) {
+                    match rule.kind() {
+                        RuleKind::Allow => computed_access_vector |= rule.access_vector(),
+                        RuleKind::AuditAllow => computed_audit_allow |= rule.access_vector(),
+                        RuleKind::DontAudit => computed_audit_deny &= rule.access_vector(),
+                        _ => {}
+                    }
                 }
             }
         }
@@ -242,38 +238,35 @@ impl ParsedPolicy {
                 },
             };
 
-        let source_attribute_bitmap: &ExtensibleBitmap =
+        let source_attribute_set: &TypeSet =
             &self.attribute_maps[(source_context.type_().as_u32() - 1) as usize];
-        let target_attribute_bitmap: &ExtensibleBitmap =
+        let target_attribute_set: &TypeSet =
             &self.attribute_maps[(target_context.type_().as_u32() - 1) as usize];
 
-        for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
-            source_attribute_bitmap.indices_of_set_bits(),
-            target_attribute_bitmap.indices_of_set_bits(),
-        ) {
-            let source_id = TypeId::from_u32((source_bit_index + 1) as u32).unwrap();
-            let target_id = TypeId::from_u32((target_bit_index + 1) as u32).unwrap();
+        for source_id in source_attribute_set.iter() {
+            for target_id in target_attribute_set.iter() {
+                for rule in self.new_policy.access_vector_rules().find_xperm_rules(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                ) {
+                    let xperms = rule.extended_permissions();
+                    if rule.kind() == RuleKind::AllowXperm
+                        && xperms_types.contains(&xperms.xperms_type())
+                    {
+                        explicit_allow.get_or_insert(XpermsBitmap::NONE);
+                    }
 
-            for rule in self.new_policy.access_vector_rules().find_xperm_rules(
-                source_id,
-                target_id,
-                target_class_id,
-            ) {
-                let xperms = rule.extended_permissions();
-                if rule.kind() == RuleKind::AllowXperm
-                    && xperms_types.contains(&xperms.xperms_type())
-                {
-                    explicit_allow.get_or_insert(XpermsBitmap::NONE);
-                }
-
-                if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
-                    match rule.kind() {
-                        RuleKind::AllowXperm => {
-                            (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
+                    if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+                        match rule.kind() {
+                            RuleKind::AllowXperm => {
+                                (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |=
+                                    xperms_bitmap;
+                            }
+                            RuleKind::AuditAllowXperm => auditallow |= xperms_bitmap,
+                            RuleKind::DontAuditXperm => auditdeny -= xperms_bitmap,
+                            _ => {}
                         }
-                        RuleKind::AuditAllowXperm => auditallow |= xperms_bitmap,
-                        RuleKind::DontAuditXperm => auditdeny -= xperms_bitmap,
-                        _ => {}
                     }
                 }
             }
@@ -524,7 +517,7 @@ fn parse_policy_remaining(
     let mut tail = tail;
 
     for i in 0..primary_names_count {
-        let (item, next_tail) = ExtensibleBitmap::parse(tail)
+        let (item, next_tail) = TypeSet::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .with_context(|| format!("parsing {}th attribute map", i))?;
         attribute_maps.push(item);
@@ -719,4 +712,58 @@ fn validate_id<IdType: Debug + Eq + Hash>(
         return Err(ValidateError::UnknownId { kind: debug_kind, id: format!("{:?}", id) }.into());
     }
     Ok(())
+}
+
+impl<T: PolicyId, const WITH_ID_ZERO: bool> Parse for IdSet<T, WITH_ID_ZERO> {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let offset = cursor.offset() as usize;
+        let slice = &cursor.data().as_ref()[offset..];
+        let mut new_cursor = crate::new_policy::parser::PolicyCursor::new(slice);
+        let id_set = <Self as crate::new_policy::traits::Parse>::parse(&mut new_cursor)
+            .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
+        let bytes_parsed = new_cursor.offset();
+        let new_offset = cursor.offset() + bytes_parsed as u32;
+        Ok((id_set, PolicyCursor::new_at(cursor.data(), new_offset)))
+    }
+}
+
+impl<T: PolicyId + crate::new_policy::traits::Validate, const WITH_ID_ZERO: bool> Validate
+    for IdSet<T, WITH_ID_ZERO>
+{
+    type Error = anyhow::Error;
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_id_set_parse_compatibility() {
+        let bytes = [
+            64, 0, 0, 0, // map_item_size_bits = 64
+            128, 0, 0, 0, // high_bit = 128
+            2, 0, 0, 0, // count = 2
+            // Item 1
+            0, 0, 0, 0, // start_bit = 0
+            5, 0, 0, 0, 0, 0, 0, 0, // map = 5 (bits 0 and 2 set)
+            // Item 2
+            64, 0, 0, 0, // start_bit = 64
+            2, 0, 0, 0, 0, 0, 0, 0, // map = 2 (bit 65 set)
+        ];
+        let data: PolicyData = Arc::from(bytes);
+        let cursor = PolicyCursor::new(&data);
+        let (id_set, tail) = TypeSet::parse(cursor).unwrap();
+        assert_eq!(tail.offset(), bytes.len() as u32);
+        assert!(id_set.contains(TypeId::from_u32(1).unwrap()));
+        assert!(!id_set.contains(TypeId::from_u32(2).unwrap()));
+        assert!(id_set.contains(TypeId::from_u32(3).unwrap()));
+        assert!(id_set.contains(TypeId::from_u32(66).unwrap()));
+    }
 }

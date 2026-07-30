@@ -5,13 +5,13 @@
 use crate::policy::view::Hashable;
 
 use super::error::ValidateError;
-use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use super::view::{ArrayView, Walk};
 use super::{
     Array, ClassId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, RoleId, TypeId,
     UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
+use crate::new_policy::TypeSet;
 
 use crate::new_policy::traits::PolicyId;
 use anyhow::Context as _;
@@ -346,13 +346,13 @@ where
 
 #[derive(Debug, PartialEq)]
 pub(super) struct FilenameTransitionItem {
-    stypes: ExtensibleBitmap,
+    stypes: TypeSet,
     out_type: le::U32,
 }
 
 impl FilenameTransitionItem {
     pub(super) fn has_source_type(&self, source_type: TypeId) -> bool {
-        self.stypes.is_set(source_type.as_u32() - 1)
+        self.stypes.contains(source_type)
     }
 
     pub(super) fn out_type(&self) -> TypeId {
@@ -362,14 +362,14 @@ impl FilenameTransitionItem {
 
 impl Parse for FilenameTransitionItem
 where
-    ExtensibleBitmap: Parse,
+    TypeSet: Parse,
 {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
-        let (stypes, tail) = ExtensibleBitmap::parse(tail)
+        let (stypes, tail) = TypeSet::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing stypes extensible bitmap for file transition")?;
 
