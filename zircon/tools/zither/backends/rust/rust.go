@@ -78,7 +78,7 @@ type traits struct {
 }
 
 func (t traits) supported() []string {
-	var supported []string
+	supported := []string{"Immutable"}
 	if t.debug {
 		supported = append(supported, "Debug")
 	}
@@ -283,7 +283,7 @@ func Imports(summary zither.FileSummary) []string {
 	}
 
 	if intoBytes || fromBytes || tryFromBytes {
-		var zerocopyImports []string
+		zerocopyImports := []string{"Immutable"}
 		if intoBytes {
 			zerocopyImports = append(zerocopyImports, "IntoBytes")
 		}
@@ -393,7 +393,7 @@ func BitsAttributes() []string {
 	// macro.
 	return []string{
 		"#[repr(C)]",
-		"#[derive(IntoBytes, FromBytes)]",
+		"#[derive(Immutable, IntoBytes, FromBytes)]",
 	}
 }
 

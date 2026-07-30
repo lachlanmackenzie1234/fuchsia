@@ -5,7 +5,7 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.aliases` by zither, a Fuchsia platform tool.
 
-use zerocopy::{IntoBytes, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, TryFromBytes};
 
 pub type BoolAlias = bool;
 
@@ -30,7 +30,7 @@ pub type Uint64Alias = u64;
 pub const CONST_FROM_ALIAS: u8 = 0xff;
 
 #[repr(i16)]
-#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Immutable, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Enum {
     Member = 0,
 }
@@ -54,7 +54,7 @@ impl From<Enum> for i16 {
 pub type EnumAlias = Enum;
 
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Immutable, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Bits {
     One = 1,
 }
@@ -78,7 +78,7 @@ impl From<Bits> for u16 {
 pub type BitsAlias = Bits;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Immutable, PartialEq, TryFromBytes)]
 pub struct Struct {
     pub x: u64,
     pub y: u64,

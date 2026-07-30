@@ -6,10 +6,12 @@
 // Generated from FIDL library `zx` by zither, a Fuchsia platform tool.
 
 use bitflags::bitflags;
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 #[repr(C)]
-#[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Immutable, IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub struct Rights(u32);
 
 bitflags! {

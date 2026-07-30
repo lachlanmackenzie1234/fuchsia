@@ -5,10 +5,10 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.resources` by zither, a Fuchsia platform tool.
 
-use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Immutable, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Subtype {
     A = 0,
     B = 1,
@@ -36,7 +36,7 @@ impl From<Subtype> for u32 {
 pub type Handle = u32;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, FromBytes, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromBytes, Immutable, IntoBytes, PartialEq)]
 pub struct StructWithHandleMembers {
     pub untyped_handle: Handle,
     pub handle_a: Handle,

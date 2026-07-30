@@ -5,12 +5,12 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.multifile` by zither, a Fuchsia platform tool.
 
-use zerocopy::{IntoBytes, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, TryFromBytes};
 
 use crate::{A, B2};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Immutable, IntoBytes, PartialEq, TryFromBytes)]
 pub struct C {
     pub a: A,
     pub b2: B2,

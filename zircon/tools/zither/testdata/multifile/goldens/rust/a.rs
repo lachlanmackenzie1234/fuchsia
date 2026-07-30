@@ -5,10 +5,10 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zither.multifile` by zither, a Fuchsia platform tool.
 
-use zerocopy::{IntoBytes, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, TryFromBytes};
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Immutable, IntoBytes, PartialEq, TryFromBytes)]
 pub enum A {
     Member = 0,
 }

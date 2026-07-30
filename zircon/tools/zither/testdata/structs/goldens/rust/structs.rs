@@ -6,27 +6,27 @@
 // Generated from FIDL library `zither.structs` by zither, a Fuchsia platform tool.
 
 use bitflags::bitflags;
-use zerocopy::{FromBytes, IntoBytes, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, FromBytes, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromBytes, Immutable, IntoBytes, PartialEq)]
 pub struct Empty {}
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, FromBytes, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromBytes, Immutable, IntoBytes, PartialEq)]
 pub struct Singleton {
     pub value: u8,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, FromBytes, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromBytes, Immutable, IntoBytes, PartialEq)]
 pub struct Doubtleton {
     pub first: Singleton,
     pub second: Singleton,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Immutable, PartialEq, TryFromBytes)]
 pub struct PrimitiveMembers {
     pub i64: i64,
     pub u64: u64,
@@ -40,7 +40,7 @@ pub struct PrimitiveMembers {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, FromBytes, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromBytes, Immutable, IntoBytes, PartialEq)]
 pub struct ArrayMembers {
     pub u8s: [u8; 10],
     pub singletons: [Singleton; 6],
@@ -49,7 +49,7 @@ pub struct ArrayMembers {
 }
 
 #[repr(i32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Immutable, IntoBytes, PartialEq, TryFromBytes)]
 pub enum Enum {
     Zero = 0,
     One = 1,
@@ -74,7 +74,9 @@ impl From<Enum> for i32 {
 }
 
 #[repr(C)]
-#[derive(IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Immutable, IntoBytes, FromBytes, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub struct Bits(u16);
 
 bitflags! {
@@ -85,7 +87,7 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Immutable, PartialEq, TryFromBytes)]
 pub struct EnumAndBitsMembers {
     pub e: Enum,
     pub b: Bits,
@@ -93,7 +95,7 @@ pub struct EnumAndBitsMembers {
 
 /// Struct with a one-line comment.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Immutable, PartialEq, TryFromBytes)]
 pub struct StructWithOneLineComment {
     /// Struct member with one-line comment.
     pub member_with_one_line_comment: u32,
@@ -111,7 +113,7 @@ pub struct StructWithOneLineComment {
 ///         many-line
 ///           comment.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, FromBytes, IntoBytes, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromBytes, Immutable, IntoBytes, PartialEq)]
 pub struct StructWithManyLineComment {
     pub member: u16,
 }

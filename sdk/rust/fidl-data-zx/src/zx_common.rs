@@ -5,7 +5,7 @@
 // DO NOT EDIT.
 // Generated from FIDL library `zx` by zither, a Fuchsia platform tool.
 
-use zerocopy::{IntoBytes, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, TryFromBytes};
 
 pub type Status = i32;
 
@@ -44,7 +44,7 @@ pub const MAX_NAME_LEN: u64 = 32;
 pub const MAX_CPUS: u64 = 512;
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, IntoBytes, PartialEq, TryFromBytes)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Immutable, IntoBytes, PartialEq, TryFromBytes)]
 pub enum ObjType {
     None = 0,
     Process = 1,
