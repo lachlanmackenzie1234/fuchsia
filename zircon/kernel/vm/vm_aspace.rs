@@ -9,10 +9,7 @@ use super::vm_address_region::VmAddressRegion;
 use crate::kernel::thread::ThreadPtr;
 use crate::kernel::types::PAddr;
 use core::ffi::{CStr, c_char, c_void};
-use core::marker::{PhantomData, PhantomPinned};
-use core::ptr::NonNull;
 use fbl::RefPtr;
-use kalloc::AllocError;
 use zr::ToMutPtr;
 use zx_status::Status;
 
@@ -111,15 +108,12 @@ unsafe extern "C" {
     fn cpp_vm_aspace_free(aspace: *mut VmAspace);
 }
 
-#[repr(C)]
-pub struct VmAspace {
-    // TODO(https://fxbug.dev/529915725): Use zx::OpaqueBytes with the correct size and alignment of
-    // the underlying structure to allow for correct Rust allocation.
-    _data: [u8; 0],
-    // Mark with PhantomPinned as this is a shared C++ struct and this object is not trivially
-    // movable. Wrap it with PhantomData to allow for FFI usage.
-    _marker: PhantomData<PhantomPinned>,
-}
+fbl::impl_opaque_ref_counted_facade!(
+    /// An address space in the kernel or user space.
+    pub struct VmAspace,
+    cpp_vm_aspace_free,
+    cpp_vm_aspace_get_ref_counted,
+);
 
 impl VmAspace {
     /// Creates an address space of the type specified in `type_` with name `name`.
@@ -421,23 +415,5 @@ impl VmAspace {
     /// Returns whether this address space is currently set to be a high memory priority.
     pub fn is_high_memory_priority(&self) -> bool {
         unsafe { cpp_vm_aspace_is_high_memory_priority(self.to_mut_ptr()) }
-    }
-}
-
-impl fbl::HasRefCount for VmAspace {
-    fn ref_count(&self) -> &fbl::RefCounted {
-        unsafe { &*cpp_vm_aspace_get_ref_counted(self.to_mut_ptr()) }
-    }
-}
-
-unsafe impl fbl::Recyclable for VmAspace {
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        unsafe {
-            cpp_vm_aspace_free(ptr.as_ptr());
-        }
-    }
-
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
     }
 }

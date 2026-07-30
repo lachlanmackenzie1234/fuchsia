@@ -9,10 +9,7 @@ use super::vm_mapping::VmMapping;
 use super::vm_object::VmObject;
 use crate::kernel::types::VAddr;
 use core::ffi::{CStr, c_char};
-use core::marker::{PhantomData, PhantomPinned};
-use core::ptr::NonNull;
 use fbl::RefPtr;
-use kalloc::AllocError;
 use zr::ToMutPtr;
 use zx_status::Status;
 
@@ -132,12 +129,12 @@ unsafe extern "C" {
     ) -> *mut VmMapping;
 }
 
-/// A contiguous region of the virtual address space.
-#[repr(C)]
-pub struct VmAddressRegion {
-    _data: [u8; 0],
-    _marker: PhantomData<PhantomPinned>,
-}
+fbl::impl_opaque_ref_counted_facade!(
+    /// A contiguous region of the virtual address space.
+    pub struct VmAddressRegion,
+    cpp_vm_address_region_free,
+    cpp_vm_address_region_get_ref_counted,
+);
 
 impl VmAddressRegion {
     /// Creates a subregion of this region.
@@ -291,23 +288,5 @@ impl VmAddressRegion {
                 arch_mmu_flags,
             )
         })
-    }
-}
-
-impl fbl::HasRefCount for VmAddressRegion {
-    fn ref_count(&self) -> &fbl::RefCounted {
-        unsafe { &*cpp_vm_address_region_get_ref_counted(self.to_mut_ptr()) }
-    }
-}
-
-unsafe impl fbl::Recyclable for VmAddressRegion {
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        unsafe {
-            cpp_vm_address_region_free(ptr.as_ptr());
-        }
-    }
-
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
     }
 }

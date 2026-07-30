@@ -8,7 +8,6 @@ use super::vm_object::VmObject;
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
 use fbl::RefPtr;
-use kalloc::AllocError;
 use zx_status::Status;
 
 #[repr(C)]
@@ -86,9 +85,5 @@ unsafe impl fbl::Recyclable for VmObjectPaged {
         unsafe {
             cpp_vm_object_paged_free(ptr.as_ptr());
         }
-    }
-
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
     }
 }

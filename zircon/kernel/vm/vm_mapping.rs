@@ -6,10 +6,7 @@
 
 use super::arch_vm_aspace::ArchMmuFlags;
 use super::vm_object::VmObject;
-use core::marker::{PhantomData, PhantomPinned};
-use core::ptr::NonNull;
 use fbl::RefPtr;
-use kalloc::AllocError;
 use zr::ToMutPtr;
 use zx_status::Status;
 
@@ -39,14 +36,14 @@ unsafe extern "C" {
     fn cpp_vm_mapping_vmo(mapping: *mut VmMapping) -> *const VmObject;
 }
 
-/// A leaf mapping that maps a VMO into the address space.
-///
-/// This is an opaque FFI wrapper around Zircon's C++ `VmMapping` class.
-#[repr(C)]
-pub struct VmMapping {
-    _data: [u8; 0],
-    _marker: PhantomData<PhantomPinned>,
-}
+fbl::impl_opaque_ref_counted_facade!(
+    /// A leaf mapping that maps a VMO into the address space.
+    ///
+    /// This is an opaque FFI wrapper around Zircon's C++ `VmMapping` class.
+    pub struct VmMapping,
+    cpp_vm_mapping_free,
+    cpp_vm_mapping_get_ref_counted,
+);
 
 impl VmMapping {
     /// Destroys this mapping, unmapping all pages and removing dependencies on the underlying VMO.
@@ -117,23 +114,5 @@ impl VmMapping {
     /// Returns the underlying VMO backing this mapping.
     pub fn vmo(&self) -> Option<RefPtr<VmObject>> {
         unsafe { RefPtr::try_from_raw(cpp_vm_mapping_vmo(self.to_mut_ptr())) }
-    }
-}
-
-impl fbl::HasRefCount for VmMapping {
-    fn ref_count(&self) -> &fbl::RefCounted {
-        unsafe { &*cpp_vm_mapping_get_ref_counted(self.to_mut_ptr()) }
-    }
-}
-
-unsafe impl fbl::Recyclable for VmMapping {
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        unsafe {
-            cpp_vm_mapping_free(ptr.as_ptr());
-        }
-    }
-
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
     }
 }

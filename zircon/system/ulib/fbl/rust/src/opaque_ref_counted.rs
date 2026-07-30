@@ -9,7 +9,6 @@ use crate::ref_counted::{HasRefCount, RefCounted};
 use core::marker::{PhantomData, PhantomPinned};
 use core::ops::Deref;
 use core::ptr::NonNull;
-use kalloc::AllocError;
 use zr::Opaque;
 
 /// A wrapper for C++ objects that are known to use `fbl::RefCounted`
@@ -62,10 +61,6 @@ unsafe impl<B: Recyclable> Recyclable for OpaqueRefCountedFacade<B> {
             B::recycle(ptr.cast::<B>());
         }
     }
-
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
-    }
 }
 
 /// Trait for facade types that wrap an `OpaqueRefCountedFacade<B>` and derefer to `B`.
@@ -74,7 +69,8 @@ unsafe impl<B: Recyclable> Recyclable for OpaqueRefCountedFacade<B> {
 ///
 /// # Safety
 ///
-/// `Self` must be a facade struct for a C++ object that inherits from `TargetBase` and derefers to `TargetBase`.
+/// `Self` must be a facade struct for a C++ object that inherits from `TargetBase` and derefers to
+/// `TargetBase`.
 pub unsafe trait IsOpaqueRefCounted: Deref + Sized {
     type TargetBase: HasRefCount + Recyclable;
 }
@@ -94,10 +90,93 @@ unsafe impl<T: IsOpaqueRefCounted> Recyclable for T {
             <T::TargetBase as Recyclable>::recycle(base_ptr);
         }
     }
+}
 
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
-    }
+/// Declares a zero-sized facade struct for an opaque refcounted C++ object and implements
+/// `HasRefCount` and `Recyclable` for it.
+///
+/// Supported forms:
+/// 1. Where `fbl::RefCounted` is at offset 0 of the C++ object:
+/// ```rust
+/// fbl::impl_opaque_ref_counted_facade!(
+///     /// Facade type representing the C++ `iommu::Iommu` object.
+///     pub struct Iommu,
+///     cpp_iommu_release,
+/// );
+/// ```
+/// 2. Where `fbl::RefCounted` is at a non-zero offset or requires a C++ helper function:
+/// ```rust
+/// fbl::impl_opaque_ref_counted_facade!(
+///     /// Facade type representing the C++ `VmObject` object.
+///     pub struct VmObject,
+///     cpp_vm_object_free,
+///     cpp_vm_object_get_ref_counted,
+/// );
+/// ```
+#[macro_export]
+macro_rules! impl_opaque_ref_counted_facade {
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident,
+        $release_fn:path $(,)?
+    ) => {
+        $(#[$meta])*
+        #[repr(C)]
+        $vis struct $name {
+            _facade: $crate::OpaqueRefCountedFacade,
+        }
+
+        impl $crate::HasRefCount for $name {
+            fn ref_count(&self) -> &$crate::RefCounted {
+                // SAFETY: `$name` represents a C++ `fbl::RefCounted` object whose ref count is at
+                // offset 0.
+                unsafe { &*(self as *const Self as *const $crate::RefCounted) }
+            }
+        }
+
+        // SAFETY: `$name` represents a C++ `fbl::RefCounted` object.
+        unsafe impl $crate::Recyclable for $name {
+            unsafe fn recycle(ptr: core::ptr::NonNull<Self>) {
+                // SAFETY: `ptr` was constructed from `RefPtr::into_raw` on a valid `$name` facade.
+                unsafe {
+                    $release_fn(ptr.as_ptr() as *mut Self);
+                }
+            }
+        }
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident,
+        $release_fn:path,
+        $get_ref_counted_fn:path $(,)?
+    ) => {
+        $(#[$meta])*
+        #[repr(C)]
+        $vis struct $name {
+            _facade: $crate::OpaqueRefCountedFacade,
+        }
+
+        impl $crate::HasRefCount for $name {
+            fn ref_count(&self) -> &$crate::RefCounted {
+                // SAFETY: `$get_ref_counted_fn` returns a valid pointer to the C++
+                // `fbl::RefCounted` subobject of `$name`.
+                unsafe {
+                    &*($get_ref_counted_fn(self as *const Self as *mut Self)
+                        as *const $crate::RefCounted)
+                }
+            }
+        }
+
+        // SAFETY: `$name` represents a C++ `fbl::RefCounted` object.
+        unsafe impl $crate::Recyclable for $name {
+            unsafe fn recycle(ptr: core::ptr::NonNull<Self>) {
+                // SAFETY: `ptr` was constructed from `RefPtr::into_raw` on a valid `$name` facade.
+                unsafe {
+                    $release_fn(ptr.as_ptr() as *mut Self);
+                }
+            }
+        }
+    };
 }
 
 #[cfg(test)]
@@ -120,10 +199,6 @@ mod tests {
             unsafe {
                 destroy_cpp_ref_counted_object(ptr.as_ptr() as *mut c_void);
             }
-        }
-
-        fn allocate(_value: Self) -> Result<NonNull<Self>, ::kalloc::AllocError> {
-            Err(::kalloc::AllocError)
         }
     }
 
@@ -168,9 +243,6 @@ mod tests {
                 destroy_cpp_ref_counted_object(ptr.as_ptr() as *mut c_void);
             }
         }
-        fn allocate(_value: Self) -> Result<NonNull<Self>, ::kalloc::AllocError> {
-            Err(::kalloc::AllocError)
-        }
     }
     impl HasRefCount for TestCppFacadeBase {
         fn ref_count(&self) -> &RefCounted {
@@ -204,6 +276,85 @@ mod tests {
 
             {
                 let ref_ptr = RefPtr::from_raw(raw_ptr as *mut TestSubtypeFacade);
+                assert!(!destroyed.load(Ordering::Relaxed));
+
+                let ref_ptr_clone = ref_ptr.clone();
+                assert!(!destroyed.load(Ordering::Relaxed));
+
+                drop(ref_ptr_clone);
+                assert!(!destroyed.load(Ordering::Relaxed));
+            }
+
+            assert!(destroyed.load(Ordering::Relaxed));
+        }
+    }
+
+    unsafe extern "C" fn test_release_fn(ptr: *mut TestMacroFacade) {
+        unsafe {
+            destroy_cpp_ref_counted_object(ptr as *mut c_void);
+        }
+    }
+
+    impl_opaque_ref_counted_facade!(
+        pub struct TestMacroFacade,
+        test_release_fn,
+    );
+
+    #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
+    fn test_macro_facade_ref_ptr() {
+        use core::sync::atomic::{AtomicBool, Ordering};
+
+        let destroyed = AtomicBool::new(false);
+        unsafe {
+            let raw_ptr = create_cpp_ref_counted_object(destroyed.as_ptr());
+            assert!(!destroyed.load(Ordering::Relaxed));
+
+            {
+                let ref_ptr = RefPtr::from_raw(raw_ptr as *mut TestMacroFacade);
+                assert!(!destroyed.load(Ordering::Relaxed));
+
+                let ref_ptr_clone = ref_ptr.clone();
+                assert!(!destroyed.load(Ordering::Relaxed));
+
+                drop(ref_ptr_clone);
+                assert!(!destroyed.load(Ordering::Relaxed));
+            }
+
+            assert!(destroyed.load(Ordering::Relaxed));
+        }
+    }
+
+    unsafe extern "C" fn test_get_ref_counted_fn(
+        ptr: *mut TestMacroFacadeWithGetter,
+    ) -> *mut RefCounted {
+        ptr as *mut RefCounted
+    }
+
+    unsafe extern "C" fn test_release_fn_with_getter(ptr: *mut TestMacroFacadeWithGetter) {
+        unsafe {
+            destroy_cpp_ref_counted_object(ptr as *mut c_void);
+        }
+    }
+
+    impl_opaque_ref_counted_facade!(
+        pub struct TestMacroFacadeWithGetter,
+        test_release_fn_with_getter,
+        test_get_ref_counted_fn,
+    );
+
+    #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
+    fn test_macro_facade_with_getter_ref_ptr() {
+        use core::sync::atomic::{AtomicBool, Ordering};
+
+        let destroyed = AtomicBool::new(false);
+        unsafe {
+            let raw_ptr = create_cpp_ref_counted_object(destroyed.as_ptr());
+            assert!(!destroyed.load(Ordering::Relaxed));
+
+            {
+                let ref_ptr = RefPtr::from_raw(raw_ptr as *mut TestMacroFacadeWithGetter);
                 assert!(!destroyed.load(Ordering::Relaxed));
 
                 let ref_ptr_clone = ref_ptr.clone();

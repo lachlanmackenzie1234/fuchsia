@@ -335,10 +335,6 @@ macro_rules! impl_instanced_slab_allocatable {
         }
 
         unsafe impl $crate::Recyclable for $ty {
-            fn allocate(_value: Self) -> Result<::core::ptr::NonNull<Self>, ::kalloc::AllocError> {
-                Err(::kalloc::AllocError)
-            }
-
             unsafe fn recycle(ptr: ::core::ptr::NonNull<Self>) {
                 // SAFETY: The pointer is guaranteed to be non-null and to point to a valid,
                 // initialized instance of `Self` allocated from this slab allocator.

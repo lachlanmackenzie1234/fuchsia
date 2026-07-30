@@ -13,11 +13,17 @@ use kalloc::AllocError;
 /// # Safety
 ///
 /// Implementing this trait is unsafe because the implementer must ensure that:
-/// - `allocate` returns a valid pointer that can be safely deallocated by `recycle`.
+/// - `allocate`, if overridden, returns a valid pointer that can be safely deallocated by
+///   `recycle`.
 /// - `recycle` correctly deallocates the pointer and does not cause double-free or use-after-free.
 pub unsafe trait Recyclable: Sized {
     /// Allocates a new instance of `Self`.
-    fn allocate(value: Self) -> Result<NonNull<Self>, AllocError>;
+    ///
+    /// The default implementation returns `Err(AllocError)`, which is appropriate for types
+    /// that cannot be allocated from Rust (e.g., C++ ref-counted objects).
+    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
+        Err(AllocError)
+    }
 
     /// Recycles the object.
     ///

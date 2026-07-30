@@ -188,10 +188,6 @@ unsafe impl Sync for Region {}
 // SAFETY: The Recyclable trait requires that `recycle` is safe to call with a valid pointer.
 // `Region` handles recycling via its allocator owner.
 unsafe impl Recyclable for Region {
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
-    }
-
     /// Recycle a region when its `UniquePtr` goes out of scope.
     ///
     /// # Safety

@@ -11,8 +11,6 @@ use super::dispatcher_ffi::{
 use super::handle::HandleValue;
 use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
 use core::mem::MaybeUninit;
-use core::ptr::NonNull;
-use kalloc::AllocError;
 use ksync::LockToken;
 use zx_status::Status;
 use zx_types::zx_rights_t;
@@ -180,11 +178,12 @@ macro_rules! impl_dispatcher_state_init {
 }
 pub(crate) use impl_dispatcher_state_init;
 
-/// Base facade type for kernel Dispatchers.
-#[repr(C)]
-pub struct Dispatcher {
-    _facade: fbl::OpaqueRefCountedFacade,
-}
+fbl::impl_opaque_ref_counted_facade!(
+    /// Base facade type for kernel Dispatchers.
+    pub struct Dispatcher,
+    cpp_dispatcher_recycle,
+    cpp_dispatcher_get_ref_counted,
+);
 
 impl Dispatcher {
     /// Returns the ZX object type of this Dispatcher.
@@ -256,28 +255,5 @@ impl DispatcherOps for Dispatcher {
 
     fn dispatcher(&self) -> *const Dispatcher {
         self
-    }
-}
-
-impl fbl::HasRefCount for Dispatcher {
-    fn ref_count(&self) -> &fbl::RefCounted {
-        // SAFETY: self is a valid Dispatcher whose C++ ref-count pointer is non-null and valid.
-        unsafe {
-            let ptr = cpp_dispatcher_get_ref_counted(self);
-            &*(ptr.cast::<fbl::RefCounted>())
-        }
-    }
-}
-
-unsafe impl fbl::Recyclable for Dispatcher {
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        // SAFETY: ptr is a non-null pointer to a Dispatcher ready to be recycled.
-        unsafe {
-            cpp_dispatcher_recycle(ptr.as_ptr());
-        }
-    }
-
-    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-        Err(AllocError)
     }
 }

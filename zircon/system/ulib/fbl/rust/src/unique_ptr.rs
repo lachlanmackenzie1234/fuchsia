@@ -156,10 +156,6 @@ mod tests {
                 destroy_cpp_object(ptr.as_ptr() as *mut c_void);
             }
         }
-
-        fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
-            Err(AllocError)
-        }
     }
 
     #[test]

@@ -278,9 +278,6 @@ unsafe impl Recyclable for Opaque<CppUniqueObject> {
             cpp_destroy_unique_object(ptr.as_ptr() as *mut c_void);
         }
     }
-    fn allocate(_value: Self) -> Result<NonNull<Self>, kalloc::AllocError> {
-        Err(kalloc::AllocError)
-    }
 }
 
 pub struct CppRefObject;
@@ -289,9 +286,6 @@ unsafe impl Recyclable for OpaqueRefCounted<CppRefObject> {
         unsafe {
             cpp_delete_ref_object(ptr.as_ptr() as *mut c_void);
         }
-    }
-    fn allocate(_value: Self) -> Result<NonNull<Self>, kalloc::AllocError> {
-        Err(kalloc::AllocError)
     }
 }
 
