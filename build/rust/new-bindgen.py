@@ -140,7 +140,10 @@ class Bindgen:
             "--blocklist-function=" + x for x in self.args.blocklist_function
         ]
         args += ["--blocklist-type=" + x for x in self.args.blocklist_type]
+        args += ["--blocklist-var=" + x for x in self.args.blocklist_var]
+        args += ["--opaque-type=" + x for x in self.args.opaque_type]
         args += ["--no-debug=" + x for x in self.args.no_debug]
+        args += ["--rustified-enum=" + x for x in self.args.rustified_enum]
         args += ["--impl-" + x for x in self.args.std_impl]
         args += ["--with-derive-" + x for x in self.args.std_derive]
 
@@ -408,10 +411,28 @@ def main():
         help="Mark types as hidden, to omit them from generated code.",
     )
     parser.add_argument(
+        "--blocklist-var",
+        action="append",
+        default=[],
+        help="Mark variables as hidden, to omit them from generated code.",
+    )
+    parser.add_argument(
+        "--opaque-type",
+        action="append",
+        default=[],
+        help="Mark types as opaque blobs in generated code.",
+    )
+    parser.add_argument(
         "--no-debug",
         action="append",
         default=[],
         help="Avoid deriving/implementing Debug for types matching regexes.",
+    )
+    parser.add_argument(
+        "--rustified-enum",
+        action="append",
+        default=[],
+        help="Generate enums matching regexes as Rust enums.",
     )
     parser.add_argument(
         "--use-core",

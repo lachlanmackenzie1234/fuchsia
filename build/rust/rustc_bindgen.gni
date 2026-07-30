@@ -122,9 +122,24 @@ default_bindgen_rust_version = "nightly"
 #       will not be generated.
 #     - Type: list(string)
 #
+#   * var_blocklist
+#     - Optional: A list of regexes. Free-standing variables and static members
+#       which match any of these regexes will not be generated.
+#     - Type: list(string)
+#
+#   * opaque_types
+#     - Optional: A list of regexes. Types which match any of these regexes
+#       will be marked as opaque layout blobs.
+#     - Type: list(string)
+#
 #   * no_debug_types
 #     - Optional: A list of regexes. Types which match any of these regexes
 #       will not derive `Debug`.
+#     - Type: list(string)
+#
+#   * rustified_enums
+#     - Optional: A list of regexes. Enums which match any of these regexes
+#       will be generated as Rust enums instead of constants.
 #     - Type: list(string)
 #
 #   * use_core
@@ -329,9 +344,24 @@ template("rustc_bindgen") {
         args += [ "--blocklist-type=${x}" ]
       }
     }
+    if (defined(invoker.var_blocklist)) {
+      foreach(x, invoker.var_blocklist) {
+        args += [ "--blocklist-var=${x}" ]
+      }
+    }
+    if (defined(invoker.opaque_types)) {
+      foreach(x, invoker.opaque_types) {
+        args += [ "--opaque-type=${x}" ]
+      }
+    }
     if (defined(invoker.no_debug_types)) {
       foreach(x, invoker.no_debug_types) {
         args += [ "--no-debug=${x}" ]
+      }
+    }
+    if (defined(invoker.rustified_enum)) {
+      foreach(x, invoker.rustified_enum) {
+        args += [ "--rustified-enum=${x}" ]
       }
     }
 
@@ -397,6 +427,12 @@ template("rustc_bindgen") {
 
     if (defined(invoker.additional_clang_flags)) {
       args += invoker.additional_clang_flags
+    }
+
+    if (defined(invoker.defines)) {
+      foreach(d, invoker.defines) {
+        args += [ "-D${d}" ]
+      }
     }
   }
 }
