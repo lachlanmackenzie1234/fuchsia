@@ -83,6 +83,8 @@ pub(crate) fn encode_dirent(
         return false;
     }
 
+    // TODO(https://fxbug.dev/293948129): `Sink` implementations should take a type that enforces
+    // this constraint. "." is valid here, so taking [`crate::Name`] directly isn't sufficient.
     assert!(
         name.len() <= fio::MAX_NAME_LENGTH as usize,
         "Entry names are expected to be no longer than MAX_FILENAME ({}) bytes.\n\
