@@ -60,16 +60,24 @@ class WorktreePrinter:
                     parts.append(", ".join(sync_parts))
 
             build_entries = []
-            for bd in wt.build_dirs:
+            try:
+                selected_dir = wt.selected_build_dir()
+            except (FileNotFoundError, ValueError, OSError):
+                selected_dir = None
+
+            for bd in wt.build_dirs():
                 try:
                     out_rel = str(bd.path.relative_to(wt.path))
                 except ValueError:
                     out_rel = str(bd.path)
-                max_left_len = max(max_left_len, 4 + len(out_rel) + 1)
+                is_active = selected_dir is not None and bd.path == selected_dir
+                suffix = " *" if is_active else ""
+                label = f"{out_rel}{suffix}:"
+                max_left_len = max(max_left_len, 4 + len(label))
 
                 cfg = bd.get_build_config()
                 time_str = format_time_ago(bd.get_build_time_ago_sec())
-                build_entries.append((out_rel, cfg, time_str))
+                build_entries.append((label, cfg, time_str, is_active))
 
             wt_entries.append((display_name, parts, build_entries))
 
@@ -81,10 +89,12 @@ class WorktreePrinter:
             if parts:
                 header = f"{header} ({', '.join(parts)})"
             print(header)
-            for i, (out_rel, cfg, time_str) in enumerate(builds):
+            for i, (label, cfg, time_str, is_active) in enumerate(builds):
                 is_last = i == len(builds) - 1
                 prefix = "└── " if is_last else "├── "
-                left_part = f"{prefix}{out_rel}:"
-                padding = " " * max(0, left_width - len(left_part))
-                print(f"{left_part}{padding}{cfg} ({time_str})")
+                left_part = f"{prefix}{label}"
+                line = f"{left_part:<{left_width}}{cfg} ({time_str})"
+                if is_active:
+                    line = colorize(line, Colors.GREEN)
+                print(line)
             print()

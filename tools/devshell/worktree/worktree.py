@@ -78,7 +78,17 @@ class Worktree:
         except Exception:
             return None
 
-    @property
+    def selected_build_dir(self) -> Path:
+        fx_build_dir_file = self.path / ".fx-build-dir"
+        if not fx_build_dir_file.exists():
+            raise FileNotFoundError(
+                f".fx-build-dir does not exist in {self.path}"
+            )
+        build_dir_rel = fx_build_dir_file.read_text().strip()
+        if not build_dir_rel:
+            raise ValueError(f".fx-build-dir is empty in {self.path}")
+        return (self.path / build_dir_rel).resolve()
+
     def build_dirs(self) -> list[BuildDir]:
         dirs = set()
         fx_build_dir_file = self.path / ".fx-build-dir"
@@ -107,7 +117,11 @@ class Worktree:
                         except OSError:
                             pass
 
-        return [BuildDir(d) for d in sorted(dirs) if d.exists() and d.is_dir()]
+        return [
+            BuildDir(d)
+            for d in sorted(dirs)
+            if d.exists() and d.is_dir() and d.name != "default"
+        ]
 
     def get_sync_status(self) -> tuple[SyncStatus, int, int]:
         try:
@@ -182,7 +196,7 @@ class Worktree:
         except FileExistsError:
             raise RuntimeError(f"Worktree '{self.name}' is already leased")
 
-        for bd in self.build_dirs:
+        for bd in self.build_dirs():
             bd.backup_args()
 
         self.set_state(WorktreeState.LEASED)
@@ -194,7 +208,7 @@ class Worktree:
                 f"Cannot release '{self.name}': worktree is not leased (state: {state.value})"
             )
 
-        for bd in self.build_dirs:
+        for bd in self.build_dirs():
             bd.restore_args()
 
         try:

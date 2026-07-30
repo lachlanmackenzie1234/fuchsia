@@ -19,7 +19,7 @@ from subcommands import add as add_cmd
 from subcommands import pool_add as pool_add_cmd
 from subcommands import pool_remove as pool_remove_cmd
 from subcommands import remove as remove_cmd
-from worktree import NoFreeWorktreesError, WorktreeState
+from worktree import NoFreeWorktreesError, SyncStatus, Worktree, WorktreeState
 from worktree_pool import ADJECTIVES, NOUNS, WorktreePool
 
 
@@ -234,6 +234,97 @@ class TestPoolAddSubcommand(unittest.TestCase):
         pool_add_cmd.run(args, self.pool)
         self.assertEqual(self.mock_fx.call_count, 2)
         self.pool.get_worktree_by_name("wt1")
+
+
+class TestWorktreeSelectedBuildDir(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.wt_path = Path(self.temp_dir.name)
+        self.wt = Worktree(
+            name="test-wt",
+            path=self.wt_path,
+            main_checkout_dir=self.wt_path / "main",
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_default_selected_build_dir(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            self.wt.selected_build_dir()
+
+    def test_empty_selected_build_dir(self) -> None:
+        fx_build_dir_file = self.wt_path / ".fx-build-dir"
+        fx_build_dir_file.write_text("")
+        with self.assertRaises(ValueError):
+            self.wt.selected_build_dir()
+
+    def test_custom_selected_build_dir(self) -> None:
+        fx_build_dir_file = self.wt_path / ".fx-build-dir"
+        fx_build_dir_file.write_text("out/custom-dir")
+        expected = (self.wt_path / "out" / "custom-dir").resolve()
+        self.assertEqual(self.wt.selected_build_dir(), expected)
+
+    def test_printer_highlights_selected_build_dir(self) -> None:
+        from worktree_printer import WorktreePrinter
+
+        other_dir = self.wt_path / "out" / "other"
+        other_dir.mkdir(parents=True, exist_ok=True)
+        (other_dir / "args.gn").write_text(
+            'build_info_product = "core"\nbuild_info_board = "x64"\n'
+        )
+
+        default_symlink = self.wt_path / "out" / "default"
+        default_symlink.symlink_to("other")
+
+        fx_build_dir_file = self.wt_path / ".fx-build-dir"
+        fx_build_dir_file.write_text("out/default")
+
+        another_dir = self.wt_path / "out" / "another"
+        another_dir.mkdir(parents=True, exist_ok=True)
+        (another_dir / "args.gn").write_text(
+            'build_info_product = "workbench"\nbuild_info_board = "arm64"\n'
+        )
+
+        with patch.object(
+            self.wt, "get_sync_status", return_value=(SyncStatus.SYNCED, 0, 0)
+        ):
+            with patch("sys.stdout", new_callable=StringIO) as mock_out:
+                WorktreePrinter.print_worktrees([self.wt])
+                output = mock_out.getvalue()
+
+        self.assertIn("out/other *:", output)
+        self.assertIn("out/another:", output)
+        self.assertNotIn("out/default", output)
+        self.assertNotIn("out/another *:", output)
+
+    def test_printer_highlights_selected_build_dir_with_color(self) -> None:
+        from worktree_printer import WorktreePrinter
+
+        other_dir = self.wt_path / "out" / "other"
+        other_dir.mkdir(parents=True, exist_ok=True)
+        (other_dir / "args.gn").write_text(
+            'build_info_product = "core"\nbuild_info_board = "x64"\n'
+        )
+
+        default_symlink = self.wt_path / "out" / "default"
+        default_symlink.symlink_to("other")
+
+        fx_build_dir_file = self.wt_path / ".fx-build-dir"
+        fx_build_dir_file.write_text("out/default")
+
+        with patch.object(
+            self.wt, "get_sync_status", return_value=(SyncStatus.SYNCED, 0, 0)
+        ):
+            with patch("utils.USE_COLORS", True):
+                with patch("sys.stdout", new_callable=StringIO) as mock_out:
+                    WorktreePrinter.print_worktrees([self.wt])
+                    output = mock_out.getvalue()
+
+        # Colors.GREEN is \033[92m, Colors.RESET is \033[0m
+        self.assertIn("\033[92m", output)
+        self.assertIn("out/other *:", output)
+        self.assertIn("\033[0m", output)
 
 
 if __name__ == "__main__":
