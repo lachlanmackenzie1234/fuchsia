@@ -6,7 +6,7 @@
 
 #![cfg_attr(not(test), no_std)]
 
-// Allows for the test_suite macro to work within this crate's test module.
+// Allows for the suite macro to work within this crate's test module.
 #[cfg(test)]
 extern crate self as unittest;
 
@@ -49,7 +49,7 @@ pub use zx_status::Status as __Status;
 /// ```rust
 /// /// Brief test suite description.
 /// #[cfg(ktest)]
-/// #[test_suite(name = "optional_name")]
+/// #[unittest::suite(name = "optional_name")]
 /// mod my_suite {
 ///     /* non-test items... */
 ///
@@ -67,7 +67,7 @@ pub use zx_status::Status as __Status;
 /// }
 /// ```
 ///
-pub use unittest_macro::test_suite;
+pub use unittest_macro::suite;
 
 // We leverage libc for printing for now. Once all unittests are in Rust we can
 // revisit how printing should work here.
@@ -156,7 +156,7 @@ macro_rules! failed_format {
 }
 
 /// The data structure that statically defines a test suite, intended to be
-/// defined via the #[test_suite] macro to encoded into a special section in
+/// defined via the #[suite] macro to encoded into a special section in
 /// the kernel.
 #[doc(hidden)]
 #[repr(C)]
@@ -171,7 +171,7 @@ pub struct TestSuiteRegistration {
 unsafe impl Sync for TestSuiteRegistration {}
 
 /// The data structure defining a test case within a suite, also intended be
-/// defined via the #[test_suite] macro to encoded into a special section in
+/// defined via the #[suite] macro to encoded into a special section in
 /// the kernel
 #[doc(hidden)]
 #[repr(C)]
@@ -506,7 +506,7 @@ macro_rules! unwrap_ok {
 }
 
 // When building this crate with unit tests we also pass `--cfg ktest` to
-// enable the unconditional use of #[test_suite] below.
+// enable the unconditional use of #[suite] below.
 #[cfg(test)]
 mod tests {
     use core::ffi::CStr;
@@ -514,7 +514,7 @@ mod tests {
     use std::cell::Cell;
     use std::vec::Vec;
 
-    use super::{TestSuiteRegistration, test_suite};
+    use super::{TestSuiteRegistration, suite};
 
     unsafe extern "C" {
         static __start_unittest_testcases: TestSuiteRegistration;
@@ -542,15 +542,15 @@ mod tests {
         std::assert_eq!(END_REACHED.with(|cell| cell.get()), false);
     }
 
-    fn get_test_suites() -> Vec<TestSuiteRegistration> {
+    fn get_suites() -> Vec<TestSuiteRegistration> {
         let start = unsafe { &__start_unittest_testcases as *const TestSuiteRegistration };
         let stop = unsafe { &__stop_unittest_testcases as *const TestSuiteRegistration };
 
         let count = unsafe { stop.offset_from(start) } as usize;
 
-        let test_suites_rodata = unsafe { slice::from_raw_parts(start, count) };
+        let suites_rodata = unsafe { slice::from_raw_parts(start, count) };
 
-        let mut suites = Vec::from(test_suites_rodata);
+        let mut suites = Vec::from(suites_rodata);
 
         suites.sort_by(|a, b| {
             let a_name = unsafe { CStr::from_ptr(a.name) };
@@ -561,7 +561,7 @@ mod tests {
     }
 
     /// Suite with one function description.
-    #[test_suite(name = "one_function")]
+    #[suite(name = "one_function")]
     mod suite_with_one_function {
         /// Empty function description.
         #[test]
@@ -569,7 +569,7 @@ mod tests {
     }
 
     /// Suite with non-test items.
-    #[test_suite]
+    #[suite]
     mod suite_with_other_items {
         use std::vec;
 
@@ -596,7 +596,7 @@ mod tests {
     }
 
     /// Suite with ignored test.
-    #[test_suite(name = "with_ignored")]
+    #[suite(name = "with_ignored")]
     mod suite_with_ignored {
         /// Ignored test.
         #[ignore]
@@ -611,7 +611,7 @@ mod tests {
     }
 
     /// Assertion tests description.
-    #[test_suite]
+    #[suite]
     mod assertions {
         /// Success cases.
         #[test]
@@ -724,7 +724,7 @@ mod tests {
     }
 
     /// Expectation tests description.
-    #[test_suite]
+    #[suite]
     mod expectations {
         /// Success cases.
         #[test]
@@ -838,13 +838,13 @@ mod tests {
 
     #[test]
     fn check_suite_count() {
-        let suites = get_test_suites();
+        let suites = get_suites();
         std::assert_eq!(suites.len(), 5);
     }
 
     #[test]
     fn check_suite_assertions() {
-        let suites = get_test_suites();
+        let suites = get_suites();
         std::assert!(suites.len() > 0);
         let suite = &suites[0];
 
@@ -868,7 +868,7 @@ mod tests {
 
     #[test]
     fn check_suite_expectations() {
-        let suites = get_test_suites();
+        let suites = get_suites();
         std::assert!(suites.len() > 1);
         let suite = &suites[1];
 
@@ -891,7 +891,7 @@ mod tests {
 
     #[test]
     fn check_suite_with_one_function() {
-        let suites = get_test_suites();
+        let suites = get_suites();
         std::assert!(suites.len() > 2);
         let suite = &suites[2];
 
@@ -908,7 +908,7 @@ mod tests {
 
     #[test]
     fn check_suite_with_other_items() {
-        let suites = get_test_suites();
+        let suites = get_suites();
         std::assert!(suites.len() > 3);
         let suite = &suites[3];
 
@@ -928,7 +928,7 @@ mod tests {
 
     #[test]
     fn check_suite_with_ignored() {
-        let suites = get_test_suites();
+        let suites = get_suites();
         std::assert!(suites.len() > 4);
         let suite = &suites[4];
 

@@ -38,14 +38,14 @@ impl Parse for TestSuiteArgs {
 }
 
 #[proc_macro_attribute]
-pub fn test_suite(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn suite(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as TestSuiteArgs);
     let mut suite = parse_macro_input!(item as TestSuite);
     suite.custom_name = args.name;
     quote!(#suite).into()
 }
 
-// Represents a test function, as defined within a #[test_suite]-annotated
+// Represents a test function, as defined within a #[suite]-annotated
 // module.
 struct TestCase {
     // The name of the test.
@@ -208,7 +208,7 @@ impl ToTokens for TestSuite {
             #[doc = #doc_comment]
             pub mod #mod_ident {
                 #[cfg(not(ktest))]
-                compile_error!("#[test_suite] may only be used in a cfg(ktest) context");
+                compile_error!("#[suite] may only be used in a cfg(ktest) context");
 
                 use super::*;
 

@@ -232,8 +232,8 @@ pin_init!(Self {
 ### 3.8. Testing & Fuzz Testing Parity
 - **Kernel Mode (`zircon/kernel/`) vs Userspace**:
   - Kernel crates do **NOT** run standard `#[test]` / `#[cfg(test)]`. Use kernel
-    in-tree `unittest-rs` (`#[cfg(ktest)]` + `#[test_suite]`) executed via `k
-    ut`, or core integration tests in `zircon/system/utest/core/`.
+    in-tree `unittest-rs` (`#[cfg(ktest)]` + `#[unittest::suite]`) executed via
+    `k ut`, or core integration tests in `zircon/system/utest/core/`.
   - Userspace crates use standard `#[test]` and `#[cfg(test)]` executed via `fx
     test`.
 - **Assertion Mapping**: Use `expect_eq!`, `assert_eq!`, `expect_ok!`,

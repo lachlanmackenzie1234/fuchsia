@@ -6,7 +6,7 @@
 
 /// Tests for the kernel console.
 #[cfg(all(console_enabled, ktest))]
-#[unittest::test_suite(name = "console_rust")]
+#[unittest::suite(name = "console_rust")]
 mod console_tests {
 
     use crate::console_rust::console::{

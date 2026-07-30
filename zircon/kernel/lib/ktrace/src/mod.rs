@@ -772,7 +772,7 @@ pub unsafe extern "C" fn rust_ktrace_init_cpu_buffer(
 
 /// KTrace tests
 #[cfg(all(not(gcc), ktest))]
-#[unittest::test_suite(name = "ktrace_rust")]
+#[unittest::suite(name = "ktrace_rust")]
 mod tests {
     use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, max_num_cpus};
     use crate::kernel::thread::{FxtRef, ThreadPtr};

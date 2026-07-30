@@ -6,7 +6,7 @@
 #![cfg_attr(not(ktest), allow(unused_crate_dependencies))]
 
 #[cfg(ktest)]
-#[unittest::test_suite(name = "rust_ksync")]
+#[unittest::suite(name = "rust_ksync")]
 /// Tests for Rust ksync bindings
 mod ksync_tests {
     use pin_init::{pin_init, stack_pin_init};

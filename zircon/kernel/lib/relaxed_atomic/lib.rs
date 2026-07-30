@@ -6,8 +6,6 @@
 
 #![no_std]
 
-use unittest as _;
-
 use core::sync::atomic::{
     AtomicBool, AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicIsize, AtomicU8, AtomicU16,
     AtomicU32, AtomicU64, AtomicUsize, Ordering,
@@ -143,7 +141,7 @@ impl_relaxed_atomic_numeric!(AtomicUsize, usize);
 
 #[cfg(ktest)]
 /// Relaxed atomic unit tests.
-#[unittest::test_suite(name = "relaxed_atomic_tests")]
+#[unittest::suite(name = "relaxed_atomic_tests")]
 mod tests {
     use super::{RelaxedAtomicBool, RelaxedAtomicI32, RelaxedAtomicU64};
 

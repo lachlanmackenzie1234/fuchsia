@@ -136,7 +136,7 @@ zr::static_assert!(core::mem::align_of::<Timer>() == 8);
 
 /// Kernel timer tests.
 #[cfg(ktest)]
-#[unittest::test_suite(name = "rust_timer")]
+#[unittest::suite(name = "rust_timer")]
 mod tests {
     use super::{Timer, ZX_CLOCK_MONOTONIC};
     use crate::platform_rs::timer::DurationMono;
