@@ -14,8 +14,6 @@ use futures::StreamExt as _;
 use std::sync::Arc;
 use zx_status::Status;
 
-pub use vfs_macros::attribute_query;
-
 /// Set of known rights.
 #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 const FS_RIGHTS: fio::OpenFlags = fio::OPEN_RIGHTS;
@@ -152,31 +150,30 @@ pub fn decode_extended_attribute_value(
 ///
 #[macro_export]
 macro_rules! attributes {
-    ($requested:expr,
-     Mutable {$($mut_a:ident: $mut_v:expr),* $(,)?},
-     Immutable {$($immut_a:ident: $immut_v:expr),* $(,)?}) => (
-        {
-            use $crate::common::attribute_query;
-            fio::NodeAttributes2 {
-                mutable_attributes: fio::MutableNodeAttributes {
-                    $($mut_a: if $requested.contains(attribute_query!($mut_a)) {
-                        Option::from($mut_v)
-                    } else {
-                        None
-                    },)*
-                    ..Default::default()
-                },
-                immutable_attributes: fio::ImmutableNodeAttributes {
-                    $($immut_a: if $requested.contains(attribute_query!($immut_a)) {
-                        Option::from($immut_v)
-                    } else {
-                        None
-                    },)*
-                    ..Default::default()
-                }
+    (
+        $requested:expr,
+        Mutable {$($mut_a:ident: $mut_v:expr),* $(,)?},
+        Immutable {$($immut_a:ident: $immut_v:expr),* $(,)?}
+    ) => {
+        fio::NodeAttributes2 {
+            mutable_attributes: fio::MutableNodeAttributes {
+                $($mut_a: if $requested.contains($crate::__attribute_query!($mut_a)) {
+                    Option::from($mut_v)
+                } else {
+                    None
+                },)*
+                ..Default::default()
+            },
+            immutable_attributes: fio::ImmutableNodeAttributes {
+                $($immut_a: if $requested.contains($crate::__attribute_query!($immut_a)) {
+                    Option::from($immut_v)
+                } else {
+                    None
+                },)*
+                ..Default::default()
             }
         }
-    )
+    };
 }
 
 /// Helper for building [`fio::NodeAttributes2`]` given immutable attributes in `requested`
@@ -191,23 +188,35 @@ macro_rules! attributes {
 ///
 #[macro_export]
 macro_rules! immutable_attributes {
-    ($requested:expr,
-     Immutable {$($immut_a:ident: $immut_v:expr),* $(,)?}) => (
-        {
-            use $crate::common::attribute_query;
-            fio::NodeAttributes2 {
-                mutable_attributes: Default::default(),
-                immutable_attributes: fio::ImmutableNodeAttributes {
-                    $($immut_a: if $requested.contains(attribute_query!($immut_a)) {
-                        Option::from($immut_v)
-                    } else {
-                        None
-                    },)*
-                    ..Default::default()
-                },
-            }
+    (
+        $requested:expr,
+        Immutable {$($immut_a:ident: $immut_v:expr),* $(,)?}
+    ) => {
+        fio::NodeAttributes2 {
+            mutable_attributes: Default::default(),
+            immutable_attributes: fio::ImmutableNodeAttributes {
+                $($immut_a: if $requested.contains($crate::__attribute_query!($immut_a)) {
+                    Option::from($immut_v)
+                } else {
+                    None
+                },)*
+                ..Default::default()
+            },
         }
-    )
+    };
+}
+
+#[doc(hidden)]
+pub mod __private {
+    pub use paste::paste;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __attribute_query {
+    ($attr:ident) => {
+        $crate::common::__private::paste! { fio::NodeAttributesQuery::[< $attr:upper >] }
+    };
 }
 
 /// Represents if and how objects should be created with an open request.
