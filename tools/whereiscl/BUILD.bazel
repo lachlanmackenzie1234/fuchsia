@@ -65,7 +65,7 @@ host_go_test(
 )
 
 test_suite(
-    name = "tests",
+    name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [":whereiscl_test"],
     visibility = ["//visibility:public"],

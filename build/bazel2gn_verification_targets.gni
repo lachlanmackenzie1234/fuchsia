@@ -209,7 +209,6 @@ bazel2gn_verification_targets = [
   "//tools/testing/testparser:verify_bazel2gn",
   "//tools/testing/testrunner:verify_bazel2gn",
   "//tools/update_crates:verify_bazel2gn",
-  "//tools/whereiscl:verify_bazel2gn",
   "//zircon/system/ulib/sync:verify_bazel2gn",
   "//zircon/system/ulib/zircon-internal:verify_bazel2gn",
   "//zircon/vdso/zx:verify_bazel2gn",
