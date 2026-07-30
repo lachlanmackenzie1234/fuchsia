@@ -27,7 +27,10 @@ namespace {
 // Since we can't use the expression system to resolve the actual value from
 // DW_TAG_template_value_parameters, we have to do a simple decoding ourselves.
 void AddTemplateValueToName(std::string& name, const TemplateParameter* template_value) {
-  auto base_type = template_value->type().Get()->As<Type>()->StripCVT()->As<BaseType>();
+  const Type* type = template_value->type().Get()->As<Type>();
+  if (!type)
+    return;
+  auto base_type = type->StripCVT()->As<BaseType>();
 
   if (!base_type)
     return;
@@ -160,8 +163,12 @@ void AddAllTemplateParametersToName(std::string& name,
       if (template_parameter->is_value() && template_parameter->const_value().has_value()) {
         AddTemplateValueToName(name, template_parameter);
       } else {
-        AddTemplateParameterToName(
-            name, template_parameter->type().Get()->As<Type>()->GetAssignedName().c_str());
+        const Type* type = template_parameter->type().Get()->As<Type>();
+        if (type) {
+          AddTemplateParameterToName(name, type->GetAssignedName().c_str());
+        } else {
+          AddTemplateParameterToName(name, "<unknown>");
+        }
       }
     }
   }

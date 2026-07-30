@@ -12,6 +12,7 @@
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/namespace.h"
 #include "src/developer/debug/zxdb/symbols/symbol_test_parent_setter.h"
+#include "src/developer/debug/zxdb/symbols/template_parameter.h"
 #include "src/developer/debug/zxdb/symbols/type_test_support.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
 
@@ -108,6 +109,31 @@ TEST(SymbolUtils, AddCVQualifiersToMatch) {
       fxl::MakeRefCounted<ModifiedType>(DwarfTag::kVolatileType, const_int64_type);
   result = AddCVQualifiersToMatch(volatile_const_int64_type.get(), int32_type);
   EXPECT_EQ("volatile int32_t const", result->GetFullName());
+}
+
+TEST(SymbolUtils, AddAllTemplateParametersToNameUnresolvedType) {
+  // Test that we don't crash when a template parameter has an unresolved type.
+  auto param = fxl::MakeRefCounted<TemplateParameter>("T", LazySymbol(), false);
+  std::vector<LazySymbol> params;
+  params.push_back(LazySymbol(param));
+
+  std::string name = "MyClass";
+  AddAllTemplateParametersToName(name, params);
+  EXPECT_EQ("MyClass<<unknown>>", name);
+}
+
+TEST(SymbolUtils, AddAllTemplateParametersToNameUnresolvedValueType) {
+  // Test that we don't crash when a template value parameter has an unresolved type.
+  auto param = fxl::MakeRefCounted<TemplateParameter>("i", LazySymbol(), true);
+  // Need to set a const value to make is_value() return true.
+  param->set_const_value(ConstValue(static_cast<uint64_t>(42)));
+  std::vector<LazySymbol> params;
+  params.push_back(LazySymbol(param));
+
+  std::string name = "MyClass";
+  AddAllTemplateParametersToName(name, params);
+  // Since the type is unresolved, AddTemplateValueToName will return early and do nothing.
+  EXPECT_EQ("MyClass", name);
 }
 
 }  // namespace zxdb
