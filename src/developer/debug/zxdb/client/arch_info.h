@@ -18,6 +18,7 @@ class MCSubtargetInfo;
 class MCAsmInfo;
 class Target;
 class Triple;
+class MCTargetOptions;
 }  // namespace llvm
 
 namespace zxdb {
@@ -80,6 +81,7 @@ class ArchInfo {
   std::unique_ptr<llvm::MCRegisterInfo> register_info_;
   std::unique_ptr<llvm::MCSubtargetInfo> subtarget_info_;
   std::unique_ptr<llvm::MCAsmInfo> asm_info_;
+  std::unique_ptr<llvm::MCTargetOptions> target_options_;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(ArchInfo);
 };

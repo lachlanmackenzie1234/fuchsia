@@ -88,7 +88,8 @@ Err ArchInfo::Init(debug::Arch arch, uint64_t page_size) {
   instr_info_.reset(target_->createMCInstrInfo());
   register_info_.reset(target_->createMCRegInfo(*triple_));
   subtarget_info_.reset(target_->createMCSubtargetInfo(*triple_, processor_name_, ""));
-  asm_info_.reset(target_->createMCAsmInfo(*register_info_, *triple_, {}));
+  target_options_ = std::make_unique<llvm::MCTargetOptions>();
+  asm_info_.reset(target_->createMCAsmInfo(*register_info_, *triple_, *target_options_));
 
   if (!instr_info_ || !register_info_ || !subtarget_info_ || !asm_info_)
     return Err("Error initializing LLVM.");

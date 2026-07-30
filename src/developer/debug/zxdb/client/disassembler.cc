@@ -133,8 +133,8 @@ Disassembler::~Disassembler() = default;
 Err Disassembler::Init(const ArchInfo* arch) {
   arch_ = arch;
 
-  context_ = std::make_unique<llvm::MCContext>(*arch_->triple(), arch_->asm_info(),
-                                               arch_->register_info(), nullptr);
+  context_ = std::make_unique<llvm::MCContext>(*arch_->triple(), *arch_->asm_info(),
+                                               *arch_->register_info(), *arch_->subtarget_info());
   disasm_.reset(arch_->target()->createMCDisassembler(*arch_->subtarget_info(), *context_));
   if (!disasm_)
     return Err("Couldn't create LLVM disassembler.");
