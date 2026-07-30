@@ -236,6 +236,54 @@ class TestPoolAddSubcommand(unittest.TestCase):
         self.assertEqual(self.mock_fx.call_count, 2)
         self.pool.get_worktree_by_name("wt1")
 
+    def test_add_symlink_local_dir(self) -> None:
+        src_local = self.fuchsia_dir / "local"
+        src_local.mkdir(parents=True, exist_ok=True)
+        (src_local / "file.txt").write_text("hello")
+
+        wt_path = self.pool.worktrees_dir / "wt1"
+        args = argparse.Namespace(
+            name="wt1",
+            set=None,
+            symlink_local=True,
+            copy_local=False,
+        )
+        pool_add_cmd.run(args, self.pool)
+
+        dest_local = wt_path / "local"
+        self.assertTrue(dest_local.is_symlink())
+        self.assertEqual(dest_local.resolve(), src_local.resolve())
+
+    def test_add_copy_local_dir(self) -> None:
+        src_local = self.fuchsia_dir / "local"
+        src_local.mkdir(parents=True, exist_ok=True)
+        (src_local / "file.txt").write_text("hello")
+
+        wt_path = self.pool.worktrees_dir / "wt1"
+        args = argparse.Namespace(
+            name="wt1",
+            set=None,
+            symlink_local=False,
+            copy_local=True,
+        )
+        pool_add_cmd.run(args, self.pool)
+
+        dest_local = wt_path / "local"
+        self.assertTrue(dest_local.exists())
+        self.assertFalse(dest_local.is_symlink())
+        self.assertTrue((dest_local / "file.txt").exists())
+        self.assertEqual((dest_local / "file.txt").read_text(), "hello")
+
+    def test_add_local_dir_missing(self) -> None:
+        args = argparse.Namespace(
+            name="wt1",
+            set=None,
+            symlink_local=True,
+            copy_local=False,
+        )
+        with self.assertRaises(SystemExit):
+            pool_add_cmd.run(args, self.pool)
+
 
 class TestWorktreeSelectedBuildDir(unittest.TestCase):
     def setUp(self) -> None:

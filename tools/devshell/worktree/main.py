@@ -58,6 +58,17 @@ def main() -> None:
         "name", nargs="?", help="Optional physical name"
     )
     parser_pool_add.add_argument("--set", action="append", help="Run 'fx set'")
+    group = parser_pool_add.add_mutually_exclusive_group()
+    group.add_argument(
+        "--symlink-local",
+        action="store_true",
+        help="Symlink the 'local' directory from the main checkout",
+    )
+    group.add_argument(
+        "--copy-local",
+        action="store_true",
+        help="Copy the 'local' directory from the main checkout",
+    )
 
     parser_pool_remove = pool_subparsers.add_parser(
         "remove",
