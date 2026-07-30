@@ -64,6 +64,15 @@ declare_args() {
       ]
       install_host_tool = true
     },
+    {
+      bazel_label = "//build/config/python/generate_python_api_symbols"
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_python_api_symbols_/generate_python_api_symbols"
+          ninja = "generate_python_api_symbols"
+        },
+      ]
+    },
 
     # First, a target that verifies that the host toolchains work properly,
     # i.e. can compile and link C++ and Rust binaries properly.

@@ -56,6 +56,7 @@ config_setting(
         # legacy macro, so this setting must be visible where that macro is used.
         "//build/bazel/rules/host_tests/tests/go:__pkg__",
         "//build/beads/.agent/skills:__subpackages__",
+        "//build/config/python/generate_python_api_symbols:__pkg__",
         "//build/tools:__subpackages__",
         "//tools:__subpackages__",
         "//sdk/ctf/plasa/clang_doc_filter:__pkg__",
