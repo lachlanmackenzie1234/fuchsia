@@ -23,7 +23,7 @@ constexpr uint32_t MAX_INTERRUPTS = 1024;
 using interrupt_vector_t = uint32_t;
 using interrupt_handler_t = fit::inline_function<void()>;
 
-enum class interrupt_trigger_mode {
+enum class interrupt_trigger_mode : uint32_t {
   EDGE,
   LEVEL,
 };
@@ -38,7 +38,7 @@ constexpr const char* interrupt_trigger_mode_string(interrupt_trigger_mode mode)
   return "unknown";
 }
 
-enum class interrupt_polarity {
+enum class interrupt_polarity : uint32_t {
   HIGH,
   LOW,
 };
