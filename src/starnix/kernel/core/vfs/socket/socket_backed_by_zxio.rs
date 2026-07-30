@@ -480,18 +480,35 @@ impl SocketOps for ZxioBackedSocket {
             _ => (),
         };
 
-        match peer {
+        let connect_result = match &peer {
             SocketPeer::Address(
                 SocketAddress::Inet(addr)
                 | SocketAddress::Inet6(addr)
                 | SocketAddress::Packet(addr),
             ) => self
                 .zxio
-                .connect(&addr)
+                .connect(addr)
                 .map_err(|status| from_status_like_fdio!(status))?
                 .map_err(|out_code| errno_from_zxio_code!(out_code)),
             _ => error!(EINVAL),
+        };
+
+        if connect_result.is_ok() {
+            if let SocketPeer::Address(ref address) = peer {
+                if let Some(port) = address.maybe_inet_port() {
+                    if port == 80 {
+                        track_stub!(
+                            TODO("https://fxbug.dev/540841946"),
+                            "fake NFLOG message on port 80 connect"
+                        );
+                        let uid = current_task.current_creds().uid;
+                        crate::vfs::socket::send_fake_nflog_message(uid);
+                    }
+                }
+            }
         }
+
+        connect_result
     }
 
     fn listen(&self, _socket: &Socket, backlog: i32, _credentials: ucred) -> Result<(), Errno> {

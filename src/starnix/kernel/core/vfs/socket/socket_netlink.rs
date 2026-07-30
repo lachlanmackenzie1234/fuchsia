@@ -88,9 +88,12 @@ pub fn new_netlink_socket(
         NetlinkFamily::Generic => Box::new(GenericNetlinkSocket::new(kernel)?),
         NetlinkFamily::SockDiag => Box::new(new_sock_diag_socket(kernel)?),
         NetlinkFamily::Audit => Box::new(AuditNetlinkSocket::new(kernel)?),
+        NetlinkFamily::Nflog => {
+            let inner = Arc::new(NetlinkSocketInner::new(NetlinkFamily::Nflog).into());
+            Box::new(NflogNetlinkSocket::new(inner))
+        }
         NetlinkFamily::Usersock
         | NetlinkFamily::Firewall
-        | NetlinkFamily::Nflog
         | NetlinkFamily::Xfrm
         | NetlinkFamily::Selinux
         | NetlinkFamily::Iscsi
@@ -436,6 +439,198 @@ impl NetlinkSocketInner {
         }
 
         Ok(())
+    }
+}
+
+struct NflogListener {
+    inner: std::sync::Weak<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>,
+}
+
+static NFLOG_LISTENERS: std::sync::LazyLock<std::sync::Mutex<Vec<NflogListener>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+struct NflogNetlinkSocket {
+    inner: Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>,
+}
+
+impl NflogNetlinkSocket {
+    fn new(inner: Arc<LockDepMutex<NetlinkSocketInner, NetlinkSocketInnerLock>>) -> Self {
+        NFLOG_LISTENERS.lock().unwrap().push(NflogListener { inner: Arc::downgrade(&inner) });
+        Self { inner }
+    }
+
+    fn lock(&self) -> LockDepGuard<'_, NetlinkSocketInner> {
+        self.inner.lock()
+    }
+}
+
+impl Drop for NflogNetlinkSocket {
+    fn drop(&mut self) {
+        let mut listeners = NFLOG_LISTENERS.lock().unwrap();
+        listeners.retain(|l| {
+            if let Some(arc) = l.inner.upgrade() { !Arc::ptr_eq(&arc, &self.inner) } else { false }
+        });
+    }
+}
+
+impl SocketOps for NflogNetlinkSocket {
+    fn connect(
+        &self,
+        _socket: &SocketHandle,
+        current_task: &CurrentTask,
+        peer: SocketPeer,
+    ) -> Result<(), Errno> {
+        self.lock().connect(current_task, peer)
+    }
+
+    fn listen(&self, _socket: &Socket, _backlog: i32, _credentials: ucred) -> Result<(), Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn accept(&self, _socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn bind(
+        &self,
+        _socket: &Socket,
+        current_task: &CurrentTask,
+        socket_address: SocketAddress,
+    ) -> Result<(), Errno> {
+        self.lock().bind(current_task, socket_address)
+    }
+
+    fn read(
+        &self,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        data: &mut dyn OutputBuffer,
+        flags: SocketMessageFlags,
+    ) -> Result<MessageReadInfo, Errno> {
+        self.lock().read_datagram(data, flags)
+    }
+
+    fn write(
+        &self,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        _data: &mut dyn InputBuffer,
+        _dest_address: &mut Option<SocketAddress>,
+        _ancillary_data: &mut Vec<AncillaryData>,
+    ) -> Result<usize, Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn wait_async(
+        &self,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        waiter: &Waiter,
+        events: FdEvents,
+        handler: EventHandler,
+    ) -> WaitCanceler {
+        self.lock().wait_async(waiter, events, handler)
+    }
+
+    fn query_events(
+        &self,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+    ) -> Result<FdEvents, Errno> {
+        Ok(self.lock().query_events() & FdEvents::POLLIN)
+    }
+
+    fn shutdown(&self, _socket: &Socket, _how: SocketShutdownFlags) -> Result<(), Errno> {
+        Ok(())
+    }
+
+    fn close(&self, _current_task: &CurrentTask, _socket: &Socket) {}
+
+    fn getsockname(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
+        self.lock().getsockname()
+    }
+
+    fn getpeername(&self, _socket: &Socket) -> Result<SocketAddress, Errno> {
+        self.lock().getpeername()
+    }
+
+    fn getsockopt(
+        &self,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        level: u32,
+        optname: u32,
+        _optlen: u32,
+    ) -> Result<Vec<u8>, Errno> {
+        self.lock().getsockopt(level, optname)
+    }
+
+    fn setsockopt(
+        &self,
+        _socket: &Socket,
+        current_task: &CurrentTask,
+        level: u32,
+        optname: u32,
+        optval: SockOptValue,
+    ) -> Result<(), Errno> {
+        self.lock().setsockopt(current_task, level, optname, optval)
+    }
+}
+
+fn write_attr(buf: &mut Vec<u8>, attr_type: u16, data: &[u8]) {
+    let len = 4 + data.len();
+    buf.extend_from_slice(&(len as u16).to_ne_bytes());
+    buf.extend_from_slice(&attr_type.to_ne_bytes());
+    buf.extend_from_slice(data);
+    let pad = (4 - (data.len() % 4)) % 4;
+    for _ in 0..pad {
+        buf.push(0);
+    }
+}
+
+pub fn send_fake_nflog_message(uid: u32) {
+    const NFNL_SUBSYS_ULOG: u16 = 4;
+    const NFULNL_MSG_PACKET: u8 = 0;
+    const LOCAL_NFLOG_PACKET: u16 = (NFNL_SUBSYS_ULOG << 8) | (NFULNL_MSG_PACKET as u16);
+    const NFULA_PAYLOAD: u16 = 9;
+    const NFULA_UID: u16 = 11;
+
+    let mut msg_body = vec![0u8; 4]; // 4 bytes of nfgenmsg header
+
+    // Write UID attribute
+    let uid_bytes = uid.to_be_bytes();
+    write_attr(&mut msg_body, NFULA_UID, &uid_bytes);
+
+    // Write PAYLOAD attribute (placeholder IPv4 header)
+    let mut ip_hdr = vec![0u8; 20];
+    ip_hdr[0] = 0x45; // Version 4, IHL 5
+    ip_hdr[12..16].copy_from_slice(&[127, 0, 0, 1]);
+    ip_hdr[16..20].copy_from_slice(&[8, 8, 8, 8]);
+    write_attr(&mut msg_body, NFULA_PAYLOAD, &ip_hdr);
+
+    // Construct nlmsghdr
+    let total_len = 16 + msg_body.len();
+    let mut packet = vec![];
+    packet.extend_from_slice(&(total_len as u32).to_ne_bytes());
+    packet.extend_from_slice(&LOCAL_NFLOG_PACKET.to_ne_bytes());
+    packet.extend_from_slice(&0u16.to_ne_bytes()); // flags
+    packet.extend_from_slice(&0u32.to_ne_bytes()); // seq
+    packet.extend_from_slice(&0u32.to_ne_bytes()); // pid
+    packet.extend_from_slice(&msg_body);
+
+    // Broadcast to all listeners
+    let listeners = NFLOG_LISTENERS.lock().unwrap();
+    let ancillary_data = AncillaryData::Unix(UnixControlData::Credentials(Default::default()));
+    let mut ancillary_data = vec![ancillary_data];
+
+    for listener in listeners.iter() {
+        if let Some(socket) = listener.inner.upgrade() {
+            let _ = socket.lock().write_to_queue(
+                &mut VecInputBuffer::new(&packet),
+                Some(NetlinkAddress { pid: 0, groups: 1 }),
+                &mut ancillary_data,
+            );
+        }
     }
 }
 
