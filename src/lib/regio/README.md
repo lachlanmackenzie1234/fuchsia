@@ -133,6 +133,21 @@ unsafe { uart.at(TXDATA) }.write(data);
 let _: u8 = unsafe { uart.at(RXDATA) }.read().data();
 ```
 
+## arm64 system registers
+
+`regio::arm64::SysReg` defines an arm64 system register, aliasing `Register`.
+It takes a system register 'spec' as a generic parameter, all of which have been
+stamped out in the `regio::arm64::spec` submodule with names equal to their
+official mnemonics.
+
+```rust
+use regio::arm64::{SysReg, spec};
+
+const TPIDR_EL0: SysReg<spec::TPIDR_EL0, u64> = SysReg::new();
+
+println!("TPIDR_EL0: {:#x}", TPIDR_EL0.read().get());
+```
+
 ## x86 CPUID
 
 The core CPUID type is `Cpuid` for defining the layouts of a particular

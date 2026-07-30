@@ -9,6 +9,8 @@ regio_common = {
   crate_name = "regio"
   edition = "2024"
   sources = [
+    "src/arm64/mod.rs",
+    "src/arm64/spec.rs",
     "src/lib.rs",
     "src/mmio.rs",
     "src/testing.rs",

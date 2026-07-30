@@ -4,6 +4,7 @@
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod arm64;
 mod mmio;
 pub mod traits;
 pub mod x86;
