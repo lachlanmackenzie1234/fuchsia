@@ -837,6 +837,15 @@ class GnBuildArgs(object):
                 args_bzl_filename = "args.bzl"
             generated.record_file_content(args_bzl_filename, args_bzl_content)
 
+        # Generate @fuchsia_build_info//:bazel_host_test_suites.bzl
+        bazel_host_test_suites = (
+            (build_dir / "bazel_host_test_suites.txt").read_text().splitlines()
+        )
+        generated.record_file_content(
+            "bazel_host_test_suites.bzl",
+            "bazel_host_test_suites = %s" % repr(bazel_host_test_suites),
+        )
+
     @staticmethod
     def generate_fuchsia_build_info(
         fuchsia_dir: Path, build_dir: Path, repository_dir: Path
