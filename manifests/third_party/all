@@ -610,7 +610,7 @@
              path="third_party/github.com/ridiculousfish/libdivide/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/ridiculousfish/libdivide"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="b8a4423ddfc6f5a44b0ecbf506db1e2760d56ce6"/>
+             revision="8a74ae47a5b84aec8502827523831b384f2400c2"/>
     <project name="third_party/github.com/simdutf/simdutf"
              path="third_party/github.com/simdutf/simdutf/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/simdutf/simdutf"
