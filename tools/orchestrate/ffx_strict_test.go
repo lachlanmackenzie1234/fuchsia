@@ -787,3 +787,41 @@ exit 0
 		t.Errorf("Expected 'target add 192.168.1.1:8022 --nowait' in args, got: %s", args)
 	}
 }
+
+func TestFFXStrictClient_TargetList(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+echo "target-1234"
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	out, err := client.TargetList(ctx)
+	if err != nil {
+		t.Fatalf("TargetList failed: %v", err)
+	}
+
+	if !strings.Contains(out, "target-1234") {
+		t.Errorf("Expected output to contain 'target-1234', got %q", out)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "target list") {
+		t.Errorf("Expected 'target list' in args, got: %s", args)
+	}
+}

@@ -498,6 +498,14 @@ func (c *FFXStrictClient) TargetAdd(ctx context.Context, addr string) error {
 	return nil
 }
 
+func (c *FFXStrictClient) TargetList(ctx context.Context) (string, error) {
+	out, err := c.ffxInst.RunAndGetOutput(ctx, "target", "list")
+	if err != nil {
+		return "", fmt.Errorf("target list failed: %w", err)
+	}
+	return out, nil
+}
+
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
 
 func (c *FFXStrictClient) ApplyEnv(env []string) ([]string, error) {
