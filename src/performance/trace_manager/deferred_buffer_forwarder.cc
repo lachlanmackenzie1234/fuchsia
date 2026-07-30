@@ -16,8 +16,11 @@ namespace {
 const char* kTraceDir = "/traces";
 }
 
-DeferredBufferForwarder::DeferredBufferForwarder(zx::socket destination)
-    : BufferForwarder(std::move(destination)) {
+DeferredBufferForwarder::DeferredBufferForwarder(zx::socket destination,
+                                                 size_t transfer_buffer_size,
+                                                 size_t backpressure_percentage)
+    : BufferForwarder(std::move(destination), backpressure_percentage),
+      chunk_buffer_(transfer_buffer_size > 0 ? transfer_buffer_size : kDefaultTransferBufferSize) {
   // In the event where trace_manager was killed while copying a trace, we might have an old file
   // laying around. Remove them just in case.
   std::filesystem::path dir_path = kTraceDir;  // Current directory
@@ -45,6 +48,9 @@ TransferStatus DeferredBufferForwarder::Flush() {
   if (flushed_) {
     return TransferStatus::kComplete;
   }
+  FX_LOGS(INFO) << "Flushing trace file to socket: backpressure threshold="
+                << backpressure_percentage_
+                << "%, transfer batch buffer=" << (chunk_buffer_.size() / 1024) << "KB";
   if (buffer_file_ == nullptr) {
     FX_LOGS(ERROR) << "Failed to open trace file: " << buffer_path_ << " for read!";
     return TransferStatus::kWriteError;
@@ -54,14 +60,21 @@ TransferStatus DeferredBufferForwarder::Flush() {
     return TransferStatus::kWriteError;
   }
 
-  const size_t BUFFER_SIZE = 4096;
-  uint8_t buffer[BUFFER_SIZE];
   for (;;) {
-    size_t bytes_read = fread(buffer, sizeof(uint8_t), BUFFER_SIZE, buffer_file_);
-    if (bytes_read <= 0) {
+    if (TransferStatus status = WaitForSocketDrain(); status != TransferStatus::kComplete) {
+      return status;
+    }
+
+    size_t bytes_read =
+        fread(chunk_buffer_.data(), sizeof(uint8_t), chunk_buffer_.size(), buffer_file_);
+    if (bytes_read == 0) {
+      if (ferror(buffer_file_)) {
+        FX_LOGS(ERROR) << "Error reading trace file during flush: " << buffer_path_;
+        return TransferStatus::kWriteError;
+      }
       break;
     }
-    if (TransferStatus status = BufferForwarder::WriteBuffer({buffer, bytes_read});
+    if (TransferStatus status = BufferForwarder::WriteBuffer({chunk_buffer_.data(), bytes_read});
         status != TransferStatus::kComplete) {
       return status;
     }

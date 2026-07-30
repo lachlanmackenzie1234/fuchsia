@@ -7,9 +7,36 @@
 #include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/fields.h>
+#include <lib/zx/time.h>
 #include <lib/zx/vmar.h>
 
 namespace tracing {
+
+bool BufferForwarder::IsSocketBackpressureExceeded() const {
+  zx_info_socket_t info;
+  if (destination_.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr) == ZX_OK) {
+    size_t threshold = std::max<size_t>(1, (info.tx_buf_max * backpressure_percentage_) / 100);
+    return info.tx_buf_size >= threshold;
+  }
+  return false;
+}
+
+TransferStatus BufferForwarder::WaitForSocketDrain() const {
+  while (IsSocketBackpressureExceeded()) {
+    zx_signals_t pending = 0;
+    // Set the deadline to 10ms. This is short enough to allow responsiveness
+    // but long enough to allow the reader to be scheduled and drain some data.
+    zx_status_t status =
+        destination_.wait_one(ZX_SOCKET_PEER_CLOSED, zx::deadline_after(zx::msec(10)), &pending);
+    if (status == ZX_ERR_TIMED_OUT) {
+      continue;
+    }
+    if (status != ZX_OK || (pending & ZX_SOCKET_PEER_CLOSED)) {
+      return TransferStatus::kReceiverDead;
+    }
+  }
+  return TransferStatus::kComplete;
+}
 
 TransferStatus BufferForwarder::WriteMagicNumberRecord() const {
   size_t num_words = 1u;
@@ -137,6 +164,10 @@ TransferStatus BufferForwarder::WriteChunkBy(BufferForwarder::ForwardStrategy st
 
 TransferStatus BufferForwarder::WriteBuffer(cpp20::span<const uint8_t> data) const {
   while (!data.empty()) {
+    if (TransferStatus status = WaitForSocketDrain(); status != TransferStatus::kComplete) {
+      return status;
+    }
+
     size_t actual = 0;
     if (zx_status_t status = destination_.write(0u, data.data(), data.size(), &actual);
         status != ZX_OK) {

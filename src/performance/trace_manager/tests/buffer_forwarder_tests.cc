@@ -4,8 +4,11 @@
 //
 #include <lib/zx/socket.h>
 
+#include <vector>
+
 #include <gtest/gtest.h>
 
+#include "src/performance/trace_manager/buffer_forwarder.h"
 #include "src/performance/trace_manager/deferred_buffer_forwarder.h"
 
 TEST(BufferForwarderTest, DeferredForwarder) {
@@ -39,4 +42,41 @@ TEST(BufferForwarderTest, DeferredForwarder) {
   // The socket should now be empty.
   res = ep0.wait_one(ZX_SOCKET_READABLE, zx::time::infinite_past(), &pending);
   ASSERT_EQ(res, ZX_ERR_TIMED_OUT);
+}
+
+TEST(BufferForwarderTest, SocketBackpressureThreshold) {
+  zx::socket ep0, ep1;
+  ASSERT_EQ(zx::socket::create(0, &ep0, &ep1), ZX_OK);
+
+  zx::socket ep1_dup;
+  ASSERT_EQ(ep1.duplicate(ZX_RIGHT_SAME_RIGHTS, &ep1_dup), ZX_OK);
+
+  tracing::BufferForwarder forwarder(std::move(ep1));
+  ASSERT_FALSE(forwarder.IsSocketBackpressureExceeded());
+
+  zx_info_socket_t info;
+  ASSERT_EQ(ep0.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  const size_t tx_buf_max = info.tx_buf_max;
+  ASSERT_GT(tx_buf_max, 0u);
+
+  const size_t threshold = (tx_buf_max * forwarder.backpressure_percentage()) / 100;
+  ASSERT_GT(threshold, 0u);
+
+  size_t bytes_to_write = threshold + 100;
+  if (bytes_to_write > tx_buf_max) {
+    bytes_to_write = tx_buf_max;
+  }
+  std::vector<uint8_t> mock_data(bytes_to_write, 0x55);
+  size_t actual_written = 0;
+  ASSERT_EQ(ep1_dup.write(0, mock_data.data(), mock_data.size(), &actual_written), ZX_OK);
+  ASSERT_EQ(actual_written, bytes_to_write);
+
+  ASSERT_TRUE(forwarder.IsSocketBackpressureExceeded());
+
+  std::vector<uint8_t> read_buffer(bytes_to_write);
+  size_t actual_read = 0;
+  ASSERT_EQ(ep0.read(0, read_buffer.data(), read_buffer.size(), &actual_read), ZX_OK);
+  ASSERT_EQ(actual_read, bytes_to_write);
+
+  ASSERT_FALSE(forwarder.IsSocketBackpressureExceeded());
 }

@@ -8,6 +8,7 @@
 #include <lib/zx/socket.h>
 
 #include <filesystem>
+#include <vector>
 
 #include "src/performance/trace_manager/buffer_forwarder.h"
 #include "src/performance/trace_manager/util.h"
@@ -17,7 +18,21 @@ namespace tracing {
 // the resulting socked
 class DeferredBufferForwarder : public BufferForwarder {
  public:
-  explicit DeferredBufferForwarder(zx::socket destination);
+  // Use a fixed buffer size to move the data from the file to the socket. This avoids a large
+  // stack allocation and reduces the number of reads to copy the data.
+  static constexpr size_t kDefaultTransferBufferSize = 64 * 1024;
+
+  explicit DeferredBufferForwarder(
+      zx::socket destination, size_t transfer_buffer_size = kDefaultTransferBufferSize,
+      size_t backpressure_percentage = BufferForwarder::kDefaultSocketBackpressurePercentage);
+
+  // Get or set the transfer buffer size for controlled batching during flush.
+  size_t transfer_buffer_size() const { return chunk_buffer_.size(); }
+  void set_transfer_buffer_size(size_t size) {
+    if (size > 0) {
+      chunk_buffer_.resize(size);
+    }
+  }
 
   TransferStatus Flush() override;
 
@@ -38,6 +53,7 @@ class DeferredBufferForwarder : public BufferForwarder {
  private:
   std::filesystem::path buffer_path_;
   FILE* buffer_file_;
+  std::vector<uint8_t> chunk_buffer_;
 };
 }  // namespace tracing
 
