@@ -145,6 +145,8 @@ class PageCache;
 
 class ScopedPageFreedList;
 
+extern "C" void cpp_vm_cow_pages_free(VmCowPages*);
+
 // Implements a copy-on-write hierarchy of pages in a VmPageList.
 // VmCowPages have a life cycle where they start in an Init state to allow them to have
 // initialization finished outside the constructor. A VmCowPages in the Init state may be
@@ -922,6 +924,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   friend class fbl::RefPtr<VmCowPages>;
   friend class LockedParentWalker;
   friend class PriorityChanger;
+  friend void ::cpp_vm_cow_pages_free(VmCowPages*);
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmCowPages);
 

@@ -1,0 +1,53 @@
+// Copyright 2026 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
+
+use core::marker::PhantomPinned;
+use core::ptr::NonNull;
+use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
+use kalloc::AllocError;
+use vm_cow_pages_bindings as bindings;
+
+/// A copy-on-write page hierarchy.
+#[repr(C)]
+pub struct VmCowPages {
+    raw: bindings::VmCowPages,
+    phantom: PhantomPinned,
+}
+
+impl HasRefCount for VmCowPages {
+    fn ref_count(&self) -> &RefCounted {
+        let raw = unsafe { bindings::cpp_vm_cow_pages_get_ref_counted(self.as_raw()) };
+        unsafe { &*(raw.cast::<RefCounted>()) }
+    }
+}
+
+unsafe impl Recyclable for VmCowPages {
+    unsafe fn recycle(ptr: NonNull<Self>) {
+        unsafe {
+            bindings::cpp_vm_cow_pages_free(ptr.as_ptr().cast());
+        }
+    }
+
+    fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
+        Err(AllocError)
+    }
+}
+
+impl VmCowPages {
+    /// Domain-specific conversion: returns raw pointer for `VmCowPages`.
+    pub fn as_raw(&self) -> *mut bindings::VmCowPages {
+        core::ptr::from_ref(&self.raw).cast_mut()
+    }
+
+    /// Domain-specific conversion: constructs a `RefPtr<VmCowPages>` from an exported pointer.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be a valid raw `VmCowPages` pointer exported from C++.
+    pub unsafe fn from_raw(ptr: *mut bindings::VmCowPages) -> Option<RefPtr<Self>> {
+        unsafe { RefPtr::try_from_raw(ptr.cast::<Self>()) }
+    }
+}

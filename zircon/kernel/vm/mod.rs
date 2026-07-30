@@ -10,6 +10,7 @@ pub mod page_state;
 pub mod vm;
 pub mod vm_address_region;
 pub mod vm_aspace;
+pub mod vm_cow_pages;
 pub mod vm_mapping;
 pub mod vm_object;
 pub mod vm_object_paged;

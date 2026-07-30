@@ -5,6 +5,8 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_bindgen.gni")
+import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
@@ -45,6 +47,7 @@ source_set("vm") {
     "vm_address_region_or_mapping.cc",
     "vm_aspace.cc",
     "vm_cow_pages.cc",
+    "vm_cow_pages_ffi.cc",
     "vm_mapping.cc",
     "vm_object.cc",
     "vm_object_ffi.cc",
@@ -93,6 +96,50 @@ source_set("vm") {
   # the reference so it will never actually be called, but the compiler can't
   # figure that out statically so we must disable its warning.
   configs += [ ":suppress-nonheap-warning" ]
+}
+
+config("bindgen_common_config") {
+  cflags = [ "-ffreestanding" ]
+  defines = [
+    "SMP_MAX_CPUS=$smp_max_cpus",
+    "_KERNEL",
+    "LK",
+    "ZIRCON_TOOLCHAIN",
+  ]
+  include_dirs = [
+    "//zircon/kernel/include",
+    "//zircon/kernel/arch/$zircon_cpu/include",
+    "//zircon/system/ulib/page_tables/include",
+  ]
+  if (current_cpu == "x64") {
+    include_dirs += [ "//zircon/kernel/arch/x86/page_tables/include" ]
+  }
+}
+
+group("bindgen_common_deps") {
+  public_configs = [
+    ":bindgen_common_config",
+    "//build/config/fuchsia:compiler_fuchsia_api_level",
+  ]
+  public_deps = [
+    ":headers",
+    "//src/performance/lib/fxt:headers",
+    "//zircon/kernel/lib/backtrace:headers",
+    "//zircon/kernel/lib/fbl:headers",
+    "//zircon/kernel/lib/heap:headers",
+    "//zircon/kernel/lib/libc:headers",
+    "//zircon/kernel/lib/lockup_detector:headers",
+    "//zircon/kernel/lib/mmu_rcu:headers",
+    "//zircon/kernel/lib/page-map:headers",
+    "//zircon/kernel/lib/percpu_writer:headers",
+    "//zircon/kernel/lib/power-management:headers",
+    "//zircon/kernel/lib/sched:headers",
+    "//zircon/kernel/lib/spsc_buffer:headers",
+    "//zircon/kernel/lib/stall:headers",
+    "//zircon/kernel/lib/wake-vector:headers",
+    "//zircon/kernel/object:headers",
+    "//zircon/system/ulib/page_tables:headers",
+  ]
 }
 
 library_headers("headers") {
@@ -156,6 +203,35 @@ kernel_bindgen_crate("vm-constants-rs") {
   raw_lines = [ "#![no_std]" ]
 }
 
+kernel_bindgen_crate("vm-cow-pages-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/vm_cow_pages_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "vm_cow_pages_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_vm_cow_pages_get_ref_counted",
+    "cpp_vm_cow_pages_free",
+  ]
+  type_allowlist = [ "VmCowPages" ]
+  type_blocklist = [
+    "vm_page",
+    "vm_page_t",
+    "zx_status_t",
+  ]
+  additional_bindgen_flags = [
+    "--opaque-type=VmCowPages",
+    "--no-recursive-allowlist",
+    "--blocklist-item=VmCowPages_.*",
+  ]
+
+  edition = "2024"
+
+  raw_lines = [ "#![no_std]" ]
+}
+
 kernel_rust_mod("vm-rs") {
   output_name = "vm"
   source_root = "mod.rs"
@@ -167,6 +243,7 @@ kernel_rust_mod("vm-rs") {
     "vm.rs",
     "vm_address_region.rs",
     "vm_aspace.rs",
+    "vm_cow_pages.rs",
     "vm_mapping.rs",
     "vm_object.rs",
     "vm_object_paged.rs",
@@ -175,6 +252,7 @@ kernel_rust_mod("vm-rs") {
 
   deps = [
     ":vm-constants-rs",
+    ":vm-cow-pages-bindings",
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
     "//src/lib/ksync",
