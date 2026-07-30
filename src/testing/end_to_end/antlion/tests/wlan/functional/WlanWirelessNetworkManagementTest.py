@@ -881,11 +881,11 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                                 ssid=ssid,
                                 security=SecurityOpen(),
                                 custom_uci_options=UciBssOptions(
-                                    bss_transition=True
+                                    bss_transition=True,
+                                    max_num_sta=0,
                                 ),
                             )
                         ],
-                        custom_hostapd_options={"max_num_sta": 0},  # type: ignore
                     ),
                 ]
             )

@@ -34,5 +34,7 @@ targets:
       - bss_transition
       - wnm_sleep_mode
       - ieee80211w
+      - max_num_sta
+
 
 

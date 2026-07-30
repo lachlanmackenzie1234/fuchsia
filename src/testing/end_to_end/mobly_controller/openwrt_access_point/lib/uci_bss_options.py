@@ -49,3 +49,6 @@ class UciBssOptions(TypedDict, total=False):
 
     ieee80211w: Literal[0, 1, 2]
     """Enables MFP (802.11w) support (0 = disabled, 1 = optional, 2 = required). Requires the 'full' version of wpad/hostapd and support from the Wi-Fi driver"""
+
+    max_num_sta: int
+    """Maximum number of stations allowed in station table"""
