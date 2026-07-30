@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 library fuchsia.wlan.policy;
 
-using fuchsia.wlan.common;
-
 /// The AccessPointProvider API provides a mechanism for access point
 /// control and is intended to be called by applications or entities representing
 /// the user (ex, Settings). This API is not intended to be called by other
@@ -42,36 +40,19 @@ closed protocol AccessPointListener {
 closed protocol AccessPointController {
     /// Enables wlan to initiate AccessPoint operation using the provided network
     /// configuration, connectivity mode and band.
-    @available(added=25)
     strict StartAccessPoint(struct {
         config NetworkConfig;
         mode ConnectivityMode;
         band OperatingBand;
-    }) -> (struct {
-        status RequestStatus;
-    });
-    @available(replaced=25)
-    strict StartAccessPoint(struct {
-        config NetworkConfig;
-        mode ConnectivityMode;
-        band OperatingBand;
-    }) -> (struct {
-        status fuchsia.wlan.common.RequestStatus;
-    });
-
-    /// Deactivate AccessPoint operation for a specified network configuration.
-    @available(added=25)
-    strict StopAccessPoint(struct {
-        config NetworkConfig;
     }) -> (struct {
         status RequestStatus;
     });
 
-    @available(replaced=25)
+    /// Deactivate AccessPoint operation for a specified network configuration.
     strict StopAccessPoint(struct {
         config NetworkConfig;
     }) -> (struct {
-        status fuchsia.wlan.common.RequestStatus;
+        status RequestStatus;
     });
 
     /// Deactivates all AccessPoints currently operating on the device.

@@ -6,7 +6,6 @@ library fuchsia.wlan.policy;
 using fuchsia.wlan.ieee80211 as ieee80211;
 
 // Basic definitions for wlan APIs.
-@available(added=25)
 @strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type RequestStatus = strict enum {
     ACKNOWLEDGED = 0;

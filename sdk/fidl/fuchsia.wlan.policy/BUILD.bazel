@@ -22,7 +22,6 @@ fidl_library(
     stable = True,
     visibility = ["//visibility:public"],
     deps = [
-        "//sdk/fidl/fuchsia.wlan.common",
         "//sdk/fidl/fuchsia.wlan.ieee80211",
         "//zircon/vdso/zx",
     ],
