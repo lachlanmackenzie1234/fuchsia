@@ -518,6 +518,7 @@ pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
         enable_connect_disconnect: true,
         enable_toggle_logger: true,
         enable_recovery_logger: true,
+        enable_client_iface_counters_logger: true,
         device_mobility: wlan_telemetry::DeviceMobility::Stationary,
         ..Default::default()
     }
@@ -552,6 +553,12 @@ pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
         metrics::CLIENT_CONNECTIONS_STOP_AND_START_METRIC_ID,
         metrics::CLIENT_CONNECTION_ENABLED_DURATION_METRIC_ID,
         metrics::RECOVERY_OCCURRENCE_2_METRIC_ID,
+        metrics::GET_IFACE_STATS_FAILURE_METRIC_ID,
+        metrics::GET_IFACE_STATS_TIMEOUT_METRIC_ID,
+        metrics::GET_IFACE_STATS_ERROR_IN_RESPONSE_METRIC_ID,
+        metrics::BAD_RX_RATE_METRIC_ID,
+        metrics::RX_UNICAST_PACKETS_METRIC_ID,
+        metrics::BAD_TX_RATE_METRIC_ID,
     ]))
 }
 
