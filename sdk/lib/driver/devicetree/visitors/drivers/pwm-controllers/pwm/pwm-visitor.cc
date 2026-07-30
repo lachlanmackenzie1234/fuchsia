@@ -159,6 +159,8 @@ zx::result<> PwmVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
     pwm_node.properties().push_back(
         fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
                            "fuchsia.pwm.PWM_ID_FUNCTION." + std::string(*pwm_name)));
+    pwm_node.properties().push_back(
+        fdf::MakeProperty2(bind_fuchsia::NAME, std::string(*pwm_name)));
   }
 
   child.AddNodeSpec(pwm_node);

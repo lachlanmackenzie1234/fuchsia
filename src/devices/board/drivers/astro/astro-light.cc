@@ -87,6 +87,7 @@ zx_status_t Astro::LightInit() {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_LIGHT_INTERRUPT),
+      fdf::MakeProperty2(bind_fuchsia::NAME, "LIGHT_INTERRUPT"),
   };
 
   auto kTcs3400LightParents = std::vector{
@@ -167,6 +168,7 @@ zx_status_t Astro::LightInit() {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_GPIO_AMBER_LED),
+      fdf::MakeProperty2(bind_fuchsia::NAME, "GPIO_AMBER_LED"),
   };
 
   auto amber_led_pwm_bind_rules = std::vector{
@@ -181,6 +183,7 @@ zx_status_t Astro::LightInit() {
                          bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
                          bind_fuchsia_pwm::PWM_ID_FUNCTION_AMBER_LED),
+      fdf::MakeProperty2(bind_fuchsia::NAME, "AMBER_LED"),
   };
   const auto kGpioInitBindRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),

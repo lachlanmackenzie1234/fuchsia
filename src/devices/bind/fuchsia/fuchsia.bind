@@ -10,6 +10,12 @@ uint BIND_FLAGS;
 // Primary protocol of the device.
 uint BIND_PROTOCOL;
 
+// A generic name property.
+string NAME;
+
+// A generic ID property.
+uint ID;
+
 // Property that indicates if it's an automated bind/load.
 uint BIND_AUTOBIND;
 

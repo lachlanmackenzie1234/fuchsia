@@ -106,6 +106,7 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
                                bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
             fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
                                "fuchsia.pwm.PWM_ID_FUNCTION." + std::string(PIN1_NAME)),
+            fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN1_NAME)),
         }},
         (*mgr_request.parents2())[1].properties(), false));
 
@@ -123,6 +124,7 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
                                bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
             fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
                                "fuchsia.pwm.PWM_ID_FUNCTION." + std::string(PIN2_NAME)),
+            fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN2_NAME)),
         }},
         (*mgr_request.parents2())[2].properties(), false));
   }

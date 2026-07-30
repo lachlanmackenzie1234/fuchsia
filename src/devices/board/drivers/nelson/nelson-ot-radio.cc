@@ -69,9 +69,9 @@ const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
 };
 
 const std::map<uint32_t, std::string> kGpioPinFunctionMap = {
-    {GPIO_TH_SOC_INT, bind_fuchsia_gpio::FUNCTION_OT_RADIO_INTERRUPT},
-    {GPIO_SOC_TH_RST_L, bind_fuchsia_gpio::FUNCTION_OT_RADIO_RESET},
-    {GPIO_SOC_TH_BOOT_MODE_L, bind_fuchsia_gpio::FUNCTION_OT_RADIO_BOOTLOADER},
+    {GPIO_TH_SOC_INT, "OT_RADIO_INTERRUPT"},
+    {GPIO_SOC_TH_RST_L, "OT_RADIO_RESET"},
+    {GPIO_SOC_TH_BOOT_MODE_L, "OT_RADIO_BOOTLOADER"},
 };
 
 }  // namespace
@@ -114,7 +114,8 @@ zx_status_t Nelson::OtRadioInit() {
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, function),
+        fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, "fuchsia.gpio.FUNCTION." + function),
+        fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});
   }

@@ -145,7 +145,8 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION,
                            "fuchsia.clock.FUNCTION." + std::string(CLK1_NAME)),
-        fdf::MakeProperty2(bind_fuchsia_clock::NAME, std::string(CLK1_NAME))}},
+        fdf::MakeProperty2(bind_fuchsia_clock::NAME, std::string(CLK1_NAME)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, std::string(CLK1_NAME))}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
@@ -160,7 +161,8 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION,
                            "fuchsia.clock.FUNCTION." + std::string(CLK2_NAME)),
-        fdf::MakeProperty2(bind_fuchsia_clock::NAME, std::string(CLK2_NAME))}},
+        fdf::MakeProperty2(bind_fuchsia_clock::NAME, std::string(CLK2_NAME)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, std::string(CLK2_NAME))}},
       (*mgr_request_video.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,

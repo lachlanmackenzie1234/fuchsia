@@ -129,15 +129,15 @@ aml_thermal_info_t aml_thermal_info = {
 };
 
 const std::map<uint32_t, std::string> kPwmIdMap = {
-    {T931_PWM_A, bind_fuchsia_pwm::PWM_ID_FUNCTION_CORE_POWER_BIG_CLUSTER},
-    {T931_PWM_AO_D, bind_fuchsia_pwm::PWM_ID_FUNCTION_CORE_POWER_LITTLE_CLUSTER},
+    {T931_PWM_A, "CORE_POWER_BIG_CLUSTER"},
+    {T931_PWM_AO_D, "CORE_POWER_LITTLE_CLUSTER"},
 };
 
 const std::map<uint32_t, std::string> kClockFunctionMap = {
-    {g12b_clk::G12B_CLK_SYS_PLL_DIV16, bind_fuchsia_clock::FUNCTION_SYS_PLL_DIV16},
-    {g12b_clk::G12B_CLK_SYS_PLLB_DIV16, bind_fuchsia_clock::FUNCTION_SYS_PLLB_DIV16},
-    {g12b_clk::G12B_CLK_SYS_CPU_CLK_DIV16, bind_fuchsia_clock::FUNCTION_SYS_CPU_DIV16},
-    {g12b_clk::G12B_CLK_SYS_CPUB_CLK_DIV16, bind_fuchsia_clock::FUNCTION_SYS_CPUB_DIV16},
+    {g12b_clk::G12B_CLK_SYS_PLL_DIV16, "SYS_PLL_DIV16"},
+    {g12b_clk::G12B_CLK_SYS_PLLB_DIV16, "SYS_PLLB_DIV16"},
+    {g12b_clk::G12B_CLK_SYS_CPU_CLK_DIV16, "SYS_CPU_DIV16"},
+    {g12b_clk::G12B_CLK_SYS_CPUB_CLK_DIV16, "SYS_CPUB_DIV16"},
 };
 
 zx::result<> CreateThermalPllNode(
@@ -298,7 +298,8 @@ zx::result<> CreateThermalPllNode(
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                            bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION, function),
+        fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION, "fuchsia.pwm.PWM_ID_FUNCTION." + function),
+        fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});
   }
@@ -312,7 +313,8 @@ zx::result<> CreateThermalPllNode(
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, function),
+        fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, "fuchsia.clock.FUNCTION." + function),
+        fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});
   }

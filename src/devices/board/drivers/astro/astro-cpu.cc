@@ -63,9 +63,9 @@ const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
 
 // Contains all the clock parent nodes for the composite. Maps the clock id to the clock function.
 const std::map<uint32_t, std::string> kClockFunctionMap = {
-    {g12a_clk::CLK_SYS_PLL_DIV16, bind_fuchsia_clock::FUNCTION_SYS_PLL_DIV16},
-    {g12a_clk::CLK_SYS_CPU_CLK_DIV16, bind_fuchsia_clock::FUNCTION_SYS_CPU_DIV16},
-    {g12a_clk::CLK_SYS_CPU_CLK, bind_fuchsia_clock::FUNCTION_SYS_CPU_BIG_CLK},
+    {g12a_clk::CLK_SYS_PLL_DIV16, "SYS_PLL_DIV16"},
+    {g12a_clk::CLK_SYS_CPU_CLK_DIV16, "SYS_CPU_DIV16"},
+    {g12a_clk::CLK_SYS_CPU_CLK, "SYS_CPU_BIG_CLK"},
 };
 
 }  // namespace
@@ -138,7 +138,8 @@ zx_status_t Astro::CpuInit() {
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, function),
+        fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, "fuchsia.clock.FUNCTION." + function),
+        fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});
   }

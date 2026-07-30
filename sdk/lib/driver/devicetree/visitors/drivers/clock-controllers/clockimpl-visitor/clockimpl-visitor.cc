@@ -178,6 +178,8 @@ zx::result<> ClockImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uin
         bind_fuchsia_clock::FUNCTION, "fuchsia.clock.FUNCTION." + std::string(*clock_name)));
     clock_node.properties().push_back(
         fdf::MakeProperty2(bind_fuchsia_clock::NAME, std::string(*clock_name)));
+    clock_node.properties().push_back(
+        fdf::MakeProperty2(bind_fuchsia::NAME, std::string(*clock_name)));
   }
 
   child.AddNodeSpec(clock_node);

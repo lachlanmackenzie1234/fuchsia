@@ -95,6 +95,7 @@ const std::vector<fdf::NodeProperty2> kAudioEnableGpioProps{
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_ENABLE),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "SOC_AUDIO_ENABLE"),
 };
 
 const std::vector<fdf::BindRule2> kCodecRules{
@@ -135,6 +136,7 @@ const std::vector<fdf::NodeProperty2> kFaultGpioProps{
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_FAULT),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "SOC_AUDIO_FAULT"),
 };
 
 const std::vector<fdf::ParentSpec2> kTdmI2sSpec = std::vector{

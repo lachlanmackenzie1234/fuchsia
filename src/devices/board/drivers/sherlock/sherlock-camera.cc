@@ -299,6 +299,7 @@ zx_status_t Sherlock::CameraInit() {
                                  bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION,
                                  bind_fuchsia_gpio::FUNCTION_CAM_RESET),
+              fdf::MakeProperty2(bind_fuchsia::NAME, "CAM_RESET"),
           },
   }};
 
@@ -316,6 +317,7 @@ zx_status_t Sherlock::CameraInit() {
                                  bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION,
                                  bind_fuchsia_gpio::FUNCTION_VANA_ENABLE),
+              fdf::MakeProperty2(bind_fuchsia::NAME, "VANA_ENABLE"),
           },
   }};
 
@@ -333,6 +335,7 @@ zx_status_t Sherlock::CameraInit() {
                                  bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION,
                                  bind_fuchsia_gpio::FUNCTION_VDIG_ENABLE),
+              fdf::MakeProperty2(bind_fuchsia::NAME, "VDIG_ENABLE"),
           },
   }};
 
@@ -351,6 +354,7 @@ zx_status_t Sherlock::CameraInit() {
                                  bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION,
                                  bind_fuchsia_clock::FUNCTION_CAMERA_SENSOR),
+              fdf::MakeProperty2(bind_fuchsia::NAME, "CAMERA_SENSOR"),
           },
   }};
 

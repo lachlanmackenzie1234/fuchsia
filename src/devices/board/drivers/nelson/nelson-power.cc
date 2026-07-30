@@ -228,6 +228,7 @@ zx_status_t Nelson::BrownoutProtectionInit() {
       ddk::MakeProperty(bind_fuchsia_hardware_gpio::SERVICE,
                         bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       ddk::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_GPIO_ALERT_PWR_L),
+      ddk::MakeProperty(bind_fuchsia::NAME, "GPIO_ALERT_PWR_L"),
   };
 
   const device_bind_prop_t kCodecProperties[] = {

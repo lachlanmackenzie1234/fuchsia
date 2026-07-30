@@ -16,6 +16,10 @@ static const char FLAGS[] = "fuchsia.BIND_FLAGS";
 
 static const char PROTOCOL[] = "fuchsia.BIND_PROTOCOL";
 
+static const char NAME[] = "fuchsia.NAME";
+
+static const char ID[] = "fuchsia.ID";
+
 static const char AUTOBIND[] = "fuchsia.BIND_AUTOBIND";
 
 static const char COMPOSITE[] = "fuchsia.BIND_COMPOSITE";
