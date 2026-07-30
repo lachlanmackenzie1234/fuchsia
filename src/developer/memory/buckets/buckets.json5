@@ -86,7 +86,7 @@
     },
     {
         name: "Feedback",
-        process: "exceptions\\.cm|feedback\\.cm|system_log_recorder|feedback_id\\.cm",
+        process: "exceptions\\.cm|exception_handler_[0-9]+|feedback\\.cm|system_log_recorder|feedback_id\\.cm",
         vmo: "",
         event_code: 46,
     },
