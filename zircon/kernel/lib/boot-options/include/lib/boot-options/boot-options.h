@@ -28,7 +28,8 @@
 #include "test-types.h"
 #endif
 
-extern "C" bool cpp_boot_options_enable_debugging_syscalls();
+struct BootOptions;
+extern "C" const BootOptions* cpp_boot_options_get();
 
 struct BootOptions {
   // This returns the only instance of BootOptions that ever exists outside

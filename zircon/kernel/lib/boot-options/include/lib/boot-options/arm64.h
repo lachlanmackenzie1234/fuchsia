@@ -7,11 +7,13 @@
 #ifndef ZIRCON_KERNEL_LIB_BOOT_OPTIONS_INCLUDE_LIB_BOOT_OPTIONS_ARM64_H_
 #define ZIRCON_KERNEL_LIB_BOOT_OPTIONS_INCLUDE_LIB_BOOT_OPTIONS_ARM64_H_
 
+#include <stdint.h>
+
 // This file provides declarations for special types used by arm64.inc options.
 // See kernel/lib/boot-options/README.md for full details and constraints.
 // It should avoid other kernel header dependencies.
 
-enum class Arm64PhysPsciReset {
+enum class Arm64PhysPsciReset : uint8_t {
   kDisabled,
   kShutdown,
   kReboot,
@@ -19,7 +21,7 @@ enum class Arm64PhysPsciReset {
   kRebootRecovery,
 };
 
-enum class Arm64AlternateVbar {
+enum class Arm64AlternateVbar : uint8_t {
   kNone,
   kAuto,
   kArchWorkaround3,

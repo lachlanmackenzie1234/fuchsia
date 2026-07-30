@@ -6,11 +6,13 @@
 
 use core::mem::MaybeUninit;
 
-use crate::object::{HandleValue, validate_system_resource};
-use crate::user_copy::UserOutPtr;
+use boot_options::BootOptions;
 use syscalls_macro::syscall;
 use zx_status::{ErrorStatus, Status};
 use zx_types::*;
+
+use crate::object::{HandleValue, validate_system_resource};
+use crate::user_copy::UserOutPtr;
 
 // Allocate this many extra bytes at the end of the bootdata for the platform
 // to fill in with platform specific boot structures.
@@ -35,7 +37,7 @@ pub fn sys_system_mexec_payload_get(
     user_buffer: UserOutPtr<u8>,
     buffer_size: usize,
 ) -> Result<(), ErrorStatus> {
-    if !boot_options_rs::enable_debugging_syscalls() {
+    if !BootOptions::get().enable_debugging_syscalls {
         return Err(Status::NOT_SUPPORTED.into());
     }
     // Highly privileged, only mexec resource should have access.
@@ -67,7 +69,7 @@ pub fn sys_system_mexec(
     kernel_vmo: HandleValue,
     data_zbi_vmo: HandleValue,
 ) -> Result<(), ErrorStatus> {
-    if !boot_options_rs::enable_debugging_syscalls() {
+    if !BootOptions::get().enable_debugging_syscalls {
         return Err(Status::NOT_SUPPORTED.into());
     }
     validate_system_resource(resource, ZX_RSRC_SYSTEM_MEXEC_BASE)?;

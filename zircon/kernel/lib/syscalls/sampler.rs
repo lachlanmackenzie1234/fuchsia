@@ -4,10 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::object::{
-    Dispatcher, HandleValue, ProcessDispatcher, SamplerDispatcher, validate_ranged_resource,
-};
-use crate::user_copy::{UserInPtr, UserOutPtr};
+use boot_options::BootOptions;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::{ErrorStatus, Status};
@@ -16,10 +13,15 @@ use zx_types::{
     ZX_SAMPLER_MAX_BUFFER_SIZE, ZX_SAMPLER_MIN_PERIOD, zx_sampler_config_t,
 };
 
+use crate::object::{
+    Dispatcher, HandleValue, ProcessDispatcher, SamplerDispatcher, validate_ranged_resource,
+};
+use crate::user_copy::{UserInPtr, UserOutPtr};
+
 const LOCAL_TRACE: u32 = 0;
 
 fn check_sampler_supported() -> Result<(), Status> {
-    if !crate::object::sampler_enabled() || !boot_options_rs::enable_debugging_syscalls() {
+    if !crate::object::sampler_enabled() || !BootOptions::get().enable_debugging_syscalls {
         return Err(Status::NOT_SUPPORTED);
     }
     Ok(())

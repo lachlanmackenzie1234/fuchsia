@@ -6,17 +6,9 @@
 
 import("//build/compiled_action.gni")
 import("//build/cpp/library_headers.gni")
-import("//build/rust/rustc_library.gni")
 import("//build/testing/golden_files.gni")
 import("//build/toolchain/toolchain_environment.gni")
-
-rustc_library("boot-options-rs") {
-  edition = "2024"
-  name = "boot_options_rs"
-  source_root = "boot_options.rs"
-  sources = [ "boot_options.rs" ]
-  non_rust_deps = [ ":boot-options" ]
-}
+import("//zircon/kernel/kernel_bindgen_crate.gni")
 
 if (current_toolchain == default_toolchain) {
   compiled_action("json") {
@@ -78,6 +70,77 @@ library_headers("headers") {
   if (is_kernel) {
     public_deps += [ "//zircon/kernel/lib/ktl:headers" ]
   }
+}
+
+kernel_bindgen_crate("boot-options-rs") {
+  crate_name = "boot-options"
+
+  notice_year = "2026"
+
+  cpp = true
+  headers = [ "include/lib/boot-options/boot-options.h" ]
+  non_rust_deps = [ ":boot-options" ]
+
+  # The layout of BootOptions is compilation-dependent and very load-bearing,
+  # so these tests represent an important regression stop against drift.
+  layout_tests = true
+
+  # It's a big struct and so explicit padding can make it difficult to inspect.
+  explicit_padding = false
+
+  # No functions needed at this time.
+  function_blocklist = [ ".*" ]
+
+  type_allowlist = [ "BootOptions" ]
+  type_blocklist = [
+    # Not needed.
+    "BootOptions_WordResult",
+  ]
+
+  opaque_types = [
+    "AutoOr",
+    "std::.*",
+    "uart::.*",
+  ]
+
+  # Always better.
+  rustified_enum = [ ".*" ]
+
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+
+  raw_lines = [ "#![no_std]" ]
+
+  if (is_kernel) {
+    raw_lines += [
+      "",
+      "unsafe extern \"C\" { fn cpp_boot_options_get() -> *const BootOptions; }",
+      "",
+      "impl BootOptions {",
+      "    pub fn get() -> &'static Self { ",
+      "        // Safety: This pointer is set before the kernel proper boots.",
+      "        unsafe { cpp_boot_options_get().as_ref_unchecked() } ",
+      "    }",
+      "}",
+    ]
+  }
+
+  replacements = [
+    # A more convenient representation of SmallString.
+    [
+      "pub type SmallString = __BindgenOpaqueArray<\\[u8; ([0-9]+)usize\\]>",
+      "pub type SmallString = [u8; \\1]",
+    ],
+
+    # Drop "k" prefixes since that's a C++-ism that doesn't help with
+    # readability on the Rust side.
+    [
+      "\bk([A-Z0-9])",
+      "\\1",
+    ],
+  ]
 }
 
 if (toolchain_environment == "kernel") {

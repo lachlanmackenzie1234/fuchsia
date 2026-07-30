@@ -69,26 +69,26 @@ class AutoOr : public std::optional<T> {
 };
 
 // See kernel.oom.behavior.
-enum class OomBehavior { kReboot, kJobKill };
+enum class OomBehavior : uint8_t { kReboot, kJobKill };
 
 // See kernel.entropy-test.len.
 constexpr uint64_t kMaxEntropyLength = 1u << 20;
 
 // See kernel.entropy-test.src.
-enum class EntropyTestSource { kHwRng, kJitterEntropy };
+enum class EntropyTestSource : uint8_t { kHwRng, kJitterEntropy };
 
 // See kernel.page-scanner.eviction_policy.
-enum class PageTableEvictionPolicy { kOnRequest, kNever, kAlways };
+enum class PageTableEvictionPolicy : uint8_t { kOnRequest, kNever, kAlways };
 
 // See kernel.enable-serial-syscalls.
-enum class SerialDebugSyscalls {
+enum class SerialDebugSyscalls : uint8_t {
   kDisabled,
   kEnabled,
   kOutputOnly,
 };
 
 // See kernel.root-job.behavior.
-enum class RootJobBehavior {
+enum class RootJobBehavior : uint8_t {
   kHalt,
   kReboot,
   kBootloader,
@@ -97,26 +97,26 @@ enum class RootJobBehavior {
 };
 
 // Wallclock options.
-enum class WallclockType {
+enum class WallclockType : uint8_t {
   kAutoDetect,
   kTsc,
   kPit,
   kHpet,
 };
 
-enum class ScannerLruAction {
+enum class ScannerLruAction : uint8_t {
   kNone,
   kEvictOnly,
   kCompressOnly,
   kEvictAndCompress,
 };
 
-enum class CompressionStrategy {
+enum class CompressionStrategy : uint8_t {
   kNone,
   kLz4,
 };
 
-enum class CompressionStorageStrategy {
+enum class CompressionStorageStrategy : uint8_t {
   kNone,
   kSlot,
 };
@@ -128,13 +128,13 @@ struct RamReservation {
 };
 
 // See kernel.pmm-checker.action.
-enum class CheckFailAction {
+enum class CheckFailAction : uint8_t {
   kOops,
   kPanic,
 };
 
 // See kernel.pmm-checker.enable
-enum class CheckerEnable {
+enum class CheckerEnable : uint8_t {
   kTrue,
   kFalse,
   kAuto,

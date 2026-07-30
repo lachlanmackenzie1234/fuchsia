@@ -7,13 +7,15 @@
 #ifndef ZIRCON_KERNEL_LIB_BOOT_OPTIONS_INCLUDE_LIB_BOOT_OPTIONS_X86_H_
 #define ZIRCON_KERNEL_LIB_BOOT_OPTIONS_INCLUDE_LIB_BOOT_OPTIONS_X86_H_
 
+#include <stdint.h>
+
 // This file provides declarations for special types used by x86.inc options.
 // See kernel/lib/boot-options/README.md for full details and constraints.
 // It should avoid other kernel header dependencies.
 
 // TODO(53594): Wallclock
 
-enum class IntelHwpPolicy {
+enum class IntelHwpPolicy : uint8_t {
   // Use BIOS-specified settings if available, falling back to balanced.
   kBiosSpecified,
 
