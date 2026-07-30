@@ -37,7 +37,7 @@ pub use spawn::{eval_pipeline, spawn_subshell_vmo, wait_for_process_to_exit};
 pub use crate::process::clone_fd_to_action;
 pub use crate::tty::{ShellSignalState, ShellSignals};
 pub use execution_context::{ClosedReader, ClosedWriter, ExecutionContext};
-pub use expand::expand_string;
+pub use expand::{expand_prompt, expand_string};
 pub use format::command_to_bstring;
 pub use redirect::eval_redirect;
 pub use signals::{run_exit_trap, run_pending_traps};
@@ -115,7 +115,9 @@ pub fn eval_command(
             if cmd.tag.is_traceable() {
                 let formatted = command_to_bstring(cmd, builder);
                 if state.opt_xtrace {
-                    let _ = writeln!(stderr, "+ {}", formatted);
+                    let ps4_prefix =
+                        expand::expand_prompt(BStr::new(b"PS4"), BStr::new(b"+ "), state, ctx);
+                    let _ = writeln!(stderr, "{}{}", ps4_prefix, formatted);
                 }
                 if state.opt_verbose {
                     let _ = writeln!(stderr, "{}", formatted);

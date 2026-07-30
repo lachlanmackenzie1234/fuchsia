@@ -12,7 +12,7 @@ use std::ffi::{CString, NulError};
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 
-const DEFAULT_PATH: &str = "/bin:/pkg/bin";
+const DEFAULT_PATH: &str = "/bin:/boot/bin:/boot-bin";
 const DEFAULT_SHELL_NAME: &str = "zxsh";
 
 /// Represents a running background process tracked by the shell.
@@ -456,6 +456,41 @@ impl ShellState {
             exported.insert(BString::from("PWD"));
         }
 
+        // Align with dash: default PATH is /bin:/boot/bin:/boot-bin, unexported unless inherited.
+        if !vars.contains_key(BStr::new(b"PATH")) {
+            vars.insert(BString::from("PATH"), BString::from(DEFAULT_PATH));
+        }
+
+        // Align with dash: default IFS is space, tab, newline, unexported.
+        if !vars.contains_key(BStr::new(b"IFS")) {
+            vars.insert(BString::from("IFS"), BString::from(" \t\n"));
+        }
+
+        // Align with dash: default OPTIND is 1, unexported.
+        if !vars.contains_key(BStr::new(b"OPTIND")) {
+            vars.insert(BString::from("OPTIND"), BString::from("1"));
+        }
+
+        // Align with dash: default prompts PS1, PS2, PS4, unexported.
+        if !vars.contains_key(BStr::new(b"PS1")) {
+            let ps1 = if unsafe { libc::geteuid() } == 0 { "# " } else { "$ " };
+            vars.insert(BString::from("PS1"), BString::from(ps1));
+        }
+        if !vars.contains_key(BStr::new(b"PS2")) {
+            vars.insert(BString::from("PS2"), BString::from("> "));
+        }
+        if !vars.contains_key(BStr::new(b"PS4")) {
+            vars.insert(BString::from("PS4"), BString::from("+ "));
+        }
+
+        let mut readonly = FlatSet::new();
+        // Align with dash: PPID is initialized as read-only, unexported.
+        if !vars.contains_key(BStr::new(b"PPID")) {
+            let ppid = unsafe { libc::getppid() };
+            vars.insert(BString::from("PPID"), BString::from(ppid.to_string()));
+            readonly.insert(BString::from("PPID"));
+        }
+
         let script_name = args.script_name.unwrap_or_else(|| BString::from(DEFAULT_SHELL_NAME));
 
         let mut state = Self {
@@ -465,7 +500,7 @@ impl ShellState {
             frames: Vec::new(),
             aliases: FlatMap::new(),
             umask: 0o022,
-            readonly: FlatSet::new(),
+            readonly,
             command_cache: FlatMap::new(),
             rlimits: FlatMap::from(vec![
                 (RLIMIT_CPU, Rlimit { soft: RLIM_INFINITY, hard: RLIM_INFINITY }),

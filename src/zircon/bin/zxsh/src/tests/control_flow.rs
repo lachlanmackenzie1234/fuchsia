@@ -223,3 +223,13 @@ fn test_control_flow_errexit_scope_guard() {
     assert_eq!(state.get_var("Z").unwrap(), "4");
     assert_eq!(state.ignore_err_depth, 0);
 }
+
+#[test]
+fn test_ps4_xtrace_expansion() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+    state.opt_xtrace = true;
+    state.set_var(BStr::new("PS4"), BStr::new("++ "));
+    let res = eval_str("true", &mut state, &mut ctx);
+    assert_eq!(res, EvalOutcome::Code(0));
+}

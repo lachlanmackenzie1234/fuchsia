@@ -34,10 +34,7 @@ pub fn spawn_command_with_path(
     let env_ptrs = cstrings_to_c_strs(&env_cstrs);
 
     let job = fuchsia_runtime::job_default();
-    let options = fdio::SpawnOptions::CLONE_NAMESPACE
-        | fdio::SpawnOptions::CLONE_ENVIRONMENT
-        | fdio::SpawnOptions::DEFAULT_LOADER
-        | fdio::SpawnOptions::CLONE_JOB;
+    let options = fdio::SpawnOptions::CLONE_ALL & !fdio::SpawnOptions::CLONE_ENVIRONMENT;
 
     fdio::spawn_etc(&job, options, &path_cstr, &argv_ptrs, Some(&env_ptrs), actions).map_err(
         |(status, err_msg)| {

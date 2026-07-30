@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::eval::{
-    EvalOutcome, ExecutionContext, ShellState, eval_command, expand_string, run_exit_trap,
+    EvalOutcome, ExecutionContext, ShellState, eval_command, expand_prompt, run_exit_trap,
 };
 use crate::parser::ast::ASTBuilder;
 use crate::parser::{ParseError, parse_script, tokenize};
@@ -22,15 +22,7 @@ fn get_prompt(input_buffer: &BStr, state: &mut ShellState, ctx: &ExecutionContex
         if input_buffer.is_empty() { bstr::BStr::new(b"PS1") } else { bstr::BStr::new(b"PS2") };
     let default_prompt =
         if input_buffer.is_empty() { BStr::new(DEFAULT_PS1) } else { BStr::new(DEFAULT_PS2) };
-    let prompt_owned = state.get_var(prompt_var);
-    let prompt_raw = match &prompt_owned {
-        Some(s) => s.as_ref(),
-        None => default_prompt,
-    };
-    match expand_string(prompt_raw, state, ctx) {
-        Ok(p) => p,
-        Err(_) => default_prompt.to_owned(),
-    }
+    expand_prompt(prompt_var, default_prompt, state, ctx)
 }
 
 /// Starts the interactive read-eval-print loop (REPL) using `linenoise` for command history and

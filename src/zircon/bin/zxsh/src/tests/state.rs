@@ -188,3 +188,28 @@ fn test_shell_env_new_with_equals_panics() {
     use crate::eval::ShellEnv;
     let _ = ShellEnv::new(vec![(BString::from("A=B"), BString::from("val"))]);
 }
+
+#[test]
+fn test_default_shell_variables_align_with_dash() {
+    let state = ShellState::new();
+    assert_eq!(state.get_var(BStr::new("PATH")), Some(BString::from("/bin:/boot/bin:/boot-bin")));
+    assert!(!state.exported().contains(BStr::new("PATH")));
+
+    assert!(state.get_var(BStr::new("PWD")).is_some());
+    assert!(state.exported().contains(BStr::new("PWD")));
+
+    assert_eq!(state.get_var(BStr::new("IFS")), Some(BString::from(" \t\n")));
+    assert!(!state.exported().contains(BStr::new("IFS")));
+
+    assert_eq!(state.get_var(BStr::new("OPTIND")), Some(BString::from("1")));
+    assert!(!state.exported().contains(BStr::new("OPTIND")));
+
+    assert!(state.get_var(BStr::new("PPID")).is_some());
+    assert!(state.is_readonly(BStr::new("PPID")));
+    assert!(!state.exported().contains(BStr::new("PPID")));
+
+    let expected_ps1 = if unsafe { libc::geteuid() } == 0 { "# " } else { "$ " };
+    assert_eq!(state.get_var(BStr::new("PS1")), Some(BString::from(expected_ps1)));
+    assert_eq!(state.get_var(BStr::new("PS2")), Some(BString::from("> ")));
+    assert_eq!(state.get_var(BStr::new("PS4")), Some(BString::from("+ ")));
+}

@@ -1018,6 +1018,25 @@ pub fn expand_string(
     Ok(BString::from(result_bytes))
 }
 
+/// Reads a prompt variable by name, falling back to `default_prompt` if unset,
+/// and expands variable and arithmetic expressions inside it.
+pub fn expand_prompt(
+    var_name: &BStr,
+    default_prompt: &BStr,
+    state: &mut ShellState,
+    context: &ExecutionContext,
+) -> BString {
+    let prompt_owned = state.get_var(var_name);
+    let prompt_raw = match &prompt_owned {
+        Some(s) => s.as_ref(),
+        None => default_prompt,
+    };
+    match expand_string(prompt_raw, state, context) {
+        Ok(expanded) => expanded,
+        Err(_) => BString::from(default_prompt),
+    }
+}
+
 /// Extracts the literal command string if the argument word consists solely of a single unquoted
 /// literal.
 pub fn get_literal_command_name(arg: &[WordPart], buf: &relative::Buffer) -> Option<BString> {

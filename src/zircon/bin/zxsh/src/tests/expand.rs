@@ -9,7 +9,7 @@ use crate::eval::testing::{
     expand_assignment_value, expand_var_with_modifiers, get_literal_command_name,
     needs_subshell_process,
 };
-use crate::eval::{ExecutionContext, ShellState, expand_string};
+use crate::eval::{ExecutionContext, ShellState, expand_prompt, expand_string};
 use crate::parser::ast::{ASTBuilder, CommandTag, ResolvedWordPart, WordPart, WordPartTag};
 use crate::parser::{parse_script, tokenize};
 use crate::relative;
@@ -594,4 +594,31 @@ fn test_expand_alias_nested() {
     let mut active = FlatSet::new();
     let res = expand_alias(&mut builder, &args, &state, &mut ctx, &mut active).unwrap();
     assert!(matches!(res, Some(ExpandedCommand::Words(_))));
+}
+
+#[test]
+fn test_expand_prompt() {
+    let mut state = ShellState::new();
+    let ctx = ExecutionContext::initial().unwrap();
+
+    // Fall back to default when unset
+    assert_eq!(
+        expand_prompt(BStr::new("MY_PS"), BStr::new("default> "), &mut state, &ctx),
+        "default> "
+    );
+
+    // Expand variable when set
+    state.set_var(BStr::new("MY_PS"), BStr::new("${USER}@host$ "));
+    state.set_var(BStr::new("USER"), BStr::new("testuser"));
+    assert_eq!(
+        expand_prompt(BStr::new("MY_PS"), BStr::new("default> "), &mut state, &ctx),
+        "testuser@host$ "
+    );
+
+    // Fall back to default on invalid expansion syntax
+    state.set_var(BStr::new("MY_PS"), BStr::new("$(( 1 / 0 ))"));
+    assert_eq!(
+        expand_prompt(BStr::new("MY_PS"), BStr::new("default> "), &mut state, &ctx),
+        "default> "
+    );
 }
