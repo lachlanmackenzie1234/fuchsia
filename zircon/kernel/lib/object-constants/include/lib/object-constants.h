@@ -24,6 +24,11 @@ constexpr size_t kEventDispatcherStateSize = 64;
 constexpr size_t kEventDispatcherStateAlign = 8;
 constexpr size_t kEventDispatcherStateOffset = 48;
 
+// Size and alignment for IommuDispatcherState.
+constexpr size_t kIommuDispatcherStateSize = 48;
+constexpr size_t kIommuDispatcherStateAlign = 8;
+constexpr size_t kIommuDispatcherStateOffset = 48;
+
 // Size and alignment for LogDispatcherState.
 constexpr size_t kLogDispatcherStateSize = 112;
 constexpr size_t kLogDispatcherStateAlign = 8;

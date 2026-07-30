@@ -154,44 +154,6 @@ zx_status_t sys_vmo_create_physical(zx_handle_t hrsrc, zx_paddr_t paddr, size_t 
   return up->MakeAndAddHandle(ktl::move(kernel_handle), rights, out);
 }
 
-// zx_status_t zx_iommu_create
-zx_status_t sys_iommu_create(zx_handle_t resource, uint32_t type, user_in_ptr<const void> desc,
-                             size_t desc_size, zx_handle_t* out) {
-  zx_status_t status;
-  if ((status = validate_resource_kind_base(resource, ZX_RSRC_KIND_SYSTEM,
-                                            ZX_RSRC_SYSTEM_IOMMU_BASE)) < 0) {
-    return status;
-  }
-
-  if (desc_size > ZX_IOMMU_MAX_DESC_LEN) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  KernelHandle<IommuDispatcher> handle;
-  zx_rights_t rights;
-
-  {
-    // Copy the descriptor into the kernel and try to create the dispatcher
-    // using it.
-    fbl::AllocChecker ac;
-    ktl::unique_ptr<uint8_t[]> copied_desc(new (&ac) uint8_t[desc_size]);
-    if (!ac.check()) {
-      return ZX_ERR_NO_MEMORY;
-    }
-    if ((status = desc.reinterpret<const uint8_t>().copy_array_from_user(copied_desc.get(),
-                                                                         desc_size)) != ZX_OK) {
-      return status;
-    }
-    status = IommuDispatcher::Create(type, ktl::unique_ptr<const uint8_t[]>(copied_desc.release()),
-                                     desc_size, &handle, &rights);
-    if (status != ZX_OK) {
-      return status;
-    }
-  }
-
-  return ProcessDispatcher::GetCurrent()->MakeAndAddHandle(ktl::move(handle), rights, out);
-}
-
 #if ARCH_X86
 #include <arch/x86/descriptor.h>
 #include <arch/x86/ioport.h>

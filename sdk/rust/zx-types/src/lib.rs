@@ -2741,6 +2741,8 @@ pub struct zx_iommu_desc_stub_t {
     padding1: PadByte,
 }
 
+pub const ZX_IOMMU_MAX_DESC_LEN: usize = 4096;
+
 multiconst!(u32, [
     ZX_IOMMU_TYPE_STUB = 0;
     ZX_IOMMU_TYPE_INTEL = 1;

@@ -21,46 +21,23 @@
 #include <dev/arm_smmu/smmu.h>
 #endif
 
-#define LOCAL_TRACE 0
+#include <lib/object-constants.h>
 
-zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t[]> desc,
-                                    size_t desc_len, KernelHandle<IommuDispatcher>* handle,
-                                    zx_rights_t* rights) {
-  zx::result<fbl::RefPtr<Iommu>> result;
-  switch (type) {
-    case ZX_IOMMU_TYPE_STUB:
-      // TODO(b/462772483) Remove this check (or convert it to check for
-      // nullptr/0) once we have removed the need to pass a zx_iommu_desc_stub_t
-      // at all.
-      if (!desc || (desc_len != sizeof(zx_iommu_desc_stub_t))) {
-        result = zx::error(ZX_ERR_INVALID_ARGS);
-      } else {
-        result = StubIommu::Create();
-      }
-      break;
-#if ARCH_ARM64
-    case ZX_IOMMU_TYPE_ARM_SMMU:
-      result = ArmSmmu::Fetch(ktl::move(desc), desc_len);
-      break;
-#endif
-    default:
-      return ZX_ERR_NOT_SUPPORTED;
-  }
+#include <kernel/ffi.h>
 
-  if (result.is_error()) {
-    return result.error_value();
-  }
-
-  fbl::AllocChecker ac;
-  KernelHandle new_handle(fbl::AdoptRef(new (&ac) IommuDispatcher(ktl::move(result.value()))));
-  if (!ac.check())
-    return ZX_ERR_NO_MEMORY;
-
-  *rights = default_rights();
-  *handle = ktl::move(new_handle);
-  return ZX_OK;
+IommuDispatcher::IommuDispatcher(fbl::RefPtr<Iommu> iommu) : Dispatcher(0u) {
+  DISPATCHER_VERIFY_OFFSET(IommuDispatcher, kIommuDispatcherStateOffset);
+  rust_iommu_dispatcher_state_init(&opaque_storage_, this, fbl::ExportToRawPtr(&iommu));
 }
 
-IommuDispatcher::IommuDispatcher(fbl::RefPtr<Iommu> iommu) : iommu_(iommu) {}
+IMPLEMENT_DISPATCHER_RUST_STATE(IommuDispatcher, rust_iommu_dispatcher_state_get_lock,
+                                rust_iommu_dispatcher_state_destroy)
 
-IommuDispatcher::~IommuDispatcher() {}
+iommu::Iommu& IommuDispatcher::iommu() const { return *rust_iommu_dispatcher_get_iommu(this); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void cpp_iommu_release(iommu::Iommu* iommu) {
+  if (iommu) {
+    fbl::RefPtr<iommu::Iommu> drop_me = fbl::ImportFromRawPtr(iommu);
+  }
+}

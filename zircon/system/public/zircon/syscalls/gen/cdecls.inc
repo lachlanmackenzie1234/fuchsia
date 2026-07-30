@@ -276,7 +276,7 @@ _ZX_SYSCALL_DECL(iob_writev, zx_status_t, /* no attributes */, 5,
                   zx_iob_write_options_t options, uint32_t region_index, const zx_iovec_t* vectors,
                   size_t num_vectors))
 
-_ZX_SYSCALL_DECL(iommu_create, zx_status_t, /* no attributes */, 5,
+_ZX_SYSCALL_DECL(iommu_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 5,
                  (resource, type, desc, desc_size, out),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint32_t type,
                   const void* desc, size_t desc_size,

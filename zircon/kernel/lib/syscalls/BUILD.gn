@@ -135,6 +135,7 @@ kernel_rust_mod("syscalls-rs") {
     "counter.rs",
     "debuglog.rs",
     "event.rs",
+    "iommu.rs",
     "lib.rs",
     "profile.rs",
     "restricted.rs",

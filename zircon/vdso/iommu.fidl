@@ -82,6 +82,7 @@ closed protocol Iommu {
     /// [`zx_bti_create()`]: bti_create.md
     /// [`zx_bti_pin()`]: bti_pin.md
     /// [`zx_pmt_unpin()`]: pmt_unpin.md
+    @rust
     strict Create(resource struct {
         resource Handle:RESOURCE;
         type uint32;
