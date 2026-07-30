@@ -7,10 +7,20 @@ import("//build/components.gni")
 import("//build/dist/renamed_binary.gni")
 import("//build/rust/rustc_binary.gni")
 
+config("optimize-for-size") {
+  # "opt-level=z" saves ~34 KiB on the zxsh binary in release builds.
+  rustflags = [ "-Copt-level=z" ]
+}
+
 rustc_binary("bin") {
   name = "zxsh"
   edition = "2024"
   with_unit_tests = true
+
+  # We optimize zxsh for size because the binary is stored in bootfs and pinned
+  # in memory all the time.
+  configs += [ ":optimize-for-size" ]
+
   sources = [
     "src/args.rs",
     "src/builtins/dump.rs",

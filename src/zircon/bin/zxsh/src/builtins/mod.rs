@@ -158,7 +158,7 @@ fn with_io(
     ctx: &mut ExecutionContext,
     args: &[BString],
     state: &mut ShellState,
-    f: impl FnOnce(&[BString], &mut ShellState, &mut dyn Read, &mut dyn Write, &mut dyn Write) -> i32,
+    f: fn(&[BString], &mut ShellState, &mut dyn Read, &mut dyn Write, &mut dyn Write) -> i32,
 ) -> Result<EvalOutcome, String> {
     let mut default_in = ClosedReader;
     let mut default_out = ClosedWriter;
@@ -186,6 +186,15 @@ fn with_io(
 /// context.
 pub fn run_builtin(
     name: impl VarName,
+    args: &[BString],
+    state: &mut ShellState,
+    ctx: &mut ExecutionContext,
+) -> Result<EvalOutcome, String> {
+    run_builtin_impl(name.to_bstr(), args, state, ctx)
+}
+
+fn run_builtin_impl(
+    name: &bstr::BStr,
     args: &[BString],
     state: &mut ShellState,
     ctx: &mut ExecutionContext,
