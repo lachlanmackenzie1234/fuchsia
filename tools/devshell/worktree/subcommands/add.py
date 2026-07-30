@@ -29,14 +29,18 @@ def run(args: Any, pool: WorktreePool) -> None:
             wt.acquire_lease(task_id=task_name)
     except NoFreeWorktreesError:
         print(
-            "\n[!] No free worktrees available in the pool.\n"
-            "    Run 'fx worktree pool add' to provision additional build capacity.\n",
+            "No free worktrees available in the pool. Provisioning a new one...",
             file=sys.stderr,
         )
-        sys.exit(1)
-    except (KeyError, RuntimeError, FileExistsError) as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            wt = pool.add_worktree()
+            wt.acquire_lease(task_id=task_name)
+        except Exception as e:
+            print(
+                f"Error: Failed to auto-provision worktree: {e}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     if getattr(args, "sync", False):
         try:

@@ -159,6 +159,53 @@ class TestActiveAddSubcommand(unittest.TestCase):
         with self.assertRaises(KeyError):
             pool_remove_cmd.run(args_pool, self.pool)
 
+    @patch("worktree_pool.run_jiri")
+    @patch("sys.stderr", new_callable=StringIO)
+    def test_add_auto_provisions_when_no_free_slots(
+        self, mock_stderr: MagicMock, mock_run_jiri: MagicMock
+    ) -> None:
+        from typing import Any
+
+        def mock_run_jiri_side_effect(
+            jiri_root: Path, args: list[str], **kwargs: Any
+        ) -> MagicMock:
+            if args[0:2] == ["worktree", "add"]:
+                path = Path(args[2])
+                path.mkdir(parents=True, exist_ok=True)
+                with open(self.pool.registry_file, "a") as f:
+                    f.write(f"{path}\n")
+            return MagicMock()
+
+        mock_run_jiri.side_effect = mock_run_jiri_side_effect
+
+        args = argparse.Namespace(
+            name="my-feat", pool_name=None, sync=False, json=False
+        )
+
+        with patch("sys.stdout", new_callable=StringIO) as mock_out:
+            add_cmd.run(args, self.pool)
+            self.assertIn(
+                "No free worktrees available in the pool. Provisioning a new one...",
+                mock_stderr.getvalue(),
+            )
+            self.assertIn(".jiri_root/worktrees/my-feat", mock_out.getvalue())
+
+        mock_run_jiri.assert_called_once()
+        call_args = mock_run_jiri.call_args[0][1]
+        self.assertEqual(call_args[0:2], ["worktree", "add"])
+
+        symlink_path = self.pool.worktrees_dir / "my-feat"
+        self.assertTrue(symlink_path.is_symlink())
+
+        worktrees = self.pool.get_worktrees()
+        self.assertEqual(len(worktrees), 1)
+        wt = worktrees[0]
+        self.assertEqual(wt.get_state(), WorktreeState.LEASED)
+        lease = wt.get_lease_info()
+        self.assertIsNotNone(lease)
+        assert lease is not None
+        self.assertEqual(lease.task_id, "my-feat")
+
 
 class TestPoolAddSubcommand(unittest.TestCase):
     def setUp(self) -> None:

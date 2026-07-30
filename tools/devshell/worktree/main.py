@@ -21,29 +21,23 @@ def main() -> None:
         prog="fx worktree",
         description="Manage Fuchsia worktrees for parallel development.",
         epilog=(
-            "Worktree Pool Lifecycle & Command Comparison:\n"
-            "  Unlike standard git worktrees, 'fx worktree' maintains a pool of reusable checkouts\n"
-            "  with 2 distinct states: free (available) and leased (in active use).\n"
+            "Workflow:\n"
+            "  • fx worktree add <name>     Create a new worktree.\n"
+            "  • fx worktree remove <name>  Remove a worktree.\n"
             "\n"
-            "  • Physical Disk Management (pool add / pool remove):\n"
-            "      pool add       Create a new physical checkout on disk under .jiri_root/worktrees/<name>\n"
-            "                     and register it in the pool as 'free'.\n"
-            "      pool remove    Permanently delete a worktree directory and its build artifacts from disk.\n"
-            "\n"
-            "  • Active Task Allocation (add / remove):\n"
-            "      add            Temporarily allocate a 'free' worktree for active use (e.g. by an AI agent),\n"
-            "                     marking it 'leased' to prevent concurrent modifications by other tasks.\n"
-            "      remove         End active use of a worktree, restore backed-up GN build arguments, and return\n"
-            "                     the checkout to the pool as 'free'."
+            "Advanced (Internal Pool Management):\n"
+            "  For performance, worktrees are transparently backed by a pool of reusable checkouts.\n"
+            "  You can manage this pool using 'fx worktree pool' commands (e.g., 'fx worktree pool list')."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    subparsers = parser.add_subparsers(
+        dest="subcommand", required=True, metavar="COMMAND"
+    )
 
     # Subcommand group 'pool'
     parser_pool = subparsers.add_parser(
         "pool",
-        help="Manage physical worktree checkouts in the pool",
         description="Administrative commands for provisioning and maintaining physical checkouts on disk.",
     )
     pool_subparsers = parser_pool.add_subparsers(
