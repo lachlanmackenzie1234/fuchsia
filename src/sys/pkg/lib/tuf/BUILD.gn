@@ -6,88 +6,11 @@ import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 
-tuf_root = "//third_party/rust_crates/vendor/tuf-0.3.0-beta14"
-
-rustc_test("tuf_lib_test") {
-  edition = "2021"
-
-  source_root = "$tuf_root/src/lib.rs"
-
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = [
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:chrono",
-    "//third_party/rust_crates:data-encoding",
-    "//third_party/rust_crates:futures-executor",
-    "//third_party/rust_crates:futures-io",
-    "//third_party/rust_crates:futures-util",
-    "//third_party/rust_crates:http",
-    "//third_party/rust_crates:itoa",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:maplit",
-    "//third_party/rust_crates:pretty_assertions",
-    "//third_party/rust_crates:ring",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:tempfile",
-    "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:untrusted",
-  ]
-
-  sources = [
-    "$tuf_root/src/client.rs",
-    "$tuf_root/src/crypto.rs",
-    "$tuf_root/src/database.rs",
-    "$tuf_root/src/error.rs",
-    "$tuf_root/src/format_hex.rs",
-    "$tuf_root/src/lib.rs",
-    "$tuf_root/src/metadata.rs",
-    "$tuf_root/src/pouf/mod.rs",
-    "$tuf_root/src/pouf/pouf1/mod.rs",
-    "$tuf_root/src/pouf/pouf1/shims.rs",
-    "$tuf_root/src/repo_builder.rs",
-    "$tuf_root/src/repository.rs",
-    "$tuf_root/src/repository/ephemeral.rs",
-    "$tuf_root/src/repository/error_repo.rs",
-    "$tuf_root/src/repository/file_system.rs",
-    "$tuf_root/src/repository/http.rs",
-    "$tuf_root/src/repository/track_repo.rs",
-    "$tuf_root/src/util.rs",
-    "$tuf_root/src/verify.rs",
-  ]
-
-  inputs = [
-    "$tuf_root/tests/ed25519/ed25519-1",
-    "$tuf_root/tests/ed25519/ed25519-1.spki.der",
-    "$tuf_root/tests/ed25519/ed25519-5.pk8.der",
-    "$tuf_root/tests/ed25519/ed25519-3.pk8.der",
-    "$tuf_root/tests/ed25519/ed25519-1.pub",
-    "$tuf_root/tests/ed25519/ed25519-4.pk8.der",
-    "$tuf_root/tests/ed25519/ed25519-1.pk8.der",
-    "$tuf_root/tests/ed25519/ed25519-2.pk8.der",
-    "$tuf_root/tests/ed25519/ed25519-6.pk8.der",
-  ]
-
-  rustflags = [
-    # TODO(https://fxbug.dev/326330182): warn for unused imports once that is fixed in the TUF crate
-    "-Aunused_imports",
-
-    # TODO(https://fxbug.dev/326330182): warn for dead code once that is fixed in the TUF crate
-    "-Adead_code",
-
-    # TODO(https://fxbug.dev/328271672): warn for deprecated code once TUF crate is updated
-    "-Adeprecated",
-
-    "--cap-lints=allow",
-  ]
-}
-
 fuchsia_component("test-component") {
   component_name = "tuf-lib-test"
   visibility = [ ":*" ]
   testonly = true
-  deps = [ ":tuf_lib_test" ]
+  deps = [ "//third_party/rust_crates:tuf.test" ]
   manifest = "meta/tuf-lib-test.cml"
 }
 

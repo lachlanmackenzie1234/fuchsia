@@ -47,7 +47,14 @@ template("rustc_test_internal") {
   }
 
   # built-in gn rules do not support dashes
-  _crate_name = string_replace(_package_name, "-", "_")
+  if (defined(invoker.crate_name)) {
+    _crate_name = invoker.crate_name
+  } else {
+    _crate_name = _package_name
+  }
+
+  # rustc does not support dashes in crate names
+  _crate_name = string_replace(_crate_name, "-", "_")
 
   exe_target_name = target_name
 
@@ -177,6 +184,7 @@ template("rustc_test_internal") {
     forward_variables_from(invoker,
                            [
                              "allow_legacy_edition",
+                             "applicable_licenses",
                              "check_cfgs",
                              "data_deps",
                              "disable_clippy",

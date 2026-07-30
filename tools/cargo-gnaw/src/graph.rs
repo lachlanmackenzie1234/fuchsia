@@ -13,11 +13,12 @@ pub struct GnBuildGraph<'a> {
     metadata: &'a Metadata,
     // hashset because the same target can get added multiple times
     targets: HashSet<GnTarget<'a>>,
+    visited: HashSet<PackageId>,
 }
 
 impl<'a> GnBuildGraph<'a> {
     pub fn new(metadata: &'a Metadata) -> Self {
-        GnBuildGraph { metadata, targets: HashSet::new() }
+        GnBuildGraph { metadata, targets: HashSet::new(), visited: HashSet::new() }
     }
 
     pub fn targets(&'a self) -> impl Iterator<Item = &'a GnTarget<'a>> {
@@ -53,6 +54,10 @@ impl<'a> GnBuildGraph<'a> {
     /// Add a cargo package to the target list. If the dependencies
     /// are not already in the target graph, add them as well
     pub fn add_cargo_package(&mut self, cargo_pkg_id: PackageId) -> Result<()> {
+        if !self.visited.insert(cargo_pkg_id.clone()) {
+            return Ok(());
+        }
+
         let package = &self.metadata[&cargo_pkg_id];
         for node in self
             .metadata
@@ -64,6 +69,8 @@ impl<'a> GnBuildGraph<'a> {
             .filter(|node| node.id == cargo_pkg_id)
         {
             let mut dependencies = HashMap::<Option<Platform>, Vec<(&'a Package, String)>>::new();
+            let mut dev_dependencies =
+                HashMap::<Option<Platform>, Vec<(&'a Package, String)>>::new();
 
             // collect the dependency edges for this node
             for node_dep in node.deps.iter() {
@@ -92,12 +99,43 @@ impl<'a> GnBuildGraph<'a> {
                             }
                         }
                         DependencyKind::Build => {}
-                        DependencyKind::Development => {}
+                        DependencyKind::Development => {
+                            self.add_cargo_package(id.clone())?;
+                            let platform = target.as_ref().map(|x| format!("{}", x));
+                            let platform_deps = dev_dependencies.entry(platform).or_default();
+
+                            if !platform_deps.iter().any(|dep| dep.1 == node_dep.name.clone()) {
+                                platform_deps.push((&self.metadata[id], node_dep.name.clone()));
+                            }
+                        }
                         err => {
                             return Err(anyhow!(
                                 "Don't know how to handle this kind of dependency edge: {:?}",
                                 err
                             ));
+                        }
+                    }
+                }
+            }
+
+            // Also collect dev-dependencies declared on package.dependencies that may not be in node.deps
+            // (Cargo resolve node graph omits dev-dependencies for non-workspace members)
+            for dep in &package.dependencies {
+                if dep.kind == DependencyKind::Development {
+                    let dep_crate_name =
+                        dep.rename.clone().unwrap_or_else(|| dep.name.replace("-", "_"));
+                    let platform = dep.target.as_ref().map(|x| format!("{}", x));
+                    let platform_deps = dev_dependencies.entry(platform).or_default();
+
+                    if !platform_deps.iter().any(|d| d.1 == dep_crate_name) {
+                        if let Some(target_pkg) = self
+                            .metadata
+                            .packages
+                            .iter()
+                            .find(|p| p.name == dep.name && dep.req.matches(&p.version))
+                        {
+                            self.add_cargo_package(target_pkg.id.clone())?;
+                            platform_deps.push((target_pkg, dep_crate_name));
                         }
                     }
                 }
@@ -135,6 +173,7 @@ impl<'a> GnBuildGraph<'a> {
                                 node.features.as_slice(),
                                 has_build_script,
                                 dependencies.clone(),
+                                dev_dependencies.clone(),
                             );
                             let _ = self.targets.insert(gn_target);
                         }
@@ -167,6 +206,7 @@ impl<'a> GnBuildGraph<'a> {
                                 node.features.as_slice(),
                                 has_build_script,
                                 deps,
+                                dev_dependencies.clone(),
                             );
                             let _ = self.targets.insert(gn_target);
                         }

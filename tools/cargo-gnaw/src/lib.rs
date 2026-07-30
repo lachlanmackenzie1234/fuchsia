@@ -548,7 +548,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
     // Iterate through the target configs, verifying that the build graph contains the configured
     // targets, then save off a mapping of GnTarget to the target config.
     let mut target_cfgs = HashMap::<&GnTarget<'_>, CombinedTargetCfg<'_>>::new();
-    let mut target_binaries = HashMap::<&GnTarget<'_>, BinaryRenderOptions<'_>>::new();
+    let mut target_binaries = BTreeMap::<&GnTarget<'_>, BinaryRenderOptions<'_>>::new();
     let mut testonly_targets = HashSet::<&GnTarget<'_>>::new();
     let mut targets_with_tests = HashSet::<&GnTarget<'_>>::new();
     let mut reviewed_features_map = HashMap::<&GnTarget<'_>, Option<&[String]>>::new();
@@ -681,10 +681,11 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
     {
         let mut names = HashSet::new();
         for (target, options) in &target_binaries {
-            if !names.insert(options.binary_name) {
+            let binary_group_name = format!("{}.{}", target.pkg_name, options.binary_name);
+            if !names.insert(binary_group_name.clone()) {
                 anyhow::bail!(
                     "Multiple targets are configured to generate executables named \"{}\"",
-                    options.binary_name
+                    binary_group_name
                 );
             }
 
@@ -699,7 +700,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                 shortcut_target: Some(format!(
                     "//{}:{}",
                     path_from_root_to_generated.display(),
-                    options.binary_name
+                    binary_group_name
                 )),
                 path: target.package_root(),
             });

@@ -102,13 +102,13 @@ pub fn write_top_level_rule<W: io::Write>(
             )?;
 
             if has_tests {
-                let test_group_name = format!("{}-test", group_cfg.name);
+                let test_group_name = format!("{}.test", group_cfg.name);
                 writeln!(
                     output,
                     include_str!("../templates/top_level_gn_rule.template"),
                     group_name = test_group_name,
                     group_rule_name = group_rule,
-                    dep_name = target_name.clone() + "-test",
+                    dep_name = target_name.clone() + ".test",
                     optional_visibility = optional_visibility,
                     optional_testonly = "testonly = true",
                 )?;
@@ -129,13 +129,13 @@ pub fn write_top_level_rule<W: io::Write>(
         )?;
 
         if has_tests {
-            let test_group_name = format!("{}-test", group_name);
+            let test_group_name = format!("{}.test", group_name);
             writeln!(
                 output,
                 include_str!("../templates/top_level_gn_rule.template"),
                 group_name = test_group_name,
                 group_rule_name = group_rule,
-                dep_name = target_name + "-test",
+                dep_name = target_name + ".test",
                 optional_visibility = optional_visibility,
                 optional_testonly = "testonly = true",
             )?;
@@ -254,6 +254,7 @@ pub fn write_binary_top_level_rule<'a, W: io::Write>(
     target: &GnTarget<'a>,
     options: &BinaryRenderOptions<'_>,
 ) -> Result<()> {
+    let group_name = format!("{}.{}", target.pkg_name, options.binary_name);
     if let Some(ref platform) = platform {
         writeln!(
             output,
@@ -264,14 +265,14 @@ pub fn write_binary_top_level_rule<'a, W: io::Write>(
     writeln!(
         output,
         include_str!("../templates/top_level_binary_gn_rule.template"),
-        group_name = options.binary_name,
+        group_name = group_name,
         dep_name = target.gn_target_name(),
         optional_testonly = "",
     )?;
 
     if options.tests_enabled {
-        let name = options.binary_name.to_owned() + "-test";
-        let dep_name = target.gn_target_name() + "-test";
+        let name = format!("{}.test", group_name);
+        let dep_name = target.gn_target_name() + ".test";
         writeln!(
             output,
             include_str!("../templates/top_level_binary_gn_rule.template"),
@@ -414,11 +415,26 @@ pub fn write_rule<W: io::Write>(
     let mut dependencies = String::from("deps = []\n");
     let mut aliased_deps = vec![];
 
+    let target_dependencies = if is_test {
+        let mut merged = target.dependencies.clone();
+        for (platform, deps) in &target.dev_dependencies {
+            let platform_deps = merged.entry(platform.clone()).or_default();
+            for dep in deps {
+                if !platform_deps.iter().any(|d| d.1 == dep.1) {
+                    platform_deps.push(dep.clone());
+                }
+            }
+        }
+        merged
+    } else {
+        target.dependencies.clone()
+    };
+
     // Stable output of platforms
     let mut platform_deps: Vec<(
         &Option<String>,
         &Vec<(&cargo_metadata::Package, std::string::String)>,
-    )> = target.dependencies.iter().collect();
+    )> = target_dependencies.iter().collect();
     platform_deps.sort_by(|p, p2| p.0.cmp(p2.0));
 
     for (platform, deps) in platform_deps {
@@ -494,9 +510,6 @@ pub fn write_rule<W: io::Write>(
     rustflags.add_cfg("--cap-lints=allow");
     rustflags.add_cfg(format!("-Cmetadata={}", target.metadata_hash()));
     rustflags.add_cfg(format!("-Cextra-filename=-{}", target.metadata_hash()));
-    if is_test {
-        rustflags.add_cfg("--test");
-    }
 
     // Aggregate feature flags
     for feature in target.features {
@@ -600,12 +613,12 @@ pub fn write_rule<W: io::Write>(
         output_name.map_or_else(
             || {
                 Cow::Owned(format!(
-                    "{}-{}-test",
+                    "{}-{}.test",
                     target.name().replace('-', "_"),
                     target.metadata_hash()
                 ))
             },
-            |n| Cow::Owned(format!("{}-test", n)),
+            |n| Cow::Owned(format!("{}.test", n)),
         )
     } else {
         output_name.map_or_else(
@@ -621,7 +634,7 @@ pub fn write_rule<W: io::Write>(
     };
     let mut target_name = target.gn_target_name();
     if is_test {
-        target_name.push_str("-test");
+        target_name.push_str(".test");
     }
 
     let optional_disable_rustdoc = if disable_rustdoc { "disable_rustdoc = true" } else { "" };
@@ -631,7 +644,7 @@ pub fn write_rule<W: io::Write>(
     let gn_rule = if let Some(renamed_rule) = renamed_rule {
         renamed_rule.to_owned()
     } else if is_test {
-        "executable".to_owned()
+        "rustc_test".to_owned()
     } else {
         target.gn_target_type()
     };
@@ -815,6 +828,7 @@ mod tests {
             &[],
             false,
             HashMap::new(),
+            HashMap::new(),
         );
 
         let not_prefix = Path::new("/foo");
@@ -872,6 +886,7 @@ mod tests {
             GnRustType::Library,
             &[],
             false,
+            HashMap::new(),
             HashMap::new(),
         );
 
@@ -939,6 +954,7 @@ mod tests {
             &[],
             false,
             HashMap::new(),
+            HashMap::new(),
         );
 
         let outname = Some("rainbow_binary");
@@ -960,7 +976,7 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
             output,
-            r#"executable("test_package-test_target-v0_1_0") {
+            r#"rustc_binary("test_package.test_target-v0_1_0") {
   crate_name = "test_target"
   source_root = "//binary_target"
   output_name = "rainbow_binary"
@@ -972,7 +988,7 @@ mod tests {
 
   rustenv = []
 
-  rustflags = ["--cap-lints=allow","-Cmetadata=bf8f4a806276c599","-Cextra-filename=-bf8f4a806276c599"]
+  rustflags = ["--cap-lints=allow","-Cmetadata=dfe40348e50d4144","-Cextra-filename=-dfe40348e50d4144"]
 
   
   visibility = [":*"]
@@ -1007,6 +1023,7 @@ mod tests {
             &[],
             false,
             HashMap::new(),
+            HashMap::new(),
         );
 
         let outname = Some("rainbow_binary");
@@ -1027,7 +1044,7 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
             output,
-            r#"renamed_rule("test_package-test_target-v0_1_0") {
+            r#"renamed_rule("test_package.test_target-v0_1_0") {
   crate_name = "test_target"
   source_root = "//renamed_target"
   output_name = "rainbow_binary"
@@ -1039,7 +1056,7 @@ mod tests {
 
   rustenv = []
 
-  rustflags = ["--cap-lints=allow","-Cmetadata=bf8f4a806276c599","-Cextra-filename=-bf8f4a806276c599"]
+  rustflags = ["--cap-lints=allow","-Cmetadata=dfe40348e50d4144","-Cextra-filename=-dfe40348e50d4144"]
 
   
   visibility = [":*"]
@@ -1151,8 +1168,8 @@ group("foo-legacy") {
   visibility = [ "//vendor/google/*" ]
 }
 
-group("foo-v1_2-test") {
-  public_deps = [":foo-v1_2_3-test"]
+group("foo-v1_2.test") {
+  public_deps = [":foo-v1_2_3.test"]
   testonly = true
   visibility = [ "//vendor/google/*" ]
 }

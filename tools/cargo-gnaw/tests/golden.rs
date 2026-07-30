@@ -127,8 +127,8 @@ fn main() {
             options: Default::default(),
         },
         TestCase {
-            manifest_path: vec!["binary_with_tests", "Cargo.toml"],
-            golden_expected_filename: vec!["binary_with_tests", "BUILD.gn"],
+            manifest_path: vec!["with-tests", "Cargo.toml"],
+            golden_expected_filename: vec!["with-tests", "BUILD.gn"],
             options: Default::default(),
         },
         TestCase {
@@ -270,6 +270,9 @@ fn main() {
         let test_base_dir = PathBuf::from(&paths.test_base_dir);
         let expected_path: PathBuf =
             test_base_dir.join(test.golden_expected_filename.iter().collect::<PathBuf>());
+        if std::env::var("BLESS").is_ok() {
+            std::fs::write(&expected_path, &output).expect("writing blessed golden file");
+        }
         let expected = std::fs::read_to_string(expected_path.to_string_lossy().to_string())
             .with_context(|| format!("while reading expected: {:?}", test.golden_expected_filename))
             .expect("expected file read success");

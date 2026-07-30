@@ -37,6 +37,8 @@ pub struct GnTarget<'a> {
     pub has_build_script: bool,
     /// Target depends on Cargo running a custom build-script
     pub dependencies: HashMap<Option<Platform>, Vec<(&'a Package, String)>>,
+    /// Target dev-dependencies from Cargo.toml
+    pub dev_dependencies: HashMap<Option<Platform>, Vec<(&'a Package, String)>>,
 }
 
 impl std::fmt::Debug for GnTarget<'_> {
@@ -98,6 +100,7 @@ impl<'a> GnTarget<'a> {
         features: &'a [Feature],
         has_build_script: bool,
         dependencies: HashMap<Option<Platform>, Vec<(&'a Package, String)>>,
+        dev_dependencies: HashMap<Option<Platform>, Vec<(&'a Package, String)>>,
     ) -> Self {
         GnTarget {
             cargo_pkg_id,
@@ -110,6 +113,7 @@ impl<'a> GnTarget<'a> {
             features,
             has_build_script,
             dependencies,
+            dev_dependencies,
         }
     }
 
@@ -132,10 +136,10 @@ impl<'a> GnTarget<'a> {
     /// with version
     pub fn gn_target_name(&self) -> String {
         let prefix = match self.target_type {
-            GnRustType::Library | GnRustType::Rlib | GnRustType::ProcMacro => {
+            GnRustType::Library | GnRustType::Rlib | GnRustType::ProcMacro | GnRustType::Test => {
                 Cow::Borrowed(self.pkg_name)
             }
-            GnRustType::Binary => Cow::Owned(format!("{}-{}", self.pkg_name, self.target_name)),
+            GnRustType::Binary => Cow::Owned(format!("{}.{}", self.pkg_name, self.target_name)),
             ty => panic!("Don't know how to represent this type \"{:?}\" in GN", ty),
         };
         add_version_suffix(&prefix, &self.version)
@@ -161,9 +165,10 @@ impl<'a> GnTarget<'a> {
 
     pub fn gn_target_type(&self) -> String {
         match self.target_type {
+            GnRustType::Binary => String::from("rustc_binary"),
             GnRustType::Library | GnRustType::Rlib => String::from("rustc_library"),
-            GnRustType::Binary => String::from("executable"),
             GnRustType::ProcMacro => String::from("rustc_macro"),
+            GnRustType::Test => String::from("rustc_test"),
             ty => panic!("Don't know how to represent this type \"{:?}\" in GN", ty),
         }
     }
