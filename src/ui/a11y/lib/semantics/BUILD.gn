@@ -33,7 +33,6 @@ source_set("semantics") {
     "//src/lib/fsl",
     "//src/lib/fxl",
     "//src/ui/a11y/lib/semantics/util",
-    "//zircon/third_party/uapp/dash:output_h",
   ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings

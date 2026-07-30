@@ -113,14 +113,14 @@ fuchsia_package("zxsh") {
   deps = [ ":bin" ]
 }
 
-renamed_binary("sh_binary") {
+renamed_binary("sh") {
   source = "$root_out_dir/zxsh"
   source_deps = [ ":bin" ]
   dest = "bin/sh"
 }
 
 bootfs_files_for_assembly("bootfs") {
-  deps = [ ":sh_binary" ]
+  deps = [ ":sh" ]
 }
 
 fuchsia_unittest_package("zxsh_tests") {
