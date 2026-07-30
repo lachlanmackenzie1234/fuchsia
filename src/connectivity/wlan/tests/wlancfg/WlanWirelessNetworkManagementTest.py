@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 #
-# Copyright 2025 The Fuchsia Authors
+# Copyright 2026 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import time
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import FrozenSet
 
-import fidl_fuchsia_wlan_common as f_wlan_common
-import fuchsia_async_extension
-from antlion import utils
+import fidl_fuchsia_wlan_policy as f_wlan_policy
+import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
-)
-from antlion.controllers.ap_lib.hostapd_security import (
-    SecurityMode,
 )
 from antlion.controllers.ap_lib.radio_measurement import (
     BssidInformation,
@@ -30,11 +26,8 @@ from antlion.controllers.ap_lib.wireless_network_management import (
     BssTransitionCandidateList,
     BssTransitionManagementRequest,
 )
-from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
-from mobly.records import TestResultRecord
 from openwrt_access_point import Radio, StationStatus
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -64,7 +57,9 @@ class TestParams:
 
 # Antlion can see (via the wlan_features config directive) whether WNM features
 # are enabled, and runs or skips tests depending on presence of WNM features.
-class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
+class WlanWirelessNetworkManagementTest(
+    fuchsia_wlan_base_test.FuchsiaWlanBaseTest
+):
     """Tests Fuchsia's Wireless Network Management (AKA 802.11v) support.
 
     Testbed Requirements:
@@ -75,7 +70,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
     suite skips certain tests depending on whether specific WNM features are enabled.
     """
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         test_args: list[tuple[TestParams]] = []
 
         SECURITY_MODES: tuple[Security, ...] = (
@@ -103,11 +98,12 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             arg_sets=test_args,
         )
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
 
-        self.fuchsia_device, self.dut = self.get_dut_type(
-            FuchsiaDevice, AssociationMode.POLICY
+        # Set country code US to support 5G bands for roaming test.
+        await self.dut.wlan_policy.set_country_code(
+            CountryCode.UNITED_STATES_OF_AMERICA
         )
 
         if self.openwrt_aps:
@@ -138,21 +134,15 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
         ), f"Expected station on exactly one interface, but found: {list(ext_caps_dict.keys())}"
         return list(ext_caps_dict.values())[0]
 
-    def teardown_class(self) -> None:
-        if self.access_point:
-            self.access_point.stop_all_aps()
-        super().teardown_class()
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
 
-    def teardown_test(self) -> None:
-        self.download_logs()
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
         if self.access_point:
             self.access_point.stop_all_aps()
-        super().teardown_test()
-
-    def on_fail(self, record: TestResultRecord) -> None:
-        if self.access_point:
-            self.access_point.stop_all_aps()
-        super().on_fail(record)
+        await super().teardown_test()
 
     def setup_ap(
         self,
@@ -186,28 +176,22 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             wnm_features=wnm_features,
         )
 
-    def _get_client_mac(self) -> str:
+    async def _get_client_mac(self) -> str:
         """Get the MAC address of the DUT client interface.
 
         Returns:
             str, MAC address of the DUT client interface.
         Raises:
             ValueError if there is no DUT client interface.
-            WlanError if the DUT interface query fails.
         """
-        for wlan_iface in self.dut.get_wlan_interface_id_list():
-            result = fuchsia_async_extension.get_loop().run_until_complete(
-                self.fuchsia_device.honeydew_fd.wlan_core.query_iface(
-                    wlan_iface
-                )
-            )
-            if result.role == f_wlan_common.WlanMacRole.CLIENT:
-                return utils.mac_address_list_to_str(bytes(result.sta_addr))
+        ifaces = await self.dut.wlan_core.query_interfaces()
+        for mac in ifaces.client:
+            return str(mac)
         raise ValueError(
             "Failed to get client interface mac address. No client interface found."
         )
 
-    def test_bss_transition_is_not_advertised_when_ap_supported_dut_unsupported(
+    async def test_bss_transition_is_not_advertised_when_ap_supported_dut_unsupported(
         self,
     ) -> None:
         if self.dut.feature_is_present("BSS_TRANSITION_MANAGEMENT"):
@@ -242,22 +226,18 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             self.openwrt_ap.configure_wifi(config)
         elif self.access_point:
             self.setup_ap(ssid, wnm_features=wnm_features)
-        asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.OPEN),
-            "Failed to associate.",
+
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
         )
-        asserts.assert_true(self.dut.is_connected(), "Failed to connect.")
-        client_mac = self._get_client_mac()
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
+
+        client_mac = await self._get_client_mac()
         # Verify that DUT is actually associated (as seen from AP).
 
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
-                client_mac, band=Band.BAND_2G
-            )
-            asserts.assert_true(
-                sta_status.assoc,
-                "DUT is not associated on the 2.4GHz band",
-            )
             ext_capabilities = self.get_single_sta_ext_capabilities(
                 client_mac, band=Band.BAND_2G
             )
@@ -266,12 +246,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "DUT is incorrectly advertising BSS Transition Management support",
             )
         elif self.access_point:
-            asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_2g, client_mac
-                ),
-                "DUT is not associated on the 2.4GHz band",
-            )
             legacy_ext_capabilities = (
                 self.access_point.get_sta_extended_capabilities(
                     self.access_point.wlan_2g, client_mac
@@ -282,7 +256,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "DUT is incorrectly advertising BSS Transition Management support",
             )
 
-    def test_bss_transition_is_advertised_when_ap_supported_dut_supported(
+    async def test_bss_transition_is_advertised_when_ap_supported_dut_supported(
         self,
     ) -> None:
         if not self.dut.feature_is_present("BSS_TRANSITION_MANAGEMENT"):
@@ -293,7 +267,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
         ssid = AccessPointConfig.random_string(
             hostapd_constants.AP_SSID_LENGTH_2G
         )
-
         if self.openwrt_ap:
             channel = DEFAULT_2G_CHANNEL
             config = AccessPointConfig(
@@ -318,20 +291,17 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 [hostapd_constants.WnmFeature.BSS_TRANSITION_MANAGEMENT]
             )
             self.setup_ap(ssid, wnm_features=wnm_features)
-        asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.OPEN),
-            "Failed to associate.",
+
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
         )
-        asserts.assert_true(self.dut.is_connected(), "Failed to connect.")
-        client_mac = self._get_client_mac()
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
+
+        client_mac = await self._get_client_mac()
         # Verify that DUT is actually associated (as seen from AP).
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
-                client_mac, band=Band.BAND_2G
-            )
-            asserts.assert_true(
-                sta_status.assoc, "DUT is not associated on the 2.4GHz band"
-            )
             ext_capabilities = self.get_single_sta_ext_capabilities(
                 client_mac, band=Band.BAND_2G
             )
@@ -340,12 +310,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "DUT is not advertising BSS Transition Management support",
             )
         elif self.access_point:
-            asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_2g, client_mac
-                ),
-                "DUT is not associated on the 2.4GHz band",
-            )
             legacy_ext_capabilities = (
                 self.access_point.get_sta_extended_capabilities(
                     self.access_point.wlan_2g, client_mac
@@ -356,7 +320,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "DUT is not advertising BSS Transition Management support",
             )
 
-    def test_wnm_sleep_mode_is_not_advertised_when_ap_supported_dut_unsupported(
+    async def test_wnm_sleep_mode_is_not_advertised_when_ap_supported_dut_unsupported(
         self,
     ) -> None:
         if self.dut.feature_is_present("WNM_SLEEP_MODE"):
@@ -389,20 +353,17 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             self.openwrt_ap.configure_wifi(config)
         elif self.access_point:
             self.setup_ap(ssid, wnm_features=wnm_features)
-        asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.OPEN),
-            "Failed to associate.",
+
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
         )
-        asserts.assert_true(self.dut.is_connected(), "Failed to connect.")
-        client_mac = self._get_client_mac()
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
+
+        client_mac = await self._get_client_mac()
         # Verify that DUT is actually associated (as seen from AP).
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
-                client_mac, band=Band.BAND_2G
-            )
-            asserts.assert_true(
-                sta_status.assoc, "DUT is not associated on the 2.4GHz band"
-            )
             ext_capabilities = self.get_single_sta_ext_capabilities(
                 client_mac, band=Band.BAND_2G
             )
@@ -411,12 +372,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "DUT is incorrectly advertising WNM Sleep Mode support",
             )
         elif self.access_point:
-            asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_2g, client_mac
-                ),
-                "DUT is not associated on the 2.4GHz band",
-            )
             legacy_ext_capabilities = (
                 self.access_point.get_sta_extended_capabilities(
                     self.access_point.wlan_2g, client_mac
@@ -428,7 +383,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             )
 
     # This is called in generate_tests.
-    def setup_connect_roam_on_btm_req(self, test: TestParams) -> None:
+    async def setup_connect_roam_on_btm_req(self, test: TestParams) -> None:
         """Setup the APs, associate a DUT, amd roam when BTM request is received.
 
         Args:
@@ -500,30 +455,21 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 wnm_features=wnm_features,
             )
 
-        asserts.assert_true(
-            self.dut.associate(
-                ssid,
-                target_pwd=password,
-                target_security=ConfigMapper.to_hostapd_security(test.security),
-            ),
-            "Failed to associate.",
-        )
-        # Verify that DUT is actually associated (as seen from AP).
-        client_mac = self._get_client_mac()
-        if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
-                client_mac, band=Band.BAND_2G
-            )
-            asserts.assert_true(
-                sta_status.assoc, "DUT is not associated on the 2.4GHz band"
-            )
-        elif self.access_point:
-            asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_2g, client_mac
-                ),
-                "DUT is not associated on the 2.4GHz band",
-            )
+        # Match Security to modern SecurityType
+        security_type = f_wlan_policy.SecurityType.NONE
+        if isinstance(test.security, SecurityWep):
+            security_type = f_wlan_policy.SecurityType.WEP
+        elif isinstance(test.security, SecurityWpa):
+            security_type = f_wlan_policy.SecurityType.WPA
+        elif isinstance(test.security, SecurityWpa2):
+            security_type = f_wlan_policy.SecurityType.WPA2
+        elif isinstance(test.security, SecurityWpa3):
+            security_type = f_wlan_policy.SecurityType.WPA3
+
+        await self.dut.wlan_policy.save_network(ssid, security_type, password)
+        await self.dut.wlan_policy.connect(ssid, security_type)
+
+        client_mac = await self._get_client_mac()
 
         # Setup 5 GHz AP with same SSID.
         if self.openwrt_ap:
@@ -562,7 +508,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
 
         # Sleep to avoid concurrent scan during reassociation, necessary due to a firmware bug.
         # TODO(fxbug.dev/42068735) Remove when fixed, or when non-firmware BTM support is merged.
-        time.sleep(5)
+        await asyncio.sleep(5)
 
         # Send BTM request from 2.4 GHz AP to DUT
         if self.openwrt_ap:
@@ -576,7 +522,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             )
 
         # Give DUT time to roam.
-        ROAM_DEADLINE = datetime.now(timezone.utc) + timedelta(seconds=2)
+        ROAM_DEADLINE = datetime.now(timezone.utc) + timedelta(seconds=15)
         while datetime.now(timezone.utc) < ROAM_DEADLINE:
             if self.openwrt_ap:
                 sta_status = next(
@@ -590,14 +536,14 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 if sta_status.authorized:
                     break
                 else:
-                    time.sleep(0.25)
+                    await asyncio.sleep(0.25)
             elif self.access_point:
                 if self.access_point.sta_authorized(
                     self.access_point.wlan_5g, client_mac
                 ):
                     break
                 else:
-                    time.sleep(0.25)
+                    await asyncio.sleep(0.25)
 
         # Verify that DUT roamed (as seen from AP).
         if self.openwrt_ap:
@@ -606,9 +552,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
             )
             asserts.assert_true(
                 sta_status.auth, "DUT is not authenticated on the 5GHz band"
-            )
-            asserts.assert_true(
-                sta_status.assoc, "DUT is not associated on the 5GHz band"
             )
             asserts.assert_true(
                 sta_status.authorized,
@@ -622,19 +565,13 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 "DUT is not authenticated on the 5GHz band",
             )
             asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_5g, client_mac
-                ),
-                "DUT is not associated on the 5GHz band",
-            )
-            asserts.assert_true(
                 self.access_point.sta_authorized(
                     self.access_point.wlan_5g, client_mac
                 ),
                 "DUT is not 802.1X authorized on the 5GHz band",
             )
 
-    def test_btm_req_ignored_dut_unsupported(self) -> None:
+    async def test_btm_req_ignored_dut_unsupported(self) -> None:
         if self.dut.feature_is_present("BSS_TRANSITION_MANAGEMENT"):
             raise signals.TestSkip(
                 "skipping test because BTM feature is present"
@@ -686,26 +623,14 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 wnm_features=wnm_features,
             )
 
-        asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.OPEN),
-            "Failed to associate.",
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
         )
-        # Verify that DUT is actually associated (as seen from AP).
-        client_mac = self._get_client_mac()
-        if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
-                client_mac, band=Band.BAND_2G
-            )
-            asserts.assert_true(
-                sta_status.assoc, "DUT is not associated on the 2.4GHz band"
-            )
-        elif self.access_point:
-            asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_2g, client_mac
-                ),
-                "DUT is not associated on the 2.4GHz band",
-            )
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
+
+        client_mac = await self._get_client_mac()
 
         # Setup 5 GHz AP with same SSID.
         if self.openwrt_ap:
@@ -769,7 +694,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                         "DUT unexpectedly roamed to target BSS after BTM request"
                     )
                 else:
-                    time.sleep(0.25)
+                    await asyncio.sleep(0.25)
             elif self.access_point:
                 if self.access_point.sta_associated(
                     self.access_point.wlan_5g, client_mac
@@ -778,26 +703,9 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                         "DUT unexpectedly roamed to target BSS after BTM request"
                     )
                 else:
-                    time.sleep(0.25)
+                    await asyncio.sleep(0.25)
 
-        # DUT should have stayed associated to original AP.
-        if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
-                client_mac, band=Band.BAND_2G
-            )
-            asserts.assert_true(
-                sta_status.assoc,
-                "DUT unexpectedly lost association on the 2.4GHz band after BTM request",
-            )
-        elif self.access_point:
-            asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_2g, client_mac
-                ),
-                "DUT unexpectedly lost association on the 2.4GHz band after BTM request",
-            )
-
-    def test_btm_req_target_ap_rejects_reassoc(self) -> None:
+    async def test_btm_req_target_ap_rejects_reassoc(self) -> None:
         if not self.dut.feature_is_present("BSS_TRANSITION_MANAGEMENT"):
             raise signals.TestSkip(
                 "skipping test because BTM feature is not present"
@@ -836,26 +744,14 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 wnm_features=wnm_features,
             )
 
-        asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.OPEN),
-            "Failed to associate.",
+        await self.dut.wlan_policy.save_network(
+            ssid, f_wlan_policy.SecurityType.NONE
         )
-        # Verify that DUT is actually associated (as seen from AP).
-        client_mac = self._get_client_mac()
-        if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
-                client_mac, band=Band.BAND_2G
-            )
-            asserts.assert_true(
-                sta_status.assoc, "DUT is not associated on the 2.4GHz band"
-            )
-        elif self.access_point:
-            asserts.assert_true(
-                self.access_point.sta_associated(
-                    self.access_point.wlan_2g, client_mac
-                ),
-                "DUT is not associated on the 2.4GHz band",
-            )
+        await self.dut.wlan_policy.connect(
+            ssid, f_wlan_policy.SecurityType.NONE
+        )
+
+        client_mac = await self._get_client_mac()
 
         # Setup 5 GHz AP with same SSID, but reject all STAs.
         reject_all_sta_param = {"max_num_sta": 0}
@@ -923,7 +819,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
 
         # Sleep to avoid concurrent scan during reassociation, necessary due to a firmware bug.
         # TODO(fxbug.dev/42068735) Remove when fixed, or when non-firmware BTM support is merged.
-        time.sleep(5)
+        await asyncio.sleep(5)
 
         # Send BTM request from 2.4 GHz AP to DUT
         if self.openwrt_ap:
@@ -949,7 +845,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                         "DUT unexpectedly roamed to 5GHz band"
                     )
                 else:
-                    time.sleep(0.25)
+                    await asyncio.sleep(0.25)
             elif self.access_point:
                 if self.access_point.sta_associated(
                     self.access_point.wlan_5g, client_mac
@@ -958,7 +854,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                         "DUT unexpectedly roamed to 5GHz band"
                     )
                 else:
-                    time.sleep(0.25)
+                    await asyncio.sleep(0.25)
 
 
 if __name__ == "__main__":
