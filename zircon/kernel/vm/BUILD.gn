@@ -241,6 +241,45 @@ kernel_bindgen_crate("vm-object-bindings") {
   expect_lints = []
 }
 
+kernel_bindgen_crate("vm-object-paged-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/vm_object_paged_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "vm_object_paged_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_vm_object_paged_as_vm_object",
+    "cpp_vm_object_paged_create",
+    "cpp_vm_object_paged_create_contiguous",
+  ]
+  type_allowlist = [ "VmObjectPaged" ]
+  type_blocklist = [
+    "VmCowPages",
+    "VmObject",
+    "vm_page",
+    "vm_page_t",
+    "zx_status_t",
+  ]
+  additional_bindgen_flags = [
+    "--opaque-type=VmObjectPaged",
+    "--no-recursive-allowlist",
+    "--blocklist-item=VmObjectPaged_.*",
+  ]
+  deps = [
+    ":vm-object-bindings",
+    "//sdk/rust/zx-types",
+  ]
+
+  raw_lines = [
+    "#![no_std]",
+    "use vm_object_bindings::VmObject;",
+    "use zx_types::zx_status_t;",
+  ]
+}
+
 kernel_bindgen_crate("vm-cow-pages-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_cow_pages_ffi.h" ]
@@ -292,6 +331,7 @@ kernel_rust_mod("vm-rs") {
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",
     ":vm-object-bindings",
+    ":vm-object-paged-bindings",
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
     "//src/lib/ksync",

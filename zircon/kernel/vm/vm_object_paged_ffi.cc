@@ -8,16 +8,9 @@
 
 #include <zircon/types.h>
 
-#include "vm/vm_object_ffi.h"
 #include "vm/vm_object_paged.h"
 
 extern "C" {
-
-void* cpp_vm_object_paged_get_ref_counted(const VmObjectPaged* vmo) {
-  return cpp_vm_object_get_ref_counted(vmo);
-}
-
-void cpp_vm_object_paged_free(VmObjectPaged* vmo) { delete vmo; }
 
 VmObjectPaged* cpp_vm_object_paged_create(uint32_t pmm_alloc_flags, uint32_t options, uint64_t size,
                                           zx_status_t* out_status) {

@@ -35,6 +35,13 @@ impl VmObject {
         unsafe { RefPtr::try_from_raw(ptr.cast::<Self>()) }
     }
 
+    /// Returns a raw `VmObject` pointer from an underlying bindings pointer.
+    ///
+    /// Provides additional type safety when used instead of a `.cast()`.
+    pub fn ptr_from_raw(raw: *mut bindings::VmObject) -> *mut VmObject {
+        raw.cast()
+    }
+
     /// Returns a pointer to the underlying `VmObject` structure.
     ///
     /// This method is helpful when you don't have a reference to the `VmObject`. If you do, then

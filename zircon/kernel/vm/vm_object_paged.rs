@@ -5,37 +5,34 @@
 // https://opensource.org/licenses/MIT
 
 use super::vm_object::VmObject;
-use core::marker::{PhantomData, PhantomPinned};
-use core::ptr::NonNull;
-use fbl::RefPtr;
+use core::marker::PhantomPinned;
+use core::ops::Deref;
+use fbl::{IsOpaqueRefCounted, RefPtr};
+use vm_object_paged_bindings as bindings;
 use zx_status::Status;
 
-#[repr(C)]
 /// VMO representing a paged range of copy-on-write memory.
+#[repr(C)]
 pub struct VmObjectPaged {
-    _data: [u8; 0],
-    _marker: PhantomData<PhantomPinned>,
-}
-
-unsafe extern "C" {
-    fn cpp_vm_object_paged_get_ref_counted(vmo: *const VmObjectPaged) -> *mut fbl::RefCounted;
-    fn cpp_vm_object_paged_free(vmo: *mut VmObjectPaged);
-    fn cpp_vm_object_paged_create(
-        pmm_alloc_flags: u32,
-        options: u32,
-        size: u64,
-        out_status: *mut i32,
-    ) -> *mut VmObjectPaged;
-    fn cpp_vm_object_paged_create_contiguous(
-        pmm_alloc_flags: u32,
-        size: u64,
-        alignment_log2: u8,
-        out_status: *mut i32,
-    ) -> *mut VmObjectPaged;
-    fn cpp_vm_object_paged_as_vm_object(vmo: *mut VmObjectPaged) -> *mut VmObject;
+    raw: bindings::VmObjectPaged,
+    phantom: PhantomPinned,
 }
 
 impl VmObjectPaged {
+    /// Domain-specific conversion: returns raw FFI pointer for `VmObjectPaged`.
+    pub fn as_raw(&self) -> *mut bindings::VmObjectPaged {
+        core::ptr::from_ref(&self.raw).cast_mut()
+    }
+
+    /// Domain-specific conversion: constructs a `RefPtr<VmObjectPaged>` from a raw FFI pointer.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be a valid, raw `VmObjectPaged` pointer exported from C++.
+    pub unsafe fn from_raw(ptr: *mut bindings::VmObjectPaged) -> Option<RefPtr<Self>> {
+        unsafe { RefPtr::try_from_raw(ptr.cast::<Self>()) }
+    }
+
     /// Create a new paged VMO.
     pub fn create(
         pmm_alloc_flags: u32,
@@ -43,10 +40,11 @@ impl VmObjectPaged {
         size: u64,
     ) -> Result<RefPtr<VmObjectPaged>, Status> {
         let mut status = 0;
-        let raw =
-            unsafe { cpp_vm_object_paged_create(pmm_alloc_flags, options, size, &mut status) };
+        let raw = unsafe {
+            bindings::cpp_vm_object_paged_create(pmm_alloc_flags, options, size, &mut status)
+        };
         Status::ok(status)?;
-        unsafe { RefPtr::try_from_raw(raw).ok_or(Status::NO_MEMORY) }
+        unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
     }
 
     /// Create a contiguous paged VMO.
@@ -57,7 +55,7 @@ impl VmObjectPaged {
     ) -> Result<RefPtr<VmObjectPaged>, Status> {
         let mut status = 0;
         let raw = unsafe {
-            cpp_vm_object_paged_create_contiguous(
+            bindings::cpp_vm_object_paged_create_contiguous(
                 pmm_alloc_flags,
                 size,
                 alignment_log2,
@@ -65,25 +63,21 @@ impl VmObjectPaged {
             )
         };
         Status::ok(status)?;
-        unsafe { RefPtr::try_from_raw(raw).ok_or(Status::NO_MEMORY) }
-    }
-
-    /// Cast a pointer to a VmObjectPaged to its base VmObject.
-    pub fn cast(vmo: NonNull<VmObjectPaged>) -> NonNull<VmObject> {
-        unsafe { NonNull::new_unchecked(cpp_vm_object_paged_as_vm_object(vmo.as_ptr())) }
+        unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
     }
 }
 
-impl fbl::HasRefCount for VmObjectPaged {
-    fn ref_count(&self) -> &fbl::RefCounted {
-        unsafe { &*cpp_vm_object_paged_get_ref_counted(self as *const _) }
-    }
+unsafe impl IsOpaqueRefCounted for VmObjectPaged {
+    type TargetBase = VmObject;
 }
 
-unsafe impl fbl::Recyclable for VmObjectPaged {
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        unsafe {
-            cpp_vm_object_paged_free(ptr.as_ptr());
-        }
+impl Deref for VmObjectPaged {
+    type Target = VmObject;
+    fn deref(&self) -> &Self::Target {
+        let raw = unsafe { bindings::cpp_vm_object_paged_as_vm_object(self.as_raw()) };
+        let ptr = VmObject::ptr_from_raw(raw);
+        // SAFETY: cpp_vm_object_paged_as_vm_object returns a valid pointer with the same lifetime
+        // as its input, so `raw`, and trivially `ptr`, are valid.
+        unsafe { ptr.as_ref_unchecked() }
     }
 }

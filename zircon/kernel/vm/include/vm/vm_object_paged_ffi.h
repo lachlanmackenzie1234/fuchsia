@@ -14,8 +14,6 @@
 
 __BEGIN_CDECLS
 
-void* cpp_vm_object_paged_get_ref_counted(const VmObjectPaged* vmo);
-void cpp_vm_object_paged_free(VmObjectPaged* vmo);
 VmObjectPaged* cpp_vm_object_paged_create(uint32_t pmm_alloc_flags, uint32_t options, uint64_t size,
                                           zx_status_t* out_status);
 VmObjectPaged* cpp_vm_object_paged_create_contiguous(uint32_t pmm_alloc_flags, uint64_t size,
