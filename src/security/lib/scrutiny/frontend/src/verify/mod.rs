@@ -111,8 +111,9 @@ mod tests {
     use cm_fidl_analyzer::component_model::ModelBuilderForAnalyzer;
     use cm_rust::{
         Availability, CapabilityDecl, ChildDecl, ComponentDecl, DependencyType, DirectoryDecl,
-        FidlIntoNative, NativeIntoFidl, OfferDecl, OfferDirectoryDecl, OfferSource, OfferTarget,
-        ProgramDecl, UseDecl, UseDirectoryDecl, UseProtocolDecl, UseSource,
+        FidlIntoNative, NativeIntoFidl, OfferDecl, OfferDirectoryDecl, OfferProtocolDecl,
+        OfferSource, OfferTarget, ProgramDecl, UseDecl, UseDirectoryDecl, UseProtocolDecl,
+        UseSource,
     };
     use cm_rust_testing::*;
     use cm_types::Url;
@@ -225,6 +226,23 @@ mod tests {
         }
     }
 
+    fn new_offer_protocol_decl(
+        source: OfferSource,
+        source_name: Name,
+        target: OfferTarget,
+        target_name: Name,
+    ) -> OfferProtocolDecl {
+        OfferProtocolDecl {
+            source,
+            source_name,
+            source_dictionary: Default::default(),
+            target,
+            target_name,
+            dependency_type: DependencyType::Strong,
+            availability: Availability::Required,
+        }
+    }
+
     fn make_v2_component(id: i32, url: &str) -> Component {
         let url = Url::new(url).unwrap();
         Component { id, url, source: fake_component_src_pkg() }
@@ -297,6 +315,7 @@ mod tests {
         let child_url = Url::new("fuchsia-boot:///#meta/child.cm").unwrap();
 
         let child_name = "child".to_string();
+        let missing_child_name = "missing_child".to_string();
 
         let good_dir_name: Name = "good_dir".parse().unwrap();
         let bad_dir_name: Name = "bad_dir".parse().unwrap();
@@ -310,6 +329,12 @@ mod tests {
             offer_target_static_child(&child_name),
             good_dir_name.clone(),
             Some(offer_rights),
+        );
+        let root_offer_protocol = new_offer_protocol_decl(
+            offer_source_static_child(&missing_child_name),
+            protocol_name.clone(),
+            offer_target_static_child(&child_name),
+            protocol_name.clone(),
         );
         let root_good_dir_decl = new_directory_decl(good_dir_name.clone(), offer_rights);
 
@@ -325,7 +350,10 @@ mod tests {
             (
                 new_component_with_capabilities(
                     vec![],
-                    vec![OfferDecl::Directory(Box::new(root_offer_good_dir))],
+                    vec![
+                        OfferDecl::Directory(Box::new(root_offer_good_dir)),
+                        OfferDecl::Protocol(root_offer_protocol),
+                    ],
                     vec![CapabilityDecl::Directory(root_good_dir_decl)],
                     vec![new_child_decl(&child_name, child_url.as_str())],
                 ),
@@ -959,17 +987,13 @@ mod tests {
                                 "capability": "bad_dir",
                                 "error": {
                                     "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "bad_dir",
-                                            "capability_type": "directory",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
+                                        "use_from_parent_not_found": {
+                                            "capability_id": "bad_dir",
+                                            "moniker": "child"
                                         }
                                     }
                                 },
-                                "message": "cannot use directory bad_dir from parent at child because parent does not offer the capability",
+                                "message": "`bad_dir` was not offered to `child` by parent",
                                 "target_decl": {
                                     "use": {
                                         "availability": "required",
@@ -1020,22 +1044,10 @@ mod tests {
                 {
                     "capability_type": "protocol",
                     "results": {
-                        "errors": [
+                        "warnings": [
                             {
                                 "capability": "protocol",
-                                "error": {
-                                    "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "protocol",
-                                            "capability_type": "protocol",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
-                                        }
-                                    }
-                                },
-                                "message": "cannot use protocol protocol from parent at child because parent does not offer the capability",
+                                "message": "`.` does not have child `#missing_child`",
                                 "target_decl": {
                                     "use": {
                                         "availability": "required",
@@ -1048,7 +1060,16 @@ mod tests {
                                         "type": "protocol"
                                     }
                                 },
-                                "using_node": "child"
+                                "using_node": "child",
+                                "warning": {
+                                    "routing_error": {
+                                        "offer_from_child_instance_not_found": {
+                                            "capability_id": "protocol",
+                                            "child_moniker": "missing_child",
+                                            "moniker": "."
+                                        }
+                                    }
+                                }
                             }
                         ]
                     }
@@ -1089,17 +1110,13 @@ mod tests {
                                 "capability": "bad_dir",
                                 "error": {
                                     "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "bad_dir",
-                                            "capability_type": "directory",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
+                                        "use_from_parent_not_found": {
+                                            "capability_id": "bad_dir",
+                                            "moniker": "child"
                                         }
                                     }
                                 },
-                                "message": "cannot use directory bad_dir from parent at child because parent does not offer the capability",
+                                "message": "`bad_dir` was not offered to `child` by parent",
                                 "target_decl": {
                                     "use": {
                                         "availability": "required",
@@ -1150,22 +1167,10 @@ mod tests {
                 {
                     "capability_type": "protocol",
                     "results": {
-                        "errors": [
+                        "warnings": [
                             {
                                 "capability": "protocol",
-                                "error": {
-                                    "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "protocol",
-                                            "capability_type": "protocol",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
-                                        }
-                                    }
-                                },
-                                "message": "cannot use protocol protocol from parent at child because parent does not offer the capability",
+                                "message": "`.` does not have child `#missing_child`",
                                 "target_decl": {
                                     "use": {
                                         "availability": "required",
@@ -1178,7 +1183,16 @@ mod tests {
                                         "type": "protocol"
                                     }
                                 },
-                                "using_node": "child"
+                                "using_node": "child",
+                                "warning": {
+                                    "routing_error": {
+                                        "offer_from_child_instance_not_found": {
+                                            "capability_id": "protocol",
+                                            "child_moniker": "missing_child",
+                                            "moniker": "."
+                                        }
+                                    }
+                                }
                             }
                         ]
                     }
@@ -1219,17 +1233,13 @@ mod tests {
                                 "capability": "bad_dir",
                                 "error": {
                                     "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "bad_dir",
-                                            "capability_type": "directory",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
+                                        "use_from_parent_not_found": {
+                                            "capability_id": "bad_dir",
+                                            "moniker": "child"
                                         }
                                     }
                                 },
-                                "message": "cannot use directory bad_dir from parent at child because parent does not offer the capability",
+                                "message": "`bad_dir` was not offered to `child` by parent",
                                 "target_decl": {
                                     "use": {
                                         "availability": "required",
@@ -1251,22 +1261,10 @@ mod tests {
                 {
                     "capability_type": "protocol",
                     "results": {
-                        "errors": [
+                        "warnings": [
                             {
                                 "capability": "protocol",
-                                "error": {
-                                    "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "protocol",
-                                            "capability_type": "protocol",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
-                                        }
-                                    }
-                                },
-                                "message": "cannot use protocol protocol from parent at child because parent does not offer the capability",
+                                "message": "`.` does not have child `#missing_child`",
                                 "target_decl": {
                                     "use": {
                                         "availability": "required",
@@ -1279,7 +1277,16 @@ mod tests {
                                         "type": "protocol"
                                     }
                                 },
-                                "using_node": "child"
+                                "using_node": "child",
+                                "warning": {
+                                    "routing_error": {
+                                        "offer_from_child_instance_not_found": {
+                                            "capability_id": "protocol",
+                                            "child_moniker": "missing_child",
+                                            "moniker": "."
+                                        }
+                                    }
+                                }
                             }
                         ]
                     }
@@ -1320,17 +1327,13 @@ mod tests {
                                 "capability": "bad_dir",
                                 "error": {
                                     "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "bad_dir",
-                                            "capability_type": "directory",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
+                                        "use_from_parent_not_found": {
+                                            "capability_id": "bad_dir",
+                                            "moniker": "child"
                                         }
                                     }
                                 },
-                                "message": "cannot use directory bad_dir from parent at child because parent does not offer the capability",
+                                "message": "`bad_dir` was not offered to `child` by parent",
                                 "target_decl": {
                                     "use": {
                                         "availability": "required",
@@ -1351,39 +1354,7 @@ mod tests {
                 },
                 {
                     "capability_type": "protocol",
-                    "results": {
-                        "errors": [
-                            {
-                                "capability": "protocol",
-                                "error": {
-                                    "routing_error": {
-                                        "route_source_not_found": {
-                                            "capability_name": "protocol",
-                                            "capability_type": "protocol",
-                                            "counter_verb": "offer",
-                                            "moniker": "child",
-                                            "source": "parent",
-                                            "verb": "use"
-                                        }
-                                    }
-                                },
-                                "message": "cannot use protocol protocol from parent at child because parent does not offer the capability",
-                                "target_decl": {
-                                    "use": {
-                                        "availability": "required",
-                                        "dependency_type": "strong",
-                                        "numbered_handle": null,
-                                        "source": "parent",
-                                        "source_dictionary": ".",
-                                        "source_name": "protocol",
-                                        "target_path": "/dir/svc",
-                                        "type": "protocol"
-                                    }
-                                },
-                                "using_node": "child"
-                            }
-                        ]
-                    }
+                    "results": {}
                 }
             ]
         });

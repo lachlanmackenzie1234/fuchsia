@@ -125,9 +125,10 @@ async fn open_protocol(
         .find(moniker)
         .await
         .ok_or_else(|| {
-            RoutingError::from(ComponentInstanceError::InstanceNotFound {
-                moniker: moniker.clone(),
-            })
+            RoutingError::expose_from_framework_not_found(
+                &moniker,
+                fupdate::ComponentOtaHealthCheckMarker::PROTOCOL_NAME,
+            )
         })?;
 
     let instance_output = instance
@@ -146,7 +147,7 @@ async fn open_protocol(
         .framework()
         .get(&Name::new(fupdate::ComponentOtaHealthCheckMarker::PROTOCOL_NAME).unwrap())
         .ok_or_else(|| {
-            RoutingError::expose_from_framework_not_found(
+            RoutingError::expose_from_self_not_found(
                 &moniker,
                 fupdate::ComponentOtaHealthCheckMarker::PROTOCOL_NAME,
             )

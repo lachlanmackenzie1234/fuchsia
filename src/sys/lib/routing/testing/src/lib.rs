@@ -34,7 +34,7 @@ use fidl_fuchsia_io as fio;
 use moniker::{ExtendedMoniker, Moniker};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::debug_route_sandbox_path;
-use routing::error::{PrettyPrintRef, RouteVerb, RoutingError};
+use routing::error::RoutingError;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -3704,12 +3704,15 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
 
         assert_matches!(
             route_result,
-            Err(RoutingError::RouteSourceNotFound { moniker, verb, source, capability_type, capability_name, .. })
-                if &format!("{capability_name}") == "hobbit"
-                    && moniker == *b_component.moniker()
-                    && capability_type == CapabilityTypeName::Runner
-                    && verb == RouteVerb::Use
-                    && source == PrettyPrintRef::Environment
+            Err(RoutingError::UseFromEnvironmentNotFound {
+                    moniker,
+                    capability_type,
+                    capability_name,
+                }
+            )
+                if moniker == *b_component.moniker() &&
+                capability_type == "runner" &&
+                capability_name == "hobbit"
         );
     }
 
@@ -3845,12 +3848,11 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
 
         assert_matches!(
             route_result,
-            Err(RoutingError::RouteSourceNotFound { moniker, verb, source, capability_type, capability_name, .. })
-                if &format!("{capability_name}") == "elf"
-                    && moniker == Moniker::root()
-                    && capability_type == CapabilityTypeName::Runner
-                    && verb == RouteVerb::Register
-                    && source == PrettyPrintRef::Parent
+            Err(RoutingError::RegisterFromComponentManagerNotFound {
+                    capability_id,
+                }
+            )
+                if capability_id == "elf".to_string()
         );
     }
 
@@ -3879,12 +3881,15 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
 
         assert_matches!(
             route_result,
-            Err(RoutingError::RouteSourceNotFound { moniker, verb, source, capability_type, capability_name, .. })
-                if &format!("{capability_name}") == "hobbit"
-                    && moniker == *a_component.moniker()
-                    && capability_type == CapabilityTypeName::Runner
-                    && verb == RouteVerb::Use
-                    && source == PrettyPrintRef::Environment
+            Err(RoutingError::UseFromEnvironmentNotFound {
+                    moniker,
+                    capability_type,
+                    capability_name,
+                }
+            )
+                if moniker == *a_component.moniker()
+                && capability_type == "runner".to_string()
+                && capability_name == "hobbit"
         );
     }
 
@@ -4284,12 +4289,8 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
 
         assert_matches!(
             route_result,
-            Err(RoutingError::RouteSourceNotFound { moniker, verb, source, capability_type, capability_name, .. })
-                if &format!("{capability_name}") == "my_dict/A"
-                    && moniker == Moniker::root()
-                    && capability_type == CapabilityTypeName::Protocol
-                    && verb == RouteVerb::Use
-                    && source == PrettyPrintRef::Self_
+            Err(RoutingError::UseFromSelfNotFound { moniker, capability_id })
+                if capability_id == "my_dict/A" && moniker == Moniker::root()
         );
     }
 

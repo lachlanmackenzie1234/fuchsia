@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::component_instance::ComponentInstanceForAnalyzer;
+use crate::component_instance::{ComponentInstanceForAnalyzer, TopInstanceForAnalyzer};
 use crate::component_model::DynamicDictionaryConfig;
 use ::routing::DictExt;
 use ::routing::bedrock::aggregate_router::AggregateSource;
@@ -10,12 +10,14 @@ use ::routing::bedrock::program_output_dict;
 use ::routing::bedrock::sandbox_construction::EventStreamSourceRouter;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_policy_check::WithPolicyCheck;
+use ::routing::bedrock::with_porcelain::WithPorcelain;
 use ::routing::component_instance::{
     WeakComponentInstanceInterface, WeakExtendedInstanceInterface,
 };
-use ::routing::error::{ComponentInstanceError, RouteRequestErrorInfo, RouteVerb, RoutingError};
+use ::routing::error::{
+    ComponentInstanceError, ErrorReporter, RouteRequestErrorInfo, RoutingError,
+};
 use ::routing::policy::GlobalPolicyChecker;
-use ::routing::rights::validate_rights;
 use async_trait::async_trait;
 use capability_source::{
     BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
@@ -24,10 +26,10 @@ use capability_source::{
 };
 use cm_config::RuntimeConfig;
 use cm_rust::{
-    CapabilityTypeName, ComponentDecl, ConfigSingleValue, ConfigValue, ConfigurationDecl,
-    DeliveryType, DictionaryDecl, FidlIntoNative, ProtocolDecl,
+    CapabilityDecl, CapabilityTypeName, ComponentDecl, ConfigSingleValue, ConfigValue,
+    ConfigurationDecl, DeliveryType, DictionaryDecl, FidlIntoNative, ProtocolDecl,
 };
-use cm_types::{Name, Path, RelativePath};
+use cm_types::{Availability, Name, Path};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runtime as fruntime;
@@ -49,38 +51,35 @@ fn new_debug_only_specific_router<T>(source: CapabilitySource) -> Arc<Router<T>>
 where
     T: CapabilityBound,
 {
-    Router::new(RootInputRouter { source, rights: None })
-}
-
-struct RootInputRouter {
-    source: CapabilitySource,
-    rights: Option<fio::Operations>,
-}
-
-#[async_trait]
-impl<C: CapabilityBound> Routable<C> for RootInputRouter {
-    async fn route(
-        &self,
-        _request: RouteRequest,
-        _target: Arc<WeakInstanceToken>,
-    ) -> Result<Option<Arc<C>>, RouterError> {
-        panic!("unexpected non-debug route");
+    struct DebugRouter {
+        source: CapabilitySource,
     }
-
-    async fn route_debug(
-        &self,
-        mut request: RouteRequest,
-        _target: Arc<WeakInstanceToken>,
-    ) -> Result<CapabilitySource, RouterError> {
-        if let Some(rights) = self.rights {
-            validate_rights(self.source.source_moniker(), rights, &mut request)?;
+    #[async_trait]
+    impl<T: CapabilityBound> Routable<T> for DebugRouter {
+        async fn route(
+            &self,
+            _request: RouteRequest,
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<T>>, RouterError> {
+            Err(RouterError::NotFound(Arc::new(RoutingError::NonDebugRoutesUnsupported {
+                moniker: self.source.source_moniker(),
+            })))
         }
-        Ok(self.source.clone())
+
+        async fn route_debug(
+            &self,
+            _request: RouteRequest,
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<CapabilitySource, RouterError> {
+            Ok(self.source.clone())
+        }
     }
+    Router::new(DebugRouter { source })
 }
 
 pub fn build_root_component_input(
     runtime_config: &Arc<RuntimeConfig>,
+    top_instance: &Arc<TopInstanceForAnalyzer>,
     policy: &GlobalPolicyChecker,
 ) -> ComponentInput {
     let root_component_input = ComponentInput::default();
@@ -116,19 +115,29 @@ pub fn build_root_component_input(
                 _ => None,
             }
         }));
-    for (name, capability_source, capability_type, _route_request_info) in
+    for (name, capability_source, capability_type, route_request_info) in
         names_and_capability_sources
     {
         let router_capability: Capability = match capability_type {
             CapabilityTypeName::Protocol
             | CapabilityTypeName::Runner
             | CapabilityTypeName::Resolver => {
-                Router::<Connector>::new_debug(capability_source.clone())
+                let router = Router::<Connector>::new_debug(capability_source.clone())
                     .with_policy_check::<ComponentInstanceForAnalyzer>(
-                        capability_source,
-                        policy.clone(),
+                    capability_source,
+                    policy.clone(),
+                );
+                Capability::ConnectorRouter(
+                    WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+                        router,
+                        capability_type,
                     )
-                    .into()
+                    .availability(Availability::Required)
+                    .target_above_root(top_instance)
+                    .error_info(route_request_info)
+                    .error_reporter(NullErrorReporter {})
+                    .build(),
+                )
             }
             CapabilityTypeName::Directory => {
                 let rights = match &capability_source {
@@ -138,15 +147,23 @@ pub fn build_root_component_input(
                     },
                     _ => panic!("unsupported capability source type"),
                 };
-                let router = Router::<DirConnector>::new(RootInputRouter {
-                    source: capability_source.clone(),
-                    rights: Some(rights),
-                })
-                .with_policy_check::<ComponentInstanceForAnalyzer>(
+                let router = Router::<DirConnector>::new_debug(capability_source.clone())
+                    .with_policy_check::<ComponentInstanceForAnalyzer>(
                     capability_source,
                     policy.clone(),
                 );
-                router.into()
+                Capability::DirConnectorRouter(
+                    WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+                        router,
+                        capability_type,
+                    )
+                    .availability(Availability::Required)
+                    .rights(Some(rights.into()))
+                    .target_above_root(top_instance)
+                    .error_info(route_request_info)
+                    .error_reporter(NullErrorReporter {})
+                    .build(),
+                )
             }
             _ => unreachable!("other types were filtered out above"),
         };
@@ -199,13 +216,38 @@ pub fn build_root_component_input(
                 }))
             }
         }
-        let porcelain_router = Router::new(EventStreamRouter { event_stream_name });
+        let router = Router::new(EventStreamRouter { event_stream_name });
+        let porcelain_router =
+            WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+                router,
+                CapabilityTypeName::EventStream,
+            )
+            .availability(Availability::Required)
+            .target_above_root(top_instance)
+            .error_info(RouteRequestErrorInfo::from(&CapabilityDecl::EventStream(
+                event_stream_decl.clone(),
+            )))
+            .error_reporter(NullErrorReporter {})
+            .build();
         root_component_input.capabilities().insert_capability(
             &event_stream_decl.name,
             Capability::DictionaryRouter(porcelain_router),
         );
     }
     root_component_input
+}
+
+#[derive(Clone)]
+struct NullErrorReporter {}
+#[async_trait]
+impl ErrorReporter for NullErrorReporter {
+    async fn report(
+        &self,
+        _: &RouteRequestErrorInfo,
+        _: &RouterError,
+        _: Arc<runtime_capabilities::WeakInstanceToken>,
+    ) {
+    }
 }
 
 pub(crate) fn build_framework_router(
@@ -233,12 +275,12 @@ impl Routable<Dictionary> for FrameworkRouter {
         let component = match target {
             WeakExtendedInstanceInterface::<ComponentInstanceForAnalyzer>::Component(c) => c,
             WeakExtendedInstanceInterface::<ComponentInstanceForAnalyzer>::AboveRoot(_) => {
-                panic!("component manager doesn't have a framework dictionary");
+                return Err(RouterError::InvalidArgs);
             }
         };
         let component = component.upgrade().map_err(RoutingError::from)?;
         if *component.moniker() != self.scope {
-            panic!("framework dictionary should not be routed");
+            return Err(RouterError::InvalidArgs);
         }
 
         let framework_dict = Dictionary::new();
@@ -442,7 +484,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         component: &Arc<ComponentInstanceForAnalyzer>,
         _decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
-    ) -> Arc<Router<DirConnector>> {
+    ) -> Arc<Router<runtime_capabilities::DirConnector>> {
         if !self.executable {
             return Router::<DirConnector>::new_error(RoutingError::from(
                 ComponentInstanceError::InstanceNotExecutable {
@@ -456,14 +498,23 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
             cm_rust::CapabilityDecl::Service(_) => fio::R_STAR_DIR,
             _ => panic!("incompatible porcelain type using DirConnector"),
         };
-
-        Router::<DirConnector>::new(RootInputRouter {
-            source: CapabilitySource::Component(ComponentSource {
+        let router = new_debug_only_specific_router::<DirConnector>(CapabilitySource::Component(
+            ComponentSource {
                 capability: ComponentCapability::from(capability.clone()),
                 moniker: component.moniker().clone(),
-            }),
-            rights: Some(rights),
-        })
+            },
+        ));
+
+        WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+            router,
+            capability.into(),
+        )
+        .availability(Availability::Required)
+        .rights(Some(rights.into()))
+        .target(component)
+        .error_info(RouteRequestErrorInfo::from(capability))
+        .error_reporter(NullErrorReporter {})
+        .build()
     }
 }
 
@@ -485,16 +536,13 @@ pub(crate) fn static_children_component_output_dictionary_routers(
             let component =
                 self.weak_component.upgrade().expect("part of component tree was dropped");
             let child = component.children.read().get(&self.child_name).cloned().ok_or(
-                RoutingError::RouteSourceNotFound {
-                    moniker: self.weak_component.moniker.clone(),
-                    verb: RouteVerb::Offer,
-                    counter_verb: RouteVerb::Expose,
-                    source: self.child_name.clone().into(),
-                    capability_type: CapabilityTypeName::Dictionary,
-                    capability_name: RelativePath::new("component_output_dictionary").unwrap(),
-                },
+                RouterError::NotFound(Arc::new(RoutingError::offer_from_child_instance_not_found(
+                    &self.child_name,
+                    &self.weak_component.moniker,
+                    "component output dictionary",
+                ))),
             )?;
-            let component_output_dict = child.sandbox.lock().component_output.capabilities();
+            let component_output_dict = child.sandbox.component_output.capabilities();
             Ok(Some(component_output_dict))
         }
 

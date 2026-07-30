@@ -8,9 +8,8 @@ use crate::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, WeakComponentInstanceInterface,
     WeakExtendedInstanceInterface,
 };
-use crate::error::{RouteVerb, RoutingError};
-use crate::intermediate_router::{IntermediateRouter, WeakDictionaryOrRouter};
-use crate::{DictExt, WeakInstanceTokenExt};
+use crate::error::RoutingError;
+use crate::{DictExt, LazyGet, WeakInstanceTokenExt};
 use async_trait::async_trait;
 use capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
 use cm_rust::{CapabilityTypeName, NativeIntoFidl};
@@ -130,13 +129,26 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             subdir,
             storage_id,
         }) => {
-            let backing_source: WeakDictionaryOrRouter = match source {
+            let router: Arc<Router<DirConnector>> = match source {
                 cm_rust::StorageDirectorySource::Parent => {
-                    Arc::downgrade(&component_input.capabilities()).into()
+                    component_input.capabilities().get_router_or_not_found(
+                        backing_dir,
+                        RoutingError::storage_from_parent_not_found(
+                            component.moniker(),
+                            backing_dir.clone(),
+                        ),
+                    )
                 }
-                cm_rust::StorageDirectorySource::Self_ => {
-                    Arc::downgrade(program_output_dict).into()
-                }
+                cm_rust::StorageDirectorySource::Self_ => program_output_dict
+                    .get_router_or_not_found(
+                        backing_dir,
+                        RoutingError::BedrockNotPresentInDictionary {
+                            name: backing_dir.to_string(),
+                            moniker: ExtendedMoniker::ComponentInstance(
+                                component.moniker().clone(),
+                            ),
+                        },
+                    ),
                 cm_rust::StorageDirectorySource::Child(child_name) => {
                     let child_name = ChildName::parse(child_name).expect("invalid child name");
                     let Some(child_component_output) =
@@ -148,27 +160,16 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                             child_name
                         );
                     };
-                    Arc::downgrade(child_component_output).into()
+                    child_component_output.clone().lazy_get(
+                        backing_dir.to_owned(),
+                        RoutingError::storage_from_child_expose_not_found(
+                            &child_name,
+                            &component.moniker(),
+                            backing_dir.clone(),
+                        ),
+                    )
                 }
             };
-            let router: Arc<Router<DirConnector>> = IntermediateRouter::new(
-                backing_source,
-                vec![backing_dir.clone()].into(),
-                RouteRequest {
-                    build_type_name: Some(CapabilityTypeName::Directory.to_string()),
-                    availability: Some(fdecl::Availability::Required),
-                    directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
-                    sub_directory_path: Some(RelativePath::dot().native_into_fidl()),
-                    inherit_rights: Some(false),
-                    ..Default::default()
-                },
-                component.as_weak().into(),
-                component.moniker().clone(),
-                RouteVerb::Declare,
-                source.clone().native_into_fidl(),
-            )
-            .try_into()
-            .expect("wrong type from intermediate router");
 
             #[derive(Debug)]
             struct StorageBackingDirRouter<C: ComponentInstanceInterface + 'static> {

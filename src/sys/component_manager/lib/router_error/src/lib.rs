@@ -16,6 +16,9 @@ pub enum RouterError {
     #[error("{0}")]
     NotFound(Arc<dyn Explain>),
 
+    #[error("invalid arguments")]
+    InvalidArgs,
+
     #[error("not supported")]
     NotSupported,
 
@@ -33,7 +36,8 @@ impl From<fruntime::RouterError> for RouterError {
     fn from(router_error: fruntime::RouterError) -> Self {
         match router_error {
             fruntime::RouterError::NotFound => Self::NotFound(Arc::new(ExternalNotFoundError {})),
-            fruntime::RouterError::NotSupported => RouterError::NotSupported,
+            fruntime::RouterError::InvalidArgs => RouterError::InvalidArgs,
+            fruntime::RouterError::NotSupported => RouterError::InvalidArgs,
             fruntime::RouterError::Internal => RouterError::Internal,
             _ => RouterError::Unknown,
         }
@@ -44,7 +48,8 @@ impl From<RouterError> for fruntime::RouterError {
     fn from(router_error: RouterError) -> Self {
         match router_error {
             RouterError::NotFound(_) => fruntime::RouterError::NotFound,
-            RouterError::NotSupported => fruntime::RouterError::NotSupported,
+            RouterError::InvalidArgs => fruntime::RouterError::InvalidArgs,
+            RouterError::NotSupported => fruntime::RouterError::InvalidArgs,
             RouterError::RemotedAt { .. } => fruntime::RouterError::NotSupported,
             RouterError::Internal => fruntime::RouterError::Internal,
             RouterError::Unknown => fruntime::RouterError::Unknown,
@@ -56,6 +61,7 @@ impl From<fsandbox::RouterError> for RouterError {
     fn from(err: fsandbox::RouterError) -> Self {
         match err {
             fsandbox::RouterError::NotFound => Self::NotFound(Arc::new(ExternalNotFoundError {})),
+            fsandbox::RouterError::InvalidArgs => Self::InvalidArgs,
             fsandbox::RouterError::NotSupported => Self::NotSupported,
             fsandbox::RouterError::Internal => Self::Internal,
             fsandbox::RouterErrorUnknown!() => Self::Unknown,
@@ -67,6 +73,7 @@ impl From<RouterError> for fsandbox::RouterError {
     fn from(err: RouterError) -> Self {
         match err {
             RouterError::NotFound(_) => Self::NotFound,
+            RouterError::InvalidArgs => Self::InvalidArgs,
             RouterError::NotSupported => Self::NotSupported,
             RouterError::RemotedAt { .. } => Self::NotSupported,
             RouterError::Internal => Self::Internal,
@@ -104,6 +111,7 @@ impl Explain for RouterError {
     fn as_zx_status(&self) -> zx::Status {
         match self {
             Self::NotFound(err) => err.as_zx_status(),
+            Self::InvalidArgs => zx::Status::INVALID_ARGS,
             Self::RemotedAt { .. } => zx::Status::NOT_SUPPORTED,
             Self::NotSupported => zx::Status::NOT_SUPPORTED,
             Self::Internal => zx::Status::INTERNAL,
