@@ -162,9 +162,16 @@ zx::result<zx::process> Launcher::Launch(zx::job job, zx::vmo executable, fbl::u
   if (log_handle.is_error()) {
     return log_handle.take_error();
   }
+  zx::handle log_handle_dup;
+  zx_status_t status = log_handle->duplicate(ZX_RIGHT_SAME_RIGHTS, &log_handle_dup);
+  EXPECT_EQ(status, ZX_OK) << "zx_handle_duplicate: " << zx_status_get_string(status);
+  if (status != ZX_OK) {
+    return zx::error{status};
+  }
+  handles.push_back(std::move(log_handle_dup));
 
   zx::channel bootstrap_send, bootstrap_receive;
-  zx_status_t status = zx::channel::create(0, &bootstrap_send, &bootstrap_receive);
+  status = zx::channel::create(0, &bootstrap_send, &bootstrap_receive);
   EXPECT_EQ(status, ZX_OK) << "zx_channel_create: " << zx_status_get_string(status);
   if (status != ZX_OK) {
     return zx::error{status};
