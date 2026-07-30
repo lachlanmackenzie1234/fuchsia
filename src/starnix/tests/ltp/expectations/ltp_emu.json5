@@ -12,6 +12,10 @@
                 "timerfd01",
                 "pipe13",
                 "prctl09",
+
+                // TODO(https://fxbug.dev/536931145): Spawns 2000 processes concurrently.
+                // Too heavy for emulators, causing OOM/ENOMEM during fork setup.
+                "hackbench01",
             ],
         },
     ],
