@@ -369,6 +369,10 @@ async fn build_ssh_command_with_ssh_config_and_env(
     let controlmaster_path = get_controlmaster_path(env, ssh_path, &addr, &keys, config).await?;
 
     let mut c = Command::new(ssh_path);
+    // We want to avoid adding the SSH_AUTH_SOCK unless explicitly said to include it (the line
+    // after this). Adding SSH_AUTH_SOCK can trigger 1 or more seconds delay depending on the
+    // setup in use.
+    c.env_remove("SSH_AUTH_SOCK");
     apply_auth_sock(&mut c, env);
     c.args(["-F", "none"]);
     c.args(config.to_args());
