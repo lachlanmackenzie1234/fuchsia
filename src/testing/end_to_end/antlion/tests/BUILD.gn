@@ -28,6 +28,7 @@ group("e2e_tests") {
     "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
     "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
     "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
+    "//src/connectivity/wlan/tests/wlancfg:wlan_wireless_network_management_test",
   ]
 }
 

@@ -82,12 +82,6 @@ antlion_host_test("wlan_reboot_dut_test_quick") {
   deps = [ "//third_party/iperf" ]
 }
 
-antlion_host_test("wlan_wireless_network_management_test") {
-  main_source = "WlanWirelessNetworkManagementTest.py"
-  environments = wlan_ap_envs
-  deps = [ "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension" ]
-}
-
 group("e2e_tests") {
   testonly = true
   public_deps = [
@@ -98,7 +92,6 @@ group("e2e_tests") {
     ":wlan_reboot_dut_open_test",
     ":wlan_reboot_dut_wpa2_test",
     ":wlan_reboot_dut_wpa3_test",
-    ":wlan_wireless_network_management_test",
   ]
 }
 
