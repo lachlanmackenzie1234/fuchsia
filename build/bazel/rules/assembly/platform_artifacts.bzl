@@ -9,8 +9,31 @@ load(
     "AssemblyInputBundleInfo",
     "PlatformArtifactsInfo",
 )
+load("//build/bazel/platforms/transitions:transitions.bzl", "sdk_to_platform_transition")
+
+visibility(["//bundles/assembly", "//build/bazel/assembly/assembly_input_bundles"])
 
 def _platform_artifacts_impl(ctx):
+    # The platform_artifacts rule can only be created in the non-sdk
+    # `fuchsia_platform` bazel platform configuration.  So validate that here.
+    # We don't use the standard 'target_compatible_with = ...' parameter because
+    # this allows enforcement on every instance fo the rule, and lets us provide
+    # a custom error message that says which targets should be used instead.
+
+    is_fuchsia = ctx.target_platform_has_constraint(
+        ctx.attr._fuchsia_constraint[platform_common.ConstraintValueInfo],
+    )
+    is_without_sdk = ctx.target_platform_has_constraint(
+        ctx.attr._without_sdk_rules_constraint[platform_common.ConstraintValueInfo],
+    )
+    if not is_fuchsia or not is_without_sdk:
+        fail("platform_artifacts can only be created in the non-SDK Fuchsia platform " +
+             "('fuchsia_platform') configuration.  Use the targets in " +
+             "'//build/bazel/assembly/assembly_input_bundles' to reference platform " +
+             "artifacts from the SDK platform ('fuchsia_sdk').")
+
+    # Now proceed with the actual implementation
+
     out_dir = ctx.actions.declare_directory(ctx.label.name + "/platform_artifacts")
 
     aib_list = []
@@ -112,6 +135,55 @@ platform_artifacts = rule(
             default = "@gn_targets//toolchain_host_x64/build/assembly/tools/assembly_config:assembly_config",
             executable = True,
             cfg = "exec",
+        ),
+        "_fuchsia_constraint": attr.label(
+            default = "@platforms//os:fuchsia",
+        ),
+        "_without_sdk_rules_constraint": attr.label(
+            default = "//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules",
+        ),
+    },
+)
+
+def _platform_artifacts_from_fuchsia_platform_impl(ctx):
+    # While using the transition targets appears to be idempotent, and doesn't cause problems,
+    # we'll make sure people using the 'fuchsia_platform' configuration don't use these targets.
+    # and instead depend on the ones that are meant to be used from 'fuchsia_sdk'.
+    #
+    # We don't use the standard 'target_compatible_with = ...' parameter because
+    # it doesn't let us provide a custom error message that says which targets
+    # should be used instead.
+
+    is_fuchsia = ctx.target_platform_has_constraint(
+        ctx.attr._fuchsia_constraint[platform_common.ConstraintValueInfo],
+    )
+    is_with_sdk = ctx.target_platform_has_constraint(
+        ctx.attr._with_sdk_rules_constraint[platform_common.ConstraintValueInfo],
+    )
+    if not is_fuchsia or not is_with_sdk:
+        fail("You're using the targets meant to transition from the 'fuchsia_sdk' Bazel platfrom " +
+             "to the 'fuchsia_platform' with a platform other than 'fuchsia_sdk'")
+
+    actual = ctx.attr.platform_artifacts[0]
+    return [
+        actual[DefaultInfo],
+        actual[PlatformArtifactsInfo],
+    ]
+
+platform_artifacts_from_fuchsia_platform = rule(
+    doc = "Transition target that returns the platform_artifacts from the non-sdk fuchsia_platform configuration, for use in the sdk-based rules.",
+    implementation = _platform_artifacts_from_fuchsia_platform_impl,
+    attrs = {
+        "platform_artifacts": attr.label(
+            mandatory = True,
+            providers = [DefaultInfo, PlatformArtifactsInfo],
+            cfg = sdk_to_platform_transition,
+        ),
+        "_fuchsia_constraint": attr.label(
+            default = "@platforms//os:fuchsia",
+        ),
+        "_with_sdk_rules_constraint": attr.label(
+            default = "//build/bazel/platforms:fuchsia_artifacts_build_with_sdk_rules",
         ),
     },
 )
