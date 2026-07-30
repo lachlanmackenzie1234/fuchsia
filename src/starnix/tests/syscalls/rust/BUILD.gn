@@ -12,7 +12,10 @@ import("//src/starnix/tests/starnix_test_subpackages.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":starnix_syscalls_rust_tests" ]
+  deps = [
+    ":linux_syscalls_rust_tests",
+    ":starnix_syscalls_rust_tests",
+  ]
   if (host_os == "linux") {
     deps += [
       # These are Linux tests, so we can run them as host tests on our host
@@ -139,4 +142,35 @@ fuchsia_test_package("starnix_syscalls_rust_tests") {
   test_specs = {
     package_resolution_timeout_secs = 660
   }
+}
+
+starnix_linux_test_component("linux_syscalls_rust_test") {
+  test_label = ":syscalls_rust_test_bin"
+  test_binary = "syscalls_rust_test_bin"
+  deps = [
+    ":ebpf_test_progs",
+    ":simple_ext4_image",
+  ]
+  test_type = "starnix"
+}
+
+fuchsia_test_package("linux_syscalls_rust_tests") {
+  test_components = [ ":linux_syscalls_rust_test" ]
+
+  subpackages = starnix_test_subpackages
+  subpackages += [ "//src/starnix/containers/debian:debian_package" ]
+
+  deps = [
+    ":fscrypt_test_resource",
+    "//src/lib/testing/expectation:expectation_comparer",
+  ]
+
+  test_specs = {
+    package_resolution_timeout_secs = 660
+  }
+}
+
+group("linux_vm_tests") {
+  testonly = true
+  deps = [ ":linux_syscalls_rust_tests" ]
 }

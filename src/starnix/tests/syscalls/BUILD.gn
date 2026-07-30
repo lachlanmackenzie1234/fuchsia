@@ -12,5 +12,8 @@ group("tests") {
 
 group("linux_vm_tests") {
   testonly = true
-  deps = [ "cpp:linux_vm_tests" ]
+  deps = [
+    "cpp:linux_vm_tests",
+    "rust:linux_vm_tests",
+  ]
 }
