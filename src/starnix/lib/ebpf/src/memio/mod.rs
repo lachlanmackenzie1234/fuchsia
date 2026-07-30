@@ -6,7 +6,7 @@ use derivative::Derivative;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::{Range, RangeBounds};
+use std::ops::RangeBounds;
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(target_arch = "aarch64")]
@@ -192,6 +192,100 @@ pub struct EbpfBufferPtr<'a> {
     phantom: PhantomData<&'a u8>,
 }
 
+/// Walks over aligned elements of an `EbpfBufferPtr`.
+///
+/// Handles unaligned prefix as u8, u16, and u32 until 8-byte aligned,
+/// processes the main body as u64 sequences, and finishes any trailing
+/// bytes as u32, u16 and u8.
+///
+/// For each element, `$body` is executed with:
+/// - `$offset`: `usize` containing the current byte offset within the buffer.
+/// - `$ebpf_ptr`: `EbpfPtr<$T>` pointing to the current chunk.
+/// - `$T`: the chunk's primitive integer type (`u8`, `u16`, `u32`, or `u64`).
+macro_rules! for_each_element {
+    ($buffer:expr, $offset:ident, $ebpf_ptr:ident, $T:ident, $body:block) => {
+        let buffer = $buffer;
+        let mut $offset: usize = 0;
+        let mut cur_ptr = buffer.raw_ptr();
+        let len = buffer.len();
+        // SAFETY: `cur_ptr` and `len` come from `buffer` which is a valid `EbpfBufferPtr`.
+        let end_ptr = unsafe { cur_ptr.add(len) };
+
+        if (cur_ptr as usize) % 8 > 0 {
+            if cur_ptr < end_ptr && (cur_ptr as usize) % 2 > 0 {
+                type $T = u8;
+                // SAFETY: `cur_ptr` is verified to be within buffer bounds.
+                let $ebpf_ptr = unsafe { EbpfPtr::new(cur_ptr as *mut $T) };
+                $body
+                // SAFETY: Advancing by 1 byte within bounds.
+                cur_ptr = unsafe { cur_ptr.add(1) };
+                $offset += 1;
+            }
+            if (cur_ptr as usize) + 2 <= (end_ptr as usize) && (cur_ptr as usize) % 4 > 0 {
+                type $T = u16;
+                // SAFETY: `cur_ptr` is verified to be within buffer bounds.
+                let $ebpf_ptr = unsafe { EbpfPtr::new(cur_ptr as *mut $T) };
+                $body
+                // SAFETY: Advancing by 2 bytes within bounds.
+                cur_ptr = unsafe { cur_ptr.add(2) };
+                $offset += 2;
+            }
+            if (cur_ptr as usize) + 4 <= (end_ptr as usize) && (cur_ptr as usize) % 8 > 0 {
+                type $T = u32;
+                // SAFETY: `cur_ptr` is verified to be within buffer bounds.
+                let $ebpf_ptr = unsafe { EbpfPtr::new(cur_ptr as *mut $T) };
+                $body
+                // SAFETY: Advancing by 4 bytes within bounds.
+                cur_ptr = unsafe { cur_ptr.add(4) };
+                $offset += 4;
+            }
+        }
+
+        while (cur_ptr as usize) + 8 <= (end_ptr as usize) {
+            type $T = u64;
+            // SAFETY: `cur_ptr` is verified to be within buffer bounds.
+            let $ebpf_ptr = unsafe { EbpfPtr::new(cur_ptr as *mut $T) };
+            $body
+            // SAFETY: Advancing by 8 bytes within bounds.
+            cur_ptr = unsafe { cur_ptr.add(8) };
+            $offset += 8;
+        }
+
+        if cur_ptr < end_ptr {
+            if (cur_ptr as usize) + 4 <= (end_ptr as usize) {
+                type $T = u32;
+                // SAFETY: `cur_ptr` is verified to be within buffer bounds.
+                let $ebpf_ptr = unsafe { EbpfPtr::new(cur_ptr as *mut $T) };
+                $body
+                // SAFETY: Advancing by 4 bytes within bounds.
+                cur_ptr = unsafe { cur_ptr.add(4) };
+                $offset += 4;
+            }
+            if (cur_ptr as usize) + 2 <= (end_ptr as usize) {
+                type $T = u16;
+                // SAFETY: `cur_ptr` is verified to be within buffer bounds.
+                let $ebpf_ptr = unsafe { EbpfPtr::new(cur_ptr as *mut $T) };
+                $body
+                // SAFETY: Advancing by 2 bytes within bounds.
+                cur_ptr = unsafe { cur_ptr.add(2) };
+                $offset += 2;
+            }
+            if cur_ptr < end_ptr {
+                type $T = u8;
+                // SAFETY: `cur_ptr` is verified to be within buffer bounds.
+                let $ebpf_ptr = unsafe { EbpfPtr::new(cur_ptr as *mut $T) };
+                $body
+                // SAFETY: Advancing by 1 byte within bounds.
+                cur_ptr = unsafe { cur_ptr.add(1) };
+                $offset += 1;
+            }
+        }
+
+        debug_assert_eq!(cur_ptr, end_ptr);
+        debug_assert_eq!($offset, len);
+    };
+}
+
 impl<'a> EbpfBufferPtr<'a> {
     pub const ALIGNMENT: usize = size_of::<u64>();
 
@@ -265,90 +359,19 @@ impl<'a> EbpfBufferPtr<'a> {
     pub fn load_to_slice(&self, dst: &mut [MaybeUninit<u8>]) {
         assert_eq!(dst.len(), self.size);
 
-        let mut src_ptr = self.ptr;
-        // SAFETY: `len` is validated above to be within bounds.
-        let src_end = unsafe { src_ptr.add(self.size) };
+        for_each_element!(self, offset, ptr, T, {
+            let value = ptr.load_relaxed();
+            let value_bytes = value.as_bytes();
 
-        let Range { start: dst_ptr, end: dst_end } = dst.as_mut_ptr_range();
-        let mut dst_ptr = dst_ptr as *mut u8;
-        let dst_end = dst_end as *mut u8;
-
-        if src_ptr as usize % 8 > 0 {
-            if src_ptr < src_end && src_ptr as usize % 2 > 0 {
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    let value: u8 = arch::load_u8(src_ptr as *const u8);
-                    std::ptr::write_unaligned(dst_ptr, value);
-                    src_ptr = src_ptr.add(1);
-                    dst_ptr = dst_ptr.add(1);
-                };
-            }
-
-            if src_ptr as usize + 2 <= src_end as usize && src_ptr as usize % 4 > 0 {
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    let value: u16 = arch::load_u16(src_ptr as *const u16);
-                    std::ptr::write_unaligned(dst_ptr as *mut u16, value);
-                    src_ptr = src_ptr.add(2);
-                    dst_ptr = dst_ptr.add(2);
-                }
-            }
-
-            if src_ptr as usize + 4 <= src_end as usize && src_ptr as usize % 8 > 0 {
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    let value: u32 = arch::load_u32(src_ptr as *const u32);
-                    std::ptr::write_unaligned(dst_ptr as *mut u32, value);
-                    src_ptr = src_ptr.add(4);
-                    dst_ptr = dst_ptr.add(4);
-                }
-            }
-        }
-
-        while src_ptr as usize + 8 <= src_end as usize {
-            // SAFETY: Pointers are verified to be within the buffer bounds.
+            // SAFETY: `dst` has the same size as `self`.
             unsafe {
-                let value: u64 = arch::load_u64(src_ptr as *const u64);
-                std::ptr::write_unaligned(dst_ptr as *mut u64, value);
-                src_ptr = src_ptr.add(8);
-                dst_ptr = dst_ptr.add(8);
+                std::ptr::copy_nonoverlapping(
+                    value_bytes.as_ptr(),
+                    dst[offset].as_mut_ptr(),
+                    std::mem::size_of::<T>(),
+                )
             }
-        }
-
-        if src_ptr < src_end {
-            if src_ptr as usize + 4 <= src_end as usize {
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    let value: u32 = arch::load_u32(src_ptr as *const u32);
-                    std::ptr::write_unaligned(dst_ptr as *mut u32, value);
-                    src_ptr = src_ptr.add(4);
-                    dst_ptr = dst_ptr.add(4);
-                }
-            }
-
-            if src_ptr as usize + 2 <= src_end as usize {
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    let value: u16 = arch::load_u16(src_ptr as *const u16);
-                    std::ptr::write_unaligned(dst_ptr as *mut u16, value);
-                    src_ptr = src_ptr.add(2);
-                    dst_ptr = dst_ptr.add(2);
-                }
-            }
-
-            if src_ptr < src_end {
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    let value: u8 = arch::load_u8(src_ptr as *const u8);
-                    std::ptr::write_unaligned(dst_ptr, value);
-                    src_ptr = src_ptr.add(1);
-                    dst_ptr = dst_ptr.add(1);
-                }
-            }
-        }
-
-        debug_assert_eq!(src_ptr, src_end);
-        debug_assert_eq!(dst_ptr, dst_end);
+        });
     }
 
     /// Loads all buffer contents into a `SmallVec`.
@@ -371,90 +394,12 @@ impl<'a> EbpfBufferPtr<'a> {
     pub fn store(&self, data: &[u8]) {
         assert!(data.len() <= self.size);
 
-        let mut ptr = self.ptr;
-        // SAFETY: `len` is validated above to be within bounds.
-        let end = unsafe { ptr.add(data.len()) };
-        let mut data_offset = 0;
-
-        // Write the head of the buffer with u8, u16, u32 stores.
-        if ptr as usize % 8 > 0 {
-            if ptr < end && ptr as usize % 2 > 0 {
-                let value = data[data_offset];
-                data_offset += 1;
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    arch::store_u8(ptr, value);
-                    ptr = ptr.add(1)
-                };
-            }
-
-            if (ptr as usize) + 2 <= end as usize && ptr as usize % 4 > 0 {
-                let value = u16::read_from_bytes(&data[data_offset..(data_offset + 2)]).unwrap();
-                data_offset += 2;
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    arch::store_u16(ptr as *mut u16, value);
-                    ptr = ptr.add(2)
-                };
-            }
-
-            if (ptr as usize) + 4 <= end as usize && ptr as usize % 8 > 0 {
-                let value = u32::read_from_bytes(&data[data_offset..(data_offset + 4)]).unwrap();
-                data_offset += 4;
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    arch::store_u32(ptr as *mut u32, value);
-                    ptr = ptr.add(4)
-                };
-            }
-        }
-
-        // Write the body of the buffer with u64 stores.
-        while (ptr as usize) + 8 <= end as usize {
-            let value = u64::read_from_bytes(&data[data_offset..(data_offset + 8)]).unwrap();
-            data_offset += 8;
-            // SAFETY: Pointers are verified to be within the buffer bounds.
-            unsafe {
-                arch::store_u64(ptr as *mut u64, value);
-                ptr = ptr.add(8)
-            };
-        }
-
-        // Write the tail of the buffer with u32, u16, u8 stores.
-        if ptr < end {
-            if (ptr as usize) + 4 <= end as usize {
-                let value = u32::read_from_bytes(&data[data_offset..(data_offset + 4)]).unwrap();
-                data_offset += 4;
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    arch::store_u32(ptr as *mut u32, value);
-                    ptr = ptr.add(4)
-                };
-            }
-
-            if (ptr as usize) + 2 <= end as usize {
-                let value = u16::read_from_bytes(&data[data_offset..(data_offset + 2)]).unwrap();
-                data_offset += 2;
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    arch::store_u16(ptr as *mut u16, value);
-                    ptr = ptr.add(2)
-                };
-            }
-
-            if ptr < end {
-                let value = data[data_offset];
-                data_offset += 1;
-                // SAFETY: Pointers are verified to be within the buffer bounds.
-                unsafe {
-                    arch::store_u8(ptr, value);
-                    ptr = ptr.add(1)
-                };
-            }
-        }
-
-        debug_assert_eq!(ptr, end);
-        debug_assert_eq!(data_offset, data.len());
+        let buffer = self.slice(..data.len()).unwrap();
+        for_each_element!(buffer, offset, ptr, T, {
+            let value =
+                T::read_from_bytes(&data[offset..offset + std::mem::size_of::<T>()]).unwrap();
+            ptr.store_relaxed(value);
+        });
     }
 
     /// Copies the data from another `EbpfBufferPtr`. `src` may be smaller than
@@ -522,6 +467,25 @@ impl<'a> EbpfBufferPtr<'a> {
             // buffer.
             self.store(&src.load::<128>());
         }
+    }
+
+    /// Compares the buffer contents with the specified slice. Returns true if
+    /// they are equal.
+    pub fn eq_slice(&self, slice: &[u8]) -> bool {
+        if self.size != slice.len() {
+            return false;
+        }
+
+        for_each_element!(self, offset, ptr, T, {
+            let val = ptr.load_relaxed();
+            let slice_val =
+                T::read_from_bytes(&slice[offset..offset + std::mem::size_of::<T>()]).unwrap();
+            if val != slice_val {
+                return false;
+            }
+        });
+
+        true
     }
 }
 
@@ -732,6 +696,45 @@ mod test {
                             );
                         }
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_buffer_eq_slice() {
+        const BASE_SIZE: usize = 48;
+        let mut src_buf = (0..(BASE_SIZE as u8)).map(|v| v as u8).collect::<Vec<_>>();
+        // SAFETY: Creating EbpfBufferPtr for the buffer allocated above.
+        let src_base = unsafe { EbpfBufferPtr::new(src_buf.as_mut_ptr(), BASE_SIZE) };
+
+        for src_align in 0..8 {
+            for len in 0..=32 {
+                let src_slice = src_base.slice(src_align..(src_align + len)).unwrap();
+                let expected = (src_align..(src_align + len)).map(|v| v as u8).collect::<Vec<_>>();
+
+                assert!(src_slice.eq_slice(&expected));
+
+                // Test inequality by modifying one byte.
+                if len > 0 {
+                    let mut modified = expected.clone();
+                    modified[0] ^= 0xff;
+                    assert!(!src_slice.eq_slice(&modified));
+
+                    let mut modified_end = expected.clone();
+                    let last = len - 1;
+                    modified_end[last] ^= 0xff;
+                    assert!(!src_slice.eq_slice(&modified_end));
+                }
+
+                // Test inequality with different length.
+                let mut longer = expected.clone();
+                longer.push(0);
+                assert!(!src_slice.eq_slice(&longer));
+
+                if len > 0 {
+                    let shorter = &expected[..len - 1];
+                    assert!(!src_slice.eq_slice(shorter));
                 }
             }
         }

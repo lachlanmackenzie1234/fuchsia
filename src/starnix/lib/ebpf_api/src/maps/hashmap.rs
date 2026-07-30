@@ -84,8 +84,8 @@ use ebpf::{EbpfBufferPtr, MapSchema};
 use linux_uapi::{BPF_EXIST, BPF_NOEXIST};
 use siphasher::sip::SipHasher;
 use std::hash::Hasher;
-use std::mem::offset_of;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Low-level types used in the `HashMap` implementation.
 mod internal {
@@ -93,31 +93,30 @@ mod internal {
     use ebpf::{EbpfBufferPtr, MapSchema};
     use static_assertions::const_assert_eq;
     use std::mem::size_of;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
     // Value stored in the shared VMO to reference a data entry by index. 0 is
     // equivalent to a null reference. Reference to entry at index N is stored
     // as N + 1. This allows to keep the whole VMO initialized to zeros after
     // creation.
     #[repr(C)]
-    #[derive(Copy, Clone, Default)]
-    pub(super) struct EntryIndex(u32);
+    pub(super) struct EntryIndex(AtomicU32);
 
     impl EntryIndex {
         fn get(&self) -> Option<u32> {
-            (self.0 > 0).then(|| self.0 - 1)
+            let v = self.0.load(Ordering::Relaxed);
+            (v > 0).then(|| v - 1)
+        }
+
+        fn set(&self, value: Option<u32>) {
+            let v = value.map(|index| index + 1).unwrap_or(0);
+            self.0.store(v, Ordering::Relaxed);
         }
     }
 
-    impl From<Option<u32>> for EntryIndex {
-        fn from(value: Option<u32>) -> Self {
-            EntryIndex(value.map(|index| index + 1).unwrap_or(0))
-        }
-    }
-
-    impl From<EntryIndex> for Option<u32> {
-        fn from(value: EntryIndex) -> Self {
-            value.get()
+    impl Default for EntryIndex {
+        fn default() -> Self {
+            Self(AtomicU32::new(0))
         }
     }
 
@@ -127,7 +126,7 @@ mod internal {
     pub struct FreeListHeader {
         // Number of data entries that have been used. All entries with indices
         // greater than this value are considered unused.
-        num_used_entries: u32,
+        num_used_entries: AtomicU32,
 
         // The head of the linked list of entries that are available for reuse.
         head: EntryIndex,
@@ -136,17 +135,18 @@ mod internal {
     // Hash table header stored in the VMO at offset 0.
     #[repr(C)]
     pub(super) struct HashTableHeader {
-        pub hash_key: [u8; 16],
+        pub hash_key: (AtomicU64, AtomicU64),
 
         // Lock that controls access to the free list.
         free_list_lock: AtomicU32,
         free_list_header: FreeListHeader,
     }
 
-    const_assert_eq!(size_of::<HashTableHeader>(), 28);
+    const_assert_eq!(size_of::<HashTableHeader>(), 32);
 
     // 4 bytes added at the end to ensure 8-byte alignment for the hash table.
     const MAP_HEADER_SIZE: usize = 32;
+    const_assert_eq!(MAP_HEADER_SIZE, size_of::<HashTableHeader>());
     const_assert_eq!(MAP_HEADER_SIZE % MapBuffer::ALIGNMENT, 0);
 
     // Contents of one entry in the hash table.
@@ -250,7 +250,7 @@ mod internal {
     }
 
     pub(super) struct FreeListState<'a> {
-        header: &'a mut FreeListHeader,
+        header: &'a FreeListHeader,
         store: HashMapStore<'a>,
     }
 
@@ -262,29 +262,31 @@ mod internal {
             // the free list is synchronized.
             unsafe {
                 let hash_table_header =
-                    store.buf.ptr().get_ptr::<HashTableHeader>(0).unwrap().deref_mut();
+                    store.buf.ptr().get_ptr::<HashTableHeader>(0).unwrap().deref();
                 RwMapLock::new(
                     &hash_table_header.free_list_lock,
                     store.buf.vmo().as_handle_ref(),
                     LOCK_SIGNAL,
-                    FreeListState { header: &mut hash_table_header.free_list_header, store },
+                    FreeListState { header: &hash_table_header.free_list_header, store },
                 )
             }
         }
 
         pub fn alloc(&mut self) -> Option<HashMapEntryRef<'a>> {
-            let entry = if let Some(index) = self.header.head.into() {
+            let entry = if let Some(index) = self.header.head.get() {
                 // Pop an entry from the head of the free list if it's not empty.
                 //
                 // SAFETY: The free list is locked, so it's safe to access the
                 // free list head.
                 let entry = unsafe { self.store.data_entry(index) };
-                self.header.head = entry.next();
+                self.header.head.set(entry.next());
                 entry
-            } else if self.header.num_used_entries < self.store.layout.max_entries {
+            } else if let num_used_entries = self.header.num_used_entries.load(Ordering::Relaxed)
+                && num_used_entries < self.store.layout.max_entries
+            {
                 // Allocate an unused entry if any.
-                let index = self.header.num_used_entries;
-                self.header.num_used_entries += 1;
+                let index = num_used_entries;
+                self.header.num_used_entries.store(num_used_entries + 1, Ordering::Relaxed);
                 // SAFETY: The entry being allocated is marked as unused, which
                 // means other threads should not be using it.
                 unsafe { self.store.data_entry(index) }
@@ -312,8 +314,8 @@ mod internal {
             //
             // SAFETY: The `ref_count` is 0, which guarantees that the entry is
             // not in a hash table bucket.
-            unsafe { entry.set_next(self.header.head) };
-            self.header.head = Some(entry.index).into();
+            unsafe { entry.set_next(self.header.head.get()) };
+            self.header.head.set(Some(entry.index));
         }
     }
 
@@ -358,7 +360,7 @@ mod internal {
             // SAFETY: Caller has access to the `entry`, which implies that
             // the bucket is locked and it's safe to access the next entry in
             // the list.
-            unsafe { Some(self.data_entry(entry.next().get()?)) }
+            unsafe { Some(self.data_entry(entry.next()?)) }
         }
 
         /// Returns a ref-counted reference to the `entry`.
@@ -379,10 +381,10 @@ mod internal {
 
     impl<'a> DataEntry<'a> {
         /// Index of the next element in the linked list.
-        fn next(&self) -> EntryIndex {
+        fn next(&self) -> Option<u32> {
             // SAFETY: It's safe to read the value because the current thread is
             // holding a lock for the bucker that contains the entry.
-            unsafe { self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref().next }
+            unsafe { self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref().next.get() }
         }
 
         /// Reference counted for the entry
@@ -409,36 +411,16 @@ mod internal {
         /// # Safety
         /// Caller must ensure linked list consistency, i.e. the entry is in
         /// only one list, there are no cycles, etc.
-        unsafe fn set_next(&mut self, next: EntryIndex) {
+        unsafe fn set_next(&mut self, next: Option<u32>) {
             #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
             unsafe {
-                self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref_mut().next = next
+                self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref().next.set(next)
             }
         }
 
-        pub fn key(&self) -> &[u8] {
-            // SAFETY: This method can be called only when the linked list
-            // that contains the entry is locked, so it's safe to read the
-            // value directly.
-            unsafe {
-                std::slice::from_raw_parts(
-                    self.buf.raw_ptr().byte_offset(DATA_ENTRY_HEADER_SIZE as isize),
-                    self.key_size as usize,
-                )
-            }
-        }
-
-        /// # Safety
-        /// The key can be updated only when the entry is being inserted to a
-        /// bucket.
-        unsafe fn key_mut(&mut self) -> &mut [u8] {
-            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-            unsafe {
-                std::slice::from_raw_parts_mut(
-                    self.buf.raw_ptr().byte_offset(DATA_ENTRY_HEADER_SIZE as isize),
-                    self.key_size as usize,
-                )
-            }
+        pub fn key(&self) -> EbpfBufferPtr<'a> {
+            let key_pos = DATA_ENTRY_HEADER_SIZE;
+            self.buf.slice(key_pos..(key_pos + self.key_size as usize)).unwrap()
         }
 
         /// Returns the buffer pointing at the element value.
@@ -492,7 +474,7 @@ mod internal {
     }
 
     pub(super) struct BucketState<'a> {
-        head: &'a mut EntryIndex,
+        head: &'a EntryIndex,
         store: HashMapStore<'a>,
     }
 
@@ -515,13 +497,13 @@ mod internal {
             // header to synchronized access access to the `BucketState`.
             unsafe {
                 let offset = store.layout.bucket_offset(index);
-                let header = store.buf.ptr().get_ptr::<BucketHeader>(offset).unwrap().deref_mut();
+                let header = store.buf.ptr().get_ptr::<BucketHeader>(offset).unwrap().deref();
                 let lock_cell = &header.lock;
                 RwMapLock::new(
                     lock_cell,
                     store.buf.vmo().as_handle_ref(),
                     BUCKET_LOCK_SIGNALS[(index as usize) % BUCKET_LOCK_SIGNALS.len()],
-                    BucketState { head: &mut header.head, store },
+                    BucketState { head: &header.head, store },
                 )
             }
         }
@@ -540,7 +522,7 @@ mod internal {
             let mut previous = None;
             let mut current = self.head()?;
             loop {
-                if current.key() == key {
+                if current.key().eq_slice(key) {
                     return Some((current.index, previous));
                 }
                 previous = Some(current.index);
@@ -568,8 +550,11 @@ mod internal {
             unsafe {
                 let entry = self.store.data_entry(found);
                 match previous {
-                    None => *self.head = entry.next(),
-                    Some(previous) => self.store.data_entry(previous).set_next(entry.next()),
+                    None => self.head.set(entry.next()),
+                    Some(previous) => {
+                        let mut prev_entry = self.store.data_entry(previous);
+                        prev_entry.set_next(entry.next());
+                    }
                 };
                 Some(HashMapEntryRef { store: self.store.clone(), index: Some(entry.index) })
             }
@@ -588,14 +573,15 @@ mod internal {
             // that the bucket lock is held when it's being used.
             let mut entry = unsafe { self.store.data_entry(index) };
 
-            // SAFETY: The entry is not being used by other threads, so it's safe
-            // to mutate it.
+            entry.key().store(key);
+            // SAFETY: The entry is not in any list (we just allocated it or
+            // removed it from bucket and checked it is the only reference).
+            // We are inserting it to the head of the bucket.
             unsafe {
-                entry.key_mut().copy_from_slice(&key);
-                entry.set_next(*self.head);
+                entry.set_next(self.head.get());
             }
 
-            *self.head = Some(index).into();
+            self.head.set(Some(index));
 
             entry
         }
@@ -621,17 +607,17 @@ impl HashMap {
         // in the buffer.
         // SAFETY: The buffer is not shared at this point, so it's safe to
         // access it directly.
-        let hash_key = unsafe {
-            &mut buffer.ptr().get_ptr::<HashTableHeader>(0).unwrap().deref_mut().hash_key
-        };
-        rand::fill(hash_key);
+        let header = unsafe { buffer.ptr().get_ptr::<HashTableHeader>(0).unwrap().deref() };
+        header.hash_key.0.store(rand::random(), Ordering::Relaxed);
+        header.hash_key.1.store(rand::random(), Ordering::Relaxed);
 
         Ok(HashMap { buffer, layout })
     }
 
-    fn hash_key<'a>(&'a self) -> &[u8; 16] {
+    fn hash_key<'a>(&'a self) -> (u64, u64) {
         // SAFETY: The hash key never changes, it's safe to access it directly.
-        unsafe { self.buffer.ptr().get_ptr(offset_of!(HashTableHeader, hash_key)).unwrap().deref() }
+        let header = unsafe { self.buffer.ptr().get_ptr::<HashTableHeader>(0).unwrap().deref() };
+        (header.hash_key.0.load(Ordering::Relaxed), header.hash_key.1.load(Ordering::Relaxed))
     }
 
     fn bucket<'a>(&'a self, index: u32) -> RwMapLock<'a, BucketState<'a>> {
@@ -643,7 +629,8 @@ impl HashMap {
     }
 
     fn get_bucket_index_for_key<'a>(&'a self, key: &'_ [u8]) -> u32 {
-        let mut hasher = SipHasher::new_with_key(self.hash_key());
+        let (k1, k2) = self.hash_key();
+        let mut hasher = SipHasher::new_with_keys(k1, k2);
         hasher.write(key);
         let hash = hasher.finish();
 
@@ -721,7 +708,7 @@ impl MapImpl for HashMap {
                 let bucket = self.bucket(bucket_index).read();
                 let entry = bucket.find(&key).ok_or(MapError::InvalidKey)?;
                 if let Some(next_entry) = self.store().next(&entry) {
-                    return Ok(MapKey::from_slice(next_entry.key()));
+                    return Ok(next_entry.key().load::<16>());
                 }
                 bucket_index + 1
             }
@@ -733,7 +720,7 @@ impl MapImpl for HashMap {
         for bucket_index in next_bucket..self.layout.num_buckets() {
             let bucket = self.bucket(bucket_index).read();
             if let Some(entry) = bucket.head() {
-                return Ok(MapKey::from_slice(entry.key()));
+                return Ok(entry.key().load::<16>());
             }
         }
 
