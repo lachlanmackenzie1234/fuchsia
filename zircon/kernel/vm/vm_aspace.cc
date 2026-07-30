@@ -902,10 +902,7 @@ VmAspace* cpp_vm_aspace_create_unified(VmAspace* shared, VmAspace* restricted, c
   auto aspace = VmAspace::CreateUnified(shared, restricted, name);
   return fbl::ExportToRawPtr(&aspace);
 }
-VmAspace* cpp_vm_aspace_kernel_aspace() {
-  fbl::RefPtr<VmAspace> aspace(VmAspace::kernel_aspace());
-  return fbl::ExportToRawPtr(&aspace);
-}
+VmAspace* cpp_vm_aspace_kernel_aspace() { return VmAspace::kernel_aspace(); }
 VmAddressRegion* cpp_vm_aspace_root_vmar(VmAspace* aspace) {
   fbl::RefPtr<VmAddressRegion> vmar = aspace->RootVmar();
   return fbl::ExportToRawPtr(&vmar);

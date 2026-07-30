@@ -238,8 +238,8 @@ impl VmAspace {
     }
 
     /// Returns the singleton kernel address space.
-    pub fn kernel_aspace() -> Option<RefPtr<VmAspace>> {
-        unsafe { RefPtr::try_from_raw(cpp_vm_aspace_kernel_aspace()) }
+    pub fn kernel_aspace() -> &'static VmAspace {
+        unsafe { &*cpp_vm_aspace_kernel_aspace() }
     }
 
     /// Returns the root address region (`RootVmar`) for this address space.
