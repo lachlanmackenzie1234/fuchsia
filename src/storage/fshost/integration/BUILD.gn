@@ -32,6 +32,7 @@ rustc_library("fshost_test_fixture") {
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/rust/zbi",
     "//sdk/rust/zx",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_rust",
     "//src/devices/bus/drivers/platform",

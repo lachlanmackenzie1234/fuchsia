@@ -12,42 +12,23 @@ use anyhow::{Context, Error, ensure};
 use fuchsia_component::client::connect_to_protocol;
 use vmo_backed_block_server::VmoBackedServer;
 
-use zerocopy::{FromBytes, Immutable, KnownLayout};
-
-/// The following types and constants are defined in sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
-const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
-const ZBI_FLAGS_VERSION: u32 = 0x00010000;
-const ZBI_ITEM_MAGIC: u32 = 0xb5781729;
-const ZBI_FLAGS_STORAGE_COMPRESSED: u32 = 0x00000001;
-
-#[repr(C)]
-#[derive(KnownLayout, FromBytes, Immutable)]
-struct ZbiHeader {
-    type_: u32,
-    length: u32,
-    extra: u32,
-    flags: u32,
-    _reserved0: u32,
-    _reserved1: u32,
-    magic: u32,
-    _crc32: u32,
-}
+// Defined in //sdk/lib/zbi-format/include/lib/zbi-format/internal/storage.h.
+const ZBI_FLAGS_STORAGE_COMPRESSED: zbi::Flags = zbi::Flags::from_bits_retain(1);
 
 async fn create_ramdisk(zbi_vmo: zx::Vmo) -> Result<Box<dyn Device>, Error> {
-    let mut header_buf = [0u8; std::mem::size_of::<ZbiHeader>()];
+    let mut header_buf = [0u8; std::mem::size_of::<zbi::Header>()];
     zbi_vmo.read(&mut header_buf, 0).context("reading zbi item header")?;
     // Expect is fine here - we made the buffer ourselves to the exact size of the header so
     // something is very wrong if we trip this.
-    let header =
-        ZbiHeader::read_from_bytes(header_buf.as_slice()).expect("buffer was the wrong size");
+    let header: zbi::Header = unsafe { std::mem::transmute(header_buf) };
 
     ensure!(
-        header.flags & ZBI_FLAGS_VERSION != 0,
+        header.flags.contains(zbi::Flags::VERSION),
         "invalid ZBI_TYPE_STORAGE_RAMDISK item header: flags"
     );
-    ensure!(header.magic == ZBI_ITEM_MAGIC, "invalid ZBI_TYPE_STORAGE_RAMDISK item header: magic");
+    ensure!(header.magic == zbi::ITEM_MAGIC, "invalid ZBI_TYPE_STORAGE_RAMDISK item header: magic");
     ensure!(
-        header.type_ == ZBI_TYPE_STORAGE_RAMDISK,
+        header.r#type == zbi::Type::StorageRamdisk,
         "invalid ZBI_TYPE_STORAGE_RAMDISK item header: type"
     );
 
@@ -56,14 +37,14 @@ async fn create_ramdisk(zbi_vmo: zx::Vmo) -> Result<Box<dyn Device>, Error> {
     // could just be used here directly if uncompressed (or maybe bootsvc deals with decompression
     // in the first place so the uncompressed VMO is always what we get).
     ensure!(
-        header.flags & ZBI_FLAGS_STORAGE_COMPRESSED != 0,
+        header.flags.contains(ZBI_FLAGS_STORAGE_COMPRESSED),
         "ignoring uncompressed RAMDISK item in ZBI"
     );
 
     let ramdisk_vmo = zx::Vmo::create(header.extra as u64).context("making output vmo")?;
     let mut compressed_buf = vec![0u8; header.length as usize];
     zbi_vmo
-        .read(&mut compressed_buf, std::mem::size_of::<ZbiHeader>() as u64)
+        .read(&mut compressed_buf, std::mem::size_of::<zbi::Header>() as u64)
         .context("reading compressed ramdisk")?;
     let decompressed_buf =
         zstd::decode_all(compressed_buf.as_slice()).context("zstd decompression failed")?;
@@ -81,7 +62,7 @@ async fn create_ramdisk(zbi_vmo: zx::Vmo) -> Result<Box<dyn Device>, Error> {
 pub async fn set_up_ramdisk() -> Result<Option<Box<dyn Device>>, Error> {
     let proxy = connect_to_protocol::<fidl_fuchsia_boot::ItemsMarker>()?;
     let (maybe_vmo, _length) = proxy
-        .get(ZBI_TYPE_STORAGE_RAMDISK, 0)
+        .get(zbi::Type::StorageRamdisk.into(), 0)
         .await
         .context("boot items get failed (fidl failure)")?;
 

@@ -31,7 +31,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use test_vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
 use uuid::Uuid;
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::IntoBytes;
 
 pub const TEST_DISK_BLOCK_SIZE: u32 = 512;
 pub const FVM_SLICE_SIZE: u64 = 32 * 1024;
@@ -887,25 +887,8 @@ impl DiskBuilder {
     /// Create a vmo artifact with the format of a compressed zbi boot item containing this
     /// filesystem.
     pub(crate) async fn build_as_zbi_ramdisk(self) -> zx::Vmo {
-        /// The following types and constants are defined in
-        /// sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
-        const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
-        const ZBI_FLAGS_VERSION: u32 = 0x00010000;
-        const ZBI_ITEM_MAGIC: u32 = 0xb5781729;
-        const ZBI_FLAGS_STORAGE_COMPRESSED: u32 = 0x00000001;
-
-        #[repr(C)]
-        #[derive(IntoBytes, Immutable)]
-        struct ZbiHeader {
-            type_: u32,
-            length: u32,
-            extra: u32,
-            flags: u32,
-            _reserved0: u32,
-            _reserved1: u32,
-            magic: u32,
-            _crc32: u32,
-        }
+        // Defined in //sdk/lib/zbi-format/include/lib/zbi-format/internal/storage.h.
+        const ZBI_FLAGS_STORAGE_COMPRESSED: zbi::Flags = zbi::Flags::from_bits_retain(1);
 
         let (ramdisk_vmo, _) = self.build().await;
         let extra = ramdisk_vmo.get_size().unwrap() as u32;
@@ -914,18 +897,18 @@ impl DiskBuilder {
         let compressed_buf = zstd::encode_all(decompressed_buf.as_slice(), 0).unwrap();
         let length = compressed_buf.len() as u32;
 
-        let header = ZbiHeader {
-            type_: ZBI_TYPE_STORAGE_RAMDISK,
+        let header = zbi::Header {
+            r#type: zbi::Type::StorageRamdisk,
             length,
             extra,
-            flags: ZBI_FLAGS_VERSION | ZBI_FLAGS_STORAGE_COMPRESSED,
-            _reserved0: 0,
-            _reserved1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            _crc32: 0,
+            flags: zbi::Flags::VERSION | ZBI_FLAGS_STORAGE_COMPRESSED,
+            reserved0: 0,
+            reserved1: 0,
+            magic: zbi::ITEM_MAGIC,
+            crc32: 0,
         };
 
-        let header_size = std::mem::size_of::<ZbiHeader>() as u64;
+        let header_size = std::mem::size_of::<zbi::Header>() as u64;
         let zbi_vmo = zx::Vmo::create(header_size + length as u64).unwrap();
         zbi_vmo.write(header.as_bytes(), 0).unwrap();
         zbi_vmo.write(&compressed_buf, header_size).unwrap();
