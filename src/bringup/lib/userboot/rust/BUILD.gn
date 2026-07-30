@@ -5,12 +5,10 @@
 import("//build/rust/rustc_library.gni")
 
 group("rust") {
-  testonly = true  # While using experimental-protocol boot option.
   public_deps = [ ":userboot" ]
 }
 
 rustc_library("userboot") {
-  testonly = true  # While using experimental-protocol boot option.
   edition = "2024"
   sources = [ "src/lib.rs" ]
   public_deps = [ ".." ]  # Public to propagate static linking configs.

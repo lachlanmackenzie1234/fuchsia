@@ -29,10 +29,8 @@ static_library("userboot") {
   deps = [ ":startup.basic" ]
 
   # Get the boot option set via a ZBI item that will roll up into the ultimate
-  # kernel ZBI that contains the userboot executable.  While this is needed,
-  # the whole library is testonly.
+  # kernel ZBI that contains the userboot executable.
   data_deps = [ ":experimental-protocol" ]
-  testonly = true
 }
 
 user_basic_redirect("startup.basic") {
@@ -149,7 +147,6 @@ zbi_test("userboot-lib-boot-test") {
 
 # Eventually the new protocol will be the only protocol and this will go away.
 kernel_cmdline("experimental-protocol") {
-  testonly = true
   visibility = [ ":*" ]
   args = [ "kernel.userboot.experimental-protocol" ]
 }
