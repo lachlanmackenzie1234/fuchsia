@@ -19,6 +19,7 @@ use fuchsia_driver_test::{
     DriverTestRealmInstance2, Options2,
 };
 use futures::{FutureExt as _, StreamExt as _};
+use zerocopy::IntoBytes;
 
 async fn get_driver_info(
     service: &fdd::ManagerProxy,
@@ -71,15 +72,12 @@ async fn run_boot_items(mut stream: fboot::ItemsRequestStream) {
                         pid: PDEV_PID_PBUS_TEST,
                         board_name: [0; 32],
                     };
-                    const PLATFORM_ID_SIZE: usize = std::mem::size_of::<zbi::PlatformId>();
-                    let vmo = zx::Vmo::create(PLATFORM_ID_SIZE as u64).unwrap();
-                    let bytes = unsafe {
-                        std::mem::transmute::<zbi::PlatformId, [u8; PLATFORM_ID_SIZE]>(platform_id)
-                    };
-                    vmo.write(&bytes, 0).unwrap();
+                    const PLATFORM_ID_SIZE: u32 = size_of::<zbi::PlatformId>() as u32;
+                    let vmo = zx::Vmo::create(PLATFORM_ID_SIZE.into()).unwrap();
+                    vmo.write(platform_id.as_bytes(), 0).unwrap();
                     let ret = vec![fboot::RetrievedItems {
                         payload: vmo,
-                        length: PLATFORM_ID_SIZE as u32,
+                        length: PLATFORM_ID_SIZE,
                         extra: 0,
                     }];
                     responder.send(Ok(ret)).unwrap();
