@@ -1059,10 +1059,16 @@ zx_status_t SegmentManager::ReadCompactedSummaries() {
   // Step 1: restore nat cache
   CursegInfo *seg_i = CURSEG_I(CursegType::kCursegHotData);
   page->Read(&seg_i->sum_blk->n_nats, 0, kSumJournalSize);
+  if (NatsInCursum(*seg_i->sum_blk) > static_cast<int>(kNatJournalEntries)) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
 
   // Step 2: restore sit cache
   seg_i = CURSEG_I(CursegType::kCursegColdData);
   page->Read(&seg_i->sum_blk->n_sits, kSumJournalSize, kSumJournalSize);
+  if (SitsInCursum(*seg_i->sum_blk) > static_cast<int>(kSitJournalEntries)) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
   offset = 2 * kSumJournalSize;
 
   // Step 3: restore summary entries
@@ -1148,6 +1154,16 @@ zx_status_t SegmentManager::ReadNormalSummaries(int type) {
   {
     std::lock_guard curseg_lock(curseg->curseg_mutex);
     new_page->Read(curseg->sum_blk.get());
+
+    if (type == static_cast<int>(CursegType::kCursegHotData) &&
+        NatsInCursum(*curseg->sum_blk) > static_cast<int>(kNatJournalEntries)) {
+      return ZX_ERR_OUT_OF_RANGE;
+    }
+    if (type == static_cast<int>(CursegType::kCursegColdData) &&
+        SitsInCursum(*curseg->sum_blk) > static_cast<int>(kSitJournalEntries)) {
+      return ZX_ERR_OUT_OF_RANGE;
+    }
+
     curseg->next_segno = segno;
     ResetCurseg(static_cast<CursegType>(type), 0);
     curseg->alloc_type = ckpt.alloc_type[type];

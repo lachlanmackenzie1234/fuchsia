@@ -1488,9 +1488,15 @@ zx_status_t FsckWorker::ReadCompactedSummaries() {
 
   curseg = segment_manager_->CURSEG_I(CursegType::kCursegHotData);
   memcpy(&curseg->sum_blk->n_nats, fs_block.get<uint8_t>(), kSumJournalSize);
+  if (NatsInCursum(*curseg->sum_blk) > static_cast<int>(kNatJournalEntries)) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
 
   curseg = segment_manager_->CURSEG_I(CursegType::kCursegColdData);
   memcpy(&curseg->sum_blk->n_sits, fs_block.get<uint8_t>() + kSumJournalSize, kSumJournalSize);
+  if (SitsInCursum(*curseg->sum_blk) > static_cast<int>(kSitJournalEntries)) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
 
   offset = 2 * kSumJournalSize;
   for (int32_t i = static_cast<int32_t>(CursegType::kCursegHotData);
@@ -1585,6 +1591,16 @@ zx_status_t FsckWorker::ReadNormalSummaries(CursegType type) {
 
   CursegInfo *curseg = segment_manager_->CURSEG_I(type);
   memcpy(curseg->sum_blk.get(), summary_block.get(), kBlockSize);
+
+  if (type == CursegType::kCursegHotData &&
+      NatsInCursum(*curseg->sum_blk) > static_cast<int>(kNatJournalEntries)) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  if (type == CursegType::kCursegColdData &&
+      SitsInCursum(*curseg->sum_blk) > static_cast<int>(kSitJournalEntries)) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+
   curseg->next_segno = segno;
   ResetCurseg(type, 0);
   curseg->alloc_type = ckpt.alloc_type[static_cast<int>(type)];
