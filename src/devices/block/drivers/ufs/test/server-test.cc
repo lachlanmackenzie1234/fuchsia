@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.rpmb/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/common_types.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/markers.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/wire_types.h>
+#include <fidl/fuchsia.mem/cpp/wire.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/vector_view.h>
 #include <lib/fidl/cpp/wire/wire_types.h>
@@ -639,6 +641,71 @@ TEST_F(ServerTest, ReadWriteBufferWithInvalidLun) {
       ASSERT_TRUE(result.ok());
       const fit::result response = result.value();
       ASSERT_EQ(response.error_value(), ZX_ERR_BAD_STATE);
+    }
+  });
+  ASSERT_OK(result.status_value());
+}
+
+class UfsRpmbTest : public UfsTest {
+ public:
+  fidl::ClientEnd<fuchsia_hardware_rpmb::Rpmb> GetRpmbClient() {
+    zx::result device = driver_test().Connect<fuchsia_hardware_rpmb::Service::Device>();
+    EXPECT_EQ(ZX_OK, device.status_value());
+    return std::move(device.value());
+  }
+};
+
+TEST_F(UfsRpmbTest, RpmbGetDeviceInfo) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetRpmbClient()]() {
+    const fidl::WireResult result = fidl::WireCall(client_end)->GetDeviceInfo();
+    ASSERT_TRUE(result.ok());
+
+    const fuchsia_hardware_rpmb::wire::DeviceInfo& device_info = result.value().info;
+    ASSERT_TRUE(device_info.is_emmc_info());
+    ASSERT_EQ(device_info.emmc_info().rpmb_size, 4);
+    ASSERT_EQ(device_info.emmc_info().reliable_write_sector_count, 1);
+  });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(UfsRpmbTest, RpmbRequest) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetRpmbClient()]() {
+    // Create VMOs for request
+    zx::vmo tx_vmo;
+    ASSERT_OK(zx::vmo::create(512, 0, &tx_vmo));
+    std::vector<uint8_t> tx_data(512, 0x5A);
+    ASSERT_OK(tx_vmo.write(tx_data.data(), 0, 512));
+
+    zx::vmo rx_vmo;
+    ASSERT_OK(zx::vmo::create(512, 0, &rx_vmo));
+
+    zx::vmo rx_vmo_dup;
+    ASSERT_OK(rx_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &rx_vmo_dup));
+
+    fuchsia_mem::wire::Range rx_range = {
+        .vmo = std::move(rx_vmo_dup),
+        .offset = 0,
+        .size = 512,
+    };
+    fuchsia_hardware_rpmb::wire::Request req{
+        .tx_frames =
+            fuchsia_mem::wire::Range{
+                .vmo = std::move(tx_vmo),
+                .offset = 0,
+                .size = 512,
+            },
+        .rx_frames = fidl::ObjectView<fuchsia_mem::wire::Range>::FromExternal(&rx_range),
+    };
+
+    const fidl::WireResult result = fidl::WireCall(client_end)->Request(std::move(req));
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result.value().is_ok());
+
+    // Verify response data is populated (DefaultSecurityProtocolInHandler returns 0xAB)
+    std::vector<uint8_t> rx_data(512);
+    ASSERT_OK(rx_vmo.read(rx_data.data(), 0, 512));
+    for (uint8_t val : rx_data) {
+      ASSERT_EQ(val, 0xAB);
     }
   });
   ASSERT_OK(result.status_value());

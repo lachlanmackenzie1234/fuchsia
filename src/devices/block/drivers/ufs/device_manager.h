@@ -82,6 +82,7 @@ class DeviceManager {
   zx::result<uint32_t> GetBootLunEnabled();
   zx::result<> GetControllerDescriptor();
   zx::result<UnitDescriptor> ReadUnitDescriptor(uint8_t lun);
+  zx::result<RpmbUnitDescriptor> ReadRpmbUnitDescriptor();
 
   // Exception Events
   zx::result<> PostExceptionEventsTask();

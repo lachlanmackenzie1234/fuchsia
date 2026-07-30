@@ -292,9 +292,12 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
                response_length);
   auto response = request_list_.GetDescriptorBuffer(slot, response_offset);
 
-  if (zx::result<> result =
-          FillDescriptorAndSendRequest(slot, request.GetDataDirection(), response_offset,
-                                       response_length, prdt_offset, prdt_entry_count);
+  const bool reliable_write = (lun == static_cast<uint8_t>(WellKnownLuns::kRpmb) &&
+                               request.GetDataDirection() == DataDirection::kHostToDevice);
+
+  if (zx::result<> result = FillDescriptorAndSendRequest(
+          slot, request.GetDataDirection(), response_offset, response_length, prdt_offset,
+          prdt_entry_count, reliable_write);
       result.is_error()) {
     fdf::error("Failed to send upiu: {}", result);
     return result.take_error();
@@ -509,7 +512,8 @@ zx_time_t TransferRequestProcessor::GetEarliestTimeoutDeadline() {
 
 zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
     uint8_t slot, const DataDirection data_dir, const uint16_t response_offset,
-    const uint16_t response_length, const uint16_t prdt_offset, const uint32_t prdt_entry_count) {
+    const uint16_t response_length, const uint16_t prdt_offset, const uint32_t prdt_entry_count,
+    const bool reliable_write) {
   auto descriptor = request_list_.GetRequestDescriptor<TransferRequestDescriptor>(slot);
   RequestSlot &request_slot = request_list_.GetSlot(slot);
   constexpr uint16_t kDwordSize = 4;
@@ -520,6 +524,7 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
   // Fill up UTP Transfer Request Descriptor.
   CustomMemSet(descriptor, 0, sizeof(TransferRequestDescriptor));
   descriptor->set_interrupt(true);
+  descriptor->set_ru(reliable_write);
   descriptor->set_data_direction(data_dir);
   descriptor->set_command_type(kCommandTypeUfsStorage);
   // If the command was successful, overwrite |overall_command_status| field with |kSuccess|.

@@ -36,10 +36,13 @@
 
 namespace ufs {
 
+class UfsRpmbDevice;
+
 constexpr uint32_t kMaxLunCount = 32;
 constexpr uint32_t kMaxLunIndex = kMaxLunCount - 1;
 constexpr uint32_t kDeviceInitTimeoutUs = 2000000;
 constexpr uint32_t kHostControllerTimeoutUs = 1000;
+constexpr int kMaxRetries = 3;
 constexpr uint32_t kMaxTransferSize1MiB = 1024 * 1024;
 constexpr uint8_t kPlaceholderTarget = 0;
 
@@ -174,8 +177,8 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOn = 1;
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelBoot = 2;
 
-  explicit Ufs() : fdf::DriverBase2(kDriverName), hardware_power_element_runner_server_(*this) {}
-  ~Ufs() override = default;
+  explicit Ufs();
+  ~Ufs() override;
 
   zx::result<> Start(fdf::DriverContext context) override;
 
@@ -384,6 +387,7 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   std::unique_ptr<DeviceManager> device_manager_;
   std::unique_ptr<TransferRequestProcessor> transfer_request_processor_;
   std::unique_ptr<TaskManagementRequestProcessor> task_management_request_processor_;
+  std::unique_ptr<UfsRpmbDevice> rpmb_device_;
 
   // Controller internal information.
   uint32_t logical_unit_count_ = 0;

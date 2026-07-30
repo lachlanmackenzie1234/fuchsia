@@ -6,6 +6,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <algorithm>
+#include <cstdio>
 
 #include "src/devices/block/lib/common/include/common.h"
 #include "ufs-mock-device.h"
@@ -28,6 +29,8 @@ zx::result<uint8_t *> PrdtMapAndGetVirtualAddress(
   }
   return zx::ok(data_buffer);
 }
+
+}  // namespace
 
 zx_status_t CopyBufferToPhysicalRegion(UfsMockDevice &mock_device,
                                        cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upius,
@@ -87,8 +90,6 @@ zx_status_t CopyPhysicalRegionToBuffer(
 
   return ZX_OK;
 }
-
-}  // namespace
 
 void ScsiCommandProcessor::BuildSenseData(ResponseUpiuData &response_upiu,
                                           const scsi::SenseKey sense_key) {
@@ -501,6 +502,54 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultWriteBufferHandler
 
   if (zx_status_t status =
           mock_device.WriteToDeviceBuffer(lun, data_buffer.data(), buffer_offset, length);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok(std::move(data_buffer));
+}
+
+zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultSecurityProtocolInHandler(
+    UfsMockDevice &mock_device, CommandUpiuData &command_upiu, ResponseUpiuData &response_upiu,
+    cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upius) {
+  ScsiCommandUpiu security_in_command(command_upiu);
+  auto *scsi_cdb = reinterpret_cast<scsi::SecurityProtocolInCDB *>(
+      security_in_command.GetData<CommandUpiuData>()->cdb);
+  uint32_t allocation_length_be;
+  std::memcpy(&allocation_length_be, &scsi_cdb->allocation_length, sizeof(uint32_t));
+  uint32_t allocation_length = be32toh(allocation_length_be);
+  if (scsi_cdb->inc_512()) {
+    allocation_length *= 512;
+  }
+
+  // Populate mock read frames with placeholder data (e.g. 0xAB)
+  std::vector<uint8_t> data_buffer(allocation_length, 0xAB);
+
+  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  if (zx_status_t status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
+      status != ZX_OK) {
+    fdf::error("UFS MOCK: DefaultSecurityProtocolInHandler failed to CopyBufferToPhysicalRegion");
+    return zx::error(status);
+  }
+  return zx::ok(std::move(data_buffer));
+}
+
+zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultSecurityProtocolOutHandler(
+    UfsMockDevice &mock_device, CommandUpiuData &command_upiu, ResponseUpiuData &response_upiu,
+    cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upius) {
+  ScsiCommandUpiu security_out_command(command_upiu);
+  auto *scsi_cdb = reinterpret_cast<scsi::SecurityProtocolOutCDB *>(
+      security_out_command.GetData<CommandUpiuData>()->cdb);
+  uint32_t transfer_length_be;
+  std::memcpy(&transfer_length_be, &scsi_cdb->transfer_length, sizeof(uint32_t));
+  uint32_t transfer_length = be32toh(transfer_length_be);
+  if (scsi_cdb->inc_512()) {
+    transfer_length *= 512;
+  }
+
+  std::vector<uint8_t> data_buffer(transfer_length);
+
+  ZX_DEBUG_ASSERT(command_upiu.header_flags_w());
+  if (zx_status_t status = CopyPhysicalRegionToBuffer(mock_device, data_buffer, prdt_upius);
       status != ZX_OK) {
     return zx::error(status);
   }

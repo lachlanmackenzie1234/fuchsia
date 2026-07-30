@@ -127,7 +127,8 @@ class TransferRequestProcessor : public RequestProcessor {
 
   zx::result<> FillDescriptorAndSendRequest(uint8_t slot, DataDirection data_dir,
                                             uint16_t response_offset, uint16_t response_length,
-                                            uint16_t prdt_offset, uint32_t prdt_entry_count);
+                                            uint16_t prdt_offset, uint32_t prdt_entry_count,
+                                            bool reliable_write = false);
 
   zx::result<> CheckResponse(uint8_t slot_num, AbstractResponseUpiu &response);
   // Check for errors in the following order: OCS -> header_response -> scsi_status
