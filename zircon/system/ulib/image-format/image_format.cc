@@ -121,8 +121,12 @@ CheckedNumeric<T> CheckRoundUp(CheckedNumeric<T> val, CheckedNumeric<U> multiple
 }
 
 CheckedNumeric<uint64_t> arm_transaction_elimination_row_size(CheckedNumeric<uint32_t> width) {
-  constexpr CheckedNumeric<uint32_t> kTileSize = 32;
-  constexpr CheckedNumeric<uint32_t> kBytesPerTilePerRow = 16;
+  constexpr CheckedNumeric<uint32_t> kTileSize = 64;
+  // Each CRC table entry is an 8-byte checksum covering a 16x16 pixel block.
+  // A 64-pixel wide tile (kTileSize = 64) spans 64 / 16 = 4 blocks horizontally,
+  // requiring 4 blocks * 8 bytes/block = 32 bytes of CRC table entries per row
+  // per tile.
+  constexpr CheckedNumeric<uint32_t> kBytesPerTilePerRow = 32;
   CheckedNumeric<uint32_t> width_in_tiles = CheckRoundUp(width, kTileSize) / kTileSize;
   return CheckRoundUp(width_in_tiles * kBytesPerTilePerRow, kTransactionEliminationAlignment);
 }
@@ -130,13 +134,19 @@ CheckedNumeric<uint64_t> arm_transaction_elimination_row_size(CheckedNumeric<uin
 CheckedNumeric<uint64_t> arm_transaction_elimination_buffer_size(CheckedNumeric<uint64_t> start,
                                                                  CheckedNumeric<uint32_t> width,
                                                                  CheckedNumeric<uint32_t> height) {
-  constexpr CheckedNumeric<uint32_t> kTileSize = 32;
+  // Arm Mali v12+ GPU architectures fetch 64x64 regions from the CRC table buffer
+  // (4 rows of 16 8-byte 16x16 blocks per 64x64 tile), requiring height to be
+  // rounded up to 64 pixels.
+  constexpr CheckedNumeric<uint32_t> kTileSize = 64;
   CheckedNumeric<uint64_t> end = start;
   end = CheckRoundUp(end, kTransactionEliminationAlignment);
   constexpr CheckedNumeric<uint32_t> kHeaderSize = kTransactionEliminationAlignment;
   end += kHeaderSize;
   CheckedNumeric<uint32_t> height_in_tiles = CheckRoundUp(height, kTileSize) / kTileSize;
-  end += arm_transaction_elimination_row_size(width) * 2 * height_in_tiles;
+  // Each tile is kTileSize (64) pixels high, and each CRC table row covers a
+  // 16-pixel high stripe of the image (4 rows of CRC table per tile, instead of
+  // 2 rows when kTileSize was 32).
+  end += arm_transaction_elimination_row_size(width) * 4 * height_in_tiles;
   return end - start;
 }
 

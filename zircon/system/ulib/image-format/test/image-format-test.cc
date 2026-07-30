@@ -751,6 +751,32 @@ TEST(ImageFormat, TransactionEliminationFormats_V2) {
 }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(32)
+TEST(ImageFormat, TransactionEliminationBufferSize_ArmV12) {
+  // Test that for 1280x800, the TE CRC buffer size requires 52 rows of 640 bytes
+  // plus the 64-byte header, totaling 33,344 bytes (to satisfy Arm Mali v12+
+  // 64x64 region fetch requirements).
+  sysmem_v2::ImageFormatConstraints constraints;
+  constraints.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
+  constraints.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kArmLinearTe;
+  constraints.min_size() = {1280u, 800u};
+  constraints.max_size() = {1280u, 800u};
+  constraints.bytes_per_row_divisor().emplace(1u);
+  constraints.max_bytes_per_row().emplace(100000u);
+
+  auto image_format_result = ImageConstraintsToFormat(constraints, 1280, 800);
+  EXPECT_TRUE(image_format_result.is_ok());
+  auto image_format = image_format_result.take_value();
+
+  constexpr uint32_t kTePlane = 3;
+  auto plane_offset_checked = ImageFormatPlaneByteOffsetChecked(image_format, kTePlane);
+  EXPECT_TRUE(plane_offset_checked.IsValid());
+  auto total_size_checked = ImageFormatImageSizeChecked(image_format);
+  EXPECT_TRUE(total_size_checked.IsValid());
+  EXPECT_EQ(33344u, (total_size_checked - plane_offset_checked).ValueOrDie());
+}
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
 TEST(ImageFormat, TransactionEliminationFormatsChecked_V2) {
   PixelFormatAndModifier format;
   format.pixel_format = fuchsia_images2::PixelFormat::kB8G8R8A8;
