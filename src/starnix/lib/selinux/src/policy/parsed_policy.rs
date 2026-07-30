@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 use super::arrays::{
-    ConditionalNode, Context, DeprecatedFilenameTransition, FilenameTransition,
-    FilenameTransitionList, FsUse, GenericFsContext, IPv6Node, InfinitiBandEndPort,
-    InfinitiBandPartitionKey, InitialSid, MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY,
-    NamedContextPair, Node, Port, RangeTransition, RoleAllow, RoleAllows, RoleTransition,
-    RoleTransitions, SimpleArray,
+    Context, DeprecatedFilenameTransition, FilenameTransition, FilenameTransitionList, FsUse,
+    GenericFsContext, IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey, InitialSid,
+    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
+    RangeTransition, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
 };
 use super::error::{ParseError, ValidateError};
 use crate::new_policy::TypeSet;
@@ -54,7 +53,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    conditional_lists: SimpleArray<ConditionalNode>,
     /// The set of role transitions to apply when instantiating new objects.
     role_transitions: RoleTransitions,
     /// The set of role transitions allowed by policy.
@@ -437,10 +435,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (conditional_lists, tail) = SimpleArray::<ConditionalNode>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing conditional lists")?;
-
     let (role_transitions, tail) = RoleTransitions::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing role transitions")?;
@@ -533,7 +527,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            conditional_lists,
             role_transitions,
             role_allowlist,
             filename_transition_list,
@@ -563,10 +556,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.conditional_lists
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating conditional_lists")?;
         self.role_transitions
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)

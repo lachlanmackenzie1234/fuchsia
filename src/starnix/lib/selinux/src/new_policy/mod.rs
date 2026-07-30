@@ -25,7 +25,7 @@ use selinux_policy_derive::{Parse, Serialize, Validate};
 use error::{ParseError, ValidateError};
 use metadata::{Config, Counts, Magic, PolicyVersion, Signature};
 pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX};
-use parser::{PolicyCursor, RemainingBytes};
+use parser::{Array, PolicyCursor, RemainingBytes};
 use traits::Validate;
 pub use u24_index::U24Index;
 
@@ -36,7 +36,7 @@ pub(super) mod users;
 
 pub use access_vector::AccessVector;
 pub use bitmap::IdSpan;
-pub use booleans::ConditionalBoolean;
+pub use booleans::{ConditionalBoolean, ConditionalBooleanId};
 pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
 pub use constraints::{
@@ -50,7 +50,10 @@ pub use parser::SymbolArray;
 pub use permissions::PermissionId;
 pub use policy_cap::{PolicyCap, PolicyCapSet};
 pub use roles::{Role, RoleId, RoleSet};
-pub use rules::{AccessDecision, AccessVectorRules, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap};
+pub use rules::{
+    AccessDecision, AccessVectorRules, ConditionalNode, IndexedAccessVectorRules,
+    SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap,
+};
 pub use types::*;
 pub use users::User;
 
@@ -100,7 +103,8 @@ pub struct NewPolicy {
     conditional_booleans: IdAndNameIndexed<SymbolArray<ConditionalBoolean>>,
     sensitivities: IdAndNameIndexed<SymbolArray<Sensitivity>>,
     categories: IdAndNameIndexed<SymbolArray<Category>>,
-    access_vector_rules: AccessVectorRules,
+    access_vector_rules: IndexedAccessVectorRules,
+    conditional_nodes: Array<ConditionalNode>,
     rest: RemainingBytes,
 }
 
@@ -177,8 +181,13 @@ impl NewPolicy {
     }
 
     /// Returns the access vector rules table.
-    pub fn access_vector_rules(&self) -> &AccessVectorRules {
+    pub fn access_vector_rules(&self) -> &IndexedAccessVectorRules {
         &self.access_vector_rules
+    }
+
+    /// Returns the list of conditional nodes.
+    pub fn conditional_nodes(&self) -> &[ConditionalNode] {
+        self.conditional_nodes.as_ref()
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
@@ -277,6 +286,9 @@ mod tests {
         assert!(!new_policy.categories().is_empty());
         let c = &new_policy.categories()[0];
         assert!(!c.name().is_empty());
+
+        // Verify conditional nodes are parsed
+        let _nodes = new_policy.conditional_nodes();
 
         // Verify 100% byte-for-byte roundtrip fidelity
         let mut serialized = Vec::new();

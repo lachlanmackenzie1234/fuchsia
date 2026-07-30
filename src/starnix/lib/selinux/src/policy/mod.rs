@@ -14,7 +14,8 @@ mod constraints;
 mod security_context;
 
 pub use crate::new_policy::{
-    AccessDecision, AccessVectorRules, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap,
+    AccessDecision, AccessVectorRules, IndexedAccessVectorRules, SELINUX_AVD_FLAGS_PERMISSIVE,
+    XpermsBitmap,
 };
 pub use arrays::FsUseType;
 pub use index::FsUseLabelAndType;
