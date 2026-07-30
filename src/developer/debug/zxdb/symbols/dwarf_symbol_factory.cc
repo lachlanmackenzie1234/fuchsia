@@ -1001,11 +1001,12 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeTemplateParameter(const llvm::DWAR
   ConstValue const_value;
   decoder.AddConstValue(llvm::dwarf::DW_AT_const_value, &const_value);
 
-  if (!decoder.Decode(die) || !name || !type)
+  if (!decoder.Decode(die) || !type)
     return fxl::MakeRefCounted<Symbol>();
 
+  std::string name_str = name ? *name : "";
   fxl::RefPtr<TemplateParameter> result = fxl::MakeRefCounted<TemplateParameter>(
-      *name, MakeLazy(type), tag == DwarfTag::kTemplateValueParameter);
+      name_str, MakeLazy(type), tag == DwarfTag::kTemplateValueParameter);
 
   result->set_const_value(std::move(const_value));
 
