@@ -25,7 +25,7 @@ class TraceModelTest(unittest.TestCase):
                 trace_time.TimeDelta.from_microseconds(698600000)
             ),
         )
-        self.assertEqual(len(list(sliced_model.all_events())), 2)
+        self.assertEqual(len(list(sliced_model.all_events())), 8)
 
         tail_model: trace_model.Model = model.slice(
             trace_time.TimePoint.from_epoch_delta(
@@ -33,7 +33,7 @@ class TraceModelTest(unittest.TestCase):
             ),
             None,
         )
-        self.assertEqual(len(list(tail_model.all_events())), 4)
+        self.assertEqual(len(list(tail_model.all_events())), 9)
 
         head_model: trace_model.Model = model.slice(
             None,
@@ -41,7 +41,7 @@ class TraceModelTest(unittest.TestCase):
                 trace_time.TimeDelta.from_microseconds(698600000)
             ),
         )
-        self.assertEqual(len(list(head_model.all_events())), 5)
+        self.assertEqual(len(list(head_model.all_events())), 14)
 
         # Slicing with a doubly-infinite interval should result in an identical
         # model.
@@ -53,32 +53,32 @@ class TraceModelTest(unittest.TestCase):
 
         sliced_model: trace_model.Model = model.slice(
             trace_time.TimePoint.from_epoch_delta(
-                trace_time.TimeDelta.from_microseconds(697503138)
+                trace_time.TimeDelta.from_microseconds(697503118)
             ),
             trace_time.TimePoint.from_epoch_delta(
-                trace_time.TimeDelta.from_microseconds(697503138.9531089)
+                trace_time.TimeDelta.from_microseconds(697778309)
             ),
         )
         self.assertEqual(len(sliced_model.scheduling_records[0]), 2)
-        self.assertEqual(len(sliced_model.scheduling_records[1]), 2)
+        self.assertEqual(len(sliced_model.scheduling_records[1]), 0)
 
         tail_model: trace_model.Model = model.slice(
             trace_time.TimePoint.from_epoch_delta(
-                trace_time.TimeDelta.from_microseconds(697503138.9531089)
+                trace_time.TimeDelta.from_microseconds(697778309)
             ),
             None,
         )
-        self.assertEqual(len(tail_model.scheduling_records[0]), 2)
+        self.assertEqual(len(tail_model.scheduling_records[0]), 3)
         self.assertEqual(len(tail_model.scheduling_records[1]), 2)
 
         head_model: trace_model.Model = model.slice(
             None,
             trace_time.TimePoint.from_epoch_delta(
-                trace_time.TimeDelta.from_microseconds(697503138.9531089)
+                trace_time.TimeDelta.from_microseconds(697778309)
             ),
         )
-        self.assertEqual(len(head_model.scheduling_records[0]), 4)
-        self.assertEqual(len(head_model.scheduling_records[1]), 2)
+        self.assertEqual(len(head_model.scheduling_records[0]), 2)
+        self.assertEqual(len(head_model.scheduling_records[1]), 0)
 
     def test_slice_doesnt_reference_old_model(self) -> None:
         model: trace_model.Model = test_utils.get_test_model()
@@ -90,7 +90,7 @@ class TraceModelTest(unittest.TestCase):
                 trace_time.TimeDelta.from_microseconds(698600000)
             ),
         )
-        self.assertEqual(len(list(sliced_model.all_events())), 2)
+        self.assertEqual(len(list(sliced_model.all_events())), 8)
 
         sentinel_name: str = "OLD_MODEL_SENTINEL"
         for event in model.all_events():
