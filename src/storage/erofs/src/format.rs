@@ -76,7 +76,9 @@ pub struct InodeCompact {
     /// Format information about this particular inode. Indicates if it is compact or extended, and
     /// the data layout (i.e. what i_u means for this node).
     pub format: LEU16,
-    /// Size of the inline xattr region.
+    /// Size of the inline xattr region, or zero if there are no xattrs. This is not a count of
+    /// xattrs, it is plugged into a formula that determines the size in bytes of the xattr
+    /// section.
     pub xattr_icount: LEU16,
     /// Standard unix file type and permission bits.
     pub mode: LEU16,
@@ -107,7 +109,9 @@ pub struct InodeExtended {
     /// Format information about this particular inode. Indicates if it is compact or extended, and
     /// the data layout (i.e. what i_u means for this node).
     pub format: LEU16,
-    /// Size of the inline xattr region.
+    /// Size of the inline xattr region, or zero if there are no xattrs. This is not a count of
+    /// xattrs, it is plugged into a formula that determines the size in bytes of the xattr
+    /// section.
     pub xattr_icount: LEU16,
     /// Standard unix file type and permission bits.
     pub mode: LEU16,
@@ -149,3 +153,44 @@ pub struct Dirent {
     pub reserved: u8,
 }
 assert_eq_size!(Dirent, [u8; 12]);
+
+/// Inlined xattr body header. This sits immediately following the inode metadata if the
+/// xattr_icount is non-zero, providing information about the structure of the following xattr
+/// entries.
+#[derive(Debug, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[repr(C)]
+pub struct XattrInlineBodyHeader {
+    /// If EROFS_FEATURE_COMPAT_XATTR_FILTER is enabled and supported, this is an inverted bloom
+    /// filter on the xattr key, which can be used to determine if a key is either definitely
+    /// absent (fast failure without reading/parsing) or may exist.
+    pub name_filter: LEU32,
+    /// The number of 4 byte entries immediately after this header that are 32-bit indexes into the
+    /// global shared xattr pool, located at the xattr_block_addr from the superblock. These shared
+    /// xattrs dedupe identical key-value pairs across inodes to save space.
+    pub shared_count: u8,
+    /// Reserved section. Must be zero.
+    pub reserved: [u8; 7],
+}
+assert_eq_size!(XattrInlineBodyHeader, [u8; 12]);
+
+/// Xattr entry record header. Describes an individual xattr key-value pair for this inode. The
+/// name suffix and value data immediately follow this header, padded to a 4-byte boundary.
+#[derive(Debug, Clone, Copy, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[repr(C)]
+pub struct XattrEntry {
+    /// Length in bytes of the name suffix (i.e. this length does not include the prefix section).
+    /// The data is stored immediately following this entry.
+    pub name_len: u8,
+    /// Index of the attribute's namespace prefix. There are 5 built-in prefixes -
+    ///  - 1 -> "user."
+    ///  - 2 -> "system.posix_acl_access"
+    ///  - 3 -> "system.posix_acl_default"
+    ///  - 4 -> "trusted."
+    ///  - 6 -> "security."
+    /// If EROFS_FEATURE_INCOMPAT_XATTR_PREFIXES is set, this value is interpreted differently, but
+    /// we don't support that right now.
+    pub name_index: u8,
+    /// Length in bytes of the value that follows the name suffix after this header.
+    pub value_size: LEU16,
+}
+assert_eq_size!(XattrEntry, [u8; 4]);

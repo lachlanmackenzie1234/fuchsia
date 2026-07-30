@@ -122,6 +122,18 @@ impl Node for ErofsFile {
             }
         ))
     }
+
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+        self.volume.fs().list_xattrs(&self.node).map_err(|e| e.to_status())
+    }
+
+    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
+        self.volume
+            .fs()
+            .get_xattr(&self.node, &name)
+            .map_err(|e| e.to_status())?
+            .ok_or(zx::Status::NOT_FOUND)
+    }
 }
 
 impl GetVmo for ErofsFile {

@@ -163,6 +163,92 @@ async fn test_erofs_file_read(filename: &str) {
 }
 
 #[fuchsia::test]
+async fn test_erofs_xattrs() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    // Open "file1" which has xattrs
+    let file = fuchsia_fs::directory::open_file(&root_client, "file1", fio::PERM_READABLE)
+        .await
+        .expect("Failed to open file1");
+
+    // Get the file protocol node
+    let node_channel = file.into_channel().unwrap();
+    let file_proxy = fio::FileProxy::from_channel(node_channel);
+
+    // List extended attributes
+    let (iterator_client, iterator_server) =
+        fidl::endpoints::create_proxy::<fio::ExtendedAttributeIteratorMarker>();
+    file_proxy
+        .list_extended_attributes(iterator_server)
+        .expect("Failed to call list_extended_attributes");
+
+    // Read all attributes from the iterator
+    let mut attributes = Vec::new();
+    loop {
+        let (chunk, last) = iterator_client
+            .get_next()
+            .await
+            .expect("Failed to call get_next")
+            .map_err(zx::Status::from_raw)
+            .expect("get_next returned error");
+        attributes.extend(chunk);
+        if last {
+            break;
+        }
+    }
+
+    // Sort and assert
+    attributes.sort();
+    let expected_attributes =
+        vec![b"user.flavor".to_vec(), b"user.security".to_vec(), b"user.shared".to_vec()];
+    assert_eq!(attributes, expected_attributes);
+
+    // Get specific attributes
+    let flavor_val = file_proxy
+        .get_extended_attribute(b"user.flavor")
+        .await
+        .expect("Failed to call get_extended_attribute")
+        .map_err(zx::Status::from_raw)
+        .expect("get_extended_attribute returned error");
+    let flavor_val_bytes = match flavor_val {
+        fio::ExtendedAttributeValue::Bytes(b) => b,
+        _ => panic!("Expected bytes"),
+    };
+    assert_eq!(flavor_val_bytes, b"vanilla");
+
+    let security_val = file_proxy
+        .get_extended_attribute(b"user.security")
+        .await
+        .expect("Failed to call get_extended_attribute")
+        .map_err(zx::Status::from_raw)
+        .expect("get_extended_attribute returned error");
+    let security_val_bytes = match security_val {
+        fio::ExtendedAttributeValue::Bytes(b) => b,
+        _ => panic!("Expected bytes"),
+    };
+    assert_eq!(security_val_bytes, b"high");
+
+    let shared_val = file_proxy
+        .get_extended_attribute(b"user.shared")
+        .await
+        .expect("Failed to call get_extended_attribute")
+        .map_err(zx::Status::from_raw)
+        .expect("get_extended_attribute returned error");
+    let shared_val_bytes = match shared_val {
+        fio::ExtendedAttributeValue::Bytes(b) => b,
+        _ => panic!("Expected bytes"),
+    };
+    assert_eq!(shared_val_bytes, b"same_value");
+
+    // Get non-existent attribute should return NOT_FOUND
+    let err = file_proxy
+        .get_extended_attribute(b"user.non_existent")
+        .await
+        .expect("Failed to call get_extended_attribute");
+    assert_eq!(err.unwrap_err(), zx::Status::NOT_FOUND.into_raw());
+}
+
+#[fuchsia::test]
 async fn test_erofs_file_paging_after_close() {
     let (root_client, _realm) = setup_erofs().await;
 

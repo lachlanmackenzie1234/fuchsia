@@ -8,6 +8,8 @@ use bitflags::bitflags;
 use crc::{CRC_32_ISCSI, Crc};
 use std::sync::Arc;
 use thiserror::Error;
+use zerocopy::IntoBytes;
+use zerocopy::byteorder::little_endian::U32 as LEU32;
 
 pub mod readers;
 use readers::{Reader, ReaderError, ReaderExt};
@@ -78,6 +80,12 @@ pub enum ParsingError {
     InvalidNid(u64),
     #[error("Integer overflow during calculation")]
     Overflow,
+    #[error("Missing shared xattr area but inode has shared xattrs")]
+    MissingSharedXattrArea,
+    #[error("Xattr entry extends past the end of the inline xattr region")]
+    XattrEntryOutOfBounds,
+    #[error("Invalid xattr namespace index: {}", _0)]
+    InvalidXattrNamespace(u8),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -113,6 +121,7 @@ pub struct NodeInner {
     uid: u32,
     gid: u32,
     mtime_ns: u64,
+    xattr_icount: u16,
 }
 
 impl NodeInner {
@@ -152,6 +161,10 @@ impl NodeInner {
             InodeVersion::Compact => 32,
             InodeVersion::Extended => 64,
         }
+    }
+
+    fn inline_xattr_size(&self) -> u64 {
+        if self.xattr_icount == 0 { 0 } else { ((self.xattr_icount as u64 - 1) * 4) + 12 }
     }
 
     pub fn size(&self) -> u64 {
@@ -278,6 +291,7 @@ impl Node {
             uid: inode.uid.get().into(),
             gid: inode.gid.get().into(),
             mtime_ns: build_time_ns,
+            xattr_icount: inode.xattr_icount.get(),
         }))
     }
 
@@ -306,6 +320,7 @@ impl Node {
             uid: inode.uid.get(),
             gid: inode.gid.get(),
             mtime_ns,
+            xattr_icount: inode.xattr_icount.get(),
         }))
     }
 
@@ -354,6 +369,7 @@ pub struct ErofsFilesystem {
     reader: Arc<dyn Reader>,
     block_size: u64,
     meta_addr: u64,
+    xattr_addr: u64,
     root_node: DirectoryNode,
     total_bytes: u64,
     total_inodes: u64,
@@ -375,6 +391,8 @@ impl ErofsFilesystem {
             .and_then(|t| t.checked_add(super_block.fixed_nsec.get().into()))
             .ok_or(ParsingError::Overflow)?;
         let total_bytes = (super_block.blocks.get() as u64) * block_size;
+        let xattr_block_addr = super_block.xattr_block_addr.get().into();
+        let xattr_addr = block_size.checked_mul(xattr_block_addr).ok_or(ParsingError::Overflow)?;
         let root_nid = super_block.root_nid.get().into();
         let root_node = match Node::from_nid(root_nid, meta_addr, build_time_ns, &reader)? {
             Node::Directory(node) => node,
@@ -384,6 +402,7 @@ impl ErofsFilesystem {
             reader,
             block_size,
             meta_addr,
+            xattr_addr,
             root_node,
             total_bytes,
             total_inodes,
@@ -521,10 +540,12 @@ impl ErofsFilesystem {
                 if bytes_read < read_len {
                     let remaining_len = read_len - bytes_read;
                     let current_offset = offset + bytes_read as u64;
-                    // TODO(https://fxbug.dev/479841115): figure out how xattrs fit into this.
+                    let inline_xattr_size = node.inline_xattr_size();
                     let inline_data_offset = node
                         .inode_offset()
                         .checked_add(node.metadata_size())
+                        .ok_or(ParsingError::Overflow)?
+                        .checked_add(inline_xattr_size)
                         .ok_or(ParsingError::Overflow)?;
                     let tail_offset = current_offset - full_blocks_len;
                     let tail_read_offset = inline_data_offset
@@ -662,6 +683,221 @@ impl ErofsFilesystem {
 
         Ok(None)
     }
+
+    /// Returns an iterator over the xattr entry headers for a node.
+    pub fn iter_xattrs<'a>(&'a self, node: &NodeInner) -> Result<XattrIterator<'a>, ErofsError> {
+        if node.xattr_icount == 0 {
+            return Ok(XattrIterator {
+                reader: self.reader.as_ref(),
+                xattr_addr: self.xattr_addr,
+                shared_ids: Vec::new(),
+                inline_offset: 0,
+                inline_end: 0,
+            });
+        }
+        let xattr_metadata_size = node.inline_xattr_size();
+        let xattr_metadata_start =
+            node.inode_offset().checked_add(node.metadata_size()).ok_or(ParsingError::Overflow)?;
+
+        // Read the inline xattr header to get the details on the extended attributes for this node
+        let header: format::XattrInlineBodyHeader =
+            self.reader.read_object(xattr_metadata_start)?;
+        let shared_count = header.shared_count as usize;
+
+        let shared_ids_size = shared_count as u64 * 4;
+        let inline_entries_start = xattr_metadata_start + 12 + shared_ids_size;
+        let inline_end = xattr_metadata_start + xattr_metadata_size;
+
+        if inline_entries_start > inline_end {
+            return Err(ParsingError::XattrEntryOutOfBounds.into());
+        }
+
+        let shared_ids = if shared_count > 0 {
+            let mut ids = vec![LEU32::ZERO; shared_count];
+            self.reader.read(xattr_metadata_start + 12, ids.as_mut_bytes())?;
+            ids
+        } else {
+            Vec::new()
+        };
+
+        Ok(XattrIterator {
+            reader: self.reader.as_ref(),
+            xattr_addr: self.xattr_addr,
+            shared_ids,
+            inline_offset: inline_entries_start,
+            inline_end,
+        })
+    }
+
+    /// List all xattr names for a given node.
+    pub fn list_xattrs(&self, node: &NodeInner) -> Result<Vec<Vec<u8>>, ErofsError> {
+        let mut names = Vec::new();
+        for entry in self.iter_xattrs(node)? {
+            let entry = entry?;
+            names.push(entry.read_name(self.reader.as_ref())?);
+        }
+        Ok(names)
+    }
+
+    /// Get the value of a specific xattr for a given node.
+    pub fn get_xattr(&self, node: &NodeInner, name: &[u8]) -> Result<Option<Vec<u8>>, ErofsError> {
+        for entry in self.iter_xattrs(node)? {
+            let entry = entry?;
+            if entry.matches_name(self.reader.as_ref(), name)? {
+                return Ok(Some(entry.read_value(self.reader.as_ref())?));
+            }
+        }
+        Ok(None)
+    }
+}
+
+/// An iterator over xattr entry headers for an inode.
+pub struct XattrIterator<'a> {
+    reader: &'a dyn Reader,
+    xattr_addr: u64,
+    shared_ids: Vec<LEU32>,
+    inline_offset: u64,
+    inline_end: u64,
+}
+
+impl XattrIterator<'_> {
+    fn next_inner(&mut self) -> Result<Option<XattrEntryHeader>, ErofsError> {
+        if let Some(shared_id) = self.shared_ids.pop() {
+            let shared_entry_offset = self.xattr_addr + (shared_id.get() as u64 * 4);
+            if self.shared_ids.is_empty() {
+                self.shared_ids = Vec::new();
+            }
+            return Ok(Some(XattrEntryHeader::parse(self.reader, shared_entry_offset)?));
+        }
+
+        if self.inline_offset < self.inline_end {
+            if self.inline_offset + 4 > self.inline_end {
+                return Err(ParsingError::XattrEntryOutOfBounds.into());
+            }
+
+            let header = XattrEntryHeader::parse(self.reader, self.inline_offset)?;
+            let next_offset = self
+                .inline_offset
+                .checked_add(header.entry_aligned_size)
+                .ok_or(ParsingError::Overflow)?;
+            if next_offset > self.inline_end {
+                return Err(ParsingError::XattrEntryOutOfBounds.into());
+            }
+            self.inline_offset = next_offset;
+            Ok(Some(header))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl Iterator for XattrIterator<'_> {
+    type Item = Result<XattrEntryHeader, ErofsError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_inner() {
+            // Throw out the rest of the values if we encounter an error parsing the extended
+            // attributes. Since most of the errors are related to overflows and math issues, there
+            // is no safe way to recover for future attributes as the locations on disk are all
+            // relative to each other.
+            Err(e) => {
+                self.shared_ids = Vec::new();
+                self.inline_offset = self.inline_end;
+                Some(Err(e))
+            }
+            Ok(None) => None,
+            Ok(Some(x)) => Some(Ok(x)),
+        }
+    }
+}
+
+/// A parsed representation of an EROFS xattr entry record header.
+#[derive(Debug, Clone, Copy)]
+pub struct XattrEntryHeader {
+    pub offset: u64,
+    pub prefix: &'static [u8],
+    pub name_index: u8,
+    pub name_len: usize,
+    pub value_size: usize,
+    pub entry_aligned_size: u64,
+}
+
+impl XattrEntryHeader {
+    /// Read and validate an xattr entry record header from the reader.
+    pub fn parse(reader: &dyn Reader, offset: u64) -> Result<Self, ErofsError> {
+        let entry: format::XattrEntry = reader.read_object(offset)?;
+        let prefix = Self::get_xattr_prefix(entry.name_index)?;
+        let name_len = entry.name_len as usize;
+        let value_size = entry.value_size.get() as usize;
+
+        let entry_aligned_size = 4usize
+            .checked_add(name_len)
+            .and_then(|s| s.checked_add(value_size))
+            .and_then(|s| s.checked_next_multiple_of(4))
+            .ok_or(ParsingError::Overflow)? as u64;
+
+        Ok(Self {
+            offset,
+            prefix,
+            name_index: entry.name_index,
+            name_len,
+            value_size,
+            entry_aligned_size,
+        })
+    }
+
+    /// Check if this xattr entry matches the given full attribute name (prefix + suffix).
+    pub fn matches_name(&self, reader: &dyn Reader, name: &[u8]) -> Result<bool, ReaderError> {
+        let Some(suffix) = name.strip_prefix(self.prefix) else {
+            return Ok(false);
+        };
+        if suffix.len() != self.name_len {
+            return Ok(false);
+        }
+        if self.name_len == 0 {
+            // Implies suffix.len() is also zero because of the previous check.
+            return Ok(true);
+        }
+        let mut buf = vec![0u8; self.name_len];
+        reader.read(self.offset + 4, &mut buf)?;
+        Ok(buf == suffix)
+    }
+
+    /// Read the name of this xattr entry (prefix + suffix).
+    pub fn read_name(&self, reader: &dyn Reader) -> Result<Vec<u8>, ReaderError> {
+        let mut name_bytes = Vec::with_capacity(self.prefix.len() + self.name_len);
+        name_bytes.extend_from_slice(self.prefix);
+        if self.name_len > 0 {
+            name_bytes.resize(self.prefix.len() + self.name_len, 0);
+            reader.read(self.offset + 4, &mut name_bytes[self.prefix.len()..])?;
+        }
+        Ok(name_bytes)
+    }
+
+    /// Read the value payload for this entry.
+    pub fn read_value(&self, reader: &dyn Reader) -> Result<Vec<u8>, ReaderError> {
+        let mut value_bytes = vec![0u8; self.value_size];
+        reader.read(self.offset + 4 + self.name_len as u64, &mut value_bytes)?;
+        Ok(value_bytes)
+    }
+
+    /// Read both key name and value payload for this entry.
+    pub fn read_payload(&self, reader: &dyn Reader) -> Result<(Vec<u8>, Vec<u8>), ReaderError> {
+        let name = self.read_name(reader)?;
+        let value = self.read_value(reader)?;
+        Ok((name, value))
+    }
+
+    fn get_xattr_prefix(index: u8) -> Result<&'static [u8], ParsingError> {
+        match index {
+            1 => Ok(b"user."),
+            2 => Ok(b"system.posix_acl_access"),
+            3 => Ok(b"system.posix_acl_default"),
+            4 => Ok(b"trusted."),
+            6 => Ok(b"security."),
+            _ => Err(ParsingError::InvalidXattrNamespace(index)),
+        }
+    }
 }
 
 /// The version of the on-disk format of the inode. Can be either 32-byte compact or 64-byte
@@ -714,6 +950,7 @@ mod tests {
     use crate::readers::VecReader;
     use std::fs;
     use test_case::test_case;
+    use zerocopy::byteorder::little_endian::{U16 as LEU16, U32 as LEU32, U64 as LEU64};
 
     #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
     #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
@@ -927,5 +1164,206 @@ mod tests {
         let file1_node = fs.lookup(&root_node, "file1").unwrap().unwrap();
         assert_eq!(file1_node.link_count(), 1);
         assert!(file1_node.mtime_ns() > 0);
+    }
+
+    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
+    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[fuchsia::test]
+    fn test_xattrs(path: &str) {
+        let runfiles = fs::read(path).expect("failed to read test file");
+        let reader = Arc::new(VecReader::new(runfiles));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
+
+        // Check file1 (has both inline and shared xattrs)
+        let file1_node = fs.lookup(&root_node, "file1").unwrap().unwrap();
+
+        let xattr_names = fs.list_xattrs(&file1_node).unwrap();
+        // Should contain user.flavor, user.security, user.shared
+        assert!(xattr_names.contains(&b"user.flavor".to_vec()));
+        assert!(xattr_names.contains(&b"user.security".to_vec()));
+        assert!(xattr_names.contains(&b"user.shared".to_vec()));
+        assert_eq!(xattr_names.len(), 3);
+
+        let flavor_val = fs.get_xattr(&file1_node, b"user.flavor").unwrap().unwrap();
+        assert_eq!(flavor_val, b"vanilla");
+
+        let security_val = fs.get_xattr(&file1_node, b"user.security").unwrap().unwrap();
+        assert_eq!(security_val, b"high");
+
+        let shared_val = fs.get_xattr(&file1_node, b"user.shared").unwrap().unwrap();
+        assert_eq!(shared_val, b"same_value");
+
+        // Check photosynthesis (has only shared xattr)
+        let photo_node = fs.lookup(&root_node, "photosynthesis").unwrap().unwrap();
+
+        let photo_xattrs = fs.list_xattrs(&photo_node).unwrap();
+        assert_eq!(photo_xattrs, vec![b"user.shared".to_vec()]);
+
+        let photo_shared_val = fs.get_xattr(&photo_node, b"user.shared").unwrap().unwrap();
+        assert_eq!(photo_shared_val, b"same_value");
+
+        // Verify that we can still read the file content of photosynthesis
+        let file_node = match photo_node {
+            Node::File(f) => f,
+            _ => panic!("Expected file node"),
+        };
+        let size = file_node.size() as usize;
+        let mut buf = vec![0u8; size];
+        let bytes_read = fs.read_file_range(&file_node, 0, &mut buf).expect("failed to read");
+        assert_eq!(bytes_read, size);
+        assert!(size > 0);
+
+        // Check non-existent xattr
+        let val = fs.get_xattr(&file1_node, b"user.non_existent").unwrap();
+        assert_eq!(val, None);
+    }
+
+    // EROFS doesn't seem to make shared xattr groups with simple xattrs like the one above (I
+    // assume it has some heuristics for judging when it is worth the cost) so this test manually
+    // constructs a shared xattr area to test that part of the parsing logic.
+    #[fuchsia::test]
+    fn test_shared_xattr_parsing() {
+        let block_size = 4096usize;
+        let mut buf = vec![0u8; 3 * block_size];
+
+        // Superblock at offset 1024
+        let sb = format::SuperBlock {
+            magic: LEU32::new(format::EROFS_MAGIC),
+            checksum: LEU32::new(0),
+            feature_compat: LEU32::new(0),
+            block_size_bits: 12,
+            sb_ext_slots: 0,
+            root_nid: LEU16::new(0),
+            inode_count: LEU64::new(1),
+            epoch: LEU64::new(0),
+            fixed_nsec: LEU32::new(0),
+            blocks: LEU32::new(3),
+            meta_block_addr: LEU32::new(1),
+            xattr_block_addr: LEU32::new(0),
+            uuid: [0; 16],
+            volume_name: [0; 16],
+            feature_incompat: LEU32::new(0),
+            available_compr_algs: LEU16::new(0),
+            extra_devices: LEU32::new(0),
+            dirblkbits: 0,
+            reserved: [0; 37],
+        };
+        buf[1024..1024 + 128].copy_from_slice(sb.as_bytes());
+
+        // Compact Inode at meta_block_addr (block 1, offset 4096)
+        let inode = format::InodeCompact {
+            format: LEU16::new(0),
+            xattr_icount: LEU16::new(2),
+            mode: LEU16::new(0o040755),
+            link_count: LEU16::new(1),
+            size: LEU32::new(0),
+            reserved_1: [0; 4],
+            i_u: [0; 4],
+            ino: LEU32::new(0),
+            uid: LEU16::new(0),
+            gid: LEU16::new(0),
+            reserved_2: [0; 4],
+        };
+        buf[4096..4096 + 32].copy_from_slice(inode.as_bytes());
+
+        // XattrInlineBodyHeader at offset 4128
+        let header = format::XattrInlineBodyHeader {
+            name_filter: LEU32::new(0),
+            shared_count: 1,
+            reserved: [0; 7],
+        };
+        buf[4128..4128 + 12].copy_from_slice(header.as_bytes());
+        // shared_id index 512 (512 * 4 = offset 2048 in block 0) at offset 4140
+        buf[4140..4144].copy_from_slice(&512u32.to_le_bytes());
+
+        // Shared Xattr Entry at xattr_block_addr (block 0, offset 2048)
+        let xentry = format::XattrEntry {
+            name_len: 6,
+            name_index: 1, // "user."
+            value_size: LEU16::new(10),
+        };
+        buf[2048..2052].copy_from_slice(xentry.as_bytes());
+        buf[2052..2058].copy_from_slice(b"shared");
+        buf[2058..2068].copy_from_slice(b"same_value");
+
+        let reader = Arc::new(VecReader::new(buf));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
+
+        let xattr_names = fs.list_xattrs(&root_node).expect("failed to list xattrs");
+        assert_eq!(xattr_names, vec![b"user.shared".to_vec()]);
+
+        let shared_val =
+            fs.get_xattr(&root_node, b"user.shared").expect("failed to get xattr").unwrap();
+        assert_eq!(shared_val, b"same_value");
+    }
+
+    #[fuchsia::test]
+    fn test_xattr_iterator_fusing_on_error() {
+        let block_size = 4096usize;
+        let mut buf = vec![0u8; 3 * block_size];
+
+        let sb = format::SuperBlock {
+            magic: LEU32::new(format::EROFS_MAGIC),
+            checksum: LEU32::new(0),
+            feature_compat: LEU32::new(0),
+            block_size_bits: 12,
+            sb_ext_slots: 0,
+            root_nid: LEU16::new(0),
+            inode_count: LEU64::new(1),
+            epoch: LEU64::new(0),
+            fixed_nsec: LEU32::new(0),
+            blocks: LEU32::new(3),
+            meta_block_addr: LEU32::new(1),
+            xattr_block_addr: LEU32::new(2),
+            uuid: [0; 16],
+            volume_name: [0; 16],
+            feature_incompat: LEU32::new(0),
+            available_compr_algs: LEU16::new(0),
+            extra_devices: LEU32::new(0),
+            dirblkbits: 0,
+            reserved: [0; 37],
+        };
+        buf[1024..1024 + 128].copy_from_slice(sb.as_bytes());
+
+        let inode = format::InodeCompact {
+            format: LEU16::new(0),
+            xattr_icount: LEU16::new(3),
+            mode: LEU16::new(0o040755),
+            link_count: LEU16::new(1),
+            size: LEU32::new(0),
+            reserved_1: [0; 4],
+            i_u: [0; 4],
+            ino: LEU32::new(0),
+            uid: LEU16::new(0),
+            gid: LEU16::new(0),
+            reserved_2: [0; 4],
+        };
+        buf[4096..4096 + 32].copy_from_slice(inode.as_bytes());
+
+        let header = format::XattrInlineBodyHeader {
+            name_filter: LEU32::new(0),
+            shared_count: 2,
+            reserved: [0; 7],
+        };
+        buf[4128..4128 + 12].copy_from_slice(header.as_bytes());
+        buf[4140..4144].copy_from_slice(&0u32.to_le_bytes());
+        buf[4144..4148].copy_from_slice(&1u32.to_le_bytes());
+
+        // Invalid shared xattr entry (invalid name_index 99) at xattr_block_addr for shared_id 0
+        // (offset 8192)
+        let invalid_xentry =
+            format::XattrEntry { name_len: 6, name_index: 99, value_size: LEU16::new(10) };
+        buf[8192..8196].copy_from_slice(invalid_xentry.as_bytes());
+
+        let reader = Arc::new(VecReader::new(buf));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
+
+        let mut iter = fs.iter_xattrs(&root_node).expect("failed to create iterator");
+        assert!(iter.next().unwrap().is_err());
+        // Iterator MUST be fused now: subsequent next() calls MUST return None
+        assert!(iter.next().is_none());
     }
 }
