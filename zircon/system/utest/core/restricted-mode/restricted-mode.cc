@@ -57,6 +57,7 @@ class RestrictedMode : public restricted_machine::testing::SupportedMachinesTest
     auto arm_env = environment(restricted_machine::MachineType::kArm);
     if (arm_env.is_ok()) {
       ASSERT_OK(arm_env.value()->AddLoadableBlob("boundary", kBoundaryTargetMapping));
+      ASSERT_OK(arm_env.value()->AddLoadableBlob("thumb"));
     }
   }
 
@@ -874,5 +875,38 @@ TEST_P(RestrictedMode, ExceptionRedirectRestoresTpidrroEl0) {
   // Verify that the normal-mode TPIDRRO_EL0 register was restored and did not retain
   // the restricted mode value.
   EXPECT_EQ(normal_tpidrro_before, normal_tpidrro_after);
+}
+
+TEST_P(RestrictedMode, ThumbModeSyscall) {
+  if (machine() != restricted_machine::MachineType::kArm) {
+    ZXTEST_SKIP() << "kArm machine type only test";
+    return;
+  }
+
+  auto arm_env = environment(restricted_machine::MachineType::kArm);
+  ASSERT_TRUE(arm_env.is_ok());
+
+  auto thumb_addr = arm_env.value()->SymbolAddress("thumb_syscall_bounce");
+  ASSERT_OK(thumb_addr);
+
+  // In Thumb mode, the function symbol address will have bit 0 set (interworking convention).
+  EXPECT_EQ(thumb_addr.value() & 1, 1);
+
+  restricted_machine::Machine machine(environment());
+  ASSERT_TRUE(machine.Initialize());
+
+  // Set CPSR to AArch32 Thumb mode (0x30: ARM32_BIT_MODE | ARM32_BIT_THUMB_MODE).
+  constexpr uint32_t kArm32ThumbCpsr = 0x30;
+  machine.registers()->restricted_state().cpsr = kArm32ThumbCpsr;
+  machine.registers()->set_pc(thumb_addr.value());
+  EXPECT_OK(machine.CommitState());
+
+  // Enter restricted mode in Thumb mode and verify successful entry & syscall exit.
+  zx::result<uint64_t> r = machine.Enter();
+  ASSERT_OK(r);
+  EXPECT_EQ(ZX_RESTRICTED_REASON_SYSCALL, r.value());
+
+  // Verify that the syscall was issued (r7 == 64).
+  EXPECT_EQ(64, machine.registers()->restricted_state().x[7]);
 }
 #endif  // defined(__aarch64__)

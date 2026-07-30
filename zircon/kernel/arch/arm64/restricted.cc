@@ -60,11 +60,9 @@ zx_status_t RestrictedState::ArchValidateStatePreRestrictedEntry(
       return ZX_ERR_BAD_STATE;
     }
 
-    // If CPSR's T bit is set, then PC[0] must be 0 (16-bit aligned).
-    if (unlikely((state.cpsr & kArm32BitThumbMode) == 1 && (state.pc & 0x1))) {
-      LTRACEF("fail due to unaligned T32 32-bit PC %#" PRIx64 "\n", state.pc);
-      return ZX_ERR_BAD_STATE;
-    }
+    // Note: Callers entering 32-bit restricted mode in Thumb state may provide an
+    // entry PC with the low bit clear or set due to the interworking convention.
+    // We do not reject state when PC[0] is set in Thumb mode.
 
     // Validate that only the NCZV flags and 32-bit relevant flags of the CPSR are set.
     if (unlikely((state.cpsr & ~(kArm32UserRestrictedVisibleFlags)) != 0)) {

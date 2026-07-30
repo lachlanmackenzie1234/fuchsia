@@ -20,3 +20,11 @@ restricted_loadable_module("restricted-blob") {
 restricted_loadable_module("boundary") {
   sources = [ "boundary.$current_cpu.S" ]
 }
+
+# The thumb module is a blob of code compiled in Thumb mode for ARM32.
+# This tests that restricted mode can execute Thumb code and accept entry
+# points with bit 0 set (the ARM Thumb interworking convention).
+restricted_loadable_module("thumb") {
+  sources = [ "thumb.$current_cpu.S" ]
+  deps = [ "//zircon/kernel/lib/arch" ]
+}

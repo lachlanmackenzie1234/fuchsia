@@ -38,5 +38,6 @@ source_set("restricted-mode") {
     data_deps +=
         [ "restricted-blob:restricted-blob(//build/toolchain:linux_arm)" ]
     data_deps += [ "restricted-blob:boundary(//build/toolchain:linux_arm)" ]
+    data_deps += [ "restricted-blob:thumb(//build/toolchain:linux_arm)" ]
   }
 }
