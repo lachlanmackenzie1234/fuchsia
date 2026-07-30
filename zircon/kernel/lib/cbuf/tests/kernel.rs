@@ -4,375 +4,271 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use cbuf::Cbuf;
-use core::ffi::{c_char, c_void};
-use core::sync::atomic::{AtomicU32, Ordering};
-use pin_init::stack_pin_init;
-use zx_status::Status;
-use zx_types::ZX_TIME_INFINITE;
+/// Test suite for Rust cbuf implementation.
+#[cfg(ktest)]
+#[unittest::suite(name = "rust_cbuf")]
+mod tests {
+    use cbuf::Cbuf;
+    use core::ffi::{c_char, c_void};
+    use core::sync::atomic::{AtomicU32, Ordering};
+    use pin_init::stack_pin_init;
+    use unittest::{assert_eq, assert_ok, assert_true, unwrap_ok};
+    use zx_status::Status;
+    use zx_types::ZX_TIME_INFINITE;
 
-const ZX_ERR_INTERNAL_INTR_KILLED: i32 = -502;
+    use crate::kernel::thread;
 
-#[unsafe(no_mangle)]
-pub extern "C" fn test_cbuf_constructor() -> bool {
-    stack_pin_init!(let cbuf = Cbuf::init());
-    if !cbuf.full() {
-        return false;
-    }
+    const ZX_ERR_INTERNAL_INTR_KILLED: i32 = -502;
 
-    let mut buf = [0u8; 4];
-    // SAFETY: `buf` is valid for cbuf lifetime.
-    unsafe {
-        if cbuf.initialize(buf.len(), buf.as_mut_ptr()).is_err() {
-            return false;
+    /// Test that the cbuf constructor initializes it to full until initialized.
+    #[test]
+    fn constructor() {
+        stack_pin_init!(let cbuf = Cbuf::init());
+        assert_true!(cbuf.full());
+
+        let mut buf = [0u8; 4];
+        // SAFETY: `buf` is valid for cbuf lifetime.
+        unsafe {
+            unwrap_ok!(cbuf.initialize(buf.len(), buf.as_mut_ptr()));
         }
-    }
-    if cbuf.full() {
-        return false;
+        assert_true!(!cbuf.full());
     }
 
-    true
-}
+    /// Test basic read and write operations.
+    #[test]
+    fn read_write() {
+        stack_pin_init!(let cbuf = Cbuf::init());
 
-#[unsafe(no_mangle)]
-pub extern "C" fn test_cbuf_read_write() -> bool {
-    stack_pin_init!(let cbuf = Cbuf::init());
-
-    let mut buf = [0u8; 4];
-    // SAFETY: `buf` is valid for cbuf lifetime.
-    unsafe {
-        if cbuf.initialize(buf.len(), buf.as_mut_ptr()).is_err() {
-            return false;
+        let mut buf = [0u8; 4];
+        // SAFETY: `buf` is valid for cbuf lifetime.
+        unsafe {
+            unwrap_ok!(cbuf.initialize(buf.len(), buf.as_mut_ptr()));
         }
-    }
 
-    if cbuf.full() {
-        return false;
-    }
+        assert_true!(!cbuf.full());
 
-    // Nothing to read, don't wait.
-    if cbuf.read_char(false) != Err(Status::SHOULD_WAIT) {
-        return false;
-    }
+        // Nothing to read, don't wait.
+        assert_true!(cbuf.read_char(false) == Err(Status::SHOULD_WAIT));
 
-    // Write some characters.
-    let data = b"ABC";
-    for &c in data {
-        if cbuf.write_char(c) != 1 {
-            return false;
+        // Write some characters.
+        let data = b"ABC";
+        for &c in data {
+            assert_eq!(cbuf.write_char(c), 1);
         }
-    }
-    if !cbuf.full() {
-        return false;
-    }
+        assert_true!(cbuf.full());
 
-    // Writing when full should return 0.
-    if cbuf.write_char(b'D') != 0 {
-        return false;
-    }
+        // Writing when full should return 0.
+        assert_eq!(cbuf.write_char(b'D'), 0);
 
-    // Read them back.
-    for (i, &expected) in data.iter().enumerate() {
-        match cbuf.read_char_with_context(true) {
-            Ok(res) => {
-                if res.transitioned_from_full != (i == 0) {
-                    return false;
-                }
-                if res.c != expected {
-                    return false;
-                }
-            }
-            Err(_) => return false,
+        // Read them back.
+        for (i, &expected) in data.iter().enumerate() {
+            let res = unwrap_ok!(cbuf.read_char_with_context(true));
+            assert_eq!(res.transitioned_from_full, i == 0);
+            assert_eq!(res.c, expected);
         }
-    }
-    if cbuf.full() {
-        return false;
+        assert_true!(!cbuf.full());
     }
 
-    true
-}
-
-extern "C" fn reader_thread_entry(arg: *mut c_void) -> i32 {
-    // SAFETY: arg is a valid pointer to a Cbuf pinned on the parent thread's stack.
-    let cbuf = unsafe { &*(arg as *const Cbuf) };
-    loop {
-        match cbuf.read_char(true) {
-            Ok(_) => {}
-            Err(status) => return status.into_raw(),
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn test_cbuf_read_write_race() -> bool {
-    stack_pin_init!(let cbuf = Cbuf::init());
-
-    let mut buf = [0u8; 4];
-    // SAFETY: `buf` is valid for cbuf lifetime.
-    unsafe {
-        if cbuf.initialize(buf.len(), buf.as_mut_ptr()).is_err() {
-            return false;
-        }
-    }
-
-    let thread_name = b"cbuf_rust_race\0".as_ptr() as *const c_char;
-    let cbuf_ptr = &*cbuf as *const Cbuf as *mut c_void;
-
-    // SAFETY: we pass reader_thread_entry and valid pointers. The thread is joined
-    // before `cbuf` (and `buf`) goes out of scope.
-    unsafe {
-        let thread = match crate::kernel::thread::spawn(thread_name, reader_thread_entry, cbuf_ptr)
-        {
-            Ok(t) => t,
-            Err(_) => return false,
-        };
-
-        for _ in 0..1000 {
-            while cbuf.write_char(b'A') == 0 {
-                crate::kernel::thread::r#yield();
+    extern "C" fn reader_thread_entry(arg: *mut c_void) -> i32 {
+        // SAFETY: arg is a valid pointer to a Cbuf pinned on the parent thread's stack.
+        let cbuf = unsafe { &*(arg as *const Cbuf) };
+        loop {
+            match cbuf.read_char(true) {
+                Ok(_) => {}
+                Err(status) => return status.into_raw(),
             }
         }
+    }
 
-        thread.kill();
+    /// Test concurrent read and write operations to check for races.
+    #[test]
+    fn read_write_race() {
+        stack_pin_init!(let cbuf = Cbuf::init());
 
-        let ret = match thread.join(ZX_TIME_INFINITE) {
-            Ok(r) => r,
-            Err(_) => return false,
-        };
-        if ret != ZX_ERR_INTERNAL_INTR_KILLED {
-            return false;
+        let mut buf = [0u8; 4];
+        // SAFETY: `buf` is valid for cbuf lifetime.
+        unsafe {
+            unwrap_ok!(cbuf.initialize(buf.len(), buf.as_mut_ptr()));
+        }
+
+        let thread_name = b"cbuf_rust_race\0".as_ptr() as *const c_char;
+        let cbuf_ptr = &*cbuf as *const Cbuf as *mut c_void;
+
+        // SAFETY: we pass reader_thread_entry and valid pointers. The thread is joined
+        // before `cbuf` (and `buf`) goes out of scope.
+        unsafe {
+            let thread = unwrap_ok!(thread::spawn(thread_name, reader_thread_entry, cbuf_ptr));
+
+            for _ in 0..1000 {
+                while cbuf.write_char(b'A') == 0 {
+                    thread::r#yield();
+                }
+            }
+
+            thread.kill();
+
+            let ret = unwrap_ok!(thread.join(ZX_TIME_INFINITE));
+            assert_eq!(ret, ZX_ERR_INTERNAL_INTR_KILLED);
         }
     }
 
-    true
-}
+    /// Test initialization limits (size 0, non-power of two).
+    #[test]
+    fn init_limits() {
+        stack_pin_init!(let cbuf = Cbuf::init());
+        let mut buf = [0u8; 4];
 
-#[unsafe(no_mangle)]
-pub extern "C" fn test_cbuf_init_limits() -> bool {
-    stack_pin_init!(let cbuf = Cbuf::init());
-    let mut buf = [0u8; 4];
+        // Size 0 should fail.
+        unsafe {
+            assert_true!(cbuf.initialize(0, buf.as_mut_ptr()) == Err(Status::INVALID_ARGS));
+        }
 
-    // Size 0 should fail.
-    unsafe {
-        if cbuf.initialize(0, buf.as_mut_ptr()) != Err(Status::INVALID_ARGS) {
-            return false;
+        // Non-power of two should fail.
+        unsafe {
+            assert_true!(cbuf.initialize(3, buf.as_mut_ptr()) == Err(Status::INVALID_ARGS));
+            assert_true!(cbuf.initialize(5, buf.as_mut_ptr()) == Err(Status::INVALID_ARGS));
+        }
+
+        // Power of two should succeed.
+        unsafe {
+            assert_ok!(cbuf.initialize(4, buf.as_mut_ptr()));
         }
     }
 
-    // Non-power of two should fail.
-    unsafe {
-        if cbuf.initialize(3, buf.as_mut_ptr()) != Err(Status::INVALID_ARGS) {
-            return false;
+    /// Test uninitialized cbuf operations.
+    #[test]
+    fn uninitialized() {
+        stack_pin_init!(let cbuf = Cbuf::init());
+
+        assert_true!(cbuf.full());
+        assert_eq!(cbuf.write_char(b'A'), 0);
+        assert_true!(cbuf.read_char(false) == Err(Status::SHOULD_WAIT));
+    }
+
+    /// Test buffer wrap around behavior.
+    #[test]
+    fn wrap_around() {
+        stack_pin_init!(let cbuf = Cbuf::init());
+        let mut buf = [0u8; 4];
+
+        unsafe {
+            assert_ok!(cbuf.initialize(buf.len(), buf.as_mut_ptr()));
         }
-        if cbuf.initialize(5, buf.as_mut_ptr()) != Err(Status::INVALID_ARGS) {
-            return false;
-        }
+
+        // Write 3 chars (capacity is 3)
+        assert_eq!(cbuf.write_char(b'A'), 1);
+        assert_eq!(cbuf.write_char(b'B'), 1);
+        assert_eq!(cbuf.write_char(b'C'), 1);
+
+        assert_true!(cbuf.full());
+
+        // Read 3 chars
+        assert_eq!(unwrap_ok!(cbuf.read_char(false)), b'A');
+        assert_eq!(unwrap_ok!(cbuf.read_char(false)), b'B');
+        assert_eq!(unwrap_ok!(cbuf.read_char(false)), b'C');
+
+        assert_true!(!cbuf.full());
+
+        // Write 2 chars (wraps pointers)
+        assert_eq!(cbuf.write_char(b'D'), 1);
+        assert_eq!(cbuf.write_char(b'E'), 1);
+
+        // Read 2 chars (wraps pointers)
+        assert_eq!(unwrap_ok!(cbuf.read_char(false)), b'D');
+        assert_eq!(unwrap_ok!(cbuf.read_char(false)), b'E');
+
+        // Should be empty
+        assert_true!(cbuf.read_char(false) == Err(Status::SHOULD_WAIT));
     }
 
-    // Power of two should succeed.
-    unsafe {
-        if cbuf.initialize(4, buf.as_mut_ptr()).is_err() {
-            return false;
-        }
+    struct BlockingReadContext {
+        cbuf: *mut Cbuf,
+        state: *const AtomicU32, // 0: init, 1: about to read, 2: read done, 3: error
+        read_char: *mut u8,
     }
 
-    true
-}
+    // SAFETY: We only pass valid pointers and don't share mutability unsafely.
+    unsafe impl Send for BlockingReadContext {}
 
-#[unsafe(no_mangle)]
-pub extern "C" fn test_cbuf_uninitialized() -> bool {
-    stack_pin_init!(let cbuf = Cbuf::init());
+    extern "C" fn blocking_reader_entry(arg: *mut c_void) -> i32 {
+        let ctx = unsafe { &*(arg as *const BlockingReadContext) };
+        let cbuf = unsafe { &*ctx.cbuf };
+        let state = unsafe { &*ctx.state };
 
-    if !cbuf.full() {
-        return false;
-    }
+        state.store(1, Ordering::SeqCst);
+        let c = cbuf.read_char(true); // Should block until written.
 
-    if cbuf.write_char(b'A') != 0 {
-        return false;
-    }
-
-    if cbuf.read_char(false) != Err(Status::SHOULD_WAIT) {
-        return false;
-    }
-
-    true
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn test_cbuf_wrap_around() -> bool {
-    stack_pin_init!(let cbuf = Cbuf::init());
-    let mut buf = [0u8; 4];
-
-    unsafe {
-        if cbuf.initialize(buf.len(), buf.as_mut_ptr()).is_err() {
-            return false;
-        }
-    }
-
-    // Write 3 chars (capacity is 3)
-    if cbuf.write_char(b'A') != 1 {
-        return false;
-    }
-    if cbuf.write_char(b'B') != 1 {
-        return false;
-    }
-    if cbuf.write_char(b'C') != 1 {
-        return false;
-    }
-
-    if !cbuf.full() {
-        return false;
-    }
-
-    // Read 3 chars
-    if cbuf.read_char(false) != Ok(b'A') {
-        return false;
-    }
-    if cbuf.read_char(false) != Ok(b'B') {
-        return false;
-    }
-    if cbuf.read_char(false) != Ok(b'C') {
-        return false;
-    }
-
-    if cbuf.full() {
-        return false;
-    }
-
-    // Write 2 chars (wraps pointers)
-    if cbuf.write_char(b'D') != 1 {
-        return false;
-    }
-    if cbuf.write_char(b'E') != 1 {
-        return false;
-    }
-
-    // Read 2 chars (wraps pointers)
-    if cbuf.read_char(false) != Ok(b'D') {
-        return false;
-    }
-    if cbuf.read_char(false) != Ok(b'E') {
-        return false;
-    }
-
-    // Should be empty
-    if cbuf.read_char(false) != Err(Status::SHOULD_WAIT) {
-        return false;
-    }
-
-    true
-}
-
-struct BlockingReadContext {
-    cbuf: *mut Cbuf,
-    state: *const AtomicU32, // 0: init, 1: about to read, 2: read done, 3: error
-    read_char: *mut u8,
-}
-
-// SAFETY: We only pass valid pointers and don't share mutability unsafely.
-unsafe impl Send for BlockingReadContext {}
-
-extern "C" fn blocking_reader_entry(arg: *mut c_void) -> i32 {
-    let ctx = unsafe { &*(arg as *const BlockingReadContext) };
-    let cbuf = unsafe { &*ctx.cbuf };
-    let state = unsafe { &*ctx.state };
-
-    state.store(1, Ordering::SeqCst);
-    let c = cbuf.read_char(true); // Should block until written.
-
-    match c {
-        Ok(val) => {
-            unsafe { *ctx.read_char = val };
-            state.store(2, Ordering::SeqCst);
-            0
-        }
-        Err(status) => {
-            state.store(3, Ordering::SeqCst); // error
-            status.into_raw()
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn test_cbuf_blocking_read() -> bool {
-    stack_pin_init!(let cbuf = Cbuf::init());
-
-    let mut buf = [0u8; 4];
-    // SAFETY: `buf` is valid for cbuf lifetime.
-    unsafe {
-        if cbuf.initialize(buf.len(), buf.as_mut_ptr()).is_err() {
-            return false;
+        match c {
+            Ok(val) => {
+                unsafe { *ctx.read_char = val };
+                state.store(2, Ordering::SeqCst);
+                0
+            }
+            Err(status) => {
+                state.store(3, Ordering::SeqCst); // error
+                status.into_raw()
+            }
         }
     }
 
-    let state = AtomicU32::new(0);
-    let mut read_char = 0u8;
+    /// Test blocking read operation.
+    #[test]
+    fn blocking_read() {
+        stack_pin_init!(let cbuf = Cbuf::init());
 
-    let mut ctx = BlockingReadContext {
-        cbuf: &*cbuf as *const Cbuf as *mut Cbuf,
-        state: &state,
-        read_char: &mut read_char,
-    };
+        let mut buf = [0u8; 4];
+        // SAFETY: `buf` is valid for cbuf lifetime.
+        unsafe {
+            assert_ok!(cbuf.initialize(buf.len(), buf.as_mut_ptr()));
+        }
 
-    let thread_name = b"cbuf_blocking_read\0".as_ptr() as *const c_char;
-    let ctx_ptr = &mut ctx as *mut BlockingReadContext as *mut c_void;
+        let state = AtomicU32::new(0);
+        let mut read_char = 0u8;
 
-    unsafe {
-        let thread = match crate::kernel::thread::spawn(thread_name, blocking_reader_entry, ctx_ptr)
-        {
-            Ok(t) => t,
-            Err(_) => return false,
+        let mut ctx = BlockingReadContext {
+            cbuf: &*cbuf as *const Cbuf as *mut Cbuf,
+            state: &state,
+            read_char: &mut read_char,
         };
 
-        // Wait until the reader thread is about to read.
-        while state.load(Ordering::SeqCst) < 1 {
-            crate::kernel::thread::r#yield();
-        }
+        let thread_name = b"cbuf_blocking_read\0".as_ptr() as *const c_char;
+        let ctx_ptr = &mut ctx as *mut BlockingReadContext as *mut c_void;
 
-        // Wait until the reader thread is actually blocked.
-        while !thread.is_blocked() {
-            crate::kernel::thread::r#yield();
-            // If it failed and exited, break.
+        unsafe {
+            let thread = unwrap_ok!(thread::spawn(thread_name, blocking_reader_entry, ctx_ptr));
+
+            // Wait until the reader thread is about to read.
+            while state.load(Ordering::SeqCst) < 1 {
+                thread::r#yield();
+            }
+
+            // Wait until the reader thread is actually blocked.
+            while !thread.is_blocked() {
+                thread::r#yield();
+                // If it failed and exited, break.
+                if state.load(Ordering::SeqCst) == 3 {
+                    break;
+                }
+            }
+
             if state.load(Ordering::SeqCst) == 3 {
-                break;
+                thread.join(ZX_TIME_INFINITE).ok();
+                panic!("reader thread failed early");
             }
-        }
 
-        if state.load(Ordering::SeqCst) == 3 {
-            thread.join(ZX_TIME_INFINITE).ok();
-            return false;
-        }
+            // Double check it is indeed blocked and state is 1.
+            assert_true!(thread.is_blocked());
+            assert_eq!(state.load(Ordering::SeqCst), 1);
 
-        // Double check it is indeed blocked and state is 1.
-        if !thread.is_blocked() || state.load(Ordering::SeqCst) != 1 {
-            thread.join(ZX_TIME_INFINITE).ok();
-            return false;
-        }
+            // Now write a char. This should wake it up.
+            assert_eq!(cbuf.write_char(b'X'), 1);
 
-        // Now write a char. This should wake it up.
-        if cbuf.write_char(b'X') != 1 {
-            thread.join(ZX_TIME_INFINITE).ok();
-            return false;
-        }
+            // Wait for reader thread to complete.
+            let ret = unwrap_ok!(thread.join(ZX_TIME_INFINITE));
 
-        // Wait for reader thread to complete.
-        let ret = match thread.join(ZX_TIME_INFINITE) {
-            Ok(r) => r,
-            Err(_) => return false,
-        };
-
-        if ret != 0 {
-            return false;
-        }
-
-        if state.load(Ordering::SeqCst) != 2 {
-            return false;
-        }
-
-        if read_char != b'X' {
-            return false;
+            assert_ok!(Status::from_raw(ret));
+            assert_eq!(state.load(Ordering::SeqCst), 2);
+            assert_eq!(read_char, b'X');
         }
     }
-
-    true
 }

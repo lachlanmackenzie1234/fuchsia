@@ -27,9 +27,8 @@ library_headers("headers") {
   headers = [ "lib/cbuf.h" ]
 }
 
-rustc_library("cbuf-rs") {
-  edition = "2024"
-  name = "cbuf"
+kernel_rust_crate("cbuf-rs") {
+  crate_name = "cbuf"
   sources = [ "src/lib.rs" ]
   deps = [
     "//sdk/rust/zx-status",
@@ -38,16 +37,16 @@ rustc_library("cbuf-rs") {
   ]
 }
 
-# TODO(b/517130174): Refactor these tests once fxr/1631555 lands.
-kernel_rust_mod("cbuf-rs-tests") {
-  output_name = "cbuf_rs_tests"
+kernel_rust_mod("cbuf_rs_tests") {
+  testonly = true
   source_root = "tests/kernel.rs"
   sources = [ "tests/kernel.rs" ]
-  deps = [
-    ":cbuf-rs",
+  deps = [ ":cbuf-rs" ]
+  test_deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/unittest:unittest-rs",
   ]
 }
 
@@ -58,13 +57,10 @@ group("tests") {
 
 source_set("kernel-tests") {
   testonly = true
-  sources = [
-    "cbuf_tests.cc",
-    "tests/cbuf_tests_launcher.cc",
-  ]
+  sources = [ "cbuf_tests.cc" ]
   deps = [
     ":cbuf",
-    ":cbuf-rs-tests",
+    ":cbuf_rs_tests",
     "//zircon/kernel/lib/unittest",
   ]
 }

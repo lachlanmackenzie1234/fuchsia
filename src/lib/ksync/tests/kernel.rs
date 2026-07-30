@@ -2,18 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![no_std]
-#![cfg_attr(not(ktest), allow(unused_crate_dependencies))]
-
 #[cfg(ktest)]
 #[unittest::suite(name = "rust_ksync")]
 /// Tests for Rust ksync bindings
 mod ksync_tests {
     use pin_init::{pin_init, stack_pin_init};
     use unittest::{assert_true, expect_false, expect_ok, expect_true};
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn ksync_tests_link_helper() {}
 
     #[ksync::guarded]
     struct GuardedMutexObj {

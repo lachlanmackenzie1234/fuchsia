@@ -80,13 +80,13 @@ group("tests") {
 }
 
 if (is_kernel) {
-  import("//zircon/kernel/kernel_rust_crate.gni")
+  import("//zircon/kernel/kernel_rust_mod.gni")
 
-  kernel_rust_crate("ksync-kernel-tests") {
+  kernel_rust_mod("ksync_kernel_tests") {
     testonly = true
     source_root = "tests/kernel.rs"
     sources = [ "tests/kernel.rs" ]
-    deps = [
+    test_deps = [
       ":ksync",
       "//third_party/rust_crates:pin-init",
       "//zircon/kernel/lib/unittest:unittest-rs",

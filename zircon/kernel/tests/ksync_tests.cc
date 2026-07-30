@@ -13,19 +13,12 @@
 
 extern "C" {
 
-#if UNITTESTS_ENABLED
-void ksync_tests_link_helper();
-#endif
-
 bool cpp_verify_mutex_id(const void* lock_ptr, const void* expected_id);
 bool cpp_verify_critical_mutex_id(const void* lock_ptr, const void* expected_id);
 bool cpp_verify_spinlock_id(const void* lock_ptr, const void* expected_id);
 bool cpp_verify_brwlock_id(const void* lock_ptr, const void* expected_id);
 
 bool cpp_verify_mutex_id(const void* lock_ptr, const void* expected_id) {
-#if UNITTESTS_ENABLED
-  ksync_tests_link_helper();
-#endif
   const auto* lock = static_cast<const lockdep::Lock<Mutex>*>(lock_ptr);
   return lock->id() == reinterpret_cast<lockdep::LockClassId>(expected_id);
 }

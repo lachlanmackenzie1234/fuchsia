@@ -238,6 +238,13 @@ pin_init!(Self {
     test`.
 - **Assertion Mapping**: Use `expect_eq!`, `assert_eq!`, `expect_ok!`,
   `assert_ok!`, `expect_true!`, etc. from `unittest`.
+- **Build integration**: In GN, add `//zircon/kernel/lib/unittest:unittest-rs`
+  to the `test_deps` of the `kernel_rust_mod()` or `kernel_rust_crate()` target
+  defining the kernel Rust test sources. Bear in mind that tests need to end up
+  in the link and that nothing in the kernel crate directly references these
+  symbols; so in the case of the source set that contains the tests only
+  contains the tests, one must define them in a `kernel_rust_mod()` target
+  instead of `kernel_rust_crate()` to prevent GC.
 - **Fuzz Testing**: If C++ code has fuzz tests, implement equivalent Rust
   fuzzers in a separate crate using `rustc_fuzzer`, `fuzz`, and `arbitrary`. Add
   fuzzer components to `BUILD.gn`.

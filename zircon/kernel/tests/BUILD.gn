@@ -129,7 +129,7 @@ if (toolchain_environment == "kernel") {
       ":common",
       ":unused_rust",
       "rustlang-support:kernel-tests",
-      "//src/lib/ksync:ksync-kernel-tests",
+      "//src/lib/ksync:ksync_kernel_tests",
       "//zircon/kernel/arch/$zircon_cpu:kernel-tests",
       "//zircon/kernel/dev:kernel-tests",
       "//zircon/kernel/hypervisor:kernel-tests",

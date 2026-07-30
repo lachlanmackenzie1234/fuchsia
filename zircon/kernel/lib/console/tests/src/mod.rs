@@ -14,6 +14,7 @@ mod console_tests {
     };
     use core::ffi::c_int;
     use core::sync::atomic::{AtomicI32, Ordering};
+    use unittest::{assert_nonnull, expect_eq, expect_false, expect_lt, expect_ne, expect_true};
     use zx_status::Status;
 
     macro_rules! zx_status {
@@ -176,10 +177,6 @@ mod console_tests {
         }
         None
     }
-
-    use unittest::{
-        assert_eq, assert_nonnull, expect_eq, expect_false, expect_lt, expect_ne, expect_true,
-    };
 
     /// Verify size and alignment compatibility with C++ structs.
     #[test]
