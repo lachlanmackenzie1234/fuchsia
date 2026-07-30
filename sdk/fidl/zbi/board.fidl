@@ -6,8 +6,6 @@ library zbi;
 
 const BOARD_NAME_LEN uint64 = 32;
 
-// LINT.IfChange
-
 /// ZBI_TYPE_PLATFORM_ID payload.
 type PlatformId = struct {
     vid uint32;
@@ -19,5 +17,3 @@ type PlatformId = struct {
 type BoardInfo = struct {
     revision uint32;
 };
-
-// LINT.ThenChange(//src/lib/assembly/zbi/src/zbi_items.rs)

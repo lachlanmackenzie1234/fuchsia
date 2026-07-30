@@ -12,6 +12,7 @@ rustc_library("zbi") {
   version = "0.1.0"
   with_unit_tests = true
   deps = [
+    "//sdk/rust/zbi",
     "//src/lib/assembly/constants",
     "//src/lib/assembly/image_assembly_config",
     "//src/lib/assembly/tool",

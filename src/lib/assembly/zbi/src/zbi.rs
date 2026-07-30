@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::Write;
 use zerocopy::IntoBytes;
 
-use crate::zbi_items::{ZbiBoardInfo, ZbiPlatformId};
+use crate::zbi_items::new_platform_id;
 
 /// Builder for the Zircon Boot Image (ZBI), which takes in a kernel, BootFS, boot args, and kernel
 /// command line.
@@ -147,8 +147,8 @@ impl ZbiBuilder {
             if let Some(BoardDriverArguments { vendor_id, product_id, revision, ref name }) =
                 self.board_driver_arguments
             {
-                let platform_id = ZbiPlatformId::new(vendor_id, product_id, name)?;
-                let board_info = ZbiBoardInfo { revision };
+                let platform_id = new_platform_id(vendor_id, product_id, name)?;
+                let board_info = zbi::BoardInfo { revision };
 
                 let platform_id_path = gendir.as_ref().join("platform_id.bin");
                 let board_info_path = gendir.as_ref().join("board_info.bin");
