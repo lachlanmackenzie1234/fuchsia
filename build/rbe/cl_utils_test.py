@@ -1205,7 +1205,9 @@ class SubprocessCommunicateTests(unittest.TestCase):
         self.assertEqual(result.stderr, [])
 
     def test_failure(self) -> None:
-        result = cl_utils.subprocess_communicate(["false"], "ignored_text")
+        result = cl_utils.subprocess_communicate(
+            [sys.executable, "-c", "import sys; sys.exit(1)"], "ignored_text"
+        )
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, [])
         self.assertEqual(result.stderr, [])

@@ -7,11 +7,9 @@ import("//build/toolchain/rbe.gni")
 import("//build/toolchain/rbe_modes.gni")
 import("//build/toolchain/resultstore.gni")
 
-import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
+import("//build/testing/python_build_time_tests.gni")
 
-# TODO(https://fxbug.dev/342258577): Re-enable mypy type checking after fixing
-# type errors on the disabled python_library and python_host_test targets.
 group("tests") {
   testonly = true
 
@@ -83,167 +81,161 @@ if (is_host) {
   python_library("bbtool") {
     sources = _bbtool_sources
   }
-  python_host_test("bbtool_test") {
-    main_source = "bbtool_test.py"
-    sources = _bbtool_sources
+  python_build_time_tests("bbtool_test") {
+    tests = [ "bbtool_test.py" ]
+    inputs = _bbtool_sources
   }
 
   python_library("build_summary") {
     sources = _build_summary_sources
   }
-  python_host_test("build_summary_test") {
-    main_source = "build_summary_test.py"
-    sources = _build_summary_sources
+  python_build_time_tests("build_summary_test") {
+    tests = [ "build_summary_test.py" ]
+    inputs = _build_summary_sources
   }
 
   python_library("cas") {
     sources = _cas_sources
   }
-  python_host_test("cas_test") {
-    main_source = "cas_test.py"
-    sources = _cas_sources
+  python_build_time_tests("cas_test") {
+    tests = [ "cas_test.py" ]
+    inputs = _cas_sources
   }
 
   python_library("cl_utils") {
     sources = _cl_utils_sources
   }
-  python_host_test("cl_utils_test") {
-    main_source = "cl_utils_test.py"
-    sources = _cl_utils_sources
+  python_build_time_tests("cl_utils_test") {
+    tests = [ "cl_utils_test.py" ]
+    inputs = _cl_utils_sources
   }
 
   python_library("cxx") {
     sources = _cxx_sources
   }
-  python_host_test("cxx_test") {
-    main_source = "cxx_test.py"
-    sources = _cxx_sources
+  python_build_time_tests("cxx_test") {
+    tests = [ "cxx_test.py" ]
+    inputs = _cxx_sources
   }
 
   python_library("cxx_link_remote_wrapper") {
     sources = _cxx_link_remote_wrapper_sources
   }
-  python_host_test("cxx_link_remote_wrapper_test") {
-    enable_mypy = true
-    main_source = "cxx_link_remote_wrapper_test.py"
-    sources = _cxx_link_remote_wrapper_sources
+  python_build_time_tests("cxx_link_remote_wrapper_test") {
+    tests = [ "cxx_link_remote_wrapper_test.py" ]
+    inputs = _cxx_link_remote_wrapper_sources
   }
 
   python_library("cxx_remote_wrapper") {
     sources = _cxx_remote_wrapper_sources
   }
-  python_host_test("cxx_remote_wrapper_test") {
-    enable_mypy = true
-    main_source = "cxx_remote_wrapper_test.py"
-    sources = _cxx_remote_wrapper_sources
+  python_build_time_tests("cxx_remote_wrapper_test") {
+    tests = [ "cxx_remote_wrapper_test.py" ]
+    inputs = _cxx_remote_wrapper_sources
   }
 
   python_library("depfile") {
     sources = _depfile_sources
   }
-  python_host_test("depfile_test") {
-    main_source = "depfile_test.py"
-    sources = _depfile_sources
+  python_build_time_tests("depfile_test") {
+    tests = [ "depfile_test.py" ]
+    inputs = _depfile_sources
   }
 
   python_library("dlwrap") {
     sources = _dlwrap_sources
   }
-  python_host_test("dlwrap_test") {
-    enable_mypy = true
-    main_source = "dlwrap_test.py"
-    sources = _dlwrap_sources
+  python_build_time_tests("dlwrap_test") {
+    tests = [ "dlwrap_test.py" ]
+    inputs = _dlwrap_sources
   }
 
   python_library("fuchsia") {
     sources = _fuchsia_sources
   }
-  python_host_test("fuchsia_test") {
-    main_source = "fuchsia_test.py"
-    sources = _fuchsia_sources
+  python_build_time_tests("fuchsia_test") {
+    tests = [ "fuchsia_test.py" ]
+    inputs = _fuchsia_sources
   }
 
   python_library("linker") {
     sources = _linker_sources
   }
-  python_host_test("linker_test") {
-    main_source = "linker_test.py"
-    sources = _linker_sources
+  python_build_time_tests("linker_test") {
+    tests = [ "linker_test.py" ]
+    inputs = _linker_sources
   }
 
   python_library("output_leak_scanner") {
     sources = _output_leak_scanner_sources
   }
-  python_host_test("output_leak_scanner_test") {
-    main_source = "output_leak_scanner_test.py"
-    sources = _output_leak_scanner_sources
+  python_build_time_tests("output_leak_scanner_test") {
+    tests = [ "output_leak_scanner_test.py" ]
+    inputs = _output_leak_scanner_sources
   }
 
   python_library("prebuilt_tool_remote_wrapper") {
     sources = _prebuilt_tool_remote_wrapper_sources
   }
-  python_host_test("prebuilt_tool_remote_wrapper_test") {
-    enable_mypy = true
-    main_source = "prebuilt_tool_remote_wrapper_test.py"
-    sources = _prebuilt_tool_remote_wrapper_sources
+  python_build_time_tests("prebuilt_tool_remote_wrapper_test") {
+    tests = [ "prebuilt_tool_remote_wrapper_test.py" ]
+    inputs = _prebuilt_tool_remote_wrapper_sources
   }
 
   python_library("relativize_args") {
     sources = [ "relativize_args.py" ]
   }
-  python_host_test("relativize_args_test") {
-    main_source = "relativize_args_test.py"
-    sources = [ "relativize_args.py" ]
+  python_build_time_tests("relativize_args_test") {
+    tests = [ "relativize_args_test.py" ]
+    inputs = [ "relativize_args.py" ]
   }
 
   python_library("remote_action") {
     sources = _remote_action_sources
   }
-  python_host_test("remote_action_test") {
-    enable_mypy = true
-    main_source = "remote_action_test.py"
-    sources = _remote_action_sources
+  python_build_time_tests("remote_action_test") {
+    tests = [ "remote_action_test.py" ]
+    inputs = _remote_action_sources
   }
 
   python_library("remotetool") {
     sources = _remotetool_sources
   }
-  python_host_test("remotetool_test") {
-    main_source = "remotetool_test.py"
-    sources = _remotetool_sources
+  python_build_time_tests("remotetool_test") {
+    tests = [ "remotetool_test.py" ]
+    inputs = _remotetool_sources
   }
 
   python_library("rustc") {
     sources = _rustc_sources
   }
-  python_host_test("rustc_test") {
-    main_source = "rustc_test.py"
-    sources = _rustc_sources
+  python_build_time_tests("rustc_test") {
+    tests = [ "rustc_test.py" ]
+    inputs = _rustc_sources
   }
 
   python_library("rustc_remote_wrapper") {
     sources = _rustc_remote_wrapper_sources
   }
-  python_host_test("rustc_remote_wrapper_test") {
-    enable_mypy = true
-    main_source = "rustc_remote_wrapper_test.py"
-    sources = _rustc_remote_wrapper_sources
+  python_build_time_tests("rustc_remote_wrapper_test") {
+    tests = [ "rustc_remote_wrapper_test.py" ]
+    inputs = _rustc_remote_wrapper_sources
   }
 
   python_library("tablefmt") {
     sources = _tablefmt_sources
   }
-  python_host_test("tablefmt_test") {
-    main_source = "tablefmt_test.py"
-    sources = _tablefmt_sources
+  python_build_time_tests("tablefmt_test") {
+    tests = [ "tablefmt_test.py" ]
+    inputs = _tablefmt_sources
   }
 
   python_library("textpb") {
     sources = _textpb_sources
   }
-  python_host_test("textpb_test") {
-    main_source = "textpb_test.py"
-    sources = _textpb_sources
+  python_build_time_tests("textpb_test") {
+    tests = [ "textpb_test.py" ]
+    inputs = _textpb_sources
   }
 }
 

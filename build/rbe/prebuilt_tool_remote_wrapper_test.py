@@ -17,6 +17,31 @@ import fuchsia
 import prebuilt_tool_remote_wrapper
 import remote_action
 
+_temp_dir = None
+_orig_cwd = None
+
+
+def setUpModule() -> None:
+    # When running as a build-time test, relative path writes (such as generating
+    # auxiliary '.inputs' files) would otherwise write to the build output directory
+    # and violate GN action hermeticity.
+    # To prevent this, we run all tests in this module inside a temporary directory.
+    global _temp_dir, _orig_cwd
+    import tempfile
+
+    _orig_cwd = os.getcwd()
+    _temp_dir = tempfile.TemporaryDirectory()
+    os.chdir(_temp_dir.name)
+
+
+def tearDownModule() -> None:
+    # Restore the original working directory and clean up the temporary directory.
+    global _temp_dir, _orig_cwd
+    if _orig_cwd:
+        os.chdir(_orig_cwd)
+    if _temp_dir:
+        _temp_dir.cleanup()
+
 
 class ImmediateExit(Exception):
     """For mocking functions that do not return."""
