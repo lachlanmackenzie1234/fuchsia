@@ -57,7 +57,10 @@ if (is_host) {
 }
 if (is_host) {
   go_library("v2_stages_discover") {
-    sources = [ "v2/stages/discover/discover.go" ]
+    sources = [
+      "v2/stages/discover/config.go",
+      "v2/stages/discover/discover.go",
+    ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       ":v2_pipeline",
@@ -80,9 +83,9 @@ if (is_host) {
     sources = [ "v2/stages/report/report.go" ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
-      ":v2_config",
       ":v2_pipeline",
       ":v2_readme",
+      ":v2_stages_validate",
       "//tools/check-licenses/metrics",
     ]
   }
@@ -90,12 +93,12 @@ if (is_host) {
 if (is_host) {
   go_library("v2_stages_validate") {
     sources = [
+      "v2/stages/validate/config.go",
       "v2/stages/validate/copyright.go",
       "v2/stages/validate/validate.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
-      ":v2_config",
       ":v2_pipeline",
       "//tools/check-licenses/metrics",
     ]
@@ -132,6 +135,11 @@ if (is_host) {
       "v2/config/types.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
+    deps = [
+      ":v2_stages_classify",
+      ":v2_stages_discover",
+      ":v2_stages_validate",
+    ]
   }
 }
 if (is_host) {
@@ -148,6 +156,7 @@ if (is_host) {
   go_library("v2_stages_classify") {
     sources = [
       "v2/stages/classify/classify.go",
+      "v2/stages/classify/config.go",
       "v2/stages/classify/notice.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]

@@ -41,6 +41,7 @@ go_library(
 go_library(
     name = "v2_stages_discover",
     srcs = [
+        "v2/stages/discover/config.go",
         "v2/stages/discover/discover.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover",
@@ -75,9 +76,9 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_config",
         ":v2_pipeline",
         ":v2_readme",
+        ":v2_stages_validate",
         "//tools/check-licenses/metrics",
     ],
 )
@@ -85,6 +86,7 @@ go_library(
 go_library(
     name = "v2_stages_validate",
     srcs = [
+        "v2/stages/validate/config.go",
         "v2/stages/validate/copyright.go",
         "v2/stages/validate/validate.go",
     ],
@@ -92,7 +94,6 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_config",
         ":v2_pipeline",
         "//tools/check-licenses/metrics",
     ],
@@ -133,6 +134,11 @@ go_library(
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        ":v2_stages_classify",
+        ":v2_stages_discover",
+        ":v2_stages_validate",
+    ],
 )
 
 go_library(
@@ -153,6 +159,7 @@ go_library(
     name = "v2_stages_classify",
     srcs = [
         "v2/stages/classify/classify.go",
+        "v2/stages/classify/config.go",
         "v2/stages/classify/notice.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify",

@@ -183,6 +183,8 @@ func TestBuilder_LoadManifests(t *testing.T) {
 		{"prebuilt/media/firmware/amlogic-decoder/firmware.bin", true},
 		{"vendor/third_party/eigen3", true},
 		{"vendor/third_party/eigen3/LICENSE", true},
+		{"third_party/vendor/foo", false},
+		{"src/lib/vendor/bar", false},
 		{"unknown/project", false},
 	}
 

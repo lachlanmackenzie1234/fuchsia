@@ -86,7 +86,7 @@ func (c *FixCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 		return subcommands.ExitFailure
 	}
 
-	validator := v2validate.NewValidator(fuchsiaDir, config.PolicyExceptions, config.AllowedLicenses, config.CopyrightExtensions)
+	validator := v2validate.NewValidator(fuchsiaDir, config.Validate)
 
 	fixer := &FixerRenderer{
 		FuchsiaDir: fuchsiaDir,

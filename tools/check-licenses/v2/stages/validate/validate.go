@@ -11,36 +11,26 @@ import (
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 )
 
 // Validator implements pipeline.Validator. It acts as the Policy Engine,
 // consuming ClassifiedFiles and checking them against allowed policies.
 type Validator struct {
-	// FuchsiaDir is the root of the workspace.
 	FuchsiaDir string
-
-	// PolicyExceptions maps a Policy Check Name (e.g., "AllProjectsMustHaveALicense") to a set of allowed project paths.
-	PolicyExceptions map[string]map[string]v2config.RuleMetadata
-
-	// AllowedLicenses maps a highly restricted SPDX ID (e.g., "GPL-2.0", "FTL") to a set of allowed project paths.
-	AllowedLicenses map[string]map[string]v2config.RuleMetadata
-
-	// CopyrightExtensions tracks extensions that require Fuchsia copyright headers.
-	CopyrightExtensions map[string]bool
+	Config
 }
 
 // NewValidator creates a new stateless policy engine.
-func NewValidator(fuchsiaDir string, policyExceptions map[string]map[string]v2config.RuleMetadata, allowedLicenses map[string]map[string]v2config.RuleMetadata, copyrightExtensions map[string]bool) *Validator {
-	if policyExceptions == nil {
-		policyExceptions = make(map[string]map[string]v2config.RuleMetadata)
+func NewValidator(fuchsiaDir string, config Config) *Validator {
+	if config.PolicyExceptions == nil {
+		config.PolicyExceptions = make(map[string]map[string]RuleMetadata)
 	}
-	if allowedLicenses == nil {
-		allowedLicenses = make(map[string]map[string]v2config.RuleMetadata)
+	if config.AllowedLicenses == nil {
+		config.AllowedLicenses = make(map[string]map[string]RuleMetadata)
 	}
-	if copyrightExtensions == nil {
-		copyrightExtensions = make(map[string]bool)
+	if config.CopyrightExtensions == nil {
+		config.CopyrightExtensions = make(map[string]bool)
 	}
 
 	// Ensure FuchsiaDir is absolute for consistent comparison
@@ -50,10 +40,8 @@ func NewValidator(fuchsiaDir string, policyExceptions map[string]map[string]v2co
 	}
 
 	return &Validator{
-		FuchsiaDir:          fuchsiaDir,
-		PolicyExceptions:    policyExceptions,
-		AllowedLicenses:     allowedLicenses,
-		CopyrightExtensions: copyrightExtensions,
+		FuchsiaDir: fuchsiaDir,
+		Config:     config,
 	}
 }
 
@@ -87,18 +75,10 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			// UNLESS their file path is explicitly allowlisted.
 			if cf.IsLicenseFile {
 				if len(cf.Matches) == 0 {
-					allowed := false
-					if list, ok := v.PolicyExceptions[v2config.PolicyCheckAllLicenseTextsMustBeRecognized]; ok {
-						if _, ok := list[relPath]; ok {
-							allowed = true
-							metrics.AllowlistHits.Inc(v2config.PolicyCheckAllLicenseTextsMustBeRecognized)
-						}
-					}
-
-					if !allowed {
-						metrics.ValidationErrors.Inc(v2config.PolicyCheckAllLicenseTextsMustBeRecognized)
+					if !v.isPolicyExceptionAllowed(PolicyUnrecognizedLicense, relPath) {
+						metrics.ValidationErrors.Inc(PolicyUnrecognizedLicense)
 						err := pipeline.ComplianceError{
-							CheckName: v2config.PolicyCheckAllLicenseTextsMustBeRecognized,
+							CheckName: PolicyUnrecognizedLicense,
 							Project:   cf.ProjectRoot,
 							FilePath:  cf.Path,
 							Issue:     fmt.Sprintf("Unrecognized license text: no SPDX ID could be matched. If this file is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllLicenseTextsMustBeRecognized %s", relPath),
@@ -127,17 +107,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 				}
 
 				if !hasFuchsiaCopyright {
-					allowed := false
-					if list, ok := v.PolicyExceptions[v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders]; ok {
-						// The v1 logic sometimes uses paths relative to FuchsiaDir, sometimes just base.
-						// We use the relative file path for consistency.
-						if _, ok := list[relPath]; ok {
-							allowed = true
-							metrics.AllowlistHits.Inc(v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders)
-						}
-					}
-
-					if !allowed {
+					if !v.isPolicyExceptionAllowed(PolicyFuchsiaCopyright, relPath) {
 						// TODO(https://fxbug.dev/505430724): Skip empty __init__.py files
 						if filepath.Base(cf.Path) == "__init__.py" && len(cf.AnalyzedText) == 0 {
 							continue
@@ -148,9 +118,9 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 						// The Crawler's TargetExtensions naturally handles this, but we do a sanity check.
 						ext := strings.ToLower(filepath.Ext(cf.Path))
 						if v.CopyrightExtensions[ext] {
-							metrics.ValidationErrors.Inc(v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders)
+							metrics.ValidationErrors.Inc(PolicyFuchsiaCopyright)
 							err := pipeline.ComplianceError{
-								CheckName: v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders,
+								CheckName: PolicyFuchsiaCopyright,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
 								Issue:     fmt.Sprintf("Missing Fuchsia copyright header in first-party source file. Fix this automatically by running:\n    fx check-licenses copyright %s", relPath),
@@ -180,27 +150,11 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 					}
 
 					if needsApproval {
-						allowed := false
 						relProjRoot, _ := filepath.Rel(v.FuchsiaDir, cf.ProjectRoot)
-						if list, ok := v.AllowedLicenses[match.SPDXID]; ok {
-							// The python migration script grouped allowed licenses by the ProjectRoot or relative file path.
-							// To be safe, we check both the specific file and its project boundary.
-							if _, ok1 := list[relPath]; ok1 {
-								allowed = true
-							} else if _, ok2 := list[relProjRoot]; ok2 {
-								allowed = true
-							} else if _, ok3 := list[cf.ProjectRoot]; ok3 {
-								allowed = true
-							}
-							if allowed {
-								metrics.AllowlistHits.Inc("AllowedLicenses_" + match.SPDXID)
-							}
-						}
-
-						if !allowed {
+						if !v.isAllowedLicense(match.SPDXID, relPath, relProjRoot, cf.ProjectRoot) {
 							metrics.ValidationErrors.Inc("UnapprovedLicenseUsage")
 							err := pipeline.ComplianceError{
-								CheckName: v2config.CheckNameAllLicensePatternUsagesMustBeApproved,
+								CheckName: CheckPatternApproval,
 								LicenseID: match.SPDXID,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
@@ -219,4 +173,32 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 	}()
 
 	return out, nil
+}
+
+func (v *Validator) isPolicyExceptionAllowed(policyName, relPath string) bool {
+	return isAllowed(v.PolicyExceptions, policyName, relPath)
+}
+
+func (v *Validator) isAllowedLicense(spdxID, relPath, relProjRoot, projectRoot string) bool {
+	if list, ok := v.AllowedLicenses[spdxID]; ok {
+		for _, path := range []string{relPath, relProjRoot, projectRoot} {
+			if path != "" {
+				if _, ok := list[path]; ok {
+					metrics.AllowlistHits.Inc("AllowedLicenses_" + spdxID)
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isAllowed(targetMap map[string]map[string]RuleMetadata, key, path string) bool {
+	if list, ok := targetMap[key]; ok {
+		if _, ok := list[path]; ok {
+			metrics.AllowlistHits.Inc(key)
+			return true
+		}
+	}
+	return false
 }

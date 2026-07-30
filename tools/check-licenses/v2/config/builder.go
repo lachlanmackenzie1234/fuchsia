@@ -26,7 +26,7 @@ type Builder struct {
 func NewBuilder(fuchsiaDir string) *Builder {
 	b := &Builder{
 		FuchsiaDir: fuchsiaDir,
-		Config:     NewMasterConfig(),
+		Config:     NewMasterConfig(fuchsiaDir),
 		seen:       make(map[string]bool),
 	}
 	b.Config.PatternsDir = filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
@@ -77,7 +77,7 @@ func (b *Builder) walkDir(baseDir string) error {
 			return nil
 		}
 
-		if (category == "configs" || filepath.Ext(path) == ".json") && filepath.Ext(path) == ".json" {
+		if filepath.Ext(path) == ".json" {
 			if filepath.Base(path) == "template.json" || filepath.Base(path) == "config.json" {
 				return nil
 			}
@@ -137,8 +137,10 @@ func (b *Builder) parseConfigFile(path string) error {
 		}
 		if skip.SkipAnywhere {
 			b.Config.SkipAnywhere = append(b.Config.SkipAnywhere, skip.Paths...)
+			b.Config.Discover.SkipAnywhere = append(b.Config.Discover.SkipAnywhere, skip.Paths...)
 		} else {
 			b.Config.SkipPaths = append(b.Config.SkipPaths, skip.Paths...)
+			b.Config.Discover.SkipPaths = append(b.Config.Discover.SkipPaths, skip.Paths...)
 		}
 	}
 
@@ -150,6 +152,7 @@ func (b *Builder) parseConfigFile(path string) error {
 				ext = "." + ext
 			}
 			b.Config.TargetExtensions[ext] = true
+			b.Config.Classify.TargetExtensions[ext] = true
 		}
 	}
 
@@ -160,55 +163,65 @@ func (b *Builder) parseConfigFile(path string) error {
 				ext = "." + ext
 			}
 			b.Config.CopyrightExtensions[ext] = true
+			b.Config.Validate.CopyrightExtensions[ext] = true
 		}
 	}
 
 	// 3. Process Barriers
 	for _, barrier := range f.Barriers {
-		if barrier.Bug == "" && filepath.Base(path) != "default.json" && filepath.Base(path) != "hidden_dirs.json" && filepath.Base(path) != "test_dirs.json" && filepath.Base(path) != "bazel_vendor.json" {
+		if barrier.Bug == "" && isBugRequired(path) {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
 		b.Config.BarrierPaths = append(b.Config.BarrierPaths, barrier.Paths...)
+		b.Config.Discover.BarrierPaths = append(b.Config.Discover.BarrierPaths, barrier.Paths...)
 	}
 
 	// 4. Process PolicyExceptions
 	for checkName, entries := range f.PolicyExceptions {
-		if _, exists := b.Config.PolicyExceptions[checkName]; !exists {
-			b.Config.PolicyExceptions[checkName] = make(map[string]RuleMetadata)
-		}
-		for _, entry := range entries {
-			if entry.Bug == "" && filepath.Base(path) != "default.json" && filepath.Base(path) != "hidden_dirs.json" && filepath.Base(path) != "test_dirs.json" && filepath.Base(path) != "bazel_vendor.json" {
-				return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
-			}
-			for _, allowedPath := range entry.Paths {
-				b.Config.PolicyExceptions[checkName][allowedPath] = RuleMetadata{
-					Bug:         entry.Bug,
-					Description: entry.Description,
-					ConfigPath:  path,
-				}
-			}
+		if err := b.addRuleException(b.Config.PolicyExceptions, b.Config.Validate.PolicyExceptions, checkName, entries, path); err != nil {
+			return err
 		}
 	}
 
 	// 5. Process AllowedLicenses
 	for licenseName, entries := range f.AllowedLicenses {
-		if _, exists := b.Config.AllowedLicenses[licenseName]; !exists {
-			b.Config.AllowedLicenses[licenseName] = make(map[string]RuleMetadata)
-		}
-		for _, entry := range entries {
-			if entry.Bug == "" && filepath.Base(path) != "default.json" && filepath.Base(path) != "hidden_dirs.json" && filepath.Base(path) != "test_dirs.json" && filepath.Base(path) != "bazel_vendor.json" {
-				return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
-			}
-			for _, allowedPath := range entry.Paths {
-				b.Config.AllowedLicenses[licenseName][allowedPath] = RuleMetadata{
-					Bug:         entry.Bug,
-					Description: entry.Description,
-					ConfigPath:  path,
-				}
-			}
+		if err := b.addRuleException(b.Config.AllowedLicenses, b.Config.Validate.AllowedLicenses, licenseName, entries, path); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func isBugRequired(configPath string) bool {
+	switch filepath.Base(configPath) {
+	case "default.json", "hidden_dirs.json", "test_dirs.json", "bazel_vendor.json":
+		return false
+	default:
+		return true
+	}
+}
+
+func (b *Builder) addRuleException(targetMap map[string]map[string]RuleMetadata, validateMap map[string]map[string]RuleMetadata, key string, entries []AllowlistEntry, path string) error {
+	for _, m := range []map[string]map[string]RuleMetadata{targetMap, validateMap} {
+		if _, exists := m[key]; !exists {
+			m[key] = make(map[string]RuleMetadata)
+		}
+	}
+	for _, entry := range entries {
+		if entry.Bug == "" && isBugRequired(path) {
+			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
+		}
+		for _, allowedPath := range entry.Paths {
+			meta := RuleMetadata{
+				Bug:         entry.Bug,
+				Description: entry.Description,
+				ConfigPath:  path,
+			}
+			targetMap[key][allowedPath] = meta
+			validateMap[key][allowedPath] = meta
+		}
+	}
 	return nil
 }
 

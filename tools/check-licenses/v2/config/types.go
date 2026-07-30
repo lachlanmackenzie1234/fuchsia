@@ -5,58 +5,46 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
 // MasterConfig is the fully assembled configuration injected into the pipeline stages.
 // It is constructed by the ConfigBuilder during the Assembly Phase by merging all
 // scattered JSON files from the open-source and proprietary assets directories.
 type MasterConfig struct {
+	// FuchsiaDir is the authoritative absolute root path of the workspace.
+	FuchsiaDir string
+
+	// --- LEGACY FIELDS FOR INCREMENTAL MIGRATION ---
+	SkipPaths           []string
+	SkipAnywhere        []string
+	TargetExtensions    map[string]bool
+	CopyrightExtensions map[string]bool
+	BarrierPaths        []string
+	OutOfTreeReadmes    map[string]string
+	PatternsDir         string
+	PolicyExceptions    map[string]map[string]validate.RuleMetadata
+	AllowedLicenses     map[string]map[string]validate.RuleMetadata
+
 	// --- Injected into Discoverer (Stage 1) ---
 
-	// SkipPaths are exact repository paths (relative to fuchsia dir) that the
-	// crawler should completely ignore (e.g., "out", "prebuilt/third_party").
-	SkipPaths []string
-
-	// SkipAnywhere are basename patterns that should be ignored anywhere in
-	// the repository (e.g., ".git", "__pycache__").
-	SkipAnywhere []string
-
-	// --- Injected into Grouper (Stage 2) ---
-
-	// BarrierPaths define directories where a new third-party project strictly begins
-	// (e.g., "third_party", "prebuilt").
-	BarrierPaths []string
-
-	// OutOfTreeReadmes maps a logical project path to the physical path of its
-	// README.fuchsia file (stored in tools/check-licenses/assets/readmes/).
-	// Key: Logical path (e.g., "third_party/foo")
-	// Value: Physical path (e.g., "assets/readmes/third_party/foo/README.fuchsia")
-	OutOfTreeReadmes map[string]string
-
-	// PatternsDir is the directory containing license patterns.
-	PatternsDir string
+	Discover discover.Config
 
 	// --- Injected into Classifier (Stage 4) ---
 
-	// TargetExtensions is a map of file extensions (including the dot, e.g., ".cc")
-	// that the classifier should attempt to read and analyze for licenses.
-	// Files with unlisted extensions (like .jpg) are skipped during classification
-	// to save CPU/memory, but they still exist in the Project struct for compliance reporting.
-	TargetExtensions map[string]bool
-
-	// CopyrightExtensions is a map of file extensions (including the dot, e.g., ".cc")
-	// that require Fuchsia copyright headers if owned by Fuchsia.
-	CopyrightExtensions map[string]bool
+	Classify classify.Config
 
 	// --- Injected into Validator (Stage 5) ---
 
-	// PolicyExceptions maps a Policy Check Name (e.g., "AllProjectsMustHaveALicense") to a set of allowed project paths.
-	PolicyExceptions map[string]map[string]RuleMetadata
-
-	// AllowedLicenses maps a highly restricted SPDX ID (e.g., "GPL-2.0", "FTL") to a set of allowed project paths.
-	AllowedLicenses map[string]map[string]RuleMetadata
+	// Validate holds the configuration for the validator stage.
+	Validate validate.Config
 
 	// ManifestProjectNames maps a project's filesystem path to its name in the manifest.
 	// Key: Project path (e.g., "prebuilt/media/firmware/amlogic-decoder")
@@ -65,14 +53,36 @@ type MasterConfig struct {
 
 	// ManifestPrivateProjects tracks if a project path was found in a private manifest.
 	ManifestPrivateProjects map[string]bool
+
+	// LicenseCategories maps a license name (e.g., "GPL-2.0") to its policy category ("Restricted").
+	LicenseCategories map[string]string
+}
+
+func resolveFuchsiaDir(dir string) string {
+	if dir != "" {
+		return dir
+	}
+	if env := os.Getenv("FUCHSIA_DIR"); env != "" {
+		return env
+	}
+	return "."
 }
 
 // IsPrivateProject returns true if the project path belongs to a proprietary/private
 // repository. It prevents open-source compliance configs from being contaminated.
 func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
+	if c == nil {
+		return false
+	}
 	projectPath = filepath.Clean(projectPath)
+	slashPath := filepath.ToSlash(projectPath)
 
-	for p := projectPath; p != "." && p != "/"; p = filepath.Dir(p) {
+	parts := strings.Split(strings.TrimPrefix(slashPath, "/"), "/")
+	if len(parts) > 0 && parts[0] == "vendor" {
+		return true
+	}
+
+	for p := projectPath; p != "." && p != "/" && p != filepath.Dir(p); p = filepath.Dir(p) {
 		// 1. Check if marked private from integration folder
 		if c.ManifestPrivateProjects[p] {
 			return true
@@ -80,7 +90,7 @@ func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
 
 		// 2. Check manifest name prefix
 		if name, ok := c.ManifestProjectNames[p]; ok {
-			if strings.HasPrefix(name, "fuchsia_internal/") {
+			if strings.HasPrefix(name, "fuchsia_internal/") || strings.HasPrefix(name, "vendor/") {
 				return true
 			}
 		}
@@ -89,26 +99,140 @@ func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
 	return false
 }
 
-type RuleMetadata struct {
-	Bug         string
-	Description string
-	ConfigPath  string
+// AssetRootFor returns the base asset directory path for a project based on its privacy state.
+func (c *MasterConfig) AssetRootFor(projectPath string) string {
+	fDir := resolveFuchsiaDir("")
+	if c != nil {
+		fDir = resolveFuchsiaDir(c.FuchsiaDir)
+	}
+
+	cleanPath := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(projectPath)), "/")
+	isPrivate := (c != nil && c.IsPrivateProject(projectPath)) || (c == nil && (strings.HasPrefix(cleanPath, "vendor/") || cleanPath == "vendor"))
+	if isPrivate {
+		return filepath.Join(fDir, "vendor", "google", "tools", "check-licenses", "assets")
+	}
+	return filepath.Join(fDir, "tools", "check-licenses", "assets")
+}
+
+// ConfigRootFor returns the base config directory path for a project based on its privacy state.
+func (c *MasterConfig) ConfigRootFor(projectPath string) string {
+	return filepath.Join(c.AssetRootFor(projectPath), "configs")
+}
+
+// ReadmeRootFor returns the base readmes asset directory path for a project based on its privacy state.
+func (c *MasterConfig) ReadmeRootFor(projectPath string) string {
+	return filepath.Join(c.AssetRootFor(projectPath), "readmes")
+}
+
+// RootReadmePath returns the absolute file path to the primary first-party repository root README.fuchsia.
+func (c *MasterConfig) RootReadmePath() string {
+	return filepath.Join(c.ReadmeRootFor(""), "README.fuchsia")
+}
+
+// ResolveReadmeWritePath determines the appropriate filesystem target path for writing
+// or updating a project's README.fuchsia file. If a project resides under prebuilt/, its README
+// is redirected to the corresponding virtual assets directory.
+func (c *MasterConfig) ResolveReadmeWritePath(projectRoot, currentReadmePath string) (string, error) {
+	relRoot, err := filepath.Rel(c.FuchsiaDir, projectRoot)
+	if err != nil {
+		return currentReadmePath, err
+	}
+	if strings.HasPrefix(relRoot, "prebuilt/") && !strings.Contains(currentReadmePath, "assets/readmes") {
+		writePath := filepath.Join(c.ReadmeRootFor(relRoot), relRoot, "README.fuchsia")
+		if err := os.MkdirAll(filepath.Dir(writePath), 0755); err != nil {
+			return "", fmt.Errorf("failed to create asset directory for %s: %w", projectRoot, err)
+		}
+		return writePath, nil
+	}
+	if physPath := c.Discover.OutOfTreeReadmes[relRoot]; physPath != "" {
+		absPhys := physPath
+		if !filepath.IsAbs(absPhys) {
+			absPhys = filepath.Join(c.FuchsiaDir, absPhys)
+		}
+		if absPhys != filepath.Join(c.FuchsiaDir, relRoot, "README.fuchsia") {
+			return absPhys, nil
+		}
+	}
+	return currentReadmePath, nil
+}
+
+// ResolveAndValidatePath normalizes the fuchsia root and ensures the given input path
+// resides safely within that root. Returns the relative target path,
+// or an error if the path escapes the root workspace.
+func (c *MasterConfig) ResolveAndValidatePath(inputPath string) (string, error) {
+	c.FuchsiaDir = resolveFuchsiaDir(c.FuchsiaDir)
+	absFuchsiaDir, err := filepath.Abs(c.FuchsiaDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path for fuchsia_dir %s: %w", c.FuchsiaDir, err)
+	}
+	c.FuchsiaDir = absFuchsiaDir
+
+	if strings.HasPrefix(inputPath, "//") {
+		inputPath = filepath.Join(absFuchsiaDir, strings.TrimPrefix(inputPath, "//"))
+	}
+
+	absInputPath, err := filepath.Abs(inputPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path for %s: %w", inputPath, err)
+	}
+
+	rel, err := filepath.Rel(absFuchsiaDir, absInputPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path %s must be inside fuchsia root %s", inputPath, absFuchsiaDir)
+	}
+	if rel == "." {
+		rel = ""
+	}
+	return rel, nil
+}
+
+// CategoryForLicense returns the approved policy category (e.g., Restricted, Notice, Exception)
+// for the given license name, or "Uncategorized" if the license is unapproved or unknown.
+func (c *MasterConfig) CategoryForLicense(licenseName string) string {
+	if c != nil {
+		if cat := c.LicenseCategories[licenseName]; cat != "" && cat != "allowed_licenses" {
+			return cat
+		}
+	}
+	return "Uncategorized"
 }
 
 // NewMasterConfig initializes an empty configuration ready to be populated by the builder.
-func NewMasterConfig() *MasterConfig {
-	return &MasterConfig{
-		SkipPaths:               make([]string, 0),
-		SkipAnywhere:            make([]string, 0),
-		TargetExtensions:        make(map[string]bool),
-		CopyrightExtensions:     make(map[string]bool),
-		BarrierPaths:            make([]string, 0),
-		OutOfTreeReadmes:        make(map[string]string),
-		PolicyExceptions:        make(map[string]map[string]RuleMetadata),
-		AllowedLicenses:         make(map[string]map[string]RuleMetadata),
+func NewMasterConfig(fuchsiaDir string) *MasterConfig {
+	fuchsiaDir = resolveFuchsiaDir(fuchsiaDir)
+	if abs, err := filepath.Abs(fuchsiaDir); err == nil {
+		fuchsiaDir = abs
+	}
+	c := &MasterConfig{
+		FuchsiaDir: fuchsiaDir,
+		Discover: discover.Config{
+			SkipPaths:    make([]string, 0),
+			SkipAnywhere: make([]string, 0),
+		},
+
+		Classify: classify.Config{
+			TargetExtensions: make(map[string]bool),
+		},
+		Validate: validate.Config{
+			PolicyExceptions:    make(map[string]map[string]validate.RuleMetadata),
+			AllowedLicenses:     make(map[string]map[string]validate.RuleMetadata),
+			CopyrightExtensions: make(map[string]bool),
+			OutOfTreeReadmes:    make(map[string]string),
+		},
+		PolicyExceptions:        make(map[string]map[string]validate.RuleMetadata),
+		AllowedLicenses:         make(map[string]map[string]validate.RuleMetadata),
 		ManifestProjectNames:    make(map[string]string),
 		ManifestPrivateProjects: make(map[string]bool),
+		LicenseCategories:       make(map[string]string),
+		TargetExtensions:        make(map[string]bool),
+		CopyrightExtensions:     make(map[string]bool),
+		OutOfTreeReadmes:        make(map[string]string),
 	}
+	c.Classify.PatternDirs = []string{
+		filepath.Join(c.AssetRootFor(""), "patterns"),
+		filepath.Join(c.AssetRootFor("vendor/google"), "patterns"),
+	}
+	return c
 }
 
 // --- JSON File Schemas ---
@@ -150,13 +274,16 @@ type AllowlistEntry struct {
 	Paths       []string `json:"paths"` // Paths to allowed projects/files
 }
 
+// LEGACY CONSTANTS
 const (
-	PolicyCheckAllLicenseTextsMustBeRecognized                     = "AllLicenseTextsMustBeRecognized"
-	PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders = "AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders"
-	PolicyCheckAllProjectsMustHaveALicense                         = "AllProjectsMustHaveALicense"
-	CheckNameReadmeFuchsiaNeedsUpdate                              = "ReadmeFuchsiaNeedsUpdate"
-	CheckNameAllLicensePatternUsagesMustBeApproved                 = "AllLicensePatternUsagesMustBeApproved"
+	PolicyCheckAllLicenseTextsMustBeRecognized                     = validate.PolicyUnrecognizedLicense
+	PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders = validate.PolicyFuchsiaCopyright
+	PolicyCheckAllProjectsMustHaveALicense                         = validate.PolicyNoLicense
+	CheckNameReadmeFuchsiaNeedsUpdate                              = validate.CheckReadmeNeedsUpdate
+	CheckNameAllLicensePatternUsagesMustBeApproved                 = validate.CheckPatternApproval
 )
+
+type RuleMetadata = validate.RuleMetadata
 
 var ValidPolicyChecks = map[string]bool{
 	PolicyCheckAllLicenseTextsMustBeRecognized:                     true,

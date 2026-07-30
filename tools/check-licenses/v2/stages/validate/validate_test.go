@@ -11,25 +11,24 @@ import (
 	"testing"
 	"time"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 )
 
 func TestValidator_Run(t *testing.T) {
 	fuchsiaDir := t.TempDir()
 
-	policyExceptions := map[string]map[string]v2config.RuleMetadata{
+	policyExceptions := map[string]map[string]RuleMetadata{
 		"AllLicenseTextsMustBeRecognized": {
-			"third_party/foo/LICENSE": v2config.RuleMetadata{Bug: "test", Description: "test"},
+			"third_party/foo/LICENSE": RuleMetadata{Bug: "test", Description: "test"},
 		},
 		"AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders": {
-			"src/legacy/old.cc": v2config.RuleMetadata{Bug: "test", Description: "test"},
+			"src/legacy/old.cc": RuleMetadata{Bug: "test", Description: "test"},
 		},
 	}
 
-	allowedLicenses := map[string]map[string]v2config.RuleMetadata{
+	allowedLicenses := map[string]map[string]RuleMetadata{
 		"GPL-2.0": {
-			"third_party/legacy_gpl/LICENSE": v2config.RuleMetadata{Bug: "test", Description: "test"},
+			"third_party/legacy_gpl/LICENSE": RuleMetadata{Bug: "test", Description: "test"},
 		},
 	}
 
@@ -38,7 +37,11 @@ func TestValidator_Run(t *testing.T) {
 		".py": true,
 	}
 
-	validator := NewValidator(fuchsiaDir, policyExceptions, allowedLicenses, copyrightExtensions)
+	validator := NewValidator(fuchsiaDir, Config{
+		PolicyExceptions:    policyExceptions,
+		AllowedLicenses:     allowedLicenses,
+		CopyrightExtensions: copyrightExtensions,
+	})
 
 	inChan := make(chan pipeline.ClassifiedFile, 15)
 

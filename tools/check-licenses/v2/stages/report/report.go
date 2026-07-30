@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +18,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
 // Reporter implements pipeline.Renderer. It acts as the final stage of the pipeline,
@@ -32,11 +32,11 @@ type Reporter struct {
 	WriteReadmes             bool
 	GenerateArtifacts        bool
 	OutOfTreeReadmes         map[string]string
-	MissingLicenseExceptions map[string]v2config.RuleMetadata
+	MissingLicenseExceptions map[string]validate.RuleMetadata
 }
 
 // NewReporter creates a new stateful Reporter that writes to the given outDir.
-func NewReporter(fuchsiaDir, outDir string, verifyReadmes, writeReadmes, generateArtifacts bool, outOfTreeReadmes map[string]string, missingLicenseExceptions map[string]v2config.RuleMetadata) *Reporter {
+func NewReporter(fuchsiaDir, outDir string, verifyReadmes, writeReadmes, generateArtifacts bool, outOfTreeReadmes map[string]string, missingLicenseExceptions map[string]validate.RuleMetadata) *Reporter {
 	return &Reporter{
 		FuchsiaDir:               fuchsiaDir,
 		OutDir:                   outDir,
@@ -102,13 +102,13 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 			relProjRoot, _ := filepath.Rel(r.FuchsiaDir, proj)
 			_, allowed := r.MissingLicenseExceptions[relProjRoot]
 			if allowed {
-				metrics.AllowlistHits.Inc(v2config.PolicyCheckAllProjectsMustHaveALicense)
+				metrics.AllowlistHits.Inc(validate.PolicyNoLicense)
 				continue
 			}
 
 			// We emit this directly into the error slice so it fails the build
 			errs = append(errs, pipeline.ComplianceError{
-				CheckName: v2config.PolicyCheckAllProjectsMustHaveALicense,
+				CheckName: validate.PolicyNoLicense,
 				Project:   proj,
 				FilePath:  "",
 				Issue:     fmt.Sprintf("Project has no recognized license files. Every third-party project must contain a license file. If this project is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllProjectsMustHaveALicense %s", relProjRoot),
@@ -168,14 +168,14 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 			if r.WriteReadmes {
 				if err := os.WriteFile(readmePath, []byte(newFormatted), 0644); err != nil {
 					errs = append(errs, pipeline.ComplianceError{
-						CheckName: v2config.CheckNameReadmeFuchsiaNeedsUpdate,
+						CheckName: validate.CheckReadmeNeedsUpdate,
 						Project:   projRoot,
 						FilePath:  readmePath,
 						Issue:     fmt.Sprintf("README.fuchsia is out of date, but failed to automatically update it: %v", err),
 					})
 				} else {
 					errs = append(errs, pipeline.ComplianceError{
-						CheckName: v2config.CheckNameReadmeFuchsiaNeedsUpdate,
+						CheckName: validate.CheckReadmeNeedsUpdate,
 						Project:   projRoot,
 						FilePath:  readmePath,
 						Issue:     "README.fuchsia was out of date and has been automatically updated. Please review and commit the changes.",
@@ -183,7 +183,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 				}
 			} else {
 				errs = append(errs, pipeline.ComplianceError{
-					CheckName: v2config.CheckNameReadmeFuchsiaNeedsUpdate,
+					CheckName: validate.CheckReadmeNeedsUpdate,
 					Project:   projRoot,
 					FilePath:  readmePath,
 					Issue:     "README.fuchsia is out of date. Run 'fx check-licenses fix' to update it.",
