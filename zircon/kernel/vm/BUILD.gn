@@ -343,6 +343,15 @@ kernel_rust_mod("vm-rs") {
   ]
 }
 
+kernel_rust_mod("vm-rs-unittests") {
+  output_name = "vm_unittests"
+  testonly = true
+  visibility = [ ":*" ]
+  source_root = "unittests/mod.rs"
+  sources = [ "unittests/vmo_unittest.rs" ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
+}
+
 config("suppress-nonheap-warning") {
   visibility = [ ":*" ]
   if (is_gcc) {
@@ -365,6 +374,7 @@ source_set("tests") {
     "unittests/vmpl_unittest.cc",
   ]
   deps = [
+    ":vm-rs-unittests",
     "//third_party/lz4",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/unittest",
