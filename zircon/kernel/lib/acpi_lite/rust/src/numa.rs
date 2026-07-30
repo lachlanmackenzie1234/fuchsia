@@ -16,6 +16,7 @@ use zx_status::Status;
 
 pub const K_ACPI_MAX_NUMA_REGIONS: usize = 5;
 
+#[repr(C)]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 // A region of memory associated with a NUMA domain.
 pub struct AcpiNumaRegion {
@@ -23,6 +24,7 @@ pub struct AcpiNumaRegion {
     pub length: u64,
 }
 
+#[repr(C)]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 // A NUMA domain.
 pub struct AcpiNumaDomain {
