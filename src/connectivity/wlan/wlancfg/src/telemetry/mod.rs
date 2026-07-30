@@ -517,6 +517,7 @@ pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
     wlan_telemetry::TelemetryConfig {
         enable_connect_disconnect: true,
         enable_iface_logger: true,
+        enable_sme_timeout_logger: true,
         enable_toggle_logger: true,
         enable_recovery_logger: true,
         enable_client_iface_counters_logger: true,
@@ -562,6 +563,7 @@ pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
         metrics::BAD_TX_RATE_METRIC_ID,
         metrics::INTERFACE_CREATION_FAILURE_METRIC_ID,
         metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID,
+        metrics::SME_OPERATION_TIMEOUT_2_METRIC_ID,
     ]))
 }
 
