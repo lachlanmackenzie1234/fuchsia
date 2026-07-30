@@ -22,6 +22,9 @@ main() {
   find_bootstrap_dir
   "${BOOTSTRAP_DIR}/bootstrap_bazel.sh" "$@"
   echo "Download complete."
+  echo "Bootstrapping git hooks"
+  "${BOOTSTRAP_DIR}/bootstrap_hooks.sh" "$@"
+  echo "Git hooks complete."
 }
 
 main "$@"
