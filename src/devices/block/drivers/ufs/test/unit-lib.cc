@@ -44,11 +44,21 @@ void UfsTest::StartDriver(bool supply_power_framework) {
 void UfsTest::SetUp() {
   InitMockDevice();
   StartDriver(/*supply_power_framework=*/false);
+  dut_->GetTransferRequestProcessor().SetTimeout(kCommandTimeout);
+  dut_->GetTaskManagementRequestProcessor().SetTimeout(kCommandTimeout);
 }
 
 void UfsTest::TearDown() {
   zx::result<> result = driver_test().StopDriver();
   ASSERT_OK(result);
+  mock_device_.GetRegisterMmioProcessor().Reset();
+  mock_device_.GetUicCmdProcessor().Reset();
+  mock_device_.GetTransferRequestProcessor().Reset();
+  mock_device_.GetTaskManagementRequestProcessor().Reset();
+  mock_device_.GetQueryRequestProcessor().Reset();
+  mock_device_.GetScsiCommandProcessor().Reset();
+  mock_device_.GetDmaHandler().Reset();
+  mock_device_.GetRegisters()->Reset();
 }
 
 zx_status_t UfsTest::DisableController() { return dut_->DisableHostController(); }

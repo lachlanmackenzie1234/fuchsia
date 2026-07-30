@@ -98,6 +98,9 @@ void ScsiCommandProcessor::BuildSenseData(ResponseUpiuData &response_upiu,
   sense_data->set_response_code(scsi::SenseDataResponseCodes::kFixedCurrentInformation);
   sense_data->set_valid(0);
   sense_data->set_sense_key(sense_key);
+  if (sense_key != scsi::SenseKey::NO_SENSE) {
+    response_upiu.header.status = static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION);
+  }
 }
 
 bool ScsiCommandProcessor::IsProcessableCommand(uint8_t lun, scsi::Opcode opcode) const {
@@ -304,6 +307,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultTestUnitReadyHandl
     auto *response_data =
         reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response_upiu.sense_data);
     response_data->set_sense_key(scsi::SenseKey::UNIT_ATTENTION);
+    mock_device.SetUnitAttention(false);
     return zx::error(ZX_ERR_BAD_STATE);
   }
   return zx::ok(std::move(data_buffer));

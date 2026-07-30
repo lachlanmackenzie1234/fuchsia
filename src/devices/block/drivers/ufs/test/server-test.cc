@@ -536,6 +536,7 @@ TEST_F(ServerTest, ReadWirteBufferOutOfRange) {
                            length, std::move(dup));
       ASSERT_TRUE(result.ok());
       const fit::result response = result.value();
+      ASSERT_TRUE(response.is_error());
       ASSERT_EQ(response.error_value(), ZX_ERR_BAD_STATE);
     }
 
@@ -554,6 +555,7 @@ TEST_F(ServerTest, ReadWirteBufferOutOfRange) {
                             buffer_offset, length, std::move(vmo));
       ASSERT_TRUE(result.ok());
       const fit::result response = result.value();
+      ASSERT_TRUE(response.is_error());
       ASSERT_EQ(response.error_value(), ZX_ERR_BAD_STATE);
     }
   });

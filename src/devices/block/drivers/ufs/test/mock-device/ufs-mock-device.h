@@ -82,6 +82,8 @@ class FakeRegisters final {
     return vmo;
   }
 
+  void Reset() { CustomMemSet(registers_, 0, RegisterMap::kRegisterSize); }
+
  private:
   zx::vmo registers_vmo_;
   uint8_t *registers_ = nullptr;
@@ -107,6 +109,7 @@ class UfsLogicalUnit {
   zx_status_t BufferWrite(const void *buf, size_t block_count, off_t block_offset);
   zx_status_t BufferRead(void *buf, size_t block_count, off_t block_offset);
   UnitDescriptor &GetUnitDesc() { return unit_desc_; }
+  bool IsEnable() const { return unit_desc_.bLUEnable != 0; }
 
   zx_status_t WriteToDeviceBuffer(const void *buf, uint32_t offset, uint32_t length);
   zx_status_t ReadFromDeviceBuffer(void *buf, uint32_t offset, uint32_t length);
@@ -182,6 +185,7 @@ class UfsMockDevice {
   }
   QueryRequestProcessor &GetQueryRequestProcessor() { return query_request_processor_; }
   ScsiCommandProcessor &GetScsiCommandProcessor() { return scsi_command_processor_; }
+  FakeDmaHandler &GetDmaHandler() { return dma_handler_; }
 
  private:
   std::array<UfsLogicalUnit, kMaxLunCount> logical_units_;

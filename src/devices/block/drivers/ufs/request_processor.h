@@ -57,7 +57,7 @@ class RequestProcessor {
   zx::result<> ClearSlot(RequestSlot &request_slot);
 
   // Ring the door bell.
-  zx::result<> RingRequestDoorbell(uint8_t slot_num);
+  void RingRequestDoorbell(uint8_t slot_num);
 
   // |request_list| is not thread safe.
   // A slot in |request_list| should only be accessed by one thread at a time.

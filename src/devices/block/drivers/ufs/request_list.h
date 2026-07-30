@@ -32,20 +32,57 @@ enum class SlotState {
 };
 
 struct RequestSlot {
-  SlotState state = SlotState::kFree;
+  std::atomic<SlotState> state{SlotState::kFree};
   std::unique_ptr<dma_buffer::ContiguousBuffer> command_descriptor_io;
   sync_completion_t complete;
   zx::pmt pmt;
-  IoCommand *io_cmd;
+  IoCommand *io_cmd = nullptr;
   zx::unowned_vmo data_vmo;
   uint64_t dma_offset = 0;
   uint64_t dma_length = 0;
   bool is_read = false;
   bool is_scsi_command = false;
   bool is_sync = false;
-  uint16_t response_upiu_offset;
+  uint16_t response_upiu_offset = 0;
   zx_status_t result = ZX_OK;
-  zx_time_t deadline;
+  zx_time_t deadline = 0;
+
+  RequestSlot() = default;
+  RequestSlot(RequestSlot &&other) noexcept
+      : state(other.state.load()),
+        command_descriptor_io(std::move(other.command_descriptor_io)),
+        complete(other.complete),
+        pmt(std::move(other.pmt)),
+        io_cmd(other.io_cmd),
+        data_vmo(std::move(other.data_vmo)),
+        dma_offset(other.dma_offset),
+        dma_length(other.dma_length),
+        is_read(other.is_read),
+        is_scsi_command(other.is_scsi_command),
+        is_sync(other.is_sync),
+        response_upiu_offset(other.response_upiu_offset),
+        result(other.result),
+        deadline(other.deadline) {}
+
+  RequestSlot &operator=(RequestSlot &&other) noexcept {
+    if (this != &other) {
+      state.store(other.state.load());
+      command_descriptor_io = std::move(other.command_descriptor_io);
+      complete = other.complete;
+      pmt = std::move(other.pmt);
+      io_cmd = other.io_cmd;
+      data_vmo = std::move(other.data_vmo);
+      dma_offset = other.dma_offset;
+      dma_length = other.dma_length;
+      is_read = other.is_read;
+      is_scsi_command = other.is_scsi_command;
+      is_sync = other.is_sync;
+      response_upiu_offset = other.response_upiu_offset;
+      result = other.result;
+      deadline = other.deadline;
+    }
+    return *this;
+  }
 };
 
 using RequestSlotCallback = fit::function<void(uint8_t slot_num, RequestSlot &request_slot)>;

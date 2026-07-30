@@ -335,17 +335,16 @@ zx::result<> Ufs::Isr() {
   if (interrupt_status.utp_transfer_request_completion_status()) {
     InterruptStatusReg::Get().FromValue(0).set_utp_transfer_request_completion_status(true).WriteTo(
         &mmio);
-    auto& request_list = transfer_request_processor_->GetRequestList();
-    SlotState admin_slot_state = request_list.GetSlot(kAdminCommandSlotNumber).state;
+    TriggerIoWork();
+  }
+
+  // Check admin command completion if an admin command is active.
+  auto& request_list = transfer_request_processor_->GetRequestList();
+  SlotState admin_slot_state = request_list.GetSlot(kAdminCommandSlotNumber).state.load();
+  if (admin_slot_state == SlotState::kScheduled) {
     uint32_t door_bell = UtrListDoorBellReg::Get().ReadFrom(&mmio).door_bell();
-    bool admin_door_bell = door_bell & (1 << kAdminCommandSlotNumber);
-
-    if (admin_slot_state == SlotState::kScheduled && !admin_door_bell) {
-      sync_completion_signal(&admin_signal_);
-
-      // TODO(b/42075643) Check that the interrupt also has I/O completion.
-    } else {
-      sync_completion_signal(&io_signal_);
+    if (!(door_bell & (1 << kAdminCommandSlotNumber))) {
+      TriggerAdminWork();
     }
   }
   if (interrupt_status.utp_task_management_request_completion_status()) {
@@ -363,82 +362,84 @@ zx::result<> Ufs::Isr() {
   return zx::ok();
 }
 
-int Ufs::IrqLoop() {
-  while (true) {
-    if (zx_status_t status = irq_.wait(nullptr); status != ZX_OK) {
-      if (status == ZX_ERR_CANCELED) {
-        fdf::debug("Interrupt cancelled. Exiting IRQ loop.");
-      } else {
-        fdf::error("Failed to wait for interrupt: {}", zx_status_get_string(status));
-      }
-      break;
+void Ufs::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
+                    const zx_packet_interrupt_t* interrupt) {
+  if (status != ZX_OK) {
+    if (status == ZX_ERR_CANCELED) {
+      fdf::debug("Interrupt cancelled.");
+    } else {
+      fdf::error("Failed to wait for interrupt: {}", zx_status_get_string(status));
     }
-
-    if (zx::result<> result = Isr(); result.is_error()) {
-      fdf::error("Failed to run interrupt service routine: {}", result);
-    }
-    OnIrqComplete();
+    return;
   }
-  return thrd_success;
+
+  if (zx::result<> result = Isr(); result.is_error()) {
+    fdf::error("Failed to run interrupt service routine: {}", result);
+  }
+  OnIrqComplete();
+
+  if (zx_status_t ack_status = irq_.ack(); ack_status != ZX_OK) {
+    if (ack_status != ZX_ERR_CANCELED) {
+      fdf::error("Failed to ack interrupt: {}", zx_status_get_string(ack_status));
+    }
+  }
 }
 
-int Ufs::AdminLoop() {
-  while (true) {
-    if (zx_status_t status = sync_completion_wait(&admin_signal_, ZX_TIME_INFINITE);
-        status != ZX_OK) {
-      fdf::error("Failed to wait for sync completion: {}", zx_status_get_string(status));
-      break;
-    }
-    sync_completion_reset(&admin_signal_);
-
-    {
-      std::lock_guard<std::mutex> lock(lock_);
-      if (driver_shutdown_) {
-        fdf::debug("Admin thread exiting.");
-        break;
-      }
-    }
-
-    ProcessAdminCompletions();
+void Ufs::HandleTimeout(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_status_t status) {
+  if (status != ZX_OK) {
+    return;
   }
-  return thrd_success;
+  ProcessIo();
 }
 
-int Ufs::IoLoop() {
-  while (true) {
-    // Wait until the earliest timeout deadline.
-    zx_time_t deadline = transfer_request_processor_->GetEarliestTimeoutDeadline();
-    sync_completion_wait_deadline(&io_signal_, deadline);
-    sync_completion_reset(&io_signal_);
+void Ufs::TriggerAdminWork() {
+  async::PostTask(admin_worker_dispatcher_.async_dispatcher(),
+                  [this]() { ProcessAdminCompletions(); });
+}
 
-    {
-      std::lock_guard<std::mutex> lock(lock_);
-      if (driver_shutdown_) {
-        fdf::debug("IO thread exiting.");
-        break;
-      }
+void Ufs::TriggerIoWork() {
+  async::PostTask(io_worker_dispatcher_.async_dispatcher(), [this]() { ProcessIo(); });
+}
 
-      // If the driver is suspended, wait for it to resume before continuing.
-      if (!device_manager_->IsResumed()) {
-        wait_for_power_resumed_.Reset();
-        lock_.unlock();
-        wait_for_power_resumed_.Wait();
-        lock_.lock();
-      }
+void Ufs::ProcessIo() {
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    if (driver_shutdown_) {
+      return;
     }
-
-    // TODO(https://fxbug.dev/42075643): We need to perform a I/O completion on the in-flight I/O
-    // before the device is suspended.
-    ProcessIoCompletions();
-
-    // Unable to send I/O when in suspend.
-    if (device_manager_->IsResumed()) {
-      ProcessIoSubmissions();
-    }
-
-    ProcessErrors();
   }
-  return thrd_success;
+
+  // TODO(https://fxbug.dev/42075643): We need to perform a I/O completion on the in-flight I/O
+  // before the device is suspended.
+  // Always process in-flight completions before checking power state so
+  // pending query/init UPIUs can complete even during power transitions.
+  ProcessIoCompletions();
+
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    if (!device_manager_->IsResumed()) {
+      return;
+    }
+  }
+
+  ProcessIoSubmissions();
+
+  ProcessErrors();
+
+  ScheduleTimeoutTask();
+}
+
+void Ufs::ScheduleTimeoutTask() {
+  if (timeout_task_.is_pending()) {
+    timeout_task_.Cancel();
+  }
+
+  zx_time_t deadline = transfer_request_processor_->GetEarliestTimeoutDeadline();
+  if (deadline == ZX_TIME_INFINITE) {
+    return;
+  }
+
+  timeout_task_.PostForTime(io_worker_dispatcher_.async_dispatcher(), zx::time(deadline));
 }
 
 void Ufs::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
@@ -478,7 +479,7 @@ void Ufs::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_w
     std::lock_guard<std::mutex> lock(commands_lock_);
     list_add_tail(&pending_commands_, &io_cmd->node);
   }
-  sync_completion_signal(&io_signal_);
+  TriggerIoWork();
 }
 
 zx_status_t Ufs::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
@@ -521,10 +522,35 @@ zx_status_t Ufs::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, boo
                        safemath::checked_cast<uint8_t>(cdb.iov_len), data_direction,
                        safemath::checked_cast<uint32_t>(data.iov_len));
 
-  if (auto response = transfer_request_processor_->SendAdminScsiCmd(upiu, lun_id.value(),
-                                                                    zx::unowned_vmo(data_vmo));
-      response.is_error()) {
+  auto response = transfer_request_processor_->SendAdminScsiCmd(upiu, lun_id.value(),
+                                                                zx::unowned_vmo(data_vmo));
+  if (response.is_error()) {
     return response.error_value();
+  }
+
+  auto header_response = response.value()->GetHeader().response;
+  uint8_t scsi_status = response.value()->GetHeader().status;
+
+  if (header_response != UpiuHeaderResponseCode::kTargetSuccess &&
+      header_response != UpiuHeaderResponseCode::kTargetFailure) {
+    fdf::error("ExecuteCommandSync failed: header_response=0x{:x}, scsi_status=0x{:x}",
+               static_cast<uint32_t>(header_response), static_cast<uint32_t>(scsi_status));
+    return ZX_ERR_BAD_STATE;
+  }
+
+  if (scsi_status != static_cast<uint8_t>(scsi::StatusCode::GOOD)) {
+    auto* sense_data =
+        reinterpret_cast<scsi::FixedFormatSenseDataHeader*>(response.value()->GetSenseData());
+    fdf::error("ExecuteCommandSync scsi_status=0x{:x}, sense_key=0x{:x}, asc=0x{:x}, ascq=0x{:x}",
+               scsi_status, static_cast<uint8_t>(sense_data->sense_key()),
+               sense_data->additional_sense_code, sense_data->additional_sense_code_qualifier);
+    if (scsi_status == static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION)) {
+      if (sense_data->sense_key() == scsi::SenseKey::UNIT_ATTENTION ||
+          sense_data->sense_key() == scsi::SenseKey::NOT_READY) {
+        return ZX_ERR_UNAVAILABLE;
+      }
+    }
+    return ZX_ERR_BAD_STATE;
   }
 
   if (data_direction == DataDirection::kDeviceToHost) {
@@ -700,9 +726,9 @@ zx::result<> Ufs::InitController() {
 
   // Create and post IRQ worker
   {
-    auto irq_dispatcher = fdf::SynchronizedDispatcher::Create(
-        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-irq-worker",
-        [&](fdf_dispatcher_t*) { irq_worker_shutdown_completion_.Signal(); });
+    auto irq_dispatcher =
+        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
+                                            "ufs-irq-worker", [](fdf_dispatcher_t*) {});
     if (irq_dispatcher.is_error()) {
       fdf::error("Failed to create IRQ dispatcher: {}",
                  zx_status_get_string(irq_dispatcher.status_value()));
@@ -710,10 +736,10 @@ zx::result<> Ufs::InitController() {
     }
     irq_worker_dispatcher_ = *std::move(irq_dispatcher);
 
-    zx_status_t status =
-        async::PostTask(irq_worker_dispatcher_.async_dispatcher(), [this] { IrqLoop(); });
+    irq_handler_.set_object(irq_.get());
+    zx_status_t status = irq_handler_.Begin(irq_worker_dispatcher_.async_dispatcher());
     if (status != ZX_OK) {
-      fdf::error("Failed to start IRQ worker loop: {}", zx_status_get_string(status));
+      fdf::error("Failed to begin IRQ wait: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
@@ -758,51 +784,37 @@ zx::result<> Ufs::InitController() {
   }
   device_manager_ = std::move(*device_manager);
 
-  // Create and post Admin worker
+  // Create Admin worker dispatcher
   {
-    auto admin_dispatcher = fdf::SynchronizedDispatcher::Create(
-        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-admin-worker",
-        [&](fdf_dispatcher_t*) { admin_worker_shutdown_completion_.Signal(); });
+    auto admin_dispatcher =
+        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
+                                            "ufs-admin-worker", [](fdf_dispatcher_t*) {});
     if (admin_dispatcher.is_error()) {
       fdf::error("Failed to create Admin dispatcher: {}",
                  zx_status_get_string(admin_dispatcher.status_value()));
       return zx::error(admin_dispatcher.status_value());
     }
     admin_worker_dispatcher_ = *std::move(admin_dispatcher);
-
-    zx_status_t status =
-        async::PostTask(admin_worker_dispatcher_.async_dispatcher(), [this] { AdminLoop(); });
-    if (status != ZX_OK) {
-      fdf::error("Failed to start Admin worker loop: {}", zx_status_get_string(status));
-      return zx::error(status);
-    }
   }
 
-  // Create and post IO worker
+  // Create IO worker dispatcher
   {
-    auto io_dispatcher = fdf::SynchronizedDispatcher::Create(
-        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-io-worker",
-        [&](fdf_dispatcher_t*) { io_worker_shutdown_completion_.Signal(); });
+    auto io_dispatcher =
+        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
+                                            "ufs-io-worker", [](fdf_dispatcher_t*) {});
     if (io_dispatcher.is_error()) {
       fdf::error("Failed to create IO dispatcher: {}",
                  zx_status_get_string(io_dispatcher.status_value()));
       return zx::error(io_dispatcher.status_value());
     }
     io_worker_dispatcher_ = *std::move(io_dispatcher);
-
-    zx_status_t status =
-        async::PostTask(io_worker_dispatcher_.async_dispatcher(), [this] { IoLoop(); });
-    if (status != ZX_OK) {
-      fdf::error("Failed to start IO worker loop: {}", zx_status_get_string(status));
-      return zx::error(status);
-    }
   }
 
   // Create Exception Event worker
   {
-    auto ee_dispatcher = fdf::SynchronizedDispatcher::Create(
-        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-exception-event-worker",
-        [&](fdf_dispatcher_t*) { exception_event_completion_.Signal(); });
+    auto ee_dispatcher =
+        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
+                                            "ufs-exception-event-worker", [](fdf_dispatcher_t*) {});
     if (ee_dispatcher.is_error()) {
       fdf::error("Failed to create Exception Event dispatcher: {}",
                  zx_status_get_string(ee_dispatcher.status_value()));
@@ -1236,7 +1248,7 @@ void Ufs::HardwareElementRunner::SetLevel(
       const zx::duration duration = zx::clock::get_monotonic() - start;
       parent_.properties_.wake_latency_us.Insert(duration.to_usecs());
 
-      parent_.wait_for_power_resumed_.Signal();
+      parent_.TriggerIoWork();
       break;
     }
     case kPowerLevelOff: {
@@ -1343,30 +1355,24 @@ void Ufs::Stop(fdf::StopCompleter completer) {
   }
 
   // TODO(https://fxbug.dev/42075643): We should flush pending_commands_.
+  if (irq_.is_valid()) {
+    irq_.destroy();
+  }
 
-  irq_.destroy();  // Make irq_.wait() in IrqLoop() return ZX_ERR_CANCELED.
-  // wait for worker loop to finish before removing devices
   if (exception_event_dispatcher_.get()) {
     exception_event_dispatcher_.ShutdownAsync();
-    exception_event_completion_.Wait();
   }
 
   if (irq_worker_dispatcher_.get()) {
     irq_worker_dispatcher_.ShutdownAsync();
-    irq_worker_shutdown_completion_.Wait();
   }
 
   if (io_worker_dispatcher_.get()) {
-    sync_completion_signal(&io_signal_);
-    wait_for_power_resumed_.Signal();
     io_worker_dispatcher_.ShutdownAsync();
-    io_worker_shutdown_completion_.Wait();
   }
 
   if (admin_worker_dispatcher_.get()) {
-    sync_completion_signal(&admin_signal_);
     admin_worker_dispatcher_.ShutdownAsync();
-    admin_worker_shutdown_completion_.Wait();
   }
 
   completer(zx::ok());

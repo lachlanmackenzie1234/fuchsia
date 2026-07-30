@@ -390,16 +390,14 @@ class UfsTest : public ::testing::Test {
   }
 
   template <class T>
-  zx::result<> RingRequestDoorbell(uint8_t slot_num) {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  void RingRequestDoorbell(uint8_t slot_num) {}
+  template <>
+  void RingRequestDoorbell<TransferRequestProcessor>(uint8_t slot_num) {
+    dut_->GetTransferRequestProcessor().RingRequestDoorbell(slot_num);
   }
   template <>
-  zx::result<> RingRequestDoorbell<TransferRequestProcessor>(uint8_t slot_num) {
-    return dut_->GetTransferRequestProcessor().RingRequestDoorbell(slot_num);
-  }
-  template <>
-  zx::result<> RingRequestDoorbell<TaskManagementRequestProcessor>(uint8_t slot_num) {
-    return dut_->GetTaskManagementRequestProcessor().RingRequestDoorbell(slot_num);
+  void RingRequestDoorbell<TaskManagementRequestProcessor>(uint8_t slot_num) {
+    dut_->GetTaskManagementRequestProcessor().RingRequestDoorbell(slot_num);
   }
 
  protected:

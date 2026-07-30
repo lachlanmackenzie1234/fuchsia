@@ -319,8 +319,8 @@ void UfsServer::ProcessQueryRequestUpiu(const RequestRequestView& request,
 }
 
 void UfsServer::ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::Sync& completer) {
-  size_t size;
-  if (request->data.get_prop_content_size(&size); size < request->length) {
+  uint64_t size;
+  if (request->data.get_size(&size); size < request->length) {
     completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
     return;
   }

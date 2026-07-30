@@ -110,6 +110,11 @@ void RegisterMmioProcessor::DefaultUTRLDBRHandler(UfsMockDevice& mock_device, ui
   }
   mock_device.GetTransferRequestProcessor().SetPendingSlots(pending_slots);
 
+  uint32_t current_doorbell =
+      UtrListDoorBellReg::Get().ReadFrom(mock_device.GetRegisters()).door_bell();
+  current_doorbell &= ~static_cast<uint32_t>(completed_slots.to_ulong());
+  UtrListDoorBellReg::Get().FromValue(current_doorbell).WriteTo(mock_device.GetRegisters());
+
   uint32_t prev_completion =
       UtrListCompletionNotificationReg::Get().ReadFrom(mock_device.GetRegisters()).notification();
   UtrListCompletionNotificationReg::Get()

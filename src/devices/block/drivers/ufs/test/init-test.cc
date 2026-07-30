@@ -57,6 +57,11 @@ TEST_F(InitTest, AddLogicalUnits) {
 TEST_F(InitTest, LogicalUnitBlockInfo) {
   ASSERT_NO_FATAL_FAILURE(StartDriver());
 
+  while (dut_->block_devs().empty() || !dut_->block_devs().contains(0) ||
+         dut_->block_devs().at(0).empty()) {
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+
   const auto& block_devs = dut_->block_devs();
   scsi::BlockDevice* block_device = block_devs.at(0).at(0).get();
 

@@ -54,6 +54,8 @@ class TransferRequestProcessor {
   DEF_DEFAULT_HANDLER(UpiuTransactionCodes::kCommand, DefaultCommandHandler)
   DEF_DEFAULT_HANDLER_END()
 
+  void ResetExtra() { pending_slots_.reset(); }
+
   std::bitset<kMaxRequestListSize> &GetPendingSlots() { return pending_slots_; }
   void SetPendingSlots(std::bitset<kMaxRequestListSize> value) { pending_slots_ = value; }
 

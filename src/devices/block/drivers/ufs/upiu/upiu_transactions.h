@@ -179,13 +179,44 @@ static_assert(sizeof(ResponseUpiuData) % kUpiuAlignment == 0, "UPIU requires 64-
 // UFS Specification Version 3.1, section 10.7.2 "RESPONSE UPIU".
 class ResponseUpiu : public AbstractResponseUpiu {
  public:
-  explicit ResponseUpiu(void* data) : AbstractResponseUpiu(data) {}
+  explicit ResponseUpiu(void* data) {
+    if (data) {
+      response_data_ = std::make_unique<ResponseUpiuData>(*static_cast<ResponseUpiuData*>(data));
+      SetData(response_data_.get());
+    }
+  }
+
+  ResponseUpiu(ResponseUpiu&& other) noexcept : AbstractResponseUpiu(std::move(other)) {
+    response_data_ = std::move(other.response_data_);
+    if (response_data_) {
+      SetData(response_data_.get());
+    } else {
+      SetData(nullptr);
+    }
+    other.SetData(nullptr);
+  }
+
+  ResponseUpiu& operator=(ResponseUpiu&& other) noexcept {
+    if (this != &other) {
+      AbstractResponseUpiu::operator=(std::move(other));
+      response_data_ = std::move(other.response_data_);
+      if (response_data_) {
+        SetData(response_data_.get());
+      } else {
+        SetData(nullptr);
+      }
+      other.SetData(nullptr);
+    }
+    return *this;
+  }
 
   ~ResponseUpiu() override = default;
 
   uint8_t* GetSenseData() { return GetData<ResponseUpiuData>()->sense_data; }
 
  private:
+  std::unique_ptr<ResponseUpiuData> response_data_;
+
   // for test
   friend class ufs_mock_device::TransferRequestProcessor;
   friend class ufs_mock_device::ScsiCommandProcessor;
@@ -413,7 +444,37 @@ static_assert(sizeof(QueryResponseUpiuData) % kUpiuAlignment == 0,
 // UFS Specification Version 3.1, section 10.7.9 "QUERY RESPONSE UPIU".
 class QueryResponseUpiu : public AbstractResponseUpiu {
  public:
-  explicit QueryResponseUpiu(void* data) : AbstractResponseUpiu(data) {}
+  explicit QueryResponseUpiu(void* data) {
+    if (data) {
+      response_data_ =
+          std::make_unique<QueryResponseUpiuData>(*static_cast<QueryResponseUpiuData*>(data));
+      SetData(response_data_.get());
+    }
+  }
+
+  QueryResponseUpiu(QueryResponseUpiu&& other) noexcept : AbstractResponseUpiu(std::move(other)) {
+    response_data_ = std::move(other.response_data_);
+    if (response_data_) {
+      SetData(response_data_.get());
+    } else {
+      SetData(nullptr);
+    }
+    other.SetData(nullptr);
+  }
+
+  QueryResponseUpiu& operator=(QueryResponseUpiu&& other) noexcept {
+    if (this != &other) {
+      AbstractResponseUpiu::operator=(std::move(other));
+      response_data_ = std::move(other.response_data_);
+      if (response_data_) {
+        SetData(response_data_.get());
+      } else {
+        SetData(nullptr);
+      }
+      other.SetData(nullptr);
+    }
+    return *this;
+  }
 
   ~QueryResponseUpiu() override = default;
 
@@ -430,6 +491,8 @@ class QueryResponseUpiu : public AbstractResponseUpiu {
   uint8_t GetIndex() { return GetData<QueryResponseUpiuData>()->index; }
 
  private:
+  std::unique_ptr<QueryResponseUpiuData> response_data_;
+
   // for test
   friend class ufs_mock_device::TransferRequestProcessor;
   friend class ufs_mock_device::QueryRequestProcessor;

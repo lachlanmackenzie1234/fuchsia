@@ -70,6 +70,13 @@ std::tuple<uint16_t, uint32_t> TransferRequestProcessor::PreparePrdt<ScsiCommand
 }
 
 zx::result<> TransferRequestProcessor::Init() {
+  for (uint8_t i = 0; i < request_list_.GetSlotCount(); ++i) {
+    auto &slot = request_list_.GetSlot(i);
+    if (zx::result<> result = ClearSlot(slot); result.is_error()) {
+      fdf::error("Failed to clear slot[{}] in Init: {}", i, result);
+    }
+  }
+
   zx_paddr_t paddr =
       request_list_.GetRequestDescriptorPhysicalAddress<TransferRequestDescriptor>(0);
   UtrListBaseAddressReg::Get().FromValue(paddr & 0xffffffff).WriteTo(&register_);
@@ -99,10 +106,15 @@ zx::result<> TransferRequestProcessor::Init() {
 zx::result<uint8_t> TransferRequestProcessor::ReserveAdminSlot() {
   RequestSlot &slot = request_list_.GetSlot(kAdminCommandSlotNumber);
   if (slot.state == SlotState::kFree) {
+    slot.is_scsi_command = false;
+    slot.is_sync = false;
+    slot.io_cmd = nullptr;
+    slot.result = ZX_OK;
     slot.state = SlotState::kReserved;
     return zx::ok(kAdminCommandSlotNumber);
   }
-  fdf::debug("Failed to reserve a admin request slot");
+
+  fdf::debug("Failed to reserve an admin request slot");
   return zx::error(ZX_ERR_NO_RESOURCES);
 }
 
@@ -113,7 +125,7 @@ zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendScsiUpiu
   uint32_t block_length = 0;
   uint64_t dma_offset = 0;
   uint64_t dma_length = 0;
-  if (io_cmd != nullptr) {
+  if (io_cmd) {
     block_offset =
         safemath::checked_cast<uint32_t>(io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM
                                              ? io_cmd->device_op.op.trim.offset_dev
@@ -127,8 +139,8 @@ zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendScsiUpiu
         dma_length = zx_system_get_page_size();
       } else {
         dma_offset = io_cmd->device_op.op.rw.offset_vmo * io_cmd->block_size_bytes;
-        dma_length = static_cast<uint64_t>(io_cmd->device_op.op.rw.length) *
-                     io_cmd->block_size_bytes;
+        dma_length =
+            static_cast<uint64_t>(io_cmd->device_op.op.rw.length) * io_cmd->block_size_bytes;
       }
     }
   } else if (data_vmo->is_valid()) {
@@ -166,7 +178,7 @@ zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendAdminScs
 
 zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendIoScsiCmd(
     ScsiCommandUpiu &request, uint8_t lun, IoCommand *io_cmd) {
-  if (io_cmd == nullptr) {
+  if (!io_cmd) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -175,7 +187,7 @@ zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendIoScsiCm
     return zx::error(ZX_ERR_BAD_HANDLE);
   }
 
-  const bool synchronous = io_cmd->device_op.completion_cb == nullptr;
+  const bool synchronous = !io_cmd->device_op.completion_cb;
 
   zx::result<uint8_t> slot = ReserveSlot();
   if (slot.is_error()) {
@@ -192,7 +204,7 @@ zx::result<std::unique_ptr<QueryResponseUpiu>> TransferRequestProcessor::SendQue
     QueryOpcode query_opcode =
         static_cast<QueryOpcode>(request.GetData<QueryRequestUpiuData>()->opcode);
     uint8_t type = request.GetData<QueryRequestUpiuData>()->idn;
-    fdf::error("Failed {}(type:0x{:x}) query request UPIU: {}", QueryOpcodeToString(query_opcode),
+    fdf::debug("Failed {}(type:0x{:x}) query request UPIU: {}", QueryOpcodeToString(query_opcode),
                type, response.status_string());
   }
   return response;
@@ -206,7 +218,11 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
     // TODO(https://fxbug.dev/42075643): Needs to be changed to be compatible with DFv2's dispatcher
     // Since the completion is handled by the I/O thread, submitting a synchronous command from the
     // I/O thread will cause a deadlock.
-    // ZX_DEBUG_ASSERT(controller_.GetIoThread() != thrd_current());
+    fdf_dispatcher_t *current = fdf::Dispatcher::GetCurrent()->get();
+    fdf_dispatcher_t *io_disp = controller_.io_worker_dispatcher()->get();
+    if (current && io_disp && current == io_disp) {
+      ZX_PANIC("Synchronous UFS request cannot be issued from inside IO worker dispatcher thread!");
+    }
   }
 
   RequestSlot &request_slot = request_list_.GetSlot(slot);
@@ -250,15 +266,13 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
       return zx::error(status);
     }
 
-    // Ensure that any cached writes are written out to volatile memory before we issue the
-    // request. Even for a read, we must pessimistically assume that there are pending writes to
-    // the VMO which need to be flushed before we start doing the DMA.  If we didn't flush the
-    // writes, they might get written out after we start to DMA, in which case they could stomp
-    // the read bytes.
+    // Ensure that any cached writes are written out to RAM before we issue the request.
+    // For writes, CLEAN is sufficient and cheaper. For reads, CLEAN_INVALIDATE ensures
+    // pending writes are flushed and cache lines are cleared before DMA.
     uint32_t op = request_slot.is_read ? ZX_VMO_OP_CACHE_CLEAN_INVALIDATE : ZX_VMO_OP_CACHE_CLEAN;
     zx_status_t status = request_slot.data_vmo->op_range(op, dma_offset, dma_length, nullptr, 0);
     if (status != ZX_OK) {
-      fdf::error("Failed to invalidate cache for data VMO: {}", zx_status_get_string(status));
+      fdf::error("Failed to flush/invalidate cache for data VMO: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
@@ -300,10 +314,10 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
       fdf::error("SendRequestUsingSlot request timed out: {}", zx_status_get_string(status));
       return zx::error(status);
     }
-    if (request_result != ZX_OK) {
+    const bool is_admin_cmd = (io_cmd == nullptr);
+    if (is_admin_cmd && request_result != ZX_OK) {
       return zx::error(request_result);
     }
-
     UtrListCompletionNotificationReg::Get().FromValue(0).set_notification(1 << slot).WriteTo(
         &register_);
   }
@@ -344,7 +358,7 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
     }
   }
 
-  if (request_slot.is_scsi_command && request_result.is_ok()) {
+  if (request_slot.is_scsi_command && request_slot.io_cmd && request_result.is_ok()) {
     // Until native UFS IO commands are defined by the UFS specification, we assume that only SCSI
     // commands can be IO commands.
     request_result = controller_.ScsiComplete(status_message, sense_data);
@@ -362,7 +376,9 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
     IoCommand *io_cmd = request_slot.io_cmd;
     if (io_cmd) {
       io_cmd->data_vmo.reset();
-      io_cmd->device_op.Complete(request_result.status_value());
+      if (io_cmd->device_op.completion_cb) {
+        io_cmd->device_op.Complete(request_result.status_value());
+      }
     }
   }
 
@@ -380,9 +396,8 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
                                                  bool is_timeout) {
   if (request_slot.data_vmo->is_valid() && request_slot.is_read) {
     // Invalidate the cache so the read data is visible to the CPU.
-    zx_status_t status =
-        request_slot.data_vmo->op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, request_slot.dma_offset,
-                                        request_slot.dma_length, nullptr, 0);
+    zx_status_t status = request_slot.data_vmo->op_range(
+        ZX_VMO_OP_CACHE_INVALIDATE, request_slot.dma_offset, request_slot.dma_length, nullptr, 0);
     if (status != ZX_OK) {
       fdf::error("Failed to invalidate cache for data VMO: {}", zx_status_get_string(status));
     }
@@ -390,15 +405,21 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
   // Check request response.
   zx_status_t status = UpiuCompletion(slot_num, request_slot, is_timeout);
   if (status == ZX_ERR_UNAVAILABLE) {
-    fdf::warn("Unavailability reported for request, slot[{}] (Possibly a UNIT_ATTENTION condition)",
-              slot_num);
+    fdf::warn(
+        "Unavailability reported for request, slot[{}] "
+        "(Possibly a UNIT_ATTENTION condition)",
+        slot_num);
   } else if (status != ZX_OK) {
-    fdf::error("Failed to complete request, slot[{}]: {}", slot_num, zx_status_get_string(status));
+    fdf::debug("Failed to complete request, slot[{}]: {}", slot_num, zx_status_get_string(status));
   }
   request_slot.result = status;
 
   if (is_timeout) {
     request_slot.state = SlotState::kTimeout;
+    uint32_t current_db = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+    if (current_db & (1 << slot_num)) {
+      UtrListClearReg::Get().FromValue(1 << slot_num).WriteTo(&register_);
+    }
   } else if (request_slot.is_sync) {
     sync_completion_signal(&request_slot.complete);
   } else {
@@ -412,15 +433,33 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
     }
   }
 
-  --inflight_io_count_;
+  active_slots_mask_.fetch_and(~(1u << slot_num), std::memory_order_release);
 }
 
 bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num) {
   bool is_completed = false;
-
   RequestSlot &request_slot = request_list_.GetSlot(slot_num);
-  if (request_slot.state == SlotState::kScheduled) {
+  // Use acquire load to synchronize with release stores in RingRequestDoorbell.
+  SlotState current_state = request_slot.state.load(std::memory_order_acquire);
+  if (current_state == SlotState::kScheduled) {
+    auto descriptor = request_list_.GetRequestDescriptor<TransferRequestDescriptor>(slot_num);
     if (!(UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1 << slot_num))) {
+      // Hardware cleared doorbell; ensure descriptor DMA writes are visible before checking status.
+      // Tight spin-wait for DMA write-posting interconnect buffer settling (typically < 100ns).
+      for (uint32_t retry = 0;
+           retry < kOverallCompletionRetries &&
+           descriptor->overall_command_status() == OverallCommandStatus::kInvalid;
+           ++retry) {
+        std::atomic_thread_fence(std::memory_order_acquire);
+      }
+      if (descriptor->overall_command_status() == OverallCommandStatus::kInvalid) {
+        if (zx_clock_get_monotonic() >= request_slot.deadline) {
+          RequestCompletion(slot_num, request_slot, /*timeout*/ true);
+          return true;
+        }
+        fdf::warn("Doorbell cleared for slot[{}] but OCS remained invalid", slot_num);
+        return false;
+      }
       RequestCompletion(slot_num, request_slot, /*timeout*/ false);
       is_completed = true;
     } else if (request_slot.deadline < zx_clock_get_monotonic()) {
@@ -472,7 +511,11 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
     uint8_t slot, const DataDirection data_dir, const uint16_t response_offset,
     const uint16_t response_length, const uint16_t prdt_offset, const uint32_t prdt_entry_count) {
   auto descriptor = request_list_.GetRequestDescriptor<TransferRequestDescriptor>(slot);
-  zx_paddr_t paddr = request_list_.GetSlot(slot).command_descriptor_io->phys();
+  RequestSlot &request_slot = request_list_.GetSlot(slot);
+  constexpr uint16_t kDwordSize = 4;
+  request_slot.response_upiu_offset =
+      static_cast<uint16_t>(fbl::round_down(response_offset, kDwordSize));
+  zx_paddr_t paddr = request_slot.command_descriptor_io->phys();
 
   // Fill up UTP Transfer Request Descriptor.
   CustomMemSet(descriptor, 0, sizeof(TransferRequestDescriptor));
@@ -484,10 +527,9 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
   descriptor->set_utp_command_descriptor_base_address(static_cast<uint32_t>(paddr & 0xffffffff));
   descriptor->set_utp_command_descriptor_base_address_upper(static_cast<uint32_t>(paddr >> 32));
 
-  constexpr uint16_t kDwordSize = 4;
   descriptor->set_response_upiu_offset(response_offset / kDwordSize);
   descriptor->set_response_upiu_length(response_length / kDwordSize);
-  descriptor->set_prdt_offset(prdt_offset / kDwordSize);
+  descriptor->set_prdt_offset(prdt_entry_count > 0 ? (prdt_offset / kDwordSize) : 0);
   descriptor->set_prdt_length(prdt_entry_count);
 
   TRACE_DURATION("ufs", "RingRequestDoorbell", "slot", slot);
@@ -495,11 +537,9 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
       result.is_error()) {
     return result.take_error();
   }
-  if (zx::result<> result = RingRequestDoorbell(slot); result.is_error()) {
-    fdf::error("Failed to send cmd {}", result);
-    return result.take_error();
-  }
-  ++inflight_io_count_;
+  active_slots_mask_.fetch_or(1u << slot, std::memory_order_release);
+  RingRequestDoorbell(slot);
+  return zx::ok();
 
   return zx::ok();
 }

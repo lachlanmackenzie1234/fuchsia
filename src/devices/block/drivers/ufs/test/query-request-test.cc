@@ -115,6 +115,7 @@ TEST_F(QueryRequestTest, ReadAttributeExcpetion) {
       });
   auto attribute = ReadAttribute(Attributes::bCurrentPowerMode);
   ASSERT_EQ(attribute.status_value(), ZX_ERR_BAD_STATE);
+  mock_device_.GetQueryRequestProcessor().Reset();
 }
 
 TEST_F(QueryRequestTest, ReadFlag) {

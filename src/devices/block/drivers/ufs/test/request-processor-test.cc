@@ -42,8 +42,7 @@ TEST_F(RequestProcessorTest, RingRequestDoorbell) {
   auto &slot = dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num.value());
   ASSERT_EQ(slot.state, SlotState::kReserved);
 
-  ASSERT_EQ(RingRequestDoorbell<ufs::TransferRequestProcessor>(slot_num.value()).status_value(),
-            ZX_OK);
+  RingRequestDoorbell<ufs::TransferRequestProcessor>(slot_num.value());
   ASSERT_EQ(slot.state, SlotState::kScheduled);
 
   dut_->GetTransferRequestProcessor().EnableCompletion();
@@ -74,7 +73,10 @@ TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
   ASSERT_EQ(slot.state, SlotState::kScheduled);
 
   // Wait for request slot to be freed.
-  auto wait_for_slot_freed = [&]() -> bool { return slot.state == SlotState::kFree; };
+  auto wait_for_slot_freed = [&]() -> bool {
+    dut_->GetTransferRequestProcessor().ProcessCompletionOfAdminRequests();
+    return slot.state == SlotState::kFree;
+  };
   ASSERT_OK(dut_->WaitWithTimeout(wait_for_slot_freed, zx::sec(10),
                                   "Timeout waiting for slot to be freed", zx::msec(100)));
 
@@ -137,6 +139,7 @@ TEST_F(RequestProcessorTest, SendQueryUpiuException) {
   ASSERT_EQ(response.status_value(), ZX_ERR_TIMED_OUT);
 
   dut_->GetTransferRequestProcessor().EnableCompletion();
+  dut_->GetTransferRequestProcessor().SetTimeout(kCommandTimeout);
   dut_->GetTransferRequestProcessor().ProcessCompletionOfIoRequests();
 
   // Hook the query request handler to set a response error
@@ -266,6 +269,10 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlotTimeout) {
 
   dut_->GetTransferRequestProcessor().DisableCompletion();
   dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
+  auto cleanup = fit::defer([this]() {
+    dut_->GetTransferRequestProcessor().EnableCompletion();
+    dut_->GetTransferRequestProcessor().SetTimeout(kCommandTimeout);
+  });
 
   auto slot = ReserveSlot<ufs::TransferRequestProcessor>();
   ASSERT_OK(slot);

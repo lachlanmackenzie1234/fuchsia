@@ -26,7 +26,8 @@ zx_status_t TransferRequestProcessor::HandleTransferRequest(TransferRequestDescr
       descriptor.response_upiu_length() * sizeof(uint32_t);
   command_descriptor_data.prdt_base_addr =
       command_desc_base_addr.value() + descriptor.prdt_offset() * sizeof(uint32_t);
-  command_descriptor_data.prdt_entry_count = descriptor.prdt_length() * sizeof(uint32_t);
+  // prdt_length() is the number of PRDT entries (not dword offset count).
+  command_descriptor_data.prdt_entry_count = descriptor.prdt_length();
 
   UpiuHeader *command_upiu_header =
       reinterpret_cast<UpiuHeader *>(command_descriptor_data.command_upiu_base_addr);
@@ -47,6 +48,7 @@ zx_status_t TransferRequestProcessor::HandleTransferRequest(TransferRequestDescr
   if (it == handlers_.end()) {
     fdf::error("UFS MOCK: transfer request opcode: 0x{:x} is not supported",
                static_cast<uint32_t>(opcode));
+    descriptor.set_overall_command_status(OverallCommandStatus::kInvalid);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -69,6 +71,10 @@ zx_status_t TransferRequestProcessor::HandleTransferRequest(TransferRequestDescr
       ocs = OverallCommandStatus::kAborted;
       // Timeout does not trigger a completion interrupt.
       trigger_intr.cancel();
+    } else if (opcode == static_cast<uint8_t>(UpiuTransactionCodes::kCommand)) {
+      // For SCSI commands, SCSI status and sense data are returned in the response UPIU.
+      // The descriptor overall command status (OCS) remains kSuccess.
+      ocs = OverallCommandStatus::kSuccess;
     } else {
       fdf::warn("UFS MOCK: transfer request opcode: 0x{:x} returned an error",
                 static_cast<uint32_t>(opcode));
@@ -100,9 +106,13 @@ zx_status_t TransferRequestProcessor::DefaultQueryHandler(
   response_upiu->idn = request_upiu->idn;
   response_upiu->index = request_upiu->index;
   response_upiu->selector = request_upiu->selector;
+  response_upiu->header.response = static_cast<uint8_t>(QueryResponseCode::kSuccess);
 
   zx_status_t status =
       mock_device.GetQueryRequestProcessor().HandleQueryRequest(*request_upiu, *response_upiu);
+  if (status != ZX_OK) {
+    response_upiu->header.response = static_cast<uint8_t>(QueryResponseCode::kGeneralFailure);
+  }
   response_upiu->header.data_segment_length = response_upiu->length;
   return status;
 }

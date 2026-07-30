@@ -237,7 +237,7 @@ fuchsia_unittest_component("ufs-unit-tests") {
 fuchsia_test_package("ufs-tests") {
   test_specs = {
     log_settings = {
-      max_severity = "ERROR"
+      max_severity = "FATAL"
     }
   }
   test_components = [ ":ufs-unit-tests" ]

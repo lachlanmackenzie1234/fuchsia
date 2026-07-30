@@ -122,6 +122,7 @@ TEST_F(TimeoutTest, AsyncCommandTimeout) {
   // Check that the timed out command is aborted and not in the request list
   ASSERT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(target_task_tag).state,
             SlotState::kTimeout);
+  mock_device_.GetScsiCommandProcessor().Reset();
 }
 
 TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
@@ -191,6 +192,7 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
     EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).result,
               ZX_ERR_TIMED_OUT);
   }
+  mock_device_.GetScsiCommandProcessor().Reset();
 }
 
 TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
@@ -248,6 +250,7 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
 
   // Execute WRITE_10 commands to succeed.
   cdb->opcode = scsi::Opcode::WRITE_10;
+  cdb->transfer_length = htobe16(1);
   for (uint8_t slot_num = kTimeoutCount; slot_num < kMaxSlotCount; ++slot_num) {
     ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmos[slot_num]));
     block_op_t& op =
@@ -297,6 +300,7 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
               SlotState::kFree);
     EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).result, ZX_OK);
   }
+  mock_device_.GetScsiCommandProcessor().Reset();
 }
 
 }  // namespace ufs

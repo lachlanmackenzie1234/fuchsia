@@ -28,27 +28,31 @@ class ScsiCommandTest : public UfsTest {
     ASSERT_OK(MapVmo(unowned_vmo, mapper_, 0, block_count_ * block_size_));
   }
 
-  void TearDown() override { UfsTest::TearDown(); }
+  void TearDown() override {
+    mapper_.Unmap();
+    vmo_.reset();
+    UfsTest::TearDown();
+  }
 
   void *GetVirtualAddress() const { return mapper_.start(); }
   zx::vmo &GetVmo() { return vmo_; }
 
   uint16_t GetBlockCount() const { return block_count_; }
   uint32_t GetBlockSize() const { return block_size_; }
-  IoCommand &GetEmptyIoCommand(bool is_write, zx_handle_t vmo = ZX_HANDLE_INVALID) {
-    empty_io_cmd_.device_op.op.command.opcode = is_write ? BLOCK_OPCODE_WRITE : BLOCK_OPCODE_READ;
-    empty_io_cmd_.block_size_bytes = block_size_;
-    empty_io_cmd_.device_op.op.rw.offset_dev = 0;
-    empty_io_cmd_.device_op.op.rw.length = block_count_;
-    empty_io_cmd_.device_op.op.rw.vmo = vmo;
-    empty_io_cmd_.device_op.completion_cb = [](void *cookie, zx_status_t status, block_op_t *op) {};
-    return empty_io_cmd_;
+  IoCommand GetEmptyIoCommand(bool is_write, zx_handle_t vmo = ZX_HANDLE_INVALID) {
+    IoCommand io_cmd = {};
+    io_cmd.device_op.op.command.opcode = is_write ? BLOCK_OPCODE_WRITE : BLOCK_OPCODE_READ;
+    io_cmd.block_size_bytes = block_size_;
+    io_cmd.device_op.op.rw.offset_dev = 0;
+    io_cmd.device_op.op.rw.length = block_count_;
+    io_cmd.device_op.op.rw.vmo = vmo;
+    io_cmd.device_op.completion_cb = nullptr;
+    return io_cmd;
   }
 
  private:
   zx::vmo vmo_;
   fzl::VmoMapper mapper_;
-  IoCommand empty_io_cmd_;
 
   const uint16_t block_count_ = 1;
   const uint32_t block_size_ = kMockBlockSize;
@@ -59,7 +63,7 @@ TEST_F(ScsiCommandTest, Read10) {
   uint32_t block_offset = 0;
 
   // Write test data to the mock device
-  char buf[kMockBlockSize];
+  char buf[kMockBlockSize] = {};
   constexpr char kTestString[] = "test";
   std::strncpy(buf, kTestString, sizeof(buf));
   ASSERT_OK(mock_device_.BufferWrite(kTestLun, buf, GetBlockCount(), block_offset));
@@ -75,10 +79,31 @@ TEST_F(ScsiCommandTest, Read10) {
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kDeviceToHost,
                        GetBlockCount() * GetBlockSize());
   ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::READ_10);
-  ASSERT_OK(dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-      upiu, kTestLun, &GetEmptyIoCommand(/*is_write=*/false, GetVmo().get())));
+  IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/false, GetVmo().get());
+  sync_completion_t completion;
+  io_cmd.device_op.completion_cb = [](void *cookie, zx_status_t status, block_op_t *op) {
+    auto *comp = static_cast<sync_completion_t *>(cookie);
+    sync_completion_signal(comp);
+  };
+  io_cmd.device_op.cookie = &completion;
+
+  auto send_result = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
+  if (send_result.is_error()) {
+    fdf::error("SendIoScsiCmd in Read10 failed with error: {}", send_result.status_string());
+  }
+  ASSERT_OK(send_result);
+  ASSERT_OK(sync_completion_wait(&completion, ZX_TIME_INFINITE));
 
   // Check the read data
+  GetVmo().op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, 0, kMockBlockSize, nullptr, 0);
+  if (memcmp(GetVirtualAddress(), buf, kMockBlockSize) != 0) {
+    uint8_t *act = static_cast<uint8_t *>(GetVirtualAddress());
+    uint8_t *exp = reinterpret_cast<uint8_t *>(buf);
+    fdf::error(
+        "Read10 mismatch! Actual: [{:02x} {:02x} {:02x} {:02x}], "
+        "Expected: [{:02x} {:02x} {:02x} {:02x}]",
+        act[0], act[1], act[2], act[3], exp[0], exp[1], exp[2], exp[3]);
+  }
   ASSERT_EQ(memcmp(GetVirtualAddress(), buf, kMockBlockSize), 0);
 }
 
@@ -108,8 +133,8 @@ TEST_F(ScsiCommandTest, Read10Exception) {
 
     // The command should be failed with not-created vmo.
     zx::vmo not_created_vmo;
-    auto response = dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-        upiu, kTestLun, &GetEmptyIoCommand(/*is_write=*/false, not_created_vmo.get()));
+    IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/false, not_created_vmo.get());
+    auto response = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
     ASSERT_EQ(response.status_value(), ZX_ERR_BAD_HANDLE);
   }
 
@@ -129,9 +154,10 @@ TEST_F(ScsiCommandTest, Read10Exception) {
 
     // The command should be failed with not-exist LUN.
     const uint8_t kTestFailureLun = 1;
+    IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/false, GetVmo().get());
     zx::result<std::unique_ptr<ResponseUpiu>> response =
-        dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-            upiu, kTestFailureLun, &GetEmptyIoCommand(/*is_write=*/false, GetVmo().get()));
+        dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestFailureLun, &io_cmd);
+    ASSERT_OK(response);
     auto *response_sense_data =
         reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
     ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);
@@ -153,9 +179,10 @@ TEST_F(ScsiCommandTest, Read10Exception) {
     ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::READ_10);
 
     // The command should be failed with address exceeding device size.
+    IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/false, GetVmo().get());
     zx::result<std::unique_ptr<ResponseUpiu>> response =
-        dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-            upiu, kTestLun, &GetEmptyIoCommand(/*is_write=*/false, GetVmo().get()));
+        dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
+    ASSERT_OK(response);
     auto *response_sense_data =
         reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
     ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);
@@ -180,14 +207,34 @@ TEST_F(ScsiCommandTest, Write10) {
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kHostToDevice,
                        GetBlockCount() * GetBlockSize());
   ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::WRITE_10);
-  ASSERT_OK(dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-      upiu, kTestLun, &GetEmptyIoCommand(/*is_write=*/true, GetVmo().get())));
+  IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/true, GetVmo().get());
+  sync_completion_t completion;
+  io_cmd.device_op.completion_cb = [](void *cookie, zx_status_t status, block_op_t *op) {
+    auto *comp = static_cast<sync_completion_t *>(cookie);
+    sync_completion_signal(comp);
+  };
+  io_cmd.device_op.cookie = &completion;
+
+  auto send_result = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
+  if (send_result.is_error()) {
+    fdf::error("SendIoScsiCmd in Write10 failed with error: {}", send_result.status_string());
+  }
+  ASSERT_OK(send_result);
+  ASSERT_OK(sync_completion_wait(&completion, ZX_TIME_INFINITE));
 
   // Read test data form the mock device
   char buf[kMockBlockSize];
   ASSERT_OK(mock_device_.BufferRead(kTestLun, buf, GetBlockCount(), block_offset));
 
   // Check the written data
+  if (memcmp(GetVirtualAddress(), buf, kMockBlockSize) != 0) {
+    uint8_t *act = static_cast<uint8_t *>(GetVirtualAddress());
+    uint8_t *exp = reinterpret_cast<uint8_t *>(buf);
+    fdf::error(
+        "Write10 mismatch! Actual: [{:02x} {:02x} {:02x} {:02x}], "
+        "Expected: [{:02x} {:02x} {:02x} {:02x}]",
+        act[0], act[1], act[2], act[3], exp[0], exp[1], exp[2], exp[3]);
+  }
   ASSERT_EQ(memcmp(GetVirtualAddress(), buf, kMockBlockSize), 0);
 }
 
@@ -213,8 +260,8 @@ TEST_F(ScsiCommandTest, Write10Exception) {
 
     // The command should be failed with not-created vmo.
     zx::vmo not_created_vmo;
-    auto response = dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-        upiu, kTestLun, &GetEmptyIoCommand(/*is_write=*/true, not_created_vmo.get()));
+    IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/true, not_created_vmo.get());
+    auto response = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
     ASSERT_EQ(response.status_value(), ZX_ERR_BAD_HANDLE);
   }
 
@@ -234,9 +281,9 @@ TEST_F(ScsiCommandTest, Write10Exception) {
 
     // The command should be failed with not-exist LUN.
     const uint8_t kTestFailureLun = 1;
+    IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/true, GetVmo().get());
     zx::result<std::unique_ptr<ResponseUpiu>> response =
-        dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-            upiu, kTestFailureLun, &GetEmptyIoCommand(/*is_write=*/true, GetVmo().get()));
+        dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestFailureLun, &io_cmd);
     auto *response_sense_data =
         reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
     ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);
@@ -258,9 +305,9 @@ TEST_F(ScsiCommandTest, Write10Exception) {
     ASSERT_EQ(upiu.GetOpcode(), scsi::Opcode::WRITE_10);
 
     // The command should be failed with address exceeding device size.
+    IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/true, GetVmo().get());
     zx::result<std::unique_ptr<ResponseUpiu>> response =
-        dut_->GetTransferRequestProcessor().SendIoScsiCmd(
-            upiu, kTestLun, &GetEmptyIoCommand(/*is_write=*/true, GetVmo().get()));
+        dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
     auto *response_sense_data =
         reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response->GetSenseData());
     ASSERT_EQ(response_sense_data->sense_key(), scsi::SenseKey::ILLEGAL_REQUEST);

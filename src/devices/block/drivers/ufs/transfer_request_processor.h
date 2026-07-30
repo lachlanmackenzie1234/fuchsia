@@ -25,6 +25,12 @@ constexpr uint8_t kMaxTransferRequestListSize = kMaxRequestListSize;
 constexpr uint8_t kAdminCommandSlotCount = 1;
 constexpr uint8_t kAdminCommandSlotNumber = kMaxTransferRequestListSize - kAdminCommandSlotCount;
 
+// Maximum tight spin-wait retries when waiting for descriptor OCS update after doorbell clearance.
+// Descriptors are allocated in uncached memory; this spin-wait loop handles interconnect
+// write-posting latency on physical hardware where MMIO doorbell clearance can be observed before
+// DMA writes updating OCS reach DRAM.
+constexpr uint32_t kOverallCompletionRetries = 100;
+
 // Owns and processes the UTP transfer request list.
 class TransferRequestProcessor : public RequestProcessor {
  public:
@@ -104,14 +110,20 @@ class TransferRequestProcessor : public RequestProcessor {
                                           zx::unowned_vmo data_vmo, uint64_t dma_offset,
                                           uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
 
-  uint32_t GetInflightIoCount() const { return inflight_io_count_; }
+  uint32_t GetInflightIoCount() const {
+    constexpr uint32_t kIoSlotsMask = (1u << kAdminCommandSlotNumber) - 1;
+    return static_cast<uint32_t>(
+        std::popcount(active_slots_mask_.load(std::memory_order_acquire) & kIoSlotsMask));
+  }
 
  private:
   friend class UfsTest;
 
-  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(
-      ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
-      IoCommand *io_cmd, bool synchronous);
+  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(ScsiCommandUpiu &request,
+                                                                  uint8_t lun, uint8_t slot,
+                                                                  zx::unowned_vmo data_vmo,
+                                                                  IoCommand *io_cmd,
+                                                                  bool synchronous);
 
   zx::result<> FillDescriptorAndSendRequest(uint8_t slot, DataDirection data_dir,
                                             uint16_t response_offset, uint16_t response_length,
@@ -143,7 +155,7 @@ class TransferRequestProcessor : public RequestProcessor {
   // admin_slot_lock_ as a temporary solution.
   std::mutex admin_slot_lock_;
 
-  uint32_t inflight_io_count_ = 0;
+  std::atomic<uint32_t> active_slots_mask_{0};
 };
 
 }  // namespace ufs

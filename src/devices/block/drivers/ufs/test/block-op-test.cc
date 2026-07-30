@@ -12,7 +12,8 @@ class BlockOpTest : public UfsTest {
   void SetUp() override {
     UfsTest::SetUp();
 
-    while (dut_->block_devs().empty()) {
+    while (dut_->block_devs().empty() || !dut_->block_devs().contains(0) ||
+           dut_->block_devs().at(0).empty()) {
       zx::nanosleep(zx::deadline_after(zx::msec(1)));
     }
 

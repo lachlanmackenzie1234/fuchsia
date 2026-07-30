@@ -102,6 +102,18 @@ zx_status_t UfsLogicalUnit::ReadFromDeviceBuffer(void *buf, uint32_t offset, uin
 
 void UfsMockDevice::Init(std::unique_ptr<zx::interrupt> irq) {
   irq_ = std::move(irq);
+  registers_.Reset();
+  for (auto &lun : logical_units_) {
+    lun = UfsLogicalUnit();
+  }
+
+  register_mmio_processor_.Reset();
+  uiccmd_processor_.Reset();
+  transfer_request_processor_.Reset();
+  task_management_request_processor_.Reset();
+  query_request_processor_.Reset();
+  scsi_command_processor_.Reset();
+  dma_handler_.Reset();
 
   VersionReg::Get()
       .ReadFrom(&registers_)
@@ -235,7 +247,7 @@ zx_status_t UfsMockDevice::BufferRead(uint8_t lun, void *buf, size_t block_count
 
 zx_status_t UfsMockDevice::WriteToDeviceBuffer(uint8_t lun, const void *buf, uint32_t offset,
                                                uint32_t length) {
-  if (lun >= logical_units_.size()) {
+  if (lun >= logical_units_.size() || !logical_units_[lun].IsEnable()) {
     return ZX_ERR_INVALID_ARGS;
   }
   return logical_units_[lun].WriteToDeviceBuffer(buf, offset, length);
@@ -243,7 +255,7 @@ zx_status_t UfsMockDevice::WriteToDeviceBuffer(uint8_t lun, const void *buf, uin
 
 zx_status_t UfsMockDevice::ReadFromDeviceBuffer(uint8_t lun, void *buf, uint32_t offset,
                                                 uint32_t length) {
-  if (lun >= logical_units_.size()) {
+  if (lun >= logical_units_.size() || !logical_units_[lun].IsEnable()) {
     return ZX_ERR_INVALID_ARGS;
   }
   return logical_units_[lun].ReadFromDeviceBuffer(buf, offset, length);

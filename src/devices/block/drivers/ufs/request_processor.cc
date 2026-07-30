@@ -46,7 +46,16 @@ zx::result<uint8_t> RequestProcessor::ReserveSlot() {
       continue;
     }
     RequestSlot &slot = request_list_.GetSlot(slot_num);
-    if (slot.state == SlotState::kFree) {
+    if (slot.state == SlotState::kFree || slot.state == SlotState::kTimeout) {
+      if (slot.state == SlotState::kTimeout) {
+        if (zx::result<> result = ClearSlot(slot); result.is_error()) {
+          fdf::error("Failed to clear timed out slot[{}]: {}", slot_num, result);
+        }
+      }
+      slot.is_scsi_command = false;
+      slot.is_sync = false;
+      slot.io_cmd = nullptr;
+      slot.result = ZX_OK;
       slot.state = SlotState::kReserved;
       return zx::ok(slot_num);
     }
@@ -57,7 +66,9 @@ zx::result<uint8_t> RequestProcessor::ReserveSlot() {
 
 zx::result<> RequestProcessor::ClearSlot(RequestSlot &request_slot) {
   if (request_slot.pmt.is_valid()) {
-    if (zx_status_t status = request_slot.pmt.unpin(); status != ZX_OK) {
+    zx_status_t status = request_slot.pmt.unpin();
+    request_slot.pmt = zx::pmt();
+    if (status != ZX_OK) {
       fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
       request_slot.result = status;
       return zx::error(status);
@@ -75,19 +86,17 @@ zx::result<> RequestProcessor::ClearSlot(RequestSlot &request_slot) {
   return zx::ok();
 }
 
-zx::result<> RequestProcessor::RingRequestDoorbell(uint8_t slot_num) {
+void RequestProcessor::RingRequestDoorbell(uint8_t slot_num) {
   RequestSlot &request_slot = request_list_.GetSlot(slot_num);
   sync_completion_t *complete = &request_slot.complete;
   sync_completion_reset(complete);
   ZX_DEBUG_ASSERT(request_slot.state == SlotState::kReserved);
   request_slot.deadline = zx_deadline_after(GetTimeout().get());
-  request_slot.state = SlotState::kScheduled;
-
-  // TODO(https://fxbug.dev/42075643): Set the UtrInterruptAggregationControlReg.
-
+  // Use release store to ensure deadline and slot configuration are visible before state update.
+  request_slot.state.store(SlotState::kScheduled, std::memory_order_release);
   SetDoorBellRegister(slot_num);
 
-  return zx::ok();
+  // TODO(https://fxbug.dev/42075643): Set the UtrInterruptAggregationControlReg.
 }
 
 }  // namespace ufs

@@ -147,10 +147,7 @@ zx::result<> TaskManagementRequestProcessor::FillDescriptorAndSendRequest(
       result.is_error()) {
     return result.take_error();
   }
-  if (zx::result<> result = RingRequestDoorbell(slot); result.is_error()) {
-    fdf::error("Failed to send cmd {}", result);
-    return result.take_error();
-  }
+  RingRequestDoorbell(slot);
   return zx::ok();
 }
 

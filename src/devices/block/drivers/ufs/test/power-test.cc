@@ -34,6 +34,11 @@ TEST_F(PowerTest, PowerSuspendResume) {
 
   ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
 
+  while (dut_->block_devs().empty() || !dut_->block_devs().contains(0) ||
+         dut_->block_devs().at(0).empty()) {
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+
   scsi::BlockDevice* block_device;
   block_info_t info;
   uint64_t op_size;
@@ -207,6 +212,23 @@ TEST_F(PowerTest, PowerSuspendResume) {
   power_suspended = ufs->node().get_property<inspect::BoolPropertyValue>("power_suspended");
   ASSERT_NE(power_suspended, nullptr);
   EXPECT_TRUE(power_suspended->value());
+
+  // 5. Restore driver to active state.
+  libsync::Completion power_reply_1;
+  awake_complete.Reset();
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    env.power_broker()
+        .hardware_power_element_runner_client_->SetLevel({Ufs::kPowerLevelOn})
+        .ThenExactlyOnce([&, &reply = power_reply_1](
+                             fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+          EXPECT_TRUE(result.is_ok());
+          reply.Signal();
+        });
+  });
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() { awake_complete.Wait(); }));
+  power_reply_1.Wait();
+  ASSERT_TRUE(dut_->IsResumed());
+  mock_device_.GetUicCmdProcessor().Reset();
 }
 
 TEST_F(PowerTest, BackgroundOperations) {
@@ -368,6 +390,23 @@ TEST_F(PowerTest, BackgroundOperations) {
   is_background_op_enabled =
       bkop_node->node().get_property<inspect::BoolPropertyValue>("is_background_op_enabled");
   EXPECT_FALSE(is_background_op_enabled->value());
+
+  // Restore driver to active state.
+  libsync::Completion power_reply;
+  awake_complete.Reset();
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    env.power_broker()
+        .hardware_power_element_runner_client_->SetLevel({Ufs::kPowerLevelOn})
+        .ThenExactlyOnce([&, &reply = power_reply](
+                             fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+          EXPECT_TRUE(result.is_ok());
+          reply.Signal();
+        });
+  });
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() { awake_complete.Wait(); }));
+  power_reply.Wait();
+  ASSERT_TRUE(dut_->IsResumed());
+  mock_device_.GetUicCmdProcessor().Reset();
 }
 
 }  // namespace ufs

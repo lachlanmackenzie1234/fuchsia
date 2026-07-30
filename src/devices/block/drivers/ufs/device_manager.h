@@ -108,8 +108,8 @@ class DeviceManager {
   zx::result<> InitUfsPowerMode(inspect::Node &controller_node, inspect::Node &attributes_node)
       TA_EXCL(power_lock_);
 
-  zx::result<> SuspendPower();
-  zx::result<> ResumePower();
+  zx::result<> SuspendPower() TA_EXCL(power_lock_);
+  zx::result<> ResumePower() TA_EXCL(power_lock_);
 
   bool IsResumed() TA_EXCL(power_lock_) {
     std::lock_guard<std::mutex> lock(power_lock_);
@@ -162,7 +162,7 @@ class DeviceManager {
   zx::result<> SetFlag(Flags type);
   zx::result<> ClearFlag(Flags type);
 
-  zx::result<> SetPowerCondition(scsi::PowerCondition power_condition) TA_REQ(power_lock_);
+  zx::result<> SetPowerCondition(scsi::PowerCondition power_condition) TA_EXCL(power_lock_);
 
   zx::result<> SetExceptionEventControl(ExceptionEventControl control);
   zx::result<ExceptionEventStatus> GetExceptionEventStatus();

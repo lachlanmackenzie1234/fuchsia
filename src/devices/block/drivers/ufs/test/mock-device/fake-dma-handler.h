@@ -15,6 +15,13 @@ namespace ufs {
 namespace ufs_mock_device {
 
 constexpr uint32_t kFakeBtiAddrsCount = 1024;
+
+struct MappedRegion {
+  zx_vaddr_t vaddr;
+  size_t size;
+  std::vector<zx_paddr_t> paddrs;
+};
+
 class FakeDmaHandler {
  public:
   FakeDmaHandler();
@@ -36,10 +43,12 @@ class FakeDmaHandler {
   // vmo page pinned from |fake_bti_| by zx_bti_pin(), otherwise it returns ZX_ERR_NOT_FOUND.
   zx::result<zx_vaddr_t> PhysToVirt(zx_paddr_t paddr);
 
+  void Reset();
+
  private:
   zx_paddr_t fake_bti_paddrs_[kFakeBtiAddrsCount];
   zx::bti fake_bti_;
-  std::vector<std::pair<zx_vaddr_t, size_t>> mapped_addrs_;
+  std::vector<MappedRegion> mapped_addrs_;
 };
 
 }  // namespace ufs_mock_device

@@ -24,9 +24,7 @@ TEST_F(TaskManagementRequestProcessorTest, RingRequestDoorbell) {
   auto &slot = dut_->GetTaskManagementRequestProcessor().GetRequestList().GetSlot(slot_num.value());
   ASSERT_EQ(slot.state, SlotState::kReserved);
 
-  ASSERT_EQ(
-      RingRequestDoorbell<ufs::TaskManagementRequestProcessor>(slot_num.value()).status_value(),
-      ZX_OK);
+  RingRequestDoorbell<ufs::TaskManagementRequestProcessor>(slot_num.value());
   ASSERT_EQ(slot.state, SlotState::kScheduled);
 
   dut_->GetTaskManagementRequestProcessor().EnableCompletion();
