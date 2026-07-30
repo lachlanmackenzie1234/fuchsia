@@ -648,6 +648,7 @@ fuchsia.microbenchmarks: Tracing/BeginEndDurationEvent
 fuchsia.microbenchmarks: Tracing/InstantEvent
 fuchsia.microbenchmarks: Tracing/InstantEventArgs
 fuchsia.microbenchmarks: Tracing/ScopedDurationEvent
+fuchsia.microbenchmarks: UserPager/PageFault/Sequential.page_fault
 fuchsia.microbenchmarks: Vmar/Allocate/10000Existing/10000Candidates
 fuchsia.microbenchmarks: Vmar/Allocate/10000Existing/150000Candidates
 fuchsia.microbenchmarks: Vmar/Allocate/10000Existing/1Candidates

@@ -82,6 +82,7 @@ if (is_fuchsia) {
     "threads.cc",
     "timer.cc",
     "tracing.cc",
+    "user_pager.cc",
     "util.cc",
     "vmar.cc",
     "vmo.cc",
