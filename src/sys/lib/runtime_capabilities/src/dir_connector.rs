@@ -72,8 +72,12 @@ pub struct DirConnectorMessage {
 }
 
 impl DirConnectable for mpsc::UnboundedSender<DirConnectorMessage> {
+    /// An unbounded sender receiver channel does not restrict permissions on incoming directory
+    /// connections. Returning full permissions allows callers (including VFS lookups that pass
+    /// `PERM_READABLE`/`TRAVERSE`) to send directory requests without failing `DirConnector::send`
+    /// permission validation.
     fn maximum_flags(&self) -> fio::Flags {
-        fio::Flags::empty()
+        fio::PERM_READABLE | fio::PERM_WRITABLE | fio::PERM_EXECUTABLE
     }
 
     fn send(

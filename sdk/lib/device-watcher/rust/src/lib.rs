@@ -174,7 +174,7 @@ pub async fn recursive_wait_and_open_directory(
     recursive_wait_and_open_with_flags(
         Clone::clone(dir),
         name,
-        fio::Flags::PROTOCOL_DIRECTORY,
+        fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
         fuchsia_fs::directory::open_async::<fio::DirectoryMarker>,
     )
     .await

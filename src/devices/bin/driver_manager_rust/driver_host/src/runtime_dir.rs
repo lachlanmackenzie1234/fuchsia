@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use async_lock::OnceCell;
+use fidl_fuchsia_driver_host as fdh;
+use fidl_fuchsia_io as fio;
 use std::sync::Arc;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::directory::simple::Simple;
@@ -11,7 +13,6 @@ use vfs::file::{FidlIoConnection, File, FileIo, FileLike, FileOptions, SyncMode,
 use vfs::node::Node;
 use vfs::{ObjectRequestRef, immutable_attributes, pseudo_directory};
 use zx::Status;
-use {fidl_fuchsia_driver_host as fdh, fidl_fuchsia_io as fio};
 
 #[derive(Clone)]
 pub struct ProcessInfo {
@@ -222,14 +223,14 @@ mod tests {
 
         let scope = ExecutionScope::new();
         let (root_proxy, root_server) = create_proxy::<fio::DirectoryMarker>();
-        vfs::directory::serve_on(dir, fio::Flags::PERM_READ_BYTES, scope, root_server);
+        vfs::directory::serve_on(dir, fio::PERM_READABLE, scope, root_server);
 
         let entries = fuchsia_fs::directory::readdir(&root_proxy).await.unwrap();
         // Check for "elf" directory
         assert!(entries.iter().any(|e| e.name == "elf"));
 
         let elf_proxy =
-            fuchsia_fs::directory::open_directory(&root_proxy, "elf", fio::Flags::PERM_READ_BYTES)
+            fuchsia_fs::directory::open_directory(&root_proxy, "elf", fio::PERM_READABLE)
                 .await
                 .unwrap();
         let elf_entries = fuchsia_fs::directory::readdir(&elf_proxy).await.unwrap();

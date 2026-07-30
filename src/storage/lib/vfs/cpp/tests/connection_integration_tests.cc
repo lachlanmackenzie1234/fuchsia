@@ -132,6 +132,10 @@ class VfsTestSetup : public testing::Test {
     return vfs_.ServeDirectory(root_, std::move(server_end));
   }
 
+  zx_status_t ConnectClient(fidl::ServerEnd<fio::Directory> server_end, fio::Rights rights) {
+    return vfs_.ServeDirectory(root_, std::move(server_end), rights);
+  }
+
   void SetReadonly() { vfs_.SetReadonly(true); }
 
  protected:
@@ -422,6 +426,70 @@ TEST_F(ConnectionTest, ValidateRightsReadonly) {
     constexpr fio::Flags kExpectedFlags = fio::kPermReadable | fio::Flags::kProtocolDirectory;
     ASSERT_TRUE(flags.ok() && flags->is_ok()) << flags;
     ASSERT_EQ((*flags)->flags, kExpectedFlags);
+  }
+}
+
+TEST_F(ConnectionTest, TraverseRights) {
+  // Create connection to vfs with only GET_ATTRIBUTES right (no TRAVERSE).
+  auto root = fidl::Endpoints<fio::Directory>::Create();
+  ASSERT_EQ(ConnectClient(std::move(root.server), fio::Rights::kGetAttributes), ZX_OK);
+
+  // Attempt to open a child node. This should fail with ACCESS_DENIED because we don't have
+  // TRAVERSE.
+  {
+    zx::result fc = fidl::CreateEndpoints<fio::Node>();
+    ASSERT_EQ(fc.status_value(), ZX_OK);
+    ASSERT_EQ(fidl::WireCall(root.client)
+                  ->Open(fidl::StringView("file"),
+                         fio::Flags::kFlagSendRepresentation | fio::Flags::kProtocolFile, {},
+                         fc->server.TakeChannel())
+                  .status(),
+              ZX_OK);
+    zx::result<fio::Representation> file_info = GetOnRepresentation(fc->client);
+    ASSERT_TRUE(file_info.is_error());
+    ASSERT_EQ(file_info.error_value(), ZX_ERR_ACCESS_DENIED);
+  }
+
+  // Attempt to open "." (dot). This should succeed because TRAVERSE is not required for dot.
+  {
+    zx::result dc = fidl::CreateEndpoints<fio::Node>();
+    ASSERT_EQ(dc.status_value(), ZX_OK);
+    ASSERT_EQ(fidl::WireCall(root.client)
+                  ->Open(fidl::StringView("."),
+                         fio::Flags::kFlagSendRepresentation | fio::Flags::kProtocolDirectory, {},
+                         dc->server.TakeChannel())
+                  .status(),
+              ZX_OK);
+    zx::result<fio::Representation> dir_info = GetOnRepresentation(dc->client);
+    ASSERT_EQ(dir_info.status_value(), ZX_OK);
+    ASSERT_EQ(dir_info->Which(), fio::Representation::Tag::kDirectory);
+  }
+
+  // Attempt to open a child node with DeprecatedOpen without TRAVERSE. Should fail with
+  // ACCESS_DENIED.
+  {
+    zx::result fc = fidl::CreateEndpoints<fio::Node>();
+    ASSERT_EQ(fc.status_value(), ZX_OK);
+    ASSERT_EQ(fidl::WireCall(root.client)
+                  ->DeprecatedOpen(fio::OpenFlags::kRightReadable, {}, fidl::StringView("file"),
+                                   std::move(fc->server))
+                  .status(),
+              ZX_OK);
+    zx_signals_t observed = ZX_SIGNAL_NONE;
+    ASSERT_EQ(
+        fc->client.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &observed),
+        ZX_OK);
+  }
+
+  // Attempt to open "." with DeprecatedOpen without TRAVERSE. Should succeed.
+  {
+    zx::result dc = fidl::CreateEndpoints<fio::Node>();
+    ASSERT_EQ(dc.status_value(), ZX_OK);
+    ASSERT_EQ(fidl::WireCall(root.client)
+                  ->DeprecatedOpen(fio::OpenFlags::kRightReadable, {}, fidl::StringView("."),
+                                   std::move(dc->server))
+                  .status(),
+              ZX_OK);
   }
 }
 

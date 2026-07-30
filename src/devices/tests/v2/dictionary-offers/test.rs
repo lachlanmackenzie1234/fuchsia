@@ -16,11 +16,12 @@ use futures::channel::mpsc;
 use futures::stream::StreamExt;
 use std::sync::Arc;
 
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_dictionaryoffers_test as ft, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync,
-};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_dictionaryoffers_test as ft;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_test as fdt;
+use fuchsia_async as fasync;
 
 async fn data_plane_serve(
     mut stream: ft::DataPlaneRequestStream,
@@ -51,7 +52,11 @@ async fn data_plane_component(
 async fn test_dictionary_offers() -> Result<()> {
     let builder = RealmBuilder::new().await?;
 
-    let (sender, mut receiver) = mpsc::channel(1);
+    // A channel capacity > 1 is required because multiple child drivers (e.g. non-composite
+    // and composite) asynchronously connect and call `DataDo` in rapid succession before
+    // the test awaits `receiver.next()`. Since `data_plane_serve` uses `try_send()`, a buffer
+    // of 1 would cause `try_send` to fail if multiple requests arrive before the first is polled.
+    let (sender, mut receiver) = mpsc::channel(10);
     let sender = Arc::new(Mutex::new(sender));
 
     let data_plane_ref = builder

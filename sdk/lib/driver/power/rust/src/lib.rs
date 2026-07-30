@@ -112,11 +112,15 @@ impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
         let (svc, svc_server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         context
             .incoming
-            .open(SVC_DIR, fio::Flags::PROTOCOL_DIRECTORY, svc_server.into_channel())
+            .open(
+                SVC_DIR,
+                fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
+                svc_server.into_channel(),
+            )
             .map_err(|error| {
-            error!(error:?; "Error opening svc directory");
-            Status::INTERNAL
-        })?;
+                error!(error:?; "Error opening svc directory");
+                Status::INTERNAL
+            })?;
 
         let driver = Arc::new(T::start(context).await?);
 

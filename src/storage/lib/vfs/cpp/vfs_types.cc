@@ -53,6 +53,7 @@ constexpr DeprecatedOptions FlagsToConnectionOptions(fio::OpenFlags flags) {
 
   // Approximate a set of io2 Rights corresponding to what is expected by |flags|.
   if (!(options.flags & fio::OpenFlags::kNodeReference)) {
+    options.rights |= fio::Rights::kTraverse;
     if (flags & fio::OpenFlags::kRightReadable) {
       options.rights |= fio::kRStarDir;
     }

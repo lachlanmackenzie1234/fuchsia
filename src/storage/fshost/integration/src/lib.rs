@@ -412,7 +412,7 @@ impl TestFixture {
 
     pub async fn check_fs_type(&self, dir: &str, fs_type: u32) {
         let (status, info) = with_timeout(
-            self.dir(dir, fio::Flags::empty()).query_filesystem(),
+            self.dir(dir, fio::PERM_READABLE).query_filesystem(),
             format!("check_fs_type({dir})"),
         )
         .await
@@ -530,7 +530,7 @@ impl TestFixture {
     async fn add_ramdisk(&mut self, vmo: zx::Vmo, type_guid: Option<[u8; 16]>) {
         let mut ramdisk_builder = RamdiskClientBuilder::new_with_vmo(vmo, Some(512))
             .publish()
-            .ramdisk_service(self.dir(framdisk::ServiceMarker::SERVICE_NAME, fio::Flags::empty()));
+            .ramdisk_service(self.dir(framdisk::ServiceMarker::SERVICE_NAME, fio::PERM_READABLE));
         if let Some(guid) = type_guid {
             ramdisk_builder = ramdisk_builder.guid(guid);
         }

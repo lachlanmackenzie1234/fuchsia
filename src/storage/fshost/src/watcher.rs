@@ -76,7 +76,7 @@ impl WatchSource for PathSource {
         let path = self.path;
         let source_type = self.source_type;
         let get_parent = self.get_parent.clone();
-        let dir_proxy = fuchsia_fs::directory::open_in_namespace(path, fio::Flags::empty())
+        let dir_proxy = fuchsia_fs::directory::open_in_namespace(path, fio::PERM_READABLE)
             .with_context(|| format!("Failed to open directory at {path}"))?;
         let watcher = fuchsia_fs::directory::Watcher::new(&dir_proxy)
             .await

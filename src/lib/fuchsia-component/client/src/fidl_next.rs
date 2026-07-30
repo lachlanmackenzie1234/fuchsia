@@ -57,9 +57,7 @@ where
     let (client, server) = zx::Channel::create();
     fuchsia_fs::directory::open_channel_in_namespace(
         &service_path,
-        fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY
-            | fidl_fuchsia_io::Flags::PERM_CONNECT
-            | fidl_fuchsia_io::Flags::PERM_ENUMERATE,
+        fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY | fidl_fuchsia_io::PERM_READABLE,
         server.into(),
     )?;
     let connector = InstanceConnector(client);

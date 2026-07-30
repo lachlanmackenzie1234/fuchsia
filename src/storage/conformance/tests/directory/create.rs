@@ -22,7 +22,9 @@ async fn create_directory() {
             "dir",
             fio::Flags::PROTOCOL_DIRECTORY
                 | fio::Flags::FLAG_MUST_CREATE
-                | fio::Flags::PERM_MODIFY_DIRECTORY,
+                | fio::Flags::PERM_MODIFY_DIRECTORY
+                | fio::Flags::PERM_TRAVERSE
+                | fio::Flags::PERM_ENUMERATE,
             None,
         )
         .await
@@ -76,7 +78,10 @@ async fn create_directory_with_insufficient_rights() {
     let dir_with_insufficient_rights = dir
         .open_node::<fio::DirectoryMarker>(
             "dir",
-            fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::FLAG_MUST_CREATE,
+            fio::Flags::PROTOCOL_DIRECTORY
+                | fio::Flags::FLAG_MUST_CREATE
+                | fio::Flags::PERM_TRAVERSE
+                | fio::Flags::PERM_ENUMERATE,
             None,
         )
         .await
@@ -117,7 +122,9 @@ async fn create_directory_with_create_attributes() {
             fio::Flags::PROTOCOL_DIRECTORY
                 | fio::Flags::FLAG_MUST_CREATE
                 | fio::Flags::PERM_MODIFY_DIRECTORY
-                | fio::Flags::PERM_GET_ATTRIBUTES,
+                | fio::Flags::PERM_GET_ATTRIBUTES
+                | fio::Flags::PERM_TRAVERSE
+                | fio::Flags::PERM_ENUMERATE,
             None,
         )
         .await
@@ -203,7 +210,9 @@ async fn create_file() {
             "dir",
             fio::Flags::PROTOCOL_DIRECTORY
                 | fio::Flags::FLAG_MUST_CREATE
-                | fio::Flags::PERM_MODIFY_DIRECTORY,
+                | fio::Flags::PERM_MODIFY_DIRECTORY
+                | fio::Flags::PERM_TRAVERSE
+                | fio::Flags::PERM_ENUMERATE,
             None,
         )
         .await
@@ -235,7 +244,10 @@ async fn create_file_with_insufficient_rights() {
     let dir_with_insufficient_rights = dir
         .open_node::<fio::DirectoryMarker>(
             "dir",
-            fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::FLAG_MUST_CREATE,
+            fio::Flags::PROTOCOL_DIRECTORY
+                | fio::Flags::FLAG_MUST_CREATE
+                | fio::Flags::PERM_TRAVERSE
+                | fio::Flags::PERM_ENUMERATE,
             None,
         )
         .await
@@ -273,7 +285,9 @@ async fn create_file_with_create_attributes() {
             fio::Flags::PROTOCOL_DIRECTORY
                 | fio::Flags::FLAG_MUST_CREATE
                 | fio::Flags::PERM_MODIFY_DIRECTORY
-                | fio::Flags::PERM_GET_ATTRIBUTES,
+                | fio::Flags::PERM_GET_ATTRIBUTES
+                | fio::Flags::PERM_TRAVERSE
+                | fio::Flags::PERM_ENUMERATE,
             None,
         )
         .await

@@ -141,7 +141,7 @@ func (c *Context) BindStartupHandle(ctx fidl.Context) {
 	}); directoryRequest.IsValid() {
 		if err := (&DirectoryWrapper{
 			Directory: directory,
-		}).addConnection(0, zx.Channel(directoryRequest)); err != nil {
+		}).addConnection(io.PermReadable, zx.Channel(directoryRequest)); err != nil {
 			panic(err)
 		}
 	}

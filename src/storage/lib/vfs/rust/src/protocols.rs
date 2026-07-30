@@ -84,7 +84,9 @@ impl ProtocolsExt for fio::OpenFlags {
         if self.contains(fio::OpenFlags::CLONE_SAME_RIGHTS) {
             None
         } else {
-            let mut rights = fio::Operations::GET_ATTRIBUTES | fio::Operations::CONNECT;
+            let mut rights = fio::Operations::GET_ATTRIBUTES
+                | fio::Operations::CONNECT
+                | fio::Operations::TRAVERSE;
             if self.contains(fio::OpenFlags::RIGHT_READABLE) {
                 rights |= fio::R_STAR_DIR;
             }
@@ -146,7 +148,7 @@ impl ProtocolsExt for fio::OpenFlags {
 
         // Map io1 OpenFlags::RIGHT_* flags to the corresponding set of io2 rights. Using Open1
         // requires GET_ATTRIBUTES, as this was previously an privileged operation.
-        let mut rights = fio::Rights::GET_ATTRIBUTES;
+        let mut rights = fio::Rights::GET_ATTRIBUTES | fio::Rights::TRAVERSE;
         if flags.contains(fio::OpenFlags::RIGHT_READABLE) {
             rights |= fio::R_STAR_DIR;
         }

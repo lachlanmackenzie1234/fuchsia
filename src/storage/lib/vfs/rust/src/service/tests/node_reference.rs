@@ -40,7 +40,7 @@ async fn construction() {
     let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
     #[cfg(not(feature = "fdomain"))]
     let scope = crate::execution_scope::ExecutionScope::new();
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let proxy = connect_at(
         &root,
         "server",
@@ -60,7 +60,7 @@ async fn get_attributes() {
     let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
     #[cfg(not(feature = "fdomain"))]
     let scope = crate::execution_scope::ExecutionScope::new();
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let proxy = connect_at(
         &root,
         "server",
@@ -91,7 +91,7 @@ async fn representation() {
     let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
     #[cfg(not(feature = "fdomain"))]
     let scope = crate::execution_scope::ExecutionScope::new();
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let proxy = connect_at(
         &root,
         "server",
@@ -114,7 +114,7 @@ async fn clone() {
     let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
     #[cfg(not(feature = "fdomain"))]
     let scope = crate::execution_scope::ExecutionScope::new();
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let proxy = connect_at(
         &root,
         "server",
@@ -177,7 +177,7 @@ async fn update_attributes_not_supported() {
     let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
     #[cfg(not(feature = "fdomain"))]
     let scope = crate::execution_scope::ExecutionScope::new();
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let proxy = connect_at(
         &root,
         "server",

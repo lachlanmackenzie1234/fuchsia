@@ -24,7 +24,7 @@ async fn test_fshost_crashes_when_provision_fxfs_fails() {
         .with_extra_gpt_partition("other", 1);
     fixture.add_main_disk(Disk::Builder(disk)).await;
 
-    let data_dir = fixture.dir("data", fio::Flags::empty());
+    let data_dir = fixture.dir("data", fio::PERM_READABLE);
     let status = data_dir
         .query_filesystem()
         .await

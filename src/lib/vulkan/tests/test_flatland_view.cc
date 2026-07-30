@@ -82,7 +82,7 @@ class FlatlandViewTest : public gtest::TestLoopFixture {
     auto [svc_dir_client, svc_dir_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
     zx_status_t open_status = fdio_open3_at(
         /*directory=*/root_dir_client.channel().get(), /*path=*/component::kServiceDirectory,
-        /*flags=*/uint64_t{fuchsia_io::Flags::kProtocolDirectory},
+        /*flags=*/uint64_t{fuchsia_io::Flags::kProtocolDirectory | fuchsia_io::kPermReadable},
         /*request=*/std::move(svc_dir_server).TakeChannel().release());
     ASSERT_OK(open_status);
 

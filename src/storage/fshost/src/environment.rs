@@ -232,7 +232,7 @@ pub trait Container: Send + Sync {
         let volumes_dir = fuchsia_fs::directory::open_directory_async(
             fs.exposed_dir(),
             "volumes",
-            fio::Flags::empty(),
+            fio::PERM_READABLE,
         )?;
         let volumes = fuchsia_fs::directory::readdir(&volumes_dir).await?;
         for volume in volumes {

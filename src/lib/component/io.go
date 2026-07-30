@@ -247,7 +247,10 @@ type DirectoryWrapper struct {
 var _ Node = (*DirectoryWrapper)(nil)
 
 func (dir *DirectoryWrapper) GetDirectory() io.DirectoryWithCtx {
-	return &directoryState{DirectoryWrapper: dir}
+	return &directoryState{
+		DirectoryWrapper: dir,
+		hasTraverse:      true,
+	}
 }
 
 func (dir *DirectoryWrapper) getIO() (io.NodeWithCtx, func() error, error) {
@@ -255,7 +258,10 @@ func (dir *DirectoryWrapper) getIO() (io.NodeWithCtx, func() error, error) {
 }
 
 func (dir *DirectoryWrapper) addConnection(flags io.Flags, channel zx.Channel) error {
-	ioDir := dir.GetDirectory()
+	ioDir := &directoryState{
+		DirectoryWrapper: dir,
+		hasTraverse:      (flags & io.FlagsPermTraverse) != 0,
+	}
 	stub := io.DirectoryWithCtxStub{Impl: ioDir}
 	go Serve(context.Background(), &stub, channel, ServeOptions{
 		OnError: logError,
@@ -268,7 +274,10 @@ func (dir *DirectoryWrapper) addConnection(flags io.Flags, channel zx.Channel) e
 }
 
 func (dir *DirectoryWrapper) addConnectionDeprecated(flags io.OpenFlags, mode io.ModeType, req io.NodeWithCtxInterfaceRequest) error {
-	ioDir := dir.GetDirectory()
+	ioDir := &directoryState{
+		DirectoryWrapper: dir,
+		hasTraverse:      (flags & io.OpenFlagsNodeReference) == 0,
+	}
 	stub := io.DirectoryWithCtxStub{Impl: ioDir}
 	go Serve(context.Background(), &stub, req.Channel, ServeOptions{
 		OnError: logError,
@@ -283,6 +292,8 @@ type directoryState struct {
 
 	reading bool
 	dirents bytes.Buffer
+
+	hasTraverse bool
 }
 
 func (dirState *directoryState) DeprecatedClone(ctx fidl.Context, flags io.OpenFlags, req io.NodeWithCtxInterfaceRequest) error {
@@ -362,6 +373,12 @@ func (dirState *directoryState) DeprecatedOpen(ctx fidl.Context, flags io.OpenFl
 }
 
 func (dirState *directoryState) Open(ctx fidl.Context, path string, flags io.Flags, options io.Options, channel zx.Channel) error {
+	if path != dot && !dirState.hasTraverse {
+		if err := closeWithEpitaphIgnorePeerClosed(channel, zx.ErrAccessDenied); err != nil {
+			logError(fmt.Errorf("directoryState.Open: %w", err))
+		}
+		return nil
+	}
 	if path == dot {
 		return dirState.addConnection(flags, channel)
 	}

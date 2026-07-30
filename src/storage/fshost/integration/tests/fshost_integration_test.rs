@@ -284,7 +284,7 @@ async fn set_volume_limit() {
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
 
-    let volumes_dir = fixture.dir("volumes", fio::Flags::empty());
+    let volumes_dir = fixture.dir("volumes", fio::PERM_READABLE);
     let blob_volume_name = if cfg!(feature = "fxblob") { "blob" } else { "blobfs" };
     let blob_volume_proxy = connect_to_named_protocol_at_dir_root::<FsStartupVolumeMarker>(
         &volumes_dir,
@@ -545,9 +545,9 @@ async fn disable_block_watcher() {
 
 async fn assert_volumes_are_expected(fixture: &TestFixture) {
     let (volumes_dir, expected) = if cfg!(feature = "fxfs") {
-        (fixture.dir("volumes", fio::Flags::empty()), vec![r"^blob$", r"^data$", r"^unencrypted$"])
+        (fixture.dir("volumes", fio::PERM_READABLE), vec![r"^blob$", r"^data$", r"^unencrypted$"])
     } else {
-        (fixture.dir("volumes", fio::Flags::empty()), vec![r"^blobfs$", r"^data$"])
+        (fixture.dir("volumes", fio::PERM_READABLE), vec![r"^blobfs$", r"^data$"])
     };
 
     let mut expected: Vec<_> = expected.into_iter().map(|r| Regex::new(r).unwrap()).collect();
@@ -1512,7 +1512,7 @@ mod fxblob {
         fixture.check_fs_type("blob", blob_fs_type()).await;
         fixture.check_fs_type("data", data_fs_type()).await;
 
-        let volumes_dir = fixture.dir("volumes", fio::Flags::empty());
+        let volumes_dir = fixture.dir("volumes", fio::PERM_READABLE);
         let dir_entries = fuchsia_fs::directory::readdir(&volumes_dir)
             .await
             .expect("Failed to readdir the volumes");
@@ -2039,7 +2039,7 @@ mod fxblob {
         fixture.check_fs_type("blob", blob_fs_type()).await;
         fixture.check_fs_type("data", data_fs_type()).await;
 
-        let volumes_dir = fixture.dir("volumes", fio::Flags::empty());
+        let volumes_dir = fixture.dir("volumes", fio::PERM_READABLE);
 
         let blob_volume_proxy =
             connect_to_named_protocol_at_dir_root::<FsStartupVolumeMarker>(&volumes_dir, "blob")

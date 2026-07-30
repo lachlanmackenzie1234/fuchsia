@@ -225,7 +225,7 @@ void DictionaryUtil::OpenDirConnector(
                     arena)
                     .id(imported)
                     .server_end(std::move(server))
-                    .flags(fuchsia_io::Flags::kProtocolDirectory)
+                    .flags(fuchsia_io::Flags::kProtocolDirectory | fuchsia_io::kPermReadable)
                     .Build())
             .Then([callback = std::move(callback), client = std::move(client)](
                       fidl::WireUnownedResult<
@@ -255,11 +255,12 @@ void DirReceiverImpl::Receive(ReceiveRequestView request, ReceiveCompleter::Sync
     }
 
     zx_handle_t directory = dir_infos_[0].dir.handle()->get();
-    zx_status_t status =
-        fdio_open3_at(directory, "/",
-                      request->has_flags() ? uint64_t{request->flags()}
-                                           : uint64_t{fuchsia_io::Flags::kProtocolDirectory},
-                      request->channel().release());
+    zx_status_t status = fdio_open3_at(
+        directory, "/",
+        request->has_flags()
+            ? uint64_t{request->flags()}
+            : uint64_t{fuchsia_io::Flags::kProtocolDirectory | fuchsia_io::kPermReadable},
+        request->channel().release());
     if (status != ZX_OK) {
       fdf_log::error("Failed to open directory: {}", status);
     }
@@ -312,8 +313,9 @@ void DirReceiverImpl::Receive(ReceiveRequestView request, ReceiveCompleter::Sync
   // (aka fidl::ClientEnd<user::Protocol>).
   zx_status_t status =
       fdio_open3_at(directory, new_subdir.c_str(),
-                    request->has_flags() ? uint64_t{request->flags()}
-                                         : uint64_t{fuchsia_io::Flags::kProtocolService},
+                    request->has_flags()
+                        ? uint64_t{request->flags()}
+                        : uint64_t{fuchsia_io::Flags::kProtocolService | fuchsia_io::kPermReadable},
                     request->channel().release());
   if (status != ZX_OK) {
     fdf_log::error("Failed to open directory: {}", status);

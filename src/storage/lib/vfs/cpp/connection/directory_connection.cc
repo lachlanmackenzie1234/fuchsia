@@ -216,12 +216,14 @@ void DirectoryConnection::DeprecatedSetFlags(DeprecatedSetFlagsRequestView,
 #if FUCHSIA_API_LEVEL_LESS_THAN(32) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 void DirectoryConnection::DeprecatedOpen(DeprecatedOpenRequestView request,
                                          DeprecatedOpenCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/346585458): This operation should require the TRAVERSE right.
   zx_status_t status = [&]() -> zx_status_t {
     std::string_view path(request->path.data(), request->path.size());
     fio::OpenFlags flags = request->flags;
     if (path.empty() || ((path == "." || path == "/") && (flags & fio::OpenFlags::kNotDirectory))) {
       return ZX_ERR_INVALID_ARGS;
+    }
+    if (path != "." && path != "/" && !(rights() & fio::Rights::kTraverse)) {
+      return ZX_ERR_ACCESS_DENIED;
     }
     if (path.back() == '/') {
       flags |= fio::OpenFlags::kDirectory;
@@ -297,6 +299,10 @@ void DirectoryConnection::Open(OpenRequestView request, OpenCompleter::Sync& com
                         request->path, "', flags: ", request->flags, "options: ", request->options);
   // Attempt to open/create the target vnode, and serve a connection to it.
   zx::result handled = [&]() -> zx::result<> {
+    std::string_view path(request->path.data(), request->path.size());
+    if (!path.empty() && path != "." && path != "/" && !(this->rights() & fio::Rights::kTraverse)) {
+      return zx::error(ZX_ERR_ACCESS_DENIED);
+    }
     // If the request attempts to query attributes, this connection must allow it.
     if (request->options.has_attributes() && request->options.attributes() &&
         !(this->rights() & fio::Rights::kGetAttributes)) {
@@ -315,7 +321,6 @@ void DirectoryConnection::Open(OpenRequestView request, OpenCompleter::Sync& com
     if (!fs)
       return zx::error(ZX_ERR_CANCELED);
     // Handle opening (or creating) the vnode.
-    std::string_view path(request->path.data(), request->path.size());
     zx::result open_result = fs->Open(vnode(), path, request->flags, &request->options, rights);
     if (open_result.is_error()) {
       FS_PRETTY_TRACE_DEBUG("[DirectoryConnection::Open] Vfs::Open failed: ",

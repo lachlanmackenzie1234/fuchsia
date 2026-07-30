@@ -84,7 +84,7 @@ async fn simple_endpoint() {
     #[cfg(not(feature = "fdomain"))]
     let scope = ExecutionScope::new();
 
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     #[cfg(feature = "fdomain")]
     let proxy = connect_at(&root, "server", &client);
@@ -108,7 +108,7 @@ async fn simple_host() {
     #[cfg(not(feature = "fdomain"))]
     let scope = ExecutionScope::new();
 
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     #[cfg(feature = "fdomain")]
     let proxy = connect_at(&root, "server", &client);
@@ -142,7 +142,7 @@ async fn server_state_checking() {
     #[cfg(not(feature = "fdomain"))]
     let scope = ExecutionScope::new();
 
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     #[cfg(feature = "fdomain")]
     let proxy = connect_at(&root, "server", &client);
@@ -178,7 +178,7 @@ async fn test_epitaph() {
     #[cfg(not(feature = "fdomain"))]
     let scope = ExecutionScope::new();
 
-    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     #[cfg(feature = "fdomain")]
     let (proxy, server_end) = client.create_proxy::<EchoMarker>();
     #[cfg(not(feature = "fdomain"))]

@@ -338,6 +338,11 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             }
         };
 
+        if !path.is_dot() && !self.options.rights.contains(fio::Operations::TRAVERSE) {
+            send_on_open_with_error(describe, server_end, Status::ACCESS_DENIED);
+            return;
+        }
+
         if path.is_dir() {
             flags |= fio::OpenFlags::DIRECTORY;
         }
@@ -372,6 +377,10 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
         let path = Path::validate_and_split(path)?;
+
+        if !path.is_dot() && !self.options.rights.contains(fio::Operations::TRAVERSE) {
+            return Err(Status::ACCESS_DENIED);
+        }
 
         // Child connection must have stricter or same rights as the parent connection.
         if let Some(rights) = flags.rights() {

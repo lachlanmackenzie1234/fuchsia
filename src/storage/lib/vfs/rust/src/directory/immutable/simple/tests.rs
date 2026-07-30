@@ -1742,3 +1742,27 @@ impl FileIo for MockWritableFile {
         unimplemented!()
     }
 }
+
+#[fuchsia::test]
+async fn test_open_without_traverse() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
+
+    let dir = pseudo_directory! {
+        "file" => file::read_only(b"Content"),
+    };
+
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+
+    // Serve with no rights (PROTOCOL_DIRECTORY only).
+    // This creates a connection with empty rights (no TRAVERSE).
+    let root = serve(dir, scope.clone(), fio::Flags::PROTOCOL_DIRECTORY);
+
+    assert_open_file_err(&root, "file", fio::Flags::PROTOCOL_NODE, Status::ACCESS_DENIED).await;
+}

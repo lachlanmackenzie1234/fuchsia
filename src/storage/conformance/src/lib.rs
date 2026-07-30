@@ -110,7 +110,8 @@ pub async fn create_file_and_get_backing_memory(
     vmo_flags: fio::VmoFlags,
 ) -> Result<(zx::Vmo, (fio::DirectoryProxy, fio::FileProxy)), zx::Status> {
     let file_path = get_directory_entry_name(&dir_entry);
-    let dir_proxy = test_harness.get_directory(vec![dir_entry], file_flags);
+    let dir_proxy =
+        test_harness.get_directory(vec![dir_entry], test_harness.dir_rights.all_flags());
     let file_proxy = dir_proxy.open_node::<fio::FileMarker>(&file_path, file_flags, None).await?;
     let vmo = file_proxy
         .get_backing_memory(vmo_flags)
