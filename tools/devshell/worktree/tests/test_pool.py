@@ -21,6 +21,7 @@ from subcommands import pool_remove as pool_remove_cmd
 from subcommands import remove as remove_cmd
 from worktree import NoFreeWorktreesError, SyncStatus, Worktree, WorktreeState
 from worktree_pool import ADJECTIVES, NOUNS, WorktreePool
+from worktree_printer import WorktreePrinter
 
 
 class TestWorktreePool(unittest.TestCase):
@@ -266,8 +267,6 @@ class TestWorktreeSelectedBuildDir(unittest.TestCase):
         self.assertEqual(self.wt.selected_build_dir(), expected)
 
     def test_printer_highlights_selected_build_dir(self) -> None:
-        from worktree_printer import WorktreePrinter
-
         other_dir = self.wt_path / "out" / "other"
         other_dir.mkdir(parents=True, exist_ok=True)
         (other_dir / "args.gn").write_text(
@@ -299,8 +298,6 @@ class TestWorktreeSelectedBuildDir(unittest.TestCase):
         self.assertNotIn("out/another *:", output)
 
     def test_printer_highlights_selected_build_dir_with_color(self) -> None:
-        from worktree_printer import WorktreePrinter
-
         other_dir = self.wt_path / "out" / "other"
         other_dir.mkdir(parents=True, exist_ok=True)
         (other_dir / "args.gn").write_text(
@@ -325,6 +322,17 @@ class TestWorktreeSelectedBuildDir(unittest.TestCase):
         self.assertIn("\033[92m", output)
         self.assertIn("out/other *:", output)
         self.assertIn("\033[0m", output)
+
+    def test_printer_no_builds_no_trailing_newline(self) -> None:
+        with patch.object(
+            self.wt, "get_sync_status", return_value=(SyncStatus.SYNCED, 0, 0)
+        ):
+            with patch("utils.USE_COLORS", False):
+                with patch("sys.stdout", new_callable=StringIO) as mock_out:
+                    WorktreePrinter.print_worktrees([self.wt])
+                    output = mock_out.getvalue()
+
+        self.assertEqual(output, "test-wt\n")
 
 
 if __name__ == "__main__":

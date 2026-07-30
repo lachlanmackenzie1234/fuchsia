@@ -97,4 +97,5 @@ class WorktreePrinter:
                 if is_active:
                     line = colorize(line, Colors.GREEN)
                 print(line)
-            print()
+            if builds:
+                print()
