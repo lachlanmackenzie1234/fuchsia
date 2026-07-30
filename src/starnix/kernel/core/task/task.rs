@@ -1284,12 +1284,7 @@ impl Task {
         &self,
         updater: impl FnOnce(&mut SchedulerState),
     ) -> Result<(), Errno> {
-        let process_name = self
-            .thread_group()
-            .read()
-            .get_task(self.thread_group().leader)
-            .ok_or_else(|| errno!(EINVAL))?
-            .command();
+        let process_name = self.thread_group().read().leader_command();
         let thread_name = self.command();
 
         let (new_scheduler_state, cpuset_path, last_applied_role) = {
