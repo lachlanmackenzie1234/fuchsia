@@ -12,6 +12,7 @@ It splits the target commit into:
 
 import argparse
 import os
+import subprocess
 import sys
 
 # Ensure split_utils can be imported when running script from any directory.
@@ -53,8 +54,12 @@ def main() -> None:
         split_utils.apply_copies(repo_path, copies, base_ref=base_hash)
         split_utils.apply_moves(repo_path, base_hash, moves)
 
-        split_utils.run(
-            'git commit -m "[rust-3p] Copy and move vendored crates"',
+        msg = split_utils.format_copy_move_commit_message(base_hash, copies, moves)
+        proc = subprocess.run(
+            ["git", "commit", "-F", "-"],
+            input=msg,
+            text=True,
+            check=True,
             cwd=repo_path,
         )
         commit1_hash = split_utils.resolve_commit(repo_path, "HEAD")

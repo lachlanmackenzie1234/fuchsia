@@ -141,6 +141,33 @@ Flag | Default | Description
 
 ## 2. Verification
 
+### Verification of Pure Copies & Moves
+
+Gerrit does not always automatically detect when a vendored crate directory is copied or moved. To verify locally that a copy/move commit contains **zero content changes** to the copied or moved files, run the following verification commands:
+
+#### 1. Tree-Wide Similarity Verification
+Verify that every file added or modified in the copy/move commit is a 100% identical copy (`C100`) or 100% rename (`R100`):
+
+```bash
+git diff --raw -M100% -C100% --find-copies-harder {base_commit} {copy_move_commit}
+```
+
+Every modified file entry should show `C100` or `R100` with 100% similarity.
+
+#### 2. Per-Crate Directory Verification
+For each copied or moved crate, compare the source directory at `{base_commit}` against the target directory at `{copy_move_commit}` using git tree diffing:
+
+```bash
+git diff {base_commit}:third_party/rust_crates/vendor/{old_crate}-{old_version} {copy_move_commit}:third_party/rust_crates/vendor/{new_crate}-{new_version}
+```
+
+This command **must produce empty output** (exit status 0) for every copied or moved crate, proving that no content modifications were made during the copy or move.
+
+#### 3. Listing Verification Commands in Commit Messages
+Always list these explicit per-crate `git diff` commands in the body of the `[rust-3p] Copy and move vendored crates` commit message so that reviewers in Gerrit can easily copy-paste and verify the 100% purity of the copy/move commit locally.
+
+---
+
 ### Tree Identity Check
 
 Verify that the split did not introduce any changes compared to the original target state. The diff between your new HEAD (the final actual updates commit) and the original target commit must be empty:

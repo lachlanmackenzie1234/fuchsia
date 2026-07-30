@@ -226,6 +226,64 @@ def discover_operations(
     return get_all_actions(copies, moves)
 
 
+def format_copy_move_commit_message(
+    base_ref: str,
+    copies: List[Tuple[str, str, str]],
+    moves: List[Tuple[str, str, str]],
+    vendor_dir: str = "third_party/rust_crates/vendor",
+) -> str:
+    """Format a detailed commit message listing crate operations and verification commands.
+
+    Args:
+        base_ref: Base git reference (e.g. 'origin/main').
+        copies: List of (crate_name, old_version, new_version) tuples.
+        moves: List of (crate_name, old_version, new_version) tuples.
+        vendor_dir: Path to vendored crate directory.
+
+    Returns:
+        Formatted commit message string.
+    """
+    lines = [
+        "[rust-3p] Copy and move vendored crates",
+        "",
+        "This commit contains pure copies and moves of vendored crates under",
+        f"{vendor_dir}/ prior to applying dependency updates.",
+        "",
+    ]
+
+    if copies:
+        lines.append("Copies:")
+        grouped_copies: Dict[str, List[str]] = {}
+        for name, old_v, new_v in copies:
+            grouped_copies.setdefault(name, []).append(f"{old_v} -> {new_v}")
+        for name in sorted(grouped_copies.keys()):
+            vers = ", ".join(grouped_copies[name])
+            lines.append(f"* {name}: {vers}")
+        lines.append("")
+
+    if moves:
+        lines.append("Moves:")
+        for name, old_v, new_v in sorted(moves):
+            lines.append(f"* {name}: {old_v} -> {new_v}")
+        lines.append("")
+
+    lines.append("Verification commands (verify no content changes between base and target names):")
+    lines.append("")
+    lines.append("Tree-wide check:")
+    lines.append(f"  git diff --raw -M100% -C100% --find-copies-harder {base_ref} HEAD")
+    lines.append("")
+    lines.append("Per-crate directory check (each command should produce empty output):")
+
+    all_actions = get_all_actions(copies, moves)
+    for _, name, old_v, new_v in all_actions:
+        old_p = crate_vendor_path(name, old_v, vendor_dir=vendor_dir)
+        new_p = crate_vendor_path(name, new_v, vendor_dir=vendor_dir)
+        lines.append(f"  git diff {base_ref}:{old_p} HEAD:{new_p}")
+
+    return "\n".join(lines)
+
+
+
 def crate_vendor_path(
     crate_name: str,
     version: str,

@@ -60,15 +60,38 @@ Some host-only components (such as `partitions_config`) may not be part of the d
 
 ---
 
-## 3. Multi-Repository Graceful Migration Workflow
+## 3. Multi-Repository Migration Workflow
 
-When a dependency upgrade affects code in another repository (such as `//vendor/...` or other `jiri`-managed sub-repositories), **do not break the build tree** by attempting atomic changes across repositories. Instead, gracefully stage the release. Note that we always want to update `fuchsia.git` to use the latest version if possible. We only want to set up a commit that adds a GN group for the older version if there are any references to the crate in any of the other repositories, like `vendor/...`.
+When a dependency upgrade affects code in another repository (such as `//vendor/google` or other `jiri`-managed sub-repositories), we can update `fuchsia.git` and `vendor/google` at the same time using cross-repository `Depends-On` footers in Gerrit.
+
+### 1. Simultaneous Cross-Repository Updates (`Depends-On`)
+
+You can update `fuchsia.git` and `vendor/google` simultaneously without needing sequential staged releases:
+
+1.  **Create `fuchsia.git` Commit**: Apply the crate upgrade, `Cargo.toml`/`Cargo.lock` changes, and in-tree `fuchsia.git` migrations.
+2.  **Create `vendor/google` Commit**: Update code and `BUILD.gn` dependencies in `vendor/google` to match the new crate APIs.
+3.  **Link Commits with `Depends-On` Footers**:
+    *   In the **`fuchsia.git`** commit message, add a `Depends-On` footer pointing to the `vendor/google` (`turquoise-internal`) Change-Id:
+        ```
+        Depends-On: turquoise-internal:$Commit-Id
+        ```
+    *   In the **`vendor/google`** commit message, add a `Depends-On` footer pointing to the `fuchsia.git` Change-Id:
+        ```
+        Depends-On: fuchsia:$Commit-Id
+        ```
+4.  **Land via Fuchsia CQ**: Gerrit and Fuchsia CQ will test both CLs together in a single integration run and land them atomically across repositories.
+
+---
+
+### 2. Sequential Staged Rollout Workflow (Alternative)
+
+If a simultaneous update is not possible and out-of-tree references must be temporarily pinned:
 
 1.  **Check Sibling Dependencies & Transitive Stacks**: First verify whether updating sibling dependencies together allows `fuchsia.git` targets to compile cleanly.
     *   **Shared Foundational Crates (e.g., `der`, `spki`)**: When a target in a sub-repository depends on both an upgraded crate (e.g., `pkcs8 0.11.0`) and sibling crates (`sec1`, `pkcs1`) that share foundational types (`der`, `spki`), mixing versions across those crates will cause trait bound errors (`Decode`, `Encode`). Ensure either:
         *   The sub-repository remains on the legacy versioned target (`//third_party/rust_crates:pkcs8-0.10.2`) until all sibling cryptographic crates in that component can be migrated to the new foundational stack together, OR
         *   When migrating off the legacy pin, update all top-level foundational/sibling crates in `Cargo.toml` (`der`, `spki`) so the entire stack shares consistent types.
-1.  **Define Structured GN Groups Before Pinning Sub-Repositories**: Before updating sub-repository build files (`//vendor/...`) to pin to a legacy crate version, first land a preparatory patch in `fuchsia.git` that sets up structured `groups` on the existing crate version under `[gn.package.<PackageName>.<Version>]` in `third_party/rust_crates/Cargo.toml`. Because defining explicit `groups` on an active dependency overrides `cargo-gnaw`'s default group generation, explicitly list the default unversioned group (`{ name = "foo" }`), the major-version group (`{ name = "foo-0.3" }`), and the exact patch version group (`{ name = "foo-0.3.2" }`):
+2.  **Define Structured GN Groups Before Pinning Sub-Repositories**: Before updating sub-repository build files (`//vendor/...`) to pin to a legacy crate version, first land a preparatory patch in `fuchsia.git` that sets up structured `groups` on the existing crate version under `[gn.package.<PackageName>.<Version>]` in `third_party/rust_crates/Cargo.toml`. Because defining explicit `groups` on an active dependency overrides `cargo-gnaw`'s default group generation, explicitly list the default unversioned group (`{ name = "foo" }`), the major-version group (`{ name = "foo-0.3" }`), and the exact patch version group (`{ name = "foo-0.3.2" }`):
     ```toml
     [gn.package.foo."0.3.2"]
     groups = [
@@ -78,7 +101,7 @@ When a dependency upgrade affects code in another repository (such as `//vendor/
     ]
     ```
     Always depend on the major-version group (`//third_party/rust_crates:foo-0.3` or `//third_party/rust_crates:pkcs8-0.10`) in sub-repositories (`//vendor/...`) rather than patch-specific targets (`:foo-0.3.2`). Note: Do **not** depend directly on internal `rustc_library` targets (`:foo-v0_3_2`).
-1.  **5-CL Sequential Rollout Workflow**:
+3.  **5-CL Sequential Rollout Workflow**:
     *   **Reference**: For guidance on managing these CLs, see the [split_fuchsia_rust_dep_updates](../split_fuchsia_rust_dep_updates/SKILL.md) skill.
     *   **CL 1 (`fuchsia.git`) - Define Legacy GN Groups**:
         *   Add the structured `groups` block above to `third_party/rust_crates/Cargo.toml` for the current active legacy version (`0.3.2`).
