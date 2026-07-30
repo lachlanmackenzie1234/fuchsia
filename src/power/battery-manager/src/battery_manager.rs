@@ -101,14 +101,11 @@ impl BatterySimulationStateObserver for BatteryManager {
         *sim_state = is_simulating;
         drop(sim_state);
         if !is_simulating {
-            self.update_watchers(None);
+            self.common_update_watchers(self.get_battery_info_copy(), None);
         }
     }
     fn update_simulated_battery_info(&self, battery_info: fpower::BatteryInfo) {
-        let mut simulated_battery_info = self.simulated_battery_info.borrow_mut();
-        *simulated_battery_info = battery_info;
-        drop(simulated_battery_info);
-        self.update_watchers_conditionally(true, None);
+        self.update_watchers_conditionally(true, battery_info, None);
     }
 }
 
@@ -119,7 +116,13 @@ impl BatterySimulationStateObserver for BatteryManager {
 ///
 /// simulation_state: true when the simulator is running
 pub struct BatteryManager {
-    battery_info: RefCell<fpower::BatteryInfo>,
+    /// Cached battery info representing the last committed state.
+    ///
+    /// Used to:
+    /// - Send an initial snapshot to newly registered `Watch()` clients.
+    /// - Check previous state transitions (e.g. plug/unplug events) when processing new updates.
+    /// - Maintain state across simulation mode toggles.
+    cached_battery_info: RefCell<fpower::BatteryInfo>,
     watchers: Rc<RefCell<Vec<fpower::BatteryInfoWatcherProxy>>>,
     simulation_state: RefCell<bool>,
     simulated_battery_info: RefCell<fpower::BatteryInfo>,
@@ -155,7 +158,7 @@ impl BatteryManager {
         Self::start_watcher_worker(watchers_rc.clone(), receiver);
 
         BatteryManager {
-            battery_info: RefCell::new(fpower::BatteryInfo {
+            cached_battery_info: RefCell::new(fpower::BatteryInfo {
                 status: Some(fpower::BatteryStatus::NotAvailable),
                 charge_status: Some(fpower::ChargeStatus::Unknown),
                 charge_source: Some(fpower::ChargeSource::Unknown),
@@ -233,10 +236,16 @@ impl BatteryManager {
     fn update_watchers_conditionally(
         &self,
         expect_simulating: bool,
+        info: fpower::BatteryInfo,
         wake_lease: Option<zx::EventPair>,
     ) {
+        if expect_simulating {
+            *self.simulated_battery_info.borrow_mut() = info.clone();
+        } else {
+            *self.cached_battery_info.borrow_mut() = info.clone();
+        }
         if self.is_simulating() == expect_simulating {
-            self.update_watchers(wake_lease);
+            self.common_update_watchers(info, wake_lease);
         }
     }
 
@@ -292,20 +301,20 @@ impl BatteryManager {
         }
     }
 
-    async fn update_battery_info(
+    async fn process_battery_info(
         &self,
         info: fpower::BatteryInfo,
         sag: Option<fsystem::ActivityGovernorProxy>,
-    ) {
+    ) -> fpower::BatteryInfo {
         let raw_level = info.level_percent;
         let new_charge_status = info.charge_status;
         let recovery_event = self.info_recorders.update(raw_level, new_charge_status);
         self.info_recorders.record_raw_level_on_change(raw_level);
 
-        let old_is_plugged_in = Polisher::is_plugged_in(&self.battery_info.borrow());
+        let old_is_plugged_in = Polisher::is_plugged_in(&self.cached_battery_info.borrow());
         let new_is_plugged_in = Polisher::is_plugged_in(&info);
 
-        let info = {
+        let mut info = {
             let mut data_polisher = self.data_polisher.borrow_mut();
             if !old_is_plugged_in && new_is_plugged_in {
                 data_polisher.reset_average_current();
@@ -318,13 +327,12 @@ impl BatteryManager {
 
         self.determine_suspend_status(info.charge_source, sag).await;
 
-        let mut new_battery_info = self.battery_info.borrow_mut();
-        *new_battery_info = info;
-        if new_battery_info.timestamp.is_none() {
-            new_battery_info.timestamp = Some(get_current_time());
+        if info.timestamp.is_none() {
+            info.timestamp = Some(get_current_time());
         }
 
-        self.publish_to_inspect(&new_battery_info);
+        self.publish_to_inspect(&info);
+        info
     }
 
     fn publish_to_inspect(&self, info: &fpower::BatteryInfo) {
@@ -342,14 +350,9 @@ impl BatteryManager {
             let info_lock = self.simulated_battery_info.borrow();
             (*info_lock).clone()
         } else {
-            let info_lock = self.battery_info.borrow();
+            let info_lock = self.cached_battery_info.borrow();
             (*info_lock).clone()
         }
-    }
-
-    fn update_watchers(&self, wake_lease: Option<zx::EventPair>) {
-        let info = self.get_battery_info_copy();
-        self.common_update_watchers(info, wake_lease);
     }
 
     pub fn is_simulating(&self) -> bool {
@@ -406,8 +409,8 @@ impl BatteryManager {
                     wake_lease,
                     responder,
                 } => {
-                    self.update_battery_info(info, sag.clone()).await;
-                    self.update_watchers_conditionally(false, wake_lease);
+                    let info = self.process_battery_info(info, sag.clone()).await;
+                    self.update_watchers_conditionally(false, info, wake_lease);
                     responder.send()?;
                 }
             }
@@ -499,8 +502,8 @@ impl BatteryManager {
                         *lease.borrow_mut() = wake_lease;
                     }
                     let converted_info = fbattery_to_fpower(info, battery_spec.clone());
-                    self.update_battery_info(converted_info, sag.clone()).await;
-                    self.update_watchers_conditionally(false, downstream_lease);
+                    let info = self.process_battery_info(converted_info, sag.clone()).await;
+                    self.update_watchers_conditionally(false, info, downstream_lease);
                 }
                 Err(e) => {
                     error!("Error in WatchBattery: {e:?}");
@@ -1089,7 +1092,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_update_battery_info_records_polished_vs_raw() {
+    async fn test_process_battery_info_records_polished_vs_raw() {
         use diagnostics_assertions::assert_data_tree;
 
         let (_dir, battery_manager) = create_manager();
@@ -1102,7 +1105,7 @@ mod tests {
             ..Default::default()
         };
 
-        battery_manager.update_battery_info(info.clone(), None).await;
+        battery_manager.process_battery_info(info.clone(), None).await;
 
         // Verify recordings in Inspect
         let global_inspector = inspect::component::inspector();
@@ -1166,5 +1169,33 @@ mod tests {
             }
         });
         Ok(())
+    }
+
+    // Note: Must be `async fn` because `create_manager()` spawns an `fasync::Task`,
+    // which requires `#[fuchsia::test]` to initialize a Fuchsia async executor.
+    #[fuchsia::test]
+    async fn test_update_watchers_conditionally_updates_cache() {
+        let (_dir, battery_manager) = create_manager();
+
+        // Ensure we are initially in real mode (not simulating)
+        assert_eq!(battery_manager.is_simulating(), false);
+
+        // Call update_watchers_conditionally with expect_simulating = true (simulated update)
+        // Even though is_simulating() is false, simulated_battery_info should still be updated.
+        let mut simulated_info = fpower::BatteryInfo::default();
+        simulated_info.level_percent = Some(42.0);
+        battery_manager.update_watchers_conditionally(true, simulated_info, None);
+        assert_eq!(battery_manager.simulated_battery_info.borrow().level_percent, Some(42.0));
+
+        // Now switch to simulating mode
+        battery_manager.update_simulation(true);
+        assert_eq!(battery_manager.is_simulating(), true);
+
+        // Call update_watchers_conditionally with expect_simulating = false (real update)
+        // Even though is_simulating() is true, cached_battery_info should still be updated.
+        let mut real_info = fpower::BatteryInfo::default();
+        real_info.level_percent = Some(84.0);
+        battery_manager.update_watchers_conditionally(false, real_info, None);
+        assert_eq!(battery_manager.cached_battery_info.borrow().level_percent, Some(84.0));
     }
 }
