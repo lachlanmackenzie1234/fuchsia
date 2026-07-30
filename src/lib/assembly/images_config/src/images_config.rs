@@ -75,9 +75,14 @@ fn default_zbi_name() -> String {
 /// The parameters describing how to create a VBMeta image.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct VBMeta {
-    /// The name to give the image file.
+    /// The logical name of the VBMeta image.
     #[serde(default = "default_vbmeta_name")]
     pub name: String,
+
+    /// The filename to give the image file. If not specified, defaults to `fuchsia`.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
 
     /// The style of VBMeta to assemble.
     pub style: bfc::VBMetaStyle,
@@ -397,6 +402,7 @@ impl ImagesConfig {
             } = vbmeta.clone();
             images.push(Image::VBMeta(VBMeta {
                 name: name.unwrap_or_else(|| product.image_name.0.clone()),
+                filename: Some(product.image_name.0.clone()),
                 style,
                 key: key.into(),
                 key_metadata: key_metadata.map(Into::into),
@@ -649,6 +655,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "fuchsia".into(),
+                        filename: Some("a-product".into()),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),
@@ -690,6 +697,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "fuchsia".into(),
+                        filename: Some("a-product".into()),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),
@@ -742,6 +750,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "fuchsia".into(),
+                        filename: Some("a-product".into()),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),
@@ -840,6 +849,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "fuchsia".into(),
+                        filename: Some("a-product".into()),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: Some("path/to/metadata".into()),

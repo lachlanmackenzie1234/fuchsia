@@ -80,10 +80,12 @@ pub fn construct_vbmeta(
         .map_err(|p| anyhow!("invalid UTF-8 ZBI path: {}", p.display()))?;
 
     let output_name = match vbmeta_config.style {
-        VBMetaStyle::Fuchsia | VBMetaStyle::VBMetaSystem => vbmeta_config.name.clone(),
+        VBMetaStyle::Fuchsia | VBMetaStyle::VBMetaSystem => {
+            vbmeta_config.filename.as_deref().unwrap_or("fuchsia").to_string()
+        }
         VBMetaStyle::AndroidPvmAuto
         | VBMetaStyle::AndroidPvmNormal
-        | VBMetaStyle::AndroidPvmDebug => "boot".into(),
+        | VBMetaStyle::AndroidPvmDebug => String::from("boot"),
     };
 
     let mut builder = VBMetaImage::builder(output_name, vbmeta_config.key.clone());
@@ -172,7 +174,8 @@ mod tests {
 
         let vbmeta_config = VBMeta {
             style: VBMetaStyle::Fuchsia,
-            name: "fuchsia".into(),
+            name: "custom_name".into(),
+            filename: None,
             key: key_path,
             key_metadata: Some(metadata_path),
             additional_descriptors: vec![],
@@ -203,6 +206,49 @@ mod tests {
     }
 
     #[test]
+    fn construct_fuchsia_style_with_filename() {
+        let tmp = tempdir().unwrap();
+        let dir = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let key_path = dir.join("key");
+        let metadata_path = dir.join("key_metadata");
+        std::fs::write(&key_path, test_keys::ATX_TEST_KEY).unwrap();
+        std::fs::write(&metadata_path, test_keys::TEST_RSA_4096_PEM).unwrap();
+
+        let vbmeta_config = VBMeta {
+            style: VBMetaStyle::Fuchsia,
+            name: "custom_name".into(),
+            filename: Some("custom_file".into()),
+            key: key_path,
+            key_metadata: Some(metadata_path),
+            additional_descriptors: vec![],
+            include_base_merkle: false,
+        };
+
+        // Create a fake zbi.
+        let zbi_path = dir.join("fuchsia.zbi");
+        std::fs::write(&zbi_path, "fake zbi").unwrap();
+
+        let vbmeta = construct_vbmeta(
+            dir,
+            &vbmeta_config,
+            zbi_path,
+            Utf8PathBuf::new(),
+            BuildType::Eng,
+            None,
+        )
+        .unwrap();
+
+        let ConstructedVBMeta::Standalone(vbmeta_path) = vbmeta else {
+            panic!("Expected standalone VBMeta image; got {vbmeta:#?}");
+        };
+        assert_eq!(
+            vbmeta_path,
+            path_relative_from_current_dir(dir.join("custom_file.vbmeta")).unwrap()
+        );
+    }
+
+    #[test]
     fn construct_fuchsia_style_with_base_merkle() {
         let tmp = tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -215,6 +261,7 @@ mod tests {
         let vbmeta_config = VBMeta {
             style: VBMetaStyle::Fuchsia,
             name: "fuchsia".into(),
+            filename: None,
             key: key_path,
             key_metadata: Some(metadata_path),
             additional_descriptors: vec![],
@@ -277,6 +324,7 @@ mod tests {
                 let vbmeta_config = VBMeta {
                     style,
                     name: String::new(),
+                    filename: None,
                     key: key_path.clone(),
                     key_metadata: None,
                     additional_descriptors: vec![],
