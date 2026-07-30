@@ -7,6 +7,9 @@
             type: "expect_pass",
             matchers: [
                 "*",
+
+                // TODO(https://fxbug.dev/536048049): io_pgetevents AIO syscall is not implemented.
+                "io_pgetevents01",
             ],
         },
         {
@@ -248,9 +251,6 @@
         {
             type: "skip",
             matchers: [
-                // TODO(https://fxbug.dev/536048049): io_pgetevents AIO syscall is not implemented.
-                "io_pgetevents01",
-
                 // Flaky tests.
                 "ptrace06",
 
