@@ -116,6 +116,7 @@ class InstanceRequestor : public MdnsAgent {
     bool srv_queried_ = false;
     bool txt_received_ = false;
     bool txt_queried_ = false;
+    bool is_local_ = false;
   };
 
   // Describes a target. We use |inet::SocketAddress| because it has scope_id. The port numbers
@@ -125,6 +126,7 @@ class InstanceRequestor : public MdnsAgent {
     bool keep_ = false;
     bool dirty_ = false;
     bool addresses_queried_ = false;
+    bool is_local_ = false;
   };
 
   // Report all known instances to the indicated subscriber.
@@ -148,6 +150,8 @@ class InstanceRequestor : public MdnsAgent {
                            TargetInfo* target_info, uint32_t scope_id);
 
   void RemoveInstance(const DnsName& instance_full_name);
+
+  void RemoveLocalInstance(const DnsName& instance_full_name);
 
   DnsName service_name_;
   DnsName service_full_name_;

@@ -75,30 +75,31 @@ void InstanceRequestor::ReceiveResource(const DnsResource& resource, MdnsResourc
     case DnsType::kPtr:
       if (resource.name_ == service_full_name_ ||
           service_full_name_ == MdnsNames::kAnyServiceFullName) {
+        // PTR records referring to local instances are ignored in |ReceivePtrResource|.
         ReceivePtrResource(resource, section);
       }
       break;
     case DnsType::kSrv: {
       auto iter = instance_infos_by_full_name_.find(resource.name_);
-      if (iter != instance_infos_by_full_name_.end()) {
+      if (iter != instance_infos_by_full_name_.end() && !iter->second.is_local_) {
         ReceiveSrvResource(resource, section, &iter->second);
       }
     } break;
     case DnsType::kTxt: {
       auto iter = instance_infos_by_full_name_.find(resource.name_);
-      if (iter != instance_infos_by_full_name_.end()) {
+      if (iter != instance_infos_by_full_name_.end() && !iter->second.is_local_) {
         ReceiveTxtResource(resource, section, &iter->second);
       }
     } break;
     case DnsType::kA: {
       auto iter = target_infos_by_full_name_.find(resource.name_);
-      if (iter != target_infos_by_full_name_.end()) {
+      if (iter != target_infos_by_full_name_.end() && !iter->second.is_local_) {
         ReceiveAResource(resource, section, &iter->second, sender_address.interface_id());
       }
     } break;
     case DnsType::kAaaa: {
       auto iter = target_infos_by_full_name_.find(resource.name_);
-      if (iter != target_infos_by_full_name_.end()) {
+      if (iter != target_infos_by_full_name_.end() && !iter->second.is_local_) {
         ReceiveAaaaResource(resource, section, &iter->second, sender_address.interface_id());
       }
     } break;
@@ -400,6 +401,26 @@ void InstanceRequestor::ReceiveAaaaResource(const DnsResource& resource,
 void InstanceRequestor::RemoveInstance(const DnsName& instance_full_name) {
   auto iter = instance_infos_by_full_name_.find(instance_full_name);
   if (iter != instance_infos_by_full_name_.end()) {
+    // We've received a record via a transport referring to a local instance. It's invalid, and we
+    // ignore it.
+    if (iter->second.is_local_) {
+      return;
+    }
+
+    // |InstanceLost| may delete the subscriber synchronously (removing it from |subscribers_|),
+    // so iterate over a snapshot to keep the loop iterator valid.
+    std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
+    for (auto subscriber : subscribers) {
+      subscriber->InstanceLost(iter->second.service_name_, iter->second.instance_name_);
+    }
+
+    instance_infos_by_full_name_.erase(iter);
+  }
+}
+
+void InstanceRequestor::RemoveLocalInstance(const DnsName& instance_full_name) {
+  auto iter = instance_infos_by_full_name_.find(instance_full_name);
+  if (iter != instance_infos_by_full_name_.end()) {
     // |InstanceLost| may delete the subscriber synchronously (removing it from |subscribers_|),
     // so iterate over a snapshot to keep the loop iterator valid.
     std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
@@ -441,9 +462,10 @@ void InstanceRequestor::OnAddLocalServiceInstance(const Mdns::ServiceInstance& i
   instance_info.srv_priority_ = instance.srv_priority_;
   instance_info.srv_weight_ = instance.srv_weight_;
   instance_info.new_ = inserted;
+  instance_info.is_local_ = true;
 
   auto [target_iter, _] = target_infos_by_full_name_.insert(
-      std::make_pair(instance_info.target_full_name_, TargetInfo()));
+      std::make_pair(instance_info.target_full_name_, TargetInfo{.is_local_ = true}));
   auto& target_info = target_iter->second;
 
   if (target_info.addresses_.Replace(instance.addresses_)) {
@@ -502,8 +524,8 @@ void InstanceRequestor::OnChangeLocalServiceInstance(const Mdns::ServiceInstance
   }
 
   auto target_full_name = MdnsNames::HostFullName(instance.target_name_);
-  auto [target_iter, _] =
-      target_infos_by_full_name_.insert(std::make_pair(target_full_name, TargetInfo()));
+  auto [target_iter, _] = target_infos_by_full_name_.insert(
+      std::make_pair(target_full_name, TargetInfo{.is_local_ = true}));
   auto& target_info = target_iter->second;
 
   if (target_info.addresses_.Replace(instance.addresses_)) {
@@ -526,7 +548,7 @@ void InstanceRequestor::OnRemoveLocalServiceInstance(const DnsName& service_name
     return;
   }
 
-  RemoveInstance(MdnsNames::InstanceFullName(instance_name, service_name));
+  RemoveLocalInstance(MdnsNames::InstanceFullName(instance_name, service_name));
 
   EndOfMessage();
 }

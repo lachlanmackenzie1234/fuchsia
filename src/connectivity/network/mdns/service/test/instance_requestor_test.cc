@@ -169,6 +169,9 @@ class InstanceRequestorTest : public AgentTest {
   }
 };
 
+class InstanceRequestorTestWithParam : public InstanceRequestorTest,
+                                       public testing::WithParamInterface<bool> {};
+
 const zx::duration kMinDelay = zx::sec(1);
 const zx::duration kMaxDelay = zx::hour(1);
 const DnsName kHostFullName("test2host.local.");
@@ -809,6 +812,102 @@ TEST_F(InstanceRequestorTest, LocalProxyInstance) {
       kFromLocalHost);
   subscriber.ExpectNoOther();
 }
+
+TEST_P(InstanceRequestorTestWithParam, InstanceIgnoreNetwork) {
+  bool include_local = GetParam();
+  bool include_local_proxies = !include_local;
+  DnsName host_name = include_local ? kLocalHostName : kHostName;
+
+  InstanceRequestor under_test(this, kServiceName, Media::kBoth, IpVersions::kBoth, include_local,
+                               include_local_proxies);
+  SetAgent(under_test);
+  SetLocalHostAddresses(kHostAddresses);
+
+  Subscriber subscriber;
+  under_test.AddSubscriber(&subscriber);
+
+  under_test.Start(kLocalHostFullName);
+
+  // Expect a PTR question on start.
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber.ExpectQueryCalled(DnsType::kPtr);
+  subscriber.ExpectNoOther();
+
+  // Expect to see an added local service instance.
+  under_test.OnAddLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, host_name, kSocketAddresses, kText),
+      include_local_proxies);
+
+  auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
+  EXPECT_EQ(
+      ServiceInstance(kServiceName, kInstanceName, host_name, kSocketAddressesReversed, kText),
+      *params);
+  subscriber.ExpectNoOther();
+
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), 1, Media::kWireless, IpVersions::kV4);
+
+  // Expect that publications received over the network referring to the local
+  // (proxy) instances are ignored.
+  ReceivePublication(under_test, host_name, kServiceName, kInstanceName, kPort, kAltText,
+                     sender_address);
+  subscriber.ExpectNoOther();
+
+  // Expect that individual records received over the network referring to the
+  // local (proxy) instance or host are ignored.
+  ReceiveSrv(under_test, host_name, kServiceName, kInstanceName, inet::IpPort::From_uint16_t(4321),
+             sender_address);
+  subscriber.ExpectNoOther();
+
+  ReceiveTxt(under_test, kServiceName, kInstanceName, kAltText, sender_address);
+  subscriber.ExpectNoOther();
+
+  ReceiveAddress(under_test, host_name, sender_address);
+  subscriber.ExpectNoOther();
+
+  // Expire the PTR resource over the network and expect that it is ignored.
+  DnsResource ptr_resource(kServiceFullName, DnsType::kPtr);
+  ptr_resource.ptr_.pointer_domain_name_ = DnsName(kInstanceFullName);
+  ptr_resource.time_to_live_ = 0;
+  under_test.ReceiveResource(ptr_resource, MdnsResourceSection::kExpired, sender_address);
+  subscriber.ExpectNoOther();
+
+  // Expire the SRV resource over the network and expect that it is ignored.
+  DnsResource srv_resource(kInstanceFullName, DnsType::kSrv);
+  srv_resource.time_to_live_ = 0;
+  under_test.ReceiveResource(srv_resource, MdnsResourceSection::kExpired, sender_address);
+  subscriber.ExpectNoOther();
+
+  // Expect that legitimate local changes to the local (proxy) instance are
+  // still handled.
+  under_test.OnChangeLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, host_name, kSocketAddresses, kAltText),
+      include_local_proxies);
+  params = subscriber.ExpectInstanceChangedCalled();
+  EXPECT_EQ(
+      ServiceInstance(kServiceName, kInstanceName, host_name, kSocketAddressesReversed, kAltText),
+      *params);
+  subscriber.ExpectNoOther();
+
+  // Expect that local removals are still handled.
+  under_test.OnRemoveLocalServiceInstance(kServiceName, kInstanceName, include_local_proxies);
+  auto lost_params = subscriber.ExpectInstanceLostCalled();
+  EXPECT_EQ(kServiceName, lost_params->service_);
+  EXPECT_EQ(kInstanceName, lost_params->instance_);
+  subscriber.ExpectNoOther();
+}
+
+INSTANTIATE_TEST_SUITE_P(LocalInstanceIgnoreNetwork, InstanceRequestorTestWithParam,
+                         testing::Values(true, false));
 
 // Tests the behavior of a requestor for any service when a response is received.
 TEST_F(InstanceRequestorTest, AnyResponse) {
