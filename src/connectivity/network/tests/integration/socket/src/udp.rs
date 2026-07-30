@@ -2602,3 +2602,238 @@ async fn ignore_localhost_traffic_from_net<N: Netstack, I: Ip>(name: &str) {
 
     assert_matches!(recv_result, None);
 }
+
+// Integration test for `SOL_IP -> IP_PKTINFO`.
+//
+// IPv4 sockets should receive pktinfo and dual-stack sockets should only
+// receive pktinfo for IPv4 packets.
+#[netstack_test]
+#[test_case(
+    fposix_socket::Domain::Ipv4, net_ip_v4!("192.0.2.1"), false;
+    "v4_unicast"
+)]
+#[test_case(
+    fposix_socket::Domain::Ipv4, net_ip_v4!("255.255.255.255"), false;
+    "v4_broadcast"
+)]
+#[test_case(
+    fposix_socket::Domain::Ipv4, net_ip_v4!("192.0.2.255"), false;
+    "v4_subnet_broadcast"
+)]
+#[test_case(
+    fposix_socket::Domain::Ipv6, net_ip_v4!("192.0.2.1"), false;
+    "v6_dual_stack_unicast_no_v6_pktinfo"
+)]
+#[test_case(
+    fposix_socket::Domain::Ipv6, net_ip_v4!("255.255.255.255"), false;
+    "v6_dual_stack_broadcast_no_v6_pktinfo"
+)]
+#[test_case(
+    fposix_socket::Domain::Ipv6, net_ip_v4!("192.0.2.255"), false;
+    "v6_dual_stack_subnet_broadcast_no_v6_pktinfo"
+)]
+#[test_case(
+    fposix_socket::Domain::Ipv6, net_ip_v4!("192.0.2.1"), true;
+    "v6_dual_stack_unicast_v6_pktinfo"
+)]
+#[test_case(
+    fposix_socket::Domain::Ipv6, net_ip_v4!("255.255.255.255"), true;
+    "v6_dual_stack_broadcast_v6_pktinfo"
+)]
+async fn ip_pktinfo(
+    name: &str,
+    domain: fposix_socket::Domain,
+    v4_dst: net_types::ip::Ipv4Addr,
+    v6_recv_pktinfo: bool,
+) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>(name).expect("failed to create realm");
+
+    let net = sandbox.create_network("net").await.expect("failed to create network");
+
+    const LOCAL_MAC: fnet::MacAddress = fidl_mac!("02:00:00:00:00:01");
+    const REMOTE_MAC: fnet::MacAddress = fidl_mac!("02:00:00:00:00:02");
+    const LOCAL_V4_ADDR: net_types::ip::Ipv4Addr = net_ip_v4!("192.0.2.1");
+    const LOCAL_V6_ADDR: net_types::ip::Ipv6Addr = net_ip_v6!("2001:db8::1");
+
+    let iface = realm
+        .join_network_with(
+            &net,
+            "if0",
+            netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(LOCAL_MAC)),
+            Default::default(),
+        )
+        .await
+        .expect("failed to join network");
+    let iface_id = iface.id();
+
+    let v4_addr = fidl_subnet!("192.0.2.1/24");
+    let v6_addr = fidl_subnet!("2001:db8::1/64");
+    iface.add_address_and_subnet_route(v4_addr).await.expect("failed to set ipv4");
+    iface.add_address_and_subnet_route(v6_addr).await.expect("failed to set ipv6");
+
+    let socket = realm
+        .datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp)
+        .await
+        .expect("failed to create socket");
+
+    let channel = fdio::clone_channel(&socket).expect("failed to clone channel");
+    let proxy = fposix_socket::SynchronousDatagramSocketProxy::new(
+        fidl::AsyncChannel::from_channel(channel),
+    );
+
+    let bind_addr = match domain {
+        fposix_socket::Domain::Ipv4 => fidl_socket_addr!("0.0.0.0:1234"),
+        fposix_socket::Domain::Ipv6 => {
+            proxy.set_ipv6_only(false).await.expect("fidl error").expect("set_ipv6_only failed");
+            if v6_recv_pktinfo {
+                proxy
+                    .set_ipv6_receive_packet_info(true)
+                    .await
+                    .expect("fidl error")
+                    .expect("set_ipv6_receive_packet_info failed");
+                assert!(
+                    proxy
+                        .get_ipv6_receive_packet_info()
+                        .await
+                        .expect("fidl error")
+                        .expect("get_ipv6_receive_packet_info failed")
+                );
+            }
+            fidl_socket_addr!("[::]:1234")
+        }
+    };
+
+    proxy.set_ip_packet_info(true).await.expect("fidl error").expect("set_ip_packet_info failed");
+    assert!(
+        proxy.get_ip_packet_info().await.expect("fidl error").expect("get_ip_packet_info failed")
+    );
+    proxy.bind(&bind_addr).await.expect("fidl error").expect("bind failed");
+
+    let fake_ep = net.create_fake_endpoint().expect("failed to create endpoint");
+
+    const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(1234).unwrap();
+    const REMOTE_PORT: NonZeroU16 = NonZeroU16::new(5678).unwrap();
+
+    let make_v4_packet = |mut payload: Vec<u8>| {
+        let src = net_ip_v4!("192.0.2.2");
+        packet::Buf::new(&mut payload, ..)
+            .wrap_in(UdpPacketBuilder::new(src, v4_dst, Some(REMOTE_PORT), LOCAL_PORT))
+            .wrap_in(Ipv4PacketBuilder::new(src, v4_dst, 64, IpProto::Udp.into()))
+            .wrap_in(EthernetFrameBuilder::new(
+                net_types::ethernet::Mac::new(REMOTE_MAC.octets),
+                net_types::ethernet::Mac::new(LOCAL_MAC.octets),
+                EtherType::Ipv4,
+                ETHERNET_MIN_BODY_LEN_NO_TAG,
+            ))
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .expect("failed to serialize IPv4 UDP packet")
+            .unwrap_b()
+    };
+
+    let make_v6_packet = |mut payload: Vec<u8>| {
+        let src = net_ip_v6!("2001:db8::2");
+        packet::Buf::new(&mut payload, ..)
+            .wrap_in(UdpPacketBuilder::new(src, LOCAL_V6_ADDR, Some(REMOTE_PORT), LOCAL_PORT))
+            .wrap_in(Ipv6PacketBuilder::new(src, LOCAL_V6_ADDR, 64, IpProto::Udp.into()))
+            .wrap_in(EthernetFrameBuilder::new(
+                net_types::ethernet::Mac::new(REMOTE_MAC.octets),
+                net_types::ethernet::Mac::new(LOCAL_MAC.octets),
+                EtherType::Ipv6,
+                ETHERNET_MIN_BODY_LEN_NO_TAG,
+            ))
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .expect("failed to serialize IPv6 UDP packet")
+            .unwrap_b()
+    };
+
+    async fn wait_for_incoming_datagram(proxy: &fposix_socket::SynchronousDatagramSocketProxy) {
+        let event =
+            proxy.describe().await.expect("describe should succeed").event.expect("event missing");
+        let _ = fasync::OnSignals::new(
+            event,
+            zx::Signals::from_bits(fposix_socket::SIGNAL_DATAGRAM_INCOMING).unwrap(),
+        )
+        .await
+        .expect("waiting for signals failed");
+    }
+
+    fake_ep
+        .write(make_v4_packet(vec![1, 2, 3]).as_ref())
+        .await
+        .expect("failed to write UDP packet");
+
+    wait_for_incoming_datagram(&proxy).await;
+
+    let (_addr, _data, control, _truncated) = proxy
+        .recv_msg(false, u16::MAX.into(), true, fposix_socket::RecvMsgFlags::empty())
+        .await
+        .expect("recv_msg fidl error")
+        .expect("recv_msg failed");
+
+    let expected_ipv6_control = v6_recv_pktinfo.then_some(fposix_socket::Ipv6RecvControlData {
+        pktinfo: Some(fposix_socket::Ipv6PktInfoRecvControlData {
+            iface: iface_id,
+            header_destination_addr: fnet::Ipv6Address {
+                addr: v4_dst.to_ipv6_mapped().ipv6_bytes(),
+            },
+        }),
+        ..Default::default()
+    });
+
+    assert_eq!(
+        control.network,
+        Some(fposix_socket::NetworkSocketRecvControlData {
+            socket: None,
+            ip: Some(fposix_socket::IpRecvControlData {
+                tos: None,
+                ttl: None,
+                original_destination_address: None,
+                pktinfo: Some(fposix_socket::Ipv4PktInfoRecvControlData {
+                    iface: iface_id,
+                    local_addr: fnet::Ipv4Address { addr: LOCAL_V4_ADDR.ipv4_bytes() },
+                    header_destination_addr: fnet::Ipv4Address { addr: v4_dst.ipv4_bytes() },
+                }),
+                ..Default::default()
+            }),
+            // If `IPV6_RECVPKTINFO` is enabled, then IPv6 packet info is also
+            // received for IPv6-mapped IPv4 packets.
+            ipv6: expected_ipv6_control,
+            ..Default::default()
+        })
+    );
+
+    if domain == fposix_socket::Domain::Ipv6 {
+        fake_ep
+            .write(make_v6_packet(vec![7, 8, 9]).as_ref())
+            .await
+            .expect("failed to write UDP packet");
+
+        wait_for_incoming_datagram(&proxy).await;
+
+        let (_addr, _data, control, _truncated) = proxy
+            .recv_msg(false, u16::MAX.into(), true, fposix_socket::RecvMsgFlags::empty())
+            .await
+            .expect("recv_msg fidl error")
+            .expect("recv_msg failed");
+
+        let expected_control =
+            v6_recv_pktinfo.then_some(fposix_socket::NetworkSocketRecvControlData {
+                socket: None,
+                ip: None,
+                ipv6: Some(fposix_socket::Ipv6RecvControlData {
+                    pktinfo: Some(fposix_socket::Ipv6PktInfoRecvControlData {
+                        iface: iface_id,
+                        header_destination_addr: fnet::Ipv6Address {
+                            addr: LOCAL_V6_ADDR.ipv6_bytes(),
+                        },
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+
+        assert_eq!(control.network, expected_control);
+    }
+}

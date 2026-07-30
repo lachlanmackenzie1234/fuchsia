@@ -15,15 +15,20 @@ use starnix_uapi::errors::Errno;
 
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
 use starnix_uapi::{
-    IP_RECVORIGDSTADDR, IP_TOS, IP_TTL, IPV6_HOPLIMIT, IPV6_PKTINFO, IPV6_TCLASS, SCM_CREDENTIALS,
-    SCM_RIGHTS, SCM_SECURITY, SO_TIMESTAMP, SO_TIMESTAMPNS, SOL_IP, SOL_IPV6, SOL_SOCKET, c_int,
-    errno, error, uapi,
+    IP_PKTINFO, IP_RECVORIGDSTADDR, IP_TOS, IP_TTL, IPV6_HOPLIMIT, IPV6_PKTINFO, IPV6_TCLASS,
+    SCM_CREDENTIALS, SCM_RIGHTS, SCM_SECURITY, SO_TIMESTAMP, SO_TIMESTAMPNS, SOL_IP, SOL_IPV6,
+    SOL_SOCKET, c_int, errno, error, uapi,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
 
 uapi::check_arch_independent_layout! {
+    in_pktinfo {
+        ipi_ifindex,
+        ipi_spec_dst,
+        ipi_addr,
+    }
     in6_pktinfo {
         ipi6_addr,
         ipi6_ifindex,
@@ -167,6 +172,15 @@ impl AncillaryData {
                         .0,
                 )))
             }
+            (SOL_IP, IP_PKTINFO) => {
+                let (pktinfo, _) = uapi::in_pktinfo::read_from_prefix(&message.data[..])
+                    .map_err(|_| errno!(EINVAL))?;
+                Ok(AncillaryData::Ip(syncio::ControlMessage::IpPacketInfo {
+                    iface: pktinfo.ipi_ifindex,
+                    local_addr: pktinfo.ipi_spec_dst.s_addr.to_ne_bytes(),
+                    header_destination_addr: pktinfo.ipi_addr.s_addr.to_ne_bytes(),
+                }))
+            }
             (SOL_IPV6, IPV6_TCLASS) => Ok(AncillaryData::Ip(syncio::ControlMessage::Ipv6Tclass(
                 read_u8_value_from_int_cmsg(&message.data).ok_or_else(|| errno!(EINVAL))?,
             ))),
@@ -216,6 +230,18 @@ impl AncillaryData {
             AncillaryData::Ip(syncio::ControlMessage::Ipv6HopLimit(value)) => Ok(Some(
                 ControlMsg::new(SOL_IPV6, IPV6_HOPLIMIT, (value as c_int).as_bytes().to_vec()),
             )),
+            AncillaryData::Ip(syncio::ControlMessage::IpPacketInfo {
+                iface,
+                local_addr,
+                header_destination_addr,
+            }) => {
+                let pktinfo = uapi::in_pktinfo {
+                    ipi_ifindex: iface,
+                    ipi_spec_dst: uapi::in_addr { s_addr: u32::from_ne_bytes(local_addr) },
+                    ipi_addr: uapi::in_addr { s_addr: u32::from_ne_bytes(header_destination_addr) },
+                };
+                Ok(Some(ControlMsg::new(SOL_IP, IP_PKTINFO, pktinfo.as_bytes().to_vec())))
+            }
             AncillaryData::Ip(syncio::ControlMessage::Ipv6PacketInfo { iface, local_addr }) => {
                 let pktinfo = uapi::in6_pktinfo {
                     ipi6_addr: uapi::in6_addr {

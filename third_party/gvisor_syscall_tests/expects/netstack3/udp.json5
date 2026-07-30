@@ -61,12 +61,14 @@
                 "AllUDPSockets/AllSocketPairTest.RecvmsgPeekMsghdrFlagsCleared/*",
                 "AllUDPSockets/AllSocketPairTest.SetAndGetBooleanSocketOptions/*",
                 "AllUDPSockets/UDPSocketPairTest.GetSocketAcceptConn/*",
-                "AllUDPSockets/UDPSocketPairTest.IPPKTINFODefault/*",
                 "AllInetTests/UdpSocketControlMessagesTest.SendAndReceiveTTLOrHopLimit/*",
                 "AllInetTests/UdpSocketControlMessagesTest.SetAndReceiveTTLOrHopLimit/*",
 
-                // TODO(https://fxbug.dev/326281908): Support IP_PKTINFO.
-                "AllInetTests/UdpSocketControlMessagesTest.SetAndReceivePktInfo/0",
+                // Fails because while both Linux and Netstack3 return both IPv4
+                // and IPv6 control data when a dual-stack socket receives an
+                // IPv4 packet, the test expects to only receive the former if
+                // `IsRunningOnGvisor()` is true (which it seems is also the
+                // case for Fuchsia).
                 "AllInetTests/UdpSocketControlMessagesTest.SetAndReceivePktInfo/2",
 
                 // Netstack3 does not have complete support for multicast UDP sockets.
@@ -78,7 +80,6 @@
 
                 // Uncategorized
                 "AllUDPSockets/UDPSocketPairTest.ReceiveOrigDstAddrDefault/[0235]",
-                "AllUDPSockets/UDPSocketPairTest.SetAndGetIPPKTINFO/*",
                 "AllUDPSockets/UDPSocketPairTest.SetAndGetReceiveOrigDstAddr/[0235]",
                 "AllUDPSockets/UDPSocketPairTest.SetAndGetSocketLinger/*",
 

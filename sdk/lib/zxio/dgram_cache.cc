@@ -63,6 +63,14 @@ bool RequestedCmsgSet::ipv6_pktinfo() const {
   return static_cast<bool>(requests_ & CmsgRequests::kIpv6Pktinfo);
 }
 
+bool RequestedCmsgSet::ip_pktinfo() const {
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  return static_cast<bool>(requests_ & CmsgRequests::kIpPktinfo);
+#else
+  return false;
+#endif
+}
+
 using RequestedCmsgResult = fit::result<ErrOrOutCode, std::optional<RequestedCmsgSet>>;
 RequestedCmsgResult RequestedCmsgCache::Get(zx_wait_item_t err_wait_item,
                                             bool get_requested_cmsg_set,

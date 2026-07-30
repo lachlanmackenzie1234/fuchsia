@@ -1968,6 +1968,25 @@ class FidlControlDataProcessor {
       total += StoreControlMessage(IPPROTO_IP, IP_RECVORIGDSTADDR, &addr, addr_len);
     }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+    if (requested.ip_pktinfo() && control_data.has_pktinfo()) {
+      const fsocket::wire::Ipv4PktInfoRecvControlData& fidl_pktinfo = control_data.pktinfo();
+      in_pktinfo pktinfo = {
+          .ipi_ifindex = static_cast<int>(fidl_pktinfo.iface),
+      };
+      static_assert(
+          sizeof(pktinfo.ipi_spec_dst) == decltype(fidl_pktinfo.local_addr.addr)::size() &&
+              sizeof(pktinfo.ipi_addr) ==
+                  decltype(fidl_pktinfo.header_destination_addr.addr)::size(),
+          "mismatch between size of FIDL and in_pktinfo addresses");
+      memcpy(&pktinfo.ipi_spec_dst, fidl_pktinfo.local_addr.addr.data(),
+             sizeof(pktinfo.ipi_spec_dst));
+      memcpy(&pktinfo.ipi_addr, fidl_pktinfo.header_destination_addr.addr.data(),
+             sizeof(pktinfo.ipi_addr));
+      total += StoreControlMessage(IPPROTO_IP, IP_PKTINFO, &pktinfo, sizeof(pktinfo));
+    }
+#endif
+
     return total;
   }
 

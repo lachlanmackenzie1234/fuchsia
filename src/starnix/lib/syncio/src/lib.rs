@@ -227,9 +227,23 @@ pub enum ControlMessage {
     IpRecvOrigDstAddr([u8; size_of::<zxio::sockaddr_in>()]),
     Ipv6Tclass(u8),
     Ipv6HopLimit(u8),
-    Ipv6PacketInfo { iface: u32, local_addr: [u8; size_of::<zxio::in6_addr>()] },
-    Timestamp { sec: i64, usec: i64 },
-    TimestampNs { sec: i64, nsec: i64 },
+    IpPacketInfo {
+        iface: c_int,
+        local_addr: [u8; size_of::<zxio::in_addr>()],
+        header_destination_addr: [u8; size_of::<zxio::in_addr>()],
+    },
+    Ipv6PacketInfo {
+        iface: u32,
+        local_addr: [u8; size_of::<zxio::in6_addr>()],
+    },
+    Timestamp {
+        sec: i64,
+        usec: i64,
+    },
+    TimestampNs {
+        sec: i64,
+        nsec: i64,
+    },
 }
 
 const fn align_cmsg_size(len: usize) -> usize {
@@ -251,6 +265,7 @@ impl ControlMessage {
             ControlMessage::IpRecvOrigDstAddr(addr) => size_of_val(&addr),
             ControlMessage::Ipv6Tclass(_) => size_of::<c_int>(),
             ControlMessage::Ipv6HopLimit(_) => size_of::<c_int>(),
+            ControlMessage::IpPacketInfo { .. } => size_of::<zxio::in_pktinfo>(),
             ControlMessage::Ipv6PacketInfo { .. } => size_of::<zxio::in6_pktinfo>(),
             ControlMessage::Timestamp { .. } => size_of::<zxio::timeval>(),
             ControlMessage::TimestampNs { .. } => size_of::<zxio::timespec>(),
@@ -280,6 +295,17 @@ impl ControlMessage {
             ControlMessage::Ipv6HopLimit(v) => {
                 (*v as c_int).write_to_prefix(data).unwrap();
                 (size_of::<c_int>(), zxio::SOL_IPV6, zxio::IPV6_HOPLIMIT)
+            }
+            ControlMessage::IpPacketInfo { iface, local_addr, header_destination_addr } => {
+                let pktinfo = zxio::in_pktinfo {
+                    ipi_ifindex: *iface,
+                    ipi_spec_dst: zxio::in_addr { s_addr: u32::from_ne_bytes(*local_addr) },
+                    ipi_addr: zxio::in_addr {
+                        s_addr: u32::from_ne_bytes(*header_destination_addr),
+                    },
+                };
+                pktinfo.write_to_prefix(data).unwrap();
+                (size_of_val(&pktinfo), zxio::SOL_IP, zxio::IP_PKTINFO)
             }
             ControlMessage::Ipv6PacketInfo { iface, local_addr } => {
                 let pktinfo = zxio::in6_pktinfo {
@@ -351,6 +377,14 @@ fn parse_control_messages(data: &[u8]) -> Vec<ControlMessage> {
             (zxio::SOL_IP, zxio::IP_RECVORIGDSTADDR) => ControlMessage::IpRecvOrigDstAddr(
                 <[u8; size_of::<zxio::sockaddr_in>()]>::read_from_prefix(msg_data).unwrap().0,
             ),
+            (zxio::SOL_IP, zxio::IP_PKTINFO) => {
+                let pkt_info = zxio::in_pktinfo::read_from_prefix(msg_data).unwrap().0;
+                ControlMessage::IpPacketInfo {
+                    iface: pkt_info.ipi_ifindex,
+                    local_addr: pkt_info.ipi_spec_dst.s_addr.to_ne_bytes(),
+                    header_destination_addr: pkt_info.ipi_addr.s_addr.to_ne_bytes(),
+                }
+            }
             (zxio::SOL_IPV6, zxio::IPV6_TCLASS) => {
                 ControlMessage::Ipv6Tclass(c_int::read_from_prefix(msg_data).unwrap().0 as u8)
             }
@@ -2241,5 +2275,32 @@ mod test {
             )
         };
         assert_eq!(out, zx::sys::ZX_ERR_NO_MEMORY);
+    }
+
+    #[fuchsia::test]
+    fn test_parse_ip_pktinfo_control_message() {
+        let pktinfo = zxio::in_pktinfo {
+            ipi_ifindex: 1,
+            ipi_spec_dst: zxio::in_addr { s_addr: u32::from_ne_bytes([192, 0, 2, 1]) },
+            ipi_addr: zxio::in_addr { s_addr: u32::from_ne_bytes([192, 0, 2, 2]) },
+        };
+        let total_size = CMSG_HEADER_SIZE + size_of_val(&pktinfo);
+        let header = zxio::cmsghdr {
+            cmsg_len: total_size as c_uint,
+            cmsg_level: zxio::SOL_IP as i32,
+            cmsg_type: zxio::IP_PKTINFO as i32,
+        };
+        let mut out = vec![0u8; total_size];
+        header.write_to_prefix(&mut out[..]).unwrap();
+        pktinfo.write_to_prefix(&mut out[CMSG_HEADER_SIZE..]).unwrap();
+        let parsed = parse_control_messages(&out);
+        assert_eq!(
+            parsed,
+            vec![ControlMessage::IpPacketInfo {
+                iface: 1,
+                local_addr: [192, 0, 2, 1],
+                header_destination_addr: [192, 0, 2, 2],
+            }]
+        );
     }
 }

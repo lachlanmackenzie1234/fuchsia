@@ -565,6 +565,20 @@ type NetworkSocketRecvControlData = table {
         /// Present if the `SOL_IP` -> `IP_RECVORIGDSTADDR` option is enabled.
         @available(added=15)
         3: original_destination_address fuchsia.net.SocketAddress;
+
+        /// The packet information of a packet that was received.
+        ///
+        /// Present if the `SOL_IP` -> `IP_PKTINFO` option is enabled.
+        @available(added=HEAD)
+        4: pktinfo @generated_name("Ipv4PktInfoRecvControlData") struct {
+            /// The index of the interface on which the IP packet was received.
+            iface fuchsia.net.InterfaceId;
+            /// The local address of the interface on which the packet was received.
+            local_addr fuchsia.net.Ipv4Address;
+            /// The destination address specified in the received packet's IP
+            /// header.
+            header_destination_addr fuchsia.net.Ipv4Address;
+        };
     };
 
     /// IPv6 level ancillary data.
@@ -820,6 +834,9 @@ closed protocol DatagramSocket {
             /// Identifies whether the `IP_RECVORIGDSTADDR` control message is requested.
             @available(added=15)
             IP_RECVORIGDSTADDR = 0x20;
+            /// Identifies whether the `IP_PKTINFO` control message is requested.
+            @available(added=HEAD)
+            IP_PKTINFO = 0x40;
         };
     }) error fuchsia.posix.Errno;
 };

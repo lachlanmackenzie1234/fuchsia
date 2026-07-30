@@ -66,6 +66,7 @@ bindgen.var_allowlist = [
 ]
 bindgen.type_allowlist = [
     "cmsghdr.*",
+    "in_pktinfo.*",
     "in6_.*",
     "sockaddr.*",
     "timespec",
@@ -97,6 +98,7 @@ bindgen.set_auto_derive_traits(
                 "KnownLayout",
             ],
         ),
+        (r"in_pktinfo", ["IntoBytes", "FromBytes", "Immutable", "KnownLayout"]),
         (r"in6_pktinfo", ["IntoBytes, FromBytes", "Immutable", "KnownLayout"]),
         (
             r"sockaddr_in$",

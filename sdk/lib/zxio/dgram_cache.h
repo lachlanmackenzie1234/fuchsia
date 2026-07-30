@@ -45,6 +45,7 @@ class RequestedCmsgSet {
   bool ipv6_tclass() const;
   bool ipv6_hoplimit() const;
   bool ipv6_pktinfo() const;
+  bool ip_pktinfo() const;
 
  private:
   RequestedCmsgSet() = default;

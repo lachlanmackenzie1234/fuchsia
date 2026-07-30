@@ -23,11 +23,14 @@ use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream as _};
 use fuchsia_async as fasync;
 use log::{debug, trace, warn};
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6};
-use net_types::{MulticastAddr, SpecifiedAddr, ZonedAddr};
+use net_types::{
+    MulticastAddr, MulticastAddress, SpecifiedAddr, SpecifiedAddress, Witness, ZonedAddr,
+};
 use netstack3_core::device::{DeviceId, WeakDeviceId};
 use netstack3_core::error::{LocalAddressError, NotSupportedError, SocketError};
 use netstack3_core::icmp::ReceiveIcmpEchoError;
 use netstack3_core::ip::{IpSockCreateAndSendError, IpSockSendError, Mark, MarkDomain};
+use netstack3_core::routes::{RoutableIpAddr, RouteResolveOptions};
 use netstack3_core::socket::{
     self as core_socket, ConnInfo, ConnectError, ExpectedConnError, ExpectedUnboundError,
     ListenerInfo, MulticastInterfaceSelector, MulticastMembershipInterfaceSelector,
@@ -1287,6 +1290,8 @@ impl BindingsDataIpExt for Ipv6 {
 #[derive(Default)]
 struct Ipv4BindingsData {
     // NB: At the moment, IPv4 sockets don't need to hold any unique data.
+    // IPv4-specific options must be exposed in the generic `BindingData` so
+    // that they can be handled for dual-stack sockets.
 }
 impl<I: Ip + BindingsDataIpExt> GenericOverIp<I> for Ipv4BindingsData {
     type Type = I::VersionSpecificData;
@@ -1321,6 +1326,8 @@ struct BindingData<I: BindingsDataIpExt, T: Transport<I>> {
     ipv4_multicast_if_addr: Option<SpecifiedAddr<Ipv4Addr>>,
     /// `IP_RECVTOS` options.
     ip_recv_tos: bool,
+    /// `IP_PKTINFO` option.
+    ip_pkt_info: bool,
     /// Sharing domain for SO_REUSEPORT. Used only for clients that do not specify it explicitly.
     // TODO(https://fxbug.dev/451615802): Remove this once all clients are updated to
     // specify sharing domain explicitly.
@@ -1376,6 +1383,7 @@ where
             timestamp_option: fposix_socket::TimestampOption::Disabled,
             ipv4_multicast_if_addr: None,
             ip_recv_tos: false,
+            ip_pkt_info: false,
             sharing_domain,
         }
     }
@@ -1989,12 +1997,12 @@ where
             Request::GetIpReceiveTtl { responder } => {
                 respond_not_supported!("syncudp::GetIpReceiveTtl", responder)
             }
-            Request::SetIpPacketInfo { value: _, responder } => {
-                warn!("syncudp::SetIpPacketInfo is not supported, returning Ok(())");
+            Request::SetIpPacketInfo { value, responder } => {
+                self.data.ip_pkt_info = value;
                 responder.send(Ok(())).unwrap_or_log("failed to respond");
             }
             Request::GetIpPacketInfo { responder } => {
-                respond_not_supported!("syncudp::GetIpPacketInfo", responder)
+                responder.send(Ok(self.data.ip_pkt_info)).unwrap_or_log("failed to respond");
             }
             Request::SetMark { domain, mark, responder } => {
                 self.set_mark(domain, mark);
@@ -2162,6 +2170,7 @@ where
                     version_specific_data,
                     ip_receive_original_destination_address,
                     ip_recv_tos,
+                    ip_pkt_info,
                     timestamp_option,
                     ..
                 },
@@ -2255,6 +2264,28 @@ where
                 }
             }
 
+            if *ip_pkt_info {
+                if let Some(ipv4_dest_ip) = ipv4_dest_ip {
+                    let ipv4_src_ip = I::map_ip_in(
+                        source_addr,
+                        |ipv4_addr| Some(ipv4_addr),
+                        |ipv6_addr| ipv6_addr.to_ipv4_mapped(),
+                    );
+                    let local_addr = Self::select_ipv4_pktinfo_local_addr(
+                        ctx,
+                        interface_id,
+                        ipv4_src_ip,
+                        ipv4_dest_ip,
+                    );
+                    ip_data.get_or_insert_default().pktinfo =
+                        Some(fposix_socket::Ipv4PktInfoRecvControlData {
+                            iface: interface_id.into(),
+                            local_addr: local_addr.into_fidl(),
+                            header_destination_addr: ipv4_dest_ip.into_fidl(),
+                        });
+                }
+            }
+
             let ipv6_control_data = I::map_ip_in(
                 (version_specific_data, destination_addr, IpInvariant(interface_id)),
                 |(Ipv4BindingsData {}, _ipv4_dst_addr, _interface_id)| None,
@@ -2265,6 +2296,8 @@ where
                 )| {
                     let mut ipv6_data: Option<fposix_socket::Ipv6RecvControlData> = None;
 
+                    // An IPv6-mapped IPv4 packet will receive both IPv4 and
+                    // IPv6 info.
                     if *recv_pkt_info {
                         ipv6_data.get_or_insert_default().pktinfo =
                             Some(fposix_socket::Ipv6PktInfoRecvControlData {
@@ -2310,6 +2343,54 @@ where
             fposix_socket::DatagramSocketRecvControlData { network, ..Default::default() };
 
         Ok((addr, data, control_data, truncated.try_into().unwrap_or(u32::MAX)))
+    }
+
+    /// Selects the preferred source address for replies to a packet sent from
+    /// `ipv4_src_ip` to `ipv4_dest_ip` and received on `interface_id`.
+    // Note: the logic that this function uses is based on the logic used by
+    // Linux for the sake of compatibility (see `fib_compute_spec_dst`).
+    fn select_ipv4_pktinfo_local_addr(
+        ctx: &mut Ctx,
+        interface_id: BindingId,
+        ipv4_src_ip: Option<Ipv4Addr>,
+        ipv4_dest_ip: Ipv4Addr,
+    ) -> Ipv4Addr {
+        let addrs = DeviceId::try_from_fidl_with_ctx(ctx.bindings_ctx(), interface_id)
+            .ok()
+            .map(|device_id| ctx.api().device_ip::<Ipv4>().get_assigned_ip_addr_subnets(&device_id))
+            .unwrap_or_default();
+
+        let is_subnet_broadcast = addrs.iter().any(|addr_subnet| {
+            addr_subnet.subnet().prefix() < 31 && addr_subnet.subnet().broadcast() == ipv4_dest_ip
+        });
+        
+        // If `ipv4_dest_ip` is unicast, use it as the local addr.
+        if !ipv4_dest_ip.is_multicast()
+            && !ipv4_dest_ip.is_limited_broadcast()
+            && !is_subnet_broadcast
+            && ipv4_dest_ip.is_specified()
+        {
+            return ipv4_dest_ip;
+        }
+
+        // Otherwise, see if there's a route to the source address and use the
+        // route's src addr if so. An unspecified addr isn't routable so it'll
+        // hit the fallback below.
+        if let Some(src) = ipv4_src_ip.and_then(RoutableIpAddr::new) {
+            if let Ok(route) =
+                ctx.api().routes::<Ipv4>().resolve_route(Some(src), &RouteResolveOptions::default())
+            {
+                return route.src_addr.addr();
+            }
+        }
+
+        // If there's no route to `ipv4_src_ip`, use the first address assigned
+        // to `interface_id`.
+        if let Some(first) = addrs.first() {
+            return first.addr().get();
+        }
+
+        Ipv4Addr::new([0, 0, 0, 0])
     }
 
     fn send_msg(self, addr: Option<fnet::SocketAddress>, data: Vec<u8>) -> Result<i64, ErrnoError> {
@@ -2907,7 +2988,6 @@ mod tests {
     use crate::bindings::socket::{
         ZXSIO_SIGNAL_ERROR, ZXSIO_SIGNAL_INCOMING, ZXSIO_SIGNAL_OUTGOING,
     };
-    use net_types::Witness as _;
     use net_types::ip::{IpAddr, IpAddress};
 
     async fn prepare_test<A: TestSockAddr>(
