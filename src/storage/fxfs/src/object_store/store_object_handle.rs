@@ -32,6 +32,7 @@ use futures::stream::{FuturesOrdered, FuturesUnordered, unfold};
 use futures::{Stream, TryStreamExt, try_join};
 use fxfs_crypto::{
     Cipher, CipherHolder, CipherSet, EncryptionKey, FindKeyResult, FxfsCipher, KeyPurpose,
+    MutPtrByteSlice,
 };
 use fxfs_trace::{TraceFutureExt, trace, trace_future_args};
 use static_assertions::const_assert;
@@ -773,7 +774,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     attribute_id.raw(),
                     device_offset,
                     file_offset,
-                    buffer.as_mut_slice(),
+                    buffer.as_mut_ptr_slice(),
                 )?;
             }
         } else {
@@ -1343,7 +1344,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     attribute_id.raw(),
                     device_offset,
                     range.start,
-                    transfer_buf_ref.as_mut_slice(),
+                    transfer_buf_ref.as_mut_ptr_slice(),
                 )?;
             }
         }
@@ -1414,7 +1415,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         attribute_id.raw(),
                         0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
                         r.start,
-                        head,
+                        MutPtrByteSlice::from(head),
                     )?;
                     slice = tail;
                 }
@@ -1600,7 +1601,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         attr_id.raw(),
                         0, /* TODO(https://fxbug.dev/421269588): plumb through device_offset. */
                         r.start,
-                        head,
+                        MutPtrByteSlice::from(head),
                     )?;
                     slice = tail;
                 }

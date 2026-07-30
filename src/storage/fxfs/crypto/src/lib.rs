@@ -19,7 +19,9 @@ pub mod ff1;
 
 pub use cipher::fscrypt_ino_lblk32::FscryptSoftwareInoLblk32FileCipher;
 pub use cipher::fxfs::FxfsCipher;
-pub use cipher::{Cipher, CipherHolder, CipherSet, FindKeyResult, KeyType, key_to_cipher};
+pub use cipher::{
+    Cipher, CipherHolder, CipherSet, FindKeyResult, KeyType, MutPtrByteSlice, key_to_cipher,
+};
 pub use fidl_fuchsia_fxfs::{
     EmptyStruct, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, ObjectType, WrappedKey,
 };

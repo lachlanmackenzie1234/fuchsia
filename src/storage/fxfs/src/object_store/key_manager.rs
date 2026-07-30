@@ -501,7 +501,8 @@ mod tests {
     use futures::join;
     use fxfs_crypto::{
         Cipher, CipherHolder, Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsCipher, FxfsKey,
-        KeyPurpose, ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKeyId,
+        KeyPurpose, MutPtrByteSlice, ObjectType, UnwrappedKey, WrappedKey, WrappedKeyBytes,
+        WrappingKeyId,
     };
     use std::future::pending;
     use std::sync::Arc;
@@ -525,7 +526,9 @@ mod tests {
 
     fn cipher_text(counter: u8) -> Vec<u8> {
         let mut text = padded_plain_text();
-        cipher(counter).encrypt(0, 0, 0, 0, &mut text[..]).expect("encrypt failed");
+        cipher(counter)
+            .encrypt(0, 0, 0, 0, MutPtrByteSlice::from(&mut text[..]))
+            .expect("encrypt failed");
         // Ensure that encrypt changed the text.
         assert_ne!(&text, &padded_plain_text());
         text
@@ -624,7 +627,7 @@ mod tests {
                     .find_key(0),
             )
             .unwrap()
-            .decrypt(0, 0, 0, 0, &mut plaintext[..])
+            .decrypt(0, 0, 0, 0, MutPtrByteSlice::from(&mut plaintext[..]))
             .expect("decrypt failed");
             assert_eq!(&plaintext, &padded_plain_text());
         });
@@ -644,7 +647,7 @@ mod tests {
                     .find_key(0),
             )
             .unwrap()
-            .decrypt(0, 0, 0, 0, &mut plaintext[..])
+            .decrypt(0, 0, 0, 0, MutPtrByteSlice::from(&mut plaintext[..]))
             .expect("decrypt failed");
             assert_eq!(&plaintext, &padded_plain_text());
         });
@@ -657,7 +660,7 @@ mod tests {
                 .await
                 .expect("get failed")
                 .expect("missing key")
-                .decrypt(0, 0, 0, 0, &mut plaintext[..])
+                .decrypt(0, 0, 0, 0, MutPtrByteSlice::from(&mut plaintext[..]))
                 .expect("decrypt failed");
             assert_eq!(&plaintext, &padded_plain_text());
         });
@@ -681,7 +684,7 @@ mod tests {
             .await
             .expect("get failed")
             .expect("missing key")
-            .decrypt(0, 0, 0, 0, &mut plaintext[..])
+            .decrypt(0, 0, 0, 0, MutPtrByteSlice::from(&mut plaintext[..]))
             .expect("decrypt failed");
         assert_eq!(&plaintext, &padded_plain_text());
         let _ = manager.remove(1);

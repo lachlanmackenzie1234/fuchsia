@@ -14,6 +14,8 @@ rustc_library("crypto") {
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/fxfs/trace",
     "//src/storage/lib/fscrypt",
+    "//src/storage/lib/ptr_slice",
+    "//src/storage/lib/storage_xts",
     "//src/storage/type-fprint:fprint",
     "//third_party/rust_crates:aes",
     "//third_party/rust_crates:anyhow",
@@ -26,7 +28,6 @@ rustc_library("crypto") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:siphasher",
-    "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:zerocopy",
   ]
   sources = [

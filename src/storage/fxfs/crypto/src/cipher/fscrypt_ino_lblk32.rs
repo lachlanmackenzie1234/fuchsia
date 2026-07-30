@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 use super::{Cipher, Tweak, UnwrappedKey, XtsProcessor};
 use aes::Aes256;
 use aes::cipher::inout::InOutBuf;
@@ -11,6 +12,7 @@ use aes::cipher::{
 use anyhow::{Context, Error, ensure};
 use siphasher::sip::SipHasher;
 use std::hash::Hasher;
+use storage_ptr_slice::MutPtrByteSlice;
 use zerocopy::IntoBytes;
 
 const BLOCK_SIZE: usize = 4096;
@@ -40,7 +42,7 @@ impl Cipher for FscryptInoLblk32DirCipher {
         _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
-        _buffer: &mut [u8],
+        _buffer: MutPtrByteSlice<'_>,
     ) -> Result<(), Error> {
         Err(zx_status::Status::NOT_SUPPORTED).context("encrypt not supported for InoLblk32Dir")
     }
@@ -51,7 +53,7 @@ impl Cipher for FscryptInoLblk32DirCipher {
         _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
-        _buffer: &mut [u8],
+        _buffer: MutPtrByteSlice<'_>,
     ) -> Result<(), Error> {
         Err(zx_status::Status::NOT_SUPPORTED).context("decrypt not supported for InoLblk32Dir")
     }
@@ -198,7 +200,7 @@ impl Cipher for FscryptInoLblk32FileCipher {
         _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
-        _buffer: &mut [u8],
+        _buffer: MutPtrByteSlice<'_>,
     ) -> Result<(), Error> {
         let e: Error = zx_status::Status::NOT_SUPPORTED.into();
         Err(e.context("encrypt not supported for InoLblk32File"))
@@ -210,7 +212,7 @@ impl Cipher for FscryptInoLblk32FileCipher {
         _attribute_id: u64,
         _device_offset: u64,
         _file_offset: u64,
-        _buffer: &mut [u8],
+        _buffer: MutPtrByteSlice<'_>,
     ) -> Result<(), Error> {
         let e: Error = zx_status::Status::NOT_SUPPORTED.into();
         Err(e.context("decrypt not supported for InoLblk32File"))
@@ -280,7 +282,10 @@ impl FscryptSoftwareInoLblk32FileCipher {
 
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
             self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.xts_key1.encrypt_with_backend(XtsProcessor::new(Tweak(tweak), block));
+            self.xts_key1.encrypt_with_backend(XtsProcessor::new_in_place(
+                Tweak(tweak),
+                MutPtrByteSlice::from(&mut block[..]),
+            ));
             tweak += 1;
         }
         Ok(())
@@ -291,7 +296,10 @@ impl FscryptSoftwareInoLblk32FileCipher {
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
             self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.xts_key1.decrypt_with_backend(XtsProcessor::new(Tweak(tweak), block));
+            self.xts_key1.decrypt_with_backend(XtsProcessor::new_in_place(
+                Tweak(tweak),
+                MutPtrByteSlice::from(&mut block[..]),
+            ));
             tweak += 1;
         }
         Ok(())
@@ -370,7 +378,15 @@ mod tests {
             text.extend_from_slice(long_name_64);
         }
 
-        let raw = hex::decode("f59d083c16915d5d3479b9dbf7b7f0531905bde71624f4ba1ab416b15831ca87c2d99e43f97bd2fc18f2ad03da252715abf9d0cd9bde4215bfeeec7d07dbcf890bcc4a230faaaf73cabdfc3ca8b20a0684847f7f3991d55b6b30859dfc662c1aef03c7d16830ef7df367a3392a82e588629b89feffe49036e420686598545b20119c346af4f80fdbd225a625aa0f45ce393cfff0bd9971b6782d8768dbd1358708a75c38d9fb681304fdaa1e85a091ce38e3a65f8ef14612881e6cbd38cf4bcf").expect("decode failed");
+        let raw = hex::decode(concat!(
+            "f59d083c16915d5d3479b9dbf7b7f0531905bde71624f4ba1ab416b15831ca87",
+            "c2d99e43f97bd2fc18f2ad03da252715abf9d0cd9bde4215bfeeec7d07dbcf89",
+            "0bcc4a230faaaf73cabdfc3ca8b20a0684847f7f3991d55b6b30859dfc662c1a",
+            "ef03c7d16830ef7df367a3392a82e588629b89feffe49036e420686598545b20",
+            "119c346af4f80fdbd225a625aa0f45ce393cfff0bd9971b6782d8768dbd13587",
+            "08a75c38d9fb681304fdaa1e85a091ce38e3a65f8ef14612881e6cbd38cf4bcf"
+        ))
+        .expect("decode failed");
         cipher.encrypt_filename(object_id, &mut text).expect("encrypt filename failed");
         assert_eq!(text, raw);
     }

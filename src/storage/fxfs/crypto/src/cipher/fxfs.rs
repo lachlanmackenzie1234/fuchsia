@@ -6,6 +6,7 @@ use aes::Aes256;
 use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use anyhow::Error;
 use log::warn;
+pub use storage_ptr_slice::MutPtrByteSlice;
 use zerocopy::IntoBytes;
 
 #[derive(Debug)]
@@ -29,19 +30,22 @@ impl Cipher for FxfsCipher {
         attribute_id: u64,
         _device_offset: u64,
         file_offset: u64,
-        buffer: &mut [u8],
+        mut buffer: MutPtrByteSlice<'_>,
     ) -> Result<(), Error> {
         fxfs_trace::duration!("encrypt", "len" => buffer.len());
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);
         let upper_tweak = if self.legacy { 0 } else { (attribute_id as u128) << 64 };
-        for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
+        let mut offset = 0;
+        while offset < buffer.len() {
+            let sector = buffer.reborrow().subslice_mut(offset..offset + SECTOR_SIZE as usize);
             let mut tweak = Tweak(upper_tweak | (sector_offset as u128));
             // The same key is used for encrypting the data and computing the tweak.
             self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.key.encrypt_with_backend(XtsProcessor::new(tweak, sector));
+            self.key.encrypt_with_backend(XtsProcessor::new_in_place(tweak, sector));
             sector_offset += 1;
+            offset += SECTOR_SIZE as usize;
         }
         Ok(())
     }
@@ -52,19 +56,22 @@ impl Cipher for FxfsCipher {
         attribute_id: u64,
         _device_offset: u64,
         file_offset: u64,
-        buffer: &mut [u8],
+        mut buffer: MutPtrByteSlice<'_>,
     ) -> Result<(), Error> {
         fxfs_trace::duration!("decrypt", "len" => buffer.len());
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);
         let upper_tweak = if self.legacy { 0 } else { (attribute_id as u128) << 64 };
-        for sector in buffer.chunks_exact_mut(SECTOR_SIZE as usize) {
+        let mut offset = 0;
+        while offset < buffer.len() {
+            let sector = buffer.reborrow().subslice_mut(offset..offset + SECTOR_SIZE as usize);
             let mut tweak = Tweak(upper_tweak | (sector_offset as u128));
             // The same key is used for encrypting the data and computing the tweak.
             self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-            self.key.decrypt_with_backend(XtsProcessor::new(tweak, sector));
+            self.key.decrypt_with_backend(XtsProcessor::new_in_place(tweak, sector));
             sector_offset += 1;
+            offset += SECTOR_SIZE as usize;
         }
         Ok(())
     }
@@ -103,6 +110,7 @@ impl Cipher for FxfsCipher {
 mod tests {
     use super::{Cipher, FxfsCipher, SECTOR_SIZE};
     use crate::UnwrappedKey;
+    use storage_ptr_slice::MutPtrByteSlice;
 
     #[test]
     fn test_legacy_fxfs_cipher_ignores_attribute_id() {
@@ -111,11 +119,12 @@ mod tests {
         let mut buf0 = vec![0x12; SECTOR_SIZE as usize];
         let mut buf1 = vec![0x12; SECTOR_SIZE as usize];
 
-        cipher.encrypt(1, 0, 0, 0, &mut buf0).expect("encrypt attr 0");
-        cipher.encrypt(1, 4, 0, 0, &mut buf1).expect("encrypt attr 4");
+        cipher.encrypt(1, 0, 0, 0, MutPtrByteSlice::from(&mut buf0[..])).expect("encrypt attr 0");
+        cipher.encrypt(1, 4, 0, 0, MutPtrByteSlice::from(&mut buf1[..])).expect("encrypt attr 4");
         assert_eq!(
             buf0, buf1,
-            "LegacyFxfsCipher should produce identical ciphertext for same file_offset regardless of attribute_id"
+            "LegacyFxfsCipher should produce identical ciphertext for same file_offset regardless \
+             of attribute_id"
         );
     }
 
@@ -126,15 +135,15 @@ mod tests {
         let mut buf0 = vec![0x12; SECTOR_SIZE as usize];
         let mut buf1 = vec![0x12; SECTOR_SIZE as usize];
 
-        cipher.encrypt(1, 0, 0, 0, &mut buf0).expect("encrypt attr 0");
-        cipher.encrypt(1, 4, 0, 0, &mut buf1).expect("encrypt attr 4");
+        cipher.encrypt(1, 0, 0, 0, MutPtrByteSlice::from(&mut buf0[..])).expect("encrypt attr 0");
+        cipher.encrypt(1, 4, 0, 0, MutPtrByteSlice::from(&mut buf1[..])).expect("encrypt attr 4");
         assert_ne!(buf0, buf1, "FxfsCipher should domain-separate tweaks across attribute_id");
 
         // Verify decryption works correctly for each attribute_id
-        cipher.decrypt(1, 0, 0, 0, &mut buf0).expect("decrypt attr 0");
+        cipher.decrypt(1, 0, 0, 0, MutPtrByteSlice::from(&mut buf0[..])).expect("decrypt attr 0");
         assert_eq!(buf0, vec![0x12; SECTOR_SIZE as usize]);
 
-        cipher.decrypt(1, 4, 0, 0, &mut buf1).expect("decrypt attr 4");
+        cipher.decrypt(1, 4, 0, 0, MutPtrByteSlice::from(&mut buf1[..])).expect("decrypt attr 4");
         assert_eq!(buf1, vec![0x12; SECTOR_SIZE as usize]);
     }
 }
