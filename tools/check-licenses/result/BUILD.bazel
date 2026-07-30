@@ -36,6 +36,7 @@ go_library(
 
 host_go_test(
     name = "result_test",
+    size = "small",
     srcs = [
         "checks_test.go",
         "config_test.go",

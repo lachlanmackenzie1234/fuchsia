@@ -29,6 +29,7 @@ go_library(
 
 host_go_test(
     name = "file_test",
+    size = "small",
     srcs = [
         "encoding_test.go",
         "file_test.go",

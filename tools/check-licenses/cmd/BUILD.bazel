@@ -55,6 +55,7 @@ go_library(
 
 host_go_test(
     name = "cmd_test",
+    size = "small",
     srcs = [
         "allowlist_test.go",
         "classify_test.go",

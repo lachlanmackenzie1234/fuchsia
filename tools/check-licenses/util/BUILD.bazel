@@ -28,6 +28,7 @@ go_library(
 
 host_go_test(
     name = "util_test",
+    size = "small",
     srcs = ["gn_test.go"],
     embed = [":util"],
     embedsrcs = [

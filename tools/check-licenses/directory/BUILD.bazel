@@ -29,6 +29,7 @@ go_library(
 
 host_go_test(
     name = "directory_test",
+    size = "small",
     srcs = [
         "config_test.go",
         "directory_test.go",

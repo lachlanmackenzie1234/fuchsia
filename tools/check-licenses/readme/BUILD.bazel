@@ -33,6 +33,7 @@ go_library(
 
 host_go_test(
     name = "readme_test",
+    size = "small",
     srcs = [
         "dart_pkg_test.go",
         "golib_test.go",

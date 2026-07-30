@@ -34,6 +34,7 @@ go_library(
 
 host_go_test(
     name = "project_test",
+    size = "small",
     srcs = [
         "project_test.go",
         "spdx_test.go",

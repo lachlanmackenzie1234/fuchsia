@@ -23,6 +23,7 @@ go_library(
 
 host_go_test(
     name = "metrics_test",
+    size = "small",
     srcs = [
         "counter_test.go",
         "registry_test.go",
