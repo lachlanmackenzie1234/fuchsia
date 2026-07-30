@@ -214,16 +214,6 @@ impl Channel {
         )
     }
 
-    // TODO(https://fxbug.dev/362947192): Delete these old helper names once starnix bluetooth_aidl has been migrated.
-    pub fn create() -> (Self, Self) {
-        Self::create_socket_pair()
-    }
-
-    // TODO(https://fxbug.dev/362947192): Delete these old helper names once starnix bluetooth_aidl has been migrated.
-    pub fn create_with_max_tx(max_tx_size: usize) -> (Self, Self) {
-        Self::create_socket_pair_with_max_tx(max_tx_size)
-    }
-
     pub fn max_tx_size(&self) -> usize {
         self.max_tx_size
     }
