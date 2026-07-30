@@ -44,7 +44,6 @@ rustc_library("selinux") {
     "src/policy/constraints.rs",
     "src/policy/error.rs",
     "src/policy/index.rs",
-    "src/policy/metadata.rs",
     "src/policy/mod.rs",
     "src/policy/parsed_policy.rs",
     "src/policy/parser.rs",

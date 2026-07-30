@@ -5,7 +5,6 @@
 pub mod arrays;
 pub mod error;
 pub mod index;
-pub mod metadata;
 pub mod parsed_policy;
 pub mod parser;
 pub mod view;
@@ -621,16 +620,6 @@ macro_rules! array_type_validate_deref_both {
 }
 
 pub(super) use array_type_validate_deref_both;
-
-#[cfg(test)]
-pub(super) mod testing {
-    use super::error::ParseError;
-
-    /// Downcasts an [`anyhow::Error`] to a [`ParseError`] for structured error comparison in tests.
-    pub(super) fn as_parse_error(error: anyhow::Error) -> ParseError {
-        error.downcast::<ParseError>().expect("parse error")
-    }
-}
 
 #[cfg(test)]
 pub(super) mod tests {

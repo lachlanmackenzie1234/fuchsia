@@ -3,10 +3,6 @@
 // found in the LICENSE file.
 
 use super::arrays::FsUseType;
-use super::metadata::{
-    CONFIG_HANDLE_UNKNOWN_MASK, CONFIG_MLS_FLAG, POLICYDB_SIGNATURE, POLICYDB_STRING_MAX_LENGTH,
-    POLICYDB_VERSION_MAX, POLICYDB_VERSION_MIN, SELINUX_MAGIC,
-};
 use crate::new_policy::{ClassDefault, ClassDefaultRange};
 
 use bstr::BString;
@@ -15,12 +11,6 @@ use thiserror::Error;
 /// Structured errors that may be encountered parsing a binary policy.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum ParseError {
-    #[error("expected MLS-enabled flag ({CONFIG_MLS_FLAG:#032b}), but found {found_config:#032b}")]
-    ConfigMissingMlsFlag { found_config: u32 },
-    #[error(
-        "expected handle-unknown config at most 1 bit set (mask {CONFIG_HANDLE_UNKNOWN_MASK:#032b}), but found {masked_bits:#032b}"
-    )]
-    InvalidHandleUnknownConfigurationBits { masked_bits: u32 },
     #[error("expected end of policy, but found {num_bytes} additional bytes")]
     TrailingBytes { num_bytes: usize },
     #[error("expected data item of type {type_name} ({type_size} bytes), but found {num_bytes}")]
@@ -36,18 +26,6 @@ pub enum ParseError {
 /// Structured errors that may be encountered validating a binary policy.
 #[derive(Debug, Error, PartialEq)]
 pub enum ValidateError {
-    #[error("expected selinux magic value {SELINUX_MAGIC:#x}, but found {found_magic:#x}")]
-    InvalidMagic { found_magic: u32 },
-    #[error(
-        "expected signature length in range [0, {POLICYDB_STRING_MAX_LENGTH}], but found {found_length}"
-    )]
-    InvalidSignatureLength { found_length: u32 },
-    #[error("expected signature {POLICYDB_SIGNATURE:?}, but found {:?}", bstr::BStr::new(found_signature.as_slice()))]
-    InvalidSignature { found_signature: Vec<u8> },
-    #[error(
-        "expected policy version in range [{POLICYDB_VERSION_MIN}, {POLICYDB_VERSION_MAX}], but found {found_policy_version}"
-    )]
-    InvalidPolicyVersion { found_policy_version: u32 },
     #[error(
         "expected class default binary value to be one of {}, {}, or {}, but found {value}",
         ClassDefault::Unspecified as u32,
