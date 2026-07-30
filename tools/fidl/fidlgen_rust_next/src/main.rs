@@ -61,10 +61,15 @@ fn main() {
 
     std::fs::write(&args.output_filename, result).expect("failed to write to output file");
 
-    Command::new(&args.rustfmt)
-        .arg("--config-path")
-        .arg(&args.rustfmt_config)
-        .arg(&args.output_filename)
-        .status()
-        .expect("failed to format output file");
+    // TODO(540526942): rustfmt is not idempotent right now. As a workaround,
+    // just format the file twice.
+    const FORMAT_PASSES: usize = 2;
+    for _ in 0..FORMAT_PASSES {
+        Command::new(&args.rustfmt)
+            .arg("--config-path")
+            .arg(&args.rustfmt_config)
+            .arg(&args.output_filename)
+            .status()
+            .expect("failed to format output file");
+    }
 }
