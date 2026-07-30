@@ -73,7 +73,9 @@ enum HandleIndex : uint32_t {
 
   // userboot relies on kVmarLoaded being the last one.
   kVmarLoaded,
+  // When the experimental protocol is used, this is the index of the log handle.
   kHandleCount,
+  kExperimentalProtocolHandleCount,
 };
 
 // Copied from sdk/lib/fdio/include/lib/fdio/io.h to avoid the dependency. When this is passed

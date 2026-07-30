@@ -460,12 +460,16 @@ void userboot_init(HandoffEnd handoff_end) {
   // Prepare the bootstrap message packet.  This allocates space for its
   // handles, which we'll fill in as we create things.
   MessagePacketPtr msg;
-  zx_status_t status = MessagePacket::Create(nullptr, 0, userboot::kHandleCount, &msg);
+  const uint32_t total_handle_count = BootOptions::Get()->userboot_experimental_protocol
+                                          ? userboot::kExperimentalProtocolHandleCount
+                                          : userboot::kHandleCount;
+  zx_status_t status = MessagePacket::Create(nullptr, 0, total_handle_count, &msg);
   ASSERT(status == ZX_OK);
   msg->set_owns_handles(true);
 
-  DEBUG_ASSERT(msg->num_handles() == userboot::kHandleCount);
-  ktl::span<Handle*, userboot::kHandleCount> handles{msg->mutable_handles(), msg->num_handles()};
+  DEBUG_ASSERT(msg->num_handles() == total_handle_count);
+  ktl::span<Handle*, userboot::kHandleCount> handles{msg->mutable_handles(),
+                                                     userboot::kHandleCount};
 
   // Create the process.
   KernelHandle<ProcessDispatcher> process_handle;
@@ -542,8 +546,12 @@ void userboot_init(HandoffEnd handoff_end) {
     KernelHandle<LogDispatcher> log;
     zx_rights_t log_rights;
     RETURN_IF_NOT_OK(LogDispatcher::Create(0, &log, &log_rights));
-    auto get_handles = [log = Handle::Make(ktl::move(log), log_rights),
-                        &handles](auto... idx) mutable {
+
+    HandleOwner log_for_second_msg = Handle::Make(log.dispatcher(), log_rights);
+    msg->mutable_handles()[userboot::kHandleCount] = log_for_second_msg.release();
+
+    HandleOwner log_for_first_msg = Handle::Make(ktl::move(log), log_rights);
+    auto get_handles = [log = ktl::move(log_for_first_msg), &handles](auto... idx) mutable {
       return ktl::to_array<HandleOwner>({
           ktl::move(log),
           Handle::Dup(*handles[idx], handles[idx]->rights())...,
