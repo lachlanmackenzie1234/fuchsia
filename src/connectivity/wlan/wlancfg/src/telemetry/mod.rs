@@ -516,6 +516,7 @@ const TELEMETRY_QUERY_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::f
 pub fn get_telemetry_config() -> wlan_telemetry::TelemetryConfig {
     wlan_telemetry::TelemetryConfig {
         enable_connect_disconnect: true,
+        enable_iface_logger: true,
         enable_toggle_logger: true,
         enable_recovery_logger: true,
         enable_client_iface_counters_logger: true,
@@ -559,6 +560,8 @@ pub fn get_cobalt_allowlist() -> wlan_telemetry::CobaltAllowlist {
         metrics::BAD_RX_RATE_METRIC_ID,
         metrics::RX_UNICAST_PACKETS_METRIC_ID,
         metrics::BAD_TX_RATE_METRIC_ID,
+        metrics::INTERFACE_CREATION_FAILURE_METRIC_ID,
+        metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID,
     ]))
 }
 
@@ -3234,16 +3237,6 @@ impl StatsLogger {
     }
 
     async fn log_iface_creation_result(&mut self, result: Result<(), ()>) {
-        if result.is_err() {
-            self.throttled_error_logger.throttle_error(log_cobalt!(
-                self.cobalt_proxy,
-                log_occurrence,
-                metrics::INTERFACE_CREATION_FAILURE_METRIC_ID,
-                1,
-                &[]
-            ))
-        }
-
         if let Some(reason) = self.recovery_record.create_iface_failure.take() {
             match result {
                 Ok(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Success).await,
@@ -3253,16 +3246,6 @@ impl StatsLogger {
     }
 
     async fn log_iface_destruction_result(&mut self, result: Result<(), ()>) {
-        if result.is_err() {
-            self.throttled_error_logger.throttle_error(log_cobalt!(
-                self.cobalt_proxy,
-                log_occurrence,
-                metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID,
-                1,
-                &[]
-            ))
-        }
-
         if let Some(reason) = self.recovery_record.destroy_iface_failure.take() {
             match result {
                 Ok(()) => self.log_post_recovery_result(reason, RecoveryOutcome::Success).await,
@@ -8367,40 +8350,6 @@ mod tests {
                 CreateMetricsLoggerFailureMode::ApiFailure => assert_matches!(result, Err(_))
             }
         });
-    }
-
-    #[fuchsia::test]
-    fn test_log_iface_creation_failure() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        // Send a notification that interface creation has failed.
-        test_helper.telemetry_sender.send(TelemetryEvent::IfaceCreationResult(Err(())));
-
-        // Run the telemetry loop until it stalls.
-        assert_matches!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-
-        // Expect that Cobalt has been notified of the interface creation failure.
-        test_helper.drain_cobalt_events(&mut test_fut);
-        let logged_metrics =
-            test_helper.get_logged_metrics(metrics::INTERFACE_CREATION_FAILURE_METRIC_ID);
-        assert_eq!(logged_metrics.len(), 1);
-    }
-
-    #[fuchsia::test]
-    fn test_log_iface_destruction_failure() {
-        let (mut test_helper, mut test_fut) = setup_test();
-
-        // Send a notification that interface creation has failed.
-        test_helper.telemetry_sender.send(TelemetryEvent::IfaceDestructionResult(Err(())));
-
-        // Run the telemetry loop until it stalls.
-        assert_matches!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-
-        // Expect that Cobalt has been notified of the interface creation failure.
-        test_helper.drain_cobalt_events(&mut test_fut);
-        let logged_metrics =
-            test_helper.get_logged_metrics(metrics::INTERFACE_DESTRUCTION_FAILURE_METRIC_ID);
-        assert_eq!(logged_metrics.len(), 1);
     }
 
     #[test_case(ScanIssue::ScanFailure, metrics::CLIENT_SCAN_FAILURE_METRIC_ID)]
